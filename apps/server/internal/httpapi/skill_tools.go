@@ -16,9 +16,13 @@ import (
 // the version now installed.
 type wsInstallTool struct {
 	Tool store.SkillBundleTool `json:"tool"`
-	// Step is "install" (the default) or "setup", the tool's own step after
-	// installing.
+	// Step is "install" (the default), "setup" (the tool's own step after
+	// installing), "activate" (make a staged version current) or "remove"
+	// (delete a staged version that never became current).
 	Step string `json:"step,omitempty"`
+	// Activate false stages an install: the version is installed beside
+	// the current one, which stays current (a rollout's canary).
+	Activate *bool `json:"activate,omitempty"`
 }
 
 type wsToolInstalled struct {
@@ -106,6 +110,7 @@ func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
+	s.syncConnectorToolVersions(r.Context())
 	s.projectionsChanged("", fieldDeviceTools)
 	writeResult(w, value, nil)
 }

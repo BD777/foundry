@@ -183,6 +183,24 @@ interface components {
       registry?: string;
       /** @description Older copies work worse or not at all ("2.0.0" for AWS CLI v2). */
       minimumVersion?: string;
+      versionCheck?: components["schemas"]["ConnectorVersionCheck"];
+    };
+    /** @description ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0. */
+    ConnectorVersionCheck: {
+      commands: components["schemas"]["ConnectorVersionCheckCommand"][];
+    };
+    ConnectorVersionCheckCommand: {
+      /** @description The tool's arguments; the tool itself is the connector's command. */
+      args: string[];
+      /** @description Text the output must contain. */
+      expect?: string;
+      /**
+       * @description What a passed run shows people, in one line instead of its output (which can name the account) - "status" (signed in, token valid), "refresh" (token refreshed) or "read" (reached the service as the account, named by show).
+       * @enum {string}
+       */
+      result?: "status" | "refresh" | "read";
+      /** @description A dotted path into the command's JSON output whose value the one-line result names (e.g. data.name for the account's display name). Nothing else of the output is kept. */
+      show?: string;
     };
     /** @description A shared credential requirement; multiple business capabilities can use it. */
     ConnectorAuthorizationGroup: {
@@ -3157,6 +3175,10 @@ export type ModelRequestUsage = components["schemas"]["ModelRequestUsage"];
 export type ConnectorRequirement =
   components["schemas"]["ConnectorRequirement"];
 export type ConnectorTool = components["schemas"]["ConnectorTool"];
+export type ConnectorVersionCheck =
+  components["schemas"]["ConnectorVersionCheck"];
+export type ConnectorVersionCheckCommand =
+  components["schemas"]["ConnectorVersionCheckCommand"];
 export type ConnectorAuthorizationGroup =
   components["schemas"]["ConnectorAuthorizationGroup"];
 export type ConnectorAuthorizationScope =

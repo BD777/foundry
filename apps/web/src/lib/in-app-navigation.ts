@@ -276,6 +276,16 @@ export function navigateToSkills(): void {
   navigateAppRoute({ view: "skills" });
 }
 
+/** Opens the Skill Library, where bundles and their versions are managed. */
+export function navigateToSkillLibrary(): void {
+  navigateAppRoute({ view: "library" });
+}
+
+/** The Skill Library page, where bundles and their versions are managed. */
+export function skillLibraryHref(): string {
+  return `${pathForAppRoute({ view: "library" })}${searchWithWorkspace(workspaceIdFromLocation())}`;
+}
+
 /** Opens the page on what the built-in Foundry skill gives agents. */
 export function navigateToFoundrySkill(): void {
   navigateAppRoute({ view: "foundrySkill" });

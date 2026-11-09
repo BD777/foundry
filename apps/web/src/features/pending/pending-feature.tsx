@@ -12,6 +12,7 @@ import {
   navigateToChat,
   navigateToChatMessage,
   navigateToConnectors,
+  navigateToSkillLibrary,
   navigateToIssue,
 } from "../../lib/in-app-navigation";
 import { PendingItemCard } from "./pending-item-card";
@@ -28,7 +29,8 @@ import { PageHeader } from "../../components/ui/page-header";
 
 /** Opens where an item was found: its message in the chat, or its Issue. */
 export function openPendingItem(item: PendingItem): void {
-  if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
+  if (item.source === "bundle_update") navigateToSkillLibrary();
+  else if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
   else if (item.issueId) navigateToIssue(item.issueId);
   else if (item.sessionId)
     navigateToChatMessage(item.sessionId, item.workspaceId, item.messageId);

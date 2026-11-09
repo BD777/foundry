@@ -14,7 +14,33 @@
     "holding": "server_held",
     "adapter": "feishu",
     "tool": {
-      "command": "feishu-cli"
+      "command": "feishu-cli",
+      "versionCheck": {
+        "commands": [
+          {
+            "args": ["auth", "status", "-o", "json"],
+            "expect": "healthy",
+            "result": "status"
+          },
+          {
+            "args": ["auth", "refresh", "-o", "json"],
+            "expect": "ok",
+            "result": "refresh"
+          },
+          {
+            "args": [
+              "api",
+              "GET",
+              "/open-apis/authen/v1/user_info",
+              "--as",
+              "user"
+            ],
+            "expect": "open_id",
+            "result": "read",
+            "show": "data.name"
+          }
+        ]
+      }
     },
     "provides": {
       "tool": true

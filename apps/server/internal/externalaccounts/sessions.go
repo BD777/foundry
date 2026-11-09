@@ -40,6 +40,29 @@ func Permitted(account store.ExternalAccount, boundWorkspaces []string, workspac
 	return false
 }
 
+// CheckEligible says whether a tool version check on a device owned by
+// deviceOwner, run for userID, may act as account now: the account is
+// userID's own, server-held and usable, and the device is theirs. It is
+// what a bundle rollout's canary check uses (docs/skills.md, Bundle 版本);
+// no workspace binding is involved, since no session uses the account.
+func CheckEligible(account store.ExternalAccount, userID, deviceOwner string) bool {
+	if account.OwnerUserID == "" || userID != account.OwnerUserID || deviceOwner != account.OwnerUserID {
+		return false
+	}
+	return account.Mode == store.ExternalCredentialServerHeld &&
+		(account.Status == store.ExternalAccountReady || account.Status == store.ExternalAccountExpiring)
+}
+
+// CheckMaterial is what a tool version check acts with: the gateway
+// handles for one of the device owner's accounts, under the check's id.
+func (s *Service) CheckMaterial(ctx context.Context, account store.ExternalAccount, checkID, deviceID string) (store.ExternalAccountMaterial, error) {
+	account = s.withComputedStatus(account)
+	if !CheckEligible(account, account.OwnerUserID, account.OwnerUserID) {
+		return store.ExternalAccountMaterial{}, errors.New("the account cannot be used now")
+	}
+	return s.material(ctx, account, HandleRequest{SessionID: checkID, DeviceID: deviceID, UserID: account.OwnerUserID, Account: account})
+}
+
 // ProfileName is the tool profile a worker writes for an account in one
 // session: "foundry-<account id>-<session digest>", within feishu-cli's
 // [A-Za-z0-9_-]{1,64}. Each session has its own profile, since its handles

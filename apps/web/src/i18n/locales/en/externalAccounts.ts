@@ -139,6 +139,12 @@ export const externalAccounts = {
     intro:
       "Your connected Feishu accounts, each with its organisation and the Feishu app it signed in through. Foundry keeps each login and app secret on the server; feishu-cli in your sessions reaches Feishu through Foundry as you and holds no credential on the device.",
     connect: "Connect Feishu account",
+    versions: {
+      label: "{{command}} versions on devices",
+      title: "{{command}} on devices, with the skills sessions get",
+      manage: "Manage in Skill Library",
+      mismatch: "sessions get the latest skills, which may not match this CLI",
+    },
   },
   status: {
     ready: "Ready",

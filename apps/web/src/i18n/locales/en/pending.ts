@@ -33,6 +33,7 @@ export const pending = {
     account: "Account",
     connector: "Sign-in",
     helper_stuck: "Helper stuck",
+    bundle_update: "Bundle update",
   },
   state: {
     open: "Open",
@@ -74,6 +75,13 @@ export const pending = {
     openConnectors: "Open Connectors",
     accountReauth: "Authorize {{title}} again",
     connectorExpired: "Sign in again: {{title}}",
+    accountScopes_one:
+      "Authorize {{title}} again: {{version}} needs {{count}} more permission",
+    accountScopes_other:
+      "Authorize {{title}} again: {{version}} needs {{count}} more permissions",
+    bundleRolledBack: "Update rolled back: {{title}}",
+    bundleFailed: "Update not installed: {{title}}",
+    openSkillLibrary: "Open Skill Library",
     permissionDenied: "Permission denied: {{path}}",
     done: "Mark done",
     dismiss: "Dismiss",

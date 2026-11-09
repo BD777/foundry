@@ -20,6 +20,7 @@ import {
   toNormalizedPromotedSkill,
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
+import { rolloutMoving } from "../../lib/bundle-versions";
 import { AddRepositoryDialog } from "./add-repository-dialog";
 import { SkillRepositoriesSection } from "./skill-repositories-section";
 import { PageHeader } from "../../components/ui/page-header";
@@ -36,6 +37,9 @@ export interface SkillLibraryFeatureProps {
   /** Reloads the catalog after the library changed. */
   onChanged: () => Promise<void>;
 }
+
+/** How often a page with a running rollout reads its progress. */
+const rolloutPollMs = 3_000;
 
 const sameSet = (a: Set<string>, b: Set<string>) =>
   a.size === b.size && [...a].every((id) => b.has(id));
@@ -82,6 +86,23 @@ export function SkillLibraryFeature({
   useEffect(() => {
     void loadRepositories();
   }, []);
+  // The server publishes no event for a rollout's progress: while one is at
+  // work, read the repositories again until it stops (one that only waits
+  // for offline devices needs no polling).
+  const rolling = (repositories ?? []).some((repo) =>
+    rolloutMoving(repo.rollout),
+  );
+  useEffect(() => {
+    if (!rolling) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled) void loadRepositories();
+    }, rolloutPollMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rolling, repositories]);
   // Picked skills whose folder left their repository, by skill id.
   const missing = useMemo(
     () =>

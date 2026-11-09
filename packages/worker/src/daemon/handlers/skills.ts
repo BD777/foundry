@@ -11,6 +11,9 @@ import { scanWorkspaceDraftsFromRefs } from "../../skills/workspace-draft-scan-t
 import { createHash } from "node:crypto";
 import {
   daemonMessageTypes,
+  type CheckToolPayload,
+  type InstallToolPayload,
+  type ToolCheckedPayload,
   type FetchSkillRepositoryPayload,
   type ReadRepositoryRefsPayload,
   type ReadSkillContentPayload,
@@ -19,11 +22,15 @@ import {
 } from "@bd777/foundry-protocol";
 import { recordActivity } from "../diagnostics.js";
 import {
+  activateTool,
   installTool,
   managedToolVersions,
+  removeToolVersion,
   runToolSetup,
   type ToolSpec,
 } from "../../skills/managed-tools.js";
+import { checkTool } from "../../skills/tool-check.js";
+import { prepareConnectorCheck } from "../../connectors/index.js";
 import {
   fetchSkillRepository,
   readRepositoryRefs,
@@ -167,25 +174,58 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
       );
     })
     .on(daemonMessageTypes.installTool, (envelope, ctx) => {
-      const payload = envelope.payload as
-        { tool?: ToolSpec; step?: string } | undefined;
-      const tool = payload?.tool;
+      const payload = envelope.payload as InstallToolPayload | undefined;
+      const tool = payload?.tool as ToolSpec | undefined;
       return reply(
         ctx,
         envelope,
         daemonMessageTypes.toolInstalled,
         async () => {
           if (!tool) throw new Error("no tool to install");
+          const step = payload?.step ?? "install";
           const done =
-            payload?.step === "setup"
+            step === "setup"
               ? await runToolSetup(tool)
-              : await installTool(tool);
+              : step === "activate"
+                ? activateTool(tool.name, tool.version)
+                : step === "remove"
+                  ? removeToolVersion(tool.name, tool.version)
+                  : step === "install"
+                    ? await installTool(tool, {
+                        activate: payload?.activate !== false,
+                      })
+                    : undefined;
+          if (!done) throw new Error(`unknown install_tool step ${step}`);
           return {
             name: done.name,
             version: done.version,
             ...("output" in done ? { output: done.output } : {}),
           };
         },
+      );
+    })
+    .on(daemonMessageTypes.checkTool, (envelope, ctx) => {
+      const payload = envelope.payload as CheckToolPayload | undefined;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.toolChecked,
+        () => {
+          if (!payload?.tool) throw new Error("no tool to check");
+          return checkTool(payload, {
+            prepareEnvironment: (request) =>
+              prepareConnectorCheck(request.externalAccounts ?? [], {
+                serverURL: ctx.serverURL,
+                log: (message) => console.log(message),
+              }),
+          });
+        },
+        (message): ToolCheckedPayload => ({
+          name: payload?.tool?.name ?? "",
+          version: payload?.tool?.version ?? "",
+          steps: [],
+          error: message,
+        }),
       );
     })
     .on(daemonMessageTypes.scanSkills, (envelope, ctx) => {

@@ -306,3 +306,56 @@ func TestLiveAnswersTheSameRecheckForAConnectionTheConnectorHolds(t *testing.T) 
 		t.Fatalf("unbound account: %v", err)
 	}
 }
+
+// DEV-154: a bundle rollout's check acts with the device owner's own
+// account through a grant that names the check, not a session: live only
+// while the check runs, on its device, for its owner and account, and the
+// account still the owner's usable, server-held one. No workspace binding
+// is needed, since no session uses the account.
+func TestACheckGrantLivesOnlyWhileItsCheckRunsOnItsOwnersDevice(t *testing.T) {
+	now := time.Now()
+	setup := func() (*fixture, *Checks, Check) {
+		f := newFixture()
+		checks := NewChecks()
+		checks.Now = func() time.Time { return now }
+		f.pipe.Checks = checks
+		check := checks.Begin("d1", "alice", "a1", 5*time.Minute)
+		f.grant.SessionID, f.grant.WorkspaceID = check.ID, ""
+		f.account.WorkspaceIDs = nil
+		return f, checks, check
+	}
+	f, checks, check := setup()
+	if !IsCheck(check.ID) || IsCheck("s1") {
+		t.Fatalf("check id %q", check.ID)
+	}
+	if response := f.serve("tk_good"); response.Body.String() != "sent" {
+		t.Fatalf("a running check: %q", response.Body.String())
+	}
+	if response := f.serveAs("tk_good", Device{ID: "d1", OwnerUserID: "bob"}); response.Body.String() == "sent" {
+		t.Fatal("a check acted on a device another person owns")
+	}
+	checks.End(check.ID)
+	if response := f.serve("tk_good"); response.Body.String() == "sent" {
+		t.Fatal("an ended check still acts")
+	}
+
+	f, _, _ = setup()
+	now = now.Add(6 * time.Minute)
+	if response := f.serve("tk_good"); response.Body.String() == "sent" {
+		t.Fatal("an expired check still acts")
+	}
+	now = time.Now()
+
+	for name, change := range map[string]func(f *fixture){
+		"another person's account":   func(f *fixture) { f.account.OwnerUserID = "bob" },
+		"an account that needs auth": func(f *fixture) { f.account.Status = store.ExternalAccountNeedsReauth },
+		"another account":            func(f *fixture) { f.grant.AccountID = "a2" },
+		"no checks configured":       func(f *fixture) { f.pipe.Checks = nil },
+	} {
+		f, _, _ := setup()
+		change(f)
+		if response := f.serve("tk_good"); response.Body.String() == "sent" {
+			t.Errorf("%s: the check acted", name)
+		}
+	}
+}

@@ -70,6 +70,11 @@ export interface InstallOptions {
   allowedOrigins?: string[];
   /** The npm registry; tests serve one locally. */
   npmRegistry?: string;
+  /**
+   * false stages the version in its folder without making it current (a
+   * bundle rollout checks it first); absent or true makes it current.
+   */
+  activate?: boolean;
 }
 
 const toolName = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$/;
@@ -90,12 +95,21 @@ export function managedToolsBin(): string {
   return resolve(foundryToolsRoot(), "bin");
 }
 
-/** PATH with Foundry's tools first. */
-export function withManagedTools(path: string | undefined): string {
+/**
+ * PATH with Foundry's tools first: a session's own tool folder
+ * (session-tools.ts) in place of the current versions when it has one.
+ */
+export function withManagedTools(
+  path: string | undefined,
+  sessionTools?: string,
+): string {
   const bin = managedToolsBin();
+  const first = sessionTools ?? bin;
   return [
-    bin,
-    ...(path ?? "").split(":").filter((part) => part && part !== bin),
+    first,
+    ...(path ?? "")
+      .split(":")
+      .filter((part) => part && part !== bin && part !== first),
   ].join(":");
 }
 
@@ -262,12 +276,11 @@ export async function installTool(
   spec: ToolSpec,
   options: InstallOptions = {},
 ): Promise<{ name: string; version: string; sha256: string }> {
-  if (!toolName.test(spec.name) || !versionName.test(spec.version))
-    throw new Error("invalid tool name or version");
+  checkToolVersionName(spec.name, spec.version);
   if (process.platform !== "darwin" && process.platform !== "linux")
     throw new Error(`installing tools is not supported on ${process.platform}`);
   if (spec.source === "npm") return installNpmTool(spec, options);
-  if (spec.source === "uv") return installUvTool(spec);
+  if (spec.source === "uv") return installUvTool(spec, options);
   if (spec.source) throw new Error(`unknown tool source ${spec.source}`);
   const asset = platformAsset(spec);
   const archive = await download(asset.url, maxDownloadBytes, options);
@@ -284,7 +297,7 @@ export async function installTool(
   writeFileSync(staging, binary, { mode: 0o755 });
   chmodSync(staging, 0o755);
   renameSync(staging, target);
-  makeCurrent(spec);
+  if (options.activate !== false) makeCurrent(spec.name, spec.version);
   return {
     name: spec.name,
     version: spec.version,
@@ -292,15 +305,106 @@ export async function installTool(
   };
 }
 
+function checkToolVersionName(name: string, version: string): void {
+  if (!toolName.test(name) || !versionName.test(version))
+    throw new Error("invalid tool name or version");
+}
+
+/**
+ * The program of one installed version, `<name>/<version>/<name>` (a
+ * binary, a launcher or a link, by source), whether or not it is current.
+ */
+export function toolVersionEntry(name: string, version: string): string {
+  checkToolVersionName(name, version);
+  return resolve(foundryToolsRoot(), name, version, name);
+}
+
+/** What bin/<name> links to when `version` is current. */
+function currentLinkTarget(name: string, version: string): string {
+  return `../${name}/${version}/${name}`;
+}
+
 /** Points bin/<name> at the version's entry, `<name>/<version>/<name>`. */
-function makeCurrent(spec: ToolSpec): void {
+function makeCurrent(name: string, version: string): void {
   const bin = managedToolsBin();
   mkdirSync(bin, { recursive: true });
-  const link = join(bin, spec.name);
+  const link = join(bin, name);
   const linkStaging = `${link}.${process.pid}.tmp`;
   rmSync(linkStaging, { force: true });
-  symlinkSync(`../${spec.name}/${spec.version}/${spec.name}`, linkStaging);
+  symlinkSync(currentLinkTarget(name, version), linkStaging);
   renameSync(linkStaging, link);
+}
+
+/** Makes an installed (e.g. staged) version the current one, atomically. */
+export function activateTool(
+  name: string,
+  version: string,
+): { name: string; version: string } {
+  if (!existsSync(toolVersionEntry(name, version)))
+    throw new Error(`${name} ${version} is not installed on this device`);
+  makeCurrent(name, version);
+  return { name, version };
+}
+
+/**
+ * Deletes an installed version that is not current, e.g. a staged version
+ * whose check failed. Removing a version that is not there succeeds.
+ */
+export function removeToolVersion(
+  name: string,
+  version: string,
+): { name: string; version: string } {
+  checkToolVersionName(name, version);
+  let current: string | undefined;
+  try {
+    current = readlinkSync(join(managedToolsBin(), name));
+  } catch {
+    current = undefined;
+  }
+  if (current === currentLinkTarget(name, version))
+    throw new Error(`${name} ${version} is the current version; it stays`);
+  const folder = resolve(foundryToolsRoot(), name, version);
+  if (sessionsUsing(folder))
+    throw new Error(`${name} ${version} is in use by a running session`);
+  rmSync(folder, { recursive: true, force: true });
+  return { name, version };
+}
+
+/**
+ * The folder of per-session tool folders (session-tools.ts). It sits under
+ * the tools root, which a sandboxed session can read, unlike the state
+ * root; a leading dot keeps it apart from tool names.
+ */
+export function sessionToolsRoot(): string {
+  return resolve(foundryToolsRoot(), ".sessions");
+}
+
+/** Whether a session's tool folder links into `folder`. */
+function sessionsUsing(folder: string): boolean {
+  let sessions: string[];
+  try {
+    sessions = readdirSync(sessionToolsRoot());
+  } catch {
+    return false;
+  }
+  for (const session of sessions) {
+    const dir = join(sessionToolsRoot(), session);
+    let links: string[];
+    try {
+      links = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const link of links) {
+      try {
+        if (isInside(folder, resolve(dir, readlinkSync(join(dir, link)))))
+          return true;
+      } catch {
+        continue;
+      }
+    }
+  }
+  return false;
 }
 
 /** Replaces `<folder>/<name>` with a symlink to target. */
@@ -434,7 +538,7 @@ async function installNpmTool(
   } else {
     linkEntry(folder, spec.name, `npm/node_modules/.bin/${spec.name}`);
   }
-  makeCurrent(spec);
+  if (options.activate !== false) makeCurrent(spec.name, spec.version);
   return {
     name: spec.name,
     version: spec.version,
@@ -477,6 +581,7 @@ function findUv(): string | undefined {
  */
 async function installUvTool(
   spec: ToolSpec,
+  options: InstallOptions,
 ): Promise<{ name: string; version: string; sha256: string }> {
   const pkg = spec.package ?? spec.name;
   if (!pypiPackageName.test(pkg))
@@ -504,7 +609,7 @@ async function installUvTool(
   if (!existsSync(join(folder, "bin", spec.name)))
     throw new Error(`${pkg} ${spec.version} has no ${spec.name} command`);
   linkEntry(folder, spec.name, `bin/${spec.name}`);
-  makeCurrent(spec);
+  if (options.activate !== false) makeCurrent(spec.name, spec.version);
   return {
     name: spec.name,
     version: spec.version,
@@ -523,8 +628,7 @@ export async function runToolSetup(
 ): Promise<{ name: string; version: string; output: string }> {
   const setup = spec.setup;
   if (!setup) throw new Error(`${spec.name} has no setup step`);
-  if (!toolName.test(spec.name) || !versionName.test(spec.version))
-    throw new Error("invalid tool name or version");
+  checkToolVersionName(spec.name, spec.version);
   const commandName = setup.command || spec.name;
   if (
     !toolName.test(commandName) ||

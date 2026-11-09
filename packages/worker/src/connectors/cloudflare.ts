@@ -20,7 +20,7 @@ export interface CloudflareSessionOptions {
   ) => Promise<ExternalAccountGateway>;
 }
 export async function prepareCloudflareSession(
-  session: AgentSession,
+  session: Pick<AgentSession, "id">,
   materials: ExternalAccountMaterial[] | undefined,
   options: CloudflareSessionOptions = {},
 ) {

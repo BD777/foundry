@@ -433,6 +433,10 @@ export function availableDaemonCapabilities(): string[] {
     // profile_check: the worker checks a server profile it is handed
     // (check_agent_profile).
     "profile_check",
+    // bundle_rollout_v1: install_tool stages, activates and removes tool
+    // versions, check_tool checks one, and run_session's toolPins give each
+    // session its own tool folder (docs/skills.md, Bundle 版本).
+    "bundle_rollout_v1",
   ];
 }
 

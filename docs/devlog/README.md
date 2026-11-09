@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-09 Skill 与连接器：[DEV-154 CLI 与 Skill 版本一致、先金丝雀的绑定更新](DEV-154-bundle-versions.md)。sg-chaos 的 feishu-cli 停在 v1.41.0 而 Skill 已是 v1.44.0，会话执行 `doc media-preview` 报 “unknown subcommand”。现在每台设备按实际装的 CLI 取对应版本的 Skill，会话钉住 CLI；新版本（默认自动、可切手动）先在一台金丝雀上暂存、检查（`--version`，飞书再加 `auth status`、`auth refresh`、经网关读取）再切换并推到其余设备，检查失败整体回滚并暂停、在“等你处理”告诉跟随者，下载失败重试且不回滚；scope 预设跟着 feishu-cli 版本，新增权限提示重新授权。dev 上 feishu-cli 已经自动路径升到 v1.44.0（金丝雀 sg-chaos），会话中 `doc media-preview` 可用；Skill 库卡片按本人意见重排，检查只显示一行结果、不再露出账号数据。待验收：会话钉住在 sg-chaos 执行宿主切换后复验。
+
 2026-11-09 模型服务：[DEV-151 Foundry MCP 管理模型来源](DEV-151-mcp-model-providers.md)。本人想让 Agent（主要是助理）代为增删查改模型来源。新增 6 个工具（`list_model_providers`、`save_model_provider`、`delete_model_provider`、`check_model_provider`、`set_model_defaults`、`sign_in_subscription`），与页面共用同一套 handler 代码；只有本人自己的对话和助理能用，Issue 角色、verifier、工具会话与其他成员的会话不能。API 端点新增显式检查（设备官方 SDK 一回合，结果按端点 × 设备存 Server，页面编辑器可“验证”）。密钥只经 `apiKey` 进入、只回 `keySet`，Worker 各记录路径按字段名脱敏。经 PR #232 合入 main（`f06cdf1d`）；已部署 dev（Server、Web、Worker `.1794173489`，7 台在线设备已更新），真实 Claude 会话与 e2e-alice 浏览器 E2E 通过；待人工验收。
 2026-11-09 定时图标：[DEV-153 聊天列表里过期的定时图标](DEV-153-stale-timer-clock.md)。列表时钟来自会话的定时快照：新的 Claude 进程没定时时不上报空列表，旧 wakeup 一直留着；Worker 还按自己的时区读 Claude 的 cron，而连接可把 Claude 的 TZ 设成别的（本例多伦多 vs 上海，触发时间错 13 小时）。修复：定时带上 Claude 进程时区，Worker/补发/Web 按它计算；单次定时触发 1 小时后（旧记录 2 天）视为结束；新进程的第一份定时列表总会上报（保留设备仍要投递的 wakeup）。dev 已部署（Server `b5244ff54f221534`、Web `a2752f2e71c212bd`、Worker `.1794198054` 7 台）；scratch 副本真实浏览器验证；待人工验收；提交待窗口。
 

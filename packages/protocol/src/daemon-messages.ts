@@ -26,7 +26,12 @@ import type {
   AgentProfileProjection,
   ProfileDefinition,
 } from "./profiles.js";
-import type { SessionSkillRef } from "./skills.js";
+import type {
+  SessionSkillRef,
+  SessionToolPin,
+  SkillBundleCheckStep,
+  SkillBundleTool,
+} from "./skills.js";
 import type { AgentSession } from "./session.js";
 
 export const daemonMessageTypes = {
@@ -243,6 +248,9 @@ export const daemonMessageTypes = {
   executionRunnerSwitched: "execution_runner_switched",
   installTool: "install_tool",
   toolInstalled: "tool_installed",
+  /** Server asks: check a tool version on the device (a bundle rollout). */
+  checkTool: "check_tool",
+  toolChecked: "tool_checked",
   /** Server asks: one action on a device-held connector (connectors.ts). */
   connectorRequest: "connector_request",
   connectorReply: "connector_reply",
@@ -780,12 +788,65 @@ export interface RunSessionPayload {
   /** Device-held connectors on the session's device and what it may do with each. */
   deviceConnectors?: DeviceConnectorUse[];
   /**
+   * The tool versions this session runs (docs/skills.md, Bundle 版本): the
+   * versions its bundle skills were chosen for. The worker links each into
+   * the session's own tool folder, so an update never changes a running
+   * session's CLI.
+   */
+  toolPins?: SessionToolPin[];
+  /**
    * Files the worker writes into a personal_agent session's folder before
    * the run (docs/personal-agent.md §12): its AGENTS.md, the assistant's
    * instructions that Claude Code and Codex read natively, and the worked
    * examples beside it. Nothing about the person is in them.
    */
   personalAgentFiles?: SetupWorkspaceFile[];
+}
+
+/**
+ * install_tool: install a bundle's tool version (`install`, the default;
+ * `activate: false` only stages it in its version folder), run its setup
+ * step (`setup`), make an installed version current (`activate`) or delete
+ * a staged version that never became current (`remove`). Answered with
+ * tool_installed `{ name, version, error?, output? }`.
+ */
+export interface InstallToolPayload {
+  tool: SkillBundleTool;
+  step?: "install" | "setup" | "activate" | "remove";
+  /** With `install`: false stages the version without making it current. */
+  activate?: boolean;
+}
+
+/** One command a tool version check runs, from the connector's catalog entry. */
+export interface ToolCheckCommand {
+  args: string[];
+  /** Text the command's output must contain. */
+  expect?: string;
+  /** What a passed run shows in one line (its output is not reported). */
+  result?: "status" | "refresh" | "read";
+  /** A dotted path into the JSON output whose value the result names. */
+  show?: string;
+}
+
+/**
+ * check_tool: check an installed (or staged) tool version: `--version`
+ * names it, then each command runs in the session environment of the
+ * connector the tool belongs to (for a server-held one, with the check's
+ * stand-in material). Answered with tool_checked.
+ */
+export interface CheckToolPayload {
+  tool: SkillBundleTool;
+  commands?: ToolCheckCommand[];
+  /** A server-held connector's stand-ins for this check only. */
+  externalAccounts?: ExternalAccountMaterial[];
+}
+
+/** tool_checked */
+export interface ToolCheckedPayload {
+  name: string;
+  version: string;
+  steps: SkillBundleCheckStep[];
+  error?: string;
 }
 
 /** steer_session */

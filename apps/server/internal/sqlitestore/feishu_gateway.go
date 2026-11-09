@@ -123,8 +123,12 @@ func (s *Store) DeleteFeishuGatewayGrant(ctx context.Context, id string) error {
 }
 
 func (s *Store) PruneFeishuGatewayGrants(ctx context.Context) (int, error) {
-	result, err := s.conn().ExecContext(ctx, `DELETE FROM feishu_gateway_grants WHERE session_id NOT IN (
-		SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`)`)
+	// A tool version check's grant (session id chk_…) has no session; it
+	// lasts minutes, so one older than an hour is left over.
+	result, err := s.conn().ExecContext(ctx, `DELETE FROM feishu_gateway_grants WHERE
+		(session_id NOT LIKE 'chk\_%' ESCAPE '\' AND session_id NOT IN (
+			SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`))
+		OR (session_id LIKE 'chk\_%' ESCAPE '\' AND created_at < ?)`, formatTime(time.Now().Add(-time.Hour)))
 	if err != nil {
 		return 0, fmt.Errorf("prune feishu gateway grants: %w", err)
 	}

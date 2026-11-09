@@ -130,6 +130,12 @@ export const externalAccounts: Translation<typeof en> = {
     intro:
       "你已连接的飞书账号，以及各自所属的组织和登录所用的飞书应用。Foundry 把登录和应用密钥都保存在服务器上；会话里的 feishu-cli 经由 Foundry 以你的身份访问飞书，设备上不保存任何凭据。",
     connect: "连接飞书账号",
+    versions: {
+      label: "各设备上的 {{command}} 版本",
+      title: "各设备上的 {{command}} 与会话拿到的 Skill",
+      manage: "在 Skill 库中管理",
+      mismatch: "会话拿到的是最新的 Skill，可能与这个 CLI 不匹配",
+    },
   },
   status: {
     ready: "可用",

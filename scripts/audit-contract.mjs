@@ -143,6 +143,11 @@ export const daemonPayloadGoNames = {
   FetchSkillRepositoryPayload: "wsFetchSkillRepository",
   ReadRepositoryRefsPayload: "wsReadRepositoryRefs",
   RunRepairPayload: "wsRunRepair",
+  // DEV-154: a bundle rollout stages, activates, removes and checks tools.
+  InstallToolPayload: "wsInstallTool",
+  CheckToolPayload: "wsCheckTool",
+  ToolCheckedPayload: "wsToolChecked",
+  ToolCheckCommand: "ConnectorVersionCheckCommand",
   // DEV-146: the scan's warning is the contract's model; the bare replies
   // are wsReplyError.
   WorkspaceMigrationWarning: "WorkspaceMigrationFolderWarning",

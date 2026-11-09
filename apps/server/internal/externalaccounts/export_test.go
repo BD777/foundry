@@ -11,7 +11,7 @@ import (
 var (
 	EmailDomain          = emailDomain
 	FeishuAlwaysScopes   = feishuAlwaysScopes
-	FeishuApprovalScopes = feishuApprovalScopes
+	FeishuApprovalScopes = feishuApprovalScopes()
 	ParseTime            = parseTime
 	RefreshTokenExpiry   = refreshTokenExpiry
 )

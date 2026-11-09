@@ -17,7 +17,6 @@ import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
   sessionExternalAccountEnvironment,
-  verifiedFeishuCliVersions,
 } from "../dist/connectors/feishu.js";
 import { startGatewayForwarder } from "../dist/connectors/gateway-forwarder.js";
 import { sessionEnvironment } from "../dist/session/session-ambient.js";
@@ -36,7 +35,6 @@ function scratch() {
       assert.equal(path, "/api/feishu-gw");
       return { baseURL: "http://127.0.0.1:45678" };
     },
-    feishuCliVersion: () => verifiedFeishuCliVersions[0],
   };
 }
 
@@ -199,19 +197,31 @@ test("old-style secrets, other tools and bad names get nothing", async () => {
   assert.equal(existsSync(join(paths.home, ".feishu-cli")), false);
 });
 
-test("a feishu-cli version the gateway was not verified with is reported", async () => {
+test("a session pinned to a feishu-cli version whose rollout check has not passed is reported", async () => {
   const paths = scratch();
   const logs = [];
   const held = await materializeSessionAccounts(chat("sess_v"), [material()], {
     ...paths,
-    feishuCliVersion: () => "1.99.0",
+    toolPins: [{ name: "feishu-cli", version: "v1.99.0", bundle: "feishu" }],
     log: (line) => logs.push(line),
   });
   assert.match(
     logs.join("\n"),
-    /feishu-cli 1\.99\.0 on this device is not a version/,
+    /feishu-cli v1\.99\.0 \(bundle feishu\) has not passed its rollout check/,
   );
   held.release();
+  const quiet = [];
+  const checked = await materializeSessionAccounts(
+    chat("sess_v2"),
+    [material()],
+    {
+      ...paths,
+      toolPins: [{ name: "feishu-cli", version: "v1.44.0", verified: true }],
+      log: (line) => quiet.push(line),
+    },
+  );
+  assert.equal(quiet.join("\n"), "");
+  checked.release();
 });
 
 test("a profile whose forwarder cannot start is not written", async () => {

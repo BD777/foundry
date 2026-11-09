@@ -161,8 +161,8 @@ const feishuAppScopesPath = "/open-apis/application/v6/scopes"
 
 func (f *Feishu) ScopeCatalog(ctx context.Context, app *AppCredentials) (store.ExternalScopeCatalog, error) {
 	recommended := FeishuPresetScopes(false)
-	approval := append([]string(nil), feishuApprovalScopes...)
-	catalog := store.ExternalScopeCatalog{Source: store.ExternalScopeSource{Label: FeishuPresetSource}, Always: append([]string(nil), feishuAlwaysScopes...)}
+	approval := feishuApprovalScopes()
+	catalog := store.ExternalScopeCatalog{Source: store.ExternalScopeSource{Label: FeishuPresetSource()}, Always: append([]string(nil), feishuAlwaysScopes...)}
 	held := map[string]bool{}
 	if app != nil {
 		token, _, err := f.TenantAccessToken(ctx, *app)

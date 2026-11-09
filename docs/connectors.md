@@ -83,7 +83,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 ### 账号生命周期
 
-- **授权范围**：不指定 scope 时使用预设 `feishu-cli-recommended`，即 `feishu-cli` v1.41.0 `auth login --recommend` 的推荐清单，加上 Skill 显式申请的 `im:chat:create`。来源写在 `feishu_scopes.go`，这是 `feishu-cli` 的清单，不是飞书全部 scope 的目录。每次登录都会附加 `offline_access` 和 `auth:user.id:read`。可能需要租户管理员审批的 scope 只在本人勾选后申请，也可以填一份清单替换预设。授权后报告未获授予的 scope；没有 refresh token 的授权直接拒绝。
+- **授权范围**：不指定 scope 时使用预设 `feishu-cli-recommended`，即 Foundry 实际运行的那个 `feishu-cli` 版本 `auth login --recommend` 的推荐清单，加上同一版本的 Skill 显式申请的 scope。每个版本一份，存在 `feishu_cli_scopes.json`，由 `scripts/feishu-cli-scopes.sh <tag>` 从该版本源码生成（v1.41.0、v1.44.0）；新版本多出的 scope 在“等你处理”里提示重新授权（[Bundle 版本](skills.md)）。这是 `feishu-cli` 的清单，不是飞书全部 scope 的目录。每次登录都会附加 `offline_access` 和 `auth:user.id:read`。可能需要租户管理员审批的 scope 只在本人勾选后申请，也可以填一份清单替换预设。授权后报告未获授予的 scope；没有 refresh token 的授权直接拒绝。
 - **状态**：ready / expiring / needs_reauth / revoked。refresh token 7 天不用就失效；打开“保持登录”后，每小时巡检一次，refresh token 剩余不足 24 小时就刷新；授权本身最长一年。
 - **重新授权**：在原账号上重新扫码，账号 id、名称、保持登录设置和 Workspace 绑定都不变；登录成另一个飞书用户会被拒绝，需要作为新账号连接。
 - **立即停用**（revoke）：在飞书侧吊销登录并删除 Server 上的授权，账号标为 revoked 保留在列表中；网关从下一个请求起拒绝。**移除**：吊销后删除账号及其所有绑定。
@@ -128,7 +128,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 设备绑定的增删没有审计记录（飞书账号的绑定有）；没有后台定时检查，状态只在打开页面、手动检查或操作后更新，到期提醒只在 Connectors 页显示。
 - 页面在 2 分钟内不会重新读同一台设备：设备网络刚变化时要点“重新检查”。
 - Foundry 安装的 bytedcli 约 400 MB（npm 依赖），不运行 install 脚本，`--version` 与 `auth status` 在 0.170.0 上实测可用；设备自带的副本由 CLI 自己更新，Foundry 不提供升级。
-- 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（写在 foundry skill 的 `references/device-and-accounts.md`）。只针对 `feishu-cli` 1.41.0 验证过；其他版本只记入 Worker 日志。
+- 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（写在 foundry skill 的 `references/device-and-accounts.md`）。哪些 `feishu-cli` 版本经网关可用不再是 Worker 里的列表：每个 bundle 版本在金丝雀设备上的检查结果记在版本上，页面按设备显示（[Bundle 版本](skills.md)）。
 - 以 Bot 身份调用时，不限于路由到该 Workspace 的群。设计稿里的“只能发到本 Workspace 的群”没有实现。
 - 网关审计只有 API，Web 上没有查看入口。
 - 防的是“设备上没有真实凭据、会话结束即失效”，不是对 Agent 隐藏访问能力：未沙箱的会话能读到设备凭证，会话存活期间它能做的事与 `feishu-cli` 一样（见 [security.md](security.md) 中关于设备凭证的已知风险）。
@@ -141,6 +141,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 **验证情况**
 
 - 2026-10-13 在 dev 上真实使用：一个会话经网关使用同一个人在两个不同租户下的两个飞书账号，分别以用户和 Bot 身份执行只读调用；设备上只有替身，审计记录与调用一致（#125）。
+- 2026-11-09（DEV-154）：同一合同测试用 `feishu-cli` v1.44.0（release 资产，校验和一致）通过。
 - 2026-10-12：用真实 `feishu-cli` 1.41.0，经过真实的 Worker 转发器和网关，对假飞书跑合同测试，覆盖用户调用、Bot 调用、21 MiB 分片上传、Range 下载和 `event consume`；假飞书只见到真实 token（`httpapi/external_accounts_cli_contract_test.go`，没有 `feishu-cli` 或 node 时跳过）。
 - 网关鉴权、吊销、黑名单、限流、审计：`httpapi/external_accounts_gateway_test.go`、`feishugateway/gateway_test.go`；服务层：`externalaccounts/service_test.go`；Worker：`packages/worker/test/external-accounts.test.mjs`。
 - 扫码新建应用在真实飞书上的检查：到 2026-10-13 仍列为待本人确认，这次整理没有找到运行记录。

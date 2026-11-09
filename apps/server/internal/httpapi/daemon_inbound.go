@@ -81,6 +81,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsExecutionRunnerReadType:      answer[wsExecutionRunnerRead],
 	wsExecutionRunnerSwitchedType:  answer[wsExecutionRunnerSwitched],
 	wsToolInstalledType:            answer[wsToolInstalled],
+	wsToolCheckedType:              answer[wsToolChecked],
 	wsConnectorReplyType:           answer[store.ConnectorReplyPayload],
 	wsExtensionReplyType:           answer[store.ExtensionReplyPayload],
 	wsRepositoryRefsReadType:       answer[wsRepositoryRefs],

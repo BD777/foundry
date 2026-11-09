@@ -6,6 +6,27 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for ConnectorVersionCheckCommandResult.
+const (
+	ConnectorVersionCheckCommandResultRead    ConnectorVersionCheckCommandResult = "read"
+	ConnectorVersionCheckCommandResultRefresh ConnectorVersionCheckCommandResult = "refresh"
+	ConnectorVersionCheckCommandResultStatus  ConnectorVersionCheckCommandResult = "status"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorVersionCheckCommandResult enum.
+func (e ConnectorVersionCheckCommandResult) Valid() bool {
+	switch e {
+	case ConnectorVersionCheckCommandResultRead:
+		return true
+	case ConnectorVersionCheckCommandResultRefresh:
+		return true
+	case ConnectorVersionCheckCommandResultStatus:
+		return true
+	default:
+		return false
+	}
+}
+
 // ConnectorAuthorizationGroup A shared credential requirement; multiple business capabilities can use it.
 type ConnectorAuthorizationGroup struct {
 	ID       string                        `json:"id"`
@@ -276,7 +297,33 @@ type ConnectorTool struct {
 
 	// MinimumVersion Older copies work worse or not at all ("2.0.0" for AWS CLI v2).
 	MinimumVersion string `json:"minimumVersion,omitempty"`
+
+	// VersionCheck ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0.
+	VersionCheck *ConnectorVersionCheck `json:"versionCheck,omitempty"`
 }
+
+// ConnectorVersionCheck ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0.
+type ConnectorVersionCheck struct {
+	Commands jsonempty.List[ConnectorVersionCheckCommand] `json:"commands"`
+}
+
+// ConnectorVersionCheckCommand defines model for ConnectorVersionCheckCommand.
+type ConnectorVersionCheckCommand struct {
+	// Args The tool's arguments; the tool itself is the connector's command.
+	Args jsonempty.List[string] `json:"args"`
+
+	// Expect Text the output must contain.
+	Expect string `json:"expect,omitempty"`
+
+	// Result What a passed run shows people, in one line instead of its output (which can name the account) - "status" (signed in, token valid), "refresh" (token refreshed) or "read" (reached the service as the account, named by show).
+	Result ConnectorVersionCheckCommandResult `json:"result,omitempty"`
+
+	// Show A dotted path into the command's JSON output whose value the one-line result names (e.g. data.name for the account's display name). Nothing else of the output is kept.
+	Show string `json:"show,omitempty"`
+}
+
+// ConnectorVersionCheckCommandResult What a passed run shows people, in one line instead of its output (which can name the account) - "status" (signed in, token valid), "refresh" (token refreshed) or "read" (reached the service as the account, named by show).
+type ConnectorVersionCheckCommandResult string
 
 // DeviceConnectorSessionCheck DeviceConnectorSessionCheck separates `signed in` from `usable in a session`. The worker builds the environment a session that may use the login gets, and the one a session that may not gets, from the same code that starts sessions, and checks in them: the tool is found, the login reads as signed in and what the connector promises works (GitHub: git gets github.com credentials) in the first; nothing yields a credential in the second. It never holds a credential.
 type DeviceConnectorSessionCheck struct {

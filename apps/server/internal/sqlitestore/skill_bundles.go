@@ -2,7 +2,9 @@ package sqlitestore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -72,6 +74,105 @@ func (s *Store) RecordBundleVersion(ctx context.Context, repositoryID string, ve
 		return err
 	})
 	return version, err
+}
+
+// ListBundleVersions lists every recorded version of a repository, newest
+// first.
+func (s *Store) ListBundleVersions(ctx context.Context, repositoryID string) ([]store.SkillBundleVersion, error) {
+	rows, err := s.reader().QueryContext(ctx, `
+		SELECT seq, tag, commit_sha, applied_at, payload_json FROM skill_bundle_versions WHERE repository_id = ? ORDER BY seq DESC`, repositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("list bundle versions: %w", err)
+	}
+	defer rows.Close()
+	versions := []store.SkillBundleVersion{}
+	for rows.Next() {
+		var version store.SkillBundleVersion
+		var payload string
+		if err := rows.Scan(&version.Seq, &version.Tag, &version.Commit, &version.AppliedAt, &payload); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(payload), &version)
+		versions = append(versions, version)
+	}
+	return versions, rows.Err()
+}
+
+// SetBundleVersionCheck records a version's check on a rollout's canary.
+func (s *Store) SetBundleVersionCheck(ctx context.Context, repositoryID string, seq int, check store.SkillBundleCheck) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		var payload string
+		if err := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM skill_bundle_versions WHERE repository_id = ? AND seq = ?`, repositoryID, seq).Scan(&payload); err != nil {
+			return store.ErrNotFound
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(payload), &fields); err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(check)
+		if err != nil {
+			return err
+		}
+		fields["check"] = encoded
+		updated, err := json.Marshal(fields)
+		if err != nil {
+			return err
+		}
+		_, err = tx.conn().ExecContext(ctx, `UPDATE skill_bundle_versions SET payload_json = ? WHERE repository_id = ? AND seq = ?`, string(updated), repositoryID, seq)
+		return err
+	})
+}
+
+// SetBundleUpdatePolicy records how a bundle follows new versions.
+func (s *Store) SetBundleUpdatePolicy(ctx context.Context, repositoryID, policy string) error {
+	if policy == store.BundleUpdateAuto {
+		policy = ""
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE skill_repositories SET update_policy = ? WHERE id = ?`, policy, repositoryID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// SetBundleRollout records a bundle's latest rollout; nil clears it.
+func (s *Store) SetBundleRollout(ctx context.Context, repositoryID string, rollout *store.SkillBundleRollout) error {
+	encoded := ""
+	if rollout != nil {
+		data, err := json.Marshal(rollout)
+		if err != nil {
+			return err
+		}
+		encoded = string(data)
+	}
+	_, err := s.conn().ExecContext(ctx, `UPDATE skill_repositories SET rollout_json = ? WHERE id = ?`, encoded, repositoryID)
+	return err
+}
+
+// SkillRevisionRefs are session references to given revisions of library
+// skills, in the order asked; a revision that is gone is left out.
+func (s *Store) SkillRevisionRefs(ctx context.Context, members []store.SkillBundleMember) ([]store.SessionSkillRef, error) {
+	refs := []store.SessionSkillRef{}
+	for _, member := range members {
+		var ref store.SessionSkillRef
+		err := s.reader().QueryRowContext(ctx, `
+			SELECT ps.id, r.revision, ps.name, r.checksum, r.byte_size, COALESCE(i.source_digest, '')
+			FROM promoted_skills ps
+			JOIN promoted_skill_revisions r ON r.skill_id = ps.id AND r.revision = ?
+			LEFT JOIN skill_revision_index i ON i.skill_id = r.skill_id AND i.revision = r.revision AND i.error = ''
+			WHERE ps.id = ?`, member.Revision, member.SkillID).Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize, &ref.SourceDigest)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }
 
 // SetSkillRepositoryMode switches how a repository is followed ("pick" or

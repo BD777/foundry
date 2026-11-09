@@ -1,6 +1,6 @@
-import { Alert } from "../../components/ui/alert";
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
+import { RepositoryCheckError } from "./repository-check-error";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
@@ -147,11 +147,14 @@ export function SkillPickRow({
           />
         ) : null}
         {checkError ? (
-          <Alert
-            details={checkError}
-            size="compact"
-            title={t("library.repo.checkFailed")}
-            tone="error"
+          <RepositoryCheckError
+            busy={busy}
+            error={checkError}
+            onRetry={
+              canManage
+                ? () => run(() => checkSkillRepository(repo.id))
+                : undefined
+            }
           />
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}

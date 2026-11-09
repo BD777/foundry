@@ -33,6 +33,7 @@ export const pending: Translation<typeof en> = {
     account: "账号",
     connector: "登录",
     helper_stuck: "帮手卡住了",
+    bundle_update: "Bundle 更新",
   },
   state: {
     open: "未处理",
@@ -72,6 +73,13 @@ export const pending: Translation<typeof en> = {
     openConnectors: "打开连接器",
     accountReauth: "重新授权 {{title}}",
     connectorExpired: "重新登录：{{title}}",
+    accountScopes_one:
+      "重新授权 {{title}}：{{version}} 需要新增 {{count}} 项权限",
+    accountScopes_other:
+      "重新授权 {{title}}：{{version}} 需要新增 {{count}} 项权限",
+    bundleRolledBack: "更新已回滚：{{title}}",
+    bundleFailed: "更新未能安装：{{title}}",
+    openSkillLibrary: "打开 Skill 库",
     permissionDenied: "权限被拒绝：{{path}}",
     done: "标记完成",
     dismiss: "忽略",

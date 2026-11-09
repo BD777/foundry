@@ -44,6 +44,7 @@ import {
   reapConnectorLeftovers,
   startConnectorExtensions,
 } from "./connectors/index.js";
+import { reapSessionTools } from "./skills/session-tools.js";
 import {
   errorMessage,
   optionEnabled,
@@ -164,9 +165,12 @@ export async function connect(args: string[]): Promise<void> {
   await startServerMcpForwarder(serverURLFromArgs(args));
   await startExecutionHost(serverURLFromArgs(args));
   await superviseAgentProcesses();
-  // Connector profiles a previous process wrote for its sessions.
-  if (!executionHostClient())
+  // Connector profiles and tool folders a previous process made for its
+  // sessions.
+  if (!executionHostClient()) {
     reapConnectorLeftovers((message) => console.error(message));
+    reapSessionTools((message) => console.error(message));
+  }
   reapNativeSignIns();
   // Installed connector extensions: model access they give, kept current.
   startConnectorExtensions(ownPackage().version);

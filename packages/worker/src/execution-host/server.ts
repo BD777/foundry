@@ -20,6 +20,7 @@ import { evidenceWorkerAction } from "../issue/evidence/evidence-rpc.js";
 import { onIssueEnvironmentChange } from "../candidate-store/issue-environment-changes.js";
 import { readAgentRuntimeSettings } from "../device/device.js";
 import { reapConnectorLeftovers } from "../connectors/index.js";
+import { reapSessionTools } from "../skills/session-tools.js";
 import { clearClaudeSettingsFiles } from "../session/session-launch-options.js";
 import { outOfBandEventSink } from "../daemon/session-execution.js";
 import { ControlOutcomeUnknownError } from "../session/session-control.js";
@@ -115,6 +116,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   await superviseAgentProcesses();
   executions.reportInterrupted();
   reapConnectorLeftovers(console.error);
+  reapSessionTools(console.error);
   clearClaudeSettingsFiles();
   keepSessionTimers();
   startTimerRevival(serverURL);

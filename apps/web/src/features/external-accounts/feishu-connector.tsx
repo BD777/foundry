@@ -31,6 +31,7 @@ import { AccountRow, type AccountAction } from "./account-row";
 import { AppGroup, AppNotes, EmptyAppRow, secretReplaceable } from "./app-row";
 import { AuthorizeDialog, type AuthorizeTarget } from "./authorize-dialog";
 import { ConnectDialog } from "./connect-dialog";
+import { ConnectorBundleVersions } from "./connector-bundle-versions";
 import { LinkQrDialog, type LinkQrTarget } from "./link-qr-dialog";
 import type { RowMenuItem } from "../../components/ui/row-menu";
 import { Skeleton } from "../../components/ui/loading";
@@ -47,6 +48,10 @@ export interface FeishuConnectorProps {
   currentUserId: string;
   isAdmin: boolean;
   onNotice: (message: string, tone?: ToastTone) => void;
+  /** The connector's program, whose versions the tab lists per device. */
+  command?: string;
+  /** Names a device the page has read. */
+  deviceName?: (deviceId: string) => string | undefined;
 }
 
 const provider = "feishu";
@@ -63,6 +68,8 @@ export function FeishuConnector({
   currentUserId,
   isAdmin,
   onNotice,
+  command,
+  deviceName = () => undefined,
 }: FeishuConnectorProps) {
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [view, setView] = useState<ExternalAccountsView>();
@@ -371,6 +378,9 @@ export function FeishuConnector({
         </SectionPanel>
       ) : null}
       {groups}
+      {command ? (
+        <ConnectorBundleVersions command={command} deviceName={deviceName} />
+      ) : null}
       <LinkQrDialog onClose={() => setLinkQr(undefined)} target={linkQr} />
       <ConnectDialog
         isAdmin={isAdmin}

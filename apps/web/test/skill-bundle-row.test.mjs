@@ -108,19 +108,33 @@ test("a bundle row shows its version, last update, skills and tool on each devic
     }),
   );
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(text, /feishu-cli Bundle/);
+  // Header: name, version and one status; then where it comes from.
   assert.match(
     text,
-    /Bundle v1\.41\.0 \(latest release\) Feishu CLI and its agent skills 2 skills in the library · from github\.com\/riba2534\/feishu-cli/,
+    /feishu-cli v1\.41\.0 Up to date from github\.com\/riba2534\/feishu-cli/,
   );
-  assert.match(text, /Updated to v1\.41\.0 · 2 changed · 1 added/);
-  // The skill names sit behind a disclosure.
-  assert.match(text, /Show its 2 skills feishu-cli-docs, feishu-cli-mail/);
-  assert.doesNotMatch(text, /feishu-cli-old/, "retired skills are not listed");
-  // The program is one summary line and a button; devices open in a dialog.
+  assert.match(text, /Feishu CLI and its agent skills/);
+  assert.doesNotMatch(text, /Bundle|latest release/);
+  // One row of facts: skills (names behind a toggle), installs, updates,
+  // default for my workspaces as a switch.
   assert.match(
     text,
-    /feishu-cli v1\.41\.0 · installed on 1 of 3 devices · some have an older version Manage installs/,
+    /2 skills Installed on 1 of your 3 devices some have an older version Manage Updates Automatic Manual Default for my workspaces Tries one device first and rolls back if its check fails/,
+  );
+  assert.match(
+    html,
+    /aria-expanded="false"[^>]*aria-label="Show the skills of feishu-cli"|aria-label="Show the skills of feishu-cli"[^>]*aria-expanded="false"/,
+  );
+  assert.doesNotMatch(
+    text,
+    /feishu-cli-docs/,
+    "skill names wait behind the toggle",
+  );
+  assert.match(html, /role="switch"[^>]*aria-checked="false"/);
+  // What the latest version did is the version history's line.
+  assert.match(
+    text,
+    /Version history · Updated to v1\.41\.0 · 2 changed · 1 added/,
   );
   assert.doesNotMatch(
     text,

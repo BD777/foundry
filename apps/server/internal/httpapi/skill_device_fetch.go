@@ -379,14 +379,15 @@ func normalizeRemote(raw, deviceID string) (string, string, error) {
 	return skillrepo.NormalizeURL(raw)
 }
 
-// withFetchState says whether each repository's fetch device is connected.
+// withFetchState says whether each repository's fetch device is connected,
+// and where each device stands with each bundle that has tools.
 func (s *Server) withFetchState(repos ...store.SkillRepository) []store.SkillRepository {
 	for i := range repos {
 		if repos[i].FetchDeviceID != "" {
 			repos[i].FetchDeviceOnline = s.hub.HasConnection(repos[i].FetchDeviceID)
 		}
 	}
-	return repos
+	return s.withDeviceVersions(context.Background(), repos)
 }
 
 // handleSetSkillRepositorySource changes where a repository is read and

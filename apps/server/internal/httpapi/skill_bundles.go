@@ -29,6 +29,11 @@ type bundleStore interface {
 	ResolveBundleSkills(ctx context.Context, repositoryIDs []string) ([]store.SessionSkillRef, error)
 	WorkspaceOwner(ctx context.Context, workspaceID string) (string, error)
 	SetSkillRepositoryMode(ctx context.Context, repositoryID, mode, name string) error
+	ListBundleVersions(ctx context.Context, repositoryID string) ([]store.SkillBundleVersion, error)
+	SetBundleVersionCheck(ctx context.Context, repositoryID string, seq int, check store.SkillBundleCheck) error
+	SetBundleUpdatePolicy(ctx context.Context, repositoryID, policy string) error
+	SetBundleRollout(ctx context.Context, repositoryID string, rollout *store.SkillBundleRollout) error
+	SkillRevisionRefs(ctx context.Context, members []store.SkillBundleMember) ([]store.SessionSkillRef, error)
 }
 
 const (
@@ -469,15 +474,15 @@ func (s *Server) checkSkillRepository(ctx context.Context, repo store.SkillRepos
 		return err
 	}
 	s.projectionsChanged("", skillLibraryFields...)
+	// The devices follow, CLI and skills together, unless the bundle
+	// updates by hand (docs/skills.md, Bundle 版本).
+	s.startAutomaticRollout(ctx, repo)
 	return nil
 }
 
 // handleRollbackSkillBundle returns a followed repository to an earlier
 // version's skills and tools and pauses its automatic updates until it is
-// resumed. A bundle's skills that were not in that version leave it; picked
-// skills that were not (picked later, or gone from the repository) stay as
-// they are. Devices are offered the version's tools; nothing installs by
-// itself.
+// resumed (rollbackBundle).
 func (s *Server) handleRollbackSkillBundle(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Seq int `json:"seq"`
@@ -489,42 +494,57 @@ func (s *Server) handleRollbackSkillBundle(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	target, err := s.store.GetBundleVersion(r.Context(), repo.ID, input.Seq)
-	if err != nil {
+	s.repoMu.Lock()
+	err := s.rollbackBundle(r.Context(), repo, input.Seq)
+	s.repoMu.Unlock()
+	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "that version of the repository is not recorded")
 		return
 	}
-	s.repoMu.Lock()
-	defer s.repoMu.Unlock()
-	applied := store.SkillBundleVersion{Tag: target.Tag, Commit: target.Commit, RolledBack: true}
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	s.projectionsChanged("", skillLibraryFields...)
+	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
+	writeResult(w, updated, err)
+}
+
+// rollbackBundle returns a followed repository to an earlier version's
+// skills and tools and pauses its automatic updates until it is resumed. A
+// bundle's skills that were not in that version leave it; picked skills
+// that were not (picked later, or gone from the repository) stay as they
+// are. The version's check comes along, since it is the same release. The
+// caller holds repoMu.
+func (s *Server) rollbackBundle(ctx context.Context, repo store.SkillRepository, seq int) error {
+	target, err := s.store.GetBundleVersion(ctx, repo.ID, seq)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	applied := store.SkillBundleVersion{Tag: target.Tag, Commit: target.Commit, RolledBack: true, Check: target.Check}
 	keep := map[string]bool{}
 	for _, member := range target.Members {
 		keep[member.SkillID] = true
-		pkg, err := s.store.GetSkillPackage(r.Context(), member.SkillID, member.Revision)
+		pkg, err := s.store.GetSkillPackage(ctx, member.SkillID, member.Revision)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return err
 		}
-		item, err := s.store.GetPromotedSkill(r.Context(), member.SkillID)
+		item, err := s.store.GetPromotedSkill(ctx, member.SkillID)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return err
 		}
 		content, err := skillarchive.ExportStored(pkg.Content, pkg.Checksum)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return err
 		}
-		skill, created, err := s.store.AddPromotedSkillRevision(r.Context(), store.PromoteSkillInput{
+		skill, created, err := s.store.AddPromotedSkillRevision(ctx, store.PromoteSkillInput{
 			DeviceID: store.RepositoryOrigin(repo.ID), Root: repo.Label, DirName: member.Dir, TargetSkillID: member.SkillID,
 		}, member.Name, item.Description, content, pkg.FileCount)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return err
 		}
-		if err := s.store.LinkSkillRepositorySkill(r.Context(), repo.ID, member.Dir, member.SkillID, target.Commit); err != nil {
-			writeResult(w, nil, err)
-			return
+		if err := s.store.LinkSkillRepositorySkill(ctx, repo.ID, member.Dir, member.SkillID, target.Commit); err != nil {
+			return err
 		}
 		if created {
 			applied.Changed = append(applied.Changed, member.Name)
@@ -535,28 +555,23 @@ func (s *Server) handleRollbackSkillBundle(w http.ResponseWriter, r *http.Reques
 		if repo.Mode != "bundle" || skill.Retired || keep[skill.SkillID] {
 			continue
 		}
-		if err := s.store.RetireRepositorySkill(r.Context(), skill.SkillID); err != nil {
-			writeResult(w, nil, err)
-			return
+		if err := s.store.RetireRepositorySkill(ctx, skill.SkillID); err != nil {
+			return err
 		}
 		applied.Removed = append(applied.Removed, skill.Name)
 	}
-	tools, toolsErr := s.toolResolver.VersionTools(r.Context(), s.sourceFor(repo), repo, target)
+	tools, toolsErr := s.toolResolver.VersionTools(ctx, s.sourceFor(repo), repo, target)
 	applied.Tools = tools
-	if _, err := s.store.RecordBundleVersion(r.Context(), repo.ID, applied, true); err != nil {
-		writeResult(w, nil, err)
-		return
+	if _, err := s.store.RecordBundleVersion(ctx, repo.ID, applied, true); err != nil {
+		return err
 	}
-	if err := s.store.SetBundleTools(r.Context(), repo.ID, tools); err != nil {
-		writeResult(w, nil, err)
-		return
+	if err := s.store.SetBundleTools(ctx, repo.ID, tools); err != nil {
+		return err
 	}
 	if toolsErr != nil {
-		_ = s.store.RecordSkillRepositoryCheck(r.Context(), repo.ID, "", toolsErr.Error())
+		_ = s.store.RecordSkillRepositoryCheck(ctx, repo.ID, "", toolsErr.Error())
 	}
-	s.projectionsChanged("", skillLibraryFields...)
-	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
-	writeResult(w, updated, err)
+	return nil
 }
 
 // handleResumeSkillBundle turns a paused repository's automatic updates back

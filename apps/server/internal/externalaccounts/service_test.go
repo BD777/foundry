@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -665,7 +666,7 @@ func TestEmailDomain(t *testing.T) {
 // picker cannot pretend a login would get them.
 func TestFeishuScopeCatalogIsTheAppsOwnList(t *testing.T) {
 	h := newHarness(t)
-	h.fake.AppScopes = map[string]int{"im:message": 1, "docx:document:readonly": 1, "contact:user.phone:readonly": 1, "spark:app:write": 0}
+	h.fake.AppScopes = map[string]int{"im:message": 1, "docx:document:readonly": 1, "contact:user.phone:readonly": 1, "search:app": 0}
 	catalog, err := h.service.ScopeCatalog(h.ctx, "feishu", &h.app)
 	if err != nil {
 		t.Fatal(err)
@@ -683,7 +684,7 @@ func TestFeishuScopeCatalogIsTheAppsOwnList(t *testing.T) {
 	if s := byID["contact:user.phone:readonly"]; s.Recommended || s.Unavailable {
 		t.Fatalf("app-only scope = %+v", s)
 	}
-	if s := byID["spark:app:write"]; !s.Approval || !s.Unavailable {
+	if s := byID["search:app"]; !s.Approval || !s.Unavailable {
 		t.Fatalf("not granted to the app = %+v", s)
 	}
 	if s := byID["base:app:read"]; !s.Recommended || !s.Unavailable {
@@ -695,5 +696,58 @@ func TestFeishuScopeCatalogIsTheAppsOwnList(t *testing.T) {
 	preset, err := h.service.ScopeCatalog(h.ctx, "feishu", nil)
 	if err != nil || preset.Source.Complete || len(preset.Scopes) == 0 {
 		t.Fatalf("no app: %+v %v", preset.Source, err)
+	}
+}
+
+// DEV-154: the preset follows the feishu-cli version Foundry runs; a
+// release without a generated list takes the newest one before it.
+func TestFeishuPresetFollowsTheCLIVersion(t *testing.T) {
+	t.Cleanup(func() { externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "") })
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "v1.41.0")
+	old := externalaccounts.FeishuPresetScopes(false)
+	if len(old) != 144 || !strings.Contains(externalaccounts.FeishuPresetSource(), "v1.41.0") {
+		t.Fatalf("v1.41.0 preset: %d scopes, %q", len(old), externalaccounts.FeishuPresetSource())
+	}
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "v1.44.0")
+	if got := externalaccounts.FeishuPresetScopes(false); len(got) != 174 {
+		t.Fatalf("v1.44.0 preset: %d scopes", len(got))
+	}
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "v1.45.2")
+	if version := externalaccounts.FeishuScopeSetVersion("v1.45.2"); version != "v1.44.0" ||
+		!strings.Contains(externalaccounts.FeishuPresetSource(), "not generated") {
+		t.Fatalf("unknown release uses %s: %q", version, externalaccounts.FeishuPresetSource())
+	}
+	if externalaccounts.FeishuScopeSetVersion("v1.10.0") != "v1.41.0" || externalaccounts.FeishuScopeSetVersion("") != "v1.44.0" {
+		t.Fatal("versions are ordered by number")
+	}
+	added := externalaccounts.FeishuPresetAdded("v1.41.0", "v1.44.0")
+	if len(added) != 31 || !slices.Contains(added, "slides:presentation:screenshot") {
+		t.Fatalf("added = %v", added)
+	}
+
+	// The re-authorization prompt: an account granted the v1.41.0 preset
+	// lacks what v1.44.0 added once Foundry runs v1.44.0, and nothing
+	// while no device runs feishu-cli from Foundry or it runs v1.41.0.
+	h := newHarness(t)
+	account := store.ExternalAccount{Provider: "feishu", GrantedScopes: old}
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "")
+	if version, missing := h.service.MissingPresetAdditions(account); version != "" || len(missing) != 0 {
+		t.Fatalf("no feishu-cli from Foundry: %s %v", version, missing)
+	}
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "v1.41.0")
+	if _, missing := h.service.MissingPresetAdditions(account); len(missing) != 0 {
+		t.Fatalf("v1.41.0 asks nothing new of a v1.41.0 login: %v", missing)
+	}
+	externalaccounts.SetToolVersion(externalaccounts.FeishuCLITool, "v1.44.0")
+	version, missing := h.service.MissingPresetAdditions(account)
+	if version != "feishu-cli v1.44.0" || !slices.Equal(missing, added) {
+		t.Fatalf("v1.44.0 over a v1.41.0 login: %s %v", version, missing)
+	}
+	account.GrantedScopes = externalaccounts.FeishuPresetScopes(false)
+	if _, missing := h.service.MissingPresetAdditions(account); len(missing) != 0 {
+		t.Fatalf("a v1.44.0 login lacks %v", missing)
+	}
+	if _, missing := h.service.MissingPresetAdditions(store.ExternalAccount{Provider: "cloudflare"}); len(missing) != 0 {
+		t.Fatalf("other providers: %v", missing)
 	}
 }

@@ -587,6 +587,81 @@ test("an account or a device's sign-in waits in its own group and opens its Conn
   host.remove();
 });
 
+test("a newer CLI's missing permissions and a rolled-back bundle update are the person's own items (DEV-154)", async () => {
+  const list = {
+    open: 2,
+    bySession: {},
+    items: [
+      item({
+        id: "scopes",
+        source: "account",
+        rule: "feishu",
+        eventId: "account-scopes:fs-account|feishu-cli v1.44.0",
+        workspaceId: "",
+        workspaceName: "",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "Alice Feishu",
+        context: "feishu-cli v1.44.0",
+        excerpt: "slides:presentation:screenshot task:section:read",
+      }),
+      item({
+        id: "bundle",
+        source: "bundle_update",
+        rule: "rolled_back",
+        workspaceId: "",
+        workspaceName: "",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "feishu-cli v1.44.0",
+        excerpt: "the check on the canary sg-chaos failed: auth status",
+      }),
+      item({
+        id: "bundle-failed",
+        source: "bundle_update",
+        rule: "failed",
+        workspaceId: "",
+        workspaceName: "",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "@playwright/cli 0.1.23",
+        excerpt:
+          "installing on the canary sg-chaos failed: download failed: 504",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  const group = host.querySelector(
+    'section[aria-label*="Your accounts and devices"]',
+  );
+  assert.ok(group, host.textContent);
+  assert.match(
+    group.textContent,
+    /Authorize Alice Feishu again: feishu-cli v1\.44\.0 needs 2 more permissions/,
+  );
+  assert.match(group.textContent, /Update rolled back: feishu-cli v1\.44\.0/);
+  assert.match(
+    group.textContent,
+    /Update not installed: @playwright\/cli 0\.1\.23/,
+  );
+  // The rollback says why; the scope list waits for the re-authorization.
+  assert.match(group.textContent, /the check on the canary sg-chaos failed/);
+  assert.doesNotMatch(group.textContent, /slides:presentation:screenshot/);
+  const library = [...group.querySelectorAll("button")].find((button) =>
+    /Open Skill Library/.test(button.textContent),
+  );
+  assert.ok(library, group.textContent);
+  await act(async () => library.click());
+  assert.match(window.location.pathname, /library/);
+  const connectors = [...group.querySelectorAll("button")].find((button) =>
+    /Open Connectors/.test(button.textContent),
+  );
+  await act(async () => connectors.click());
+  assert.match(window.location.pathname, /\/connectors\/feishu$/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 test("one list: what the assistant handles waits apart, what came to the person says why (§h)", async () => {
   const list = {
     open: 2,
