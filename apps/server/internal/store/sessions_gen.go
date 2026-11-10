@@ -281,7 +281,7 @@ type AgentSessionEventMetadata struct {
 	// SubagentUsage `subagentUsage` is what a Claude subagent has used so far, on its progress and completion events.
 	SubagentUsage *SubagentUsage `json:"subagentUsage,omitempty"`
 
-	// RequestUsage `requestUsage` is a model request's final tokens (Claude), reported when its stream ends; the event itself is not shown.
+	// RequestUsage `requestUsage` is a model request's tokens, reported when Claude's stream ends or from Codex's native token-usage update; the event itself is not shown.
 	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
 
 	// ContextUsage `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts.
@@ -401,6 +401,12 @@ type AgentSubagentTranscriptMessage struct {
 type AgentTurnUsage struct {
 	// DurationMs Wall time from the runtime taking the turn to its final result.
 	DurationMs int64 `json:"durationMs"`
+
+	// Outcome How the turn ended. Completed turns set it too, so statistics can include failed and canceled turns without inferring their outcome from a separate event.
+	Outcome string `json:"outcome,omitempty"`
+
+	// Model The model that served the turn; when several did, the last one.
+	Model string `json:"model,omitempty"`
 
 	// ModelMs Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
 	ModelMs int64 `json:"modelMs,omitempty"`

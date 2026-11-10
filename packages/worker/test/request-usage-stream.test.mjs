@@ -90,6 +90,34 @@ test("a request's real tokens come from its stream, once, when it ends", () => {
   }
 });
 
+test("a request carries the model named by its message_start", () => {
+  let now = 1_000;
+  const tracker = new ClaudeRequestUsageTracker({
+    startedAt: 1_000,
+    now: () => now,
+  });
+  tracker.observe(
+    stream({
+      type: "message_start",
+      message: {
+        id: "msg_model",
+        model: "claude-sonnet-4-5[1m]",
+        usage: { input_tokens: 12, output_tokens: 0 },
+      },
+    }),
+  );
+  now = 1_250;
+  assert.deepEqual(tracker.observe(stream({ type: "message_stop" })), {
+    requestId: "msg_model",
+    model: "claude-sonnet-4-5",
+    inputTokens: 12,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 0,
+    requestMs: 250,
+  });
+});
+
 test("a request that never reports tokens yields nothing; subagent streams are not followed", () => {
   const tracker = new ClaudeRequestUsageTracker();
   assert.equal(

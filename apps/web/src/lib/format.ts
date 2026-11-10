@@ -81,10 +81,7 @@ export function formatCompactDuration(ms: number): string {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
-/**
- * Output-token speed after the first token. Short or tiny generations are
- * too noisy to compare and report no speed.
- */
+/** Output-token speed over a supplied interval; short or tiny samples are noise. */
 export function outputTokensPerSecond(
   outputTokens: number,
   elapsedMs: number,

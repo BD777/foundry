@@ -72,6 +72,11 @@ export class ClaudeContextTracker {
     this.configured = options.configured;
   }
 
+  /** The model named by the latest main-agent request. */
+  get currentModel(): string | undefined {
+    return this.model;
+  }
+
   /** The context to report after this message, if it changed it. */
   observe(message: unknown): AgentContextUsage | undefined {
     const value = optionalRecord(message);
@@ -191,6 +196,11 @@ export class CodexContextFollower {
   /** Whether the thread's log was found. */
   get found(): boolean {
     return this.path !== undefined;
+  }
+
+  /** The model named by the latest turn context. */
+  get currentModel(): string | undefined {
+    return this.model;
   }
 
   /** The thread to follow; a resumed one from what it gains from now on. */

@@ -74,3 +74,42 @@ test("a Codex turn with no tool items reports its full duration as model time", 
     timingEstimated: true,
   });
 });
+
+test("a failed Codex turn keeps the model timing accumulated before it ended", () => {
+  let now = 1_000;
+  const tracker = new CodexTimingTracker({ startedAt: 1_000, now: () => now });
+  tracker.observe("item/started", {
+    item: {
+      id: "tool",
+      type: "commandExecution",
+      startedAtMs: 1_100,
+    },
+  });
+  now = 1_500;
+  tracker.observe("item/completed", {
+    item: {
+      id: "tool",
+      type: "commandExecution",
+      completedAtMs: 1_500,
+    },
+  });
+  now = 1_600;
+  tracker.observe("item/agentMessage/delta", {
+    turnId: "turn-failed",
+    itemId: "answer",
+    delta: "partial",
+  });
+  now = 2_000;
+  assert.deepEqual(
+    tracker.finish({
+      startedAt: 1,
+      completedAt: 2,
+      status: "failed",
+    }),
+    {
+      modelMs: 600,
+      ttftMs: 600,
+      timingEstimated: true,
+    },
+  );
+});

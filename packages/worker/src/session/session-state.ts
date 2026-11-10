@@ -135,6 +135,8 @@ export interface ActiveClaudeTurn {
   startedAt: number;
   /** Provider usage summed over the turn's results. */
   usage?: TurnTokenUsage;
+  /** Whether a failed or canceled result already emitted this turn's usage. */
+  usageOutcomeReported?: boolean;
   /** Follows each model request's stream for its final tokens. */
   requestUsage?: ClaudeRequestUsageTracker;
   /** Files this turn's tools wrote and its answer named. */

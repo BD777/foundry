@@ -120,6 +120,34 @@ function Fixture() {
         <Button
           onClick={() => {
             setActive(false);
+            setMessages((items) => [
+              items[0]!,
+              ...projectTranscript([
+                {
+                  id: "estimated-usage",
+                  kind: "tool",
+                  title: "Ran tests",
+                  text: "All focused tests passed.",
+                  status: "completed",
+                  requestUsage: {
+                    requestId: "turn-1:1",
+                    inputTokens: 1000,
+                    cacheReadTokens: 900,
+                    cacheWriteTokens: 0,
+                    outputTokens: 100,
+                    requestMs: 4000,
+                    timingEstimated: true,
+                  },
+                },
+              ]).map((message) => ({ ...message, id: message.id! })),
+            ]);
+          }}
+        >
+          Estimated usage
+        </Button>
+        <Button
+          onClick={() => {
+            setActive(false);
             setMessages((items) =>
               items.map((item) => ({ ...item, streaming: false })),
             );
