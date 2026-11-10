@@ -66,6 +66,7 @@ import {
 } from "./protocol.js";
 import { prepareExecutionSocket, runtimeStamp } from "./service.js";
 import { errorMessage } from "../platform/utils.js";
+import { reconnectRegisteredFoundryTools } from "../session/runner/foundry-tools-supervisor.js";
 
 type HostHandlers = {
   [M in HostMethod]: (
@@ -250,6 +251,10 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     },
     control_goal: async ({ sessionId, action }) => {
       await controlCodexGoal(sessionId, action);
+      return {};
+    },
+    server_reconnected: async () => {
+      await reconnectRegisteredFoundryTools();
       return {};
     },
     issue_environment: ({ payload }) =>

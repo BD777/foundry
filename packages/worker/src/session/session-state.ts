@@ -22,6 +22,7 @@ import type {
   ClaudeRequestUsageTracker,
   TurnTokenUsage,
 } from "./usage/turn-usage.js";
+import type { FoundryToolsSupervisor } from "./runner/foundry-tools-supervisor.js";
 
 export type SessionEventEmitter = (
   label: string,
@@ -89,6 +90,8 @@ export class AsyncInputQueue<T> implements AsyncIterable<T> {
 export interface ClaudeSDKQuery {
   close?: () => void;
   setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown>;
+  mcpServerStatus?: () => Promise<Array<{ name: string; status: string }>>;
+  reconnectMcpServer?: (serverName: string) => Promise<void>;
   /** Stops a background task; Claude reads a "stopped" notification. */
   stopTask?: (taskId: string) => Promise<void>;
   [Symbol.asyncIterator](): AsyncIterator<unknown>;
@@ -187,6 +190,8 @@ export interface ActiveClaudeRuntime {
   mcpServers?: Record<string, unknown>;
   /** When the process was handed them: how old its Foundry token is at most. */
   mcpServersAt?: number;
+  /** Keeps the Foundry MCP connection alive after its first hand-over. */
+  foundryToolsSupervisor?: FoundryToolsSupervisor;
   timers?: ClaudeTimerTracker;
   /** Background work of the agent process; it outlives Foundry turns. */
   background?: ClaudeBackgroundTaskTracker;

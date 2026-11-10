@@ -101,7 +101,7 @@ test("a sandboxed Claude host reports background tasks without creating supervis
   assert.equal(readFileSync(blocked, "utf8"), "not a directory");
 });
 
-test("the process that owns the supervisor still observes Claude work", (t) => {
+test("the process that owns the supervisor still observes Claude work", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "owner-claude-work-"));
   const before = process.env.FOUNDRY_STATE_ROOT;
   t.after(() => {
@@ -120,6 +120,7 @@ test("the process that owns the supervisor still observes Claude work", (t) => {
     root,
   );
   observeClaudeWork(claudeRuntime("sess_owner"));
+  await sessionWork().flush();
   const inventory = JSON.parse(
     readFileSync(join(root, "session-work", "inventory.json"), "utf8"),
   );

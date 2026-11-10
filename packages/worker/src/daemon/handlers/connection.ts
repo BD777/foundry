@@ -9,6 +9,18 @@ import type { DaemonDispatch } from "../dispatch.js";
 import { configureAttachmentPreviewPush } from "../attachment-previews.js";
 import { serveResources } from "./resources.js";
 import { noteDaemonHealth } from "../daemon-health.js";
+import { reconnectRegisteredFoundryTools } from "../../session/runner/foundry-tools-supervisor.js";
+import { errorMessage } from "../../platform/utils.js";
+
+/** Reconcile Foundry tools in whichever process owns the active runtimes. */
+export async function requestFoundryToolsReconnect(
+  host:
+    { serverReconnected(): Promise<void> } | undefined = executionHostClient(),
+  local: () => Promise<void> = reconnectRegisteredFoundryTools,
+): Promise<void> {
+  if (host) return host.serverReconnected();
+  return local();
+}
 
 /** The server's answers about the connection itself. */
 export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
@@ -40,6 +52,7 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       ctx.roster.registrationNeeded(envelope.id);
     })
     .on(daemonMessageTypes.registered, (envelope, ctx) => {
+      const firstRegistration = !ctx.state.registered;
       ctx.roster.registrationTaken(envelope.id);
       ctx.state.registered = true;
       noteDaemonHealth({ connectedAt: new Date().toISOString() });
@@ -55,6 +68,12 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       // active; route their events over this socket as ordinary
       // session_event envelopes the server persists and broadcasts.
       ctx.routeOutOfBandEvents();
+      if (firstRegistration)
+        void requestFoundryToolsReconnect().catch((error) =>
+          console.error(
+            `Reconciling Foundry tools after server reconnect failed: ${errorMessage(error)}`,
+          ),
+        );
       // The turns Claude runs on its own; those running now are told again
       // (the server forgets them when the device goes).
       setSessionTurnSink((sessionId, running) =>

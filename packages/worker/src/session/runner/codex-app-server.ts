@@ -12,7 +12,7 @@ import { codexModelCatalogArguments } from "../../harness/agent-runtime/codex-mo
 import {
   recordWorkToolStarting,
   recordWorkToolCompleted,
-  recordNativeWork,
+  recordNativeWorkBatch,
 } from "../../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
 import {
@@ -42,6 +42,10 @@ import {
   goalSyncEvent,
   type SessionGoalAction,
 } from "../goals.js";
+import {
+  codexFoundryToolsConnection,
+  FoundryToolsSupervisor,
+} from "./foundry-tools-supervisor.js";
 export { CodexAppServer } from "../../harness/agent-runtime/codex-client.js";
 export type { CodexRpcTimeouts } from "../../harness/agent-runtime/codex-client.js";
 
@@ -427,6 +431,7 @@ function codexTokenUsageWire(usage: CodexTokenUsage): Record<string, number> {
 /** One app-server process and what Codex runs in it for this thread. */
 interface CodexConnection {
   client: CodexAppServer;
+  foundryTools?: FoundryToolsSupervisor;
   nativeWork?: CodexNativeWork;
   unregisterWork: () => void;
   /** Undefined until read; null when the thread has no goal. */
@@ -1160,6 +1165,7 @@ export class CodexAppServerThread implements CodexSDKThread {
         })
       : await client.request("thread/start", params);
     this.id = thread.thread.id;
+    this.startFoundryToolsSupervisor(connection);
     if (resumed) await refreshCodexInstructions(client, this.id!, this.config);
     const foundrySessionId = this.options.workSessionId as string | undefined;
     if (foundrySessionId && this.id) {
@@ -1167,8 +1173,8 @@ export class CodexAppServerThread implements CodexSDKThread {
         client,
         this.id,
         nativeCli("codex").version || "unknown",
-        (task) => {
-          recordNativeWork(foundrySessionId, task);
+        (tasks) => {
+          recordNativeWorkBatch(foundrySessionId, tasks);
           this.reconsider(connection);
         },
         (message) => this.active?.onDiagnostic?.(message),
@@ -1203,6 +1209,22 @@ export class CodexAppServerThread implements CodexSDKThread {
     return Boolean(
       this.options.persistent && this.options.workSessionId && !this.shutDown,
     );
+  }
+
+  private startFoundryToolsSupervisor(connection: CodexConnection): void {
+    if (connection.foundryTools || !this.id) return;
+    const servers = this.config.mcp_servers;
+    if (!servers || typeof servers !== "object" || !("foundry" in servers))
+      return;
+    const sessionId = String(this.options.workSessionId ?? "");
+    connection.foundryTools = new FoundryToolsSupervisor(
+      codexFoundryToolsConnection(connection.client, this.id),
+      (label, detail, level) => {
+        if (sessionId)
+          emitOutOfBandSessionEvent(sessionId, { label, detail, level });
+      },
+    );
+    void connection.foundryTools.status();
   }
 
   private connect(client: CodexAppServer): CodexConnection {
@@ -1240,6 +1262,22 @@ export class CodexAppServerThread implements CodexSDKThread {
   ): void {
     connection.nativeWork?.observe(method, params);
     if (params.threadId && this.id && params.threadId !== this.id) return;
+    if (
+      method === "mcpServer/startupStatus/updated" &&
+      params.name === "foundry"
+    ) {
+      if (params.status === "ready") void connection.foundryTools?.connected();
+      else if (params.status === "failed" || params.status === "cancelled")
+        void connection.foundryTools?.failed(
+          redactSecrets(
+            String(
+              params.error ??
+                params.failureReason?.type ??
+                "The Foundry MCP server failed to start.",
+            ),
+          ),
+        );
+    }
     if (method === codexRequestResolved) {
       this.questions.resolved(params.requestId);
       return;
@@ -1569,6 +1607,8 @@ export class CodexAppServerThread implements CodexSDKThread {
     connection.closing ??= (async () => {
       const resident = connection.resident;
       connection.resident = false;
+      connection.foundryTools?.close();
+      connection.foundryTools = undefined;
       await connection.client.close();
       connection.nativeWork?.closedAfterExit();
       connection.unregisterWork();

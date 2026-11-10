@@ -311,7 +311,7 @@ test("persisted ownership and pending controls survive supervisor recreation wit
     throw new Error("offline");
   });
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   assert.match(supervisor.context("session"), /old_timer/);
   assert.match(supervisor.context("session"), /Automatic work is STOPPED/);
   assert.match(supervisor.context("session"), /control NOT confirmed/);
@@ -354,7 +354,7 @@ test("a runtime failure after a verified revision is not sent as a stale observa
     root,
   );
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   const observed = sent.find((w) => w.id === item.id)?.observation;
   assert.equal(observed.confirmedRevision, 1);
   assert.equal(observed.status, "unknown");
@@ -403,10 +403,10 @@ test("a host entry appearing during a tool call is discovered without assuming o
     root,
   );
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
-  supervisor.toolStarting("session", "tool");
+  await supervisor.stop();
+  await supervisor.toolStarting("session", "tool");
   raw = "17 */6 * * * /tmp/unrelated-job\n";
-  supervisor.toolCompleted("tool");
+  await supervisor.toolCompleted("tool");
   await supervisor.tick();
   const item = sent.find((w) => w.source === "crontab");
   assert.equal(item.management, "observed");
@@ -448,7 +448,7 @@ test("an empty recovered conversation acknowledges its sweep only after reconcil
     }),
   );
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   assert.match(supervisor.context("session"), /Automatic work is STOPPED/);
   assert.ok(
     posts.some(
@@ -701,7 +701,7 @@ test(
       root,
     );
     await supervisor.start("http://isolated.invalid");
-    supervisor.stop();
+    await supervisor.stop();
     await supervisor.tick();
     assert.equal(
       observed.findLast((w) => w.id === item.id).observation.processRole,
@@ -792,7 +792,7 @@ test("duplicate terminal fire receipts never resurrect a failed or completed exe
       error: status === "failed" ? "delivery failed" : undefined,
     });
     await h.supervisor.start("http://isolated.invalid");
-    h.supervisor.stop();
+    await h.supervisor.stop();
     await h.supervisor.tick();
     assert.equal(h.fires, 1);
     assert.equal(h.sent.at(-1).status, status);
@@ -820,7 +820,7 @@ test("execution host draining prevents new scheduled dispatch and cancellation r
   );
   h.supervisor.setDraining(true);
   await h.supervisor.start("http://isolated.invalid");
-  h.supervisor.stop();
+  await h.supervisor.stop();
   assert.equal(h.fires, 0);
   h.supervisor.setDraining(false);
   await h.supervisor.tick();
@@ -845,7 +845,7 @@ test("an uncertain scheduled execution cannot claim a verified stop", async (t) 
     {},
   );
   await h.supervisor.start("http://isolated.invalid");
-  h.supervisor.stop();
+  await h.supervisor.stop();
   assert.equal(h.fires, 0);
   assert.equal(h.sent.at(-1).confirmedRevision, 1);
   assert.match(h.sent.at(-1).error, /cannot yet be verified/);
@@ -858,7 +858,7 @@ test("pausing a definition before its first process start is quiescent", async (
     {},
   );
   await h.supervisor.start("http://isolated.invalid");
-  h.supervisor.stop();
+  await h.supervisor.stop();
   assert.equal(h.sent.at(-1).status, "stopped");
   assert.equal(h.sent.at(-1).confirmedRevision, 2);
 });
@@ -962,7 +962,7 @@ test("a rejected work report is isolated while other work remains controllable",
     root,
   );
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   await supervisor.tick();
   assert.equal(fires, 1);
   assert.equal(goodReported, true);
@@ -993,7 +993,7 @@ test("resume discards missed periods by revision even when the worker clock was 
     { id: "unexpected", status: "running" },
   );
   await h.supervisor.start("http://isolated.invalid");
-  h.supervisor.stop();
+  await h.supervisor.stop();
   assert.equal(h.fires, 0);
   assert.equal(h.sent.at(-1).status, "idle");
   assert.ok(Date.parse(h.sent.at(-1).nextFireAt) > Date.now());
@@ -1023,7 +1023,7 @@ test("a manual run of a stopped schedule survives subsequent reconciliation unti
     stopChild: async () => {},
   });
   await h.supervisor.start("http://isolated.invalid");
-  h.supervisor.stop();
+  await h.supervisor.stop();
   await h.supervisor.tick();
   assert.equal(h.fires, 1);
   assert.equal(stops, 0);
@@ -1082,7 +1082,7 @@ test("unsent native observations are retried after a supervisor restart", async 
     );
   });
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   assert.equal(retried, true);
   assert.deepEqual(
     JSON.parse(readFileSync(join(root, "inventory.json"), "utf8")).pendingIds,
@@ -1123,7 +1123,7 @@ test("a failed network report persists newly reconciled work before host exit", 
     stopChild: async () => {},
   });
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   const saved = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"));
   assert.ok(saved.pendingIds.includes(item.id));
   assert.equal(
@@ -1154,7 +1154,7 @@ test("schedule expiry disables future runs without fabricating the current execu
       {},
     );
     await h.supervisor.start("http://isolated.invalid");
-    h.supervisor.stop();
+    await h.supervisor.stop();
     assert.equal(h.current.observation.status, status);
     assert.equal(h.current.observation.endedAt, undefined);
     assert.equal(h.fires, 0);
@@ -1183,8 +1183,11 @@ test("native schedule definitions cannot overwrite their independent current exe
     recurring: true,
     humanSchedule: "every minute",
   };
-  const read = () =>
-    JSON.parse(readFileSync(join(root, "inventory.json"), "utf8")).items[0];
+  const read = async () => {
+    await supervisor.flush();
+    return JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"))
+      .items[0];
+  };
   supervisor.observeTimers("session", [task], "2.1.295", "native");
   supervisor.observeTimerRun(
     "session",
@@ -1193,12 +1196,12 @@ test("native schedule definitions cannot overwrite their independent current exe
     "native",
   );
   supervisor.observeTimers("session", [task], "2.1.295", "native");
-  assert.equal(read().observation.status, "running");
-  assert.equal(read().native.lastRun.id, "timer@2026-10-19T01:00:00Z");
+  assert.equal((await read()).observation.status, "running");
+  assert.equal((await read()).native.lastRun.id, "timer@2026-10-19T01:00:00Z");
   supervisor.observeTimers("session", [], "2.1.295", "native");
-  assert.equal(read().spec.recurring, false);
-  assert.equal(read().observation.status, "running");
-  assert.equal(read().observation.endedAt, undefined);
+  assert.equal((await read()).spec.recurring, false);
+  assert.equal((await read()).observation.status, "running");
+  assert.equal((await read()).observation.endedAt, undefined);
   supervisor.observeTimerRun(
     "session",
     {
@@ -1215,16 +1218,16 @@ test("native schedule definitions cannot overwrite their independent current exe
     false,
     "native",
   );
-  assert.equal(read().observation.status, "completed");
-  assert.equal(read().native.lastRun.status, "completed");
-  assert.match(sessionWorkContext([read()]), /0 outstanding work item/);
+  assert.equal((await read()).observation.status, "completed");
+  assert.equal((await read()).native.lastRun.status, "completed");
+  assert.match(sessionWorkContext([await read()]), /0 outstanding work item/);
   supervisor.observeTimerRun(
     "session",
     { id: "timer", startedAt: "2026-10-19T02:00:00Z" },
     false,
     "foreign-native",
   );
-  assert.equal(read().native.lastRun.startedAt, "2026-10-19T01:00:00Z");
+  assert.equal((await read()).native.lastRun.startedAt, "2026-10-19T01:00:00Z");
 });
 
 test("a native run ending during inventory sync retains its newer run identity and receipt", async (t) => {
@@ -1296,9 +1299,269 @@ test("a native run ending during inventory sync retains its newer run identity a
     "native",
   );
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   const item = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"))
     .items[0];
   assert.equal(item.native.lastRun.status, "completed");
   assert.equal(item.observation.status, "completed");
+});
+
+function nativeTask(id, status, at, endedAt) {
+  return {
+    id,
+    kind: "process",
+    title: id,
+    native: {
+      runtime: "codex",
+      version: "test",
+      sessionId: "native",
+      taskId: id,
+      discovery: "test",
+      observation: "available",
+      controls: {
+        stop: "unavailable",
+        pause: "unsupported",
+        resume: "unsupported",
+      },
+    },
+    spec: { cwd: "/tmp" },
+    observation: {
+      status,
+      at,
+      startedAt: "2026-10-30T00:00:00.000Z",
+      ...(endedAt ? { endedAt } : {}),
+    },
+  };
+}
+
+function attachTestSession(supervisor, root) {
+  supervisor.attach(
+    {
+      id: "session",
+      threadId: "thread",
+      workspaceId: "workspace",
+      deviceId: "device",
+      nativeSessionId: "native",
+      provider: "codex",
+      source: "chat",
+    },
+    root,
+  );
+}
+
+test("pure observation timestamps do not dirty or rewrite inventory", async (t) => {
+  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  let persists = 0;
+  const supervisor = new WorkSupervisor(
+    root,
+    async () => {
+      throw new Error("offline");
+    },
+    { saveBatchMs: 20, onPersist: () => persists++ },
+  );
+  attachTestSession(supervisor, root);
+  await supervisor.flush();
+  persists = 0;
+  supervisor.observeNativeWork(
+    "session",
+    nativeTask("terminal", "running", "2026-10-30T00:00:01.000Z"),
+  );
+  await supervisor.flush();
+  assert.equal(persists, 1);
+  const [id] = supervisor.items.keys();
+  supervisor.pending.clear();
+  supervisor.reported.set(id, Date.now());
+
+  supervisor.observeNativeWork(
+    "session",
+    nativeTask("terminal", "running", "2026-10-30T00:00:09.000Z"),
+  );
+  await supervisor.flush();
+  assert.equal(persists, 1, "a later observation time caused a write");
+  assert.equal(supervisor.pending.size, 0);
+
+  supervisor.observeNativeWork(
+    "session",
+    nativeTask(
+      "missing",
+      "unknown",
+      "2026-10-30T00:00:10.000Z",
+      "2026-10-30T00:00:10.000Z",
+    ),
+  );
+  await supervisor.flush();
+  const missing = [...supervisor.items.values()].find(
+    (item) => item.sourceId === "missing",
+  );
+  supervisor.pending.clear();
+  const before = persists;
+  supervisor.observeNativeWork(
+    "session",
+    nativeTask(
+      "missing",
+      "unknown",
+      "2026-10-30T00:00:20.000Z",
+      "2026-10-30T00:00:20.000Z",
+    ),
+  );
+  await supervisor.flush();
+  assert.equal(persists, before, "a missing terminal refreshed endedAt");
+  assert.equal(
+    [...supervisor.items.values()].find((item) => item.sourceId === "missing")
+      .observation.endedAt,
+    missing.observation.endedAt,
+  );
+  await supervisor.stop();
+});
+
+test("a batch of native changes is coalesced into one inventory write", async (t) => {
+  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  let persists = 0;
+  let bytes = 0;
+  const supervisor = new WorkSupervisor(
+    root,
+    async () => {
+      throw new Error("offline");
+    },
+    {
+      saveBatchMs: 40,
+      onPersist: (written) => {
+        persists++;
+        bytes += written;
+      },
+    },
+  );
+  attachTestSession(supervisor, root);
+  await supervisor.flush();
+  persists = 0;
+  bytes = 0;
+  const at = new Date().toISOString();
+  supervisor.observeNativeWorkBatch(
+    "session",
+    Array.from({ length: 30 }, (_, index) =>
+      nativeTask(`terminal-${index}`, "running", at),
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await supervisor.flush();
+  assert.equal(persists, 1);
+  assert.ok(bytes > 0);
+  await supervisor.stop();
+});
+
+test("graceful close flushes dirty inventory", async (t) => {
+  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  const supervisor = new WorkSupervisor(root, async () => {
+    throw new Error("offline");
+  });
+  attachTestSession(supervisor, root);
+  await supervisor.flush();
+  supervisor.observeNativeWork(
+    "session",
+    nativeTask("pending-terminal", "running", new Date().toISOString()),
+  );
+  await supervisor.stop();
+  const saved = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"));
+  assert.ok(
+    saved.items.some((item) => item.sourceId === "pending-terminal"),
+    "stop did not flush the pending work item",
+  );
+});
+
+test("old terminal inventory is archived monthly while active and recent work stays local", async (t) => {
+  const { WorkSupervisor, readWorkHistory } =
+    await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  const oldItems = Array.from({ length: 12 }, (_, index) =>
+    work({
+      id: `old-${String(index).padStart(2, "0")}`,
+      createdAt: `2026-09-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+      updatedAt: `2026-09-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+      observation: {
+        status: "completed",
+        at: `2026-09-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+        endedAt: `2026-09-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+        confirmedRevision: 1,
+      },
+    }),
+  );
+  const recent = work({
+    id: "recent",
+    observation: {
+      status: "completed",
+      at: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      confirmedRevision: 1,
+    },
+  });
+  const active = work({
+    id: "active",
+    observation: {
+      status: "running",
+      at: new Date().toISOString(),
+      confirmedRevision: 1,
+    },
+  });
+  writeFileSync(
+    join(root, "inventory.json"),
+    JSON.stringify({
+      sessions: [
+        {
+          id: "session",
+          threadId: "thread",
+          workspaceId: "workspace",
+          deviceId: "device",
+          workspacePath: root,
+        },
+      ],
+      items: [...oldItems, recent, active],
+      pendingIds: [],
+      stoppedThreads: [],
+      cursor: "epoch.1",
+    }),
+  );
+  const supervisor = new WorkSupervisor(root, async () => {
+    throw new Error("offline");
+  });
+  const saved = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"));
+  const ids = new Set(saved.items.map((item) => item.id));
+  assert.equal(ids.has("recent"), true);
+  assert.equal(ids.has("active"), true);
+  assert.equal(ids.has("old-00"), false);
+  assert.equal(ids.has("old-01"), false);
+  assert.equal(ids.has("old-02"), true);
+  const archived = readWorkHistory(root, "2026-09");
+  assert.deepEqual(archived.map((item) => item.id).sort(), [
+    "old-00",
+    "old-01",
+  ]);
+  await supervisor.stop();
+});
+
+test("host schedule scans are asynchronous and reuse a short cache", async (t) => {
+  const root = scratch(t);
+  let calls = 0;
+  const host = new HostSchedules(join(root, "hosts.json"), async (argv) => {
+    calls++;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return {
+      status: 0,
+      stdout: argv[0] === "crontab" ? "" : "[]",
+      stderr: "",
+    };
+  });
+  let timerRan = false;
+  setTimeout(() => {
+    timerRan = true;
+  }, 1);
+  await host.scan();
+  assert.equal(timerRan, true, "the host scan blocked the event loop");
+  const firstCalls = calls;
+  await host.scan();
+  assert.equal(calls, firstCalls, "the cached scan spawned commands again");
+  await host.scan({ fresh: true });
+  assert.ok(calls > firstCalls, "a forced scan did not refresh");
 });

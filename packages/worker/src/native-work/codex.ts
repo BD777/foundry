@@ -16,6 +16,9 @@ type Terminal = {
 };
 const terminalState = (state: WorkStatus) =>
   ["completed", "failed", "stopped"].includes(state);
+const reportedMissingState = (task: NativeWorkTask) =>
+  task.observation.status === "unknown" &&
+  task.observation.endedAt !== undefined;
 const agentStates: Record<string, WorkStatus> = {
   pendingInit: "running",
   running: "running",
@@ -79,9 +82,22 @@ export class CodexNativeWork implements NativeWorkController {
       this.tasks.get(id)?.native.controls.stop === "available"
     );
   }
-  private publish(task: NativeWorkTask) {
-    this.tasks.set(task.id, task);
-    this.sink(task);
+  private publish(tasks: readonly NativeWorkTask[]) {
+    if (!tasks.length) return;
+    for (const task of tasks) this.tasks.set(task.id, task);
+    this.sink(tasks);
+  }
+  private sameTask(left: NativeWorkTask, right: NativeWorkTask) {
+    return (
+      JSON.stringify({
+        ...left,
+        observation: { ...left.observation, at: "" },
+      }) ===
+      JSON.stringify({
+        ...right,
+        observation: { ...right.observation, at: "" },
+      })
+    );
   }
   async refresh(): Promise<void> {
     if (this.closed) return;
@@ -93,16 +109,17 @@ export class CodexNativeWork implements NativeWorkController {
         const message = `Codex ${this.version} background inventory unavailable: ${redactSecrets(String(error)).slice(0, 300)}`;
         if (message !== this.discoveryError) this.onUnavailable(message);
         this.discoveryError = message;
+        const changed: NativeWorkTask[] = [];
         for (const task of this.tasks.values())
           if (
             task.kind === "process" &&
             !terminalState(task.observation.status)
           ) {
-            this.publish({
+            const next: NativeWorkTask = {
               ...task,
               native: {
                 ...task.native,
-                observation: "unavailable",
+                observation: "unavailable" as const,
                 controls: { ...task.native.controls, stop: "unavailable" },
               },
               observation: {
@@ -111,8 +128,10 @@ export class CodexNativeWork implements NativeWorkController {
                 at: new Date().toISOString(),
                 error: String(error),
               },
-            });
+            };
+            if (!this.sameTask(task, next)) changed.push(next);
           }
+        this.publish(changed);
       })
       .finally(() => {
         this.polling = undefined;
@@ -156,12 +175,13 @@ export class CodexNativeWork implements NativeWorkController {
       startedAt,
       itemIds: new Set([...next.values()].map((row) => row.itemId)),
     };
+    const changed: NativeWorkTask[] = [];
     for (const [id, row] of next) {
       const prior = this.tasks.get(id);
       // The terminate contract is verified for this installed protocol version.
       // Unknown versions remain observable until their control contract is verified.
       const stop = this.version === "0.163.0" ? "available" : "unknown";
-      this.publish({
+      const task: NativeWorkTask = {
         id,
         kind: "process",
         title: redactSecrets(row.command).slice(0, 250),
@@ -179,15 +199,17 @@ export class CodexNativeWork implements NativeWorkController {
           at,
           startedAt: prior?.observation.startedAt ?? at,
         },
-      });
+      };
+      if (!prior || !this.sameTask(prior, task)) changed.push(task);
     }
     for (const task of this.tasks.values())
       if (
         task.kind === "process" &&
         !next.has(task.id) &&
-        !terminalState(task.observation.status)
+        !terminalState(task.observation.status) &&
+        !reportedMissingState(task)
       ) {
-        this.publish({
+        changed.push({
           ...task,
           native: {
             ...task.native,
@@ -203,6 +225,7 @@ export class CodexNativeWork implements NativeWorkController {
           },
         });
       }
+    this.publish(changed);
     // A terminal whose exit was already reported publishes nothing when it
     // drops out of the inventory; whoever waits for it ending still hears.
     this.onInventory();
@@ -227,16 +250,18 @@ export class CodexNativeWork implements NativeWorkController {
       if (!this.terminals.has(id)) {
         const task = this.tasks.get(id)!;
         const at = new Date().toISOString();
-        this.publish({
-          ...task,
-          observation: {
-            ...task.observation,
-            status: "stopped",
-            at,
-            endedAt: at,
-            error: undefined,
+        this.publish([
+          {
+            ...task,
+            observation: {
+              ...task.observation,
+              status: "stopped",
+              at,
+              endedAt: at,
+              error: undefined,
+            },
           },
-        });
+        ]);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -249,13 +274,14 @@ export class CodexNativeWork implements NativeWorkController {
     const item = params.item;
     if (!item) return;
     const at = new Date().toISOString();
+    const changed: NativeWorkTask[] = [];
     if (item.type === "commandExecution" && method === "item/completed") {
       for (const [id, row] of this.terminals)
         if (row.itemId === item.id) {
           const task = this.tasks.get(id)!;
           if (typeof item.exitCode !== "number") continue;
           this.terminals.delete(id);
-          this.publish({
+          changed.push({
             ...task,
             native: {
               ...task.native,
@@ -280,7 +306,7 @@ export class CodexNativeWork implements NativeWorkController {
         const sourceId = `${this.threadId}:agent:${id}`;
         if (item.tool !== "spawnAgent" && !this.tasks.has(sourceId)) continue;
         const state = agentStates[item.agentsStates?.[id]?.status] ?? "unknown";
-        this.agent(sourceId, id, item.prompt ?? id, state, at);
+        changed.push(this.agent(sourceId, id, item.prompt ?? id, state, at));
       }
     }
     if (
@@ -293,14 +319,17 @@ export class CodexNativeWork implements NativeWorkController {
           : item.kind === "interrupted"
             ? "suspended"
             : "running";
-      this.agent(
-        `${this.threadId}:agent:${item.agentThreadId}`,
-        item.agentThreadId,
-        item.agentPath ?? item.agentThreadId,
-        state,
-        at,
+      changed.push(
+        this.agent(
+          `${this.threadId}:agent:${item.agentThreadId}`,
+          item.agentThreadId,
+          item.agentPath ?? item.agentThreadId,
+          state,
+          at,
+        ),
       );
     }
+    this.publish(changed);
   }
   private agent(
     id: string,
@@ -308,11 +337,11 @@ export class CodexNativeWork implements NativeWorkController {
     title: string,
     status: WorkStatus,
     at: string,
-  ) {
+  ): NativeWorkTask {
     const prior = this.tasks.get(id);
-    this.publish({
+    return {
       id,
-      kind: "agent",
+      kind: "agent" as const,
       title: prior?.title ?? redactSecrets(title).slice(0, 250),
       native: nativeWorkInfo(
         "codex",
@@ -328,16 +357,17 @@ export class CodexNativeWork implements NativeWorkController {
         startedAt: prior?.observation.startedAt ?? at,
         ...(terminalState(status) ? { endedAt: at } : {}),
       },
-    });
+    };
   }
   /** Call only after the owning runtime's process-group exit has been confirmed. */
   closedAfterExit(): void {
     this.closed = true;
     clearInterval(this.timer);
     const at = new Date().toISOString();
+    const changed: NativeWorkTask[] = [];
     for (const task of this.tasks.values())
       if (!terminalState(task.observation.status))
-        this.publish({
+        changed.push({
           ...task,
           native: {
             ...task.native,
@@ -352,5 +382,6 @@ export class CodexNativeWork implements NativeWorkController {
             error: undefined,
           },
         });
+    this.publish(changed);
   }
 }

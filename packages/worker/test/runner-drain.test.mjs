@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
+import { executionHostProtocol } from "../dist/execution-host/protocol.js";
 import {
   ExecutionHostClient,
   RunnerTurnsChangedError,
@@ -93,7 +94,7 @@ function fakeRunner(socketPath) {
     version: "old",
   };
   const snapshot = () => ({
-    protocol: 1,
+    protocol: executionHostProtocol,
     capabilities: [],
     version: runner.version,
     entry: runner.entry,

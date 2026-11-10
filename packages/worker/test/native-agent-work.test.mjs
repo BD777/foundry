@@ -25,7 +25,8 @@ function fixture(version = "0.163.0") {
     ],
   ]);
   const calls = [],
-    snapshots = [];
+    snapshots = [],
+    batches = [];
   let failed = false;
   const client = {
     async request(method, params) {
@@ -44,13 +45,17 @@ function fixture(version = "0.163.0") {
     client,
     "native-owner",
     version,
-    (task) => snapshots.push(task),
+    (tasks) => {
+      batches.push(tasks);
+      snapshots.push(...tasks);
+    },
   );
   return {
     observer,
     rows,
     calls,
     snapshots,
+    batches,
     fail() {
       failed = true;
     },
@@ -60,6 +65,8 @@ function fixture(version = "0.163.0") {
 test("Codex stops exactly the freshly enumerated terminal and verifies removal", async () => {
   const f = fixture();
   await f.observer.refresh();
+  assert.equal(f.batches.length, 1);
+  assert.equal(f.batches[0].length, 2);
   assert.equal(f.observer.canStop("native-owner:terminal:command-a:11"), true);
   await f.observer.stop("native-owner:terminal:command-a:11");
   assert.equal(f.rows.has("11"), false);
@@ -155,9 +162,17 @@ test("list absence proves no running terminal but never fabricates a successful 
   await f.observer.refresh();
   f.rows.delete("11");
   await f.observer.refresh();
+  assert.equal(f.batches.length, 2);
+  assert.equal(f.batches[1].length, 1);
   const last = f.snapshots.filter((t) => t.id.endsWith(":11")).at(-1);
   assert.equal(last.observation.status, "unknown");
   assert.ok(last.observation.endedAt);
+  await f.observer.refresh();
+  assert.equal(
+    f.batches.length,
+    2,
+    "an already reported missing terminal is not published again",
+  );
   f.observer.closedAfterExit();
   assert.equal(
     f.observer.inspect("native-owner:terminal:command-b:22"),

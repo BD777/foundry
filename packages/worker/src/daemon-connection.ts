@@ -123,7 +123,7 @@ async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
   await stopExecutionHost();
   // Without an execution host the turns, scheduled work and evidence
   // services run in this process: a removed device stops them too.
-  sessionWork().stop();
+  await sessionWork().stop();
   closeAllActiveRuntimes();
   stopAllEvidenceHTTPServices();
   const device = getDevice();

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
+import { createServer } from "node:net";
+import { createInterface } from "node:readline";
 import {
   mkdtempSync,
   mkdirSync,
@@ -22,6 +24,7 @@ import { SessionExecutionRegistry } from "../dist/session/session-state.js";
 import { ReliableSessionTransport } from "../dist/transport/transport.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
 import { runtimeStamp } from "../dist/execution-host/service.js";
+import { executionHostProtocol } from "../dist/execution-host/protocol.js";
 import { FileSessionOutbox } from "../dist/transport/session-outbox-store.js";
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(check) {
@@ -49,6 +52,72 @@ test("disk outbox retains original identities until server acknowledgement", () 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a new client accepts a draining protocol-1 host without the optional reconnect method", async (t) => {
+  assert.equal(executionHostProtocol, 1);
+  const root = mkdtempSync(join(tmpdir(), "host-old-protocol-"));
+  const socketPath = join(root, "control.sock");
+  const serverURL = "http://127.0.0.1:1";
+  const identity = processIdentity(process.pid);
+  const requests = [];
+  const server = createServer((socket) => {
+    socket.on("error", () => {});
+    createInterface({ input: socket }).on("line", (line) => {
+      const request = JSON.parse(line);
+      requests.push(request.method ?? "handshake");
+      if (request.method === "server_reconnected")
+        return socket.write(
+          `${JSON.stringify({
+            id: request.id,
+            error: "Unsupported execution host command",
+            outcomeUnknown: false,
+          })}\n`,
+        );
+      socket.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            protocol: 1,
+            version: "old",
+            serverURL,
+            pid: process.pid,
+            startTime: identity.startTime,
+            claims: [],
+            background: [],
+          },
+        })}\n`,
+      );
+    });
+  });
+  server.listen(socketPath);
+  await once(server, "listening");
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  const client = new ExecutionHostClient(socketPath, "token", serverURL);
+  t.after(async () => {
+    await client.shutdown();
+    await new Promise((done) => server.close(done));
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.open();
+  await client.serverReconnected();
+  await client.serverReconnected();
+  await client.refresh();
+
+  assert.equal(client.hostHealth(), "ready");
+  assert.equal(
+    logged.filter((line) => line.includes("predates Foundry tools")).length,
+    1,
+  );
+  assert.deepEqual(requests, [
+    "handshake",
+    "server_reconnected",
+    "server_reconnected",
+    "snapshot",
+  ]);
+});
+
 test("host keeps execution through worker disconnect, suppresses duplicate dispatch and replays output", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "host-integration-"));
   const state = join(
@@ -202,7 +271,7 @@ if(r.method==='turn/interrupt')reply({});});`,
     [
       "--input-type=module",
       "-e",
-      `import {ExecutionHostClient} from ${JSON.stringify(clientURL)};const c=new ExecutionHostClient(${JSON.stringify(socket)},'test-auth');await c.open();await c.run(${JSON.stringify(workspace)},${JSON.stringify(payload)});process.send('ready');`,
+      `import {ExecutionHostClient} from ${JSON.stringify(clientURL)};const c=new ExecutionHostClient(${JSON.stringify(socket)},'test-auth');await c.open();await c.serverReconnected();await c.run(${JSON.stringify(workspace)},${JSON.stringify(payload)});process.send('ready');`,
     ],
     { env: { ...process.env }, stdio: ["ignore", "ignore", "pipe", "ipc"] },
   );

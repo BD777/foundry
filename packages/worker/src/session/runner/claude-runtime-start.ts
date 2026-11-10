@@ -1,5 +1,6 @@
 import { nativeCli } from "../../harness/native/native-cli.js";
 import { appendLine } from "../../platform/line-log.js";
+import { errorMessage } from "../../platform/utils.js";
 import type { UUID } from "node:crypto";
 import { processLabels, sessionEventLabels } from "@bd777/foundry-protocol";
 import { ClaudeBackgroundTaskTracker } from "../tasks/agent-background-tasks.js";
@@ -50,6 +51,7 @@ import { ClaudeQuestionGate, sessionQuestionsTo } from "./claude-questions.js";
 import { claudePermissionModeAfterPlan } from "./claude-options.js";
 import {
   claudeToolsNeedHandOver,
+  reconnectFailedClaudeFoundryTools,
   refreshClaudeFoundryTools,
   startClaudeFoundryTools,
 } from "./foundry-tools.js";
@@ -369,7 +371,21 @@ async function reuseClaudeRuntime(
   if (handOver) {
     runtime.mcpServers = servers;
     runtime.mcpServersAt = Date.now();
-    await runtime.query?.setMcpServers?.(servers);
+    try {
+      const result = (await runtime.query?.setMcpServers?.(servers)) as
+        { errors?: Record<string, string> } | undefined;
+      const errors = Object.entries(result?.errors ?? {});
+      if (errors.length > 0)
+        await runtime.foundryToolsSupervisor?.failed(
+          errors.map(([name, error]) => `${name}: ${error}`).join("; "),
+        );
+      else await runtime.foundryToolsSupervisor?.connected();
+    } catch (error) {
+      await runtime.foundryToolsSupervisor?.failed(errorMessage(error));
+      throw error;
+    }
+  } else {
+    await reconnectFailedClaudeFoundryTools(runtime.foundryToolsSupervisor);
   }
   await run.emit(
     "Reused active Claude Agent SDK",
@@ -414,7 +430,14 @@ export function sendClaudeTurnPrompt(
     // before its first turn: in --mcp-config or the environment
     // their token would be readable by every command Claude runs.
     void startClaudeFoundryTools(started, plan?.mcpServers, run.emit)
-      .then(pushPrompt)
+      .then((supervisor) => {
+        if (runtime.closed) {
+          supervisor?.close();
+          return;
+        }
+        runtime.foundryToolsSupervisor = supervisor;
+        pushPrompt();
+      })
       .catch((error) => closeActiveClaudeRuntime(runtime, error));
   } catch (error) {
     closeActiveClaudeRuntime(runtime, error);

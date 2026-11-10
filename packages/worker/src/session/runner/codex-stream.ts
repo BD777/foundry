@@ -1,4 +1,5 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
+import { codexCitationsAsLinks } from "./codex-citations.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendLine } from "../../platform/line-log.js";
@@ -366,7 +367,7 @@ export async function runCodexUnstreamedTurn(
   appendLine(state.eventsPath, redactedJSONLine(turn));
   state.nativeSessionId = thread.id || state.nativeSessionId;
   state.reportNativeSessionId(state.nativeSessionId);
-  state.finalResult = sdkMessageText(turn);
+  state.finalResult = codexCitationsAsLinks(sdkMessageText(turn));
   state.usage = codexTurnUsage(turn, state.context?.currentModel);
 }
 
@@ -475,7 +476,7 @@ async function emitCodexText(
   state: CodexTurnState,
   event: unknown,
 ): Promise<void> {
-  const text = sdkMessageText(event);
+  const text = codexCitationsAsLinks(sdkMessageText(event));
   if (!text || text === state.finalResult) return;
   const message = sdkResponseMessage(event, text);
   if (message.kind === "commentary") {

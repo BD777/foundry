@@ -5,6 +5,8 @@ import { request as httpsRequest } from "node:https";
 import { serverWebSocketAgent, serverTransportError } from "./server-proxy.js";
 import { protectHTTPPort } from "../protected-http-ports.js";
 import { SingleFlight } from "../single-flight.js";
+import { errorMessage } from "../utils.js";
+import { redactSecrets } from "../secret-redaction.js";
 
 const routes = new Map<string, string>();
 const pending = new SingleFlight<() => void>({ keepResolved: true });
@@ -26,14 +28,26 @@ export function serverMcpURL(url: string): string {
   return local ? new URL(target.pathname + target.search, local).href : url;
 }
 
+export interface ServerMcpForwarderOptions {
+  /** Covers proxy connect, TLS negotiation and the wait for response headers. */
+  firstByteTimeoutMs?: number;
+  log?: (message: string) => void;
+}
+
 /** One loopback listener per process/server. No credentials are stored or added. */
 export function startServerMcpForwarder(
   serverURL: string,
+  options: ServerMcpForwarderOptions = {},
 ): Promise<() => void> {
   const origin = new URL(serverURL).origin;
   return pending.run(origin, async () => {
     const target = new URL("/api/mcp", origin);
     const send = target.protocol === "https:" ? httpsRequest : httpRequest;
+    const firstByteTimeoutMs = options.firstByteTimeoutMs ?? 20_000;
+    const logFailure = (phase: string, startedAt: number, error: Error) =>
+      (options.log ?? console.error)(
+        `${new Date().toISOString()} Foundry MCP forward failed during ${phase} after ${Math.max(0, Date.now() - startedAt)}ms: ${redactSecrets(errorMessage(error)).replace(/\s+/g, " ").slice(0, 500)}`,
+      );
     const listener = createServer((incoming, response) => {
       if (incoming.url?.split("?", 1)[0] !== "/api/mcp") {
         response.writeHead(404);
@@ -45,10 +59,12 @@ export function startServerMcpForwarder(
           ([name]) => !hopHeaders.has(name),
         ),
       );
+      const startedAt = Date.now();
       let agent;
       try {
         agent = serverWebSocketAgent(target);
-      } catch {
+      } catch (error) {
+        logFailure("proxy connection", startedAt, error as Error);
         response.writeHead(502, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
@@ -58,10 +74,19 @@ export function startServerMcpForwarder(
         );
         return;
       }
+      let phase = "proxy connection";
+      let loggedFailure = false;
+      const logOnce = (error: Error, failurePhase = phase) => {
+        if (loggedFailure) return;
+        loggedFailure = true;
+        logFailure(failurePhase, startedAt, error);
+      };
       const outgoing = send(
         target,
         { method: incoming.method, headers, agent },
         (answer) => {
+          clearTimeout(firstByteTimer);
+          phase = "response body";
           const forwarded = Object.fromEntries(
             Object.entries(answer.headers).filter(
               ([name]) => !hopHeaders.has(name),
@@ -69,11 +94,51 @@ export function startServerMcpForwarder(
           );
           response.writeHead(answer.statusCode ?? 502, forwarded);
           answer.pipe(response);
-          answer.on("error", () => response.destroy());
+          answer.on("error", (error) => {
+            logOnce(error);
+            response.destroy();
+          });
         },
       );
-      outgoing.on("error", (error) => {
+      outgoing.once("socket", (socket) => {
+        socket.once("connect", () => {
+          phase =
+            target.protocol === "https:"
+              ? "TLS handshake"
+              : "waiting for response";
+        });
+        socket.once("secureConnect", () => {
+          phase = "waiting for response";
+        });
+      });
+      outgoing.once("proxyConnect", () => {
+        phase =
+          target.protocol === "https:"
+            ? "TLS handshake"
+            : "waiting for response";
+      });
+      const firstByteTimer = setTimeout(() => {
+        const error = new Error(
+          `No response headers within ${firstByteTimeoutMs / 1000}s.`,
+        );
+        logOnce(error);
         if (response.headersSent) {
+          response.destroy();
+        } else {
+          response.writeHead(504, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: serverTransportError(error, target).message,
+            }),
+          );
+        }
+        outgoing.destroy(error);
+      }, firstByteTimeoutMs);
+      firstByteTimer.unref?.();
+      outgoing.once("error", (error) => {
+        clearTimeout(firstByteTimer);
+        logOnce(error);
+        if (response.headersSent || response.writableEnded) {
           response.destroy();
           return;
         }
@@ -85,8 +150,12 @@ export function startServerMcpForwarder(
         );
       });
       incoming.pipe(outgoing);
-      incoming.on("aborted", () => outgoing.destroy());
+      incoming.on("aborted", () => {
+        clearTimeout(firstByteTimer);
+        outgoing.destroy();
+      });
       response.on("close", () => {
+        clearTimeout(firstByteTimer);
         if (!response.writableEnded) outgoing.destroy();
       });
     });

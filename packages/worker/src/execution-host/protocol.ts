@@ -18,7 +18,7 @@ import type {
   SteerOptions,
 } from "../session/session-control.js";
 
-/** Both ends ship together; a host speaking another version is refused. */
+/** Optional methods may be absent during a drain; a version mismatch is refused. */
 export const executionHostProtocol = 1;
 
 export interface HostSnapshot {
@@ -77,6 +77,11 @@ export interface HostMethods {
   };
   control_goal: {
     request: { sessionId: string; action: SessionGoalAction };
+    result: Record<string, never>;
+  };
+  /** The daemon registered with the server again; reconcile host-local tools. */
+  server_reconnected: {
+    request: Record<string, never>;
     result: Record<string, never>;
   };
   issue_environment: {
