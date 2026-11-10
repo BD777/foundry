@@ -1,5 +1,5 @@
 import {
-  assistantSettingsSectionFrom,
+  assistantSettingsSectionValue,
   type AssistantSettingsSection,
 } from "./assistant-settings-sections";
 import {
@@ -73,13 +73,15 @@ export function parseAppRoute(pathname: string): AppRoute {
     // the shell turns back to the workspace when the person chose so.
     case undefined:
       return { view: "assistant" };
-    case "assistant":
+    case "assistant": {
+      const assistantSection = assistantSettingsSectionValue(segments[2]);
       return id === "settings"
         ? {
             view: "assistantSettings",
-            assistantSection: assistantSettingsSectionFrom(segments[2]),
+            ...(assistantSection ? { assistantSection } : {}),
           }
         : { view: "assistant" };
+    }
     case "locations":
       // /locations/<device> brings that device's workspaces into view.
       return id
@@ -170,7 +172,9 @@ export function pathForAppRoute(route: AppRoute): string {
     case "assistant":
       return "/assistant";
     case "assistantSettings":
-      return `/assistant/settings/${route.assistantSection ?? assistantSettingsSectionFrom(undefined)}`;
+      return route.assistantSection
+        ? `/assistant/settings/${route.assistantSection}`
+        : "/assistant/settings";
     case "locations":
       return route.selectedDeviceId
         ? `/locations/${encodePathSegment(route.selectedDeviceId)}`

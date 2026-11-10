@@ -2,6 +2,7 @@ import { ToastFeedback } from "../../components/ui/toast";
 import { DeviceReferences } from "./settings-device-references";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeft } from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -12,13 +13,13 @@ import type {
 } from "@bd777/foundry-protocol";
 import { listAgentProfiles, updatePersonalAgentSettings } from "../../api";
 import { Alert } from "../../components/ui/alert";
+import { AppLink } from "../../components/ui/app-link";
 import { Button } from "../../components/ui/button";
+import { PageHeader } from "../../components/ui/page-header";
 import { PageSurface } from "../../components/ui/page-surface";
-import { SegmentedControl } from "../../components/ui/segmented-control";
-import {
-  assistantSettingsSections,
-  type AssistantSettingsSection,
-} from "../../lib/assistant-settings-sections";
+import { type AssistantSettingsSection } from "../../lib/assistant-settings-sections";
+import { pathForAppRoute } from "../../lib/routes";
+import { cn } from "../../lib/cn";
 import { onStreamEvent } from "../../stream";
 import { serverErrorText } from "../../lib/errors";
 import {
@@ -44,9 +45,11 @@ import { RulesSection } from "./settings-rules";
 import { StatusSection } from "./settings-status";
 import { StyleSection } from "./settings-style";
 import { useAssistant, type AssistantController } from "./use-assistant";
+import { AssistantSettingsNav } from "./assistant-settings-nav";
 
 export interface AssistantSettingsProps {
-  section: AssistantSettingsSection;
+  /** Omitted by /assistant/settings: the narrow index, or Status when wide. */
+  section?: AssistantSettingsSection;
   onSectionChange: (section: AssistantSettingsSection) => void;
   devices: DeviceProjection[];
   agentProfiles: AgentProfileProjection[];
@@ -112,6 +115,7 @@ function SettingsPanel({
   overview: PersonalAgentOverview;
 }) {
   const { t } = useTranslation("personalAgent");
+  const activeSection = section ?? "status";
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
   const [hasWorkspaceMemory, setHasWorkspaceMemory] = useState(false);
   const [catalog, setCatalog] = useState<AgentProfileProjection[]>();
@@ -119,7 +123,7 @@ function SettingsPanel({
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const allProfiles = catalog ?? agentProfiles;
   useEffect(() => {
-    if (section !== "models" && section !== "memory") return;
+    if (activeSection !== "models" && activeSection !== "memory") return;
     let active = true,
       version = 0;
     const read = async () => {
@@ -153,7 +157,7 @@ function SettingsPanel({
       active = false;
       stop();
     };
-  }, [section, catalogRefresh]);
+  }, [activeSection, catalogRefresh]);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -202,157 +206,180 @@ function SettingsPanel({
   }
 
   return (
-    <>
-      <header className="grid gap-1">
-        <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
-          {t("settings.title")}
-        </h1>
-      </header>
-      <SegmentedControl
-        aria-label={t("settings.sectionsLabel")}
-        onValueChange={onSectionChange}
-        options={assistantSettingsSections.map((value) => ({
-          value,
-          label: t(`settings.sections.${value}`),
-        }))}
-        tone="navigation"
-        value={section}
-      />
-      <DeviceReferences agent={agent} draft={draft} devices={devices} />
-      <section
-        aria-label={t(`settings.sections.${section}`)}
-        className="grid max-w-[760px] gap-4.5"
-      >
-        {catalogError && (section === "models" || section === "memory") ? (
-          <Alert tone="error" title={t("settings.models.catalogFailed")}>
-            <p>{catalogError}</p>
-            <Button
-              size="sm"
-              onClick={() => setCatalogRefresh((value) => value + 1)}
-            >
-              {t("settings.models.refreshCatalog")}
-            </Button>
-          </Alert>
+    <div className="grid min-w-0 gap-6 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+      <div className="grid min-w-0 gap-4.5 xl:col-start-2 xl:row-start-1">
+        {section ? (
+          <Button
+            asChild
+            className="justify-self-start xl:hidden"
+            size="sm"
+            variant="ghost"
+          >
+            <AppLink href={pathForAppRoute({ view: "assistantSettings" })}>
+              <ArrowLeft aria-hidden="true" size={14} />
+              {t("settings.allSections")}
+            </AppLink>
+          </Button>
         ) : null}
-        {section === "status" ? (
-          <StatusSection
-            agent={agent}
-            assistant={assistant}
-            onNotice={notice}
-            owned={owned}
-          />
-        ) : section === "style" ? (
-          <StyleSection change={change} draft={draft} />
-        ) : section === "memory" ? (
-          <>
-            <KnowledgeSection
-              devices={devices}
-              workspaces={workspaces}
-              profiles={allProfiles}
-              onLocation={setHasWorkspaceMemory}
-            />
-            <MemorySection hasWorkspaceMemory={hasWorkspaceMemory} />
-          </>
-        ) : section === "rules" ? (
-          <RulesSection change={change} draft={draft} />
-        ) : section === "places" ? (
-          <PlacesSection
-            change={change}
-            draft={draft}
-            homeDeviceId={agent.homeDeviceId}
-            onOpenComputer={(deviceId) =>
-              onEvent({ type: "devices.open", deviceId })
-            }
-            owned={owned}
-          />
-        ) : section === "models" ? (
-          <>
-            <ModelsSection
-              agentProfiles={allProfiles}
-              devices={owned}
-              workspaces={workspaces}
-              change={change}
-              draft={draft}
-              home={home}
-            />
-          </>
-        ) : section === "connectors" ? (
-          <ConnectorsSection />
-        ) : section === "entry" ? (
-          <EntrySection change={change} draft={draft} />
-        ) : section === "limits" ? (
-          <LimitsSection change={change} draft={draft} usage={overview.usage} />
-        ) : (
-          <>
-            <RoleRuns devices={devices} workspaces={workspaces} />
-            <MaintenanceSection workspaces={workspaces} />
-            <ActivitySection
-              projectName={(id) =>
-                workspaces.find((workspace) => workspace.id === id)?.name
-              }
-            />{" "}
-          </>
-        )}
-      </section>
-      {dirty ? (
+        <PageHeader title={t("settings.title")} />
         <div
-          className="sticky bottom-0 z-[2] grid max-w-[760px] gap-2.5 rounded-lg bg-panel px-3.5 py-3 shadow-floating"
-          role="region"
-          aria-label={t("settings.unsaved")}
-        >
-          {problems.length ? (
-            <Alert tone="warning" title={t("settings.unsaved")}>
-              <ul className="grid gap-0.5">
-                {problems.map((problem) => (
-                  <li key={problemText(problem, t)}>
-                    {problemText(problem, t)}
-                  </li>
-                ))}
-              </ul>
-            </Alert>
-          ) : confirmLoosen ? (
-            <Alert tone="warning" title={t("settings.loosen.title")}>
-              {t("settings.loosen.body", {
-                actions: loosened
-                  .map((action) => t(`settings.rules.actions.${action}`))
-                  .join("; "),
-              })}
-            </Alert>
-          ) : (
-            <PaMuted>{t("settings.unsaved")}</PaMuted>
+          className={cn(
+            "grid min-w-0 gap-4.5",
+            section === undefined && "max-xl:hidden",
           )}
-          {saveError ? (
-            <ToastFeedback tone="error" title={t("settings.saveFailed")}>
-              {saveError}
-            </ToastFeedback>
+        >
+          <DeviceReferences agent={agent} draft={draft} devices={devices} />
+          <section
+            aria-label={t(`settings.sections.${activeSection}`)}
+            className="grid min-w-0 gap-4.5"
+          >
+            {catalogError &&
+            (activeSection === "models" || activeSection === "memory") ? (
+              <Alert tone="error" title={t("settings.models.catalogFailed")}>
+                <p>{catalogError}</p>
+                <Button
+                  size="sm"
+                  onClick={() => setCatalogRefresh((value) => value + 1)}
+                >
+                  {t("settings.models.refreshCatalog")}
+                </Button>
+              </Alert>
+            ) : null}
+            {activeSection === "status" ? (
+              <StatusSection
+                agent={agent}
+                assistant={assistant}
+                onNotice={notice}
+                owned={owned}
+              />
+            ) : activeSection === "style" ? (
+              <StyleSection change={change} draft={draft} />
+            ) : activeSection === "memory" ? (
+              <>
+                <KnowledgeSection
+                  devices={devices}
+                  workspaces={workspaces}
+                  profiles={allProfiles}
+                  onLocation={setHasWorkspaceMemory}
+                />
+                <MemorySection hasWorkspaceMemory={hasWorkspaceMemory} />
+              </>
+            ) : activeSection === "rules" ? (
+              <RulesSection change={change} draft={draft} />
+            ) : activeSection === "places" ? (
+              <PlacesSection
+                change={change}
+                draft={draft}
+                homeDeviceId={agent.homeDeviceId}
+                onOpenComputer={(deviceId) =>
+                  onEvent({ type: "devices.open", deviceId })
+                }
+                owned={owned}
+              />
+            ) : activeSection === "models" ? (
+              <ModelsSection
+                agentProfiles={allProfiles}
+                devices={owned}
+                workspaces={workspaces}
+                change={change}
+                draft={draft}
+                home={home}
+              />
+            ) : activeSection === "connectors" ? (
+              <ConnectorsSection />
+            ) : activeSection === "entry" ? (
+              <EntrySection change={change} draft={draft} />
+            ) : activeSection === "limits" ? (
+              <LimitsSection
+                change={change}
+                draft={draft}
+                usage={overview.usage}
+              />
+            ) : (
+              <>
+                <RoleRuns devices={devices} workspaces={workspaces} />
+                <MaintenanceSection workspaces={workspaces} />
+                <ActivitySection
+                  projectName={(id) =>
+                    workspaces.find((workspace) => workspace.id === id)?.name
+                  }
+                />{" "}
+              </>
+            )}
+          </section>
+          {dirty ? (
+            <div
+              className="sticky bottom-0 z-[2] grid w-full gap-2.5 rounded-lg bg-panel px-3.5 py-3 shadow-floating"
+              role="region"
+              aria-label={t("settings.unsaved")}
+            >
+              {problems.length ? (
+                <Alert tone="warning" title={t("settings.unsaved")}>
+                  <ul className="grid gap-0.5">
+                    {problems.map((problem) => (
+                      <li key={problemText(problem, t)}>
+                        {problemText(problem, t)}
+                      </li>
+                    ))}
+                  </ul>
+                </Alert>
+              ) : confirmLoosen ? (
+                <Alert tone="warning" title={t("settings.loosen.title")}>
+                  {t("settings.loosen.body", {
+                    actions: loosened
+                      .map((action) => t(`settings.rules.actions.${action}`))
+                      .join("; "),
+                  })}
+                </Alert>
+              ) : (
+                <PaMuted>{t("settings.unsaved")}</PaMuted>
+              )}
+              {saveError ? (
+                <ToastFeedback tone="error" title={t("settings.saveFailed")}>
+                  {saveError}
+                </ToastFeedback>
+              ) : null}
+              <ButtonRow gap="wide">
+                <Button
+                  aria-busy={saving}
+                  disabled={saving || problems.length > 0}
+                  onClick={() => void save()}
+                  variant="primary"
+                >
+                  {saving
+                    ? t("settings.saving")
+                    : confirmLoosen
+                      ? t("settings.loosen.confirm")
+                      : t("settings.save")}
+                </Button>
+                <Button
+                  disabled={saving}
+                  onClick={() => {
+                    setDraft(agent.settings);
+                    setConfirmLoosen(false);
+                    setSaveError("");
+                  }}
+                  variant="ghost"
+                >
+                  {t("settings.discard")}
+                </Button>
+              </ButtonRow>
+            </div>
           ) : null}
-          <ButtonRow gap="wide">
-            <Button
-              aria-busy={saving}
-              disabled={saving || problems.length > 0}
-              onClick={() => void save()}
-              variant="primary"
-            >
-              {saving
-                ? t("settings.saving")
-                : confirmLoosen
-                  ? t("settings.loosen.confirm")
-                  : t("settings.save")}
-            </Button>
-            <Button
-              disabled={saving}
-              onClick={() => {
-                setDraft(agent.settings);
-                setConfirmLoosen(false);
-                setSaveError("");
-              }}
-              variant="ghost"
-            >
-              {t("settings.discard")}
-            </Button>
-          </ButtonRow>
         </div>
-      ) : null}
-    </>
+      </div>
+      <div
+        className={cn(
+          "min-w-0 xl:sticky xl:top-0 xl:col-start-1 xl:row-start-1",
+          section !== undefined && "max-xl:hidden",
+        )}
+      >
+        <AssistantSettingsNav
+          onSelect={onSectionChange}
+          selected={activeSection}
+          showIndex={section === undefined}
+        />
+      </div>
+    </div>
   );
 }

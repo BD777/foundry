@@ -61,7 +61,7 @@ export interface AppViewContext {
 }
 
 export interface ActiveViewProps extends AppViewContext {
-  assistantSection: AssistantSettingsSection;
+  assistantSection?: AssistantSettingsSection;
   onAssistantSectionChange: (section: AssistantSettingsSection) => void;
   /** The assistant saved a new interface (its simpleInterface setting). */
   onInterfaceModeChange: (mode: InterfaceMode) => void;

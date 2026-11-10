@@ -18,13 +18,31 @@ export const assistantSettingsSections = [
 export type AssistantSettingsSection =
   (typeof assistantSettingsSections)[number];
 
-export function assistantSettingsSectionFrom(
+export const assistantSettingsGroups = [
+  {
+    id: "assistant",
+    sections: ["status", "style", "memory", "rules"],
+  },
+  {
+    id: "work",
+    sections: ["places", "models", "connectors"],
+  },
+  {
+    id: "reachLimits",
+    sections: ["entry", "limits", "activity"],
+  },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  sections: readonly AssistantSettingsSection[];
+}>;
+
+export type AssistantSettingsGroup =
+  (typeof assistantSettingsGroups)[number]["id"];
+
+export function assistantSettingsSectionValue(
   value: string | undefined,
-): AssistantSettingsSection {
-  return (
-    assistantSettingsSections.find((section) => section === value) ??
-    assistantSettingsSections[0]
-  );
+): AssistantSettingsSection | undefined {
+  return assistantSettingsSections.find((section) => section === value);
 }
 
 /** Full: every page. Simple: only the assistant and its settings (§10). */
