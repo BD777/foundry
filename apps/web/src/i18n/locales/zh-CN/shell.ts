@@ -46,6 +46,7 @@ export const shell: Translation<typeof en> = {
   },
   sidebar: {
     interfaceControls: "界面工具",
+    menu: "菜单",
     globalScope: "全局",
     workspaceScope: "工作区：{{workspace}}",
     open: "打开{{label}}",
