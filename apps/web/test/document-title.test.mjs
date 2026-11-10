@@ -101,21 +101,39 @@ test("the open chat replaces the page name until it closes", () => {
   assert.equal(document.title, "Chats · my-feishu — Foundry");
 });
 
-test("one leading marker: running, else unread, else background", () => {
+test("one leading marker: waiting children, running, unread, then background", () => {
   const parts = { primary: "Digest", context: "ws" };
   const title = (state) => buildDocumentTitle({ ...parts, ...state });
   assert.equal(title({}), "Digest · ws — Foundry");
+  assert.equal(
+    title({ waitingChildCount: 2 }),
+    "⌛ Waiting 2 · Digest · ws — Foundry",
+  );
   assert.equal(title({ running: true }), "⏳ Digest · ws — Foundry");
   assert.equal(title({ unread: true }), "✅ Digest · ws — Foundry");
   assert.equal(title({ background: true }), "⚙️ Digest · ws — Foundry");
-  const all = { running: true, unread: true, background: true };
-  assert.equal(title(all), "⏳ Digest · ws — Foundry");
+  const all = {
+    waitingChildCount: 2,
+    running: true,
+    unread: true,
+    background: true,
+  };
   assert.equal(
-    title({ ...all, running: false }),
+    title(all),
+    "⌛ Waiting 2 · Digest · ws — Foundry",
+    "waiting children outrank the parent session's own running state",
+  );
+  const { waitingChildCount: _, ...withoutWaiting } = all;
+  assert.equal(title(withoutWaiting), "⏳ Digest · ws — Foundry");
+  assert.equal(
+    title({ ...withoutWaiting, running: false }),
     "✅ Digest · ws — Foundry",
     "an unseen answer outranks work still running in the background",
   );
-  assert.equal(title({ running: true, background: true }), title(all));
+  assert.equal(
+    title({ running: true, background: true }),
+    title(withoutWaiting),
+  );
 });
 
 test("status marks show only while a chat is open, never on other pages", () => {

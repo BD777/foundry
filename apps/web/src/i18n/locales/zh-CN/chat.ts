@@ -290,6 +290,16 @@ export const chat: Translation<typeof en> = {
     nameLabel: "会话名称",
     closeRename: "关闭重命名",
   },
+  waitingChildren: {
+    tab: "等待 {{count}}",
+    count_one: "等待 {{count}} 个子会话",
+    count_other: "等待 {{count}} 个子会话",
+    header_one: "等待 {{count}} 个子会话",
+    header_other: "等待 {{count}} 个子会话",
+    open: "查看 {{count}} 个等待中的子会话",
+    title: "子会话",
+    untitled: "未命名子会话",
+  },
   groups: {
     new: "新建分组",
     defaultName: "新建分组",

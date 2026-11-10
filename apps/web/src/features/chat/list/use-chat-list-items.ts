@@ -143,6 +143,7 @@ export function useChatListItems({
         namedSessions,
       ),
       unread,
+      waitingChildCount: latest?.waitingChildCount ?? 0,
       foundrySessionId: latest?.id ?? thread.id,
       nativeSessionId: latest?.nativeSessionId,
     };
@@ -169,6 +170,7 @@ export function useChatListItems({
     ),
     blocked: chat.status === "blocked",
     unread: readState.unread(chat.id, chat.answerRevision ?? ""),
+    waitingChildCount: 0,
     foundrySessionId: chat.id,
     nativeSessionId: chat.nativeSessionId,
   }));

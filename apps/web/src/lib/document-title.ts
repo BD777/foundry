@@ -1,3 +1,5 @@
+import { i18n } from "../i18n";
+
 /**
  * The browser tab: its title, most specific first so a narrow tab still
  * shows what it is ("<chat or page> · <workspace> — Foundry"), and its icon.
@@ -5,19 +7,20 @@
  * state. Other chats' unread answers stay the Chats list's blue dots.
  *
  * The open chat's state, most important first, marks both the title and
- * the icon (a status dot, for tabs too narrow for the title): its turn
- * runs; its finished answer is unseen (it finished while this tab was
- * hidden; seeing it clears the mark); its turn ended but its agent still
- * works in the background (a timer's run it started on its own counts).
- * Idle shows neither; a chat whose agent only holds timers is idle too (it
- * waits, often for days): the chat's "scheduled · next at" note and its
- * list row's clock say it will wake.
+ * the icon (a status dot, for tabs too narrow for the title): it waits on
+ * child sessions; its own turn runs; its finished answer is unseen (it
+ * finished while this tab was hidden; seeing it clears the mark); its turn
+ * ended but its agent still works in the background. Idle shows neither; a
+ * chat whose agent only holds timers is idle too (it waits, often for days):
+ * the chat's "scheduled · next at" note and its list row's clock say it will
+ * wake.
  */
 export const appName = "Foundry";
 
 const maxPrimaryLength = 60;
 
-export type TabStatus = "running" | "unread" | "background" | "idle";
+export type TabStatus =
+  "waiting" | "running" | "unread" | "background" | "idle";
 
 /**
  * Each state's title marker and icon (in public/, made by
@@ -27,6 +30,7 @@ export const tabStatusMarks: Record<
   TabStatus,
   { marker: string; icon: string }
 > = {
+  waiting: { marker: "⌛", icon: "foundry-icon-running.png" },
   running: { marker: "⏳", icon: "foundry-icon-running.png" },
   unread: { marker: "✅", icon: "foundry-icon-unread.png" },
   background: { marker: "⚙️", icon: "foundry-icon-background.png" },
@@ -47,9 +51,12 @@ export interface DocumentTitleParts {
    * timer's run go on.
    */
   background?: boolean;
+  /** Direct sub-sessions that make the open chat wait. */
+  waitingChildCount?: number;
 }
 
 export function tabStatus(parts: DocumentTitleParts): TabStatus {
+  if (parts.waitingChildCount) return "waiting";
   if (parts.running) return "running";
   if (parts.unread) return "unread";
   if (parts.background) return "background";
@@ -69,11 +76,21 @@ export function buildDocumentTitle(parts: DocumentTitleParts): string {
   if (!primary && !context) return appName;
   const label = [primary, context].filter(Boolean).join(" · ");
   const { marker } = tabStatusMarks[tabStatus(parts)];
-  return `${marker ? `${marker} ` : ""}${label} — ${appName}`;
+  const waiting = parts.waitingChildCount
+    ? `${i18n.t("chat:waitingChildren.tab", { count: parts.waitingChildCount })} · `
+    : "";
+  return `${marker ? `${marker} ` : ""}${waiting}${label} — ${appName}`;
 }
 
 let page: DocumentTitleParts = {};
-let chat: { title: string; running: boolean; background?: boolean } | undefined;
+let chat:
+  | {
+      title: string;
+      running: boolean;
+      background?: boolean;
+      waitingChildCount?: number;
+    }
+  | undefined;
 let unread = false;
 /** The page's own icon (index.html) shows until a state is marked. */
 let shownIcon: TabStatus = "idle";
@@ -99,6 +116,7 @@ function apply(): void {
           primary: chat.title,
           running: chat.running,
           background: chat.background,
+          waitingChildCount: chat.waitingChildCount,
         }
       : {}),
     // Status marks belong to an open chat; other pages never carry them.
@@ -116,7 +134,14 @@ export function setDocumentPage(next: DocumentTitleParts): void {
 
 /** The chat the Chats view shows; undefined when none is open. */
 export function setDocumentChat(
-  next: { title: string; running: boolean; background?: boolean } | undefined,
+  next:
+    | {
+        title: string;
+        running: boolean;
+        background?: boolean;
+        waitingChildCount?: number;
+      }
+    | undefined,
 ): void {
   chat = next;
   apply();
