@@ -845,6 +845,69 @@ test("settings: loosening the rules takes a second confirmation", async () => {
   await page.unmount();
 });
 
+test("settings navigation groups sections and marks the current page", async () => {
+  overview = { agent, homeDeviceOnline: true };
+  const page = await render(AssistantSettings, {
+    section: "rules",
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  const nav = page.container.querySelector(
+    '[data-assistant-settings-nav="desktop"]',
+  );
+  assert.ok(nav);
+  assert.equal(nav.getAttribute("aria-label"), "Settings sections");
+  assert.deepEqual(
+    [...nav.querySelectorAll("h2")].map((node) => node.textContent),
+    ["Assistant", "Work", "Reach & limits"],
+  );
+  const current = nav.querySelector('[aria-current="page"]');
+  assert.equal(current?.textContent.trim(), "When to ask me");
+  assert.equal(current?.getAttribute("href"), "/assistant/settings/rules");
+  assert.equal(
+    page.container
+      .querySelector("a[href='/assistant/settings']")
+      ?.textContent.trim(),
+    "All settings",
+  );
+  await page.unmount();
+});
+
+test("settings navigation shows a linked grouped index when no section is open", async () => {
+  overview = { agent, homeDeviceOnline: true };
+  const page = await render(AssistantSettings, {
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  const index = page.container.querySelector(
+    '[data-assistant-settings-nav="index"]',
+  );
+  assert.ok(index);
+  assert.equal(index.querySelector("[aria-current]"), null);
+  assert.equal(
+    index
+      .querySelector("a[href='/assistant/settings/rules']")
+      ?.textContent.includes("When to ask me"),
+    true,
+  );
+  assert.match(index.textContent, /What it knows about you/);
+  assert.match(index.textContent, /Which model handles each kind of work/);
+  assert.match(index.textContent, /How much it can run and spend/);
+  assert.equal(
+    page.container
+      .querySelector(
+        '[data-assistant-settings-nav="desktop"] [aria-current="page"]',
+      )
+      ?.getAttribute("href"),
+    "/assistant/settings/status",
+  );
+  await page.unmount();
+});
+
 test("settings: the simple interface is saved with the settings and reaches the shell", async () => {
   overview = { agent, homeDeviceOnline: true };
   calls = [];

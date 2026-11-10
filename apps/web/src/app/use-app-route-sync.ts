@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  assistantSettingsSectionFrom,
-  type AssistantSettingsSection,
-} from "../lib/assistant-settings-sections";
+import type { AssistantSettingsSection } from "../lib/assistant-settings-sections";
 import {
   defaultConnectorType,
   type ConnectorType,
@@ -39,8 +36,8 @@ export interface AppRouteSelection {
   providerTab: ProviderTab;
   setProviderTab: (tab: ProviderTab) => void;
   /** The open section of the assistant's settings; only the route reads it. */
-  assistantSection: AssistantSettingsSection;
-  setAssistantSection: (section: AssistantSettingsSection) => void;
+  assistantSection?: AssistantSettingsSection;
+  setAssistantSection: (section?: AssistantSettingsSection) => void;
 }
 
 /** Keeps browser history and shell selection in sync across all features. */
@@ -65,12 +62,9 @@ export function useAppRouteSync({
       parseAppRoute(window.location.pathname).providerTab ??
       providerTabFrom(undefined),
   );
-  const [assistantSection, setAssistantSection] =
-    useState<AssistantSettingsSection>(
-      () =>
-        parseAppRoute(window.location.pathname).assistantSection ??
-        assistantSettingsSectionFrom(undefined),
-    );
+  const [assistantSection, setAssistantSection] = useState<
+    AssistantSettingsSection | undefined
+  >(() => parseAppRoute(window.location.pathname).assistantSection);
   const onPopStateRef = useRef(onPopState);
   onPopStateRef.current = onPopState;
 
@@ -92,7 +86,8 @@ export function useAppRouteSync({
       }
       if (route.connectorTab) setConnectorTab(route.connectorTab);
       if (route.providerTab) setProviderTab(route.providerTab);
-      if (route.assistantSection) setAssistantSection(route.assistantSection);
+      if (route.view === "assistantSettings")
+        setAssistantSection(route.assistantSection);
       onPopStateRef.current(route, workspaceIdFromLocation());
     };
     window.addEventListener("popstate", handlePopState);

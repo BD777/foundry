@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 助理：[DEV-160 Assistant 设置重设计与共享导航](DEV-160-assistant-settings-navigation.md)。Assistant 设置改为宽屏分组侧栏、窄屏分区目录，路由保留具体章节；共享 `NavList` 让设置与全局导航使用同一套条目。已纳入部署状态快照，等待提交窗口逐步合入。
+
 2026-11-10 原生运行：[DEV-159 原生子 agent 状态显示为未知](DEV-159-native-agent-unknown.md)。修复未观察到新状态时把既有状态覆盖成 `unknown`，并补齐 Server、Web、Worker 回归；已纳入部署状态快照，等待本次提交窗口逐步合入。
 
 2026-11-10 管理：[DEV-157 用 Agent 改 Skill 仓库读取设备、移除设备（必须确认）](DEV-157-mcp-admin-tools.md)。新增 `set_skill_repository_source`（本人的对话与助理、须为管理员），与 Web 共用实现；新增设备移除预览（与真正的清除共用一份执行计划）和仅助理可用的 `remove_device`，始终出确认卡片并列出将删除的内容。已部署 dev，bytedcli 已用新工具改由 byte-dev 读取并检查通过；`remove_device` 待助理启动后验收。

@@ -59,6 +59,14 @@ function mermaidConfig(theme: "light" | "dark"): MermaidOptions["config"] {
     // SVG text keeps exports portable, including Chinese labels and <br/>.
     htmlLabels: false,
     fontFamily: "sans-serif",
+    themeVariables: {
+      // Hide the edge line behind each relationship label.
+      edgeLabelBackground: theme === "dark" ? "#3d4044" : "#ffffff",
+    },
+    flowchart: {
+      nodeSpacing: 56,
+      rankSpacing: 72,
+    },
   };
 }
 
