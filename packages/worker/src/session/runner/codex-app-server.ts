@@ -1268,7 +1268,7 @@ export class CodexAppServerThread implements CodexSDKThread {
     ) {
       if (params.status === "ready") void connection.foundryTools?.connected();
       else if (params.status === "failed" || params.status === "cancelled")
-        void connection.foundryTools?.failed(
+        void connection.foundryTools?.reportedFailure(
           redactSecrets(
             String(
               params.error ??

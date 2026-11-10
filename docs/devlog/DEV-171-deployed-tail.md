@@ -10,6 +10,7 @@
 - step usage 比较补齐 `requestMs` 与 `decodeEligible`，请求速度变化会触发正确重渲染。
 - 表格 Dialog 测试明确断言只保留一个视口宽度类 `w-[92vw]`。
 - `AGENTS.md` 的检查规则更新为按改动选择覆盖测试与类型检查，批次检查在部署前执行一次。
+- Codex MCP startup failure 通知先与当前状态确认，避免重连成功后的迟到失败通知把连接重新标成不可用。
 
 ## 部署与版本证据
 
@@ -20,6 +21,7 @@
 - Web TypeScript typecheck
 - `chat-markdown.test.mjs`
 - `sidebar-scope.test.mjs`
+- `codex-app-server.test.mjs`
 - 最终与 D 做全树差异检查
 
 ## 限制
