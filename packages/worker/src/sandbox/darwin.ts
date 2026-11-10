@@ -52,17 +52,30 @@ function writableTree(
   command: string,
   args: string[],
 ): SandboxLaunch {
+  if (!existsSync(sandboxExec))
+    throw new SandboxError(
+      "backend_missing",
+      "requires sandbox-exec on this device",
+    );
+  const rules = seatbeltWritableTreePolicy(profile, command);
+  writeFileSync(profile.policyFile, rules, { mode: 0o600 });
+  return {
+    command: sandboxExec,
+    args: ["-f", profile.policyFile, command, ...args],
+  };
+}
+
+/** The Seatbelt rules for a writable-tree session, independent of execution. */
+export function seatbeltWritableTreePolicy(
+  profile: WritableTreeProfile,
+  command: string,
+): string {
   const hidden = profile.userFiles === "hidden";
   const deniedReads = hidden ? protectedHostPaths() : governanceStatePaths();
   const runtime = runtimeRoot();
   const systemRoots = writableTreeSystemRoots().map(canonical);
   for (const program of [command, ...profile.executables])
     systemRoots.push(...executableReadRoots(program, deniedReads));
-  if (!existsSync(sandboxExec))
-    throw new SandboxError(
-      "backend_missing",
-      "requires sandbox-exec on this device",
-    );
   const rules = [
     "(version 1)",
     "(allow default)",
@@ -125,11 +138,7 @@ function writableTree(
       (path) => `(deny file-write* (subpath ${quote(canonical(path))}))`,
     ),
   ].join("\n");
-  writeFileSync(profile.policyFile, rules, { mode: 0o600 });
-  return {
-    command: sandboxExec,
-    args: ["-f", profile.policyFile, command, ...args],
-  };
+  return rules;
 }
 
 function offlineCommand(

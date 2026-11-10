@@ -17,6 +17,7 @@ import {
   nativeCli,
   nativeCliInstallCommands,
   nativeCliUpdateCommand,
+  nativeCliWithUpdate,
   parseCliVersion,
 } from "../dist/harness/native/native-cli.js";
 import { installNativeCli } from "../dist/harness/native/native-cli-install.js";
@@ -216,7 +217,7 @@ test("native CLI registration excludes private updater fields on fresh and cache
     failureCount: 0,
     futurePrivateField: "local",
   });
-  const fresh = JSON.parse(JSON.stringify(nativeCli("claude")));
+  const fresh = JSON.parse(JSON.stringify(nativeCliWithUpdate("claude")));
   assert.deepEqual(fresh.update, publicState);
   saveRuntimeUpdate("claude", {
     ...publicState,
@@ -224,9 +225,34 @@ test("native CLI registration excludes private updater fields on fresh and cache
     failureCount: 3,
     futurePrivateField: "local",
   });
-  const cached = JSON.parse(JSON.stringify(nativeCli("claude")));
+  const cached = JSON.parse(JSON.stringify(nativeCliWithUpdate("claude")));
   assert.deepEqual(cached.update, { ...publicState, state: "failed" });
   assert.equal(runtimeUpdateState("claude").failureCount, 3);
+});
+
+test("session program detection does not read daemon update bookkeeping", (t) => {
+  withEnv(t, { FOUNDRY_CLAUDE_BIN: fakeClaude(t, "2.1.292") });
+  const path = foundryStatePath("agent-updates", "claude.json");
+  const previous = runtimeUpdateState("claude");
+  rmSync(path, { recursive: true, force: true });
+  mkdirSync(path, { recursive: true });
+  t.after(() => {
+    rmSync(path, { recursive: true, force: true });
+    if (previous) saveRuntimeUpdate("claude", previous);
+  });
+
+  assert.equal(nativeCli("claude").installed, true);
+  assert.equal(nativeCli("claude").update, undefined);
+
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args.join(" "));
+  t.after(() => {
+    console.error = original;
+  });
+  assert.equal(nativeCliWithUpdate("claude").installed, true);
+  assert.equal(nativeCliWithUpdate("claude").update, undefined);
+  assert.match(errors.join("\n"), /runtime-update bookkeeping failed/);
 });
 
 // A busy Mac took 8.5 s for Claude Code's first `--version` (a 276 MB

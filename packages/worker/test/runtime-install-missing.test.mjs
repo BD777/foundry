@@ -9,6 +9,7 @@ import { verifyCodexCompatibility } from "../dist/session/runner/codex-compatibi
 import {
   clearNativeCliCache,
   nativeCli,
+  nativeCliWithUpdate,
 } from "../dist/harness/native/native-cli.js";
 import { fakeCodexAppServer } from "./fake-codex-app-server.mjs";
 import {
@@ -80,7 +81,7 @@ test("a missing runtime installs as a Foundry-managed copy, reporting progress a
   assert.equal(nativeCli("codex").update, undefined);
   const seen = [];
   const result = await installNativeCli("codex", {
-    onProgress: () => seen.push(nativeCli("codex").update?.state),
+    onProgress: () => seen.push(nativeCliWithUpdate("codex").update?.state),
   });
   assert.equal(result.ok, true, result.log);
   assert.equal(result.cli.installed, true);
@@ -98,7 +99,7 @@ test("a failed install stays visible on the missing runtime with its reason", as
   const result = await installNativeCli("codex");
   assert.equal(result.ok, false);
   assert.match(result.log, /registry unreachable/);
-  const cli = nativeCli("codex");
+  const cli = nativeCliWithUpdate("codex");
   assert.equal(cli.installed, false);
   assert.equal(cli.update?.state, "failed");
   assert.match(cli.update?.detail ?? "", /registry unreachable/);

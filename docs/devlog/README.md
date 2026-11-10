@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 原生运行：[DEV-162 macOS verifier agent-updates 修复](DEV-162-mac-verifier-agent-updates.md)。更新记录读写失败不再阻断原生 CLI 探测或验证启动，macOS Seatbelt policy 与执行分离并正确报告后端缺失。已纳入部署状态快照，等待提交窗口逐步合入。
+
 2026-11-10 模型服务：[DEV-161 模型速度 S1-S4](DEV-161-model-speed-usage.md)。回合用量新增模型耗时、首 token 和请求级指标；Claude 使用原生时间，Codex 明确标记估算，并同步契约、Server、Worker、Web 与测试。已纳入部署状态快照，等待提交窗口逐步合入。
 
 2026-11-10 助理：[DEV-160 Assistant 设置重设计与共享导航](DEV-160-assistant-settings-navigation.md)。Assistant 设置改为宽屏分组侧栏、窄屏分区目录，路由保留具体章节；共享 `NavList` 让设置与全局导航使用同一套条目。已纳入部署状态快照，等待提交窗口逐步合入。
