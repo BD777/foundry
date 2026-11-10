@@ -210,14 +210,15 @@ export const conversation: Translation<typeof en> = {
       "这些步骤背后 {{count}} 次模型请求的 token。子智能体的用量记在子智能体上。",
     stepsTitle_other:
       "这些步骤背后 {{count}} 次模型请求的 token。子智能体的用量记在子智能体上。",
+    decodeSpeed: "严格解码速度：{{value}}",
     turnScope:
-      "整轮的用量，以 Agent 自己的报告为准。各步骤显示自己那几次模型请求的 token；Codex 只按整轮报告 token。输出速度只按模型时间计算，不含工具与其他耗时。",
+      "整轮的用量，以 Agent 自己的报告为准。各步骤显示自己那几次模型请求的 token。带 ≈ 的是 Codex 按其用量更新估算的速度。输出速度按包含首 token 等待的模型时间计算，不含工具与其他耗时。",
     details: "本轮用量",
     duration: "耗时",
     modelTime: "模型时间",
     toolsAndOther: "工具与其他",
     timeToFirstToken: "首 token 时间",
-    outputSpeed: "输出速度",
+    outputSpeed: "输出速度（含首 token）",
     modelRequests: "模型请求次数",
     input: "输入 Token",
     cacheRead: "缓存命中",

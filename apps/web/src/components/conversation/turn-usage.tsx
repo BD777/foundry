@@ -84,14 +84,29 @@ function tokenParts(usage: {
 /** The tokens of a process group's model requests, e.g. "12K in · 800 out". */
 export function stepUsageSummary(usage: StepUsage): string {
   const parts = tokenParts(usage);
-  const speed = formatOutputSpeed(usage.outputTokens, usage.generationMs ?? 0);
+  const speed = formatOutputSpeed(
+    usage.outputTokens,
+    usage.requestMs ?? 0,
+    usage.timingEstimated === true,
+  );
   if (speed) parts.push(speed);
   return parts.join(" · ");
 }
 
 /** What a group's token counts cover, for its tooltip. */
 export function stepUsageTitle(usage: StepUsage): string {
-  return i18n.t("conversation:usage.stepsTitle", { count: usage.requests });
+  const title = i18n.t("conversation:usage.stepsTitle", {
+    count: usage.requests,
+  });
+  const decodeSpeed =
+    usage.decodeEligible && usage.generationMs !== undefined
+      ? formatOutputSpeed(usage.outputTokens, usage.generationMs)
+      : undefined;
+  return decodeSpeed
+    ? `${title} ${i18n.t("conversation:usage.decodeSpeed", {
+        value: decodeSpeed,
+      })}`
+    : title;
 }
 
 /** A subagent's own work: Claude reports one token total for it. */

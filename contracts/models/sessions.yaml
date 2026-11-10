@@ -274,6 +274,19 @@ components:
           description: Wall time from the runtime taking the turn to its final result.
           type: integer
           format: int64
+        outcome:
+          description:
+            How the turn ended. Completed turns set it too, so statistics can include failed
+            and canceled turns without inferring their outcome from a separate event.
+          type: string
+          enum:
+            - completed
+            - failed
+            - canceled
+          x-go-type: string
+        model:
+          description: The model that served the turn; when several did, the last one.
+          type: string
         modelMs:
           description:
             Model work in the turn, from Claude's `duration_api_ms`; tool and other wall
@@ -1041,8 +1054,8 @@ components:
           x-go-type-skip-optional-pointer: false
         requestUsage:
           description:
-            "`requestUsage` is a model request's final tokens (Claude), reported when its stream
-            ends; the event itself is not shown."
+            "`requestUsage` is a model request's tokens, reported when Claude's stream ends or
+            from Codex's native token-usage update; the event itself is not shown."
           $ref: ./chats.yaml#/components/schemas/ModelRequestUsage
           x-go-type-skip-optional-pointer: false
         contextUsage:

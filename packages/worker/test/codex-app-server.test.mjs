@@ -40,6 +40,18 @@ if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:
 if(r.method==='thread/compact/start'){if(process.env.MODE==='overflow-compact-rejected')return send({id:r.id,error:{message:'compact refused'}});reply({});notify('turn/started',{turn:{id:'compact-1'}});notify('item/started',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});notify('item/completed',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});return notify('turn/completed',{turn:{id:'compact-1',status:process.env.MODE==='overflow-compact-fails'?'failed':'completed',...(process.env.MODE==='overflow-compact-fails'?{error:full}:{})}});}}
 if(r.method==='turn/start'&&process.env.MODE==='schema'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:JSON.stringify(r.params.outputSchema??null),phase:'final_answer'}});return notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});}
 if(r.method==='turn/start'&&process.env.MODE==='provider-check'&&!process.argv.includes('model_provider="foundry_x"'))return send({id:r.id,error:{message:'This chat uses foundry_x, but your current provider is openai.'}});
+if(r.method==='turn/start'&&process.env.MODE==='usage-multi'){notify('turn/started',{turn:{id:'turn-usage'}});reply({turn:{id:'turn-usage'}});const at=(ms,fn)=>setTimeout(fn,ms);
+at(40,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:10,cachedInputTokens:3,cacheWriteInputTokens:1,outputTokens:4,reasoningOutputTokens:1,totalTokens:14},total:{inputTokens:10,cachedInputTokens:3,cacheWriteInputTokens:1,outputTokens:4,reasoningOutputTokens:1,totalTokens:14}}}));
+at(90,()=>notify('item/completed',{turnId:'turn-usage',item:{id:'tool-1',type:'commandExecution',command:'one'}}));
+at(140,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:20,cachedInputTokens:6,cacheWriteInputTokens:1,outputTokens:6,reasoningOutputTokens:2,totalTokens:26},total:{inputTokens:30,cachedInputTokens:9,cacheWriteInputTokens:2,outputTokens:10,reasoningOutputTokens:3,totalTokens:40}}}));
+at(190,()=>notify('item/completed',{turnId:'turn-usage',item:{id:'tool-2',type:'commandExecution',command:'two'}}));
+at(240,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:30,cachedInputTokens:9,cacheWriteInputTokens:1,outputTokens:9,reasoningOutputTokens:3,totalTokens:39},total:{inputTokens:60,cachedInputTokens:18,cacheWriteInputTokens:3,outputTokens:19,reasoningOutputTokens:6,totalTokens:79}}}));
+at(280,()=>{notify('item/completed',{turnId:'turn-usage',item:{id:'answer',type:'agentMessage',text:'finished',phase:'final_answer'}});notify('turn/completed',{turn:{id:'turn-usage',status:'completed'}});});return;}
+if(r.method==='turn/start'&&process.env.MODE==='usage-late'){notify('turn/started',{turn:{id:'turn-late'}});reply({turn:{id:'turn-late'}});const at=(ms,fn)=>setTimeout(fn,ms);
+at(60,()=>notify('item/completed',{turnId:'turn-late',item:{id:'tool-late',type:'commandExecution',command:'slow'}}));
+at(150,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14},total:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14}}}));
+at(220,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:20,cachedInputTokens:6,outputTokens:6,totalTokens:26},total:{inputTokens:30,cachedInputTokens:9,outputTokens:10,totalTokens:40}}}));
+at(260,()=>{notify('item/completed',{turnId:'turn-late',item:{id:'answer',type:'agentMessage',text:'finished',phase:'final_answer'}});notify('turn/completed',{turn:{id:'turn-late',status:'completed'}});});return;}
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});setTimeout(()=>notify('turn/completed',{turn:{id:'turn-1',status:'completed'}}),50);return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
@@ -73,16 +85,82 @@ test("same native owner steers the exact turn, retaining phases and usage", asyn
     ),
   );
   assert.ok(seen.some((e) => e.item?.text === "changed"));
-  const completed = seen.at(-1);
-  assert.equal(completed.type, "turn.completed");
-  assert.deepEqual(completed.usage, {
+  assert.equal(seen.at(-1).type, "turn.completed");
+  assert.deepEqual(seen.at(-1).usage, {
     input_tokens: 42,
     cached_input_tokens: 2,
+    cache_write_input_tokens: 0,
     output_tokens: 8,
+    reasoning_output_tokens: 0,
   });
-  assert.equal(completed.timing?.timingEstimated, true);
-  assert.ok(completed.timing?.ttftMs >= 0);
+  assert.equal(seen.at(-1).timing.timingEstimated, true);
   await assert.rejects(thread.steer("late"), /not accepting/);
+});
+
+test("a turn sums every token usage update and emits three request records", async (t) => {
+  const thread = fixture(t, "usage-multi");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(
+    requests.map((request) => request.requestId),
+    ["turn-usage:1", "turn-usage:2", "turn-usage:3"],
+  );
+  assert.deepEqual(
+    requests.map((request) => [
+      request.inputTokens,
+      request.cacheReadTokens,
+      request.cacheWriteTokens,
+      request.outputTokens,
+    ]),
+    [
+      [10, 3, 1, 4],
+      [20, 6, 1, 6],
+      [30, 9, 1, 9],
+    ],
+  );
+  for (const request of requests) {
+    assert.equal(request.timingEstimated, true);
+    assert.equal(request.firstTokenMs, undefined);
+    assert.equal(request.generationMs, undefined);
+    assert.ok(request.requestMs >= 20 && request.requestMs < 150);
+  }
+  assert.equal(seen.at(-1).type, "turn.completed");
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 60,
+    cached_input_tokens: 18,
+    cache_write_input_tokens: 3,
+    output_tokens: 19,
+    reasoning_output_tokens: 6,
+  });
+});
+
+test("a delayed first token usage update keeps request time and turn totals", async (t) => {
+  const thread = fixture(t, "usage-late");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].requestMs >= 50);
+  assert.ok(requests[1].requestMs >= 20);
+  assert.equal(requests[0].inputTokens, 10);
+  assert.equal(requests[1].inputTokens, 20);
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 30,
+    cached_input_tokens: 9,
+    cache_write_input_tokens: 0,
+    output_tokens: 10,
+    reasoning_output_tokens: 0,
+  });
 });
 test("an output schema reaches Codex's turn/start as its native structured output", async (t) => {
   const schema = { type: "object", required: ["verdict"] };

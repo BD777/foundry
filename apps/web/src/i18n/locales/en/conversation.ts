@@ -217,14 +217,15 @@ export const conversation = {
       "Tokens of the {{count}} model request behind these steps. A subagent's work counts on the subagent.",
     stepsTitle_other:
       "Tokens of the {{count}} model requests behind these steps. A subagent's work counts on the subagent.",
+    decodeSpeed: "Strict decode speed: {{value}}",
     turnScope:
-      "The whole turn, as the agent reported it. Steps show the tokens of their own model requests; Codex reports tokens only per turn. Output speed uses model time only, excluding tools and other work.",
+      "The whole turn, as the agent reported it. Steps show the tokens of their own model requests. ≈ marks a Codex speed estimated from its token-usage updates. Output speed uses model time including time to first token, excluding tools and other work.",
     details: "Turn usage",
     duration: "Duration",
     modelTime: "Model time",
     toolsAndOther: "Tools & other",
     timeToFirstToken: "Time to first token",
-    outputSpeed: "Output speed",
+    outputSpeed: "Output speed (including TTFT)",
     modelRequests: "Model requests",
     input: "Input tokens",
     cacheRead: "Cache hits",

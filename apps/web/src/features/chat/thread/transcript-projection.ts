@@ -10,8 +10,10 @@ import type { ChatViewMessage } from "../chat-types";
 import { i18n } from "../../../i18n";
 
 type ModelRequestUsageWithTiming = ModelRequestUsage & {
+  requestMs?: number;
   firstTokenMs?: number;
   generationMs?: number;
+  timingEstimated?: boolean;
 };
 
 export type TranscriptEntry = TranscriptMessage &
@@ -63,8 +65,12 @@ export function laterRequestUsage(
 ): ModelRequestUsageWithTiming {
   return {
     ...later,
+    requestMs: later.requestMs ?? earlier.requestMs,
     firstTokenMs: later.firstTokenMs ?? earlier.firstTokenMs,
     generationMs: later.generationMs ?? earlier.generationMs,
+    ...(later.timingEstimated || earlier.timingEstimated
+      ? { timingEstimated: true }
+      : {}),
     outputTokens: Math.max(earlier.outputTokens, later.outputTokens),
   };
 }
@@ -97,8 +103,12 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     cacheReadTokens: 0,
     outputTokens: 0,
   };
+  let requestMs = 0;
+  let everyRequestHasRequestTime = true;
   let generationMs = 0;
   let everyRequestHasGenerationTime = true;
+  let everyRequestLooksStreamed = true;
+  let timingEstimated = false;
   for (const usage of requests.values()) {
     total.inputTokens += usage.inputTokens;
     total.cacheReadTokens += usage.cacheReadTokens;
@@ -112,8 +122,37 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     } else {
       generationMs += usage.generationMs;
     }
+    if (
+      usage.requestMs === undefined ||
+      !Number.isFinite(usage.requestMs) ||
+      usage.requestMs < 0
+    ) {
+      everyRequestHasRequestTime = false;
+    } else {
+      requestMs += usage.requestMs;
+    }
+    const firstTokenMs =
+      usage.firstTokenMs !== undefined &&
+      Number.isFinite(usage.firstTokenMs) &&
+      usage.firstTokenMs >= 0
+        ? usage.firstTokenMs
+        : undefined;
+    const generationLooksReal =
+      usage.generationMs !== undefined &&
+      Number.isFinite(usage.generationMs) &&
+      usage.generationMs >= usage.outputTokens * 2;
+    if (
+      !(firstTokenMs !== undefined && firstTokenMs >= 50) &&
+      !generationLooksReal
+    )
+      everyRequestLooksStreamed = false;
+    if (usage.timingEstimated === true) timingEstimated = true;
   }
+  if (everyRequestHasRequestTime) total.requestMs = requestMs;
   if (everyRequestHasGenerationTime) total.generationMs = generationMs;
+  if (everyRequestHasGenerationTime && everyRequestLooksStreamed)
+    total.decodeEligible = true;
+  if (timingEstimated) total.timingEstimated = true;
   return total;
 }
 

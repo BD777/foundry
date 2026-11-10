@@ -59,6 +59,7 @@ import {
   claudeRuntimeHasLiveWork,
   closeActiveClaudeRuntime,
   logClaudeRuntime,
+  reportClaudeTurnUsage,
 } from "./active-runtimes.js";
 
 /**
@@ -278,11 +279,15 @@ async function finishClaudeContinuation(
     ? Date.parse(fire.startedAt)
     : (continuation?.startedAt ?? Date.now());
   const usage = result
-    ? claudeResultUsage(result, runtime.context?.costOf(result))
+    ? claudeResultUsage(
+        result,
+        runtime.context?.costOf(result),
+        runtime.context?.currentModel,
+      )
     : undefined;
   const completedAt = new Date().toISOString();
   const metadata = {
-    ...turnUsageMetadata(usage, startedAt),
+    ...turnUsageMetadata(usage, startedAt, error ? "failed" : "completed"),
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   };
   const answer = error ? error.message : response;
@@ -579,8 +584,15 @@ async function routeActiveClaudeMessage(
       { requestUsage },
     );
   }
+  const resultUsage = claudeResultUsage(
+    message,
+    runtime.context?.costOf(message),
+    runtime.context?.currentModel,
+  );
+  if (resultUsage) turn.usage = addTurnUsage(turn.usage, resultUsage);
   const resultError = claudeAgentResultError(message);
   if (resultError) {
+    await reportClaudeTurnUsage(turn, "failed");
     closeActiveClaudeRuntime(runtime, resultError);
     return;
   }
@@ -608,11 +620,6 @@ async function routeActiveClaudeMessage(
   if (claudeTaskNotificationBookkeeping(message)) {
     return;
   }
-  const resultUsage = claudeResultUsage(
-    message,
-    runtime.context?.costOf(message),
-  );
-  if (resultUsage) turn.usage = addTurnUsage(turn.usage, resultUsage);
   if (
     message &&
     typeof message === "object" &&
@@ -645,7 +652,7 @@ async function routeActiveClaudeMessage(
       turn.resultPath,
       undefined,
       {
-        ...turnUsageMetadata(turn.usage, turn.startedAt),
+        ...turnUsageMetadata(turn.usage, turn.startedAt, "completed"),
         ...(fileReferences.length > 0 ? { fileReferences } : {}),
       },
     );

@@ -35,6 +35,7 @@ import {
 import {
   claudeRuntimeHasLiveWork,
   closeActiveClaudeRuntime,
+  reportClaudeTurnUsage,
 } from "./active-runtimes.js";
 import {
   claudeTurnOperationBounds,
@@ -198,6 +199,7 @@ async function cancelClaudeTurn(
     );
   }
   const answered = turn.deliveredResponse !== undefined;
+  await reportClaudeTurnUsage(turn, "canceled");
   closeActiveClaudeRuntime(runtime, new AgentSessionCanceledError());
   return { answered };
 }

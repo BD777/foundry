@@ -114,7 +114,7 @@ interface components {
       status?: components["schemas"]["TranscriptMessageStatus"];
       /** @description `attachments` travel with a user message. */
       attachments?: components["schemas"]["ChatAttachment"][];
-      /** @description `requestUsage` is the tokens of the model request that produced this step (Claude). */
+      /** @description `requestUsage` is the tokens of the model request that produced this step. Claude reports them when the request stream ends; Codex estimates them from native token-usage updates. */
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats). */
       turnUsage?: components["schemas"]["AgentTurnUsage"];
@@ -149,6 +149,8 @@ interface components {
     /** @description ModelRequestUsage is one model request's tokens; steps of one request share its id and its last report counts. */
     ModelRequestUsage: {
       requestId: string;
+      /** @description The model that served the request. Claude reports it in `message_start`; Codex reports it in the thread's `turn_context`. */
+      model?: string;
       /**
        * Format: int64
        * @description Prompt tokens, cache reads and writes included.
@@ -172,9 +174,11 @@ interface components {
       generationMs?: number;
       /**
        * Format: int64
-       * @description Milliseconds from the request's start to the Worker receiving `message_stop`. The first request starts when its turn starts; a later request starts when the SDK delivers the user message carrying the `tool_result` blocks that request sends. It includes time to first token and all stream delivery, so it remains meaningful when a relay buffers SSE; unlike `generationMs`, it is not a strict decode-speed interval.
+       * @description Milliseconds from the request's start to its completion report. Claude starts with the turn, then with each tool result, and ends at `message_stop`. Codex starts with the turn, then at the previous tool completion or token-usage update, and ends at the next token-usage update. It includes time to first token and stream delivery, so unlike `generationMs` it is not a strict decode interval.
        */
       requestMs?: number;
+      /** @description Whether request timing was reconstructed rather than observed from model stream frames. Codex estimates `requestMs` from the native token usage notification; it has no first-token or generation timing. */
+      timingEstimated?: boolean;
     };
     /** @description ConnectorRequirement is a condition a device must meet for the connector to work there ("tcp_reachable": host:port opens within a few seconds). */
     ConnectorRequirement: {
@@ -2353,6 +2357,13 @@ interface components {
        */
       durationMs: number;
       /**
+       * @description How the turn ended. Completed turns set it too, so statistics can include failed and canceled turns without inferring their outcome from a separate event.
+       * @enum {string}
+       */
+      outcome?: "completed" | "failed" | "canceled";
+      /** @description The model that served the turn; when several did, the last one. */
+      model?: string;
+      /**
        * Format: int64
        * @description Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
        */
@@ -2710,7 +2721,7 @@ interface components {
       turnUsage?: components["schemas"]["AgentTurnUsage"];
       /** @description `subagentUsage` is what a Claude subagent has used so far, on its progress and completion events. */
       subagentUsage?: components["schemas"]["SubagentUsage"];
-      /** @description `requestUsage` is a model request's final tokens (Claude), reported when its stream ends; the event itself is not shown. */
+      /** @description `requestUsage` is a model request's tokens, reported when Claude's stream ends or from Codex's native token-usage update; the event itself is not shown. */
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts. */
       contextUsage?: components["schemas"]["AgentContextUsage"];

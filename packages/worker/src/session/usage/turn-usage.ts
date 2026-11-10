@@ -3,10 +3,21 @@ import type {
   ModelRequestUsage,
   SubagentUsage,
 } from "@bd777/foundry-protocol";
+import {
+  processLabels,
+  withoutOneMillionSuffix,
+} from "@bd777/foundry-protocol";
 import { count, optionalRecord } from "../../platform/json-values.js";
 
 /** Token and model timing usage without the turn's wall duration. */
 export type TurnTokenUsage = Omit<AgentTurnUsage, "durationMs">;
+export type TurnOutcome = NonNullable<AgentTurnUsage["outcome"]>;
+
+function modelName(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim()
+    ? withoutOneMillionSuffix(value.trim())
+    : undefined;
+}
 
 function milliseconds(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -36,6 +47,7 @@ function carriesToolResult(message: unknown): boolean {
 export function claudeResultUsage(
   message: unknown,
   costUsd?: number,
+  model?: string,
 ): TurnTokenUsage | undefined {
   const result = optionalRecord(message);
   if (result?.type !== "result") return undefined;
@@ -46,11 +58,13 @@ export function claudeResultUsage(
   const modelMs = milliseconds(result.duration_api_ms);
   const ttftMs =
     milliseconds(result.ttft_stream_ms) ?? milliseconds(result.ttft_ms);
+  const servedModel = modelName(model ?? result.model);
   return {
     inputTokens: count(usage.input_tokens) + cacheReadTokens + cacheWriteTokens,
     cacheReadTokens,
     cacheWriteTokens,
     outputTokens: count(usage.output_tokens),
+    ...(servedModel ? { model: servedModel } : {}),
     ...(count(result.num_turns) > 0
       ? { modelRequests: count(result.num_turns) }
       : {}),
@@ -65,18 +79,23 @@ export function claudeResultUsage(
  * counts cached tokens inside `input_tokens` and reasoning inside
  * `output_tokens`.
  */
-export function codexTurnUsage(event: unknown): TurnTokenUsage | undefined {
+export function codexTurnUsage(
+  event: unknown,
+  model?: string,
+): TurnTokenUsage | undefined {
   const turn = optionalRecord(event);
   const usage = optionalRecord(turn?.usage);
   if (!usage) return undefined;
   const timing = optionalRecord(turn?.timing);
   const modelMs = milliseconds(timing?.modelMs);
   const ttftMs = milliseconds(timing?.ttftMs);
+  const servedModel = modelName(model ?? turn?.model);
   return {
     inputTokens: count(usage.input_tokens),
     cacheReadTokens: count(usage.cached_input_tokens),
     cacheWriteTokens: count(usage.cache_write_input_tokens),
     outputTokens: count(usage.output_tokens),
+    ...(servedModel ? { model: servedModel } : {}),
     reasoningTokens: count(usage.reasoning_output_tokens),
     ...(modelMs !== undefined ? { modelMs } : {}),
     ...(ttftMs !== undefined ? { ttftMs } : {}),
@@ -118,21 +137,67 @@ export function addTurnUsage(
     ...(total.costUsd !== undefined && next.costUsd !== undefined
       ? { costUsd: total.costUsd + next.costUsd }
       : {}),
+    ...((next.model ?? total.model)
+      ? { model: next.model ?? total.model }
+      : {}),
   };
 }
 
 export function turnUsageMetadata(
   usage: TurnTokenUsage | undefined,
   startedAt: number,
+  outcome: TurnOutcome,
 ): { turnUsage: AgentTurnUsage } | undefined {
   return usage
     ? {
         turnUsage: {
           durationMs: Math.max(0, Date.now() - startedAt),
           ...usage,
+          outcome,
         },
       }
     : undefined;
+}
+
+/**
+ * A failed or canceled run still records what it spent. The hidden process
+ * label keeps this as statistics input; the existing failure report remains
+ * the turn's terminal event.
+ */
+export async function emitTurnUsage(
+  emit: (
+    label: string,
+    detail: string,
+    level?: "info" | "warning" | "error",
+    metadata?: { turnUsage: AgentTurnUsage },
+  ) => Promise<void>,
+  usage: TurnTokenUsage | undefined,
+  startedAt: number,
+  outcome: TurnOutcome,
+): Promise<void> {
+  const metadata = turnUsageMetadata(usage, startedAt, outcome);
+  if (!metadata) return;
+  await emit(
+    processLabels.modelRequestUsage,
+    usage?.model ?? "",
+    undefined,
+    metadata,
+  ).catch(() => undefined);
+}
+
+/** A streamed Claude request's usage when a turn ends before a result. */
+export function requestTurnUsage(request: ModelRequestUsage): TurnTokenUsage {
+  return {
+    inputTokens: request.inputTokens,
+    cacheReadTokens: request.cacheReadTokens,
+    cacheWriteTokens: request.cacheWriteTokens,
+    outputTokens: request.outputTokens,
+    ...(request.model ? { model: request.model } : {}),
+    modelRequests: 1,
+    ...(request.firstTokenMs !== undefined
+      ? { ttftMs: request.firstTokenMs }
+      : {}),
+  };
 }
 
 /**
@@ -142,11 +207,14 @@ export function turnUsageMetadata(
 function requestUsageOf(
   requestId: string,
   usage: Record<string, unknown>,
+  model?: string,
 ): ModelRequestUsage {
   const cacheReadTokens = count(usage.cache_read_input_tokens);
   const cacheWriteTokens = count(usage.cache_creation_input_tokens);
+  const servedModel = modelName(model);
   return {
     requestId,
+    ...(servedModel ? { model: servedModel } : {}),
     inputTokens: count(usage.input_tokens) + cacheReadTokens + cacheWriteTokens,
     cacheReadTokens,
     cacheWriteTokens,
@@ -172,6 +240,9 @@ export function mergeRequestUsage(
   return {
     ...left,
     requestId: left.requestId,
+    ...((left.model ?? right.model)
+      ? { model: left.model ?? right.model }
+      : {}),
     inputTokens: Math.max(left.inputTokens, right.inputTokens),
     cacheReadTokens: Math.max(left.cacheReadTokens, right.cacheReadTokens),
     cacheWriteTokens: Math.max(left.cacheWriteTokens, right.cacheWriteTokens),
@@ -231,7 +302,7 @@ export function claudeRequestUsage(
   const usage = optionalRecord(inner?.usage);
   const requestId = typeof inner?.id === "string" ? inner.id : "";
   if (!usage || !requestId) return undefined;
-  const value = requestUsageOf(requestId, usage);
+  const value = requestUsageOf(requestId, usage, modelName(inner?.model));
   return hasRequestUsage(value) ? value : undefined;
 }
 
@@ -274,7 +345,11 @@ export class ClaudeRequestUsageTracker {
       const started = optionalRecord(event.message);
       const requestId = typeof started?.id === "string" ? started.id : "";
       this.current = requestId
-        ? requestUsageOf(requestId, optionalRecord(started?.usage) ?? {})
+        ? requestUsageOf(
+            requestId,
+            optionalRecord(started?.usage) ?? {},
+            modelName(started?.model),
+          )
         : undefined;
       this.reported = false;
       this.startedAt = this.current ? this.now() : undefined;
