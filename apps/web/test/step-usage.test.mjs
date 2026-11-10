@@ -56,8 +56,10 @@ const { projectTranscript, stepUsage } =
   await import("../src/features/chat/thread/transcript-projection.ts");
 const { sessionTranscriptEntries, subagentTranscriptEntries } =
   await import("../src/features/chat/thread/transcript-adapters.ts");
-const { stepUsageSummary, subagentUsageSummary, turnUsageSummary } =
+const { stepUsageSummary, subagentUsageSummary, TurnUsage, turnUsageSummary } =
   await import("../src/components/conversation/turn-usage.tsx");
+const { ProcessDisclosure } =
+  await import("../src/components/conversation/process-disclosure.tsx");
 const { ProcessElapsed } =
   await import("../src/components/conversation/process-elapsed.tsx");
 const { i18n } = await import("../src/i18n/index.ts");
@@ -66,12 +68,18 @@ const { chatSessionStatus } =
 const { contextLevel, contextSummary } =
   await import("../src/features/chat/context/chat-session-status.tsx");
 
-const request = (requestId, outputTokens, inputTokens = 1000) => ({
+const request = (
+  requestId,
+  outputTokens,
+  inputTokens = 1000,
+  generationMs,
+) => ({
   requestId,
   inputTokens,
   cacheReadTokens: 900,
   cacheWriteTokens: 0,
   outputTokens,
+  ...(generationMs === undefined ? {} : { generationMs }),
 });
 
 test("a process group counts each model request once, at its last report", async () => {
@@ -115,6 +123,151 @@ test("a process group counts each model request once, at its last report", async
   assert.equal(answer.stepUsage, undefined);
   // Codex steps carry no request usage: the group shows its duration only.
   assert.equal(stepUsage([{ id: "x", kind: "tool", text: "ls" }]), undefined);
+});
+
+test("a process group sums request generation time for its output speed", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 40, 1000, 1000),
+    },
+    {
+      id: "b",
+      kind: "tool",
+      requestUsage: request("r1", 40, 1000, 1000),
+    },
+    {
+      id: "c",
+      kind: "tool",
+      requestUsage: request("r2", 60, 1000, 1000),
+    },
+  ]);
+  assert.equal(usage.generationMs, 2000);
+  assert.equal(
+    stepUsageSummary(usage),
+    "2K in (90% cached) · 100 out · 50 tok/s",
+  );
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProcessDisclosure, {
+          durationMs: 3000,
+          items: [{ title: "Used tool", detail: "Bash" }],
+          stepUsage: usage,
+          text: "done",
+          title: "Processed",
+        }),
+      ),
+    );
+    assert.match(container.textContent, /50 tok\/s/);
+    await act(async () =>
+      root.render(
+        createElement(ProcessDisclosure, {
+          durationMs: 3000,
+          items: [{ title: "Used tool", detail: "Bash" }],
+          stepUsage: { ...usage, generationMs: undefined },
+          text: "done",
+          title: "Processed",
+        }),
+      ),
+    );
+    assert.doesNotMatch(container.textContent, /tok\/s/);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a process group hides speed when any request lacks generation time", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 50, 1000, 1000),
+    },
+    {
+      id: "b",
+      kind: "tool",
+      requestUsage: request("r2", 50),
+    },
+  ]);
+  assert.equal(usage.generationMs, undefined);
+  assert.doesNotMatch(stepUsageSummary(usage), /tok\/s/);
+});
+
+test("the turn chip and tooltip show model timing and output speed", async () => {
+  await i18n.changeLanguage("en");
+  const usage = {
+    durationMs: 12_000,
+    modelMs: 5000,
+    ttftMs: 850,
+    inputTokens: 5000,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 250,
+    modelRequests: 2,
+  };
+  assert.match(turnUsageSummary(usage), /250 out · 50 tok\/s$/);
+  assert.doesNotMatch(
+    turnUsageSummary({ ...usage, modelMs: undefined }),
+    /tok\/s/,
+  );
+  assert.doesNotMatch(turnUsageSummary({ ...usage, modelMs: 199 }), /tok\/s/);
+  assert.doesNotMatch(
+    turnUsageSummary({ ...usage, outputTokens: 19 }),
+    /tok\/s/,
+  );
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(TurnUsage, { usage })));
+    const trigger = container.querySelector("button");
+    assert.match(trigger.textContent, /50 tok\/s/);
+    await act(async () => trigger.click());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    const rows = Object.fromEntries(
+      [...document.querySelectorAll('[role="dialog"] dt')].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+    assert.equal(rows.Duration, "12s");
+    assert.equal(rows["Model time"], "5s");
+    assert.equal(rows["Tools & other"], "7s");
+    assert.equal(rows["Time to first token"], "850ms");
+    assert.equal(rows["Output speed"], "50 tok/s");
+
+    await act(async () =>
+      root.render(
+        createElement(TurnUsage, {
+          usage: { ...usage, timingEstimated: true },
+        }),
+      ),
+    );
+    const estimatedRows = Object.fromEntries(
+      [...document.querySelectorAll('[role="dialog"] dt')].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+    assert.equal(estimatedRows["Model time"], "≈5s");
+    assert.equal(estimatedRows["Tools & other"], "≈7s");
+    assert.equal(estimatedRows["Time to first token"], "≈850ms");
+    assert.equal(estimatedRows["Output speed"], "≈50 tok/s");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.replaceChildren();
+  }
 });
 
 test("subagent steps keep their request usage and the subagent its total", async () => {

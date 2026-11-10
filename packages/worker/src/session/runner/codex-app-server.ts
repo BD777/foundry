@@ -33,6 +33,7 @@ import {
 import { CodexQuestionGate, codexRequestResolved } from "./codex-questions.js";
 import { sdkMessageText, sdkResponseMessage } from "./sdk-messages.js";
 import { codexTurnUsage, turnUsageMetadata } from "../usage/turn-usage.js";
+import { CodexTimingTracker } from "../usage/codex-timing.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
 import { errorMessage } from "../../platform/utils.js";
 import {
@@ -669,6 +670,11 @@ export class CodexAppServerThread implements CodexSDKThread {
       this.starting = false;
     }
     const client = connection.client;
+    const turnStartedAt =
+      typeof options?.turnStartedAt === "number"
+        ? options.turnStartedAt
+        : undefined;
+    const timing = new CodexTimingTracker({ startedAt: turnStartedAt });
     const active: CodexFoundryTurn = {
       client,
       turnId: "",
@@ -746,6 +752,7 @@ export class CodexAppServerThread implements CodexSDKThread {
       if (method === "turn/started") active.turnId = params.turn.id;
       if (params.turnId && active.turnId && params.turnId !== active.turnId)
         return;
+      timing.observe(method, params);
       if (
         method === "thread/compacted" ||
         (method === "item/completed" &&
@@ -859,7 +866,11 @@ export class CodexAppServerThread implements CodexSDKThread {
         active.completed = params.turn.status === "completed";
         queue.push(
           params.turn.status === "completed"
-            ? { type: "turn.completed", usage }
+            ? {
+                type: "turn.completed",
+                usage,
+                timing: timing.finish(params.turn),
+              }
             : {
                 type: "turn.failed",
                 error: {

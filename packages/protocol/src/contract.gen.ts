@@ -160,6 +160,21 @@ interface components {
       cacheWriteTokens: number;
       /** Format: int64 */
       outputTokens: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the Worker receiving the request's `message_start` to receiving its first `content_block_delta` of any kind (text, thinking or tool input). This excludes request setup before `message_start`.
+       */
+      firstTokenMs?: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the Worker receiving the first `content_block_delta` to receiving `message_stop`; it excludes time to first token. Clients compute output tokens per second from `outputTokens` and this duration.
+       */
+      generationMs?: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the request's start to the Worker receiving `message_stop`. The first request starts when its turn starts; a later request starts when the SDK delivers the user message carrying the `tool_result` blocks that request sends. It includes time to first token and all stream delivery, so it remains meaningful when a relay buffers SSE; unlike `generationMs`, it is not a strict decode-speed interval.
+       */
+      requestMs?: number;
     };
     /** @description ConnectorRequirement is a condition a device must meet for the connector to work there ("tcp_reachable": host:port opens within a few seconds). */
     ConnectorRequirement: {
@@ -2337,6 +2352,18 @@ interface components {
        * @description Wall time from the runtime taking the turn to its final result.
        */
       durationMs: number;
+      /**
+       * Format: int64
+       * @description Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
+       */
+      modelMs?: number;
+      /**
+       * Format: int64
+       * @description Time to the first model output token in the turn. Claude values prefer `ttft_stream_ms`, the first streamed content frame when partial messages are enabled, and fall back to `ttft_ms`, the first complete assistant message; Codex values are estimates and set `timingEstimated`.
+       */
+      ttftMs?: number;
+      /** @description Whether `modelMs` and `ttftMs` were reconstructed from wall and tool-item timing rather than reported by the provider. Codex sets this to true; Claude reports the values directly. */
+      timingEstimated?: boolean;
       /** Format: int64 */
       inputTokens: number;
       /** Format: int64 */

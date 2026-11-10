@@ -379,6 +379,8 @@ export interface StepUsage {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  /** Generation time across the requests; absent unless every request has it. */
+  generationMs?: number;
 }
 
 /** Localized failure presentation; no classification rules in the renderer. */

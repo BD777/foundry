@@ -73,10 +73,15 @@ test("same native owner steers the exact turn, retaining phases and usage", asyn
     ),
   );
   assert.ok(seen.some((e) => e.item?.text === "changed"));
-  assert.deepEqual(seen.at(-1), {
-    type: "turn.completed",
-    usage: { input_tokens: 42, cached_input_tokens: 2, output_tokens: 8 },
+  const completed = seen.at(-1);
+  assert.equal(completed.type, "turn.completed");
+  assert.deepEqual(completed.usage, {
+    input_tokens: 42,
+    cached_input_tokens: 2,
+    output_tokens: 8,
   });
+  assert.equal(completed.timing?.timingEstimated, true);
+  assert.ok(completed.timing?.ttftMs >= 0);
   await assert.rejects(thread.steer("late"), /not accepting/);
 });
 test("an output schema reaches Codex's turn/start as its native structured output", async (t) => {

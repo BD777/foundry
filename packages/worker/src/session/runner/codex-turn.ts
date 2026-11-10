@@ -136,6 +136,7 @@ async function runCodexTurn(
     });
     const state: CodexTurnState = {
       inputId: session.input?.id,
+      startedAt,
       emit,
       reportNativeSessionId,
       files,

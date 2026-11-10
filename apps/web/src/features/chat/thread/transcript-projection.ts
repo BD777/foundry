@@ -9,6 +9,11 @@ import type {
 import type { ChatViewMessage } from "../chat-types";
 import { i18n } from "../../../i18n";
 
+type ModelRequestUsageWithTiming = ModelRequestUsage & {
+  firstTokenMs?: number;
+  generationMs?: number;
+};
+
 export type TranscriptEntry = TranscriptMessage &
   Pick<
     ChatViewMessage,
@@ -53,11 +58,13 @@ const processKinds = new Set<TranscriptMessage["kind"]>([
  * later prompt counts replace the earlier ones; output only grows.
  */
 export function laterRequestUsage(
-  earlier: ModelRequestUsage,
-  later: ModelRequestUsage,
-): ModelRequestUsage {
+  earlier: ModelRequestUsageWithTiming,
+  later: ModelRequestUsageWithTiming,
+): ModelRequestUsageWithTiming {
   return {
     ...later,
+    firstTokenMs: later.firstTokenMs ?? earlier.firstTokenMs,
+    generationMs: later.generationMs ?? earlier.generationMs,
     outputTokens: Math.max(earlier.outputTokens, later.outputTokens),
   };
 }
@@ -68,11 +75,15 @@ export function laterRequestUsage(
  * report.
  */
 export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
-  const requests = new Map<string, ModelRequestUsage>();
-  for (const { requestUsage: usage } of entries) {
+  const requests = new Map<string, ModelRequestUsageWithTiming>();
+  for (const { requestUsage } of entries) {
     // A report of only zeros (as some relays send) says nothing.
-    if (!usage || (usage.inputTokens === 0 && usage.outputTokens === 0))
+    if (
+      !requestUsage ||
+      (requestUsage.inputTokens === 0 && requestUsage.outputTokens === 0)
+    )
       continue;
+    const usage = requestUsage as ModelRequestUsageWithTiming;
     const seen = requests.get(usage.requestId);
     requests.set(
       usage.requestId,
@@ -86,11 +97,23 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     cacheReadTokens: 0,
     outputTokens: 0,
   };
+  let generationMs = 0;
+  let everyRequestHasGenerationTime = true;
   for (const usage of requests.values()) {
     total.inputTokens += usage.inputTokens;
     total.cacheReadTokens += usage.cacheReadTokens;
     total.outputTokens += usage.outputTokens;
+    if (
+      usage.generationMs === undefined ||
+      !Number.isFinite(usage.generationMs) ||
+      usage.generationMs < 0
+    ) {
+      everyRequestHasGenerationTime = false;
+    } else {
+      generationMs += usage.generationMs;
+    }
   }
+  if (everyRequestHasGenerationTime) total.generationMs = generationMs;
   return total;
 }
 

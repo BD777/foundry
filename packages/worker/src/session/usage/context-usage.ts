@@ -82,6 +82,16 @@ export class ClaudeContextTracker {
         this.model =
           modelName(text(optionalRecord(event.message)?.model)) ?? this.model;
     }
+    if (value.type === "result") {
+      this.observeCost(value);
+      const usage = optionalRecord(value.modelUsage);
+      for (const [model, entry] of Object.entries(usage ?? {})) {
+        const window = count(optionalRecord(entry)?.contextWindow);
+        // A model run as `<model>[1m]` is reported under that name.
+        if (window)
+          claudeContextWindows.set(withoutOneMillionSuffix(model), window);
+      }
+    }
     const request = this.requests.observe(message);
     if (request)
       return this.report({
@@ -103,14 +113,6 @@ export class ClaudeContextTracker {
       });
     }
     if (value.type !== "result") return undefined;
-    this.observeCost(value);
-    const usage = optionalRecord(value.modelUsage);
-    for (const [model, entry] of Object.entries(usage ?? {})) {
-      const window = count(optionalRecord(entry)?.contextWindow);
-      // A model run as `<model>[1m]` is reported under that name.
-      if (window)
-        claudeContextWindows.set(withoutOneMillionSuffix(model), window);
-    }
     // The first result tells the window of a request already reported.
     const last = this.reported;
     if (!last || last.compaction || last.inputTokens === undefined)

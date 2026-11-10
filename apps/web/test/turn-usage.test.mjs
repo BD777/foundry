@@ -10,6 +10,12 @@ const { chatMessages, chatMessagesForThread } =
   await import("../src/features/chat/thread/chat-model.ts");
 const { formatDuration, turnUsageSummary } =
   await import("../src/components/conversation/turn-usage.tsx");
+const {
+  formatOutputSpeed,
+  formatTimeToFirstToken,
+  formatUsageDuration,
+  outputTokensPerSecond,
+} = await import("../src/lib/format.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 const usage = {
@@ -102,6 +108,8 @@ test("durations and token counts read naturally in both languages", async () => 
   assert.equal(formatDuration(34_200), "34s");
   assert.equal(formatDuration(72_000), "1m 12s");
   assert.equal(formatDuration(3_780_000), "1h 3m");
+  assert.equal(formatUsageDuration(0), "0s");
+  assert.equal(formatUsageDuration(400), "1s");
   assert.equal(
     turnUsageSummary(usage),
     "34s · 57.2K in (94% cached) · 1.9K out",
@@ -117,6 +125,53 @@ test("durations and token counts read naturally in both languages", async () => 
     "34 秒 · 输入 5.7万（缓存命中 94%） · 输出 1886",
   );
   await i18n.changeLanguage("en");
+});
+
+test("output speed uses generation time and hides noisy samples", async () => {
+  await i18n.changeLanguage("en");
+  assert.equal(outputTokensPerSecond(185, 4000), 46.25);
+  assert.equal(formatOutputSpeed(185, 4000), "46 tok/s");
+  assert.equal(formatOutputSpeed(85, 10_000), "8.5 tok/s");
+  assert.equal(formatOutputSpeed(100, 10_000), "10 tok/s");
+  assert.equal(formatOutputSpeed(249, 25_000), "10 tok/s");
+  assert.equal(formatOutputSpeed(85, 4000, true), "≈21 tok/s");
+  assert.equal(formatOutputSpeed(19, 4000), undefined);
+  assert.equal(formatOutputSpeed(85, 199), undefined);
+  assert.equal(formatOutputSpeed(85, 0), undefined);
+});
+
+test("time to first token switches from milliseconds to decimal seconds", async () => {
+  await i18n.changeLanguage("en");
+  assert.equal(formatTimeToFirstToken(0), "0ms");
+  assert.equal(formatTimeToFirstToken(850), "850ms");
+  assert.equal(formatTimeToFirstToken(999), "999ms");
+  assert.equal(formatTimeToFirstToken(1000), "1.0s");
+  assert.equal(formatTimeToFirstToken(1249), "1.2s");
+  assert.equal(formatTimeToFirstToken(1250), "1.3s");
+  assert.equal(formatTimeToFirstToken(1250, true), "≈1.3s");
+  assert.equal(formatTimeToFirstToken(Number.NaN), undefined);
+});
+
+test("a turn's displayed output speed follows the same noise rules", async () => {
+  await i18n.changeLanguage("en");
+  const timed = { ...usage, modelMs: 4800, outputTokens: 200 };
+  assert.equal(
+    turnUsageSummary(timed),
+    "34s · 57.2K in (94% cached) · 200 out · 42 tok/s",
+  );
+  assert.doesNotMatch(
+    turnUsageSummary({ ...timed, modelMs: undefined }),
+    /tok\/s/,
+  );
+  assert.doesNotMatch(turnUsageSummary({ ...timed, modelMs: 199 }), /tok\/s/);
+  assert.doesNotMatch(
+    turnUsageSummary({ ...timed, outputTokens: 19 }),
+    /tok\/s/,
+  );
+  assert.match(
+    turnUsageSummary({ ...timed, timingEstimated: true }),
+    /≈42 tok\/s$/,
+  );
 });
 
 test("a sent message shows at once and leaves the previous turn settled", () => {

@@ -3,7 +3,12 @@ import type { StepUsage } from "./conversation-types";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { cn } from "../../lib/cn";
-import { formatDuration } from "../../lib/format";
+import {
+  formatDuration,
+  formatOutputSpeed,
+  formatTimeToFirstToken,
+  formatUsageDuration,
+} from "../../lib/format";
 import { Button } from "../ui/button";
 import { Popover } from "../ui/popover";
 
@@ -23,9 +28,28 @@ function formatShare(part: number, total: number): string {
   }).format(total > 0 ? part / total : 0);
 }
 
+type TurnUsageWithTiming = AgentTurnUsage & {
+  modelMs?: number;
+  ttftMs?: number;
+  /** Added to the contract for estimated Codex timings. */
+  timingEstimated?: boolean;
+};
+
+function timingIsEstimated(usage: TurnUsageWithTiming): boolean {
+  return usage.timingEstimated === true;
+}
+
 /** One line for the turn, with the full breakdown one click away. */
 export function turnUsageSummary(usage: AgentTurnUsage): string {
-  return [formatDuration(usage.durationMs), ...tokenParts(usage)].join(" · ");
+  const timed = usage as TurnUsageWithTiming;
+  const parts = tokenParts(usage);
+  const speed = formatOutputSpeed(
+    usage.outputTokens,
+    timed.modelMs ?? 0,
+    timingIsEstimated(timed),
+  );
+  if (speed) parts.push(speed);
+  return [formatDuration(usage.durationMs), ...parts].join(" · ");
 }
 
 /** Whether a report counts any tokens; relays sometimes report only zeros. */
@@ -59,7 +83,10 @@ function tokenParts(usage: {
 
 /** The tokens of a process group's model requests, e.g. "12K in · 800 out". */
 export function stepUsageSummary(usage: StepUsage): string {
-  return tokenParts(usage).join(" · ");
+  const parts = tokenParts(usage);
+  const speed = formatOutputSpeed(usage.outputTokens, usage.generationMs ?? 0);
+  if (speed) parts.push(speed);
+  return parts.join(" · ");
 }
 
 /** What a group's token counts cover, for its tooltip. */
@@ -85,13 +112,70 @@ export function subagentUsageSummary(usage: SubagentUsage): string {
 export function TurnUsage({ usage }: { usage: AgentTurnUsage }) {
   const { t } = useTranslation("conversation");
   const exact = new Intl.NumberFormat(i18n.language);
+  const timed = usage as TurnUsageWithTiming;
+  const estimated = timingIsEstimated(timed);
+  const approximate = (value: string) => (estimated ? `≈${value}` : value);
   const uncached = Math.max(
     0,
     usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens,
   );
   const share = formatShare(usage.cacheReadTokens, usage.inputTokens);
-  const rows: { label: string; value?: number | string; part?: boolean }[] = [
-    { label: t("usage.duration"), value: formatDuration(usage.durationMs) },
+  const modelMs =
+    timed.modelMs !== undefined &&
+    Number.isFinite(timed.modelMs) &&
+    timed.modelMs >= 0
+      ? timed.modelMs
+      : undefined;
+  const otherMs =
+    modelMs === undefined ? undefined : Math.max(0, usage.durationMs - modelMs);
+  const outputSpeed = formatOutputSpeed(
+    usage.outputTokens,
+    modelMs ?? 0,
+    estimated,
+  );
+  const rows: {
+    label: string;
+    value?: number | string;
+    part?: boolean;
+    always?: boolean;
+  }[] = [
+    {
+      label: t("usage.duration"),
+      value: formatDuration(usage.durationMs),
+      always: true,
+    },
+    ...(modelMs === undefined
+      ? []
+      : [
+          {
+            label: t("usage.modelTime"),
+            value: approximate(formatUsageDuration(modelMs)),
+            always: true,
+          },
+          {
+            label: t("usage.toolsAndOther"),
+            value: approximate(formatUsageDuration(otherMs ?? 0)),
+            always: true,
+          },
+        ]),
+    ...(timed.ttftMs === undefined
+      ? []
+      : [
+          {
+            label: t("usage.timeToFirstToken"),
+            value: formatTimeToFirstToken(timed.ttftMs, estimated),
+            always: true,
+          },
+        ]),
+    ...(outputSpeed === undefined
+      ? []
+      : [
+          {
+            label: t("usage.outputSpeed"),
+            value: outputSpeed,
+            always: true,
+          },
+        ]),
     { label: t("usage.modelRequests"), value: usage.modelRequests },
     { label: t("usage.input"), value: usage.inputTokens },
     {
@@ -128,8 +212,7 @@ export function TurnUsage({ usage }: { usage: AgentTurnUsage }) {
         {rows
           .filter(
             (row) =>
-              row.value !== undefined &&
-              (countsTokens(usage) || row === rows[0] || row === rows[1]),
+              row.value !== undefined && (countsTokens(usage) || row.always),
           )
           .map(({ label, value, part }) => (
             <div

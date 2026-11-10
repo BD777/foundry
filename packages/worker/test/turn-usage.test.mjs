@@ -41,6 +41,29 @@ test("Claude cache reads and writes are parts of the prompt total", () => {
   assert.equal(claudeResultUsage({ type: "result" }), undefined);
 });
 
+test("Claude result timing becomes model time and time to first token", () => {
+  const usage = claudeResultUsage(
+    claudeResult(
+      "done",
+      {},
+      {
+        duration_api_ms: 8_400,
+        ttft_ms: 620,
+        ttft_stream_ms: 700,
+        time_to_request_ms: 15,
+      },
+    ),
+  );
+  assert.equal(usage?.modelMs, 8_400);
+  assert.equal(usage?.ttftMs, 700);
+
+  const streamTiming = claudeResultUsage(
+    claudeResult("done", {}, { duration_api_ms: 3_200, ttft_ms: 480 }),
+  );
+  assert.equal(streamTiming?.modelMs, 3_200);
+  assert.equal(streamTiming?.ttftMs, 480);
+});
+
 test("Codex input already includes its cached tokens", () => {
   assert.deepEqual(
     codexTurnUsage({
@@ -72,6 +95,17 @@ test("usage adds up across results without inventing absent fields", () => {
   assert.equal(sum.inputTokens, 20);
   assert.equal(sum.reasoningTokens, 0);
   assert.equal("modelRequests" in sum, false);
+
+  const first = claudeResultUsage(
+    claudeResult("first", {}, { duration_api_ms: 1_200, ttft_stream_ms: 300 }),
+  );
+  const next = claudeResultUsage(
+    claudeResult("next", {}, { duration_api_ms: 800, ttft_stream_ms: 500 }),
+  );
+  assert.ok(first && next);
+  const timed = addTurnUsage(first, next);
+  assert.equal(timed.modelMs, 2_000);
+  assert.equal(timed.ttftMs, 300);
 });
 
 test("a turn that waits for background work reports the usage of every result it waited through", async () => {
