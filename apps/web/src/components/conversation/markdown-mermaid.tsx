@@ -41,6 +41,7 @@ function MermaidError({ chart, retry }: MermaidErrorComponentProps) {
           {t("diagram.retry")}
         </Button>
       }
+      data-mermaid-error="true"
       size="compact"
       title={t("diagram.error")}
       tone="warning"

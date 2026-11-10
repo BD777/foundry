@@ -19,6 +19,8 @@ export interface RecordsTableProps {
   toolbar?: ReactNode;
   /** The card scrolls past this height. */
   tall?: boolean;
+  /** Names the scroll region and makes it reachable from the keyboard. */
+  scrollLabel?: string;
 }
 
 export function RecordsTable({
@@ -26,6 +28,7 @@ export function RecordsTable({
   className,
   tall = true,
   toolbar,
+  scrollLabel,
 }: RecordsTableProps) {
   return (
     <div
@@ -36,10 +39,13 @@ export function RecordsTable({
       data-toolbar={toolbar ? "true" : undefined}
     >
       <div
+        aria-label={scrollLabel}
         className={cn(
-          "overflow-auto rounded-lg [scrollbar-color:var(--line-strong)_transparent]",
+          "overflow-auto rounded-lg [scrollbar-color:var(--line-strong)_transparent] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(color:--fdy-accent)",
           tall && "max-h-[300px]",
         )}
+        role={scrollLabel ? "group" : undefined}
+        tabIndex={scrollLabel ? 0 : undefined}
       >
         <table className="m-0 w-full table-auto border-separate border-spacing-0 text-sm text-ink">
           {children}

@@ -17,8 +17,25 @@ async function renderMarkdown(props, text, inspect) {
     IntersectionObserver: window.IntersectionObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   };
-  for (const key of ["Node", "Element", "HTMLElement", "Event", "MouseEvent"])
+  for (const key of [
+    "Node",
+    "Element",
+    "HTMLElement",
+    "HTMLButtonElement",
+    "HTMLInputElement",
+    "Event",
+    "CustomEvent",
+    "MouseEvent",
+    "PointerEvent",
+    "KeyboardEvent",
+    "MutationObserver",
+    "ResizeObserver",
+    "NodeFilter",
+  ])
     globals[key] = window[key];
+  globals.getComputedStyle = window.getComputedStyle.bind(window);
+  globals.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+  globals.cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
   for (const [key, value] of Object.entries(globals)) {
     previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, {
@@ -44,12 +61,38 @@ async function renderMarkdown(props, text, inspect) {
     });
     return html;
   } finally {
+    // Radix's focus guard dispatches on a timer; let it finish before the
+    // happy-dom window supplying CustomEvent is restored for the next test.
+    if (root)
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
     if (root) await act(async () => root.unmount());
     for (const [key, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     await window.happyDOM.close();
   }
+}
+
+async function copyTableMarkdown(trigger, target = document) {
+  await act(async () => {
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const item = [...target.querySelectorAll('[role="menuitem"]')].find(
+    (candidate) => candidate.getAttribute("title") === "Copy table as Markdown",
+  );
+  assert.ok(item, "the table menu offers Markdown");
+  await act(async () => {
+    item.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 test("Mermaid fences render diagrams after streaming ends; ordinary code stays code", async () => {
@@ -113,6 +156,118 @@ test("an agent answer keeps Markdown soft breaks and GFM task lists", async () =
   assert.doesNotMatch(html, /<br>/);
   assert.match(html, /<ul class="[^"]*contains-task-list[^"]*">/);
   assert.equal(html.match(/<li class="[^"]*task-list-item[^"]*">/g)?.length, 2);
+});
+
+test("a Markdown table expands into a dismissible modal dialog", async () => {
+  await renderMarkdown(
+    {},
+    "| Check | Result |\n| --- | --- |\n| tsc | PASS |",
+    async (container) => {
+      const expand = container.querySelector(
+        'button[aria-label="Expand table"]',
+      );
+      assert.ok(expand, "the table has an Expand control");
+      await act(async () => expand.click());
+
+      let dialog = document.querySelector('[role="dialog"]');
+      assert.ok(dialog, "activating Expand opens the dialog");
+      assert.match(dialog.textContent, /Table/);
+      assert.equal(dialog.querySelectorAll("table").length, 1);
+      assert.ok(
+        [...dialog.querySelectorAll("td")].some((cell) =>
+          cell.textContent.includes("PASS"),
+        ),
+      );
+      assert.match(
+        dialog.querySelector(".fdy-records")?.className ?? "",
+        /border border-line/,
+      );
+      assert.equal(
+        document.querySelector('[data-streamdown="table-fullscreen"]'),
+        null,
+        "Streamdown's own fullscreen is not mounted",
+      );
+
+      await act(async () =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            code: "Escape",
+            bubbles: true,
+          }),
+        ),
+      );
+      assert.equal(document.querySelector('[role="dialog"]'), null);
+
+      await act(async () => expand.click());
+      dialog = document.querySelector('[role="dialog"]');
+      assert.ok(dialog, "the dialog reopens");
+      const overlay = dialog.previousElementSibling;
+      assert.ok(overlay, "the dialog has an overlay");
+      await act(async () => {
+        overlay.dispatchEvent(
+          new MouseEvent("pointerdown", {
+            bubbles: true,
+            button: 0,
+          }),
+        );
+        overlay.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            button: 0,
+          }),
+        );
+      });
+      assert.equal(document.querySelector('[role="dialog"]'), null);
+    },
+  );
+});
+
+test("table Markdown copy keeps links, inline code and bold from the source", async () => {
+  const copied = [];
+  const table = [
+    "| Session | Detail |",
+    "| --- | --- |",
+    "| [sess_123](https://foundry.test/chats/sess_123) | `worker.ts` and **ready** |",
+  ].join("\n");
+  await renderMarkdown({}, table, async (container) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text) => copied.push(text) },
+    });
+    await copyTableMarkdown(
+      container.querySelector('button[aria-label="Copy table"]'),
+    );
+    assert.deepEqual(copied, [table]);
+
+    await act(async () =>
+      container.querySelector('button[aria-label="Expand table"]').click(),
+    );
+    const dialog = document.querySelector('[role="dialog"]');
+    await copyTableMarkdown(
+      dialog.querySelector('button[aria-label="Copy table"]'),
+    );
+    assert.deepEqual(copied, [table, table]);
+  });
+});
+
+test("table Markdown copy strips a blockquote container prefix", async () => {
+  const copied = [];
+  const table = "| Key | Value |\n| --- | --- |\n| code | `value` |";
+  await renderMarkdown(
+    {},
+    `> ${table.replace(/\n/g, "\n> ")}`,
+    async (container) => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async (text) => copied.push(text) },
+      });
+      await copyTableMarkdown(
+        container.querySelector('button[aria-label="Copy table"]'),
+      );
+      assert.deepEqual(copied, [table]);
+    },
+  );
 });
 
 test("CJK emphasis next to punctuation renders in streaming and settled text", async () => {
@@ -360,4 +515,23 @@ test("CJK syntax never cuts authored links containing Chinese punctuation", asyn
       assert.deepEqual(links, [{ href: new URL(url).href, text: url }]);
     }
   }
+});
+
+test("table Markdown copy finds the table after other blocks", async () => {
+  const copied = [];
+  const table = "| A | B |\n| --- | --- |\n| [x](https://x.test) | `y` |";
+  await renderMarkdown(
+    {},
+    `Intro paragraph.\n\n## Heading\n\n${table}\n\nAfter.`,
+    async (container) => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async (text) => copied.push(text) },
+      });
+      await copyTableMarkdown(
+        container.querySelector('button[aria-label="Copy table"]'),
+      );
+      assert.deepEqual(copied, [table]);
+    },
+  );
 });

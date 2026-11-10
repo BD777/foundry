@@ -123,7 +123,13 @@ createRoot(document.getElementById("root")!).render(
   >
     <div className="flex min-h-0 flex-col [--fdy-chat-content-max:720px] [--fdy-chat-content-padding:0px]">
       <ChatMessageRow
-        message={{ id: "gallery", kind: "message", role: "bot", text: sample }}
+        message={{
+          copyText: sample,
+          id: "gallery",
+          kind: "message",
+          role: "bot",
+          text: sample,
+        }}
       />
     </div>
   </main>,

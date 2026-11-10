@@ -7,13 +7,16 @@ import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
 export type DialogLayout = "sectioned" | "compact";
-export type DialogSize = "default" | "wide" | "large" | "editor";
+export type DialogSize =
+  "default" | "wide" | "large" | "editor" | "viewport" | "preview";
+export type DialogSide = "center" | "left";
 
 /*
- * shadcn/ui's Dialog on Radix: an overlay and a centred surface. Each portal
- * is one stacking context (the layer), so a later, nested dialog covers the
- * whole earlier one whatever its layout; menus still portal above a dialog.
- * The `fdy-dialog*` classes are hooks for tests and carry no style.
+ * shadcn/ui's Dialog on Radix: an overlay and a centred surface or side
+ * drawer. Each portal is one stacking context (the layer), so a later, nested
+ * dialog covers the whole earlier one whatever its layout; menus still portal
+ * above a dialog. The `fdy-dialog*` classes are hooks for tests and carry no
+ * style.
  */
 const overlayVariants = cva("pointer-events-auto fixed inset-0 z-0 bg-scrim", {
   variants: { layout: { sectioned: "backdrop-blur-xs", compact: "" } },
@@ -23,10 +26,14 @@ const overlayVariants = cva("pointer-events-auto fixed inset-0 z-0 bg-scrim", {
    (e.g. Install once it succeeds); it is a surface, not a control, so it draws
    no focus ring while its controls keep their own. */
 const contentVariants = cva(
-  `fdy-dialog pointer-events-auto fixed top-1/2 left-1/2 z-1 box-border -translate-x-1/2
-   -translate-y-1/2 rounded-xl bg-surface shadow-floating focus-visible:outline-none`,
+  `fdy-dialog pointer-events-auto fixed z-1 box-border bg-surface
+   shadow-floating focus-visible:outline-none`,
   {
     variants: {
+      side: {
+        center: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl",
+        left: "inset-y-0 left-0 h-dvh rounded-r-xl",
+      },
       layout: {
         /** A divided header above a padded body that scrolls. */
         sectioned:
@@ -39,6 +46,12 @@ const contentVariants = cva(
       size: {
         default: "",
         wide: "w-[min(840px,calc(100vw-32px))]",
+        /** A near-full-window working surface for wide content such as tables. */
+        viewport:
+          "h-[min(85vh,calc(100vh-32px))] w-[92vw] max-h-[calc(100vh-32px)]",
+        /** A long-form reading surface that still leaves the page visible. */
+        preview:
+          "h-[min(85vh,calc(100vh-32px))] w-[min(900px,92vw)] max-h-[calc(100vh-32px)]",
         /** A form editor: its height stays put as the fields inside change. */
         editor:
           "h-[min(880px,calc(100vh-32px))] max-h-[calc(100vh-32px)] w-[min(820px,calc(100vw-32px))]",
@@ -58,8 +71,16 @@ const contentVariants = cva(
         class:
           "max-[560px]:w-[min(960px,calc(100vw-32px))] max-[560px]:max-h-[calc(100vh-32px)]",
       },
+      {
+        side: "left",
+        class: "max-h-none w-[min(340px,calc(100vw-32px))]",
+      },
     ],
-    defaultVariants: { layout: "sectioned", size: "default" },
+    defaultVariants: {
+      layout: "sectioned",
+      side: "center",
+      size: "default",
+    },
   },
 );
 
@@ -127,7 +148,9 @@ const footerVariants = cva("flex flex-wrap items-center justify-end gap-2", {
  * one padded surface for pickers and confirmations, with actions in `footer`.
  * "wide" fits long text such as a SKILL.md; "large" a side-by-side diff;
  * "editor" keeps one settled height while a form inside changes, so the
- * window does not re-centre as fields come and go.
+ * window does not re-centre as fields come and go; "viewport" holds a wide
+ * table near the full window size without becoming a second app shell;
+ * "preview" holds long-form content at a comfortable reading width.
  */
 export function Dialog({
   title,
@@ -135,11 +158,15 @@ export function Dialog({
   open = true,
   onClose,
   layout = "sectioned",
+  side = "center",
   size = "default",
   busy,
+  bodyClassName,
+  contentId,
   initialFocus,
   returnFocusTo,
   footer,
+  headerActions,
   children,
 }: {
   title: string;
@@ -150,13 +177,20 @@ export function Dialog({
   /** Asked to close: Escape, outside click or the close button. */
   onClose: () => void;
   layout?: DialogLayout;
+  /** Center modal or a full-height drawer anchored to one side. */
+  side?: DialogSide;
   size?: DialogSize;
   busy?: boolean;
+  /** Layout hook for a body that owns its own scroll region. */
+  bodyClassName?: string;
+  contentId?: string;
   /** Focused on open; a text input's value is also selected. */
   initialFocus?: RefObject<HTMLElement | null>;
   /** Where focus goes on close when the opener itself goes away (a menu item). */
   returnFocusTo?: HTMLElement | null;
   footer?: ReactNode;
+  /** Extra controls beside the dialog's close button. */
+  headerActions?: ReactNode;
   children?: ReactNode;
 }) {
   const { t } = useTranslation("ui");
@@ -176,9 +210,11 @@ export function Dialog({
           />
           <RadixDialog.Content
             {...(description ? {} : { "aria-describedby": undefined })}
-            className={cn(contentVariants({ layout, size }))}
+            className={cn(contentVariants({ layout, side, size }))}
             data-layout={layout}
+            data-side={side}
             data-size={size}
+            id={contentId}
             onOpenAutoFocus={(event) => {
               opener.current =
                 document.activeElement instanceof HTMLElement
@@ -220,19 +256,24 @@ export function Dialog({
                   </RadixDialog.Description>
                 ) : null}
               </div>
-              <RadixDialog.Close asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  disabled={busy}
-                  aria-label={t("dialog.close", { title })}
-                >
-                  <X size={18} />
-                </Button>
-              </RadixDialog.Close>
+              <div className="flex flex-none items-center gap-1">
+                {headerActions}
+                <RadixDialog.Close asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    aria-label={t("dialog.close", { title })}
+                  >
+                    <X size={18} />
+                  </Button>
+                </RadixDialog.Close>
+              </div>
             </header>
             {children != null ? (
-              <div className={bodyVariants({ layout })}>{children}</div>
+              <div className={cn(bodyVariants({ layout }), bodyClassName)}>
+                {children}
+              </div>
             ) : null}
             {footer ? (
               <footer className={footerVariants({ layout })}>{footer}</footer>
