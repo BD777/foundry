@@ -171,6 +171,9 @@ type AgentSession struct {
 	// ParentSessionID `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 
+	// WaitingChildCount `waitingChildCount` is how many direct sub-sessions this session is waiting on: active turns whose current input it started, or ended children that are themselves waiting on such descendants up to four levels deep. Absent or 0 when none.
+	WaitingChildCount int `json:"waitingChildCount,omitempty"`
+
 	// QuestionsTo `questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: "person", who holds this chat (a prompt waits in the turn for a while); "parent", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.
 	QuestionsTo string `json:"questionsTo,omitempty"`
 

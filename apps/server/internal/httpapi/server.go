@@ -96,6 +96,7 @@ type Backend interface {
 	store.FeishuIssueThreads
 	store.SessionRecordStore
 	store.SessionAdoptionStore
+	store.SessionDelegationStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -322,13 +323,14 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		// Feishu card, the chat's queued messages, the chat's title, the
 		// resources it leases, the assistant's tasks, inbox results and run
 		// controls, its inbox, its report to its parent, pending items,
-		// workspace digests, and last an Issue's run starting.
+		// workspace digests, waiting child projections, and last an Issue's
+		// run starting.
 		Changes: slices.Concat([]sessions.ChangeObserver{
 			workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles,
 			resourceLeaseReactions{server},
 		}, server.assistant.Observers(), []sessions.ChangeObserver{
 			inbox, childReportReactions{server},
-			pendingReactions{server}, workspaceDigestReactions{server}, server.issueService.Observer(),
+			pendingReactions{server}, workspaceDigestReactions{server}, waitingChildReactions{server}, server.issueService.Observer(),
 		}),
 		// An event added to its transcript: its Feishu card, the chat's
 		// queued messages, its inbox, pending items, a child's question to

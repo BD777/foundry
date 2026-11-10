@@ -60,6 +60,12 @@ func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http
 	if events == nil {
 		events = []store.AgentSessionEvent{}
 	}
+	counted, err := s.withWaitingChildCounts(r.Context(), []store.AgentSession{item})
+	if err != nil {
+		writeResult(w, item, err)
+		return
+	}
+	item = counted[0]
 	item.Events = nil
 	item = s.presentSession(r.Context(), item)
 	writeResult(w, caughtUpAgentSession{AgentSession: item, Events: events, EventsAfter: newest, EventsMore: more}, nil)
