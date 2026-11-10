@@ -19,11 +19,13 @@ export function needsConfirmation(item: SessionWork): boolean {
 }
 
 export function isFinishedWork(item: SessionWork): boolean {
+  const knownEnd = Boolean(item.observation.endedAt);
   return (
     (item.management === "managed" || Boolean(item.native)) &&
     !hasFutureScheduledWork(item) &&
-    !needsConfirmation(item) &&
-    ["completed", "failed", "stopped"].includes(item.observation.status) &&
+    (knownEnd || !needsConfirmation(item)) &&
+    (knownEnd ||
+      ["completed", "failed", "stopped"].includes(item.observation.status)) &&
     (item.kind !== "schedule" || item.desiredState !== "paused")
   );
 }

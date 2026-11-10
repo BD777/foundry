@@ -44,6 +44,7 @@ func Timer(session store.AgentSession, timer store.SessionKeptTimer) store.Sessi
 // callers insert only missing identities, never overwrite a control with it.
 func FromEvents(session store.AgentSession) []store.SessionWork {
 	items := map[string]store.SessionWork{}
+	now := time.Now().UTC()
 	for _, e := range session.Events {
 		m := e.Metadata
 		if m == nil {
@@ -55,6 +56,7 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				if task.Kind == "subagent" {
 					kind = "agent"
 				}
+				known, exists := items[task.ID]
 				w := Base(session, kind, "claude", task.ID, task.Description)
 				w.CreatedAt = task.StartedAt
 				w.Native = NativeInfo(session, task.ID, "transcript task lifecycle")
@@ -63,9 +65,31 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				w.Spec.NativeSessionID = session.NativeSessionID
 				status := task.Status
 				if status == "ended" {
-					status = "unknown"
+					// "ended" means the task's outcome was not reported. An
+					// ending task is history, not a live unknown, and a
+					// lifecycle completion that already named its outcome wins.
+					if exists && terminalWorkStatus(known.Observation.Status) {
+						status = known.Observation.Status
+					} else {
+						status = "stopped"
+					}
 				}
-				w.Observation = store.WorkObservation{Status: status, At: e.At, StartedAt: task.StartedAt, EndedAt: task.EndedAt, ExitCode: task.ExitCode}
+				endedAt := task.EndedAt
+				at := e.At
+				if exists && terminalWorkStatus(known.Observation.Status) {
+					status = known.Observation.Status
+					endedAt = firstNonEmpty(endedAt, known.Observation.EndedAt)
+					at = known.Observation.At
+				}
+				if terminalWorkStatus(status) && endedAt != "" {
+					// The task's end is the observation time. A later
+					// inventory read does not move a finished task forward.
+					at = endedAt
+				}
+				w.Observation = store.WorkObservation{
+					Status: status, At: boundedObservationAt(at, now),
+					StartedAt: task.StartedAt, EndedAt: endedAt, ExitCode: task.ExitCode,
+				}
 				items[task.ID] = w
 			}
 		}
@@ -78,7 +102,7 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				w.Management = "observed"
 				w.AllowedActions = []string{}
 				w.Observation.Status = "running"
-				w.Observation.At = e.At
+				w.Observation.At = boundedObservationAt(e.At, now)
 				items[m.TaskID] = w
 			}
 		}
@@ -88,7 +112,7 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				w.Observation.Status = "failed"
 			}
 			w.Observation.EndedAt = e.At
-			w.Observation.At = e.At
+			w.Observation.At = boundedObservationAt(e.At, now)
 			items[m.TaskID] = w
 		}
 	}
@@ -97,4 +121,28 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 		result = append(result, w)
 	}
 	return result
+}
+
+func terminalWorkStatus(status string) bool {
+	return status == "completed" || status == "failed" || status == "stopped"
+}
+
+func firstNonEmpty(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+// boundedObservationAt canonicalizes a transcript instant and prevents clock
+// skew from placing an observation after the server read that imported it.
+func boundedObservationAt(value string, now time.Time) string {
+	at, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	if at.After(now) {
+		at = now
+	}
+	return at.UTC().Format(time.RFC3339Nano)
 }

@@ -429,6 +429,34 @@ test("native subagents remain read-only with a focusable icon naming type and st
   assert.doesNotMatch(html, /aria-haspopup="menu"|work\.unassigned/);
 });
 
+test("a native agent with a known end is history even when its status is unknown", () => {
+  const item = work({
+    kind: "agent",
+    source: "claude",
+    management: "observed",
+    allowedActions: [],
+    native: {
+      runtime: "claude",
+      version: "2.1.311",
+      sessionId: "native",
+      taskId: "nested",
+      discovery: "transcript agent lifecycle",
+      observation: "available",
+      controls: { stop: "unavailable" },
+    },
+    observation: {
+      status: "unknown",
+      at: "2099-01-01T00:00:00Z",
+      confirmedRevision: 1,
+      endedAt: "2026-11-08T13:21:24.561Z",
+    },
+  });
+  const html = renderWork([item]);
+  assert.equal(isCurrentWork(item), false);
+  assert.match(html, /work\.agentHistory/);
+  assert.doesNotMatch(html, /data-work-id="work_a"/);
+});
+
 test("workspace services stay in inventory but are absent from the conversation sidebar", () => {
   const shared = work({
     kind: "process",

@@ -173,6 +173,58 @@ func TestWorkObservationUsesInstantsNotLexicalFractions(t *testing.T) {
 	}
 }
 
+func TestTerminalWorkObservationCannotBecomeUnknown(t *testing.T) {
+	s, w := workFixture(t)
+	ctx := context.Background()
+	endedAt := "2026-10-17T01:00:00Z"
+	if err := s.ObserveSessionWork(ctx, w.ID, store.WorkObservation{
+		Status: "completed", At: endedAt, EndedAt: endedAt, ConfirmedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ObserveSessionWork(ctx, w.ID, store.WorkObservation{
+		Status: "unknown", At: "2099-01-01T00:00:00Z", ConfirmedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListSessionWork(ctx, "thread", "")
+	if err != nil || list.Items[0].Observation.Status != "completed" ||
+		list.Items[0].Observation.EndedAt != endedAt {
+		t.Fatalf("terminal observation was downgraded: %+v %v", list, err)
+	}
+	if at, err := time.Parse(time.RFC3339Nano, list.Items[0].Observation.At); err != nil || at.After(time.Now()) {
+		t.Fatalf("observation time is in the future: %q, %v", list.Items[0].Observation.At, err)
+	}
+}
+
+func TestUnknownNativeHistoryIsRepairedFromTheSameTranscriptEnd(t *testing.T) {
+	s, w := workFixture(t)
+	ctx := context.Background()
+	endedAt := "2026-10-17T01:00:00Z"
+	broken := store.SessionWork{
+		ID: w.ID, SessionID: "session", ThreadID: "thread", WorkspaceID: "workspace", DeviceID: "device",
+		Kind: "agent", Source: "claude", SourceID: "nested", Management: "observed", DesiredState: "enabled",
+		Revision: 1, Generation: 1, AllowedActions: []string{},
+		Native: &store.NativeWorkInfo{Runtime: "claude", TaskID: "nested", Discovery: "transcript agent lifecycle", Observation: "available", Controls: map[string]string{}},
+		Observation: store.WorkObservation{
+			Status: "unknown", At: "2026-10-18T00:00:00Z", EndedAt: endedAt,
+			ConfirmedRevision: 1,
+		},
+	}
+	if err := s.writeWork(ctx, broken); err != nil {
+		t.Fatal(err)
+	}
+	completed := broken
+	completed.Observation = store.WorkObservation{
+		Status: "completed", At: endedAt, EndedAt: endedAt,
+	}
+	saved, err := s.SaveSessionWork(ctx, completed)
+	if err != nil || saved.Observation.Status != "completed" ||
+		saved.Observation.At != endedAt || saved.Observation.ConfirmedRevision != 1 {
+		t.Fatalf("known end was not repaired: %+v %v", saved, err)
+	}
+}
+
 func TestWorkNewObservationErrorDoesNotLookVerified(t *testing.T) {
 	s, w := workFixture(t)
 	ctx := context.Background()
