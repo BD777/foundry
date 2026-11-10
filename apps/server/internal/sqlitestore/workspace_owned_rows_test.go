@@ -38,6 +38,15 @@ var unownedOwnerColumns = map[string]string{
 	"pa_actions.session_id":             "the person's audit trail, kept 90 days",
 	"pa_routing_decisions.workspace_id": "the person's routing history, for evals",
 	"pa_routing_decisions.session_id":   "the person's routing history, for evals",
+	// Usage and cost are historical facts. Deleting a workspace or session
+	// must not erase the person's usage record or the dims it was charged to.
+	"usage_turns.workspace_id":         "historical usage fact",
+	"usage_turns.session_id":           "historical usage fact",
+	"usage_turns.parent_session_id":    "historical orchestration lineage",
+	"usage_requests.workspace_id":      "historical request detail",
+	"usage_requests.session_id":        "historical request detail",
+	"usage_requests.parent_session_id": "historical orchestration lineage",
+	"usage_daily.workspace_id":         "historical usage rollup",
 }
 
 // tableColumns lists every table with its columns.

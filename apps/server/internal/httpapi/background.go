@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
+	"github.com/foundry-dev/foundry/apps/server/internal/usagestats"
 )
 
 // backgroundJob is work the server runs by itself for as long as it serves.
@@ -25,6 +27,25 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"resource-leases", s.runResourceLeases},
 		{"preview-route-check", s.runPreviewRouteCheck},
 		{"session-event-compaction", s.runSessionEventCompaction},
+		{"usage-request-retention", func(ctx context.Context) {
+			recorder := s.hub.usageStats
+			if recorder == nil {
+				return
+			}
+			everyAfter(ctx, usagestats.RetentionSweepInterval, nil, func(ctx context.Context) {
+				if _, err := recorder.DeleteExpiredRequests(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("usage request retention: %v", err)
+				}
+			})
+		}},
+		{"usage-history-backfill", func(ctx context.Context) {
+			if s.hub.usageStats == nil {
+				return
+			}
+			if err := s.hub.usageStats.Backfill(ctx, usagestats.BackfillOptions{}); err != nil && ctx.Err() == nil {
+				log.Printf("usage history backfill: %v", err)
+			}
+		}},
 		{"session-inbox", func(ctx context.Context) {
 			everyAfter(ctx, sessions.InboxPumpInterval, s.sessionService.InboxKicks(), s.sessionService.PumpInbox)
 		}},

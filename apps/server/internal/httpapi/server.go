@@ -265,6 +265,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessionEvents, issues: issueEvents, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
+	server.hub.usageStats = newUsageRecorder(store, server.assistant.SessionRole)
 	server.wire = openWireRecording(options.WireRecordDir)
 	server.hub.wire = server.wire
 	server.chatQueueKicks = newWorkGroup(server.hub.work)

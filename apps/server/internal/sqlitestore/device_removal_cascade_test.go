@@ -28,6 +28,9 @@ var unownedDeviceColumns = map[string]string{
 	"knowledge_publications.target_workspace_id":  "the person's knowledge record, kept like knowledge_vaults.workspace_id",
 	"pa_routing_decisions.corrected_workspace_id": "the person's routing history, for evals",
 	"promoted_skills.origin_device_id":            "the server's catalog copy; the origin is provenance and is read with LEFT JOIN",
+	"usage_turns.device_id":                       "historical usage fact; a removed device is shown as deleted",
+	"usage_requests.device_id":                    "historical request detail; retention keeps it independent of device lifecycle",
+	"usage_daily.device_id":                       "historical usage rollup; a removed device is shown as deleted",
 }
 
 func deviceColumnUnowned(key string) bool {
@@ -121,6 +124,12 @@ func seedValue(table string, column seedColumn, owners map[string]string) (any, 
 		return "member", true
 	case column.name == "kind" && table == "feishu_bot_routes":
 		return "chat", true
+	case column.name == "entry":
+		return store.UsageEntryChat, true
+	case column.name == "cost_source":
+		return store.UsageCostUnknown, true
+	case column.name == "outcome":
+		return store.UsageOutcomeCompleted, true
 	}
 	return fmt.Sprintf("seed_%s_%s", table, column.name), true
 }

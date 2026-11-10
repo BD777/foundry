@@ -5327,6 +5327,124 @@
         "binary": { "type": "boolean" }
       }
     },
+    "UsageStatsGranularity": { "type": "string", "enum": ["hour", "day"] },
+    "UsageStatsDimension": {
+      "type": "string",
+      "enum": [
+        "entry",
+        "device",
+        "workspace",
+        "provider",
+        "model",
+        "runtime",
+        "user"
+      ]
+    },
+    "UsageStatsCostSource": {
+      "description": "One cost_source's share of a usage group.",
+      "type": "object",
+      "required": ["source", "turns", "costUsd"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["reported", "estimated", "custom", "unknown"]
+        },
+        "turns": { "type": "integer" },
+        "costUsd": { "type": "number" }
+      }
+    },
+    "UsageStatsPoint": {
+      "description": "One time bucket and selected dimension combination.",
+      "type": "object",
+      "required": [
+        "bucket",
+        "turns",
+        "requests",
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "outputTokens",
+        "reasoningTokens",
+        "costUsd",
+        "costSources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "description": "An RFC 3339 hour boundary or a YYYY-MM-DD day.",
+          "type": "string"
+        },
+        "userId": { "type": "string" },
+        "entry": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "provider": {
+          "description": "The profile/provider label recorded with the usage.",
+          "type": "string"
+        },
+        "model": { "type": "string" },
+        "runtime": { "type": "string" },
+        "turns": { "type": "integer" },
+        "requests": { "type": "integer" },
+        "inputTokens": { "type": "integer" },
+        "cacheReadTokens": { "type": "integer" },
+        "cacheWriteTokens": { "type": "integer" },
+        "outputTokens": { "type": "integer" },
+        "reasoningTokens": { "type": "integer" },
+        "costUsd": { "type": "number" },
+        "costSources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UsageStatsCostSource" }
+        },
+        "averageTokensPerSecond": {
+          "description": "Output tokens divided by measured generation time.",
+          "type": "number"
+        },
+        "medianTokensPerSecond": {
+          "description": "Median output tokens per second across measured requests.",
+          "type": "number"
+        },
+        "ttftP50Ms": {
+          "description": "Median first-token latency across measured requests.",
+          "type": "integer"
+        },
+        "ttftP90Ms": {
+          "description": "90th-percentile first-token latency across measured requests.",
+          "type": "integer"
+        }
+      }
+    },
+    "UsageStatsResult": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "granularity",
+        "groupBy",
+        "items",
+        "total",
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "granularity": { "$ref": "#/$defs/UsageStatsGranularity" },
+        "groupBy": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UsageStatsDimension" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UsageStatsPoint" }
+        },
+        "total": { "type": "integer" },
+        "limit": { "type": "integer" },
+        "offset": { "type": "integer" }
+      }
+    },
     "WorkspaceAccessRole": {
       "type": "string",
       "enum": ["viewer", "member", "maintainer", "owner"]

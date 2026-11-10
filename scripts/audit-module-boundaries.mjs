@@ -148,6 +148,7 @@ export const serverPackages = {
   // as the package here, so workspacedigest importing the rules is no cycle.
   personalagent: ["store", "sessions", "workspacedigest", "redact", "textcut"],
   sessionwork: ["store"],
+  usagestats: ["store", "jsonempty"],
   // The session lifecycle; httpapi implements its ports and never the
   // reverse.
   sessions: ["store", "eventstream", "browserevent"],
