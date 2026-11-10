@@ -19,6 +19,7 @@ import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
+import { navHeadingClass, navItemClass } from "./nav-list";
 import { ScrollArea } from "./scroll-area";
 import { StatusIndicator, type StatusItem } from "./status-indicator";
 import { ToastProvider, type ToastPlacement } from "./toast";
@@ -469,7 +470,12 @@ export function SidebarNav<T extends string>({
               data-section-id={section.id}
               aria-label={section.label}
             >
-              <span className="fdy-sidebar-nav-heading flex items-center gap-2 px-3 pt-4 pb-2 text-2xs leading-[1.4] font-semibold text-ink-faint uppercase group-first/section:pt-2 rail:hidden">
+              <span
+                className={cn(
+                  navHeadingClass,
+                  "fdy-sidebar-nav-heading group-first/section:pt-2 rail:hidden",
+                )}
+              >
                 {section.label}
               </span>
               <div className="fdy-sidebar-nav-items">
@@ -504,9 +510,8 @@ export function SidebarNav<T extends string>({
 }
 
 const navLinkClass = cn(
-  "fdy-sidebar-nav-link mb-0.5 min-h-[35px] w-full min-w-0 justify-start gap-2.5 rounded-md px-3 py-[9px] text-md leading-[1.25] text-ink-muted",
-  "flex h-auto border-0",
-  "data-[state=active]:bg-selected data-[state=active]:text-ink data-[state=active]:shadow-selected data-[state=active]:hover:bg-selected",
+  navItemClass,
+  "fdy-sidebar-nav-link",
   "rail:mx-auto rail:mb-1 rail:min-h-10 rail:w-10 rail:justify-center rail:gap-0 rail:rounded-lg rail:p-0 rail:data-[state=idle]:hover:bg-control-ghost-hover",
 );
 

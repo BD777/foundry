@@ -84,7 +84,9 @@ function stepUsageEqual(left?: StepUsage, right?: StepUsage): boolean {
       left.inputTokens === right.inputTokens &&
       left.cacheReadTokens === right.cacheReadTokens &&
       left.outputTokens === right.outputTokens &&
-      left.generationMs === right.generationMs)
+      left.requestMs === right.requestMs &&
+      left.generationMs === right.generationMs &&
+      left.decodeEligible === right.decodeEligible)
   );
 }
 

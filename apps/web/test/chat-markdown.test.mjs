@@ -243,6 +243,11 @@ test("table Markdown copy keeps links, inline code and bold from the source", as
       container.querySelector('button[aria-label="Expand table"]').click(),
     );
     const dialog = document.querySelector('[role="dialog"]');
+    // One width per size: the viewport size replaces the default width.
+    const widths = dialog.className
+      .split(/\s+/)
+      .filter((name) => /^w-/.test(name));
+    assert.deepEqual(widths, ["w-[92vw]"]);
     await copyTableMarkdown(
       dialog.querySelector('button[aria-label="Copy table"]'),
     );
