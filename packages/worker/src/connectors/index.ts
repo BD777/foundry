@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { foundryStatePath } from "../platform/state-root.js";
+import { prepareAppStoreConnectSession } from "./appstoreconnect.js";
 import { prepareCloudflareSession } from "./cloudflare.js";
 import {
   applySessionSetup,
@@ -249,13 +250,22 @@ export async function prepareSessionConnectors(
     input.externalAccounts,
     { serverURL: options.serverURL },
   );
+  const appStoreConnect = await prepareAppStoreConnectSession(
+    session,
+    input.externalAccounts,
+    { serverURL: options.serverURL },
+  );
+  const serverHeldEnvironment = mergeEnvironment(
+    cloudflare.environment,
+    appStoreConnect.environment,
+  );
   const run = {};
   if (session.id) {
     preparedBySession.set(session.id, run);
     environmentBySession.delete(session.id);
     binDirBySession.delete(session.id);
-    if (Object.keys(cloudflare.environment).length)
-      environmentBySession.set(session.id, cloudflare.environment);
+    if (Object.keys(serverHeldEnvironment).length)
+      environmentBySession.set(session.id, serverHeldEnvironment);
   }
   const uses = Array.isArray(input.deviceConnectors)
     ? input.deviceConnectors
@@ -289,6 +299,7 @@ export async function prepareSessionConnectors(
       released = true;
       accounts.release();
       cloudflare.release();
+      appStoreConnect.release();
       if (session.id && preparedBySession.get(session.id) === run) {
         preparedBySession.delete(session.id);
         environmentBySession.delete(session.id);

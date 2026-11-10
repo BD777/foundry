@@ -1,4 +1,5 @@
 import type { ToastTone } from "../../components/ui/toast";
+import { AppStoreConnectConnector } from "./appstoreconnect-connector";
 import { CloudflareConnector } from "./cloudflare-connector";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -281,6 +282,14 @@ function WorkspaceConnectorsContent({
         );
       })}
       <CloudflareConnector
+        workspaceId={workspaceId}
+        workspaceView={view}
+        onWorkspaceChanged={setView}
+        currentUserId={currentUserId}
+        readOnlyReason={readOnlyReason}
+        onNotice={onNotice}
+      />
+      <AppStoreConnectConnector
         workspaceId={workspaceId}
         workspaceView={view}
         onWorkspaceChanged={setView}

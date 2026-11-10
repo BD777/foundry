@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		30: "28f5a3b00864af197a8d05acfaaa746965b5b0a3c44066243f539063e8881374", // ASC-2: App Store Connect curl examples through the gateway
 		29: "444f19bacb28eb3627771a23b1d64908d5a9a8abccb51fa494a096f19d1f1407", // MCP: skill repository source; assistant device removal always asks
 		28: "973fe7f7d3c6aa9549dccaffb6132268c4f17bdf4dab7f1abb934a125a0ef81c", // DEV-155: connector stand-ins work for what a turn leaves running
 		27: "141eadfb461c0a018bd7ddc4b14f0f22996faf89891a0fd670e0a57943ec307c", // DEV-151: model providers managed through the Foundry tools

@@ -1,4 +1,6 @@
 import type {
+  AppStoreConnectApp,
+  AppStoreConnectConnection,
   CloudflareActivityEntry,
   ConnectorCatalogView,
   ConnectorExtensionRepository,
@@ -16,6 +18,7 @@ import type {
   ExternalAccountsView,
   ExternalProviderApp,
   SaveExternalProviderAppInput,
+  SaveAppStoreConnectKeyInput,
   SetupExternalAccountInput,
   WorkspaceExternalAccounts,
 } from "@bd777/foundry-protocol";
@@ -27,6 +30,8 @@ const externalAppPath = (id: string) =>
   `/api/external-apps/${encodeURIComponent(id)}`;
 const workspaceAccountsPath = (workspaceId: string) =>
   `/api/workspaces/${encodeURIComponent(workspaceId)}/external-accounts`;
+const appStoreConnectKeyPath = (appId: string) =>
+  `/api/connectors/appstoreconnect/keys/${encodeURIComponent(appId)}`;
 
 export function getExternalAccounts(): Promise<ExternalAccountsView> {
   return request("GET", "/api/external-accounts");
@@ -126,6 +131,45 @@ export function setWorkspaceAccountAccess(
     "PUT",
     `${workspaceAccountsPath(workspaceId)}/${encodeURIComponent(accountId)}/access`,
     { body: { access } },
+  );
+}
+
+export function getAppStoreConnectKeys(): Promise<{
+  keys: AppStoreConnectConnection[];
+}> {
+  return request("GET", "/api/connectors/appstoreconnect/keys");
+}
+
+/** The .p8 is write-only: the server validates and seals it, never returns it. */
+export function createAppStoreConnectKey(
+  input: SaveAppStoreConnectKeyInput,
+): Promise<AppStoreConnectConnection> {
+  return request("POST", "/api/connectors/appstoreconnect/keys", {
+    body: input,
+  });
+}
+
+/** Replaces both public ids and the .p8 after Apple validates the new key. */
+export function replaceAppStoreConnectKey(
+  appId: string,
+  input: SaveAppStoreConnectKeyInput,
+): Promise<AppStoreConnectConnection> {
+  return request("PUT", appStoreConnectKeyPath(appId), { body: input });
+}
+
+/** Revokes Foundry's use of the key and its workspace bindings' access. */
+export function revokeAppStoreConnectKey(
+  appId: string,
+): Promise<AppStoreConnectConnection> {
+  return request("DELETE", appStoreConnectKeyPath(appId));
+}
+
+export function getAppStoreConnectApps(
+  accountId: string,
+): Promise<{ apps: AppStoreConnectApp[] }> {
+  return request(
+    "GET",
+    `/api/connectors/appstoreconnect/accounts/${encodeURIComponent(accountId)}/apps`,
   );
 }
 
@@ -368,7 +412,7 @@ export function getCloudflareActivity(
     `/api/connectors/cloudflare/accounts/${encodeURIComponent(accountId)}/activity`,
   );
 }
-export async function getCloudflareBindingWorkspaces(): Promise<
+export async function getConnectorBindingWorkspaces(): Promise<
   Array<{ id: string; name: string; detail?: string }>
 > {
   const [workspaces, devices] = await Promise.all([
@@ -398,4 +442,8 @@ export async function getCloudflareBindingWorkspaces(): Promise<
         .filter(Boolean)
         .join(" · "),
     }));
+}
+
+export function getCloudflareBindingWorkspaces() {
+  return getConnectorBindingWorkspaces();
 }

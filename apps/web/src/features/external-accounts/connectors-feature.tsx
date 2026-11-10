@@ -15,6 +15,7 @@ import { PageSurface } from "../../components/ui/page-surface";
 import type { ConnectorType } from "../../lib/connector-types";
 import { errorText } from "./account-format";
 import { AddConnectorDialog } from "./add-connector-dialog";
+import { AppStoreConnectConnector } from "./appstoreconnect-connector";
 import { CloudflareConnector } from "./cloudflare-connector";
 import { connectorName } from "./connector-text";
 import { ConnectorPicker } from "./connector-picker";
@@ -168,6 +169,11 @@ export function ConnectorsFeature({
             />
           ) : connector.kind === "cloudflare" ? (
             <CloudflareConnector
+              currentUserId={props.currentUserId}
+              onNotice={props.onNotice}
+            />
+          ) : connector.kind === "appstoreconnect" ? (
+            <AppStoreConnectConnector
               currentUserId={props.currentUserId}
               onNotice={props.onNotice}
             />

@@ -89,6 +89,102 @@ export const externalAccounts: Translation<typeof en> = {
       refused: "已拒绝",
     },
   },
+  appstoreconnect: {
+    addKey: "添加团队密钥",
+    refresh: "刷新",
+    intro:
+      "App Store Connect 团队密钥保存在服务器上。会话只能经 Foundry 网关管理此工作区绑定的 App。",
+    teamKeyTitle: "建议使用具有 App Manager 角色的团队密钥",
+    teamKeyBody:
+      "Apple 团队密钥可以访问团队拥有的所有 App。Foundry 不会把 .p8 或真实 JWT 下发给会话；服务器逐个请求检查，只放行已绑定的 App。修改价格和提交审核仍需本人在 App Store Connect 操作。",
+    noSecretStore: "服务器必须先配置 secret store，才能封存团队密钥。",
+    empty: "尚未添加 App Store Connect 团队密钥。",
+    addTitle: "添加 App Store Connect 团队密钥",
+    addDescription:
+      "在 App Store Connect 的“用户和访问”→“集成”中下载 .p8 团队密钥，并填写 Issuer ID、Key ID；可以上传文件或粘贴内容。",
+    replaceTitle: "替换 App Store Connect 团队密钥",
+    replaceDescription:
+      "Apple 会先验证新密钥，通过后 Foundry 才替换服务器上封存的旧密钥；成功后旧密钥立即停止使用。",
+    replace: "替换密钥",
+    revoke: "吊销密钥",
+    revokeTitle: "吊销 {{name}}？",
+    revokeDescription:
+      "这会立即停止所有相关会话，并移除其工作区绑定中的 App Store Connect 访问。",
+    revokeBody:
+      "团队密钥本身仍留在 Apple。Foundry 会删除封存副本并拒绝后续请求；再次使用需要重新添加 .p8。",
+    revokeConfirm: "吊销并停止访问",
+    revokedNotice:
+      "已吊销 {{name}}；使用它的 App Store Connect 会话已失去访问。",
+    savedNotice: "App Store Connect 密钥 {{name}} 已验证并封存。",
+    issuer: "Issuer",
+    keyId: "Key",
+    issuerLabel: "Issuer ID",
+    issuerPlaceholder: "00000000-0000-0000-0000-000000000000",
+    issuerHelp: "位于 App Store Connect 团队密钥列表上方，不是机密。",
+    keyIdLabel: "Key ID",
+    keyIdPlaceholder: "ABCDE12345",
+    keyIdHelp: "下载的 .p8 文件名旁的短 ID，不是机密。",
+    nameLabel: "名称（可选）",
+    namePlaceholder: "例如：我们团队的 App Store",
+    teamKey:
+      "Apple 会通过读取团队中的第一个 App 验证此密钥；不会修改任何 App 或商品。",
+    privateKeyLabel: "私钥（.p8）",
+    privateKeyPlaceholder: "-----BEGIN PRIVATE KEY-----",
+    sourceLabel: "私钥输入方式",
+    uploadFile: "上传文件",
+    pasteText: "粘贴内容",
+    privateKeyHelp:
+      ".p8 只提交一次给 Foundry，验证后封存在服务器 secret store 中，永不回传。",
+    keyDiscarded:
+      "上一次 .p8 已在提交完成前从此表单清除。重试前请重新选择或粘贴。",
+    validating: "正在验证…",
+    validate: "验证并保存",
+    validationFailed: "Apple 拒绝了这个团队密钥",
+    editAndRetry: "修改后重试",
+    errors: {
+      issuer: "请填写 Apple 的 Issuer ID（UUID）。",
+      keyId: "请填写 Apple 的 8–16 位 Key ID。",
+      privateKey: "请选择或粘贴 Apple 的 .p8 私钥。",
+      fileTooLarge: "文件超过 16 KiB；请选择 Apple 下载的 .p8 文件。",
+      fileRead: "此浏览器无法读取所选文件。",
+    },
+    loadingApps: "正在检查此密钥可见的 App…",
+    appCount_one: "可见 {{count}} 个 App",
+    appCount_other: "可见 {{count}} 个 App",
+    appsNotRead: "尚未读取 App 列表。",
+    refreshApps: "检查 App",
+    noApps: "此密钥当前看不到任何 App。",
+    unnamedApp: "App {{id}}",
+    validatedTitle_one: "密钥验证成功 · 可见 {{count}} 个 App",
+    validatedTitle_other: "密钥验证成功 · 可见 {{count}} 个 App",
+    validatedApps: "可见 App：{{apps}}",
+    validatedNoApps:
+      "密钥有效，但当前看不到 App。请检查它在 App Store Connect 中的 App Manager 角色。",
+    loadFailed: "无法加载 App Store Connect 密钥：{{error}}",
+    workspaceAccess: "工作区访问",
+    bindingDetail:
+      "选择此工作区可以管理的 App。团队密钥在 Apple 侧仍可访问所有 App；Foundry 会拒绝此选择之外的全部请求。",
+    workspace: "工作区",
+    chooseWorkspace: "选择你管理的工作区",
+    loadingBinding: "正在加载此工作区的 App Store Connect 绑定…",
+    identity: "App Store Connect 密钥",
+    chooseIdentity: "选择团队密钥",
+    unverifiedApp: "已保存的 App 不在当前列表中。请检查密钥，或取消选择。",
+    accessTitle: "会话访问级别",
+    accessDetail:
+      "“只读”允许 GET 请求；“commerce”还允许创建和更新订阅组、订阅、优惠、本地化与审核截图。",
+    accessRead: "只读",
+    accessReadDetail: "App、订阅组、订阅、价格与本地化元数据。",
+    accessCommerce: "只读 + commerce",
+    accessCommerceDetail:
+      "还可创建和更新订阅组、订阅、推介优惠、本地化与审核截图。修改价格和提交审核仍需在 App Store Connect 中操作。",
+    saveBinding: "保存 App 与访问级别",
+    removeBinding: "移除工作区绑定",
+    boundNotice: "已在工作区为 {{name}} 绑定所选 App。",
+    unboundNotice: "已从此工作区移除 {{name}} 的 App Store Connect App。",
+    consumption:
+      "会话会获得 ASC_API_BASE_URL 与可撤销的 ASC_API_TOKEN。curl 只能访问此工作区绑定的 App 与级别；级别修改会在运行中会话的下一次请求生效。",
+  },
   page: {
     title: "连接器",
     intro:
@@ -122,6 +218,7 @@ export const externalAccounts: Translation<typeof en> = {
     workspaces_other: "已绑定 {{count}} 个工作区",
   },
   providers: {
+    appstoreconnect: "App Store Connect",
     aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "飞书",

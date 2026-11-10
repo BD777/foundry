@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -98,6 +99,27 @@ func TestAppStoreConnectJWTClaimsSignatureAndCache(t *testing.T) {
 	defer mu.Unlock()
 	if len(authorizations) != 4 || authorizations[3] == authorizations[1] {
 		t.Fatal("a JWT inside its refresh window was not replaced")
+	}
+}
+
+func TestAppStoreConnectCheckKeyReturnsAppleReason(t *testing.T) {
+	privateKey, _ := appStoreConnectTestKey(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"errors":[{"status":"403","code":"FORBIDDEN_ERROR","title":"The API key is not allowed to access this resource.","detail":"Grant the key App Manager access."}]}`))
+	}))
+	defer server.Close()
+	provider := externalaccounts.NewAppStoreConnect()
+	provider.BaseURL = server.URL
+	provider.Client = server.Client()
+	err := provider.CheckKey(context.Background(), "11111111-2222-3333-4444-555555555555", "ABCDEF1234", privateKey)
+	var keyError *externalaccounts.AppStoreConnectKeyError
+	if !errors.As(err, &keyError) || !errors.Is(err, externalaccounts.ErrAppStoreConnectKeyRejected) {
+		t.Fatalf("key refusal = %T %v", err, err)
+	}
+	if keyError.Status != http.StatusForbidden || !strings.Contains(keyError.Reason, "App Manager") || !strings.Contains(keyError.Reason, "not allowed") {
+		t.Fatalf("Apple reason was not preserved: %+v", keyError)
 	}
 }
 
