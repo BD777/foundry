@@ -387,7 +387,12 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 			if err != nil {
 				return err
 			}
-			data.AgentSessions = s.presentSessions(ctx, withoutRepeatedPrompts(summarizeAgentSessionsForList(s.sessionService.ReconcileAll(ctx, sessions))))
+			sessions = withoutRepeatedPrompts(summarizeAgentSessionsForList(s.sessionService.ReconcileAll(ctx, sessions)))
+			sessions, err = s.withWaitingChildCounts(ctx, sessions)
+			if err != nil {
+				return err
+			}
+			data.AgentSessions = s.presentSessions(ctx, sessions)
 			return nil
 		}},
 		{[]string{fieldAssets}, "ListAssets", func() (err error) {

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -27,7 +28,11 @@ func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request)
 		items = slices.DeleteFunc(items, func(session store.AgentSession) bool { return session.IssueID != issueID })
 	}
 	if err == nil {
-		items = s.presentSessions(r.Context(), summarizeAgentSessionsForList(s.sessionService.ReconcileAll(r.Context(), items)))
+		items = summarizeAgentSessionsForList(s.sessionService.ReconcileAll(r.Context(), items))
+		items, err = s.withWaitingChildCounts(r.Context(), items)
+		if err == nil {
+			items = s.presentSessions(r.Context(), items)
+		}
 	}
 	writeResult(w, items, err)
 }
@@ -46,6 +51,25 @@ func summarizeAgentSessionForList(session store.AgentSession) store.AgentSession
 	session.Error = ""
 	session.Events = nil
 	return session
+}
+
+// withWaitingChildCounts stamps the one projection-only field shared by chat
+// list and open-chat reads. The field is advisory: a failed count leaves the
+// sessions readable with zero, rather than failing the whole read.
+func (s *Server) withWaitingChildCounts(ctx context.Context, sessions []store.AgentSession) ([]store.AgentSession, error) {
+	ids := make([]string, len(sessions))
+	for index, session := range sessions {
+		ids[index] = session.ID
+	}
+	counts, err := s.sessionService.WaitingChildCounts(ctx, ids)
+	if err != nil {
+		log.Printf("waiting child counts for %d sessions: %v", len(sessions), err)
+		counts = nil
+	}
+	for index := range sessions {
+		sessions[index].WaitingChildCount = counts[sessions[index].ID]
+	}
+	return sessions, nil
 }
 
 func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
@@ -67,19 +91,25 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, _, err = s.reconcileAgentSession(r.Context(), item)
+	if err == nil && sessionEventsRequested(r) && !windowed {
+		item, err = s.store.GetAgentSession(r.Context(), item.ID)
+	}
+	if err == nil {
+		var counted []store.AgentSession
+		counted, err = s.withWaitingChildCounts(r.Context(), []store.AgentSession{item})
+		if err == nil {
+			item = counted[0]
+		}
+	}
 	item = s.presentSession(r.Context(), item)
-	if err == nil && sessionEventsRequested(r) {
-		if windowed {
-			page, pageErr := s.sessionEventWindow(r.Context(), item, window)
-			if pageErr != nil {
-				writeEventWindowError(w, pageErr)
-				return
-			}
-			writeResult(w, page, nil)
+	if err == nil && sessionEventsRequested(r) && windowed {
+		page, pageErr := s.sessionEventWindow(r.Context(), item, window)
+		if pageErr != nil {
+			writeEventWindowError(w, pageErr)
 			return
 		}
-		item, err = s.store.GetAgentSession(r.Context(), item.ID)
-		item = s.presentSession(r.Context(), item)
+		writeResult(w, page, nil)
+		return
 	}
 	writeResult(w, item, err)
 }
@@ -106,6 +136,11 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	items = s.sessionService.ReconcileAll(r.Context(), items)
+	items, err = s.withWaitingChildCounts(r.Context(), items)
+	if err != nil {
+		writeResult(w, items, err)
+		return
+	}
 	items = s.presentSessions(r.Context(), items)
 	if !windowed {
 		writeResult(w, items, nil)
@@ -155,7 +190,13 @@ func (s *Server) handleListIssueExecutions(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
-	items = s.presentSessions(r.Context(), s.sessionService.ReconcileAll(r.Context(), items))
+	items = s.sessionService.ReconcileAll(r.Context(), items)
+	items, err = s.withWaitingChildCounts(r.Context(), items)
+	if err != nil {
+		writeResult(w, items, err)
+		return
+	}
+	items = s.presentSessions(r.Context(), items)
 	pages := make([]windowedAgentSession, 0, len(items))
 	for _, item := range items {
 		page, err := windowSessionEvents(r.Context(), s.store, item, window)

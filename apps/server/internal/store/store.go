@@ -147,6 +147,22 @@ type IssueExecutionStore interface {
 	AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string, via string) (Issue, error)
 }
 
+// OutstandingChildTurn is one direct child of a session whose own current
+// turn may make its parent wait. StartedByParent is the store's attribution
+// fact; the sessions package owns how that fact becomes a waiting count.
+type OutstandingChildTurn struct {
+	ParentSessionID string
+	SessionID       string
+	Status          RunStatus
+	StartedByParent bool
+}
+
+// SessionDelegationStore reads the direct children whose current turns may
+// keep their parents waiting.
+type SessionDelegationStore interface {
+	OutstandingChildTurns(ctx context.Context, parentIDs []string) (map[string][]OutstandingChildTurn, error)
+}
+
 type Store interface {
 	Close() error
 

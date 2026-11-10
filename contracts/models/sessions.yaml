@@ -1217,6 +1217,12 @@ components:
                 one. Empty for human/browser chats. It is a record for display and limits, never a
                 source of permission."
               type: string
+            waitingChildCount:
+              description:
+                "`waitingChildCount` is how many direct sub-sessions this session is waiting on:
+                active turns whose current input it started, or ended children that are themselves
+                waiting on such descendants up to four levels deep. Absent or 0 when none."
+              type: integer
             questionsTo:
               description:
                 '`questionsTo`, set by the server on dispatch, is who answers the session''s questions
