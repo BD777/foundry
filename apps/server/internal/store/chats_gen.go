@@ -96,6 +96,15 @@ type ModelRequestUsage struct {
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
 	OutputTokens     int64 `json:"outputTokens"`
+
+	// FirstTokenMs Milliseconds from the Worker receiving the request's `message_start` to receiving its first `content_block_delta` of any kind (text, thinking or tool input). This excludes request setup before `message_start`.
+	FirstTokenMs int64 `json:"firstTokenMs,omitempty"`
+
+	// GenerationMs Milliseconds from the Worker receiving the first `content_block_delta` to receiving `message_stop`; it excludes time to first token. Clients compute output tokens per second from `outputTokens` and this duration.
+	GenerationMs int64 `json:"generationMs,omitempty"`
+
+	// RequestMs Milliseconds from the request's start to the Worker receiving `message_stop`. The first request starts when its turn starts; a later request starts when the SDK delivers the user message carrying the `tool_result` blocks that request sends. It includes time to first token and all stream delivery, so it remains meaningful when a relay buffers SSE; unlike `generationMs`, it is not a strict decode-speed interval.
+	RequestMs int64 `json:"requestMs,omitempty"`
 }
 
 // NativeArchiveDesired defines model for NativeArchiveDesired.

@@ -189,12 +189,15 @@ export const conversation = {
   },
   /** Duration and tokens of one turn, as the agent's SDK reported them. */
   usage: {
+    milliseconds: "{{value}}ms",
+    zeroSeconds: "0s",
     seconds: "{{seconds}}s",
     minutes: "{{minutes}}m {{seconds}}s",
     hours: "{{hours}}h {{minutes}}m",
     inputShort: "{{count}} in",
     inputCached: "{{count}} in ({{share}} cached)",
     outputShort: "{{count}} out",
+    outputSpeedValue: "{{value}} tok/s",
     totalShort: "{{count}} tokens",
     toolUses_one: "{{count}} tool call",
     toolUses_other: "{{count}} tool calls",
@@ -203,9 +206,13 @@ export const conversation = {
     stepsTitle_other:
       "Tokens of the {{count}} model requests behind these steps. A subagent's work counts on the subagent.",
     turnScope:
-      "The whole turn, as the agent reported it. Steps show the tokens of their own model requests; Codex reports tokens only per turn.",
+      "The whole turn, as the agent reported it. Steps show the tokens of their own model requests; Codex reports tokens only per turn. Output speed uses model time only, excluding tools and other work.",
     details: "Turn usage",
     duration: "Duration",
+    modelTime: "Model time",
+    toolsAndOther: "Tools & other",
+    timeToFirstToken: "Time to first token",
+    outputSpeed: "Output speed",
     modelRequests: "Model requests",
     input: "Input tokens",
     cacheRead: "Cache hits",

@@ -47,6 +47,7 @@ import {
 export interface CodexTurnState {
   inputId?: string;
   ceilingMs?: number;
+  startedAt?: number;
   emit: SessionEventEmitter;
   reportNativeSessionId: (nativeSessionId: string) => void;
   files: SessionTurnFiles;
@@ -217,6 +218,7 @@ export async function runCodexStreamedTurn(
   try {
     const streamed = await thread.runStreamed(input, {
       signal: abortController.signal,
+      turnStartedAt: state.startedAt,
       onStartupWait: () =>
         state.emit(
           "Notice",

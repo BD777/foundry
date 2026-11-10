@@ -400,7 +400,16 @@ type AgentSubagentTranscriptMessage struct {
 // AgentTurnUsage What one turn cost, as the agent's SDK reported it. Token counts share one meaning across providers: `inputTokens` is every prompt token the model read, and cache reads/writes are parts of it, not additions to it.
 type AgentTurnUsage struct {
 	// DurationMs Wall time from the runtime taking the turn to its final result.
-	DurationMs       int64 `json:"durationMs"`
+	DurationMs int64 `json:"durationMs"`
+
+	// ModelMs Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
+	ModelMs int64 `json:"modelMs,omitempty"`
+
+	// TtftMs Time to the first model output token in the turn. Claude values prefer `ttft_stream_ms`, the first streamed content frame when partial messages are enabled, and fall back to `ttft_ms`, the first complete assistant message; Codex values are estimates and set `timingEstimated`.
+	TtftMs int64 `json:"ttftMs,omitempty"`
+
+	// TimingEstimated Whether `modelMs` and `ttftMs` were reconstructed from wall and tool-item timing rather than reported by the provider. Codex sets this to true; Claude reports the values directly.
+	TimingEstimated  bool  `json:"timingEstimated,omitempty"`
 	InputTokens      int64 `json:"inputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
