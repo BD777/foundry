@@ -4,6 +4,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { flushRadixTimers } from "./radix-cleanup.mjs";
 import { toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
@@ -88,6 +89,7 @@ async function render(element) {
     container,
     async close() {
       await act(async () => root.unmount());
+      await flushRadixTimers(window);
       container.remove();
     },
   };

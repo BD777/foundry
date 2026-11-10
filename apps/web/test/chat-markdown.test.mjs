@@ -4,6 +4,10 @@ import { register } from "node:module";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  closeRadixDialogs,
+  flushRadixTimers,
+} from "./radix-cleanup.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 
 async function renderMarkdown(props, text, inspect) {
@@ -61,11 +65,9 @@ async function renderMarkdown(props, text, inspect) {
     });
     return html;
   } finally {
-    // Radix's focus guard dispatches on a timer; let it finish before the
-    // happy-dom window supplying CustomEvent is restored for the next test.
-    if (root)
-      await act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+    await closeRadixDialogs(window);
     if (root) await act(async () => root.unmount());
+    await flushRadixTimers(window);
     for (const [key, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
