@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CodexNativeWork } from "../dist/native-work/codex.js";
+import { claudeBackgroundWork } from "../dist/native-work/claude.js";
 
 function fixture(version = "0.163.0") {
   const rows = new Map([
@@ -163,6 +164,37 @@ test("list absence proves no running terminal but never fabricates a successful 
     "stopped",
   );
   assert.equal(f.observer.canStop("native-owner:terminal:command-b:22"), false);
+});
+
+test("an ended nested Claude subagent is terminal at its transcript end in another time zone", () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "America/Toronto";
+  try {
+    const endedAt = "2026-11-08T13:21:24.561404443Z";
+    const task = claudeBackgroundWork(
+      {
+        id: "nested",
+        provider: "claude",
+        kind: "subagent",
+        description: "nested task",
+        status: "ended",
+        startedAt: "2026-11-08T13:19:25.986986694Z",
+        endedAt,
+        hasOutput: true,
+      },
+      {
+        sessionId: "native",
+        version: "2.1.311",
+        canStop: () => false,
+      },
+    );
+    assert.equal(task.observation.status, "stopped");
+    assert.equal(task.observation.at, endedAt);
+    assert.ok(Date.parse(task.observation.at) <= Date.now());
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
 });
 
 test("a recycled process id cannot redirect an old task stop to a new command", async () => {

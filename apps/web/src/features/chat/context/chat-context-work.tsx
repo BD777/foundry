@@ -47,6 +47,10 @@ function WorkRow({
   const waitingAgain =
     hasFutureScheduledWork(item) &&
     ["completed", "failed", "stopped"].includes(item.observation.status);
+  const observedStatus =
+    item.observation.status === "unknown" && item.observation.endedAt
+      ? "stopped"
+      : item.observation.status;
   const status = unassigned
     ? "unknown"
     : pending
@@ -57,7 +61,7 @@ function WorkRow({
           ? "stopped"
           : waitingAgain
             ? "idle"
-            : item.observation.status;
+            : observedStatus;
   const statusLabel = unassigned
     ? t("work.unassignedStatus")
     : status === "pending"
@@ -66,7 +70,7 @@ function WorkRow({
         ? t("work.paused")
         : waitingAgain
           ? `${t("work.status.idle")} · ${t(`work.runStatus.${item.observation.status as "completed" | "failed" | "stopped"}`)}`
-          : t(`work.status.${item.observation.status}`);
+          : t(`work.status.${observedStatus}`);
   const scheduler = controller.list?.coverage.scheduler;
   const error =
     item.observation.error &&
@@ -280,7 +284,7 @@ function WorkRow({
           <dt>{t("work.observed")}</dt>
           <dd>{at(item.observation.at)}</dd>
           <dt>{t("work.actual")}</dt>
-          <dd>{t(`work.status.${item.observation.status}`)}</dd>
+          <dd>{t(`work.status.${observedStatus}`)}</dd>
           {item.kind === "schedule" ? (
             <>
               <dt>{t("work.schedule")}</dt>
