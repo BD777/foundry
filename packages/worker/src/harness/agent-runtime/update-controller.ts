@@ -36,12 +36,31 @@ const defaults: UpdateDependencies = {
   now: Date.now,
   busy: () => false,
 };
+
+function reportBookkeepingFailure(
+  action: "read" | "write",
+  runtime: string,
+  error: unknown,
+): void {
+  console.error(
+    `${action === "read" ? "Reading" : "Writing"} ${runtime} runtime-update bookkeeping failed: ${redactSecrets(String(error))}`,
+  );
+}
+
 export async function updateAgentRuntime(
   adapter: AgentUpdateAdapter,
   overrides: Partial<UpdateDependencies> = {},
 ): Promise<void> {
   const deps = { ...defaults, ...overrides };
-  const previous = deps.read(adapter.id);
+  const read = () => {
+    try {
+      return deps.read(adapter.id);
+    } catch (error) {
+      reportBookkeepingFailure("read", adapter.id, error);
+      return undefined;
+    }
+  };
+  const previous = read();
   if ((previous?.nextCheckAt ?? 0) > deps.now()) return;
   let state: RuntimeUpdateState = {
     ...previous,
@@ -50,7 +69,11 @@ export async function updateAgentRuntime(
   };
   const save = (change: Partial<RuntimeUpdateState>) => {
     state = { ...state, ...change };
-    deps.write(adapter.id, state);
+    try {
+      deps.write(adapter.id, state);
+    } catch (error) {
+      reportBookkeepingFailure("write", adapter.id, error);
+    }
   };
   let release: (() => void) | undefined;
   try {
@@ -95,7 +118,7 @@ export async function updateAgentRuntime(
       return;
     }
     // Another controller may have activated the target while we discovered it.
-    const latest = deps.read(adapter.id);
+    const latest = read();
     if (
       latest?.state === "current" &&
       latest.target === plan.target &&

@@ -14,8 +14,8 @@ import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
 import { clearNativeLoginHealth } from "./native-login.js";
 import {
   clearNativeCliCache,
-  nativeCli,
   nativeCliInstallCommands,
+  nativeCliWithUpdate,
 } from "./native-cli.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
 
@@ -69,7 +69,7 @@ async function runInstall(
 ): Promise<NativeCliInstallResult> {
   const testCommand = process.env.FOUNDRY_NATIVE_CLI_INSTALL_COMMAND?.trim();
   if (testCommand) return officialInstall(runtime, testCommand);
-  const cli = nativeCli(runtime);
+  const cli = nativeCliWithUpdate(runtime);
   if (cli.installed && cli.update?.state !== "external") {
     saveRuntimeUpdate(runtime, {
       state: "checking",
@@ -85,7 +85,7 @@ async function runInstall(
       ok: update?.state === "current" || update?.state === "waiting_idle",
       command: "Official stable runtime update",
       log: update?.detail ?? update?.state ?? "",
-      cli: nativeCli(runtime),
+      cli: nativeCliWithUpdate(runtime),
     };
   }
   const pin =
@@ -142,7 +142,7 @@ async function managedInstall(
       ok: false,
       command: managedCommand,
       log: `Sessions are still using ${name} on this device. Try again when they have finished.`,
-      cli: nativeCli(runtime),
+      cli: nativeCliWithUpdate(runtime),
     };
   saveRuntimeUpdate(runtime, {
     state: "updating",
@@ -221,7 +221,7 @@ export function installFailureReason(log: string): string {
 function refreshed(runtime: Runtime) {
   clearNativeLoginHealth();
   clearNativeCliCache();
-  return nativeCli(runtime);
+  return nativeCliWithUpdate(runtime);
 }
 
 async function officialInstall(
