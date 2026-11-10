@@ -79,6 +79,13 @@ components:
         runtimeSettings:
           $ref: "#/components/schemas/AgentRuntimeSettings"
           x-go-type-skip-optional-pointer: false
+        runtimeState:
+          description:
+            "`runtimeState` is the latest admission sample its worker reported: the effective
+            adaptive or forced limit, running and queued turns, why, the host signals and the
+            per-workspace estimates. The server stores it without recalculating it."
+          $ref: "#/components/schemas/DeviceRuntimeState"
+          x-go-type-skip-optional-pointer: false
         owned:
           description: "`owned` reports whether the caller owns (and may manage) the device."
           type: boolean
@@ -421,27 +428,45 @@ components:
       type: object
       required:
         - activeRuntimeTtlMs
-        - maxConcurrentTasks
       additionalProperties: false
       properties:
         activeRuntimeTtlMs:
           type: integer
+        mode:
+          description:
+            "`adaptive` lets the worker choose from its parallel floor through 16 using its signals
+            and turn estimates;
+            `forced` uses `forcedLimit` (the owner's overclock setting)."
+          type: string
+          enum:
+            - adaptive
+            - forced
+          x-go-type: string
+        forcedLimit:
+          description: The owner's fixed limit while `mode` is `forced` (1–16).
+          type: integer
         maxConcurrentTasks:
           description:
-            "`maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws
-            their choice: the worker uses its hardware default."
+            "Deprecated compatibility field from workers before adaptive concurrency. A positive
+            value is migrated to adaptive mode with a one-time notice; 0 means adaptive."
           type: integer
         maxConcurrentTasksSource:
-          description:
-            '`maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it
-            out.'
+          description: "Deprecated compatibility projection for older clients. New settings use `mode`."
           type: string
           enum:
             - owner
             - hardware
           x-go-type: string
+        migrationNotice:
+          description:
+            "`adaptive_migrated` is present once when an older positive `maxConcurrentTasks`
+            setting was moved to adaptive mode. It is for the device settings UI to acknowledge."
+          type: string
+          enum:
+            - adaptive_migrated
+          x-go-type: string
         hardwareMaxConcurrentTasks:
-          description: What this device's hardware allows by default.
+          description: Compatibility mirror of this device's adaptive parallel floor.
           type: integer
         hardware:
           description: The memory and CPUs that default is computed from.
@@ -460,6 +485,126 @@ components:
           format: double
         cpus:
           type: integer
+    DeviceRuntimeState:
+      description:
+        DeviceRuntimeState is the worker's latest admission sample, stored by the server as
+        reported.
+      type: object
+      required:
+        - capturedAt
+        - mode
+        - limit
+        - running
+        - queued
+        - hardHold
+        - reasons
+        - signals
+        - estimates
+      additionalProperties: false
+      properties:
+        capturedAt:
+          type: string
+        mode:
+          type: string
+          enum:
+            - adaptive
+            - forced
+          x-go-type: string
+        limit:
+          type: integer
+        running:
+          type: integer
+          description: Total turns running, limited and limit-exempt.
+        queued:
+          type: integer
+          description: Total turns waiting, limited and limit-exempt.
+        runningLimited:
+          type: integer
+          description: Turns running against the adaptive or forced limit.
+        runningExempt:
+          type: integer
+          description: Human and orchestration-parent turns running outside the limit.
+        queuedLimited:
+          type: integer
+          description: Turns waiting for an adaptive or forced-limit slot.
+        queuedExempt:
+          type: integer
+          description: Limit-exempt turns waiting only behind the same conversation.
+        hardHold:
+          description: While true, no new turn starts regardless of the limit.
+          type: boolean
+        reasons:
+          description:
+            "Stable reason codes such as memory_hard_hold, memory_limit,
+            estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased,
+            cpu_limit_increased and forced_mode."
+          type: array
+          items:
+            type: string
+        signals:
+          $ref: "#/components/schemas/DeviceResourceSignals"
+          x-go-type-skip-optional-pointer: false
+        estimates:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceTurnEstimate"
+    DeviceResourceSignals:
+      description: The host resource signals behind one admission decision.
+      type: object
+      additionalProperties: false
+      properties:
+        cpuCount:
+          type: integer
+        cpuPressurePercent:
+          type: number
+          format: double
+        loadAverage1:
+          type: number
+          format: double
+        memoryAvailableBytes:
+          type: integer
+          format: int64
+        memoryPressurePercent:
+          type: number
+          format: double
+        memoryTotalBytes:
+          type: integer
+          format: int64
+        swapFreeBytes:
+          type: integer
+          format: int64
+    DeviceTurnEstimate:
+      description: DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime.
+      type: object
+      required:
+        - typicalRssBytes
+        - peakRssBytes
+        - averageCpuCores
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        runtime:
+          type: string
+        source:
+          description:
+            "`prior` is the conservative default used before a completed turn has
+            been measured; `observed` comes from the worker's rolling samples."
+          type: string
+          enum:
+            - prior
+            - observed
+          x-go-type: string
+        typicalRssBytes:
+          type: integer
+          format: int64
+        peakRssBytes:
+          description: The 90th percentile of observed per-turn peak RSS.
+          type: integer
+          format: int64
+        averageCpuCores:
+          type: number
+          format: double
     DaemonRegistration:
       type: object
       required:

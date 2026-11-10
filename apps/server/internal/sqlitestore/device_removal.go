@@ -357,6 +357,8 @@ var deviceReferences = []deviceReference{
 	// No record means the person sent the input (SessionInputSender).
 	{"session_input_senders", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
 	{"session_inbox", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"session_alerts", "", `(child_session_id IN (` + deviceSessions + `) AND recipient_session_id NOT IN (` + deviceSessions + `))
+		OR (recipient_session_id IN (` + deviceSessions + `) AND child_session_id NOT IN (` + deviceSessions + `))`},
 	{"chat_queue_items", `sent_session_id = ''`, `sent_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"chat_titles", `generation_session_id = ''`, `generation_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"feishu_chat_threads", `latest_session_id = ''`, `latest_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},

@@ -93,8 +93,8 @@ func TestSessionObserversReactInOrderAfterViewers(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		{"changes", typesForTest(events.Observing().Changes), []string{"httpapi.workRunReactions", "httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "assistant.taskReactions", "assistant.inboxReactions", "assistant.runControlReactions", "sessions.inboxReactions", "httpapi.childReportReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions", "issues.executionStarts"}},
-		{"transcript events", typesForTest(events.Observing().Events), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "sessions.inboxReactions", "httpapi.pendingReactions", "httpapi.childQuestionReactions"}},
+		{"changes", typesForTest(events.Observing().Changes), []string{"httpapi.workRunReactions", "httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "assistant.taskReactions", "assistant.inboxReactions", "assistant.runControlReactions", "httpapi.sessionAlertReactions", "sessions.inboxReactions", "httpapi.childReportReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions", "httpapi.waitingChildReactions", "issues.executionStarts"}},
+		{"transcript events", typesForTest(events.Observing().Events), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "httpapi.sessionAlertReactions", "sessions.inboxReactions", "httpapi.pendingReactions", "httpapi.childQuestionReactions"}},
 		{"reported ends", typesForTest(events.Observing().Ends), []string{"*httpapi.chatTitleService"}},
 		{"issue updates", typesForTest(server.issues.Observing()), []string{"httpapi.feishuReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions"}},
 	} {

@@ -9,6 +9,7 @@
  */
 
 import type {
+  ConnectorConfiguration,
   ConnectorDescriptor,
   ConnectorExtensionSource,
   DeviceConnectorState,
@@ -17,6 +18,7 @@ export type {
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationScope,
   ConnectorAuthorizationState,
+  ConnectorConfiguration,
   ConnectorDescriptor,
   ConnectorExtensionRepository,
   ConnectorExtensionSource,
@@ -152,6 +154,7 @@ export interface SetWorkspaceDeviceConnectorsInput {
 export type DeviceConnectorAction =
   | "status"
   | "install"
+  | "configure"
   | "sign_in_begin"
   | "sign_in_poll"
   | "sign_in_dismiss"
@@ -167,8 +170,10 @@ export interface ConnectorRequestPayload {
   authorizationId?: string;
   authorizationRevision?: number;
   operationId?: string;
-  /** sign_in_begin: what the person chose (connector-specific, e.g. AWS method and Region). */
+  /** sign_in_begin: what the person chose (connector-specific, e.g. AWS method). */
   signInOptions?: Record<string, string>;
+  /** configure: non-secret profile settings the person changed. */
+  configuration?: ConnectorConfiguration;
   /** sign_in_input: what the person typed (an authorization code). */
   input?: string;
 }

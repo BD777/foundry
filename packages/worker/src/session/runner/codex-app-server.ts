@@ -9,10 +9,11 @@ import { nativeCli } from "../../harness/native/native-cli.js";
 import { authenticateIsolatedCodex } from "../../harness/agent-runtime/codex-auth.js";
 import { acquireRuntime } from "../../harness/agent-runtime/maintenance.js";
 import { codexModelCatalogArguments } from "../../harness/agent-runtime/codex-model-catalog.js";
+import type { AgentProcessContext } from "../../platform/process/agent-processes.js";
 import {
   recordWorkToolStarting,
   recordWorkToolCompleted,
-  recordNativeWork,
+  recordNativeWorkBatch,
 } from "../../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
 import {
@@ -33,6 +34,11 @@ import {
 import { CodexQuestionGate, codexRequestResolved } from "./codex-questions.js";
 import { sdkMessageText, sdkResponseMessage } from "./sdk-messages.js";
 import { codexTurnUsage, turnUsageMetadata } from "../usage/turn-usage.js";
+import { CodexTimingTracker } from "../usage/codex-timing.js";
+import {
+  CodexRequestTimingTracker,
+  estimatedTimingReliable,
+} from "../usage/codex-request-timing.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
 import { errorMessage } from "../../platform/utils.js";
 import {
@@ -41,6 +47,10 @@ import {
   goalSyncEvent,
   type SessionGoalAction,
 } from "../goals.js";
+import {
+  codexFoundryToolsConnection,
+  FoundryToolsSupervisor,
+} from "./foundry-tools-supervisor.js";
 export { CodexAppServer } from "../../harness/agent-runtime/codex-client.js";
 export type { CodexRpcTimeouts } from "../../harness/agent-runtime/codex-client.js";
 
@@ -333,11 +343,100 @@ interface CodexOwnTurn {
   startedAt: number;
   response: string;
   usage?: Record<string, number>;
+  usageBaseline?: CodexTokenUsage;
+  usageSummed?: CodexTokenUsage;
+}
+
+interface CodexTokenUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+}
+
+const emptyCodexTokenUsage: CodexTokenUsage = {
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteInputTokens: 0,
+  outputTokens: 0,
+  reasoningOutputTokens: 0,
+  totalTokens: 0,
+};
+
+const codexToolItemTypes = new Set([
+  "commandExecution",
+  "fileChange",
+  "mcpToolCall",
+  "webSearch",
+]);
+
+function codexTokenUsage(value: unknown): CodexTokenUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const usage = value as Record<string, unknown>;
+  const count = (field: string): number => {
+    const number = usage[field];
+    return typeof number === "number" && Number.isFinite(number) && number > 0
+      ? Math.round(number)
+      : 0;
+  };
+  return {
+    inputTokens: count("inputTokens"),
+    cachedInputTokens: count("cachedInputTokens"),
+    cacheWriteInputTokens: count("cacheWriteInputTokens"),
+    outputTokens: count("outputTokens"),
+    reasoningOutputTokens: count("reasoningOutputTokens"),
+    totalTokens: count("totalTokens"),
+  };
+}
+
+function addCodexTokenUsage(
+  left: CodexTokenUsage,
+  right: CodexTokenUsage,
+): CodexTokenUsage {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
+    cacheWriteInputTokens:
+      left.cacheWriteInputTokens + right.cacheWriteInputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningOutputTokens:
+      left.reasoningOutputTokens + right.reasoningOutputTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}
+
+function subtractCodexTokenUsage(
+  total: CodexTokenUsage,
+  baseline: CodexTokenUsage,
+): CodexTokenUsage {
+  const delta = (key: keyof CodexTokenUsage) =>
+    Math.max(0, total[key] - baseline[key]);
+  return {
+    inputTokens: delta("inputTokens"),
+    cachedInputTokens: delta("cachedInputTokens"),
+    cacheWriteInputTokens: delta("cacheWriteInputTokens"),
+    outputTokens: delta("outputTokens"),
+    reasoningOutputTokens: delta("reasoningOutputTokens"),
+    totalTokens: delta("totalTokens"),
+  };
+}
+
+function codexTokenUsageWire(usage: CodexTokenUsage): Record<string, number> {
+  return {
+    input_tokens: usage.inputTokens,
+    cached_input_tokens: usage.cachedInputTokens,
+    cache_write_input_tokens: usage.cacheWriteInputTokens,
+    output_tokens: usage.outputTokens,
+    reasoning_output_tokens: usage.reasoningOutputTokens,
+  };
 }
 
 /** One app-server process and what Codex runs in it for this thread. */
 interface CodexConnection {
   client: CodexAppServer;
+  foundryTools?: FoundryToolsSupervisor;
   nativeWork?: CodexNativeWork;
   unregisterWork: () => void;
   /** Undefined until read; null when the thread has no goal. */
@@ -357,6 +456,8 @@ interface CodexConnection {
   held?: [string, any][];
   /** Kept open past the end of the Foundry turn that started it. */
   resident: boolean;
+  /** The latest cumulative token usage Codex reported for the thread. */
+  tokenUsageTotal?: CodexTokenUsage;
   /** Goal controls of the person in flight: they keep it open. */
   controls?: number;
   closing?: Promise<void>;
@@ -404,6 +505,7 @@ export class CodexAppServerThread implements CodexSDKThread {
     private readonly config: Record<string, unknown>,
     private readonly options: Record<string, any>,
     id?: string,
+    private readonly processContext?: AgentProcessContext,
   ) {
     this.id = id;
     this.questions = new CodexQuestionGate(
@@ -419,6 +521,11 @@ export class CodexAppServerThread implements CodexSDKThread {
    */
   answerQuestion(message: string): boolean {
     return this.questions.take(message);
+  }
+
+  /** The process-group leader while this thread has an app-server open. */
+  pid(): number | undefined {
+    return this.connection?.client.pid;
   }
 
   /** A message to the session: it may grant a relayed approval. */
@@ -553,6 +660,7 @@ export class CodexAppServerThread implements CodexSDKThread {
             this.options.workingDirectory,
             this.options.rpcTimeouts,
             [...catalogArgs, ...codexProviderArguments(this.config)],
+            this.processContext,
           ),
         ),
       );
@@ -659,6 +767,7 @@ export class CodexAppServerThread implements CodexSDKThread {
             this.options.workingDirectory,
             this.options.rpcTimeouts,
             [...catalogArgs, ...codexProviderArguments(this.config)],
+            this.processContext,
           ),
         );
       }
@@ -669,6 +778,14 @@ export class CodexAppServerThread implements CodexSDKThread {
       this.starting = false;
     }
     const client = connection.client;
+    const turnStartedAt =
+      typeof options?.turnStartedAt === "number"
+        ? options.turnStartedAt
+        : undefined;
+    const timing = new CodexTimingTracker({ startedAt: turnStartedAt });
+    const requestTiming = new CodexRequestTimingTracker({
+      startedAt: turnStartedAt,
+    });
     const active: CodexFoundryTurn = {
       client,
       turnId: "",
@@ -688,6 +805,9 @@ export class CodexAppServerThread implements CodexSDKThread {
     const queue = new AsyncInputQueue<unknown>();
     let failure: Error | undefined;
     let usage: any;
+    let usageBaseline = connection.tokenUsageTotal;
+    let summedUsage = { ...emptyCodexTokenUsage };
+    let requestSequence = 0;
     const items = new Map<string, any>();
     // Codex 0.164 neither compacts nor retries after the endpoint refuses a
     // request as too long, and its next turns skip pre-turn compaction too
@@ -702,7 +822,12 @@ export class CodexAppServerThread implements CodexSDKThread {
     const fail = (message: string) => {
       if (active.terminal) return;
       active.terminal = true;
-      queue.push({ type: "turn.failed", error: { message } });
+      queue.push({
+        type: "turn.failed",
+        ...(usage ? { usage } : {}),
+        timing: timing.finish(undefined),
+        error: { message },
+      });
       queue.close();
     };
     const abort = () => {
@@ -716,7 +841,10 @@ export class CodexAppServerThread implements CodexSDKThread {
           })
           .catch(() => undefined);
       active.terminal = true;
-      failure = new Error("Codex turn was interrupted.");
+      failure = Object.assign(new Error("Codex turn was interrupted."), {
+        ...(usage ? { usage } : {}),
+        timing: timing.finish(undefined),
+      });
       queue.close();
       if (!active.turnId) void client.close().catch(() => {});
     };
@@ -730,7 +858,11 @@ export class CodexAppServerThread implements CodexSDKThread {
       });
     };
     active.onFailure = (error) => {
-      if (!active.terminal) failure = error;
+      if (!active.terminal)
+        failure = Object.assign(error, {
+          ...(usage ? { usage } : {}),
+          timing: timing.finish(undefined),
+        });
       queue.close();
     };
     active.onPrompt = (message) => {
@@ -743,9 +875,13 @@ export class CodexAppServerThread implements CodexSDKThread {
     };
     active.item = (itemId) => items.get(itemId);
     active.onNotification = (method, params) => {
-      if (method === "turn/started") active.turnId = params.turn.id;
+      if (method === "turn/started") {
+        active.turnId = params.turn.id;
+      }
       if (params.turnId && active.turnId && params.turnId !== active.turnId)
         return;
+      timing.observe(method, params);
+      requestTiming.observe(method, params);
       if (
         method === "thread/compacted" ||
         (method === "item/completed" &&
@@ -755,13 +891,41 @@ export class CodexAppServerThread implements CodexSDKThread {
         if (recovery === "compacting") return;
       }
       if (method === "thread/tokenUsage/updated") {
-        const last = params.tokenUsage?.last;
-        if (last)
-          usage = {
-            input_tokens: last.inputTokens,
-            cached_input_tokens: last.cachedInputTokens,
-            output_tokens: last.outputTokens,
-          };
+        const last = codexTokenUsage(params.tokenUsage?.last);
+        const total = codexTokenUsage(params.tokenUsage?.total);
+        if (last) {
+          summedUsage = addCodexTokenUsage(summedUsage, last);
+          requestSequence += 1;
+          const requestId = `${active.turnId || params.turnId || "turn"}:${requestSequence}`;
+          const requestMs = requestTiming.takeRequestMs();
+          queue.push({
+            type: "foundry.model_request_usage",
+            requestUsage: {
+              requestId,
+              inputTokens: last.inputTokens,
+              cacheReadTokens: last.cachedInputTokens,
+              cacheWriteTokens: last.cacheWriteInputTokens,
+              outputTokens: last.outputTokens,
+              ...(requestMs !== undefined &&
+              estimatedTimingReliable(last.outputTokens, requestMs)
+                ? { requestMs }
+                : {}),
+              timingEstimated: true,
+            },
+          });
+        }
+        if (total) {
+          if (!usageBaseline && last)
+            usageBaseline = subtractCodexTokenUsage(total, last);
+          usage = codexTokenUsageWire(
+            usageBaseline
+              ? subtractCodexTokenUsage(total, usageBaseline)
+              : summedUsage,
+          );
+          connection.tokenUsageTotal = total;
+        } else {
+          usage = codexTokenUsageWire(summedUsage);
+        }
       }
       if (method === "item/started" || method === "item/completed") {
         if (params.item.type === "commandExecution") {
@@ -859,13 +1023,22 @@ export class CodexAppServerThread implements CodexSDKThread {
         active.completed = params.turn.status === "completed";
         queue.push(
           params.turn.status === "completed"
-            ? { type: "turn.completed", usage }
+            ? {
+                type: "turn.completed",
+                usage,
+                timing: timing.finish(params.turn),
+              }
             : {
                 type: "turn.failed",
+                ...(usage ? { usage } : {}),
+                timing: timing.finish(params.turn),
                 error: {
                   message:
                     params.turn.error?.message ??
                     `Codex turn ${params.turn.status}`,
+                  ...(params.turn.error?.codexErrorInfo !== undefined
+                    ? { codexErrorInfo: params.turn.error.codexErrorInfo }
+                    : {}),
                 },
               },
         );
@@ -1007,6 +1180,7 @@ export class CodexAppServerThread implements CodexSDKThread {
         })
       : await client.request("thread/start", params);
     this.id = thread.thread.id;
+    this.startFoundryToolsSupervisor(connection);
     if (resumed) await refreshCodexInstructions(client, this.id!, this.config);
     const foundrySessionId = this.options.workSessionId as string | undefined;
     if (foundrySessionId && this.id) {
@@ -1014,8 +1188,8 @@ export class CodexAppServerThread implements CodexSDKThread {
         client,
         this.id,
         nativeCli("codex").version || "unknown",
-        (task) => {
-          recordNativeWork(foundrySessionId, task);
+        (tasks) => {
+          recordNativeWorkBatch(foundrySessionId, tasks);
           this.reconsider(connection);
         },
         (message) => this.active?.onDiagnostic?.(message),
@@ -1050,6 +1224,22 @@ export class CodexAppServerThread implements CodexSDKThread {
     return Boolean(
       this.options.persistent && this.options.workSessionId && !this.shutDown,
     );
+  }
+
+  private startFoundryToolsSupervisor(connection: CodexConnection): void {
+    if (connection.foundryTools || !this.id) return;
+    const servers = this.config.mcp_servers;
+    if (!servers || typeof servers !== "object" || !("foundry" in servers))
+      return;
+    const sessionId = String(this.options.workSessionId ?? "");
+    connection.foundryTools = new FoundryToolsSupervisor(
+      codexFoundryToolsConnection(connection.client, this.id),
+      (label, detail, level) => {
+        if (sessionId)
+          emitOutOfBandSessionEvent(sessionId, { label, detail, level });
+      },
+    );
+    void connection.foundryTools.status();
   }
 
   private connect(client: CodexAppServer): CodexConnection {
@@ -1087,6 +1277,22 @@ export class CodexAppServerThread implements CodexSDKThread {
   ): void {
     connection.nativeWork?.observe(method, params);
     if (params.threadId && this.id && params.threadId !== this.id) return;
+    if (
+      method === "mcpServer/startupStatus/updated" &&
+      params.name === "foundry"
+    ) {
+      if (params.status === "ready") void connection.foundryTools?.connected();
+      else if (params.status === "failed" || params.status === "cancelled")
+        void connection.foundryTools?.failed(
+          redactSecrets(
+            String(
+              params.error ??
+                params.failureReason?.type ??
+                "The Foundry MCP server failed to start.",
+            ),
+          ),
+        );
+    }
     if (method === codexRequestResolved) {
       this.questions.resolved(params.requestId);
       return;
@@ -1237,6 +1443,8 @@ export class CodexAppServerThread implements CodexSDKThread {
         turnId: String(params.turn?.id ?? ""),
         startedAt: Date.now(),
         response: "",
+        usageBaseline: connection.tokenUsageTotal,
+        usageSummed: { ...emptyCodexTokenUsage },
       };
       reportNativeOwnTurn(sessionId, true);
       this.log("own turn started", connection.own.turnId);
@@ -1244,13 +1452,33 @@ export class CodexAppServerThread implements CodexSDKThread {
     }
     const own = connection.own;
     if (!own) return;
-    if (method === "thread/tokenUsage/updated" && params.tokenUsage?.last) {
-      const last = params.tokenUsage.last;
-      own.usage = {
-        input_tokens: last.inputTokens,
-        cached_input_tokens: last.cachedInputTokens,
-        output_tokens: last.outputTokens,
-      };
+    if (
+      method === "thread/tokenUsage/updated" &&
+      (params.tokenUsage?.last || params.tokenUsage?.total)
+    ) {
+      const last = codexTokenUsage(params.tokenUsage?.last);
+      const total = codexTokenUsage(params.tokenUsage?.total);
+      if (last)
+        own.usageSummed = addCodexTokenUsage(
+          own.usageSummed ?? emptyCodexTokenUsage,
+          last,
+        );
+      if (total) {
+        own.usageBaseline ??=
+          last && total
+            ? subtractCodexTokenUsage(total, last)
+            : connection.tokenUsageTotal;
+        own.usage = codexTokenUsageWire(
+          own.usageBaseline
+            ? subtractCodexTokenUsage(total, own.usageBaseline)
+            : (own.usageSummed ?? emptyCodexTokenUsage),
+        );
+        connection.tokenUsageTotal = total;
+      } else if (last) {
+        own.usage = codexTokenUsageWire(
+          own.usageSummed ?? emptyCodexTokenUsage,
+        );
+      }
     }
     if (method === "item/completed" && params.item?.type === "agentMessage") {
       const event = {
@@ -1278,7 +1506,12 @@ export class CodexAppServerThread implements CodexSDKThread {
    */
   private finishOwnTurn(
     connection: CodexConnection,
-    turn: { status?: string; error?: { message?: string } } | undefined,
+    turn:
+      | {
+          status?: string;
+          error?: { message?: string; codexErrorInfo?: unknown };
+        }
+      | undefined,
     handedOver = false,
   ): void {
     const own = connection.own;
@@ -1319,6 +1552,7 @@ export class CodexAppServerThread implements CodexSDKThread {
           ...turnUsageMetadata(
             codexTurnUsage({ usage: own.usage }),
             own.startedAt,
+            failed ? "failed" : "completed",
           ),
         },
       });
@@ -1393,6 +1627,8 @@ export class CodexAppServerThread implements CodexSDKThread {
     connection.closing ??= (async () => {
       const resident = connection.resident;
       connection.resident = false;
+      connection.foundryTools?.close();
+      connection.foundryTools = undefined;
       await connection.client.close();
       connection.nativeWork?.closedAfterExit();
       connection.unregisterWork();

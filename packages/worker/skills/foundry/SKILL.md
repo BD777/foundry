@@ -52,6 +52,10 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   next one. Do not hold a turn open waiting, least of all in a chat, where the
   person waits behind you. A session you did not create reports to its own
   creator: ask it to send you its result.
+- If a session you started fails, is canceled by someone else or stays blocked, Foundry sends a short `Foundry alert:` with its code and suggested action; retry or redirect it with `send_message` only when that helps.
+  when you are idle if a session you started fails, is canceled by someone
+  else, or stays blocked/offline; read its code and action, then use
+  `send_message` only when a retry or redirect is appropriate.
 - A child's question or approval reaches you as a `Foundry question:`
   message while it waits. Answer with `send_message` to it: plain text, or
   "Approve" for an approval (other text denies). If only the person can
@@ -82,8 +86,9 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - Use your own tools for timers and background commands within a session;
   `create_scheduled_work` is only for what must outlive your process. A
   control of persistent work is done when `list_session_work` shows it
-  confirmed. Never replace a managed schedule with host cron or a detached
-  agent.
+  confirmed; list it compactly with `status`, `itemSessionId`, `limit` and
+  `nextCursor`, and ask for `detail=true` only when a full record is needed.
+  Never replace a managed schedule with host cron or a detached agent.
 
 ## The person's assistant
 

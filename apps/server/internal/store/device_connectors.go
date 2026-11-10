@@ -148,6 +148,8 @@ type ConnectorRequestPayload struct {
 	Fresh                 bool                `json:"fresh,omitempty"`
 	// SignInOptions: what the person chose for sign_in_begin (connector-specific).
 	SignInOptions map[string]string `json:"signInOptions,omitempty"`
+	// Configuration: non-secret profile settings a configure action changes.
+	Configuration *ConnectorConfiguration `json:"configuration,omitempty"`
 	// Input: what the person typed for sign_in_input (an authorization code).
 	Input string `json:"input,omitempty"`
 }

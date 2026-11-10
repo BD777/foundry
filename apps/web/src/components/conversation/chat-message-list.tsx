@@ -8,6 +8,7 @@ import { i18n } from "../../i18n";
 import { cn } from "../../lib/cn";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { CopyButton } from "../ui/copy-button";
+import { AnswerPreviewButton } from "./answer-preview";
 import { CompactionDivider } from "./compaction-divider";
 import { AttachmentList } from "./attachment-list";
 import {
@@ -82,7 +83,10 @@ function stepUsageEqual(left?: StepUsage, right?: StepUsage): boolean {
       left.requests === right.requests &&
       left.inputTokens === right.inputTokens &&
       left.cacheReadTokens === right.cacheReadTokens &&
-      left.outputTokens === right.outputTokens)
+      left.outputTokens === right.outputTokens &&
+      left.requestMs === right.requestMs &&
+      left.generationMs === right.generationMs &&
+      left.decodeEligible === right.decodeEligible)
   );
 }
 
@@ -328,6 +332,13 @@ export const ChatMessageRow = memo(
       message.sentBy ||
       message.idea;
     const attachmentsAlone = user && attachments && !bubble;
+    const answerPreview =
+      !user &&
+      !message.streaming &&
+      typeof message.text === "string" &&
+      message.text
+        ? message.text
+        : undefined;
     // Time and usage, under the bubble on hover (or the tiles of a message
     // of attachments alone).
     const meta =
@@ -343,7 +354,9 @@ export const ChatMessageRow = memo(
                     ? "right-0"
                     : user
                       ? "right-14"
-                      : "left-[25px]",
+                      : answerPreview
+                        ? "left-[54px]"
+                        : "left-[25px]",
                 ],
           )}
         >
@@ -451,6 +464,20 @@ export const ChatMessageRow = memo(
             label={t("message.copyMessage")}
             showCheck={false}
             text={message.copyText}
+          />
+        ) : null}
+        {answerPreview ? (
+          <AnswerPreviewButton
+            className={cn(
+              messageActionClass(Boolean(message.copyAlways)),
+              !message.copyAlways && "left-[22px]",
+            )}
+            deviceFiles={message.role !== "user" && fileActions?.deviceFiles}
+            fileReferences={message.fileReferences}
+            fileRoot={message.role === "user" ? undefined : fileActions?.root}
+            markdown={answerPreview}
+            onImagePreview={onImagePreview}
+            onOpenFileReference={fileActions?.open}
           />
         ) : null}
         {meta}

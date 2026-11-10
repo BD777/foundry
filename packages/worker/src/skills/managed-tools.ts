@@ -30,6 +30,11 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 import { foundryToolsRoot } from "../platform/state-root.js";
+import {
+  outboundRoute,
+  workerFetch,
+  workerProxyEnvironment,
+} from "../platform/server-link/server-proxy.js";
 import { unpackZip } from "./skill-zip.js";
 import { isInside } from "../platform/paths.js";
 
@@ -168,10 +173,18 @@ async function download(
   for (let hop = 0; hop < 6; hop += 1) {
     if (!allowed(url, options))
       throw new Error(`refusing to download from ${url.origin}`);
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(5 * 60 * 1000),
-    });
+    const route = outboundRoute(url);
+    let response;
+    try {
+      response = await workerFetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(5 * 60 * 1000),
+      });
+    } catch (error) {
+      throw new Error(
+        `download failed (${route}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("redirect without a location");
@@ -179,7 +192,9 @@ async function download(
       continue;
     }
     if (!response.ok || !response.body)
-      throw new Error(`download failed: ${response.status} ${url.pathname}`);
+      throw new Error(
+        `download failed (${route}): HTTP ${response.status} ${url.pathname}`,
+      );
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (declared > limit) throw new Error("download is too large");
     const chunks: Buffer[] = [];
@@ -439,9 +454,9 @@ export function findCommand(
 
 /** PATH for package managers and setup steps: this worker's node first,
  * then Foundry's tools. */
-export function toolEnvironment(): NodeJS.ProcessEnv {
+export function toolEnvironment(target?: string): NodeJS.ProcessEnv {
   return {
-    ...process.env,
+    ...workerProxyEnvironment(target),
     PATH: `${dirname(process.execPath)}:${withManagedTools(process.env.PATH)}`,
   };
 }
@@ -504,7 +519,11 @@ async function installNpmTool(
         `${pkg}@${spec.version}`,
       ],
       {
-        env: toolEnvironment(),
+        env: toolEnvironment(
+          spec.registry && spec.registry !== "device"
+            ? spec.registry
+            : (options.npmRegistry ?? "https://registry.npmjs.org/"),
+        ),
         timeout: 9 * 60 * 1000,
         maxBuffer: 16 * 1024 * 1024,
       },

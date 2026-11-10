@@ -72,8 +72,17 @@ func (s *Service) DeleteApp(ctx context.Context, app store.ExternalProviderApp) 
 		s.Logf("external accounts: forget the rotation advice of %s: %v", app.ID, err)
 	}
 	if s.secrets != nil {
-		if err := s.secrets.DeleteSecret(ctx, AppSecretID(app.ID)); err != nil && !errors.Is(err, store.ErrNotFound) {
+		secretID := AppSecretID(app.ID)
+		if app.Provider == "appstoreconnect" {
+			secretID = AppStoreConnectKeySecretID(app.ID)
+		}
+		if err := s.secrets.DeleteSecret(ctx, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("delete the app secret: %w", err)
+		}
+	}
+	if app.Provider == "appstoreconnect" {
+		if keyStore, ok := any(s.store).(store.AppStoreConnectStore); ok {
+			_ = keyStore.DeleteAppStoreConnectKey(ctx, app.ID)
 		}
 	}
 	return nil
@@ -95,7 +104,11 @@ func (s *Service) ListApps(ctx context.Context, userID string) ([]store.External
 		return nil, err
 	}
 	for index := range apps {
-		apps[index].HasSecret = s.hasSecret(ctx, AppSecretID(apps[index].ID))
+		secretID := AppSecretID(apps[index].ID)
+		if apps[index].Provider == "appstoreconnect" {
+			secretID = AppStoreConnectKeySecretID(apps[index].ID)
+		}
+		apps[index].HasSecret = s.hasSecret(ctx, secretID)
 		_, apps[index].RotateSecret = rotate[apps[index].ID]
 		for _, account := range accounts {
 			if account.AppID == apps[index].ID {
@@ -280,6 +293,9 @@ func (s *Service) withAppNames(ctx context.Context, accounts []store.ExternalAcc
 func (s *Service) ReplaceAppSecret(ctx context.Context, app store.ExternalProviderApp, clientSecret string) (store.ExternalProviderApp, error) {
 	if !s.SecretsConfigured() {
 		return store.ExternalProviderApp{}, ErrSecretsNotConfigured
+	}
+	if app.Provider == "appstoreconnect" {
+		return store.ExternalProviderApp{}, errors.New("replace an App Store Connect key through its key endpoint")
 	}
 	clientSecret = strings.TrimSpace(clientSecret)
 	if clientSecret == "" {

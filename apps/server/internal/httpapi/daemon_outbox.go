@@ -42,6 +42,9 @@ type wsHeartbeatPayload struct {
 	// tasks, timers, a turn the agent continues, a kept Codex app-server);
 	// they keep the sessions' connector grants live (gateway.SessionLive).
 	NativeWorkSessionIDs []string `json:"nativeWorkSessionIds,omitempty"`
+	// RuntimeState is the worker's latest admission decision and resource
+	// sample. The server stores it as reported.
+	RuntimeState *store.DeviceRuntimeState `json:"runtimeState,omitempty"`
 }
 
 const (
@@ -71,6 +74,20 @@ func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
 	}
 	c.noteHeartbeatClaims(heartbeat.ActiveSessionIDs)
 	c.confirmNativeWork(heartbeat.NativeWorkSessionIDs)
+	if heartbeat.RuntimeState != nil {
+		deviceID, _ := c.registrationSnapshot()
+		if deviceID != "" {
+			if recorder, ok := c.hub.store.(store.DeviceRuntimeStateStore); ok {
+				if err := recorder.SaveDeviceRuntimeState(
+					context.Background(),
+					deviceID,
+					*heartbeat.RuntimeState,
+				); err != nil {
+					log.Printf("daemon %s runtime state not kept: %v", deviceID, err)
+				}
+			}
+		}
+	}
 	if heartbeat.Outbox == nil {
 		return
 	}

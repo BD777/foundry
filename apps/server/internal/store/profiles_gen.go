@@ -264,6 +264,33 @@ type CreateAgentProfileInput struct {
 	Env                  map[string]string    `json:"env,omitempty"`
 }
 
+// ExecutionDefaultScope defines model for ExecutionDefaultScope.
+type ExecutionDefaultScope = string
+
+// ExecutionDefaultsView The saved execution default at this level, the effective one after workspace fallback, and where it came from.
+type ExecutionDefaultsView struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+
+	// Saved The model a person's orchestrator uses for delegated execution when a child names no model.
+	Saved *ExecutionModelDefault `json:"saved,omitempty"`
+
+	// Effective The model a person's orchestrator uses for delegated execution when a child names no model.
+	Effective ExecutionModelDefault `json:"effective"`
+}
+
+// ExecutionModelDefault The model a person's orchestrator uses for delegated execution when a child names no model.
+type ExecutionModelDefault struct {
+	ProviderID string `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime   NativeRuntimeID       `json:"runtime"`
+	Model     string                `json:"model"`
+	Effort    string                `json:"effort,omitempty"`
+	Scope     ExecutionDefaultScope `json:"scope"`
+	UpdatedBy string                `json:"updatedBy,omitempty"`
+	UpdatedAt string                `json:"updatedAt,omitempty"`
+}
+
 // ExternalConnectionSetupInfo ExternalConnectionSetupInfo is what a gateway registered with `foundry-worker connection add --setup-command …`: one shell line the device's own account runs, never a secret.
 type ExternalConnectionSetupInfo struct {
 	// Command One shell line the device's own account runs; never a secret.
@@ -281,6 +308,46 @@ type ExternalConnectionSetupInfo struct {
 
 // ExternalConnectionSignIn How the installer signs the person in to the gateway.
 type ExternalConnectionSignIn = string
+
+// ModelNote ModelNote is one observation an orchestrator recorded about a specific model.
+type ModelNote struct {
+	ID           string `json:"id"`
+	ProviderKind string `json:"providerKind"`
+	ProviderID   string `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime"`
+	Model   string          `json:"model"`
+
+	// Body What the orchestrator learned about handing work to this model.
+	Body         string `json:"body"`
+	AuthorUserID string `json:"authorUserId"`
+	AuthorName   string `json:"authorName"`
+
+	// AuthorSessionID The agent session that appended the note; absent for a person.
+	AuthorSessionID string `json:"authorSessionId,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
+}
+
+// ModelNoteInput ModelNoteInput appends one note to a provider's model.
+type ModelNoteInput struct {
+	ProviderKind string `json:"providerKind"`
+	ProviderID   string `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime"`
+	Model   string          `json:"model"`
+	Body    string          `json:"body"`
+}
+
+// ModelNotePage One page of model notes, newest first.
+type ModelNotePage struct {
+	Total      int                       `json:"total"`
+	Offset     int                       `json:"offset"`
+	NextOffset int                       `json:"nextOffset,omitempty"`
+	Notes      jsonempty.List[ModelNote] `json:"notes"`
+}
 
 // NativeAccountHold NativeAccountHold is Foundry's durable block, not an online health claim.
 type NativeAccountHold struct {
@@ -427,6 +494,9 @@ type ProfileDefinition struct {
 	// Models The models this profile offers. `model` is the default; everything here is selectable in chat and issue runs. Native discovery fills it where a CLI can enumerate, and anything the user adds stays.
 	Models []string `json:"models,omitempty"`
 
+	// ModelPrices `modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are US dollars per one million input, cache-read, cache-write and output tokens.
+	ModelPrices map[string]ProfileModelPrice `json:"modelPrices,omitempty"`
+
 	// ContextWindows `contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker).
 	ContextWindows       map[string]int64     `json:"contextWindows,omitempty"`
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
@@ -454,6 +524,14 @@ type ProfileDefinition struct {
 	// PromotedFrom `promotedFrom` is set when the profile was promoted from a provider in a device's own configuration.
 	PromotedFrom   *ProfilePromotionSource `json:"promotedFrom,omitempty"`
 	UpdatedAtLabel string                  `json:"updatedAtLabel"`
+}
+
+// ProfileModelPrice Custom prices for one model, in US dollars per one million tokens. A complete entry replaces LiteLLM's estimate for turns through this provider.
+type ProfileModelPrice struct {
+	InputPerMillion      float64 `json:"inputPerMillion"`
+	CacheReadPerMillion  float64 `json:"cacheReadPerMillion"`
+	CacheWritePerMillion float64 `json:"cacheWritePerMillion"`
+	OutputPerMillion     float64 `json:"outputPerMillion"`
 }
 
 // ProfileOrigin `device` profiles are discovered by a daemon on one machine and cannot move.

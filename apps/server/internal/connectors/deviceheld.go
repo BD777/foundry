@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +19,10 @@ var ErrUnknownConnector = errors.New("no device-held connector of that kind")
 
 // ErrNotDeviceOwner: a binding names a device the caller does not own.
 var ErrNotDeviceOwner = errors.New("only a device's owner binds its connectors")
+
+var connectorRegionPattern = regexp.MustCompile(
+	`^[a-z]{2}(-[a-z]+)+-\d{1,2}$`,
+)
 
 // DeviceHeld is the device-held kind: the credential stays on the device
 // and the server keeps what the device read of it (never a token), with the
@@ -95,6 +100,16 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 	}
 	reading.DeviceID = deviceID
 	reading.CheckedAt = d.Now().UTC().Format(time.RFC3339)
+	if reading.Configuration != nil {
+		region := strings.TrimSpace(reading.Configuration.Region)
+		if region == "" || !connectorRegionPattern.MatchString(region) {
+			reading.Configuration = nil
+		} else {
+			reading.Configuration = &store.ConnectorConfiguration{
+				Region: region,
+			}
+		}
+	}
 	if reading.ExpiresAt != "" {
 		if expiry, err := parseTime(reading.ExpiresAt); err == nil {
 			reading.ExpiresAt = expiry.UTC().Format(time.RFC3339)

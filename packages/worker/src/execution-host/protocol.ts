@@ -7,6 +7,7 @@
  */
 import type {
   ChatAttachment,
+  DeviceRuntimeState,
   EvidenceWorkerRequest,
   ProtocolEnvelope,
   RunSessionPayload,
@@ -18,7 +19,7 @@ import type {
   SteerOptions,
 } from "../session/session-control.js";
 
-/** Both ends ship together; a host speaking another version is refused. */
+/** Optional methods may be absent during a drain; a version mismatch is refused. */
 export const executionHostProtocol = 1;
 
 export interface HostSnapshot {
@@ -35,6 +36,8 @@ export interface HostSnapshot {
   ownTurns?: string[];
   /** Sessions whose agents work on their own (sessionsWithNativeWork). */
   nativeWork?: string[];
+  /** Latest sampled admission decision. */
+  runtimeState?: DeviceRuntimeState;
   version: string;
 }
 
@@ -77,6 +80,11 @@ export interface HostMethods {
   };
   control_goal: {
     request: { sessionId: string; action: SessionGoalAction };
+    result: Record<string, never>;
+  };
+  /** The daemon registered with the server again; reconcile host-local tools. */
+  server_reconnected: {
+    request: Record<string, never>;
     result: Record<string, never>;
   };
   issue_environment: {

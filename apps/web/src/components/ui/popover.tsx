@@ -3,13 +3,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
 /*
- * shadcn/ui's Popover on Radix: a small floating panel on the floating
- * surface tokens (see tooltip.tsx).
+ * shadcn/ui's Popover on Radix: a small interactive panel.
  */
 const popoverSurface = `z-110 max-h-[var(--radix-popover-content-available-height,calc(100dvh-24px))]
   max-w-[min(360px,var(--radix-popover-content-available-width,calc(100vw-24px)))] overflow-auto
-  rounded-md border border-floating-line bg-floating px-3 py-2.5 text-xs font-semibold
-  leading-[1.45] text-floating-ink shadow-drop [overflow-wrap:anywhere]`;
+  rounded-md border px-3 py-2.5 text-xs font-semibold leading-[1.45] [overflow-wrap:anywhere]`;
 
 /**
  * A small floating panel opened by click, Enter or Space and closed by Escape
@@ -43,7 +41,11 @@ export function Popover({
         <PopoverPrimitive.Content
           aria-label={label}
           align="start"
-          className={cn(popoverSurface, className)}
+          className={cn(
+            popoverSurface,
+            "border-floating-line bg-floating text-floating-ink shadow-drop",
+            className,
+          )}
           collisionPadding={12}
           sideOffset={6}
         >
@@ -137,7 +139,11 @@ function PreviewPopover({
           align="start"
           sideOffset={6}
           collisionPadding={12}
-          className={cn(popoverSurface, className)}
+          className={cn(
+            popoverSurface,
+            "border-floating-line bg-floating text-floating-ink shadow-drop",
+            className,
+          )}
           onPointerEnter={clear}
           onPointerLeave={leave}
           onFocus={clear}

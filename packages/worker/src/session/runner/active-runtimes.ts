@@ -40,7 +40,13 @@ import {
 } from "../session-state.js";
 import { sessionTimers } from "../tasks/session-timers.js";
 import type { SessionGoalAction } from "../goals.js";
-import { turnUsageMetadata } from "../usage/turn-usage.js";
+import {
+  addTurnUsage,
+  emitTurnUsage,
+  requestTurnUsage,
+  turnUsageMetadata,
+  type TurnOutcome,
+} from "../usage/turn-usage.js";
 import { errorMessage } from "../../platform/utils.js";
 
 /**
@@ -384,6 +390,8 @@ export function closeActiveClaudeRuntime(
   ),
 ): void {
   runtime.closed = true;
+  runtime.foundryToolsSupervisor?.close();
+  runtime.foundryToolsSupervisor = undefined;
   forgetClaudeRuntime(runtime, reason);
   const turn = runtime.pending;
   runtime.pending = undefined;
@@ -402,6 +410,12 @@ export function closeActiveClaudeRuntime(
   reportClaudeOwnTurn(runtime);
   if (turn) {
     turn.liveness.close();
+    if (turn.deliveredResponse === undefined) {
+      const outcome: TurnOutcome = isAgentSessionCanceledError(reason)
+        ? "canceled"
+        : "failed";
+      void reportClaudeTurnUsage(turn, outcome);
+    }
     if (turn.deliveredResponse !== undefined)
       void completeInterruptedClaudeTurn(runtime, turn, reason);
     else turn.reject(reason);
@@ -413,6 +427,19 @@ export function closeActiveClaudeRuntime(
     // Best-effort cleanup only.
   }
   void runtime.releasePreparation?.().catch(() => undefined);
+}
+
+/** Records a failed or canceled Claude turn's usage without changing how it ends. */
+export async function reportClaudeTurnUsage(
+  turn: ActiveClaudeTurn,
+  outcome: Exclude<TurnOutcome, "completed">,
+): Promise<void> {
+  if (turn.usageOutcomeReported) return;
+  const request = turn.requestUsage?.flush();
+  if (request) turn.usage = addTurnUsage(turn.usage, requestTurnUsage(request));
+  if (!turn.usage) return;
+  turn.usageOutcomeReported = true;
+  await emitTurnUsage(turn.emit, turn.usage, turn.startedAt, outcome);
 }
 
 /**
@@ -442,7 +469,11 @@ async function completeInterruptedClaudeTurn(
       turn.resultPath,
       undefined,
       {
-        ...turnUsageMetadata(turn.usage, turn.startedAt),
+        ...turnUsageMetadata(
+          turn.usage,
+          turn.startedAt,
+          isAgentSessionCanceledError(reason) ? "canceled" : "failed",
+        ),
         ...(fileReferences.length > 0 ? { fileReferences } : {}),
       },
     );

@@ -378,8 +378,8 @@ func sessionEndsForTest(t *testing.T, events []streamedForTest) []string {
 // A child an agent starts joins its parent's layout group, which is
 // announced; when its device takes no more messages, its failure is told
 // like any other end (agent_session_completed, which invalidates cached
-// snapshots), and what reacts to an ended session is told it. It used to be
-// announced only as a data change, which nothing on the server reacts to.
+// snapshots), and what reacts to an ended session is told it. Its status
+// changes also invalidate the parent's waiting-child projection.
 func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	db, parent := lineageFixture(t)
 	token, err := db.MintAgentSessionToken(context.Background(), parent.ID)
@@ -407,8 +407,8 @@ func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	if got := chatListEventsForTest(t, events); !reflect.DeepEqual(got, []string{"chat_layout_changed ws_lineage"}) {
 		t.Fatalf("chat list events = %v", got)
 	}
-	if got := dataChangesForTest(t, events); len(got) != 0 {
-		t.Fatalf("data changes = %v, want the failure told as the child's end", got)
+	if got := dataChangesForTest(t, events); !reflect.DeepEqual(got, []string{"ws_lineage"}) {
+		t.Fatalf("data changes = %v, want the parent projection invalidated", got)
 	}
 	// The child is told first; the naming of the group it opened runs
 	// alongside, and its job may be told too.
@@ -538,7 +538,7 @@ func TestClaimedIssueExecutionIsAnnounced(t *testing.T) {
 
 // A group-naming job its device cannot take fails, and its failure is told
 // like any other end (agent_session_completed), also to what reacts to
-// ended sessions. It used to be announced only as a data change.
+// ended sessions. It is not a sub-session of the thread it describes.
 func TestUndeliveredGroupNamingIsAnnounced(t *testing.T) {
 	db, parent := lineageFixture(t)
 	server := NewServer(db)

@@ -576,6 +576,11 @@ func (s *Service) OnInboxMessageFailed(failed func(context.Context, store.Sessio
 // ChildReportPrefix opens every report.
 const ChildReportPrefix = "Foundry report:"
 
+// SessionAlertPrefix opens every system alert. Alerts use the same inbox
+// delivery path but never wait behind report gathering and are never
+// treated as a child's own handoff.
+const SessionAlertPrefix = "Foundry alert:"
+
 // ChildReportGather: a report to a parent between turns waits this long
 // for its siblings, so children that end together start one parent turn.
 var ChildReportGather = 10 * time.Second
@@ -584,6 +589,12 @@ var ChildReportGather = 10 * time.Second
 // between turns wait for more reports: one of them is a report younger than
 // ChildReportGather.
 func childReportsGathering(items []store.SessionInboxItem, due []int, now time.Time) bool {
+	for _, index := range due {
+		if strings.HasPrefix(items[index].Prompt, SessionAlertPrefix) {
+			// A critical alert must not wait for sibling result reports.
+			return false
+		}
+	}
 	for _, index := range due {
 		item := items[index]
 		if strings.HasPrefix(item.Prompt, ChildReportPrefix) && now.Sub(item.CreatedAt) < ChildReportGather {

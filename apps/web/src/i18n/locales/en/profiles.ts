@@ -88,6 +88,38 @@ export const profiles = {
     chooseOnlineDevice: "Choose an online device",
     saveFirst: "Save this provider first, then assign devices here.",
   },
+  modelNotes: {
+    title: "Orchestration notes",
+    intro:
+      "What your orchestrator has learned about handing work to each model. Appends keep their author and time.",
+    none: "No provider with a known model is available in this view.",
+    modelCount_one: "{{count}} model",
+    modelCount_other: "{{count}} models",
+    count_one: "{{count}} note",
+    count_other: "{{count}} notes",
+    kinds: {
+      subscription: "Subscription",
+      api: "API",
+      environment: "Environment",
+      discovered: "Discovered",
+    },
+    edited: "edited {{time}}",
+    empty: "No notes for this model yet.",
+    addButton: "Add note",
+    add: "Append note",
+    addLabel: "New note for {{model}}",
+    addPlaceholder:
+      "What to delegate, how small to make steps, what to watch and what evidence to require.",
+    editLabel: "Edit note for {{model}}",
+    deleteLabel: "Delete note for {{model}}",
+    save: "Save",
+    cancel: "Cancel",
+    deleteConfirm: "Delete this note?",
+    loadMore: "Load more",
+    loadFailed: "Could not read this model's notes.",
+    saveFailed: "Could not save this note.",
+    deleteFailed: "Could not delete this note.",
+  },
   list: {
     title: "On this server",
     saved: "{{count}} saved on this server",
@@ -172,6 +204,29 @@ export const profiles = {
     cardLearned: "Transport: {{transport}} · learned {{date}}",
     cardChosen: "Transport: {{transport}} · set here",
     cardUnknown: "Transport: learned on the next session",
+  },
+  modelPrices: {
+    title: "Custom model prices",
+    intro:
+      "Set every tier to replace LiteLLM's estimate for this provider. Prices are in US dollars per one million tokens.",
+    noModels: "Add a model above to set custom prices.",
+    fields: {
+      inputPerMillion: "Input",
+      cacheReadPerMillion: "Cache read",
+      cacheWritePerMillion: "Cache write",
+      outputPerMillion: "Output",
+    },
+    inputLabels: {
+      inputPerMillion: "Input price for {{model}} per one million tokens",
+      cacheReadPerMillion:
+        "Cache-read price for {{model}} per one million tokens",
+      cacheWritePerMillion:
+        "Cache-write price for {{model}} per one million tokens",
+      outputPerMillion: "Output price for {{model}} per one million tokens",
+    },
+    placeholder: "0.00",
+    invalid:
+      "Enter all four prices as non-negative US dollars, or leave the model blank.",
   },
   contextWindows: {
     title: "Context windows",

@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { updateAgentRuntime } from "../dist/harness/agent-runtime/update-controller.js";
 import {
   acquireRuntime,
+  setRuntimeOwnerProvider,
   tryMaintainRuntime,
 } from "../dist/harness/agent-runtime/maintenance.js";
 import {
   stablePackageVersion,
   isStableVersion,
 } from "../dist/harness/agent-runtime/release-source.js";
+
+const testOwner = {
+  pid: process.pid,
+  startTime: `test:${process.pid}:${randomUUID()}`,
+};
+setRuntimeOwnerProvider({
+  current: () => testOwner,
+  startTime: (pid) => (pid === process.pid ? testOwner.startTime : undefined),
+});
 
 function fixture() {
   let state;
@@ -62,6 +73,33 @@ test("failure preserves current version and releases the maintenance gate", asyn
   assert.equal(f.state().state, "failed");
   assert.equal(f.state().current, "1.0.0");
   assert.equal(f.released(), 1);
+});
+test("bookkeeping failures are logged and never fail the update check", async (t) => {
+  const f = fixture();
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args.join(" "));
+  t.after(() => {
+    console.error = original;
+  });
+  f.deps.read = () => {
+    throw new Error("state directory is not readable");
+  };
+  f.deps.write = () => {
+    throw new Error("state directory is not writable");
+  };
+
+  await updateAgentRuntime(f.adapter, f.deps);
+  assert.equal(f.updated(), 1);
+  assert.equal(f.released(), 1);
+  assert.match(
+    errors.join("\n"),
+    /Reading test-agent runtime-update bookkeeping/,
+  );
+  assert.match(
+    errors.join("\n"),
+    /Writing test-agent runtime-update bookkeeping/,
+  );
 });
 test("app-owned and pinned executables are not overwritten", async () => {
   const f = fixture();

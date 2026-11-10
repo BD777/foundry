@@ -91,11 +91,26 @@ type ChatThread struct {
 type ModelRequestUsage struct {
 	RequestID string `json:"requestId"`
 
+	// Model The model that served the request. Claude reports it in `message_start`; Codex reports it in the thread's `turn_context`.
+	Model string `json:"model,omitempty"`
+
 	// InputTokens Prompt tokens, cache reads and writes included.
 	InputTokens      int64 `json:"inputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
 	OutputTokens     int64 `json:"outputTokens"`
+
+	// FirstTokenMs Milliseconds from the Worker receiving the request's `message_start` to receiving its first `content_block_delta` of any kind (text, thinking or tool input). This excludes request setup before `message_start`.
+	FirstTokenMs int64 `json:"firstTokenMs,omitempty"`
+
+	// GenerationMs Milliseconds from the Worker receiving the first `content_block_delta` to receiving `message_stop`; it excludes time to first token. Clients compute output tokens per second from `outputTokens` and this duration.
+	GenerationMs int64 `json:"generationMs,omitempty"`
+
+	// RequestMs Milliseconds from the request's start to its completion report. Claude starts with the turn, then with each tool result, and ends at `message_stop`. Codex starts with the turn, then at the previous tool completion or token-usage update, and ends at the next token-usage update. It includes time to first token and stream delivery, so unlike `generationMs` it is not a strict decode interval.
+	RequestMs int64 `json:"requestMs,omitempty"`
+
+	// TimingEstimated Whether request timing was reconstructed rather than observed from model stream frames. Codex estimates `requestMs` from the native token usage notification; it has no first-token or generation timing.
+	TimingEstimated bool `json:"timingEstimated,omitempty"`
 }
 
 // NativeArchiveDesired defines model for NativeArchiveDesired.
@@ -147,7 +162,7 @@ type TranscriptMessage struct {
 	// Attachments `attachments` travel with a user message.
 	Attachments []ChatAttachment `json:"attachments,omitempty"`
 
-	// RequestUsage `requestUsage` is the tokens of the model request that produced this step (Claude).
+	// RequestUsage `requestUsage` is the tokens of the model request that produced this step. Claude reports them when the request stream ends; Codex estimates them from native token-usage updates.
 	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
 
 	// TurnUsage `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats).

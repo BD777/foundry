@@ -10,6 +10,7 @@ import type {
   CodexSpeed,
   CodexTransportMode,
   ProfileAuthMode,
+  ProfileModelPrice,
   WorkerRuntimeId,
 } from "./contract.gen.js";
 export type {
@@ -29,6 +30,12 @@ export type {
   CodexTransport,
   CodexTransportMode,
   CodexTransportObservation,
+  ExecutionDefaultScope,
+  ExecutionDefaultsView,
+  ExecutionModelDefault,
+  ModelNote,
+  ModelNoteInput,
+  ModelNotePage,
   NativeAccountHold,
   NativeAccountInspection,
   NativeAccountUsage,
@@ -44,6 +51,7 @@ export type {
   ProfileAuthMode,
   ProfileConnector,
   ProfileDefinition,
+  ProfileModelPrice,
   ProfileOrigin,
   ProfilePromotionSource,
   ProviderHealth,
@@ -89,6 +97,8 @@ export interface SaveProfileInput {
   codexApprovalPolicy?: CodexApprovalPolicy;
   codexSpeed?: CodexSpeed;
   models?: string[];
+  /** Replaces custom prices by model; omitted keeps them. */
+  modelPrices?: Record<string, ProfileModelPrice>;
   /** Replaces the stored per-model windows; omitted keeps them. */
   contextWindows?: Record<string, number>;
   /** Codex compatible endpoints only; omitted is `auto`. */

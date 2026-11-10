@@ -8,6 +8,14 @@ import type {
 } from "../../../components/conversation/conversation-types";
 import type { ChatViewMessage } from "../chat-types";
 import { i18n } from "../../../i18n";
+import { estimatedOutputTimingReliable } from "../../../lib/format";
+
+type ModelRequestUsageWithTiming = ModelRequestUsage & {
+  requestMs?: number;
+  firstTokenMs?: number;
+  generationMs?: number;
+  timingEstimated?: boolean;
+};
 
 export type TranscriptEntry = TranscriptMessage &
   Pick<
@@ -53,11 +61,17 @@ const processKinds = new Set<TranscriptMessage["kind"]>([
  * later prompt counts replace the earlier ones; output only grows.
  */
 export function laterRequestUsage(
-  earlier: ModelRequestUsage,
-  later: ModelRequestUsage,
-): ModelRequestUsage {
+  earlier: ModelRequestUsageWithTiming,
+  later: ModelRequestUsageWithTiming,
+): ModelRequestUsageWithTiming {
   return {
     ...later,
+    requestMs: later.requestMs ?? earlier.requestMs,
+    firstTokenMs: later.firstTokenMs ?? earlier.firstTokenMs,
+    generationMs: later.generationMs ?? earlier.generationMs,
+    ...(later.timingEstimated || earlier.timingEstimated
+      ? { timingEstimated: true }
+      : {}),
     outputTokens: Math.max(earlier.outputTokens, later.outputTokens),
   };
 }
@@ -68,11 +82,15 @@ export function laterRequestUsage(
  * report.
  */
 export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
-  const requests = new Map<string, ModelRequestUsage>();
-  for (const { requestUsage: usage } of entries) {
+  const requests = new Map<string, ModelRequestUsageWithTiming>();
+  for (const { requestUsage } of entries) {
     // A report of only zeros (as some relays send) says nothing.
-    if (!usage || (usage.inputTokens === 0 && usage.outputTokens === 0))
+    if (
+      !requestUsage ||
+      (requestUsage.inputTokens === 0 && requestUsage.outputTokens === 0)
+    )
       continue;
+    const usage = requestUsage as ModelRequestUsageWithTiming;
     const seen = requests.get(usage.requestId);
     requests.set(
       usage.requestId,
@@ -86,11 +104,60 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     cacheReadTokens: 0,
     outputTokens: 0,
   };
+  let requestMs = 0;
+  let everyRequestHasRequestTime = true;
+  let generationMs = 0;
+  let everyRequestHasGenerationTime = true;
+  let everyRequestLooksStreamed = true;
+  let timingEstimated = false;
   for (const usage of requests.values()) {
     total.inputTokens += usage.inputTokens;
     total.cacheReadTokens += usage.cacheReadTokens;
     total.outputTokens += usage.outputTokens;
+    if (
+      usage.generationMs === undefined ||
+      !Number.isFinite(usage.generationMs) ||
+      usage.generationMs < 0
+    ) {
+      everyRequestHasGenerationTime = false;
+    } else {
+      generationMs += usage.generationMs;
+    }
+    const requestTime =
+      usage.requestMs !== undefined &&
+      Number.isFinite(usage.requestMs) &&
+      usage.requestMs >= 0 &&
+      (usage.timingEstimated !== true ||
+        estimatedOutputTimingReliable(usage.outputTokens, usage.requestMs))
+        ? usage.requestMs
+        : undefined;
+    if (requestTime === undefined) {
+      everyRequestHasRequestTime = false;
+    } else {
+      requestMs += requestTime;
+    }
+    const firstTokenMs =
+      usage.firstTokenMs !== undefined &&
+      Number.isFinite(usage.firstTokenMs) &&
+      usage.firstTokenMs >= 0
+        ? usage.firstTokenMs
+        : undefined;
+    const generationLooksReal =
+      usage.generationMs !== undefined &&
+      Number.isFinite(usage.generationMs) &&
+      usage.generationMs >= usage.outputTokens * 2;
+    if (
+      !(firstTokenMs !== undefined && firstTokenMs >= 50) &&
+      !generationLooksReal
+    )
+      everyRequestLooksStreamed = false;
+    if (usage.timingEstimated === true) timingEstimated = true;
   }
+  if (everyRequestHasRequestTime) total.requestMs = requestMs;
+  if (everyRequestHasGenerationTime) total.generationMs = generationMs;
+  if (everyRequestHasGenerationTime && everyRequestLooksStreamed)
+    total.decodeEligible = true;
+  if (timingEstimated) total.timingEstimated = true;
   return total;
 }
 

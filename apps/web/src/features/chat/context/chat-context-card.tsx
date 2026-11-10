@@ -259,6 +259,7 @@ export const ChatContextCard = memo(function ChatContextCard({
                 );
                 return source && onSelect ? () => onSelect(source) : undefined;
               }}
+              reveal={reveal}
             />
           ) : null}
 

@@ -1,0 +1,171 @@
+openapi: 3.1.0
+info:
+  title: Foundry usage statistics
+  version: 1.0.0
+  description: "Usage statistics queries. Part of the Foundry contract
+    (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript types
+    and Go models (apps/server/internal/store/usage_stats_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    UsageStatsGranularity:
+      type: string
+      enum:
+        - hour
+        - day
+      x-go-type: string
+    UsageStatsDimension:
+      type: string
+      enum:
+        - entry
+        - device
+        - workspace
+        - provider
+        - model
+        - runtime
+        - user
+      x-go-type: string
+    UsageStatsCostSource:
+      description: One cost_source's share of a usage group.
+      type: object
+      required:
+        - source
+        - turns
+        - costUsd
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+          enum:
+            - reported
+            - estimated
+            - custom
+            - unknown
+          x-go-type: string
+        turns:
+          type: integer
+          format: int64
+        costUsd:
+          type: number
+          format: double
+    UsageStatsPoint:
+      description: One time bucket and selected dimension combination.
+      type: object
+      required:
+        - bucket
+        - turns
+        - requests
+        - inputTokens
+        - cacheReadTokens
+        - cacheWriteTokens
+        - outputTokens
+        - reasoningTokens
+        - costUsd
+        - costSources
+      additionalProperties: false
+      properties:
+        bucket:
+          description: An RFC 3339 hour boundary or a YYYY-MM-DD day.
+          type: string
+        userId:
+          type: string
+        entry:
+          type: string
+        deviceId:
+          type: string
+        workspaceId:
+          type: string
+        provider:
+          description: The profile/provider label recorded with the usage.
+          type: string
+        model:
+          type: string
+        runtime:
+          type: string
+        turns:
+          type: integer
+          format: int64
+        requests:
+          type: integer
+          format: int64
+        inputTokens:
+          type: integer
+          format: int64
+        cacheReadTokens:
+          type: integer
+          format: int64
+        cacheWriteTokens:
+          type: integer
+          format: int64
+        outputTokens:
+          type: integer
+          format: int64
+        reasoningTokens:
+          type: integer
+          format: int64
+        costUsd:
+          type: number
+          format: double
+        costSources:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageStatsCostSource"
+        averageTokensPerSecond:
+          description: Output tokens divided by measured generation time.
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+        medianTokensPerSecond:
+          description: Median output tokens per second across measured requests.
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+        ttftP50Ms:
+          description: Median first-token latency across measured requests.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        ttftP90Ms:
+          description: 90th-percentile first-token latency across measured requests.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+    UsageStatsResult:
+      type: object
+      required:
+        - from
+        - to
+        - granularity
+        - groupBy
+        - items
+        - total
+        - limit
+        - offset
+      additionalProperties: false
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        granularity:
+          $ref: "#/components/schemas/UsageStatsGranularity"
+        groupBy:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageStatsDimension"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageStatsPoint"
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64

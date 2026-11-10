@@ -254,6 +254,7 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 		item.Management = "observed"
 		item.AllowedActions = []string{}
 	}
+	item.Observation.At = boundedWorkTime(item.Observation.At, time.Now().UTC())
 
 	if saved, settled := s.savedWorkUnchanged(ctx, item); settled {
 		return saved, nil
@@ -342,7 +343,7 @@ func mergeSavedWork(raw string, evidence store.SessionWork) (store.SessionWork, 
 		return item, false, err
 	}
 	changed := confirmNativeWorkHistory(&item, evidence)
-	if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && workObservationBefore(item.Observation.At, evidence.Observation.At) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
+	if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && (workObservationBefore(item.Observation.At, evidence.Observation.At) || (item.Observation.Status == "unknown" && sameWorkInstant(item.Observation.EndedAt, evidence.Observation.EndedAt))) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
 		item.Observation = evidence.Observation
 		item.Observation.ConfirmedRevision = item.Revision
 		changed = true
@@ -451,6 +452,7 @@ func (s *Store) writeWork(ctx context.Context, item store.SessionWork) error {
 }
 
 func (s *Store) ObserveSessionWork(ctx context.Context, id string, observation store.WorkObservation) error {
+	observation.At = boundedWorkTime(observation.At, time.Now().UTC())
 	// Settle an observation that changes nothing (a stale or repeated
 	// report) on the read pool, without the write lock.
 	if s.exec == nil && s.read != nil {
@@ -503,6 +505,19 @@ func applyWorkObservation(raw string, observation store.WorkObservation) (store.
 			return w, false, nil
 		}
 	}
+	// A one-shot task that has reached a terminal state cannot become live
+	// merely because a later reconciliation could no longer inspect it.
+	if terminalWorkStatus(w.Observation.Status) && observation.Status == "unknown" {
+		if observation.Error != "" &&
+			observation.ConfirmedRevision >= w.Observation.ConfirmedRevision &&
+			!workObservationBefore(observation.At, w.Observation.At) {
+			w.Observation.At = observation.At
+			w.Observation.ConfirmedRevision = observation.ConfirmedRevision
+			w.Observation.Error = observation.Error
+			return w, true, nil
+		}
+		return w, false, nil
+	}
 	if w.Source == "process" {
 		// A verified exit is final; a later unverifiable read cannot revive it.
 		if w.Observation.Error == "" && slices.Contains([]string{"completed", "stopped"}, w.Observation.Status) &&
@@ -548,6 +563,27 @@ func workObservationBefore(a, b string) bool {
 	x, xe := time.Parse(time.RFC3339Nano, a)
 	y, ye := time.Parse(time.RFC3339Nano, b)
 	return xe == nil && ye == nil && x.Before(y)
+}
+
+func sameWorkInstant(a, b string) bool {
+	x, xe := time.Parse(time.RFC3339Nano, a)
+	y, ye := time.Parse(time.RFC3339Nano, b)
+	return xe == nil && ye == nil && x.Equal(y)
+}
+
+func terminalWorkStatus(status string) bool {
+	return status == "completed" || status == "failed" || status == "stopped"
+}
+
+func boundedWorkTime(value string, now time.Time) string {
+	at, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	if at.After(now) {
+		at = now
+	}
+	return at.UTC().Format(time.RFC3339Nano)
 }
 
 func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID string, input store.WorkControlInput) (store.WorkOperation, error) {

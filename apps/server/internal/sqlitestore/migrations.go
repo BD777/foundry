@@ -19,15 +19,19 @@ func (s *Store) migrate(ctx context.Context) error {
 	steps := []func(context.Context) error{
 		s.createCoreSchema,
 		s.setupProfiles,
+		s.setupModelNotes,
+		s.setupExecutionDefaults,
 		s.setupSkillCatalog,
 		s.setupWorkspaceDraftSkills,
 		s.setupSessionEventCompaction,
+		s.setupUsageStats,
 		s.migrateNativeSessions,
 		s.setupFeishu,
 		s.setupAccounts,
 		s.setupDeviceCredentials,
 		s.setupOwnership,
 		s.setupExternalAccounts,
+		s.setupAppStoreConnect,
 		s.setupFeishuGateway,
 		// Before the prune, which walks their workspace-owned rows.
 		s.setupDeviceConnectors,
@@ -44,6 +48,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// Before the prune, which walks its rows.
 		s.setupSessionInputSenders,
 		s.setupSessionInbox,
+		s.setupSessionAlerts,
 		s.setupPendingItems,
 		// Before the orphan prune (RunMaintenance), so an issue number only
 		// orphaned rows still mention is not handed out again.

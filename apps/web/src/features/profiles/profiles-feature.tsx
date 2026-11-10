@@ -32,6 +32,7 @@ import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { PageHeader, SectionHeader } from "../../components/ui/page-header";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { ownedDeviceCandidates } from "../../lib/devices";
 import { SubscriptionsSection } from "./subscriptions-section";
 import { EnvironmentProviders } from "./device-providers";
@@ -39,6 +40,8 @@ import type { NativeRuntime } from "./device-accounts";
 import { ProviderFilters, type RuntimeFilter } from "./provider-filters";
 import type { ProviderTab } from "../../lib/provider-tabs";
 import { EndpointsSection, ProviderTabsControl } from "./provider-sections";
+import { ModelNotesSection } from "./model-notes";
+import { ExecutionDefaultFields } from "../../components/workspace/execution-default-fields";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -72,6 +75,7 @@ export function ProfilesFeature({
   onTabChange,
 }: ProfilesFeatureProps) {
   const { t } = useTranslation("profiles");
+  const { t: tAgents } = useTranslation("agents");
   const ownDevices = ownedDeviceCandidates(devices);
   // A link from a device's page opens filtered to it (?device=<id>). The URL
   // is read once; the filter writes it back, never the other way round.
@@ -181,6 +185,20 @@ export function ProfilesFeature({
   return (
     <PageSurface variant="profiles">
       <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <SectionPanel className="grid min-w-0 gap-3">
+        <SectionHeader
+          level={3}
+          title={tAgents("executionDefault.globalTitle")}
+          description={tAgents("executionDefault.globalIntro")}
+        />
+        <ExecutionDefaultFields
+          profiles={agentProfiles}
+          servers={connections}
+          onNotice={(message, tone) =>
+            void onEvent({ type: "notice.requested", message, tone })
+          }
+        />
+      </SectionPanel>
       <ProviderTabsControl tab={tab} onTabChange={onTabChange} />
       <ProviderFilters
         devices={ownDevices}
@@ -221,6 +239,18 @@ export function ProfilesFeature({
           onRefresh={refresh}
         />
       )}
+      <ModelNotesSection
+        agentProfiles={shownProfiles}
+        kinds={
+          tab === "subscriptions"
+            ? ["subscription"]
+            : tab === "endpoints"
+              ? ["api", "discovered"]
+              : ["environment"]
+        }
+        profiles={shownConnections}
+        runtimes={runtimes}
+      />
       <Dialog
         busy={saving || models.busy}
         description={t("page.modalDescription")}

@@ -65,10 +65,92 @@ export function formatDuration(ms: number): string {
   return i18n.t("conversation:usage.seconds", { seconds });
 }
 
+/** A usage breakdown keeps an exact zero instead of rounding it up. */
+export function formatUsageDuration(ms: number): string {
+  const clamped = Math.max(0, ms);
+  return clamped === 0
+    ? i18n.t("conversation:usage.zeroSeconds")
+    : formatDuration(clamped);
+}
+
 /** "75m 3s", "8s": minutes and seconds, at least a second, not localized. */
 export function formatCompactDuration(ms: number): string {
   const totalSeconds = wholeSeconds(ms, 1);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+/** Output-token speed over a supplied interval; short or tiny samples are noise. */
+export function outputTokensPerSecond(
+  outputTokens: number,
+  elapsedMs: number,
+): number | undefined {
+  if (
+    !Number.isFinite(outputTokens) ||
+    !Number.isFinite(elapsedMs) ||
+    outputTokens < 20 ||
+    elapsedMs < 200
+  ) {
+    return undefined;
+  }
+  return outputTokens / (elapsedMs / 1000);
+}
+
+/** Estimated request times are too noisy to show when they imply a local spike. */
+export function estimatedOutputTimingReliable(
+  outputTokens: number,
+  elapsedMs: number,
+): boolean {
+  if (
+    !Number.isFinite(outputTokens) ||
+    outputTokens < 0 ||
+    !Number.isFinite(elapsedMs) ||
+    elapsedMs < 1000
+  )
+    return false;
+  return outputTokens / (elapsedMs / 1000) <= 1000;
+}
+
+/** "85 tok/s", or one decimal below 10 tok/s; `≈` marks an estimate. */
+export function formatOutputSpeed(
+  outputTokens: number,
+  elapsedMs: number,
+  estimated = false,
+): string | undefined {
+  if (estimated && !estimatedOutputTimingReliable(outputTokens, elapsedMs))
+    return undefined;
+  const speed = outputTokensPerSecond(outputTokens, elapsedMs);
+  if (speed === undefined) return undefined;
+  const roundedToTenth = Math.round(speed * 10) / 10;
+  const digits = roundedToTenth < 10 ? 1 : 0;
+  const value = new Intl.NumberFormat(i18n.language, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(speed);
+  const formatted = i18n.t("conversation:usage.outputSpeedValue", { value });
+  return estimated ? `≈${formatted}` : formatted;
+}
+
+/** "850ms" below a second, "1.0s" from a second; `≈` marks an estimate. */
+export function formatTimeToFirstToken(
+  ms: number,
+  estimated = false,
+): string | undefined {
+  if (!Number.isFinite(ms) || ms < 0) return undefined;
+  const roundedMs = Math.round(ms);
+  const value =
+    roundedMs < 1000
+      ? new Intl.NumberFormat(i18n.language, {
+          maximumFractionDigits: 0,
+        }).format(roundedMs)
+      : new Intl.NumberFormat(i18n.language, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }).format(roundedMs / 1000);
+  const formatted =
+    roundedMs < 1000
+      ? i18n.t("conversation:usage.milliseconds", { value })
+      : i18n.t("conversation:usage.seconds", { seconds: value });
+  return estimated ? `≈${formatted}` : formatted;
 }

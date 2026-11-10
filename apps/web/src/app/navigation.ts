@@ -1,4 +1,5 @@
 import {
+  ChartNoAxesCombined,
   Columns2,
   Inbox,
   LayoutDashboard,
@@ -43,6 +44,7 @@ const pageViews = new Set<string>([
   "locations",
   "profiles",
   "connectors",
+  "usage",
   "resources",
   "workspaceConnectors",
   "library",
@@ -115,6 +117,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
       { id: "library", label: "library", icon: Library },
       { id: "profiles", label: "profiles", icon: KeyRound },
       { id: "connectors", label: "connectors", icon: Plug },
+      { id: "usage", label: "usage", icon: ChartNoAxesCombined },
     ],
   },
 ];

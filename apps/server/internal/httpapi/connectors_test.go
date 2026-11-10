@@ -32,9 +32,10 @@ type fakeConnectorWorker struct {
 	writeMu sync.Mutex
 	// AWS browser sign-in: what the page chose and typed, and whether the
 	// device signed in.
-	awsOptions  map[string]string
-	awsInput    string
-	awsSignedIn bool
+	awsOptions       map[string]string
+	awsInput         string
+	awsSignedIn      bool
+	awsConfiguration *store.ConnectorConfiguration
 	// Extension requests the device received, and the error it answers
 	// installs with when set.
 	extensionRequests []store.ExtensionRequestPayload
@@ -121,7 +122,21 @@ func (w *fakeConnectorWorker) serve() {
 		reply := store.ConnectorReplyPayload{}
 		switch {
 		case request.Connector.Kind == "aws" && request.Action == "status" && w.awsOptions != nil:
-			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut}
+			configuration := w.awsConfiguration
+			if configuration == nil {
+				configuration = &store.ConnectorConfiguration{Region: "us-east-1"}
+			}
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut, Configuration: configuration}
+			if w.awsSignedIn {
+				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
+			}
+		case request.Connector.Kind == "aws" && request.Action == "configure":
+			w.awsConfiguration = request.Configuration
+			configuration := w.awsConfiguration
+			if configuration == nil {
+				configuration = &store.ConnectorConfiguration{Region: "us-east-1"}
+			}
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut, Configuration: configuration}
 			if w.awsSignedIn {
 				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
 			}
@@ -498,7 +513,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 		}
 	}
 
-	begin := `{"requestId":"aws-1","signInOptions":{"method":"console","region":"eu-west-1"}}`
+	begin := `{"requestId":"aws-1","signInOptions":{"method":"console"}}`
 	var signIn store.DeviceConnectorSignIn
 	waitFor(t, "the AWS sign-in page", func() bool {
 		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/aws/sign-in", begin, http.StatusAccepted), &signIn)
@@ -510,7 +525,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	worker.mu.Lock()
 	options := worker.awsOptions
 	worker.mu.Unlock()
-	if options["method"] != "console" || options["region"] != "eu-west-1" {
+	if options["method"] != "console" || options["region"] != "" {
 		t.Fatalf("options on the device = %+v", options)
 	}
 	codePath := "/api/devices/dev_alice/connectors/aws/sign-in/code"
@@ -533,6 +548,14 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	if signIn.State == nil || !signIn.State.SignedIn || signIn.State.Identity != "arn:aws:iam::123456789012:user/me" {
 		t.Fatalf("completed = %+v", signIn)
 	}
+
+	// The default Region is a profile setting after sign-in, not a login scope.
+	var configured store.DeviceConnectorState
+	_ = json.Unmarshal(call(f.alice, http.MethodPut, "/api/devices/dev_alice/connectors/aws/configuration", `{"configuration":{"region":"ap-south-1"}}`, http.StatusOK), &configured)
+	if configured.Configuration == nil || configured.Configuration.Region != "ap-south-1" {
+		t.Fatalf("configured AWS state = %+v", configured)
+	}
+	call(f.bob, http.MethodPut, "/api/devices/dev_alice/connectors/aws/configuration", `{"configuration":{"region":"eu-west-1"}}`, http.StatusNotFound)
 }
 
 // A running install's progress, as the device reports it, is listed with the

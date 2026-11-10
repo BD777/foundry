@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 对话：[DEV-158 对话界面显示等待子会话](DEV-158-waiting-children-web.md)。会话列表行、标签页标题和打开会话的顶部胶囊现在显示 `waitingChildCount`，顶部可展开子会话并跳转；复用现有子会话工作清单与 projection 刷新，不新增轮询。scratch 数据库副本真实浏览器浅/深、宽/窄与键盘自验通过；未提交、未部署，待人工验收。
+
 2026-11-10 管理：[DEV-157 用 Agent 改 Skill 仓库读取设备、移除设备（必须确认）](DEV-157-mcp-admin-tools.md)。新增 `set_skill_repository_source`（本人的对话与助理、须为管理员），与 Web 共用实现；新增设备移除预览（与真正的清除共用一份执行计划）和仅助理可用的 `remove_device`，始终出确认卡片并列出将删除的内容。已部署 dev，bytedcli 已用新工具改由 byte-dev 读取并检查通过；`remove_device` 待助理启动后验收。
 
 2026-11-10 助理：[DEV-156 助理默认可用本人的全部连接器](DEV-156-assistant-connectors.md)。助理的会话跑在它自己的 Workspace，而连接器按 Workspace 绑定，那里从未绑定过，所以助理用不了飞书等账号。改为一条规则：在本人的助理 Workspace 里，本人拥有的连接器账号默认可用，本人可在助理设置的 Connectors 分区逐个关掉；服务端持有、设备持有和网关复查共用这条规则。已部署 dev，测试与审计通过；本人助理处于停用状态，真实调用待验收。
@@ -120,7 +122,7 @@
 
 2026-10-30 发布与运维：[DEV-100 SIGHUP 交接时旧进程 15 s 才退出，长请求被 nginx 502](DEV-100-handoff-drain.md)。旧进程退出要等 `http.Server.Shutdown`，而 MCP `wait_session`（最长 10 分钟）不听关闭信号，拖满 15 s 后以 status 1 退出并掐断连接，nginx 回 502。现在 `Server.Shutdown` 先发排空信号，等待立即返回 “the Foundry server is restarting … Wait again” 的可重试结果；SSE/WebSocket 沿用原路径；超时时日志点名未结束的请求。Server `95e6f102…` 已部署：旧版本基线交接 15.035 s / status 1 / 等待得到 502；新版本交接 657 ms / status 0，等待得到重试结果，SSE 干净结束，nginx 无 5xx。只对下一次交接生效；Agent 自验通过，人工验收待确认，未提交。
 
-2026-10-30 连接器：[DEV-099 AWS CLI 安装进度，以及不用终端的浏览器登录](DEV-099-aws-progress-and-browser-sign-in.md)。安装时行内显示下载字节、百分比和速度，以及之后的步骤：Worker 发送新的 `connector_progress` 消息，Server 只在内存中保留，Web 安装期间每 1.5 s 刷新。登录改为浏览器优先：“Open AWS sign-in” 在设备上运行 `aws login --remote`，打开 AWS 登录页，本人把页面显示的授权码粘贴回来；或 IAM Identity Center，填门户信息后用设备码，无需粘贴。失败时显示原因和重试；终端命令折叠为最后手段。登录始终在设备上完成，授权码只经过内存。Server `349362f9…`、Web `c0f4ee7e428fee44` 已部署，Worker `.1793343579` 已发布（设备空闲时更新）；scratch 栈自验到出现 AWS 登录链接为止，最后一步需要本人；未提交。
+2026-10-30 连接器：[DEV-099 AWS CLI 安装进度，以及不用终端的浏览器登录](DEV-099-aws-progress-and-browser-sign-in.md)。安装时行内显示下载字节、百分比和速度，以及之后的步骤：Worker 发送新的 `connector_progress` 消息，Server 只在内存中保留，Web 安装期间每 1.5 s 刷新。登录改为浏览器优先：“Open AWS sign-in” 在设备上运行 `aws login --remote`，打开 AWS 登录页，本人把页面显示的授权码粘贴回来；或 IAM Identity Center，填门户信息后用设备码，无需粘贴。登录不再要求选默认区域：沿用 profile 或环境变量，否则用 `us-east-1`；登录后可在设备详情里修改，权限始终由登录身份决定。失败时显示原因和重试；终端命令折叠为最后手段。登录始终在设备上完成，授权码只经过内存。Server `349362f9…`、Web `c0f4ee7e428fee44` 已部署，Worker `.1793343579` 已发布（设备空闲时更新）；scratch 栈自验到出现 AWS 登录链接为止，最后一步需要本人；未提交。
 
 2026-10-30 对话界面：[DEV-098 聊天页右侧面板恢复为浮动卡片](DEV-098-chat-context-card-restore.md)。DEV-078 修类名冲突时顺带把右侧 Context / Changes 的浮动卡片改成了贴边侧栏，本人更喜欢原样。恢复原来的圆角卡片、18 px 间距、按内容定高和整卡滚动，以及 ≤1360 px 的 12 px 内缩抽屉；DEV-078 的类名修复与审计加固保留，审计改为锁住卡片样式。Web `871c74cf41b6aa0e` 已部署，真实浏览器 10 种组合自验通过；待人工验收；未提交。
 

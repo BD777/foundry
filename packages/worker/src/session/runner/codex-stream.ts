@@ -1,4 +1,5 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
+import { codexCitationsAsLinks } from "./codex-citations.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendLine } from "../../platform/line-log.js";
@@ -29,13 +30,19 @@ import type {
   CodexSDKThread,
   SessionEventEmitter,
 } from "../session-state.js";
-import { codexTurnUsage, type TurnTokenUsage } from "../usage/turn-usage.js";
+import {
+  codexTurnUsage,
+  emitTurnUsage,
+  type TurnTokenUsage,
+} from "../usage/turn-usage.js";
 import type { CodexTransportLearner } from "./codex-transport.js";
 import { CodexBoundaryHold } from "./codex-boundary.js";
 import type {
   ChatAttachment,
+  ModelRequestUsage,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
+import { optionalRecord } from "../../platform/json-values.js";
 import {
   CodexTurnLiveness,
   livenessDuration,
@@ -47,6 +54,7 @@ import {
 export interface CodexTurnState {
   inputId?: string;
   ceilingMs?: number;
+  startedAt?: number;
   emit: SessionEventEmitter;
   reportNativeSessionId: (nativeSessionId: string) => void;
   files: SessionTurnFiles;
@@ -86,6 +94,7 @@ export async function runCodexStreamedTurn(
   sessionId: string,
 ): Promise<void> {
   const abortController = new AbortController();
+  const turnStartedAt = state.startedAt ?? Date.now();
   let canceled = false;
   const unregisterCancel = registerActiveSessionCancelTarget(sessionId, {
     provider: "codex",
@@ -217,6 +226,7 @@ export async function runCodexStreamedTurn(
   try {
     const streamed = await thread.runStreamed(input, {
       signal: abortController.signal,
+      turnStartedAt: state.startedAt,
       onStartupWait: () =>
         state.emit(
           "Notice",
@@ -230,6 +240,8 @@ export async function runCodexStreamedTurn(
       try {
         next = await events.next();
       } catch (error) {
+        state.usage =
+          codexTurnUsage(error, state.context?.currentModel) ?? state.usage;
         if (ceilingError) throw ceilingError;
         if (canceled || abortController.signal.aborted) {
           throw new AgentSessionCanceledError();
@@ -252,6 +264,12 @@ export async function runCodexStreamedTurn(
     }
   } catch (error) {
     turnFailed = true;
+    await emitTurnUsage(
+      state.emit,
+      state.usage,
+      turnStartedAt,
+      canceled ? "canceled" : "failed",
+    );
     if (canceled) throw new AgentSessionCanceledError();
     throw error;
   } finally {
@@ -349,8 +367,8 @@ export async function runCodexUnstreamedTurn(
   appendLine(state.eventsPath, redactedJSONLine(turn));
   state.nativeSessionId = thread.id || state.nativeSessionId;
   state.reportNativeSessionId(state.nativeSessionId);
-  state.finalResult = sdkMessageText(turn);
-  state.usage = codexTurnUsage(turn);
+  state.finalResult = codexCitationsAsLinks(sdkMessageText(turn));
+  state.usage = codexTurnUsage(turn, state.context?.currentModel);
 }
 
 /** Screenshots in a finished MCP call's result or a command's output. */
@@ -376,6 +394,30 @@ async function handleCodexEvent(
 ): Promise<boolean> {
   appendLine(state.eventsPath, redactedJSONLine(event));
   await followCodexThread(state, nativeSessionIdFromEvent(event));
+  const eventType =
+    event && typeof event === "object"
+      ? (event as Record<string, unknown>).type
+      : undefined;
+  if (eventType === "foundry.model_request_usage") {
+    await reportCodexContext(state);
+    const requestUsage = optionalRecord(optionalRecord(event)?.requestUsage) as
+      ModelRequestUsage | undefined;
+    if (requestUsage) {
+      const model = state.context?.currentModel;
+      await state.emit(
+        processLabels.modelRequestUsage,
+        requestUsage.requestId,
+        undefined,
+        {
+          requestUsage: {
+            ...requestUsage,
+            ...(model ? { model } : {}),
+          },
+        },
+      );
+    }
+    return false;
+  }
   const processEvent = sdkProcessEvent(event);
   if (processEvent) {
     await state.emit(
@@ -389,16 +431,16 @@ async function handleCodexEvent(
   for (const write of codexFileWrites(event))
     await state.files.recordToolWrite(write);
   await emitCodexToolFrames(state, event);
-  const eventType =
-    event && typeof event === "object"
-      ? (event as Record<string, unknown>).type
-      : undefined;
   if (eventType === "item.completed") await reportCodexContext(state);
   await emitCodexText(state, event);
   await state.transport?.observe(event, eventType === "turn.completed");
-  if (eventType === "turn.failed") throw codexTurnFailure(event);
+  if (eventType === "turn.failed") {
+    state.usage =
+      codexTurnUsage(event, state.context?.currentModel) ?? state.usage;
+    throw codexTurnFailure(event);
+  }
   if (eventType !== "turn.completed") return false;
-  state.usage = codexTurnUsage(event);
+  state.usage = codexTurnUsage(event, state.context?.currentModel);
   // The log trails the stream a little: its last count is read before the
   // process stops.
   for (let wait = 0; ; wait += 1) {
@@ -411,6 +453,8 @@ async function handleCodexEvent(
       break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  state.usage =
+    codexTurnUsage(event, state.context?.currentModel) ?? state.usage;
   return true;
 }
 
@@ -432,7 +476,7 @@ async function emitCodexText(
   state: CodexTurnState,
   event: unknown,
 ): Promise<void> {
-  const text = sdkMessageText(event);
+  const text = codexCitationsAsLinks(sdkMessageText(event));
   if (!text || text === state.finalResult) return;
   const message = sdkResponseMessage(event, text);
   if (message.kind === "commentary") {
@@ -468,6 +512,8 @@ function codexTurnFailure(event: unknown): Error {
 
 async function reportCodexContext(state: CodexTurnState): Promise<void> {
   const reports = await state.context.read().catch(() => []);
+  if (state.usage && state.context.currentModel)
+    state.usage = { ...state.usage, model: state.context.currentModel };
   for (const contextUsage of reports)
     await state.emit(
       processLabels.modelRequestUsage,

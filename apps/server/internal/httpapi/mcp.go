@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // The Foundry tools over MCP's Streamable HTTP (POST /api/mcp): one catalog
@@ -25,6 +27,12 @@ import (
 // long waits are server-side polls bounded by maxMCPWaitMs.
 
 const mcpProtocolVersion = "2025-06-18"
+
+const (
+	defaultMCPResultBytes = 12_000
+	maxMCPResultBytes     = 32_000
+	minMCPResultBytes     = 1_000
+)
 
 // mcpProtocolVersions are the Streamable HTTP revisions this endpoint serves;
 // initialize echoes the client's requested one when it is listed here.
@@ -52,11 +60,14 @@ type mcpTool struct {
 	// foundry skill's page); agents never see them.
 	summary string
 	limits  []string
+	// maxBytes raises or lowers the tools/call text budget. Zero uses the
+	// default; values are clamped to minMCPResultBytes..maxMCPResultBytes.
+	maxBytes int
 }
 
 // mcpToolPeopleFields are the catalog's fields for people, kept beside each
 // definition and left out of what agents are sent.
-var mcpToolPeopleFields = []string{"summary", "limits"}
+var mcpToolPeopleFields = []string{"summary", "limits", "maxBytes"}
 
 var remoteMCPTools = func() []mcpTool {
 	var definitions []json.RawMessage
@@ -70,8 +81,9 @@ var remoteMCPTools = func() []mcpTool {
 			Annotations struct {
 				ReadOnlyHint bool `json:"readOnlyHint"`
 			} `json:"annotations"`
-			Summary string   `json:"summary"`
-			Limits  []string `json:"limits"`
+			Summary  string   `json:"summary"`
+			Limits   []string `json:"limits"`
+			MaxBytes int      `json:"maxBytes"`
 		}
 		if err := json.Unmarshal(definition, &named); err != nil || named.Name == "" {
 			panic(fmt.Sprintf("mcp_tools.json: tool %d has no name", index))
@@ -87,7 +99,7 @@ var remoteMCPTools = func() []mcpTool {
 		if err != nil {
 			panic("mcp_tools.json: " + named.Name + ": " + err.Error())
 		}
-		tools[index] = mcpTool{named.Name, forAgents, named.Annotations.ReadOnlyHint, named.Summary, named.Limits}
+		tools[index] = mcpTool{named.Name, forAgents, named.Annotations.ReadOnlyHint, named.Summary, named.Limits, named.MaxBytes}
 	}
 	return tools
 }()
@@ -249,15 +261,120 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// A failed tool call is a result the agent can read and act on.
+			content := boundMCPResultContent(params.Name, params.Arguments, append([]any{map[string]any{"type": "text", "text": message}}, notices...))
 			s.writeMCPResult(w, request.ID, map[string]any{
-				"content": append([]any{map[string]any{"type": "text", "text": message}}, notices...),
+				"content": content,
 				"isError": true,
 			})
 			return
 		}
-		s.writeMCPResult(w, request.ID, map[string]any{"content": append(content, notices...)})
+		s.writeMCPResult(w, request.ID, map[string]any{"content": boundMCPResultContent(params.Name, params.Arguments, append(content, notices...))})
 	default:
 		s.writeMCPError(w, request.ID, -32601, "method not found: "+request.Method)
+	}
+}
+
+func mcpResultBudget(name string) int {
+	budget := defaultMCPResultBytes
+	for _, tool := range remoteMCPTools {
+		if tool.name == name && tool.maxBytes > 0 {
+			budget = tool.maxBytes
+			break
+		}
+	}
+	return min(max(budget, minMCPResultBytes), maxMCPResultBytes)
+}
+
+// boundMCPResultContent keeps textual tool content within its declared
+// budget. Image blocks are media attachments with their own resource limits;
+// their payload is not part of the text-context budget. A cut always says the
+// original size and how to continue, and the server logs the tool and size.
+func boundMCPResultContent(name string, args map[string]json.RawMessage, content []any) []any {
+	originalBytes := mcpTextContentBytes(content)
+	budget := mcpResultBudget(name)
+	if originalBytes <= budget {
+		return content
+	}
+	hint := mcpResultContinuationHint(name, args)
+	marker := fmt.Sprintf("\n\n…[truncated: this tool returned %d bytes of text; the budget is %d bytes. %s]", originalBytes, budget, hint)
+	textBudget := budget - len(marker)
+	if textBudget < 0 {
+		textBudget = 0
+	}
+	result := make([]any, 0, len(content)+1)
+	used := 0
+	cutText := false
+	for _, raw := range content {
+		block, ok := raw.(map[string]any)
+		if !ok || block["type"] != "text" {
+			result = append(result, raw)
+			continue
+		}
+		if cutText {
+			continue
+		}
+		text, _ := block["text"].(string)
+		if len(text) == 0 || used >= textBudget {
+			continue
+		}
+		room := textBudget - used
+		if len(text) > room {
+			text = textcut.Prefix(text, room)
+			used += len(text)
+			if text != "" {
+				copy := make(map[string]any, len(block))
+				for key, value := range block {
+					copy[key] = value
+				}
+				copy["text"] = text
+				result = append(result, copy)
+			}
+			cutText = true
+			continue
+		}
+		used += len(text)
+		result = append(result, raw)
+	}
+	result = append(result, map[string]any{"type": "text", "text": marker})
+	log.Printf("mcp: result truncated tool=%s originalBytes=%d budgetBytes=%d", name, originalBytes, budget)
+	return result
+}
+
+func mcpTextContentBytes(content []any) int {
+	total := 0
+	for _, raw := range content {
+		block, ok := raw.(map[string]any)
+		if !ok || block["type"] != "text" {
+			continue
+		}
+		text, _ := block["text"].(string)
+		total += len(text)
+	}
+	return total
+}
+
+func mcpResultContinuationHint(name string, args map[string]json.RawMessage) string {
+	switch name {
+	case "list_session_work":
+		return "Pass nextCursor (or offset) for the next page, lower limit, or narrow with status or itemSessionId."
+	case "list_models":
+		return "Pass nextOffset (or offset) for the next page, lower limit, or narrow with query."
+	case "list_sessions":
+		return "Pass nextCursor for the next page, lower limit, or narrow with workspaceId or parentSessionId."
+	case "list_model_providers":
+		return "Pass nextOffset for the next page, lower limit, or narrow with kind, runtime, deviceId or providerId."
+	case "list_issues":
+		return "Filter by status or open a single Issue with get_issue."
+	case "read_context":
+		return "Read one scope with a smaller maxBytes/limit, use after/before cursors, or filter events."
+	case "list_resources":
+		return "Set detailed=false, name type or deviceId, or inspect one instance."
+	case "operate_resource":
+		return "Run fewer actions, reduce max_image_dimension, lower tailBytes, or request one operation at a time."
+	case "list_group_sessions":
+		return "Read one session with get_session or read_context instead of the whole group."
+	default:
+		return "Narrow the request with the tool's filters or a smaller limit; use its cursor or offset when it returns one."
 	}
 }
 
@@ -351,6 +468,9 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"check_model_provider":  mcpTextTool((*Server).checkModelProviderForMCP),
 	"set_model_defaults":    mcpTextTool((*Server).setModelDefaultsForMCP),
 	"sign_in_subscription":  mcpTextTool((*Server).signInSubscriptionForMCP),
+	"get_model_notes":       mcpTextTool((*Server).getModelNotesForMCP),
+	"append_model_note":     mcpTextTool((*Server).appendModelNoteForMCP),
+	"get_execution_default": mcpTextTool((*Server).getExecutionDefaultForMCP),
 	// Skill repositories (mcp_skill_repositories.go).
 	"set_skill_repository_source": mcpTextTool((*Server).setSkillRepositorySourceForMCP),
 }
@@ -404,6 +524,10 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 	case "list_profiles", "list_models":
 		if !view.seesDevice(mcpDeviceID(actor, args)) {
 			return &statusError{http.StatusNotFound, errors.New("device not found")}
+		}
+	case "get_execution_default":
+		if workspace != "" && !view.scope.can(workspace, store.WorkspaceRoleViewer) {
+			return &statusError{http.StatusNotFound, errors.New("workspace not found")}
 		}
 	case "list_sessions", "list_group_sessions", "list_issues":
 		if name == "list_sessions" && mcpArgString(args, "parentSessionId") != "" && mcpArgString(args, "workspaceId") == "" {

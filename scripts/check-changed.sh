@@ -14,10 +14,6 @@
 # Heavy steps (tsc, builds, web/worker tests, go test) queue on a VM-wide flock so
 # concurrent callers do not thrash the CPUs; light steps (prettier, gofmt, audits) don't.
 set -uo pipefail
-if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
-  echo "check-changed.sh needs bash 4 or newer (macOS: brew install bash), not $BASH_VERSION" >&2
-  exit 2
-fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 caller_pwd="$PWD"
@@ -65,10 +61,14 @@ cd "$root"
 
 if [ $files_given -eq 1 ]; then
   scope="given files"
-  mapfile -t changed < <(printf '%s\n' "${explicit_files[@]}" | grep . | sort -u)
+  changed=()
+  while IFS= read -r file; do changed+=("$file"); done < <(
+    printf '%s\n' ${explicit_files[@]+"${explicit_files[@]}"} | grep . | sort -u
+  )
 else
   scope="changed files against $base"
-  mapfile -t changed < <(
+  changed=()
+  while IFS= read -r file; do changed+=("$file"); done < <(
     { git diff --name-only "$base" --; git ls-files --others --exclude-standard; } | sort -u
   )
 fi
@@ -77,24 +77,25 @@ if [ -n "$since" ]; then
     since_epoch="$(date -d "$since" +%s)" || { echo "bad --since time: $since" >&2; exit 2; }
   fi
   recent=()
-  for f in "${changed[@]}"; do
+  for f in ${changed[@]+"${changed[@]}"}; do
     [ -f "$f" ] && [ "$(stat -c %Y -- "$f")" -gt "$since_epoch" ] && recent+=("$f")
   done
-  changed=("${recent[@]}")
+  changed=(${recent[@]+"${recent[@]}"})
   scope="$scope modified since $since"
 fi
 existing=()
-for f in "${changed[@]}"; do [ -f "$f" ] && existing+=("$f"); done
-mapfile -t untracked < <(git ls-files --others --exclude-standard)
+for f in ${changed[@]+"${changed[@]}"}; do [ -f "$f" ] && existing+=("$f"); done
+untracked=()
+while IFS= read -r file; do untracked+=("$file"); done < <(git ls-files --others --exclude-standard)
 
 if [ ${#changed[@]} -eq 0 ]; then
   echo "No $scope."
   exit 0
 fi
 
-has() { printf '%s\n' "${changed[@]}" | grep -qE "$1"; }
-matching() { printf '%s\n' "${existing[@]}" | grep -E "$1" || true; }
-is_untracked() { printf '%s\n' "${untracked[@]}" | grep -qxF "$1"; }
+has() { printf '%s\n' ${changed[@]+"${changed[@]}"} | grep -qE "$1"; }
+matching() { printf '%s\n' ${existing[@]+"${existing[@]}"} | grep -E "$1" || true; }
+is_untracked() { printf '%s\n' ${untracked[@]+"${untracked[@]}"} | grep -qxF "$1"; }
 # True when the file is new or its diff adds/removes an import line.
 imports_changed() {
   local file="$1" pattern="$2"
@@ -113,7 +114,7 @@ add() { names+=("$1"); targets+=("$2"); commands+=("$3"); heavy+=("${4:-0}"); }
 q() { printf '%q ' "$@"; }
 
 prettier_files=()
-for f in "${existing[@]}"; do
+for f in ${existing[@]+"${existing[@]}"}; do
   case "$f" in *.go) ;; *) prettier_files+=("$f") ;; esac
 done
 if [ ${#prettier_files[@]} -gt 0 ]; then
@@ -121,7 +122,8 @@ if [ ${#prettier_files[@]} -gt 0 ]; then
     "$(q "$root/node_modules/.bin/prettier" --check --ignore-unknown --log-level warn "${prettier_files[@]}")"
 fi
 
-mapfile -t go_files < <(matching '^apps/server/.*\.go$')
+go_files=()
+while IFS= read -r file; do go_files+=("$file"); done < <(matching '^apps/server/.*\.go$')
 if [ ${#go_files[@]} -gt 0 ]; then
   add gofmt "${#go_files[@]} files" \
     "out=\$(gofmt -l $(q "${go_files[@]}")); if [ -n \"\$out\" ]; then echo \"gofmt needed:\"; echo \"\$out\"; exit 1; fi"
@@ -133,7 +135,7 @@ has '^packages/protocol/(src|tsconfig)' && protocol_changed=1
 # without it. A checkout that never built it (a fresh worktree) builds it first:
 # the protocol it imports, then the Worker. A stale build is not detected here.
 worker_dist_needed=0
-if [ ${#go_files[@]} -gt 0 ] && printf '%s\n' "${go_files[@]}" | grep -q '^apps/server/internal/httpapi/' &&
+if [ ${#go_files[@]} -gt 0 ] && printf '%s\n' ${go_files[@]+"${go_files[@]}"} | grep -q '^apps/server/internal/httpapi/' &&
   [ ! -f packages/worker/dist/cli.js ]; then
   worker_dist_needed=1
 fi
@@ -153,8 +155,9 @@ fi
 # Web tests: changed test files + tests that mention a changed src module by path
 # (relative to src, no extension), feature directory, or basename as an import specifier.
 web_tests=()
-mapfile -t web_tests < <(matching '^apps/web/test/.*\.test\.mjs$')
-mapfile -t web_src < <(matching '^apps/web/src/.*\.(ts|tsx)$')
+while IFS= read -r file; do web_tests+=("$file"); done < <(matching '^apps/web/test/.*\.test\.mjs$')
+web_src=()
+while IFS= read -r file; do web_src+=("$file"); done < <(matching '^apps/web/src/.*\.(ts|tsx)$')
 if [ ${#web_src[@]} -gt 0 ]; then
   patterns=()
   for f in "${web_src[@]}"; do
@@ -164,10 +167,18 @@ if [ ${#web_src[@]} -gt 0 ]; then
     stem="$(basename "$rel")"
     if [ "$stem" != index ]; then patterns+=("/$stem.ts" "/$stem.js" "/$stem\"" "/$stem'"); fi
   done
-  mapfile -t related < <(grep -lF "$(printf '%s\n' "${patterns[@]}" | sort -u)" apps/web/test/*.test.mjs 2>/dev/null)
-  web_tests+=("${related[@]}")
+  related=()
+  while IFS= read -r file; do related+=("$file"); done < <(
+    grep -lF "$(printf '%s\n' "${patterns[@]}" | sort -u)" apps/web/test/*.test.mjs 2>/dev/null
+  )
+  [ ${#related[@]} -eq 0 ] || web_tests+=("${related[@]}")
 fi
-mapfile -t web_tests < <(printf '%s\n' "${web_tests[@]}" | grep . | sort -u)
+web_tests_unsorted=()
+[ ${#web_tests[@]} -eq 0 ] || web_tests_unsorted=("${web_tests[@]}")
+web_tests=()
+while IFS= read -r file; do web_tests+=("$file"); done < <(
+  printf '%s\n' ${web_tests_unsorted[@]+"${web_tests_unsorted[@]}"} | grep . | sort -u
+)
 if [ ${#web_tests[@]} -gt 0 ]; then
   rel_tests=("${web_tests[@]#apps/web/}")
   add "web tests" "${#web_tests[@]} files" \
@@ -178,8 +189,9 @@ fi
 worker_src_changed=0
 has '^packages/worker/(src/|tsconfig)' && worker_src_changed=1
 worker_tests=()
-mapfile -t worker_tests < <(matching '^packages/worker/test/.*\.test\.mjs$')
-mapfile -t worker_src < <(matching '^packages/worker/src/.*\.ts$')
+while IFS= read -r file; do worker_tests+=("$file"); done < <(matching '^packages/worker/test/.*\.test\.mjs$')
+worker_src=()
+while IFS= read -r file; do worker_src+=("$file"); done < <(matching '^packages/worker/src/.*\.ts$')
 if [ ${#worker_src[@]} -gt 0 ]; then
   patterns=()
   for f in "${worker_src[@]}"; do
@@ -187,10 +199,18 @@ if [ ${#worker_src[@]} -gt 0 ]; then
     patterns+=("dist/$rel.js")
     case "$rel" in */*) patterns+=("dist/${rel%/*}/") ;; esac
   done
-  mapfile -t related < <(grep -lF "$(printf '%s\n' "${patterns[@]}" | sort -u)" packages/worker/test/*.test.mjs 2>/dev/null)
-  worker_tests+=("${related[@]}")
+  related=()
+  while IFS= read -r file; do related+=("$file"); done < <(
+    grep -lF "$(printf '%s\n' "${patterns[@]}" | sort -u)" packages/worker/test/*.test.mjs 2>/dev/null
+  )
+  [ ${#related[@]} -eq 0 ] || worker_tests+=("${related[@]}")
 fi
-mapfile -t worker_tests < <(printf '%s\n' "${worker_tests[@]}" | grep . | sort -u)
+worker_tests_unsorted=()
+[ ${#worker_tests[@]} -eq 0 ] || worker_tests_unsorted=("${worker_tests[@]}")
+worker_tests=()
+while IFS= read -r file; do worker_tests+=("$file"); done < <(
+  printf '%s\n' ${worker_tests_unsorted[@]+"${worker_tests_unsorted[@]}"} | grep . | sort -u
+)
 if { [ $worker_src_changed -eq 1 ] && [ ${#worker_tests[@]} -gt 0 ]; } || [ $worker_dist_needed -eq 1 ]; then
   add "worker build" packages/worker "cd packages/worker && $(q "$(bin packages/worker tsc)") -p tsconfig.json" heavy
 elif [ $worker_src_changed -eq 1 ] || [ $protocol_changed -eq 1 ]; then
@@ -211,13 +231,19 @@ if command -v systemd-run >/dev/null 2>&1; then
   go_test_cmd="cd apps/server && systemd-run --user --scope -q -p MemoryMax=2500M go test -timeout 20m"
 fi
 go_full=() go_plan=()
-mapfile -t go_dirs < <(printf '%s\n' "${go_files[@]}" | grep . | xargs -r -n1 dirname | sort -u)
-for dir in "${go_dirs[@]}"; do
+go_dirs=()
+while IFS= read -r dir; do go_dirs+=("$dir"); done < <(
+  printf '%s\n' ${go_files[@]+"${go_files[@]}"} | grep . | while IFS= read -r file; do dirname "$file"; done | sort -u
+)
+for dir in ${go_dirs[@]+"${go_dirs[@]}"}; do
   pkg="./${dir#apps/server/}"
   short="${pkg#./internal/}"
   test_files=("$dir"/*_test.go)
   [ -e "${test_files[0]}" ] || test_files=()
-  mapfile -t touched < <(printf '%s\n' "${go_files[@]}" | grep -E "^$dir/[^/]+\.go\$")
+  touched=()
+  while IFS= read -r file; do touched+=("$file"); done < <(
+    printf '%s\n' ${go_files[@]+"${go_files[@]}"} | grep -E "^$dir/[^/]+\.go\$"
+  )
   shared=""
   for f in "${touched[@]}"; do
     case "$(basename "$f")" in store.go | server.go | routes.go | models.go) shared="$(basename "$f")" ;; esac
@@ -237,7 +263,11 @@ for dir in "${go_dirs[@]}"; do
       fi
     done
   done
-  mapfile -t funcs < <(cat /dev/null "${chosen[@]}" | grep -oE '^func Test[A-Za-z0-9_]+\(' | sed -E 's/^func (Test[A-Za-z0-9_]+)\(/\1/' | grep -vx TestMain | sort -u)
+  funcs=()
+  while IFS= read -r func; do funcs+=("$func"); done < <(
+    cat /dev/null ${chosen[@]+"${chosen[@]}"} | grep -oE '^func Test[A-Za-z0-9_]+\(' |
+      sed -E 's/^func (Test[A-Za-z0-9_]+)\(/\1/' | grep -vx TestMain | sort -u
+  )
   if [ ${#funcs[@]} -eq 0 ]; then
     go_plan+=("$short: compile only (no tests match $(printf '%s ' "${touched[@]##*/}"))")
     add "go test" "$short (compile)" "$go_test_cmd -run '^\$' $(q "$pkg")" heavy
@@ -297,7 +327,7 @@ echo "${#changed[@]} $scope. Plan:"
 for i in "${!names[@]}"; do
   printf '  %-15s %s%s\n' "${names[$i]}" "${targets[$i]}" "$([ "${heavy[$i]}" = heavy ] && echo '  [locked]')"
 done
-for line in "${go_plan[@]}"; do echo "  go: $line"; done
+for line in ${go_plan[@]+"${go_plan[@]}"}; do echo "  go: $line"; done
 if [ $list_only -eq 1 ]; then
   echo
   for i in "${!names[@]}"; do printf '# %s\n%s\n' "${names[$i]}" "${commands[$i]}"; done

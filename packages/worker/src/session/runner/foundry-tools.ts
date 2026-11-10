@@ -1,9 +1,13 @@
-import type { AgentSessionEvent } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "../../platform/secret-redaction.js";
 import type { ActiveClaudeRuntime, ClaudeSDKQuery } from "../session-state.js";
 import { mintTimerTurnToken } from "../session-token.js";
 import { errorMessage } from "../../platform/utils.js";
 import { claudeQueryStartFailed } from "../../harness/agent-runtime/claude-sdk.js";
+import {
+  claudeFoundryToolsConnection,
+  FoundryToolsSupervisor,
+  type FoundryToolsEventEmitter,
+} from "./foundry-tools-supervisor.js";
 
 /**
  * Hands a new Claude process its Foundry tools. A failure leaves the
@@ -11,30 +15,49 @@ import { claudeQueryStartFailed } from "../../harness/agent-runtime/claude-sdk.j
  * a process that failed to start rejects with that failure.
  */
 export async function startClaudeFoundryTools(
-  query: Pick<ClaudeSDKQuery, "setMcpServers">,
+  query: Pick<
+    ClaudeSDKQuery,
+    "setMcpServers" | "mcpServerStatus" | "reconnectMcpServer"
+  >,
   servers: Record<string, unknown> | undefined,
-  emit: (
-    label: string,
-    detail: string,
-    level?: AgentSessionEvent["level"],
-  ) => Promise<void> | void,
-): Promise<void> {
-  if (!servers || Object.keys(servers).length === 0) return;
+  emit: FoundryToolsEventEmitter,
+): Promise<FoundryToolsSupervisor | undefined> {
+  if (!servers || Object.keys(servers).length === 0) return undefined;
+  const supervisor = new FoundryToolsSupervisor(
+    claudeFoundryToolsConnection(query),
+    emit,
+  );
   try {
     const result = (await query.setMcpServers?.(servers)) as
       { errors?: Record<string, string> } | undefined;
     const errors = Object.entries(result?.errors ?? {});
-    if (errors.length > 0)
-      await emit(
-        "Foundry tools unavailable",
+    if (errors.length > 0) {
+      await supervisor.failed(
         errors.map(([name, error]) => `${name}: ${error}`).join("; "),
-        "warning",
       );
+    } else {
+      await supervisor.connected();
+    }
   } catch (error) {
     // The process never started: the session reports that failure itself.
-    if (claudeQueryStartFailed(error)) throw error;
-    await emit("Foundry tools unavailable", errorMessage(error), "warning");
+    if (claudeQueryStartFailed(error)) {
+      supervisor.close();
+      throw error;
+    }
+    await supervisor.failed(errorMessage(error));
   }
+  return supervisor;
+}
+
+/**
+ * The process dials its Foundry tools once, when it starts; a server it could
+ * not reach then (a restart, a busy host) stays failed for the process's
+ * life. A reused process checks them, then reconnects before its next turn.
+ */
+export async function reconnectFailedClaudeFoundryTools(
+  supervisor: FoundryToolsSupervisor | undefined,
+): Promise<void> {
+  await supervisor?.checkAndReconnect();
 }
 
 // The server keeps a session's token valid while the session is queued or

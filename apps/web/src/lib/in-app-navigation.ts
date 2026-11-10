@@ -118,6 +118,24 @@ export function navigateToDeviceResources(deviceId: string): void {
   });
 }
 
+/** Opens a device's execution settings through the shell's normal route. */
+export function navigateToDeviceSettings(deviceId: string): void {
+  navigateAppRoute({
+    deviceSection: "settings",
+    selectedDeviceId: deviceId,
+    view: "devices",
+  });
+}
+
+/** A real, copyable link to a device's execution settings. */
+export function deviceSettingsHref(deviceId: string): string {
+  return `${pathForAppRoute({
+    deviceSection: "settings",
+    selectedDeviceId: deviceId,
+    view: "devices",
+  })}${searchWithWorkspace(workspaceIdFromLocation())}`;
+}
+
 /** Opens the Resources page, filtered to one device's resources when given. */
 export function navigateToResources(deviceId = "", type = ""): void {
   navigateAppRoute({ view: "resources" }, undefined, {

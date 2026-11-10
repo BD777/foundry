@@ -334,10 +334,11 @@
   },
   {
     "name": "list_models",
-    "description": "List the models a profile can run, on your device by default or another you reach.",
-    "summary": "Lists the models a profile can run, from its endpoint's catalog.",
+    "description": "List the chat-capable models the profile's runtime can use, on your device by default or another you reach. Models for images, video, audio, speech, 3D and embeddings are left out. One line each: id, label and context window. Pages of limit with nextOffset; query narrows by id or label.",
+    "summary": "Lists the chat-capable models a profile can run, one line each and paged.",
     "limits": [
-      "The calling session's device, or another device hosting a workspace the agent reaches."
+      "The calling session's device, or another device hosting a workspace the agent reaches.",
+      "At most 100 models per page, 30 by default; use query, offset or limit."
     ],
     "inputSchema": {
       "type": "object",
@@ -348,6 +349,21 @@
         "deviceId": {
           "type": "string",
           "description": "Device that owns the profiles; defaults to the calling device."
+        },
+        "query": {
+          "type": "string",
+          "description": "Only models whose id or label contains this text."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip this many matching models (nextOffset of the previous page)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "At most this many models; default 30."
         }
       },
       "required": ["profileId"]
@@ -544,6 +560,104 @@
     }
   },
   {
+    "name": "get_model_notes",
+    "description": "Read what the person's orchestrator has learned about handing work to one provider's model, newest first. Notes are scoped by provider kind, provider id, runtime and model id. Pages of up to 50 (default 20); each note says who appended it and when, and every append is kept.",
+    "summary": "Reads recent orchestration notes for one provider model.",
+    "limits": [
+      "Only the person's own providers.",
+      "Returns at most 50 notes per page.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"]
+        },
+        "model": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      },
+      "required": ["providerKind", "providerId", "runtime", "model"]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "append_model_note",
+    "description": "Append what you learned about handing execution work to one model: what to delegate, how small to make steps, briefing details, known failure modes and required evidence. This does not need the person's approval; it keeps a new historical note rather than replacing earlier ones.",
+    "summary": "Appends an orchestration lesson to one provider model.",
+    "limits": [
+      "Only the person's own providers.",
+      "The note body is limited to 12000 bytes.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"]
+        },
+        "model": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 12000
+        }
+      },
+      "required": ["providerKind", "providerId", "runtime", "model", "body"]
+    }
+  },
+  {
+    "name": "get_execution_default",
+    "description": "Read the default execution model the person chose for their orchestrator: providerId, runtime, model and effort. With workspaceId the workspace override is used when set, else the global choice; without it, read the global choice. scope is global, workspace or none.",
+    "summary": "Reads the effective provider, model and effort for delegated execution.",
+    "limits": [
+      "Only the person's own settings.",
+      "A workspace must be one the caller may read.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "Use this workspace's override when set, else its person's global default."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
     "name": "sign_in_subscription",
     "description": "Sign a device's Claude Code (runtime claude) or Codex (codex) in to the person's subscription, as the page's Sign in does: the device's own CLI signs in; you only relay. action start answers status, operationId, verificationUrl and, for Codex, userCode: give the person the link (and code) to open in their own browser; never open it yourself. For Claude, codeEntry true means the page shows a code after approval: ask the person for it and send it with action code. action status follows it while status is pending, until complete, denied, failed or expired; cancel stops it. Starting again while one runs answers that one.",
     "summary": "Starts a subscription sign-in on a device and relays its link and code to the person.",
@@ -697,9 +811,9 @@
   },
   {
     "name": "list_sessions",
-    "description": "List a workspace's sessions, newest activity first, one line each (id, title, status, runtime, profile, device, parent, activity). Yours by default, or workspaceId; parentSessionId lists the sessions one session started; parentOnly the ones you started. Pages of limit with the nextCursor a page returns.",
+    "description": "List a workspace's sessions, newest activity first, one line each (id, title, status, runtime, profile, device, parent, activity). Yours by default, or workspaceId; parentSessionId lists the sessions one session started; parentOnly the ones you started. Pages of limit with the nextCursor a page returns; pass nextCursor to continue.",
     "summary": "Lists a workspace's sessions, newest activity first, one line each.",
-    "limits": ["Pages of at most 100 sessions, 30 by default."],
+    "limits": ["Pages of at most 100 sessions, 20 by default."],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -722,7 +836,7 @@
         },
         "limit": {
           "type": "number",
-          "description": "Sessions per page; default 30, at most 100."
+          "description": "Sessions per page; default 20, at most 100."
         },
         "cursor": {
           "type": "string",
@@ -781,8 +895,9 @@
     "name": "read_context",
     "description": "Read a session or native chat you can read, in any workspace you reach. scope: summary (default: status, places, lineage, last input and answer, open work, last error); events (one line each; filter by levels, labels, query; the newest with tail, or pages of limit with after/before cursors; labels [\"User message\"] lists the person's own messages); thread (the conversation: messages and answers without tool calls; the newest page, or from offset; at most limit messages, each cut at maxChars; transcript is the same for a native chat); changes (the files it wrote or named, with lines added and removed; with path, that file's diff, one turn's with inputId); file (path: the file as it is now on the session's device); background (commands it left running; taskId: the end of one's output); subagents (its native subagents; taskId: one's transcript). file and a diff are read in lines: from offset, at most limit. Every answer stays within maxBytes and says how to read on.",
     "summary": "Reads a session in depth: its events, transcript, native subagents, the files it changed and the commands it left running.",
+    "maxBytes": 32000,
     "limits": [
-      "Output is cut at maxBytes, 12000 by default.",
+      "Output is cut at maxBytes, 12000 by default and at most 32000.",
       "Pages of at most 500 events, with up to 5 events of context each.",
       "A background command's output needs Member in the session's workspace."
     ],
@@ -860,7 +975,7 @@
         },
         "maxBytes": {
           "type": "number",
-          "description": "The answer's size, default 12000."
+          "description": "The answer's size, default 12000 and at most 32000."
         },
         "offset": {
           "type": "number",
@@ -1899,8 +2014,9 @@
   },
   {
     "name": "list_session_work",
-    "description": "List persistent work: schedules, background processes and subagents of this conversation (or sessionId), earlier turns included, with unconfirmed controls. workspaceId lists a workspace's persistent services instead. With id: that item and its run history.",
-    "summary": "Lists persistent schedules, background commands and subagents across the conversation, including pending controls.",
+    "description": "List persistent work: schedules, background processes and subagents of this conversation (or sessionId), earlier turns included. By default one line per item: id, kind, status, title or command, time. workspaceId lists a workspace's persistent services instead. Pages of limit with nextCursor; status and itemSessionId narrow the list. detail=true returns full records, and with id returns that item plus its runs.",
+    "summary": "Lists persistent schedules, background commands and subagents, compact and paged.",
+    "maxBytes": 12000,
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1910,11 +2026,41 @@
         },
         "sessionId": {
           "type": "string",
-          "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
+          "description": "Conversation to read; defaults to the calling session."
+        },
+        "itemSessionId": {
+          "type": "string",
+          "description": "Only work owned by or linked to this session id."
         },
         "id": {
           "type": "string",
           "description": "Work ID; includes durable run history when provided."
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Only items in one of these observed or desired states, such as running, pending, completed or stopped."
+        },
+        "detail": {
+          "type": "boolean",
+          "description": "Return full records, complete controls and workspace service tunnels instead of one-line item summaries. Detail pages are capped at 5 items; use id for one item and its runs."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip this many matching items. Do not combine with cursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "At most this many items; default 20."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "The nextCursor of the previous page."
         }
       },
       "required": []
@@ -1924,6 +2070,8 @@
     },
     "limits": [
       "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
+      "At most 50 items per page, 20 by default; nextCursor or offset continues.",
+      "Default item lines are compact; use detail=true or id for full records and runs.",
       "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped."
     ]
   },

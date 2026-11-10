@@ -49,6 +49,8 @@ export interface SelectMenuProps {
   /** Action rows after the options (see SelectMenuAction). */
   actions?: SelectMenuAction[];
   ariaLabel: string;
+  /** A catalog is being read: show the trigger's busy state and spinner. */
+  busy?: boolean;
   className?: string;
   /**
    * Icon-only trigger (runtime prefix + chevron); the open menu still shows
@@ -143,6 +145,7 @@ const optionDetailClass =
 export function SelectMenu({
   actions = [],
   ariaLabel,
+  busy = false,
   className,
   compactTrigger = false,
   popoverClassName,
@@ -195,6 +198,7 @@ export function SelectMenu({
             aria-label={
               visibleOption ? `${ariaLabel}: ${visibleOption.label}` : ariaLabel
             }
+            busy={busy}
             className={cn(triggerVariants({ compact, tone }), triggerClassName)}
             disabled={disabled}
             ref={triggerRef}

@@ -47,6 +47,8 @@ export interface ChatListItem {
   unread: boolean;
   /** Open pending items of the chat (DEV-079), shown as a count. */
   pendingCount?: number;
+  /** Direct sub-sessions whose work keeps this chat waiting. */
+  waitingChildCount?: number;
   foundrySessionId: string;
   nativeSessionId?: string;
   renaming?: boolean;
@@ -117,6 +119,7 @@ export interface ChatSurfaceProps {
   selectedChatId?: string;
   agentActive?: boolean;
   agentActiveSessionId?: string;
+  waitingChildCount?: number;
   agentOptions: ChatAgentOption[];
   /** Picker rows that act instead of selecting (connection setup, …). */
   agentPickerActions?: SelectMenuAction[];

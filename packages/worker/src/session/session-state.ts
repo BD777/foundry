@@ -22,6 +22,7 @@ import type {
   ClaudeRequestUsageTracker,
   TurnTokenUsage,
 } from "./usage/turn-usage.js";
+import type { FoundryToolsSupervisor } from "./runner/foundry-tools-supervisor.js";
 
 export type SessionEventEmitter = (
   label: string,
@@ -89,6 +90,8 @@ export class AsyncInputQueue<T> implements AsyncIterable<T> {
 export interface ClaudeSDKQuery {
   close?: () => void;
   setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown>;
+  mcpServerStatus?: () => Promise<Array<{ name: string; status: string }>>;
+  reconnectMcpServer?: (serverName: string) => Promise<void>;
   /** Stops a background task; Claude reads a "stopped" notification. */
   stopTask?: (taskId: string) => Promise<void>;
   [Symbol.asyncIterator](): AsyncIterator<unknown>;
@@ -135,6 +138,8 @@ export interface ActiveClaudeTurn {
   startedAt: number;
   /** Provider usage summed over the turn's results. */
   usage?: TurnTokenUsage;
+  /** Whether a failed or canceled result already emitted this turn's usage. */
+  usageOutcomeReported?: boolean;
   /** Follows each model request's stream for its final tokens. */
   requestUsage?: ClaudeRequestUsageTracker;
   /** Files this turn's tools wrote and its answer named. */
@@ -185,6 +190,8 @@ export interface ActiveClaudeRuntime {
   mcpServers?: Record<string, unknown>;
   /** When the process was handed them: how old its Foundry token is at most. */
   mcpServersAt?: number;
+  /** Keeps the Foundry MCP connection alive after its first hand-over. */
+  foundryToolsSupervisor?: FoundryToolsSupervisor;
   timers?: ClaudeTimerTracker;
   /** Background work of the agent process; it outlives Foundry turns. */
   background?: ClaudeBackgroundTaskTracker;
@@ -221,6 +228,8 @@ export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
 // --- Codex active thread ---
 
 export interface CodexSDKThread {
+  /** The app-server process-group leader while one is open. */
+  pid?: () => number | undefined;
   steer?: (input: unknown, inputId?: string) => Promise<void>;
   /** Takes the person's answer to a prompt that waits (codex-questions.ts). */
   answerQuestion?: (message: string) => boolean;
@@ -245,6 +254,7 @@ export interface ActiveCodexThread {
   lastUsed: number;
   /** The Foundry session that last ran on it. */
   sessionId?: string;
+  workspaceId?: string;
   nativeSessionId: string;
   thread: CodexSDKThread;
 }

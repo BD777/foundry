@@ -18,6 +18,7 @@ import type {
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationState,
   ConnectorAuthorizationChallenge,
+  ConnectorConfiguration,
   ConnectorProgressPayload,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
@@ -109,6 +110,13 @@ export interface DeviceHeldAdapter {
   clearEnvironment: string[];
   readVersion(run: ToolRun): Promise<string | undefined>;
   readLogin(run: ToolRun): Promise<LoginReading>;
+  /** Reads non-secret settings from the tool's active profile. */
+  readConfiguration?(run: ToolRun): Promise<ConnectorConfiguration | undefined>;
+  /** Writes non-secret settings the page changed to the tool's active profile. */
+  writeConfiguration?(
+    run: ToolRun,
+    configuration: ConnectorConfiguration,
+  ): Promise<void>;
   /** Starts the tool's sign-in; scratch is a private folder removed after. */
   /** options: what the person chose on the page (adapter-specific). */
   beginSignIn(
@@ -601,6 +609,14 @@ export class DeviceHeldConnectors {
               );
             }
           })(),
+          (async () => {
+            if (!adapter.readConfiguration) return;
+            try {
+              state.configuration = await adapter.readConfiguration(run);
+            } catch {
+              delete state.configuration;
+            }
+          })(),
         ]);
         if ("error" in login) throw login.error;
         reading = login.value;
@@ -724,6 +740,19 @@ export class DeviceHeldConnectors {
   async signOut(connector: ConnectorDescriptor): Promise<DeviceConnectorState> {
     const { adapter, run } = await this.usable(checkedDescriptor(connector));
     await adapter.signOut(run);
+    return this.status(connector, true);
+  }
+
+  async configure(
+    connector: ConnectorDescriptor,
+    configuration: ConnectorConfiguration,
+  ): Promise<DeviceConnectorState> {
+    const { adapter, run } = await this.usable(checkedDescriptor(connector));
+    if (!adapter.writeConfiguration)
+      throw new Error(
+        `${connector.label} has no editable defaults on this worker`,
+      );
+    await adapter.writeConfiguration(run, configuration);
     return this.status(connector, true);
   }
 
@@ -957,6 +986,13 @@ export class DeviceHeldConnectors {
                   hooks.progress &&
                     ((progress) =>
                       hooks.progress!({ kind: connector.kind, ...progress })),
+                ),
+              };
+            case "configure":
+              return {
+                state: await this.configure(
+                  connector,
+                  request.configuration ?? {},
                 ),
               };
             case "sign_in_begin": {

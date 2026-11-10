@@ -114,7 +114,7 @@ interface components {
       status?: components["schemas"]["TranscriptMessageStatus"];
       /** @description `attachments` travel with a user message. */
       attachments?: components["schemas"]["ChatAttachment"][];
-      /** @description `requestUsage` is the tokens of the model request that produced this step (Claude). */
+      /** @description `requestUsage` is the tokens of the model request that produced this step. Claude reports them when the request stream ends; Codex estimates them from native token-usage updates. */
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats). */
       turnUsage?: components["schemas"]["AgentTurnUsage"];
@@ -149,6 +149,8 @@ interface components {
     /** @description ModelRequestUsage is one model request's tokens; steps of one request share its id and its last report counts. */
     ModelRequestUsage: {
       requestId: string;
+      /** @description The model that served the request. Claude reports it in `message_start`; Codex reports it in the thread's `turn_context`. */
+      model?: string;
       /**
        * Format: int64
        * @description Prompt tokens, cache reads and writes included.
@@ -160,6 +162,23 @@ interface components {
       cacheWriteTokens: number;
       /** Format: int64 */
       outputTokens: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the Worker receiving the request's `message_start` to receiving its first `content_block_delta` of any kind (text, thinking or tool input). This excludes request setup before `message_start`.
+       */
+      firstTokenMs?: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the Worker receiving the first `content_block_delta` to receiving `message_stop`; it excludes time to first token. Clients compute output tokens per second from `outputTokens` and this duration.
+       */
+      generationMs?: number;
+      /**
+       * Format: int64
+       * @description Milliseconds from the request's start to its completion report. Claude starts with the turn, then with each tool result, and ends at `message_stop`. Codex starts with the turn, then at the previous tool completion or token-usage update, and ends at the next token-usage update. It includes time to first token and stream delivery, so unlike `generationMs` it is not a strict decode interval.
+       */
+      requestMs?: number;
+      /** @description Whether request timing was reconstructed rather than observed from model stream frames. Codex estimates `requestMs` from the native token usage notification; it has no first-token or generation timing. */
+      timingEstimated?: boolean;
     };
     /** @description ConnectorRequirement is a condition a device must meet for the connector to work there ("tcp_reachable": host:port opens within a few seconds). */
     ConnectorRequirement: {
@@ -442,6 +461,11 @@ interface components {
       | "not_installed"
       | "unavailable"
       | "error";
+    /** @description Non-secret settings read from a device-held connector's active profile. It never holds a credential. */
+    ConnectorConfiguration: {
+      /** @description The default Region the tool's active profile uses when a command names none. */
+      region?: string;
+    };
     /** @description DeviceConnectorState is a device-held connector on one device as last read there. It never holds a credential. */
     DeviceConnectorState: {
       authorizations?: components["schemas"]["ConnectorAuthorizationState"][];
@@ -450,6 +474,8 @@ interface components {
       status: components["schemas"]["DeviceConnectorStatus"];
       /** @description Why it is unavailable or failed (a requirement's label, an error). */
       statusDetail?: string;
+      /** @description Non-secret settings read from the connector's active profile. */
+      configuration?: components["schemas"]["ConnectorConfiguration"];
       installed: boolean;
       version?: string;
       /**
@@ -494,6 +520,32 @@ interface components {
       isolationEnv?: {
         [key: string]: string;
       };
+    };
+    /** @description SaveAppStoreConnectKeyInput stores an App Store Connect API key. The issuer and key ids are public metadata; privateKey is write-only and is sealed by the server. */
+    SaveAppStoreConnectKeyInput: {
+      issuerId: string;
+      keyId: string;
+      privateKey: string;
+      label?: string;
+    };
+    /** @description AppStoreConnectConnection is one App Store Connect key as its owner sees it: the external app and account a workspace binding names, with no private key. */
+    AppStoreConnectConnection: {
+      appId: string;
+      accountId: string;
+      label: string;
+      issuerId: string;
+      keyId: string;
+      hasKey: boolean;
+      status: string;
+      createdAt?: string;
+      updatedAt?: string;
+    };
+    /** @description AppStoreConnectApp is one App Store Connect app record a bound workspace may select. */
+    AppStoreConnectApp: {
+      id: string;
+      name?: string;
+      bundleId?: string;
+      sku?: string;
     };
     /** @description ExternalAccountMaterial is what a worker needs to let one tool act as an account for one session: the identity, the tool's profile and the gateway handles that stand in for the app secret and the access token. No secret and no real token ever rides it: the tool reaches the provider through the server's gateway (internal/feishugateway), which swaps the handles for the real credentials. It rides run_session and is written into a tool profile the worker removes when the session ends. */
     ExternalAccountMaterial: {
@@ -551,6 +603,8 @@ interface components {
       status: "connected" | "disconnected";
       lastSeenLabel: string;
       runtimeSettings?: components["schemas"]["AgentRuntimeSettings"];
+      /** @description `runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it. */
+      runtimeState?: components["schemas"]["DeviceRuntimeState"];
       /** @description `owned` reports whether the caller owns (and may manage) the device. */
       owned?: boolean;
       /** @description `managedRoots` are the folders, resolved, the Personal Agent may create projects in, reported by its worker. */
@@ -706,14 +760,26 @@ interface components {
     };
     AgentRuntimeSettings: {
       activeRuntimeTtlMs: number;
-      /** @description `maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default. */
-      maxConcurrentTasks: number;
       /**
-       * @description `maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it out.
+       * @description `adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).
+       * @enum {string}
+       */
+      mode?: "adaptive" | "forced";
+      /** @description The owner's fixed limit while `mode` is `forced` (1–16). */
+      forcedLimit?: number;
+      /** @description Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive. */
+      maxConcurrentTasks?: number;
+      /**
+       * @description Deprecated compatibility projection for older clients. New settings use `mode`.
        * @enum {string}
        */
       maxConcurrentTasksSource?: "owner" | "hardware";
-      /** @description What this device's hardware allows by default. */
+      /**
+       * @description `adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.
+       * @enum {string}
+       */
+      migrationNotice?: "adaptive_migrated";
+      /** @description Compatibility mirror of this device's adaptive parallel floor. */
       hardwareMaxConcurrentTasks?: number;
       /** @description The memory and CPUs that default is computed from. */
       hardware?: components["schemas"]["DeviceHardware"];
@@ -723,6 +789,66 @@ interface components {
       /** Format: double */
       memoryGiB: number;
       cpus: number;
+    };
+    /** @description DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported. */
+    DeviceRuntimeState: {
+      capturedAt: string;
+      /** @enum {string} */
+      mode: "adaptive" | "forced";
+      limit: number;
+      /** @description Total turns running, limited and limit-exempt. */
+      running: number;
+      /** @description Total turns waiting, limited and limit-exempt. */
+      queued: number;
+      /** @description Turns running against the adaptive or forced limit. */
+      runningLimited?: number;
+      /** @description Human and orchestration-parent turns running outside the limit. */
+      runningExempt?: number;
+      /** @description Turns waiting for an adaptive or forced-limit slot. */
+      queuedLimited?: number;
+      /** @description Limit-exempt turns waiting only behind the same conversation. */
+      queuedExempt?: number;
+      /** @description While true, no new turn starts regardless of the limit. */
+      hardHold: boolean;
+      /** @description Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode. */
+      reasons: string[];
+      signals: components["schemas"]["DeviceResourceSignals"];
+      estimates: components["schemas"]["DeviceTurnEstimate"][];
+    };
+    /** @description The host resource signals behind one admission decision. */
+    DeviceResourceSignals: {
+      cpuCount?: number;
+      /** Format: double */
+      cpuPressurePercent?: number;
+      /** Format: double */
+      loadAverage1?: number;
+      /** Format: int64 */
+      memoryAvailableBytes?: number;
+      /** Format: double */
+      memoryPressurePercent?: number;
+      /** Format: int64 */
+      memoryTotalBytes?: number;
+      /** Format: int64 */
+      swapFreeBytes?: number;
+    };
+    /** @description DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime. */
+    DeviceTurnEstimate: {
+      workspaceId?: string;
+      runtime?: string;
+      /**
+       * @description `prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.
+       * @enum {string}
+       */
+      source?: "prior" | "observed";
+      /** Format: int64 */
+      typicalRssBytes: number;
+      /**
+       * Format: int64
+       * @description The 90th percentile of observed per-turn peak RSS.
+       */
+      peakRssBytes: number;
+      /** Format: double */
+      averageCpuCores: number;
     };
     DaemonRegistration: {
       /** @description `capabilities` name the protocol features this worker implements. Most are always declared; the server checks only those a worker withholds while it cannot run them (verification_sessions without its sandbox, and those an older execution host still running lacks). */
@@ -2082,6 +2208,17 @@ interface components {
      * @enum {string}
      */
     CodexTransportMode: "auto" | "websocket" | "https";
+    /** @description Custom prices for one model, in US dollars per one million tokens. A complete entry replaces LiteLLM's estimate for turns through this provider. */
+    ProfileModelPrice: {
+      /** Format: double */
+      inputPerMillion: number;
+      /** Format: double */
+      cacheReadPerMillion: number;
+      /** Format: double */
+      cacheWritePerMillion: number;
+      /** Format: double */
+      outputPerMillion: number;
+    };
     /** @description ProfileDefinition is a control-plane owned profile. It carries no DeviceID and no status: reachability belongs to the device that runs it. */
     ProfileDefinition: {
       id: string;
@@ -2093,6 +2230,10 @@ interface components {
       model?: string;
       /** @description The models this profile offers. `model` is the default; everything here is selectable in chat and issue runs. Native discovery fills it where a CLI can enumerate, and anything the user adds stays. */
       models?: string[];
+      /** @description `modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are US dollars per one million input, cache-read, cache-write and output tokens. */
+      modelPrices?: {
+        [key: string]: components["schemas"]["ProfileModelPrice"];
+      };
       /** @description `contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker). */
       contextWindows?: {
         [key: string]: number;
@@ -2141,6 +2282,57 @@ interface components {
       profileId: string;
       /** @description `deviceBound`: the base URL is the device's own loopback address, which no other device can reach, so the profile may run only on that device. */
       deviceBound?: boolean;
+    };
+    /** @description ModelNote is one observation an orchestrator recorded about a specific model. */
+    ModelNote: {
+      id: string;
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model: string;
+      /** @description What the orchestrator learned about handing work to this model. */
+      body: string;
+      authorUserId: string;
+      authorName: string;
+      /** @description The agent session that appended the note; absent for a person. */
+      authorSessionId?: string;
+      createdAt: string;
+      updatedAt?: string;
+    };
+    /** @description One page of model notes, newest first. */
+    ModelNotePage: {
+      total: number;
+      offset: number;
+      nextOffset?: number;
+      notes: components["schemas"]["ModelNote"][];
+    };
+    /** @description ModelNoteInput appends one note to a provider's model. */
+    ModelNoteInput: {
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model: string;
+      body: string;
+    };
+    /** @enum {string} */
+    ExecutionDefaultScope: "global" | "workspace" | "none";
+    /** @description The model a person's orchestrator uses for delegated execution when a child names no model. */
+    ExecutionModelDefault: {
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model: string;
+      effort?: string;
+      scope: components["schemas"]["ExecutionDefaultScope"];
+      updatedBy?: string;
+      updatedAt?: string;
+    };
+    /** @description The saved execution default at this level, the effective one after workspace fallback, and where it came from. */
+    ExecutionDefaultsView: {
+      workspaceId?: string;
+      saved?: components["schemas"]["ExecutionModelDefault"];
+      effective: components["schemas"]["ExecutionModelDefault"];
     };
     AgentProjection: {
       accountHold?: components["schemas"]["NativeAccountHold"];
@@ -2337,6 +2529,25 @@ interface components {
        * @description Wall time from the runtime taking the turn to its final result.
        */
       durationMs: number;
+      /**
+       * @description How the turn ended. Completed turns set it too, so statistics can include failed and canceled turns without inferring their outcome from a separate event.
+       * @enum {string}
+       */
+      outcome?: "completed" | "failed" | "canceled";
+      /** @description The model that served the turn; when several did, the last one. */
+      model?: string;
+      /**
+       * Format: int64
+       * @description Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
+       */
+      modelMs?: number;
+      /**
+       * Format: int64
+       * @description Time to the first model output token in the turn. Claude values prefer `ttft_stream_ms`, the first streamed content frame when partial messages are enabled, and fall back to `ttft_ms`, the first complete assistant message; Codex values are estimates and set `timingEstimated`.
+       */
+      ttftMs?: number;
+      /** @description Whether `modelMs` and `ttftMs` were reconstructed from wall and tool-item timing rather than reported by the provider. Codex sets this to true; Claude reports the values directly. */
+      timingEstimated?: boolean;
       /** Format: int64 */
       inputTokens: number;
       /** Format: int64 */
@@ -2683,7 +2894,7 @@ interface components {
       turnUsage?: components["schemas"]["AgentTurnUsage"];
       /** @description `subagentUsage` is what a Claude subagent has used so far, on its progress and completion events. */
       subagentUsage?: components["schemas"]["SubagentUsage"];
-      /** @description `requestUsage` is a model request's final tokens (Claude), reported when its stream ends; the event itself is not shown. */
+      /** @description `requestUsage` is a model request's tokens, reported when Claude's stream ends or from Codex's native token-usage update; the event itself is not shown. */
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts. */
       contextUsage?: components["schemas"]["AgentContextUsage"];
@@ -2748,6 +2959,8 @@ interface components {
       role?: "issue_execution" | "issue_clarification" | "personal_agent";
       /** @description `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission. */
       parentSessionId?: string;
+      /** @description `waitingChildCount` is how many direct sub-sessions this session is waiting on: active turns whose current input it started, or ended children that are themselves waiting on such descendants up to four levels deep. Absent or 0 when none. */
+      waitingChildCount?: number;
       /**
        * @description `questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: "person", who holds this chat (a prompt waits in the turn for a while); "parent", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.
        * @enum {string}
@@ -2927,6 +3140,89 @@ interface components {
       /** Format: int64 */
       sizeBytes: number;
       binary: boolean;
+    };
+    /** @enum {string} */
+    UsageStatsGranularity: "hour" | "day";
+    /** @enum {string} */
+    UsageStatsDimension:
+      | "entry"
+      | "device"
+      | "workspace"
+      | "provider"
+      | "model"
+      | "runtime"
+      | "user";
+    /** @description One cost_source's share of a usage group. */
+    UsageStatsCostSource: {
+      /** @enum {string} */
+      source: "reported" | "estimated" | "custom" | "unknown";
+      /** Format: int64 */
+      turns: number;
+      /** Format: double */
+      costUsd: number;
+    };
+    /** @description One time bucket and selected dimension combination. */
+    UsageStatsPoint: {
+      /** @description An RFC 3339 hour boundary or a YYYY-MM-DD day. */
+      bucket: string;
+      userId?: string;
+      entry?: string;
+      deviceId?: string;
+      workspaceId?: string;
+      /** @description The profile/provider label recorded with the usage. */
+      provider?: string;
+      model?: string;
+      runtime?: string;
+      /** Format: int64 */
+      turns: number;
+      /** Format: int64 */
+      requests: number;
+      /** Format: int64 */
+      inputTokens: number;
+      /** Format: int64 */
+      cacheReadTokens: number;
+      /** Format: int64 */
+      cacheWriteTokens: number;
+      /** Format: int64 */
+      outputTokens: number;
+      /** Format: int64 */
+      reasoningTokens: number;
+      /** Format: double */
+      costUsd: number;
+      costSources: components["schemas"]["UsageStatsCostSource"][];
+      /**
+       * Format: double
+       * @description Output tokens divided by measured generation time.
+       */
+      averageTokensPerSecond?: number;
+      /**
+       * Format: double
+       * @description Median output tokens per second across measured requests.
+       */
+      medianTokensPerSecond?: number;
+      /**
+       * Format: int64
+       * @description Median first-token latency across measured requests.
+       */
+      ttftP50Ms?: number;
+      /**
+       * Format: int64
+       * @description 90th-percentile first-token latency across measured requests.
+       */
+      ttftP90Ms?: number;
+    };
+    UsageStatsResult: {
+      from: string;
+      to: string;
+      granularity: components["schemas"]["UsageStatsGranularity"];
+      groupBy: components["schemas"]["UsageStatsDimension"][];
+      items: components["schemas"]["UsageStatsPoint"][];
+      /** Format: int64 */
+      total: number;
+      /** Format: int64 */
+      limit: number;
+      /** Format: int64 */
+      offset: number;
     };
     /** @enum {string} */
     WorkspaceAccessRole: "viewer" | "member" | "maintainer" | "owner";
@@ -3213,11 +3509,18 @@ export type ConnectorHolding = components["schemas"]["ConnectorHolding"];
 export type ConnectorDescriptor = components["schemas"]["ConnectorDescriptor"];
 export type DeviceConnectorStatus =
   components["schemas"]["DeviceConnectorStatus"];
+export type ConnectorConfiguration =
+  components["schemas"]["ConnectorConfiguration"];
 export type DeviceConnectorState =
   components["schemas"]["DeviceConnectorState"];
 export type DeviceConnectorSessionCheck =
   components["schemas"]["DeviceConnectorSessionCheck"];
 export type DeviceConnectorUse = components["schemas"]["DeviceConnectorUse"];
+export type SaveAppStoreConnectKeyInput =
+  components["schemas"]["SaveAppStoreConnectKeyInput"];
+export type AppStoreConnectConnection =
+  components["schemas"]["AppStoreConnectConnection"];
+export type AppStoreConnectApp = components["schemas"]["AppStoreConnectApp"];
 export type ExternalAccountMaterial =
   components["schemas"]["ExternalAccountMaterial"];
 export type ExternalAccountGateway =
@@ -3240,6 +3543,10 @@ export type DeviceWorker = components["schemas"]["DeviceWorker"];
 export type AgentRuntimeSettings =
   components["schemas"]["AgentRuntimeSettings"];
 export type DeviceHardware = components["schemas"]["DeviceHardware"];
+export type DeviceRuntimeState = components["schemas"]["DeviceRuntimeState"];
+export type DeviceResourceSignals =
+  components["schemas"]["DeviceResourceSignals"];
+export type DeviceTurnEstimate = components["schemas"]["DeviceTurnEstimate"];
 export type DaemonRegistration = components["schemas"]["DaemonRegistration"];
 export type WorkerConnectionReport =
   components["schemas"]["WorkerConnectionReport"];
@@ -3412,6 +3719,7 @@ export type ExternalConnectionSetupInfo =
   components["schemas"]["ExternalConnectionSetupInfo"];
 export type ProfileAuthMode = components["schemas"]["ProfileAuthMode"];
 export type CodexTransportMode = components["schemas"]["CodexTransportMode"];
+export type ProfileModelPrice = components["schemas"]["ProfileModelPrice"];
 export type ProfileDefinition = components["schemas"]["ProfileDefinition"];
 export type CodexTransport = components["schemas"]["CodexTransport"];
 export type CodexTransportObservation =
@@ -3420,6 +3728,15 @@ export type CodexTransportReport =
   components["schemas"]["CodexTransportReport"];
 export type ProfilePromotionSource =
   components["schemas"]["ProfilePromotionSource"];
+export type ModelNote = components["schemas"]["ModelNote"];
+export type ModelNotePage = components["schemas"]["ModelNotePage"];
+export type ModelNoteInput = components["schemas"]["ModelNoteInput"];
+export type ExecutionDefaultScope =
+  components["schemas"]["ExecutionDefaultScope"];
+export type ExecutionModelDefault =
+  components["schemas"]["ExecutionModelDefault"];
+export type ExecutionDefaultsView =
+  components["schemas"]["ExecutionDefaultsView"];
 export type AgentProjection = components["schemas"]["AgentProjection"];
 export type CreateAgentProfileInput =
   components["schemas"]["CreateAgentProfileInput"];
@@ -3486,6 +3803,13 @@ export type PromotedSkill = components["schemas"]["PromotedSkill"];
 export type SessionSkillRef = components["schemas"]["SessionSkillRef"];
 export type SessionSkillBundle = components["schemas"]["SessionSkillBundle"];
 export type SkillFileInfo = components["schemas"]["SkillFileInfo"];
+export type UsageStatsGranularity =
+  components["schemas"]["UsageStatsGranularity"];
+export type UsageStatsDimension = components["schemas"]["UsageStatsDimension"];
+export type UsageStatsCostSource =
+  components["schemas"]["UsageStatsCostSource"];
+export type UsageStatsPoint = components["schemas"]["UsageStatsPoint"];
+export type UsageStatsResult = components["schemas"]["UsageStatsResult"];
 export type WorkspaceAccessRole = components["schemas"]["WorkspaceAccessRole"];
 export type WorkspaceKind = components["schemas"]["WorkspaceKind"];
 export type WorkspaceProjection = components["schemas"]["WorkspaceProjection"];

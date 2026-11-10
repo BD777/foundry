@@ -134,7 +134,7 @@ test("an unchanged inventory is read by cursor, reported once, and the sweep bac
   server.put(schedule("work_b"));
   const { supervisor, root } = await supervisorFor(t, server);
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   const first = server.requests.splice(0);
   assert.equal(first[0].cursor, "", "the first read starts from scratch");
   assert.equal(
@@ -178,7 +178,7 @@ test("deletions on the server leave the local inventory", async (t) => {
   server.put(schedule("work_b"));
   const { supervisor } = await supervisorFor(t, server);
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   server.remove("work_b");
   await supervisor.tick();
   assert.match(supervisor.context("session"), /Schedule work_a/);
@@ -194,7 +194,7 @@ test("a first read arrives in pages and reports are split to stay small", async 
     );
   const { supervisor } = await supervisorFor(t, server);
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   const reports = server.requests.filter((r) => r.items > 0);
   assert.equal(
     reports.reduce((n, r) => n + r.items, 0),
@@ -241,7 +241,7 @@ test("an unconfirmed control keeps the regular pace for two minutes, then backs 
   // The device cannot confirm the stop: the item stays unconfirmed.
   supervisor.reconcile = async (item) => item.observation;
   await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
+  await supervisor.stop();
   // A sweep that reads nothing new.
   await supervisor.tick();
   const realNow = Date.now;

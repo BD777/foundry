@@ -405,8 +405,9 @@ func cloudflareAuditPath(path string) string {
 }
 
 type connectorHandleIssuer struct {
-	cloudflare *CloudflareGateway
-	other      externalaccounts.HandleIssuer
+	cloudflare      *CloudflareGateway
+	appStoreConnect *AppStoreConnectGateway
+	other           externalaccounts.HandleIssuer
 }
 
 func (i connectorHandleIssuer) IssueHandles(ctx context.Context, r externalaccounts.HandleRequest) (store.ExternalAccountGateway, error) {
@@ -416,10 +417,16 @@ func (i connectorHandleIssuer) IssueHandles(ctx context.Context, r externalaccou
 		}
 		return i.cloudflare.IssueHandles(ctx, r)
 	}
+	if r.Account.Provider == "appstoreconnect" {
+		if i.appStoreConnect == nil {
+			return store.ExternalAccountGateway{}, ErrAppStoreConnectAccess
+		}
+		return i.appStoreConnect.IssueHandles(ctx, r)
+	}
 	return i.other.IssueHandles(ctx, r)
 }
 func (m *Module) SetGatewayIssuer(fallback externalaccounts.HandleIssuer) {
-	m.ServerHeld.Handles = connectorHandleIssuer{cloudflare: m.Cloudflare, other: fallback}
+	m.ServerHeld.Handles = connectorHandleIssuer{cloudflare: m.Cloudflare, appStoreConnect: m.AppStoreConnect, other: fallback}
 }
 
 func cloudflareZonePage(query url.Values) (page, perPage int) {

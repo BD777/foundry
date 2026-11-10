@@ -1,5 +1,7 @@
 package store
 
+import "context"
+
 // DaemonCapabilityVerificationSessions: the worker runs a verification
 // session in a sandbox that keeps the workspace read-only while it runs
 // commands. A worker declares it only while that sandbox (bubblewrap on
@@ -18,4 +20,11 @@ const DaemonCapabilityProfileCheck = "profile_check"
 type UpsertAgentRuntimeSettingsInput struct {
 	DeviceID string               `json:"deviceId,omitempty"`
 	Settings AgentRuntimeSettings `json:"settings"`
+}
+
+// DeviceRuntimeStateStore keeps the latest admission sample a worker
+// reported. The server stores it as-is; it does not calculate resource
+// limits.
+type DeviceRuntimeStateStore interface {
+	SaveDeviceRuntimeState(ctx context.Context, deviceID string, state DeviceRuntimeState) error
 }

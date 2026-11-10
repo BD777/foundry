@@ -23,7 +23,10 @@ import {
   sandboxLauncher,
   sandboxReady,
 } from "../dist/sandbox/index.js";
-import { seatbeltBackend } from "../dist/sandbox/darwin.js";
+import {
+  seatbeltBackend,
+  seatbeltWritableTreePolicy,
+} from "../dist/sandbox/darwin.js";
 
 const runtimeRoot = realpathSync(
   fileURLToPath(new URL("../../../", import.meta.url)),
@@ -243,6 +246,27 @@ test("macOS read-only agent policy confines writes to the private home", (t) => 
   ]);
   assert.equal(
     rules.some((rule) => rule.includes("deny network")),
+    false,
+  );
+});
+
+test("macOS writable-tree policy keeps agent-update bookkeeping read-only outside the sandbox", (t) => {
+  const { root, state, tree } = userHome(t);
+  const updates = join(state, "agent-updates");
+  const rules = seatbeltWritableTreePolicy(
+    writableTree(root, tree, "readable"),
+    "/bin/sh",
+  ).split("\n");
+  const writeAllows = rules.filter((rule) =>
+    rule.startsWith("(allow file-write*"),
+  );
+
+  assert.ok(rules.includes("(deny file-write*)"));
+  assert.ok(
+    rules.includes(`(deny file-read-data (subpath ${JSON.stringify(state)}))`),
+  );
+  assert.equal(
+    writeAllows.some((rule) => rule.includes(JSON.stringify(updates))),
     false,
   );
 });

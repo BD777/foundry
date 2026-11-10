@@ -31,6 +31,7 @@ test("module load failures require a page reload, ordinary render errors do not"
 
 const routes = [
   { view: "assistant" },
+  { view: "assistantSettings" },
   { view: "assistantSettings", assistantSection: "rules" },
   { view: "issues" },
   { view: "issue", selectedIssueId: "iss_42" },
@@ -58,6 +59,7 @@ const routes = [
   { view: "profiles", providerTab: "endpoints" },
   { view: "profiles", providerTab: "environments" },
   { view: "connectors", connectorTab: "feishu" },
+  { view: "usage" },
   { view: "resources" },
 ];
 
@@ -160,6 +162,12 @@ test("global management routes and error boundaries do not inherit a workspace",
   // parameters, not path segments.
   assert.deepEqual(parseAppRoute("/resources"), { view: "resources" });
   assert.equal(pathForAppRoute({ view: "resources" }), "/resources");
+  assert.deepEqual(parseAppRoute("/usage"), { view: "usage" });
+  assert.equal(pathForAppRoute({ view: "usage" }), "/usage");
+  assert.equal(
+    viewErrorResetKey({ view: "usage", workspaceId: "ws1" }),
+    viewErrorResetKey({ view: "usage", workspaceId: "ws2" }),
+  );
   assert.equal(
     viewErrorResetKey({ view: "resources", workspaceId: "ws1" }),
     viewErrorResetKey({ view: "resources", workspaceId: "ws2" }),
@@ -215,16 +223,25 @@ test("opening Foundry lands on the assistant; unknown paths open the workspace o
 test("the assistant's settings sections have their own URLs", () => {
   assert.equal(
     pathForAppRoute({ view: "assistantSettings" }),
-    "/assistant/settings/status",
+    "/assistant/settings",
   );
   assert.deepEqual(parseAppRoute("/assistant/settings"), {
     view: "assistantSettings",
-    assistantSection: "status",
   });
   assert.deepEqual(parseAppRoute("/assistant/settings/nope"), {
     view: "assistantSettings",
+  });
+  assert.deepEqual(parseAppRoute("/assistant/settings/status"), {
+    view: "assistantSettings",
     assistantSection: "status",
   });
+  assert.equal(
+    pathForAppRoute({
+      view: "assistantSettings",
+      assistantSection: "status",
+    }),
+    "/assistant/settings/status",
+  );
   assert.equal(
     viewErrorResetKey({ view: "assistant", workspaceId: "ws1" }),
     viewErrorResetKey({ view: "assistant", workspaceId: "ws2" }),

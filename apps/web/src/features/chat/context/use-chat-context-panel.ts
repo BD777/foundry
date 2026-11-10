@@ -79,6 +79,13 @@ export function useChatContextPanel({
     closeDetail();
     setOpen(true);
   }, [closeDetail]);
+  const revealRows = useCallback(
+    (ids: readonly string[]) => {
+      if (ids.length) setReveal({ ids: [...ids] });
+      showPanel();
+    },
+    [showPanel],
+  );
   // An idle chat whose agent still works: the note names what keeps running
   // and opens the panel on those rows.
   const backgroundWork = useMemo(
@@ -221,6 +228,7 @@ export function useChatContextPanel({
     turnFilter,
     clearTurnFilter,
     reveal,
+    revealRows,
     fileActions,
     backgroundNote,
     revealBackgroundWork,

@@ -20,8 +20,9 @@ import { linkTool, toolLinkFree } from "./tool-links.js";
  * SHA-256 is checked against the release's checksums file, the program is
  * unpacked into ~/.local/share/gh-cli/<version> and linked from Foundry's
  * tools (sessions find it first) and from ~/.local/bin when no other gh is
- * there or on PATH (the person's terminal finds it too). Downloads go through the
- * device's HTTP(S)_PROXY settings. The result is checked with `gh --version`.
+ * there or on PATH (the person's terminal finds it too). Downloads use the
+ * Worker's saved outbound proxy (or its environment fallback). The result is
+ * checked with `gh --version`.
  */
 
 // The page redirects to the newest release's tag. Unlike api.github.com it

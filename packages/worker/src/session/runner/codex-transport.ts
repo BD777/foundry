@@ -70,6 +70,48 @@ export function codexWebsocketFallback(event: unknown): string | undefined {
 }
 
 /**
+ * A terminal refusal of the Responses WebSocket itself. Codex normally emits
+ * its fallback notice first, but context compaction can fail the turn
+ * directly when an endpoint rejects the upgrade (for example 405). Those
+ * statuses describe transport capability, not a transient model interruption,
+ * so the endpoint must be learned as HTTPS before the next process starts.
+ */
+export function codexWebsocketFailure(event: unknown): string | undefined {
+  const fallback = codexWebsocketFallback(event);
+  if (fallback !== undefined) return fallback;
+  if (!event || typeof event !== "object") return undefined;
+  const record = event as Record<string, unknown>;
+  if (record.type !== "turn.failed") return undefined;
+  const error = record.error;
+  const message =
+    error && typeof error === "object"
+      ? (error as Record<string, unknown>).message
+      : undefined;
+  if (typeof message !== "string") return undefined;
+  const websocketResponsesUrl =
+    /\burl:\s+wss?:\/\/\S+\/responses(?:[?#]\S*)?$/i.test(message);
+  if (!websocketResponsesUrl) return undefined;
+  const info =
+    error && typeof error === "object"
+      ? (error as Record<string, unknown>).codexErrorInfo
+      : undefined;
+  const httpConnectionFailed =
+    info && typeof info === "object"
+      ? (info as Record<string, unknown>).httpConnectionFailed
+      : undefined;
+  const status =
+    httpConnectionFailed && typeof httpConnectionFailed === "object"
+      ? (httpConnectionFailed as Record<string, unknown>).httpStatusCode
+      : undefined;
+  if (typeof status === "number")
+    return [404, 405, 426, 501].includes(status) ? message : undefined;
+  // Older Codex releases do not provide codexErrorInfo on this event.
+  return /unexpected status (?:404|405|426|501)\b/i.test(message)
+    ? message
+    : undefined;
+}
+
+/**
  * Watches one Codex turn's events for what they show about the transport
  * and reports it once on the session's transcript, where the server keeps
  * it for the profile (session event metadata `codexTransport`).
@@ -86,9 +128,9 @@ export class CodexTransportLearner {
   /** Call for every stream event; turnCompleted on its turn.completed. */
   async observe(event: unknown, turnCompleted: boolean): Promise<void> {
     if (this.reported || this.plan.learn === "none") return;
-    const fallback = codexWebsocketFallback(event);
-    if (fallback !== undefined) {
-      await this.report("https", fallback);
+    const failure = codexWebsocketFailure(event);
+    if (failure !== undefined) {
+      await this.report("https", failure);
       return;
     }
     if (turnCompleted && this.plan.learn === "outcome")

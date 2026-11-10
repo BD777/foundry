@@ -16,6 +16,7 @@ import {
   type ChatAttachment,
   type DeviceRunner,
   type DeviceRunnerDetail,
+  type DeviceRuntimeState,
   type RunSessionPayload,
   type EvidenceWorkerRequest,
 } from "@bd777/foundry-protocol";
@@ -138,6 +139,7 @@ export class ExecutionHostClient {
   private runnerSink?: (runner: DeviceRunner) => void;
   private reported = "";
   private token: string;
+  private warnedUnsupportedServerReconnected = false;
   constructor(
     private readonly socketPath: string,
     token: string,
@@ -173,6 +175,12 @@ export class ExecutionHostClient {
       this.snapshot?.claims.some((claim) => claim.sessionId === sessionId) ===
         true || this.snapshot?.background.includes(sessionId) === true
     );
+  }
+  /** The runner's latest admission sample, or none while it is unavailable. */
+  runtimeState(): DeviceRuntimeState | undefined {
+    return this.socket && !this.socket.destroyed
+      ? this.snapshot?.runtimeState
+      : undefined;
   }
   owns(sessionId: string, inputId: string): boolean {
     if (this.held.has(`${sessionId}/${inputId}`)) return true;
@@ -826,6 +834,26 @@ export class ExecutionHostClient {
     action: SessionGoalAction,
   ): Promise<void> {
     await this.command("control_goal", { sessionId, action });
+  }
+  /** The daemon's server connection resumed; reconcile host-local runtimes. */
+  async serverReconnected(): Promise<void> {
+    try {
+      await this.command("server_reconnected", {});
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Unsupported execution host command")
+      ) {
+        if (!this.warnedUnsupportedServerReconnected) {
+          this.warnedUnsupportedServerReconnected = true;
+          console.error(
+            `${new Date().toISOString()} The execution host predates Foundry tools reconciliation after a server reconnect; keeping it until it drains.`,
+          );
+        }
+        return;
+      }
+      throw error;
+    }
   }
   async issueEnvironment(payload: IssueEnvironmentRequest): Promise<unknown> {
     return this.command("issue_environment", { payload });

@@ -18,10 +18,12 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessionalerts"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/usagestats"
 	"github.com/foundry-dev/foundry/apps/server/internal/wirerecord"
 )
 
@@ -64,6 +66,7 @@ type Backend interface {
 	store.ResourceStore
 	store.ResourceLeaseStore
 	store.LeaseCommandTokenStore
+	store.AppStoreConnectStore
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
 	store.PersonalAgentStore
@@ -75,6 +78,7 @@ type Backend interface {
 	store.WorkStore
 	store.WorkChangeStore
 	store.SessionInboxStore
+	store.SessionAlertStore
 	store.PendingItemStore
 	store.AgentDefaultStore
 	store.ChatArchiveStore
@@ -96,6 +100,7 @@ type Backend interface {
 	store.FeishuIssueThreads
 	store.SessionRecordStore
 	store.SessionAdoptionStore
+	store.SessionDelegationStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -129,8 +134,10 @@ type Server struct {
 	feishu         *feishu.WSManager
 	feishuEvents   *feishuevents.Hub
 	options        ServerOptions
-	startedAt      time.Time
-	store          Backend
+	// usagePriceSource is LiteLLM's raw catalog URL; tests point it at a trap.
+	usagePriceSource string
+	startedAt        time.Time
+	store            Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
 	// connectors is the Connectors module: people's third-party logins
@@ -167,6 +174,9 @@ type Server struct {
 	// sessionService is the session lifecycle: start, dispatch, messages,
 	// stop and inboxes, over the ports in session_ports.go.
 	sessionService *sessions.Service
+	// sessionAlerts reports system incidents of turns another session
+	// started, separately from their result reports.
+	sessionAlerts *sessionalerts.Service
 	// issueService is an Issue's lifecycle, whichever entry asks, over the
 	// port in issue_ports.go.
 	issueService *issues.Service
@@ -247,6 +257,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		chats:                     chats,
 		dataChanges:               data,
 		options:                   options,
+		usagePriceSource:          usagestats.DefaultPriceSourceURL,
 		startedAt:                 time.Now().UTC(),
 		store:                     store,
 		loginLimiter:              newLoginLimiter(),
@@ -255,6 +266,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		toolResolver:              skilltools.Resolver{ReleaseAPI: "https://api.github.com", PyPIAPI: "https://pypi.org"},
 	}
 	server.sessionService = newSessionService(server, sessionEvents)
+	server.sessionAlerts = newSessionAlerts(server)
 	server.issueService = newIssueService(server, issueEvents)
 	server.runs = run.New(store, runAccounts{server})
 	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
@@ -264,6 +276,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessionEvents, issues: issueEvents, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
+	server.hub.usageStats = newUsageRecorder(store, server.assistant.SessionRole)
 	server.wire = openWireRecording(options.WireRecordDir)
 	server.hub.wire = server.wire
 	server.chatQueueKicks = newWorkGroup(server.hub.work)
@@ -277,6 +290,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations, server.hub)
 	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
 	server.connectors.Cloudflare.UseNativeWork(server.hub)
+	server.connectors.AppStoreConnect.UseNativeWork(server.hub)
 	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
@@ -322,18 +336,19 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		// Feishu card, the chat's queued messages, the chat's title, the
 		// resources it leases, the assistant's tasks, inbox results and run
 		// controls, its inbox, its report to its parent, pending items,
-		// workspace digests, and last an Issue's run starting.
+		// workspace digests, waiting child projections, and last an Issue's
+		// run starting.
 		Changes: slices.Concat([]sessions.ChangeObserver{
 			workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles,
 			resourceLeaseReactions{server},
 		}, server.assistant.Observers(), []sessions.ChangeObserver{
-			inbox, childReportReactions{server},
-			pendingReactions{server}, workspaceDigestReactions{server}, server.issueService.Observer(),
+			sessionAlertReactions{server}, inbox, childReportReactions{server},
+			pendingReactions{server}, workspaceDigestReactions{server}, waitingChildReactions{server}, server.issueService.Observer(),
 		}),
 		// An event added to its transcript: its Feishu card, the chat's
 		// queued messages, its inbox, pending items, a child's question to
 		// its parent.
-		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, inbox, pendingReactions{server}, childQuestionReactions{server}},
+		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, sessionAlertReactions{server}, inbox, pendingReactions{server}, childQuestionReactions{server}},
 		// A device's report that it ended, once the device was answered:
 		// naming what it answered.
 		Ends: []sessions.EndObserver{server.titles},

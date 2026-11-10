@@ -14,6 +14,7 @@ export const shell = {
     resources: "Resources",
     profiles: "Model providers",
     connectors: "Connectors",
+    usage: "Usage",
     library: "Skill library",
     members: "Members",
     account: "Account",
@@ -32,6 +33,7 @@ export const shell = {
     issues: "Issues",
     profiles: "Model providers",
     connectors: "Connectors",
+    usage: "Usage",
     resources: "Resources",
     workspaceConnectors: "Workspace connectors",
     library: "Skill library",
@@ -44,6 +46,7 @@ export const shell = {
   },
   sidebar: {
     interfaceControls: "Interface controls",
+    menu: "Menu",
     globalScope: "Global",
     workspaceScope: "Workspace: {{workspace}}",
     open: "Open {{label}}",
@@ -98,5 +101,12 @@ export const shell = {
       "Agents and execution on {{device}} are managed by the account that paired it. This workspace is shared with you.",
     manageAgents: "Manage agents and execution on {{device}} →",
     thisDevice: "this device",
+    concurrencyLimit:
+      "This device currently runs up to {{limit}} turns at once ({{mode}}).",
+    concurrencyMode: {
+      adaptive: "adaptive",
+      forced: "forced",
+    },
+    openDeviceConcurrency: "Open execution settings for {{device}} →",
   },
 };

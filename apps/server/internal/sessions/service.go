@@ -19,6 +19,7 @@ type Store interface {
 	store.SessionEventWindowStore
 	store.ChildReportStore
 	store.WorkStore
+	store.SessionDelegationStore
 }
 
 // Steer is a message moved into a session's running turn. Its fields are

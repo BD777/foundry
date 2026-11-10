@@ -155,7 +155,7 @@ function FlowTopology() {
       {svg ? (
         <div
           aria-hidden="true"
-          className="hidden max-w-[760px] rounded-lg border border-line p-3 sm:block"
+          className="hidden w-full place-items-center rounded-lg border border-line p-3 sm:grid [&_svg]:block [&_svg]:max-w-full"
           // Mermaid's own output, drawn with securityLevel "strict" from
           // the page's fixed labels.
           dangerouslySetInnerHTML={{ __html: svg }}
@@ -164,7 +164,7 @@ function FlowTopology() {
       <ol
         aria-label={t("settings.models.diagram.label")}
         className={cn(
-          "m-0 grid max-w-[760px] list-none gap-1.5 rounded-lg border border-line p-3 text-xs leading-[1.6] text-ink-muted",
+          "m-0 grid w-full list-none gap-1.5 rounded-lg border border-line p-3 text-xs leading-[1.6] text-ink-muted",
           svg && "sm:sr-only",
         )}
       >
@@ -578,12 +578,10 @@ function ChoiceFields({
           }}
         />
       </SettingsField>
-      <SettingsField
-        label={t("settings.models.model")}
-        hint={loading ? t("settings.models.loading") : undefined}
-      >
+      <SettingsField label={t("settings.models.model")}>
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.model")}`}
+          busy={loading}
           className="w-full max-w-full"
           disabled={!catalog}
           options={modelOptions}

@@ -13,8 +13,9 @@ import { chatHref, navigateToChat } from "../../../lib/in-app-navigation";
 import { Button } from "../../../components/ui/button";
 import { Alert } from "../../../components/ui/alert";
 import type { SessionWorkController } from "./use-session-work";
-import { FinishedFold } from "./chat-context-folds";
+import { FinishedFold, useRevealedRow } from "./chat-context-folds";
 import { ContextHeading, ContextSection } from "./chat-context-parts";
+import { cn } from "../../../lib/cn";
 import {
   needsConfirmation,
   isFinishedWork,
@@ -31,11 +32,15 @@ function WorkRow({
   controller,
   canControl,
   onInspect,
+  rowRef,
+  selected,
 }: {
   item: SessionWork;
   controller: SessionWorkController;
   canControl: boolean;
   onInspect?: (item: SessionWork) => (() => void) | undefined;
+  rowRef?: (element: HTMLElement | null) => void;
+  selected?: boolean;
 }) {
   const { t, i18n } = useTranslation("chat");
   const [expanded, setExpanded] = useState(false);
@@ -47,6 +52,10 @@ function WorkRow({
   const waitingAgain =
     hasFutureScheduledWork(item) &&
     ["completed", "failed", "stopped"].includes(item.observation.status);
+  const observedStatus =
+    item.observation.status === "unknown" && item.observation.endedAt
+      ? "stopped"
+      : item.observation.status;
   const status = unassigned
     ? "unknown"
     : pending
@@ -57,7 +66,7 @@ function WorkRow({
           ? "stopped"
           : waitingAgain
             ? "idle"
-            : item.observation.status;
+            : observedStatus;
   const statusLabel = unassigned
     ? t("work.unassignedStatus")
     : status === "pending"
@@ -66,7 +75,7 @@ function WorkRow({
         ? t("work.paused")
         : waitingAgain
           ? `${t("work.status.idle")} · ${t(`work.runStatus.${item.observation.status as "completed" | "failed" | "stopped"}`)}`
-          : t(`work.status.${item.observation.status}`);
+          : t(`work.status.${observedStatus}`);
   const scheduler = controller.list?.coverage.scheduler;
   const error =
     item.observation.error &&
@@ -153,7 +162,13 @@ function WorkRow({
     });
   return (
     <div className="min-w-0 py-0.5" data-work-id={item.id}>
-      <div className="flex min-w-0 items-center gap-2 rounded-sm hover:bg-control-ghost-hover">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-2 rounded-sm hover:bg-control-ghost-hover",
+          selected && "bg-control-ghost-hover",
+        )}
+        data-selected={selected ? "true" : undefined}
+      >
         <WorkStatusIcon
           kind={item.kind}
           status={status}
@@ -162,6 +177,7 @@ function WorkRow({
         {childSession ? (
           <Button asChild variant="bare" className={workOpen}>
             <a
+              ref={rowRef}
               title={item.title}
               href={chatHref(childSession, item.workspaceId)}
               onClick={(event) => {
@@ -182,6 +198,7 @@ function WorkRow({
           </Button>
         ) : (
           <Button
+            ref={rowRef}
             variant="bare"
             className={workOpen}
             title={item.title}
@@ -280,7 +297,7 @@ function WorkRow({
           <dt>{t("work.observed")}</dt>
           <dd>{at(item.observation.at)}</dd>
           <dt>{t("work.actual")}</dt>
-          <dd>{t(`work.status.${item.observation.status}`)}</dd>
+          <dd>{t(`work.status.${observedStatus}`)}</dd>
           {item.kind === "schedule" ? (
             <>
               <dt>{t("work.schedule")}</dt>
@@ -426,6 +443,7 @@ type WorkSectionProps = {
   controller: SessionWorkController;
   canControl: boolean;
   onInspect?: (item: SessionWork) => (() => void) | undefined;
+  reveal?: { ids: string[] };
 };
 
 /** One kind's rows and whether its section shows an error or a retry. */
@@ -459,15 +477,20 @@ function WorkKindSection({
   controller,
   canControl,
   onInspect,
+  reveal,
 }: WorkSectionProps & {
   kind: "schedule" | "agent";
 }) {
   const { t } = useTranslation("chat");
   const list = controller.list!;
   const { items, ids, error, retrying } = workKindState(controller, kind);
+  const rowRef = useRevealedRow(reveal);
   if (!items.length && !error && !retrying) return null;
   const ended = items.filter(isFinishedWork);
   const current = items.filter((item) => !isFinishedWork(item));
+  const revealed = new Set(reveal?.ids ?? []);
+  const revealedEnded = ended.filter((item) => revealed.has(item.id));
+  const foldedEnded = ended.filter((item) => !revealed.has(item.id));
   const unassigned = current.filter(
     (item) => item.management === "observed" && !item.native,
   );
@@ -486,6 +509,8 @@ function WorkKindSection({
       controller={controller}
       canControl={canControl}
       onInspect={onInspect}
+      rowRef={rowRef(item.id)}
+      selected={revealed.has(item.id)}
     />
   );
   return (
@@ -527,16 +552,17 @@ function WorkKindSection({
           {unassigned.map(row)}
         </div>
       ) : null}
-      {ended.length ? (
+      {revealedEnded.map(row)}
+      {foldedEnded.length ? (
         <FinishedFold
           appearance="plain"
           label={t(
             kind === "schedule" ? "work.timerHistory" : "work.agentHistory",
-            { count: ended.length },
+            { count: foldedEnded.length },
           )}
           memoryKey={`${controller.sessionId || items[0]?.threadId || "work"}:${kind}-history`}
         >
-          {ended.map(row)}
+          {foldedEnded.map(row)}
         </FinishedFold>
       ) : null}
     </ContextSection>

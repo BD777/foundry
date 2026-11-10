@@ -72,6 +72,11 @@ export class ClaudeContextTracker {
     this.configured = options.configured;
   }
 
+  /** The model named by the latest main-agent request. */
+  get currentModel(): string | undefined {
+    return this.model;
+  }
+
   /** The context to report after this message, if it changed it. */
   observe(message: unknown): AgentContextUsage | undefined {
     const value = optionalRecord(message);
@@ -81,6 +86,16 @@ export class ClaudeContextTracker {
       if (event?.type === "message_start")
         this.model =
           modelName(text(optionalRecord(event.message)?.model)) ?? this.model;
+    }
+    if (value.type === "result") {
+      this.observeCost(value);
+      const usage = optionalRecord(value.modelUsage);
+      for (const [model, entry] of Object.entries(usage ?? {})) {
+        const window = count(optionalRecord(entry)?.contextWindow);
+        // A model run as `<model>[1m]` is reported under that name.
+        if (window)
+          claudeContextWindows.set(withoutOneMillionSuffix(model), window);
+      }
     }
     const request = this.requests.observe(message);
     if (request)
@@ -103,14 +118,6 @@ export class ClaudeContextTracker {
       });
     }
     if (value.type !== "result") return undefined;
-    this.observeCost(value);
-    const usage = optionalRecord(value.modelUsage);
-    for (const [model, entry] of Object.entries(usage ?? {})) {
-      const window = count(optionalRecord(entry)?.contextWindow);
-      // A model run as `<model>[1m]` is reported under that name.
-      if (window)
-        claudeContextWindows.set(withoutOneMillionSuffix(model), window);
-    }
     // The first result tells the window of a request already reported.
     const last = this.reported;
     if (!last || last.compaction || last.inputTokens === undefined)
@@ -189,6 +196,11 @@ export class CodexContextFollower {
   /** Whether the thread's log was found. */
   get found(): boolean {
     return this.path !== undefined;
+  }
+
+  /** The model named by the latest turn context. */
+  get currentModel(): string | undefined {
+    return this.model;
   }
 
   /** The thread to follow; a resumed one from what it gains from now on. */

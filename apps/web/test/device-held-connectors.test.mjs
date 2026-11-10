@@ -1273,6 +1273,7 @@ const awsSignedOut = (deviceId, overrides = {}) =>
     signedIn: false,
     identity: undefined,
     expiresAt: undefined,
+    configuration: { region: "us-east-1" },
     ...overrides,
   });
 
@@ -1283,6 +1284,7 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     signedIn: true,
     identity: "arn:aws:iam::123456789012:user/me",
     expiresAt: undefined,
+    configuration: { region: "us-east-1" },
     checkedAt: new Date().toISOString(),
   });
   const url = "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s";
@@ -1332,7 +1334,8 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
   );
   await page.click(page.button("Sign in"));
   const dialog = () => document.body.querySelector("[role=dialog]");
-  // Three ways, the first chosen; its one field prefilled with the default.
+  // Three ways, the first chosen. Region is a device profile setting, not a
+  // sign-in choice.
   const radios = [...dialog().querySelectorAll("input[type=radio]")];
   assert.equal(radios.length, 3);
   assert.ok(radios[0].checked);
@@ -1340,21 +1343,15 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     dialog().textContent,
     /AWS console sign-in.*IAM Identity Center.*In a terminal on the device/,
   );
-  assert.equal(fieldInput(dialog(), "Default AWS Region").value, "us-east-1");
-  // A malformed value is caught before the device is asked.
-  await type(fieldInput(dialog(), "Default AWS Region"), "mars");
-  await page.click(page.button("Start sign-in", dialog()));
-  assert.match(dialog().textContent, /Default AWS Region doesn’t look right/);
-  assert.equal(
-    requests.filter((r) => r.path.endsWith("/aws/sign-in")).length,
-    0,
+  assert.doesNotMatch(dialog().textContent, /Default AWS Region/);
+  assert.match(
+    dialog().textContent,
+    /Permissions come from the AWS identity you sign in with/,
   );
-  await type(fieldInput(dialog(), "Default AWS Region"), "eu-west-1");
   await page.click(page.button("Start sign-in", dialog()));
   const begin = requests.find((r) => r.path.endsWith("/aws/sign-in"));
   assert.deepEqual(begin.body.signInOptions, {
     method: "console",
-    region: "eu-west-1",
   });
   assert.match(dialog().textContent, /Signing in with: AWS console sign-in/);
   assert.ok(dialog().querySelector(`a[href="${url}"]`));
@@ -1370,6 +1367,55 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     page.container.querySelector(".fdy-xacc-device-row").textContent,
     /Signed in as arn:aws:iam::123456789012:user\/me/,
   );
+  assert.match(
+    page.container.querySelector(".fdy-xacc-device-row").textContent,
+    /Default Region: us-east-1/,
+  );
+  await page.unmount();
+});
+
+test("AWS's default Region can be changed from the device details after sign-in", async () => {
+  let changed;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [awsCatalog],
+        devices: [
+          device("dev_mac", "mac", [
+            awsSignedOut("dev_mac", {
+              configuration: { region: "us-east-1" },
+            }),
+          ]),
+        ],
+      },
+    ],
+    "PUT /api/devices/dev_mac/connectors/aws/configuration": (body) => {
+      changed = body;
+      return [
+        200,
+        awsSignedOut("dev_mac", {
+          configuration: { region: body.configuration.region },
+        }),
+      ];
+    },
+  };
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "aws",
+    onNotice: (message) => notices.push(message),
+  });
+  const row = page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(row.textContent, /Default Region: us-east-1/);
+  await page.click(page.button("Change", row));
+  await type(fieldInput(row, "Default AWS Region"), "eu-west-1");
+  await page.click(page.button("Save Region", row));
+  assert.deepEqual(changed, {
+    configuration: { region: "eu-west-1" },
+  });
+  assert.match(row.textContent, /Default Region: eu-west-1/);
+  assert.match(notices.at(-1), /Default AWS Region updated on mac/);
   await page.unmount();
 });
 
@@ -1521,7 +1567,6 @@ test("a method's required fields are asked for; another method shows a device co
     startUrl: "https://my-company.awsapps.com/start",
     accountId: "123456789012",
     roleName: "Developer",
-    region: "us-east-1",
   });
   assert.match(dialog().textContent, /WXYZ-1234/);
   assert.equal(

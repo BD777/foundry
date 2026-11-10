@@ -306,6 +306,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             {section === "settings" && device.owned ? (
               <DeviceSettings
                 device={device}
+                workspaces={workspaces}
                 onRefresh={onRefresh}
                 onRemoveDevice={() => setRemovalTarget(device)}
               />

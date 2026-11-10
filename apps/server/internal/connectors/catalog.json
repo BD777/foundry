@@ -67,6 +67,27 @@
     }
   },
   {
+    "kind": "appstoreconnect",
+    "label": "App Store Connect",
+    "labels": {
+      "en": "App Store Connect",
+      "zh-CN": "App Store Connect"
+    },
+    "description": "Sessions manage the App Store Connect apps you bind, through Foundry's gateway; the team API key stays on the server.",
+    "descriptions": {
+      "en": "Sessions manage the App Store Connect apps you bind, through Foundry's gateway; the team API key stays on the server.",
+      "zh-CN": "会话经 Foundry 网关管理你绑定的 App Store Connect App；团队 API 密钥保存在服务器上。"
+    },
+    "holding": "server_held",
+    "adapter": "appstoreconnect",
+    "tool": {
+      "command": "asc"
+    },
+    "provides": {
+      "tool": true
+    }
+  },
+  {
     "kind": "aws",
     "label": "AWS CLI",
     "description": "Sessions on a device run the aws command with that device's own sign-in.",
@@ -100,26 +121,7 @@
             "en": "Sign in on the AWS page in this browser, then paste the code it shows.",
             "zh-CN": "在这个浏览器里的 AWS 页面上登录，再把页面显示的授权码粘贴回来。"
           },
-          "fields": [
-            {
-              "id": "region",
-              "label": "Default AWS Region",
-              "labels": {
-                "en": "Default AWS Region",
-                "zh-CN": "默认 AWS 区域"
-              },
-              "help": "Signing in covers every Region your account allows; commands that name none use this one.",
-              "helps": {
-                "en": "Signing in covers every Region your account allows; commands that name none use this one.",
-                "zh-CN": "登录后可用账号允许的所有区域；命令没指定区域时用这个。"
-              },
-              "type": "text",
-              "required": true,
-              "default": "us-east-1",
-              "placeholder": "us-east-1",
-              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
-            }
-          ]
+          "fields": []
         },
         {
           "id": "sso",
@@ -167,19 +169,6 @@
               "type": "text",
               "required": true,
               "placeholder": "ReadOnlyAccess"
-            },
-            {
-              "id": "region",
-              "label": "Default AWS Region",
-              "labels": {
-                "en": "Default AWS Region",
-                "zh-CN": "默认 AWS 区域"
-              },
-              "type": "text",
-              "required": true,
-              "default": "us-east-1",
-              "placeholder": "us-east-1",
-              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
             },
             {
               "id": "ssoRegion",

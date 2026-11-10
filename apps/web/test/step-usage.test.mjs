@@ -56,8 +56,15 @@ const { projectTranscript, stepUsage } =
   await import("../src/features/chat/thread/transcript-projection.ts");
 const { sessionTranscriptEntries, subagentTranscriptEntries } =
   await import("../src/features/chat/thread/transcript-adapters.ts");
-const { stepUsageSummary, subagentUsageSummary, turnUsageSummary } =
-  await import("../src/components/conversation/turn-usage.tsx");
+const {
+  stepUsageSummary,
+  stepUsageTitle,
+  subagentUsageSummary,
+  TurnUsage,
+  turnUsageSummary,
+} = await import("../src/components/conversation/turn-usage.tsx");
+const { ProcessDisclosure } =
+  await import("../src/components/conversation/process-disclosure.tsx");
 const { ProcessElapsed } =
   await import("../src/components/conversation/process-elapsed.tsx");
 const { i18n } = await import("../src/i18n/index.ts");
@@ -66,12 +73,13 @@ const { chatSessionStatus } =
 const { contextLevel, contextSummary } =
   await import("../src/features/chat/context/chat-session-status.tsx");
 
-const request = (requestId, outputTokens, inputTokens = 1000) => ({
+const request = (requestId, outputTokens, inputTokens = 1000, timing = {}) => ({
   requestId,
   inputTokens,
   cacheReadTokens: 900,
   cacheWriteTokens: 0,
   outputTokens,
+  ...timing,
 });
 
 test("a process group counts each model request once, at its last report", async () => {
@@ -113,8 +121,294 @@ test("a process group counts each model request once, at its last report", async
     "3K in (60% cached) · 45 out",
   );
   assert.equal(answer.stepUsage, undefined);
-  // Codex steps carry no request usage: the group shows its duration only.
+  // A group without request usage shows its duration only.
   assert.equal(stepUsage([{ id: "x", kind: "tool", text: "ls" }]), undefined);
+});
+
+test("step speed uses request time while strict decode speed stays in the tooltip", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 40, 1000, {
+        requestMs: 4000,
+        firstTokenMs: 500,
+        generationMs: 1000,
+      }),
+    },
+    {
+      id: "b",
+      kind: "tool",
+      requestUsage: request("r1", 40, 1000, {
+        requestMs: 4000,
+        firstTokenMs: 500,
+        generationMs: 1000,
+      }),
+    },
+    {
+      id: "c",
+      kind: "tool",
+      requestUsage: request("r2", 60, 1000, {
+        requestMs: 6000,
+        firstTokenMs: 600,
+        generationMs: 2000,
+      }),
+    },
+  ]);
+  assert.equal(usage.requestMs, 10_000);
+  assert.equal(usage.generationMs, 3000);
+  assert.equal(usage.decodeEligible, true);
+  assert.equal(
+    stepUsageSummary(usage),
+    "2K in (90% cached) · 100 out · 10 tok/s",
+  );
+  assert.match(stepUsageTitle(usage), /Strict decode speed: 33 tok\/s/);
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProcessDisclosure, {
+          durationMs: 3000,
+          items: [{ title: "Used tool", detail: "Bash" }],
+          stepUsage: usage,
+          text: "done",
+          title: "Processed",
+        }),
+      ),
+    );
+    assert.match(container.textContent, /10 tok\/s/);
+    assert.doesNotMatch(container.textContent, /33 tok\/s/);
+    assert.match(
+      container.querySelector("[title]")?.getAttribute("title") ?? "",
+      /Strict decode speed: 33 tok\/s/,
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("an estimated Codex request speed is marked approximate", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "tool",
+      requestUsage: request("turn-1:1", 100, 1000, {
+        requestMs: 4000,
+        timingEstimated: true,
+      }),
+    },
+  ]);
+  assert.equal(usage.timingEstimated, true);
+  assert.equal(
+    stepUsageSummary(usage),
+    "1K in (90% cached) · 100 out · ≈25 tok/s",
+  );
+});
+
+test("an unreliable estimated Codex request time is not used for speed", async () => {
+  await i18n.changeLanguage("en");
+  for (const timing of [
+    { requestMs: 999, outputTokens: 100 },
+    { requestMs: 1_000, outputTokens: 1_001 },
+  ]) {
+    const usage = stepUsage([
+      {
+        id: "a",
+        kind: "tool",
+        requestUsage: request("turn-1:1", timing.outputTokens, 1000, {
+          requestMs: timing.requestMs,
+          timingEstimated: true,
+        }),
+      },
+    ]);
+    assert.equal(usage.requestMs, undefined);
+    assert.doesNotMatch(stepUsageSummary(usage), /tok\/s/);
+  }
+});
+
+test("a Codex request event reaches its step group with estimated speed", async () => {
+  await i18n.changeLanguage("en");
+  const event = (id, at, fields) => ({
+    id,
+    sessionId: "s",
+    at,
+    level: "info",
+    label: "",
+    detail: "",
+    ...fields,
+  });
+  const session = {
+    id: "s",
+    events: [
+      event("e1", "2026-10-09T10:00:00Z", {
+        label: "Used tool",
+        message: {
+          id: "tool-1",
+          kind: "tool",
+          text: "tests",
+          status: "completed",
+        },
+      }),
+      event("e2", "2026-10-09T10:00:04Z", {
+        label: "Model request usage",
+        detail: "turn-1:1",
+        metadata: {
+          requestUsage: {
+            ...request("turn-1:1", 100, 1000, {
+              requestMs: 4000,
+              timingEstimated: true,
+            }),
+            model: "gpt-5.5-codex",
+          },
+        },
+      }),
+    ],
+  };
+  const groups = projectTranscript(sessionTranscriptEntries(session)).filter(
+    (message) => message.stepUsage,
+  );
+  assert.equal(groups.length, 1);
+  assert.equal(
+    stepUsageSummary(groups[0].stepUsage),
+    "1K in (90% cached) · 100 out · ≈25 tok/s",
+  );
+});
+
+test("a buffered stream keeps request speed but omits strict decode speed", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 100, 1000, {
+        requestMs: 5000,
+        firstTokenMs: 1,
+        generationMs: 2,
+      }),
+    },
+  ]);
+  assert.equal(usage.decodeEligible, undefined);
+  assert.equal(
+    stepUsageSummary(usage),
+    "1K in (90% cached) · 100 out · 20 tok/s",
+  );
+  assert.doesNotMatch(stepUsageTitle(usage), /Strict decode speed/);
+});
+
+test("a process group keeps request speed when one request lacks strict decode time", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 50, 1000, {
+        requestMs: 4000,
+        generationMs: 1000,
+      }),
+    },
+    {
+      id: "b",
+      kind: "tool",
+      requestUsage: request("r2", 50, 1000, { requestMs: 6000 }),
+    },
+  ]);
+  assert.equal(usage.requestMs, 10_000);
+  assert.equal(usage.generationMs, undefined);
+  assert.equal(usage.decodeEligible, undefined);
+  assert.match(stepUsageSummary(usage), /10 tok\/s$/);
+  assert.doesNotMatch(stepUsageTitle(usage), /Strict decode speed/);
+});
+
+test("a process group hides speed when any request lacks request time", async () => {
+  await i18n.changeLanguage("en");
+  const usage = stepUsage([
+    {
+      id: "a",
+      kind: "reasoning",
+      requestUsage: request("r1", 50, 1000, { requestMs: 4000 }),
+    },
+    {
+      id: "b",
+      kind: "tool",
+      requestUsage: request("r2", 50),
+    },
+  ]);
+  assert.equal(usage.requestMs, undefined);
+  assert.doesNotMatch(stepUsageSummary(usage), /tok\/s/);
+});
+
+test("the turn chip and tooltip show model timing and output speed", async () => {
+  await i18n.changeLanguage("en");
+  const usage = {
+    durationMs: 12_000,
+    modelMs: 5000,
+    ttftMs: 850,
+    inputTokens: 5000,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 250,
+    modelRequests: 2,
+  };
+  assert.match(turnUsageSummary(usage), /250 out · 50 tok\/s$/);
+  assert.doesNotMatch(
+    turnUsageSummary({ ...usage, modelMs: undefined }),
+    /tok\/s/,
+  );
+  assert.doesNotMatch(turnUsageSummary({ ...usage, modelMs: 199 }), /tok\/s/);
+  assert.doesNotMatch(
+    turnUsageSummary({ ...usage, outputTokens: 19 }),
+    /tok\/s/,
+  );
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(TurnUsage, { usage })));
+    const trigger = container.querySelector("button");
+    assert.match(trigger.textContent, /50 tok\/s/);
+    await act(async () => trigger.click());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    const rows = Object.fromEntries(
+      [...document.querySelectorAll('[role="dialog"] dt')].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+    assert.equal(rows.Duration, "12s");
+    assert.equal(rows["Model time"], "5s");
+    assert.equal(rows["Tools & other"], "7s");
+    assert.equal(rows["Time to first token"], "850ms");
+    assert.equal(rows["Output speed (including TTFT)"], "50 tok/s");
+
+    await act(async () =>
+      root.render(
+        createElement(TurnUsage, {
+          usage: { ...usage, timingEstimated: true },
+        }),
+      ),
+    );
+    const estimatedRows = Object.fromEntries(
+      [...document.querySelectorAll('[role="dialog"] dt')].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+    assert.equal(estimatedRows["Model time"], "≈5s");
+    assert.equal(estimatedRows["Tools & other"], "≈7s");
+    assert.equal(estimatedRows["Time to first token"], "≈850ms");
+    assert.equal(estimatedRows["Output speed (including TTFT)"], "≈50 tok/s");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.replaceChildren();
+  }
 });
 
 test("subagent steps keep their request usage and the subagent its total", async () => {

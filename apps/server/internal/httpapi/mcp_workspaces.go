@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -202,7 +203,94 @@ func (s *Server) listModelsForMCP(call mcpCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return encodeJSON(models)
+		return pageAgentModelsForMCP(profile, models, call.args)
 	}
 	return "", &statusError{http.StatusNotFound, errors.New("unknown profile: " + profileID)}
+}
+
+type mcpModelItem struct {
+	ID            string `json:"id"`
+	Label         string `json:"label,omitempty"`
+	ContextWindow int64  `json:"contextWindow,omitempty"`
+}
+
+type mcpModelPage struct {
+	Runtime    string         `json:"runtime"`
+	ProfileID  string         `json:"profileId"`
+	Models     []mcpModelItem `json:"models"`
+	Total      int            `json:"total"`
+	NextOffset *int           `json:"nextOffset,omitempty"`
+	Hint       string         `json:"hint,omitempty"`
+}
+
+const (
+	defaultMCPModelLimit = 30
+	maxMCPModelLimit     = 100
+)
+
+func pageAgentModelsForMCP(profile store.AgentProfileProjection, models []store.AgentModelOption, args map[string]json.RawMessage) (string, error) {
+	query := strings.ToLower(strings.TrimSpace(mcpArgString(args, "query")))
+	offset := mcpArgNumber(args, "offset", 0)
+	limit := mcpArgNumber(args, "limit", defaultMCPModelLimit)
+	if offset < 0 {
+		return "", invalid("offset must be zero or greater")
+	}
+	if limit == 0 {
+		limit = defaultMCPModelLimit
+	}
+	if limit < 0 {
+		return "", invalid("limit must be greater than zero")
+	}
+	limit = min(limit, maxMCPModelLimit)
+
+	filtered := make([]mcpModelItem, 0, len(models))
+	for _, model := range models {
+		if !chatModelForRuntime(profile.Runtime, model) {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(model.ID+"\n"+model.Label), query) {
+			continue
+		}
+		window := model.ContextWindow
+		if configured := profile.ContextWindows[model.ID]; configured > 0 {
+			window = configured
+		}
+		filtered = append(filtered, mcpModelItem{ID: model.ID, Label: model.Label, ContextWindow: window})
+	}
+	total := len(filtered)
+	if offset > total {
+		offset = total
+	}
+	end := min(offset+limit, total)
+	page := append([]mcpModelItem(nil), filtered[offset:end]...)
+	answer := mcpModelPage{Runtime: profile.Runtime, ProfileID: profile.ID, Models: page, Total: total}
+	if end < total {
+		next := end
+		answer.NextOffset = &next
+		answer.Hint = fmt.Sprintf("%d more chat-capable models; pass nextOffset (or offset) and a limit up to %d, or narrow with query.", total-end, maxMCPModelLimit)
+	}
+	return encodeJSON(answer)
+}
+
+// chatModelForRuntime drops modalities an agent runtime cannot call as a
+// conversation model. Claude Code only invokes Claude models. Codex can use
+// OpenAI-compatible chat models from other families, so its filter is by
+// modality rather than by vendor.
+func chatModelForRuntime(runtime string, model store.AgentModelOption) bool {
+	haystack := strings.ToLower(model.ID + "\n" + model.Label)
+	if runtime == "claude" && !strings.Contains(haystack, "claude") {
+		return false
+	}
+	for _, marker := range []string{
+		"embed", "rerank", "moderation",
+		"image", "imagen", "dall-e", "stable-diffusion", "sdxl", "flux",
+		"video", "veo", "sora", "kling", "runway",
+		"audio", "speech", "tts", "whisper", "transcribe", "voice", "music", "suno",
+		"3d", "tripo", "meshy", "point-e", "shap-e",
+	} {
+		if strings.Contains(haystack, marker) {
+			return false
+		}
+	}
+	return true
 }

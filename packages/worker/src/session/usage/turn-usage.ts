@@ -3,10 +3,40 @@ import type {
   ModelRequestUsage,
   SubagentUsage,
 } from "@bd777/foundry-protocol";
+import {
+  processLabels,
+  withoutOneMillionSuffix,
+} from "@bd777/foundry-protocol";
 import { count, optionalRecord } from "../../platform/json-values.js";
+import { estimatedTimingReliable } from "./codex-request-timing.js";
 
-/** Token usage without the duration, which the runner measures itself. */
+/** Token and model timing usage without the turn's wall duration. */
 export type TurnTokenUsage = Omit<AgentTurnUsage, "durationMs">;
+export type TurnOutcome = NonNullable<AgentTurnUsage["outcome"]>;
+
+function modelName(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim()
+    ? withoutOneMillionSuffix(value.trim())
+    : undefined;
+}
+
+function milliseconds(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
+}
+
+function elapsedMilliseconds(from: number, to: number): number {
+  return Math.max(0, Math.round(to - from));
+}
+
+function carriesToolResult(message: unknown): boolean {
+  const content = optionalRecord(optionalRecord(message)?.message)?.content;
+  return (
+    Array.isArray(content) &&
+    content.some((part) => optionalRecord(part)?.type === "tool_result")
+  );
+}
 
 /**
  * Usage of a Claude Agent SDK `result` message. Claude reports cache reads
@@ -18,6 +48,7 @@ export type TurnTokenUsage = Omit<AgentTurnUsage, "durationMs">;
 export function claudeResultUsage(
   message: unknown,
   costUsd?: number,
+  model?: string,
 ): TurnTokenUsage | undefined {
   const result = optionalRecord(message);
   if (result?.type !== "result") return undefined;
@@ -25,14 +56,21 @@ export function claudeResultUsage(
   if (!usage) return undefined;
   const cacheReadTokens = count(usage.cache_read_input_tokens);
   const cacheWriteTokens = count(usage.cache_creation_input_tokens);
+  const modelMs = milliseconds(result.duration_api_ms);
+  const ttftMs =
+    milliseconds(result.ttft_stream_ms) ?? milliseconds(result.ttft_ms);
+  const servedModel = modelName(model ?? result.model);
   return {
     inputTokens: count(usage.input_tokens) + cacheReadTokens + cacheWriteTokens,
     cacheReadTokens,
     cacheWriteTokens,
     outputTokens: count(usage.output_tokens),
+    ...(servedModel ? { model: servedModel } : {}),
     ...(count(result.num_turns) > 0
       ? { modelRequests: count(result.num_turns) }
       : {}),
+    ...(modelMs !== undefined ? { modelMs } : {}),
+    ...(ttftMs !== undefined ? { ttftMs } : {}),
     ...(costUsd !== undefined ? { costUsd } : {}),
   };
 }
@@ -42,16 +80,34 @@ export function claudeResultUsage(
  * counts cached tokens inside `input_tokens` and reasoning inside
  * `output_tokens`.
  */
-export function codexTurnUsage(event: unknown): TurnTokenUsage | undefined {
+export function codexTurnUsage(
+  event: unknown,
+  model?: string,
+): TurnTokenUsage | undefined {
   const turn = optionalRecord(event);
   const usage = optionalRecord(turn?.usage);
   if (!usage) return undefined;
+  const timing = optionalRecord(turn?.timing);
+  const outputTokens = count(usage.output_tokens);
+  const estimated = timing?.timingEstimated === true;
+  const reportedModelMs = milliseconds(timing?.modelMs);
+  const modelMs =
+    reportedModelMs !== undefined &&
+    (!estimated || estimatedTimingReliable(outputTokens, reportedModelMs))
+      ? reportedModelMs
+      : undefined;
+  const ttftMs = milliseconds(timing?.ttftMs);
+  const servedModel = modelName(model ?? turn?.model);
   return {
     inputTokens: count(usage.input_tokens),
     cacheReadTokens: count(usage.cached_input_tokens),
     cacheWriteTokens: count(usage.cache_write_input_tokens),
-    outputTokens: count(usage.output_tokens),
+    outputTokens,
+    ...(servedModel ? { model: servedModel } : {}),
     reasoningTokens: count(usage.reasoning_output_tokens),
+    ...(modelMs !== undefined ? { modelMs } : {}),
+    ...(ttftMs !== undefined ? { ttftMs } : {}),
+    ...(estimated ? { timingEstimated: true } : {}),
   };
 }
 
@@ -64,7 +120,7 @@ export function addTurnUsage(
   next: TurnTokenUsage,
 ): TurnTokenUsage {
   if (!total) return next;
-  const optional = (key: "reasoningTokens" | "modelRequests") =>
+  const optional = (key: "reasoningTokens" | "modelRequests" | "modelMs") =>
     total[key] === undefined && next[key] === undefined
       ? {}
       : { [key]: (total[key] ?? 0) + (next[key] ?? 0) };
@@ -75,8 +131,22 @@ export function addTurnUsage(
     outputTokens: total.outputTokens + next.outputTokens,
     ...optional("reasoningTokens"),
     ...optional("modelRequests"),
+    ...(total.modelMs !== undefined && next.modelMs !== undefined
+      ? optional("modelMs")
+      : {}),
+    ...(total.ttftMs !== undefined
+      ? { ttftMs: total.ttftMs }
+      : next.ttftMs !== undefined
+        ? { ttftMs: next.ttftMs }
+        : {}),
+    ...(total.timingEstimated || next.timingEstimated
+      ? { timingEstimated: true }
+      : {}),
     ...(total.costUsd !== undefined && next.costUsd !== undefined
       ? { costUsd: total.costUsd + next.costUsd }
+      : {}),
+    ...((next.model ?? total.model)
+      ? { model: next.model ?? total.model }
       : {}),
   };
 }
@@ -84,15 +154,58 @@ export function addTurnUsage(
 export function turnUsageMetadata(
   usage: TurnTokenUsage | undefined,
   startedAt: number,
+  outcome: TurnOutcome,
 ): { turnUsage: AgentTurnUsage } | undefined {
   return usage
     ? {
         turnUsage: {
           durationMs: Math.max(0, Date.now() - startedAt),
           ...usage,
+          outcome,
         },
       }
     : undefined;
+}
+
+/**
+ * A failed or canceled run still records what it spent. The hidden process
+ * label keeps this as statistics input; the existing failure report remains
+ * the turn's terminal event.
+ */
+export async function emitTurnUsage(
+  emit: (
+    label: string,
+    detail: string,
+    level?: "info" | "warning" | "error",
+    metadata?: { turnUsage: AgentTurnUsage },
+  ) => Promise<void>,
+  usage: TurnTokenUsage | undefined,
+  startedAt: number,
+  outcome: TurnOutcome,
+): Promise<void> {
+  const metadata = turnUsageMetadata(usage, startedAt, outcome);
+  if (!metadata) return;
+  await emit(
+    processLabels.modelRequestUsage,
+    usage?.model ?? "",
+    undefined,
+    metadata,
+  ).catch(() => undefined);
+}
+
+/** A streamed Claude request's usage when a turn ends before a result. */
+export function requestTurnUsage(request: ModelRequestUsage): TurnTokenUsage {
+  return {
+    inputTokens: request.inputTokens,
+    cacheReadTokens: request.cacheReadTokens,
+    cacheWriteTokens: request.cacheWriteTokens,
+    outputTokens: request.outputTokens,
+    ...(request.model ? { model: request.model } : {}),
+    modelRequests: 1,
+    ...(request.firstTokenMs !== undefined
+      ? { ttftMs: request.firstTokenMs }
+      : {}),
+  };
 }
 
 /**
@@ -102,11 +215,14 @@ export function turnUsageMetadata(
 function requestUsageOf(
   requestId: string,
   usage: Record<string, unknown>,
+  model?: string,
 ): ModelRequestUsage {
   const cacheReadTokens = count(usage.cache_read_input_tokens);
   const cacheWriteTokens = count(usage.cache_creation_input_tokens);
+  const servedModel = modelName(model);
   return {
     requestId,
+    ...(servedModel ? { model: servedModel } : {}),
     inputTokens: count(usage.input_tokens) + cacheReadTokens + cacheWriteTokens,
     cacheReadTokens,
     cacheWriteTokens,
@@ -130,7 +246,11 @@ export function mergeRequestUsage(
   right: ModelRequestUsage,
 ): ModelRequestUsage {
   return {
+    ...left,
     requestId: left.requestId,
+    ...((left.model ?? right.model)
+      ? { model: left.model ?? right.model }
+      : {}),
     inputTokens: Math.max(left.inputTokens, right.inputTokens),
     cacheReadTokens: Math.max(left.cacheReadTokens, right.cacheReadTokens),
     cacheWriteTokens: Math.max(left.cacheWriteTokens, right.cacheWriteTokens),
@@ -165,7 +285,7 @@ function settledRequestUsage(
     provisional.cacheWriteTokens;
   const uncachedTokens = reported(delta.input_tokens, provisionalInput);
   return {
-    requestId: provisional.requestId,
+    ...provisional,
     inputTokens: uncachedTokens + cacheReadTokens + cacheWriteTokens,
     cacheReadTokens,
     cacheWriteTokens,
@@ -190,7 +310,7 @@ export function claudeRequestUsage(
   const usage = optionalRecord(inner?.usage);
   const requestId = typeof inner?.id === "string" ? inner.id : "";
   if (!usage || !requestId) return undefined;
-  const value = requestUsageOf(requestId, usage);
+  const value = requestUsageOf(requestId, usage, modelName(inner?.model));
   return hasRequestUsage(value) ? value : undefined;
 }
 
@@ -203,6 +323,15 @@ export function claudeRequestUsage(
 export class ClaudeRequestUsageTracker {
   private current?: ModelRequestUsage;
   private reported = false;
+  private requestStartedAt: number;
+  private startedAt?: number;
+  private firstDeltaAt?: number;
+  private readonly now: () => number;
+
+  constructor(options: { startedAt?: number; now?: () => number } = {}) {
+    this.now = options.now ?? Date.now;
+    this.requestStartedAt = options.startedAt ?? this.now();
+  }
 
   observe(message: unknown): ModelRequestUsage | undefined {
     const value = optionalRecord(message);
@@ -213,26 +342,71 @@ export class ClaudeRequestUsageTracker {
         this.current = mergeRequestUsage(this.current, usage);
       return undefined;
     }
+    if (value.type === "user") {
+      if (carriesToolResult(message)) this.requestStartedAt = this.now();
+      return undefined;
+    }
+    if (value.type === "result") return this.flush();
     if (value.type !== "stream_event") return undefined;
     const event = optionalRecord(value.event);
     if (event?.type === "message_start") {
       const started = optionalRecord(event.message);
       const requestId = typeof started?.id === "string" ? started.id : "";
       this.current = requestId
-        ? requestUsageOf(requestId, optionalRecord(started?.usage) ?? {})
+        ? requestUsageOf(
+            requestId,
+            optionalRecord(started?.usage) ?? {},
+            modelName(started?.model),
+          )
         : undefined;
       this.reported = false;
+      this.startedAt = this.current ? this.now() : undefined;
+      this.firstDeltaAt = undefined;
       return undefined;
     }
     if (!this.current || this.reported) return undefined;
-    if (event?.type === "message_delta") {
+    if (event?.type === "content_block_delta") {
+      if (this.firstDeltaAt === undefined && this.startedAt !== undefined) {
+        this.firstDeltaAt = this.now();
+        this.current = {
+          ...this.current,
+          firstTokenMs: elapsedMilliseconds(this.startedAt, this.firstDeltaAt),
+        };
+      }
+      return undefined;
+    } else if (event?.type === "message_delta") {
       const delta = optionalRecord(event.usage);
       if (delta) this.current = settledRequestUsage(this.current, delta);
-    } else if (event?.type !== "message_stop") {
       return undefined;
     }
+    if (event?.type !== "message_stop") return undefined;
+    const stoppedAt = this.now();
+    if (this.firstDeltaAt !== undefined) {
+      this.current = {
+        ...this.current,
+        generationMs: elapsedMilliseconds(this.firstDeltaAt, stoppedAt),
+      };
+    }
+    this.current = {
+      ...this.current,
+      requestMs: elapsedMilliseconds(this.requestStartedAt, stoppedAt),
+    };
+    return this.finish();
+  }
+
+  /** Emits a request whose stream ended without its `message_stop`. */
+  flush(): ModelRequestUsage | undefined {
+    return this.finish();
+  }
+
+  private finish(): ModelRequestUsage | undefined {
+    if (!this.current || this.reported) return undefined;
     this.reported = true;
-    return hasRequestUsage(this.current) ? this.current : undefined;
+    const usage = this.current;
+    this.startedAt = undefined;
+    this.firstDeltaAt = undefined;
+    this.current = undefined;
+    return hasRequestUsage(usage) ? usage : undefined;
   }
 }
 

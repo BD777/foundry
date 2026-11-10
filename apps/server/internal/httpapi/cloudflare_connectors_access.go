@@ -47,7 +47,36 @@ func (s *Server) handleSetCloudflareAccess(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if account.Provider != "cloudflare" {
-		writeError(w, http.StatusNotFound, "Cloudflare account not found")
+		if account.Provider != "appstoreconnect" {
+			writeError(w, http.StatusNotFound, "connector account not found")
+			return
+		}
+		levelName, known := externalaccounts.AppStoreConnectAccessLevel(input.Access)
+		if !known {
+			writeError(w, http.StatusBadRequest, "unknown App Store Connect access level")
+			return
+		}
+		before := s.cloudflareBindingAccess(r.Context(), workspaceID, account.ID)
+		if err := s.store.SetExternalAccountBindingAccess(r.Context(), workspaceID, account.ID, actor.AccountID(), levelName); err != nil {
+			if errors.Is(err, store.ErrExternalAccountNotFound) {
+				writeError(w, http.StatusNotFound, "bind an App for this App Store Connect key to the workspace first")
+				return
+			}
+			writeResult(w, nil, err)
+			return
+		}
+		if before != levelName {
+			detail, _ := json.Marshal(map[string]string{"workspaceId": workspaceID, "from": before, "to": levelName})
+			if err := s.store.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: account.ID, Kind: "access_changed", ActorID: actor.AccountID(), Detail: string(detail)}); err != nil {
+				s.connectors.ServerHeld.Logf("App Store Connect access audit in %s: %v", workspaceID, err)
+			}
+		}
+		view, err := s.workspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID())
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, view)
 		return
 	}
 	level, known := externalaccounts.CloudflareAccessLevel(input.Access)

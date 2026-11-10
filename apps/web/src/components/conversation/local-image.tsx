@@ -19,12 +19,15 @@ export function LocalImage({
   path,
   source: sourceUrl,
   alt,
+  fallback = "status",
   onPreview,
 }: {
   path: string;
   /** Where the image is read instead of by its path (a session's frame). */
   source?: string;
   alt: string;
+  /** What to show before or instead of the image: progress or its alt text. */
+  fallback?: "status" | "alt";
   onPreview?: () => void;
 }) {
   const { t } = useTranslation("conversation");
@@ -38,6 +41,8 @@ export function LocalImage({
   const url = preview.phase === "ready" ? preview.url : undefined;
   const broken = url !== undefined && url === brokenUrl;
   const ready = url !== undefined && decoded === url && !broken;
+  const failed = preview.phase === "error" || broken;
+  const exportAlt = fallback === "alt";
   const frame = url ? (
     <img
       alt={alt}
@@ -52,8 +57,10 @@ export function LocalImage({
     <div
       className="min-w-0 max-w-full"
       aria-busy={!ready && preview.phase !== "error" && !broken}
+      data-image-state={ready ? "ready" : failed ? "error" : "loading"}
     >
-      {!ready &&
+      {!exportAlt &&
+      !ready &&
       placeholder.phase === "ready" &&
       preview.phase !== "error" &&
       !broken ? (
@@ -64,7 +71,7 @@ export function LocalImage({
           src={placeholder.url}
         />
       ) : null}
-      {preview.phase === "error" || broken ? (
+      {failed && !exportAlt ? (
         <Alert
           actions={
             <Button onClick={() => preview.retry(true)} size="sm">
@@ -79,7 +86,7 @@ export function LocalImage({
             `image.${preview.phase === "error" ? preview.reason : "unavailable"}`,
           )}
         </Alert>
-      ) : !ready ? (
+      ) : !ready && !exportAlt ? (
         <p
           className="rounded-xl bg-panel-soft p-4 text-sm text-ink-muted"
           role="status"
@@ -99,6 +106,10 @@ export function LocalImage({
                   ? "image.retrying"
                   : "image.loading",
               )}
+        </p>
+      ) : !ready && exportAlt ? (
+        <p className="rounded-xl bg-panel-soft p-4 text-sm text-ink-muted">
+          {alt}
         </p>
       ) : null}
       {frame && onPreview ? (

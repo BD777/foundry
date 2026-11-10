@@ -16,8 +16,10 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 
 const { claudeSettingsFile, clearClaudeSettingsFiles } =
   await import("../dist/session/session-launch-options.js");
-const { startClaudeFoundryTools } =
+const { reconnectFailedClaudeFoundryTools, startClaudeFoundryTools } =
   await import("../dist/session/runner/foundry-tools.js");
+const { claudeFoundryToolsConnection, FoundryToolsSupervisor } =
+  await import("../dist/session/runner/foundry-tools-supervisor.js");
 const { withoutSessionToken } =
   await import("../dist/session/session-ambient.js");
 
@@ -78,6 +80,71 @@ test("a new Claude process gets its Foundry tools over its input stream before i
     "a session without its tools still runs",
   );
   await startClaudeFoundryTools({}, undefined, () => assert.fail());
+});
+
+test("a reused process reconnects Foundry tools that failed to connect", async () => {
+  const reconnected = [];
+  const events = [];
+  const query = (statuses) => ({
+    mcpServerStatus: async () => statuses,
+    reconnectMcpServer: async (name) => reconnected.push(name),
+  });
+  const supervisor = new FoundryToolsSupervisor(
+    claudeFoundryToolsConnection(
+      query([
+        { name: "foundry", status: "failed" },
+        { name: "other", status: "failed" },
+      ]),
+    ),
+    (...event) => events.push(event),
+    () => 0.5,
+    () => 60_000,
+  );
+  await reconnectFailedClaudeFoundryTools(supervisor);
+  const connected = new FoundryToolsSupervisor(
+    claudeFoundryToolsConnection(
+      query([{ name: "foundry", status: "connected" }]),
+    ),
+    (...event) => events.push(event),
+    () => 0.5,
+    () => 60_000,
+  );
+  await reconnectFailedClaudeFoundryTools(connected);
+  assert.deepEqual(reconnected, ["foundry"]);
+  assert.deepEqual(events, [
+    [
+      "Foundry tools unavailable",
+      "The Foundry MCP server reports a failed connection.",
+      "warning",
+    ],
+    [
+      "Foundry tools reconnected",
+      "The Foundry MCP connection recovered.",
+      undefined,
+    ],
+  ]);
+
+  const failing = new FoundryToolsSupervisor(
+    claudeFoundryToolsConnection({
+      mcpServerStatus: async () => [{ name: "foundry", status: "failed" }],
+      reconnectMcpServer: async () => {
+        throw new Error("connect timed out");
+      },
+    }),
+    (...event) => events.push(event),
+    () => 0.5,
+    () => 60_000,
+  );
+  await reconnectFailedClaudeFoundryTools(failing);
+  assert.deepEqual(events.at(-1), [
+    "Foundry tools unavailable",
+    "The Foundry MCP server reports a failed connection.",
+    "warning",
+  ]);
+  supervisor.close();
+  connected.close();
+  failing.close();
+  await reconnectFailedClaudeFoundryTools(undefined);
 });
 
 test("withoutSessionToken drops only the token", () => {

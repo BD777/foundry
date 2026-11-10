@@ -274,6 +274,39 @@ components:
           description: Wall time from the runtime taking the turn to its final result.
           type: integer
           format: int64
+        outcome:
+          description:
+            How the turn ended. Completed turns set it too, so statistics can include failed
+            and canceled turns without inferring their outcome from a separate event.
+          type: string
+          enum:
+            - completed
+            - failed
+            - canceled
+          x-go-type: string
+        model:
+          description: The model that served the turn; when several did, the last one.
+          type: string
+        modelMs:
+          description:
+            Model work in the turn, from Claude's `duration_api_ms`; tool and other wall
+            time are excluded. Codex values are estimates and set `timingEstimated`.
+          type: integer
+          format: int64
+        ttftMs:
+          description:
+            Time to the first model output token in the turn. Claude values prefer
+            `ttft_stream_ms`, the first streamed content frame when partial messages are
+            enabled, and fall back to `ttft_ms`, the first complete assistant message;
+            Codex values are estimates and set `timingEstimated`.
+          type: integer
+          format: int64
+        timingEstimated:
+          description:
+            Whether `modelMs` and `ttftMs` were reconstructed from wall and tool-item
+            timing rather than reported by the provider. Codex sets this to true; Claude
+            reports the values directly.
+          type: boolean
         inputTokens:
           type: integer
           format: int64
@@ -1021,8 +1054,8 @@ components:
           x-go-type-skip-optional-pointer: false
         requestUsage:
           description:
-            "`requestUsage` is a model request's final tokens (Claude), reported when its stream
-            ends; the event itself is not shown."
+            "`requestUsage` is a model request's tokens, reported when Claude's stream ends or
+            from Codex's native token-usage update; the event itself is not shown."
           $ref: ./chats.yaml#/components/schemas/ModelRequestUsage
           x-go-type-skip-optional-pointer: false
         contextUsage:
@@ -1184,6 +1217,12 @@ components:
                 one. Empty for human/browser chats. It is a record for display and limits, never a
                 source of permission."
               type: string
+            waitingChildCount:
+              description:
+                "`waitingChildCount` is how many direct sub-sessions this session is waiting on:
+                active turns whose current input it started, or ended children that are themselves
+                waiting on such descendants up to four levels deep. Absent or 0 when none."
+              type: integer
             questionsTo:
               description:
                 '`questionsTo`, set by the server on dispatch, is who answers the session''s questions

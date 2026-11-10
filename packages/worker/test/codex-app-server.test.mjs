@@ -29,17 +29,47 @@ const rl=require('node:readline').createInterface({input:process.stdin});
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 const notify=(method,params)=>send({method,params:{threadId:process.env.MODE==='provider-moved'?'forked':'native',...params}});
 let refreshed=false;
+let foundryMcp='failed';
 rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send({id:r.id,result});
 if(r.method==='initialize')return reply({});
+if(r.method==='mcpServerStatus/list')return reply({data:[{name:'foundry',runtimeStatus:foundryMcp,authStatus:'bearerToken'}]});
+if(r.method==='config/mcpServer/reload'){foundryMcp='connected';reply({});return notify('mcpServer/startupStatus/updated',{name:'foundry',status:'ready'});}
 if(r.method==='thread/resume'&&process.env.MODE==='provider-moved')return send({id:r.id,error:{code:-32600,message:'This chat uses foundry_a, but your current provider is foundry_b.',data:{type:'modelProviderMismatch'}}});
 if(r.method==='thread/fork')return reply({thread:{id:r.params.threadId==='native'&&r.params.config.model_provider==='foundry_b'?'forked':'wrong'}});
-if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
+if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);const result=reply({thread:{id:'native'}});if(r.params.config?.mcp_servers?.foundry)setTimeout(()=>notify('mcpServer/startupStatus/updated',{name:'foundry',status:'failed',error:'connect refused'}),25);return result;}
 if(r.method==='thread/inject_items'){if(process.env.MODE==='refresh-rejected')return send({id:r.id,error:{message:'refresh rejected'}});const item=r.params.items[0];refreshed=r.params.threadId==='native'&&item.role==='developer'&&item.content[0].text==='CURRENT_CATALOG';return reply({});}
 if(process.env.MODE.startsWith('overflow')){globalThis.calls=(globalThis.calls||[]);globalThis.calls.push(r.method);const full={message:"Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",codexErrorInfo:'contextWindowExceeded'};const starts=globalThis.calls.filter(m=>m==='turn/start').length;
 if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:{id}});reply({turn:{id}});if(starts===1||process.env.MODE==='overflow-twice')return notify('turn/completed',{turn:{id,status:'failed',error:full}});notify('item/completed',{turnId:id,item:{id:'answer',type:'agentMessage',text:'CONTINUED:'+r.params.input[0].text,phase:'final_answer'}});return notify('turn/completed',{turn:{id,status:'completed'}});}
 if(r.method==='thread/compact/start'){if(process.env.MODE==='overflow-compact-rejected')return send({id:r.id,error:{message:'compact refused'}});reply({});notify('turn/started',{turn:{id:'compact-1'}});notify('item/started',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});notify('item/completed',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});return notify('turn/completed',{turn:{id:'compact-1',status:process.env.MODE==='overflow-compact-fails'?'failed':'completed',...(process.env.MODE==='overflow-compact-fails'?{error:full}:{})}});}}
 if(r.method==='turn/start'&&process.env.MODE==='schema'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:JSON.stringify(r.params.outputSchema??null),phase:'final_answer'}});return notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});}
 if(r.method==='turn/start'&&process.env.MODE==='provider-check'&&!process.argv.includes('model_provider="foundry_x"'))return send({id:r.id,error:{message:'This chat uses foundry_x, but your current provider is openai.'}});
+if(r.method==='turn/start'&&process.env.MODE==='usage-multi'){notify('turn/started',{turn:{id:'turn-usage'}});reply({turn:{id:'turn-usage'}});const at=(ms,fn)=>setTimeout(fn,ms);
+at(40,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:10,cachedInputTokens:3,cacheWriteInputTokens:1,outputTokens:4,reasoningOutputTokens:1,totalTokens:14},total:{inputTokens:10,cachedInputTokens:3,cacheWriteInputTokens:1,outputTokens:4,reasoningOutputTokens:1,totalTokens:14}}}));
+at(90,()=>notify('item/completed',{turnId:'turn-usage',item:{id:'tool-1',type:'commandExecution',command:'one'}}));
+at(140,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:20,cachedInputTokens:6,cacheWriteInputTokens:1,outputTokens:6,reasoningOutputTokens:2,totalTokens:26},total:{inputTokens:30,cachedInputTokens:9,cacheWriteInputTokens:2,outputTokens:10,reasoningOutputTokens:3,totalTokens:40}}}));
+at(190,()=>notify('item/completed',{turnId:'turn-usage',item:{id:'tool-2',type:'commandExecution',command:'two'}}));
+at(240,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:30,cachedInputTokens:9,cacheWriteInputTokens:1,outputTokens:9,reasoningOutputTokens:3,totalTokens:39},total:{inputTokens:60,cachedInputTokens:18,cacheWriteInputTokens:3,outputTokens:19,reasoningOutputTokens:6,totalTokens:79}}}));
+at(280,()=>{notify('item/completed',{turnId:'turn-usage',item:{id:'answer',type:'agentMessage',text:'finished',phase:'final_answer'}});notify('turn/completed',{turn:{id:'turn-usage',status:'completed'}});});return;}
+if(r.method==='turn/start'&&process.env.MODE==='usage-late'){notify('turn/started',{turn:{id:'turn-late'}});reply({turn:{id:'turn-late'}});const at=(ms,fn)=>setTimeout(fn,ms);
+at(60,()=>notify('item/completed',{turnId:'turn-late',item:{id:'tool-late',type:'commandExecution',command:'slow'}}));
+at(150,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14},total:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14}}}));
+at(220,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:20,cachedInputTokens:6,outputTokens:6,totalTokens:26},total:{inputTokens:30,cachedInputTokens:9,outputTokens:10,totalTokens:40}}}));
+at(260,()=>{notify('item/completed',{turnId:'turn-late',item:{id:'answer',type:'agentMessage',text:'finished',phase:'final_answer'}});notify('turn/completed',{turn:{id:'turn-late',status:'completed'}});});return;}
+if(r.method==='turn/start'&&process.env.MODE==='terminal-ws-405'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});return notify('turn/completed',{turn:{id:'turn-1',status:'failed',error:{message:'unexpected status 405 Method Not Allowed: Method Not Allowed, url: wss://tokenhub.example/v1/responses',codexErrorInfo:{httpConnectionFailed:{httpStatusCode:405}}}}});}
+if(r.method==='turn/start'&&process.env.MODE==='usage-timeline'){const base=Date.now();notify('turn/started',{turn:{id:'turn-timeline',startedAtMs:base}});reply({turn:{id:'turn-timeline'}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'reasoning-1',type:'reasoning',startedAtMs:base+2000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'reasoning-1',type:'reasoning',completedAtMs:base+4000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'commentary-1',type:'agentMessage',phase:'commentary',text:'working',completedAtMs:base+4500}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'tool-1',type:'commandExecution',startedAtMs:base+5000}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'tool-2',type:'commandExecution',startedAtMs:base+5200}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'tool-1',type:'commandExecution',completedAtMs:base+12000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'tool-2',type:'commandExecution',completedAtMs:base+15000}});
+notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:100,cachedInputTokens:80,outputTokens:1500,totalTokens:1600},total:{inputTokens:100,cachedInputTokens:80,outputTokens:1500,totalTokens:1600}}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'reasoning-2',type:'reasoning',startedAtMs:base+16000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'reasoning-2',type:'reasoning',completedAtMs:base+18000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'answer',type:'agentMessage',phase:'final_answer',text:'finished',completedAtMs:base+19000}});
+notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:200,cachedInputTokens:180,outputTokens:800,totalTokens:1000},total:{inputTokens:300,cachedInputTokens:260,outputTokens:2300,totalTokens:2600}}});
+notify('turn/completed',{turn:{id:'turn-timeline',status:'completed'}});return;}
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});setTimeout(()=>notify('turn/completed',{turn:{id:'turn-1',status:'completed'}}),50);return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
@@ -59,6 +89,51 @@ if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'tur
     options.nativeSessionId,
   );
 }
+
+test("a Codex MCP failure reconnects through the app-server protocol", async (t) => {
+  const { clearOutOfBandSessionEventSink, setOutOfBandSessionEventSink } =
+    await import("../dist/session/session-state.js");
+  const { reconnectRegisteredFoundryTools } =
+    await import("../dist/session/runner/foundry-tools-supervisor.js");
+  const events = [];
+  const sink = (sessionId, event) => events.push({ sessionId, ...event });
+  setOutOfBandSessionEventSink(sink);
+  t.after(() => clearOutOfBandSessionEventSink(sink));
+
+  const thread = fixture(t, "normal", {
+    workSessionId: "sess_codex_mcp",
+    config: {
+      mcp_servers: {
+        foundry: { url: "http://127.0.0.1/api/mcp" },
+      },
+    },
+  });
+  t.after(() => thread.close());
+  const { events: turnEvents } = await thread.runStreamed("start");
+  const waitForLabel = async (label) => {
+    const deadline = Date.now() + 1_000;
+    while (!events.some((event) => event.label === label)) {
+      if (Date.now() >= deadline) throw new Error(`${label} did not arrive`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  await waitForLabel("Foundry tools unavailable");
+  await reconnectRegisteredFoundryTools();
+  await waitForLabel("Foundry tools reconnected");
+  await thread.steer("finish");
+  for await (const _event of turnEvents) {
+    // Drain the turn so its process closes before the test ends.
+  }
+  assert.deepEqual(
+    events.map((event) => [event.label, event.sessionId]),
+    [
+      ["Foundry tools unavailable", "sess_codex_mcp"],
+      ["Foundry tools reconnected", "sess_codex_mcp"],
+    ],
+  );
+});
+
 test("same native owner steers the exact turn, retaining phases and usage", async (t) => {
   const thread = fixture(t);
   const { events } = await thread.runStreamed("start");
@@ -73,11 +148,112 @@ test("same native owner steers the exact turn, retaining phases and usage", asyn
     ),
   );
   assert.ok(seen.some((e) => e.item?.text === "changed"));
-  assert.deepEqual(seen.at(-1), {
-    type: "turn.completed",
-    usage: { input_tokens: 42, cached_input_tokens: 2, output_tokens: 8 },
+  assert.equal(seen.at(-1).type, "turn.completed");
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 42,
+    cached_input_tokens: 2,
+    cache_write_input_tokens: 0,
+    output_tokens: 8,
+    reasoning_output_tokens: 0,
   });
+  assert.equal(seen.at(-1).timing.timingEstimated, true);
   await assert.rejects(thread.steer("late"), /not accepting/);
+});
+
+test("a turn sums every token usage update and emits three request records", async (t) => {
+  const thread = fixture(t, "usage-multi");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(
+    requests.map((request) => request.requestId),
+    ["turn-usage:1", "turn-usage:2", "turn-usage:3"],
+  );
+  assert.deepEqual(
+    requests.map((request) => [
+      request.inputTokens,
+      request.cacheReadTokens,
+      request.cacheWriteTokens,
+      request.outputTokens,
+    ]),
+    [
+      [10, 3, 1, 4],
+      [20, 6, 1, 6],
+      [30, 9, 1, 9],
+    ],
+  );
+  for (const request of requests) {
+    assert.equal(request.timingEstimated, true);
+    assert.equal(request.firstTokenMs, undefined);
+    assert.equal(request.generationMs, undefined);
+    assert.equal(request.requestMs, undefined);
+  }
+  assert.equal(seen.at(-1).type, "turn.completed");
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 60,
+    cached_input_tokens: 18,
+    cache_write_input_tokens: 3,
+    output_tokens: 19,
+    reasoning_output_tokens: 6,
+  });
+});
+
+test("a delayed token usage update keeps tokens without inventing timing", async (t) => {
+  const thread = fixture(t, "usage-late");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].requestMs, undefined);
+  assert.equal(requests[1].requestMs, undefined);
+  assert.equal(requests[0].inputTokens, 10);
+  assert.equal(requests[1].inputTokens, 20);
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 30,
+    cached_input_tokens: 9,
+    cache_write_input_tokens: 0,
+    output_tokens: 10,
+    reasoning_output_tokens: 0,
+  });
+});
+
+test("a replayed item timeline gives usage updates their response time", async (t) => {
+  const thread = fixture(t, "usage-timeline");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.deepEqual(
+    requests.map((request) => request.requestMs),
+    [5200, 4000],
+  );
+  assert.deepEqual(
+    requests.map((request) => request.outputTokens),
+    [1500, 800],
+  );
+  for (const request of requests) {
+    const speed = request.outputTokens / (request.requestMs / 1000);
+    assert.ok(speed >= 50 && speed <= 300, `speed was ${speed} tok/s`);
+  }
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 300,
+    cached_input_tokens: 260,
+    cache_write_input_tokens: 0,
+    output_tokens: 2300,
+    reasoning_output_tokens: 0,
+  });
 });
 test("an output schema reaches Codex's turn/start as its native structured output", async (t) => {
   const schema = { type: "object", required: ["verdict"] };
@@ -128,6 +304,19 @@ test("tool mapping retains outcomes", () => {
     }).changes,
     [{ path: "a", kind: "add" }],
   );
+});
+
+test("a terminal turn preserves Codex's structured HTTP failure", async (t) => {
+  const thread = fixture(t, "terminal-ws-405");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+  assert.equal(seen.at(-1).type, "turn.failed");
+  assert.deepEqual(seen.at(-1).error, {
+    message:
+      "unexpected status 405 Method Not Allowed: Method Not Allowed, url: wss://tokenhub.example/v1/responses",
+    codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 405 } },
+  });
 });
 
 test("native startup can exceed the control deadline without replaying a turn", async (t) => {

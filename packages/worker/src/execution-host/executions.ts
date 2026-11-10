@@ -20,7 +20,11 @@ import {
 } from "../session/session-control.js";
 import { FileSessionOutbox } from "../transport/session-outbox-store.js";
 import { dispatchKey } from "../session/session-state.js";
-import { writePrivateJSONAtomic } from "../platform/storage.js";
+import {
+  CoalescedJSONWriter,
+  writePrivateJSONAtomic,
+  type CoalescedJSONWriterOptions,
+} from "../platform/storage.js";
 import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
 import { ReliableSessionTransport } from "../transport/transport.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
@@ -30,6 +34,7 @@ interface Claim {
   sessionId: string;
   inputId: string;
   status: "active" | "completed";
+  completedAt?: string;
 }
 
 type ControlOutcome = "pending" | "accepted" | "unknown";
@@ -45,6 +50,11 @@ export interface HostExecutionsOptions {
   failed: (error: unknown) => void;
   /** Runs one input; tests replace it. */
   run?: RunInput;
+  /** How long a completed claim suppresses a duplicate dispatch (24 h). */
+  completedClaimRetentionMs?: number;
+  /** Tests may shorten the claim write batch. */
+  claimWriteDelayMs?: number;
+  writeClaims?: CoalescedJSONWriterOptions["write"];
 }
 
 function readRecords<T>(path: string): Record<string, T> {
@@ -56,6 +66,18 @@ function readRecords<T>(path: string): Record<string, T> {
   }
 }
 
+function legacyClaimTimestamp(claim: Claim): number | undefined {
+  const candidates: number[] = [];
+  const sessionTime = /^sess_(\d{13})/.exec(claim.sessionId)?.[1];
+  if (sessionTime) candidates.push(Number(sessionTime));
+  const uuid7 = /^([0-9a-f]{8})-([0-9a-f]{4})-7[0-9a-f]{3}-/i.exec(
+    claim.inputId,
+  );
+  if (uuid7) candidates.push(Number.parseInt(uuid7[1]! + uuid7[2]!, 16));
+  const timestamp = Math.max(...candidates.filter(Number.isFinite));
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
 export class HostExecutions {
   readonly transport: ReliableSessionTransport;
   readonly core: ExecutionCore;
@@ -64,12 +86,28 @@ export class HostExecutions {
   private readonly claims: Record<string, Claim>;
   private readonly controls: Record<string, ControlOutcome>;
   private readonly controlFlights = new Map<string, Promise<void>>();
+  private readonly claimWriter: CoalescedJSONWriter<Record<string, Claim>>;
+  private readonly completedClaimRetentionMs: number;
+  private readonly localClaims = new Map<string, Claim>();
+  private readonly deletedClaims = new Set<string>();
 
   constructor(private readonly options: HostExecutionsOptions) {
     this.claimsPath = resolve(options.root, "claims.json");
     this.controlsPath = resolve(options.root, "controls.json");
     this.claims = readRecords(this.claimsPath);
     this.controls = readRecords(this.controlsPath);
+    this.completedClaimRetentionMs =
+      options.completedClaimRetentionMs ?? 24 * 60 * 60 * 1000;
+    this.claimWriter = new CoalescedJSONWriter(
+      this.claimsPath,
+      () => this.claims,
+      {
+        delayMs: options.claimWriteDelayMs ?? 50,
+        prepare: () => this.mergeClaimsFromDisk(),
+        write: options.writeClaims,
+      },
+    );
+    if (this.pruneClaims()) this.persistClaims();
     this.transport = new ReliableSessionTransport({
       store: new FileSessionOutbox(resolve(options.root, "outbox")),
       // An input whose completion is on its way is done, even before its
@@ -82,10 +120,7 @@ export class HostExecutions {
         };
         const claim =
           this.claims[dispatchKey(payload.sessionId, payload.inputId)];
-        if (claim) {
-          claim.status = "completed";
-          this.persistClaims();
-        }
+        if (claim) this.completeClaim(claim, true);
       },
     });
     this.core = new ExecutionCore({
@@ -96,19 +131,22 @@ export class HostExecutions {
         claim: (sessionId, inputId) => {
           const key = dispatchKey(sessionId, inputId);
           if (this.claims[key]) return false;
-          this.claims[key] = { sessionId, inputId, status: "active" };
+          const claim: Claim = { sessionId, inputId, status: "active" };
+          this.claims[key] = claim;
+          this.localClaims.set(key, { ...claim });
+          this.deletedClaims.delete(key);
           this.persistClaims();
           return true;
         },
         complete: (sessionId, inputId) => {
-          this.claims[dispatchKey(sessionId, inputId)]!.status = "completed";
-          this.persistClaims();
+          this.completeClaim(this.claims[dispatchKey(sessionId, inputId)]!);
           options.changed();
         },
       },
       asksForIssues: true,
       failed: options.failed,
       run: options.run,
+      beforeRun: () => this.flushClaims(),
     });
   }
 
@@ -116,7 +154,7 @@ export class HostExecutions {
    * The inputs an earlier host was running, reported as stopped. Its
    * processes were cleaned up before (superviseAgentProcesses).
    */
-  reportInterrupted(): void {
+  async reportInterrupted(): Promise<void> {
     for (const claim of Object.values(this.claims))
       if (claim.status === "active") {
         reportWorkerFailure(
@@ -124,26 +162,33 @@ export class HostExecutions {
           { id: claim.sessionId, input: { id: claim.inputId } },
           executionHostStoppedError,
         );
-        claim.status = "completed";
+        this.completeClaim(claim);
       }
-    this.persistClaims();
+    await this.flush();
   }
 
   /** The inputs accepted and not yet reported. */
-  active(): Claim[] {
-    return Object.values(this.claims).filter(
-      (claim) => claim.status === "active",
-    );
+  active(): Array<Pick<Claim, "sessionId" | "inputId">> {
+    if (this.pruneClaims()) this.persistClaims();
+    return Object.values(this.claims)
+      .filter((claim) => claim.status === "active")
+      .map(({ sessionId, inputId }) => ({ sessionId, inputId }));
   }
 
-  run({
+  async run({
     workspacePath,
     payload,
-  }: HostMethods["run"]["request"]): HostMethods["run"]["result"] {
+  }: HostMethods["run"]["request"]): Promise<HostMethods["run"]["result"]> {
     if (this.core.accept(payload, () => workspacePath)) this.options.changed();
+    await this.flush();
     const claim =
       this.claims[dispatchKey(payload.session.id, payload.session.input?.id)];
     return { status: claim!.status };
+  }
+
+  /** Test and startup barrier for the compact claims batch. */
+  async flush(): Promise<void> {
+    await this.flushClaims();
   }
 
   async steer(
@@ -214,7 +259,105 @@ export class HostExecutions {
   }
 
   private persistClaims(): void {
-    writePrivateJSONAtomic(this.claimsPath, this.claims);
+    void this.claimWriter.change().catch(this.options.failed);
+  }
+
+  private flushClaims(): Promise<void> {
+    return this.claimWriter.flush();
+  }
+
+  private completeClaim(claim: Claim, flush = false): void {
+    claim.status = "completed";
+    claim.completedAt = new Date().toISOString();
+    const key = dispatchKey(claim.sessionId, claim.inputId);
+    this.localClaims.set(key, { ...claim });
+    this.deletedClaims.delete(key);
+    this.pruneClaims();
+    this.persistClaims();
+    if (flush) this.claimWriter.flushSync();
+  }
+
+  /**
+   * Keeps every active claim, plus completions recent enough to suppress a
+   * duplicate dispatch. Old records had no completion time; a UUIDv7 input id
+   * is a safe lower bound for when that input was accepted.
+   */
+  private pruneClaims(now = Date.now()): boolean {
+    const cutoff = now - this.completedClaimRetentionMs;
+    let changed = false;
+    for (const [key, claim] of Object.entries(this.claims)) {
+      if (claim.status === "active") {
+        if (claim.completedAt !== undefined) {
+          delete claim.completedAt;
+          this.localClaims.set(key, { ...claim });
+          this.deletedClaims.delete(key);
+          changed = true;
+        }
+        continue;
+      }
+      const parsed = Date.parse(claim.completedAt ?? "");
+      const completedAt = Number.isFinite(parsed)
+        ? parsed
+        : legacyClaimTimestamp(claim);
+      if (completedAt !== undefined && completedAt >= cutoff) {
+        const normalized = new Date(completedAt).toISOString();
+        if (claim.completedAt !== normalized) {
+          claim.completedAt = normalized;
+          this.localClaims.set(key, { ...claim });
+          this.deletedClaims.delete(key);
+          changed = true;
+        }
+        continue;
+      }
+      delete this.claims[key];
+      this.localClaims.delete(key);
+      this.deletedClaims.add(key);
+      changed = true;
+    }
+    return changed;
+  }
+
+  /**
+   * The old host and a draining new host can share claims.json. Neither has a
+   * lock, so whole-file writes are already last-writer-wins. Before our
+   * asynchronous write, retain every external key we did not change and merge
+   * conflicts toward completion. This does not make the shared file
+   * multi-writer safe; it avoids widening the existing race during debounce.
+   */
+  private mergeClaimsFromDisk(): void {
+    const disk = readRecords<Claim>(this.claimsPath);
+    const merged: Record<string, Claim> = { ...disk };
+    for (const key of this.deletedClaims) {
+      const remote = merged[key];
+      if (remote?.status !== "active") delete merged[key];
+    }
+    for (const [key, local] of this.localClaims) {
+      const remote = merged[key];
+      if (!remote) {
+        merged[key] = local;
+        continue;
+      }
+      if (local.status === "completed" || remote.status === "completed") {
+        const candidates = [local, remote].filter(
+          (claim) => claim.status === "completed",
+        );
+        merged[key] =
+          candidates
+            .filter((claim) =>
+              Number.isFinite(Date.parse(claim.completedAt ?? "")),
+            )
+            .sort(
+              (a, b) =>
+                Date.parse(b.completedAt ?? "") -
+                Date.parse(a.completedAt ?? ""),
+            )[0] ?? candidates[0]!;
+      } else merged[key] = local;
+    }
+    for (const key of Object.keys(this.claims))
+      if (!(key in merged)) delete this.claims[key];
+    for (const [key, claim] of Object.entries(merged)) this.claims[key] = claim;
+    this.localClaims.clear();
+    this.deletedClaims.clear();
   }
 
   private persistControls(): void {

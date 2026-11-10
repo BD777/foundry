@@ -87,26 +87,62 @@ func (s *Server) handleUpsertAgentRuntimeSettings(w http.ResponseWriter, r *http
 	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
 		return
 	}
-	if input.Settings.ActiveRuntimeTTLMs <= 0 {
-		writeError(w, http.StatusBadRequest, "activeRuntimeTtlMs must be positive")
+	settings, err := normalizeAgentRuntimeSettingsInput(input.Settings)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// 0 returns the device to its hardware default.
-	if input.Settings.MaxConcurrentTasks < 0 || input.Settings.MaxConcurrentTasks > 16 {
-		writeError(w, http.StatusBadRequest, "maxConcurrentTasks must be between 1 and 16, or 0 for the device's default")
-		return
-	}
-	input.Settings.MaxConcurrentTasksSource = ""
-	input.Settings.HardwareMaxConcurrentTasks = 0
-	input.Settings.Hardware = nil
+	input.Settings = settings
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	settings, err := s.hub.UpsertAgentRuntimeSettings(ctx, input)
+	settings, err = s.hub.UpsertAgentRuntimeSettings(ctx, input)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusConflict, "local daemon is not connected")
 		return
 	}
 	writeResult(w, settings, err)
+}
+
+// normalizeAgentRuntimeSettingsInput accepts the adaptive shape and the
+// older fixed maxConcurrentTasks shape. Legacy values become adaptive with
+// the one-time notice the device settings UI acknowledges.
+func normalizeAgentRuntimeSettingsInput(settings store.AgentRuntimeSettings) (store.AgentRuntimeSettings, error) {
+	if settings.ActiveRuntimeTTLMs <= 0 {
+		return store.AgentRuntimeSettings{}, errors.New("activeRuntimeTtlMs must be positive")
+	}
+	if settings.MaxConcurrentTasks < 0 || settings.MaxConcurrentTasks > 16 {
+		return store.AgentRuntimeSettings{}, errors.New("maxConcurrentTasks must be between 0 and 16")
+	}
+	// Older clients send only maxConcurrentTasks. A positive value is the
+	// now-withdrawn fixed setting; it becomes adaptive with a one-time notice.
+	legacyMode := strings.TrimSpace(settings.Mode) == ""
+	if legacyMode {
+		settings.Mode = "adaptive"
+		if settings.MaxConcurrentTasks > 0 {
+			settings.MigrationNotice = "adaptive_migrated"
+		}
+	}
+	switch settings.Mode {
+	case "adaptive":
+		settings.ForcedLimit = 0
+		settings.MaxConcurrentTasks = 0
+	case "forced":
+		if settings.ForcedLimit < 1 || settings.ForcedLimit > 16 {
+			return store.AgentRuntimeSettings{}, errors.New("forcedLimit must be between 1 and 16")
+		}
+		// Older workers only understand the fixed field.
+		settings.MaxConcurrentTasks = settings.ForcedLimit
+	default:
+		return store.AgentRuntimeSettings{}, errors.New("mode must be adaptive or forced")
+	}
+	if settings.MigrationNotice != "" &&
+		settings.MigrationNotice != "adaptive_migrated" {
+		return store.AgentRuntimeSettings{}, errors.New("unknown migrationNotice")
+	}
+	settings.MaxConcurrentTasksSource = ""
+	settings.HardwareMaxConcurrentTasks = 0
+	settings.Hardware = nil
+	return settings, nil
 }
 
 // handleRefreshDeviceResources re-detects a device's resources, first asking

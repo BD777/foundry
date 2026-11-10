@@ -10,11 +10,19 @@ import {
   type CodexTransportMode,
   type ProfileAuthMode,
   type ProfileDefinition,
+  type ProfileModelPrice,
   type SaveProfileInput,
 } from "@bd777/foundry-protocol";
 
 /** Runtimes a server profile can target. `mock` is a test-only daemon runtime. */
 export type ProfileRuntime = ProfileDefinition["runtime"];
+
+export interface ModelPriceDraft {
+  inputPerMillion: string;
+  cacheReadPerMillion: string;
+  cacheWritePerMillion: string;
+  outputPerMillion: string;
+}
 
 export interface ProfileDraft {
   /** Write-only. Blank means "keep whatever the server already sealed". */
@@ -34,6 +42,8 @@ export interface ProfileDraft {
   model: string;
   /** Selectable models for this profile; `model` is the default. */
   models: string[];
+  /** The person's custom USD-per-million prices as typed. */
+  modelPrices: Record<string, ModelPriceDraft>;
   /** The person's window per model, as typed (`200k`, `1M`); blank is automatic. */
   contextWindows: Record<string, string>;
   promptPrefix: string;
@@ -81,10 +91,69 @@ export function defaultProfileDraft(
     label: defaultProfileLabel(runtime),
     model: "",
     models: [],
+    modelPrices: {},
     contextWindows: {},
     promptPrefix: "",
     runtime,
   };
+}
+
+export const emptyModelPriceDraft = (): ModelPriceDraft => ({
+  inputPerMillion: "",
+  cacheReadPerMillion: "",
+  cacheWritePerMillion: "",
+  outputPerMillion: "",
+});
+
+export function parseModelPrice(value: string): number | undefined {
+  const text = value.trim();
+  if (!text) return undefined;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+export function invalidModelPrices(draft: ProfileDraft): string[] {
+  return draft.models.filter((model) => {
+    const price = draft.modelPrices[model];
+    if (!price) return false;
+    const values = [
+      price.inputPerMillion,
+      price.cacheReadPerMillion,
+      price.cacheWritePerMillion,
+      price.outputPerMillion,
+    ];
+    const started = values.some((value) => value.trim() !== "");
+    if (!started) return false;
+    return values.some((value) => parseModelPrice(value) === undefined);
+  });
+}
+
+function modelPricesInput(
+  draft: ProfileDraft,
+): Record<string, ProfileModelPrice> {
+  const prices: Record<string, ProfileModelPrice> = {};
+  for (const model of draft.models) {
+    const price = draft.modelPrices[model];
+    if (!price) continue;
+    const input = parseModelPrice(price.inputPerMillion);
+    const cacheRead = parseModelPrice(price.cacheReadPerMillion);
+    const cacheWrite = parseModelPrice(price.cacheWritePerMillion);
+    const output = parseModelPrice(price.outputPerMillion);
+    if (
+      input === undefined ||
+      cacheRead === undefined ||
+      cacheWrite === undefined ||
+      output === undefined
+    )
+      continue;
+    prices[model] = {
+      inputPerMillion: input,
+      cacheReadPerMillion: cacheRead,
+      cacheWritePerMillion: cacheWrite,
+      outputPerMillion: output,
+    };
+  }
+  return prices;
 }
 
 /** A stored window as the field shows it: `1M`, `200K`, or the plain count. */
@@ -144,6 +213,17 @@ export function draftFromProfile(profile?: ProfileDefinition): ProfileDraft {
       : profile.model
         ? [profile.model]
         : [],
+    modelPrices: Object.fromEntries(
+      Object.entries(profile.modelPrices ?? {}).map(([model, price]) => [
+        model,
+        {
+          inputPerMillion: String(price.inputPerMillion),
+          cacheReadPerMillion: String(price.cacheReadPerMillion),
+          cacheWritePerMillion: String(price.cacheWritePerMillion),
+          outputPerMillion: String(price.outputPerMillion),
+        },
+      ]),
+    ),
     contextWindows: Object.fromEntries(
       Object.entries(profile.contextWindows ?? {}).map(([model, tokens]) => [
         model,
@@ -227,6 +307,8 @@ export function buildSaveProfileInput(draft: ProfileDraft): SaveProfileInput {
     label: draft.label.trim(),
     model: draft.model.trim() || undefined,
     models: draft.models,
+    modelPrices:
+      draft.authMode === "custom" ? modelPricesInput(draft) : undefined,
     contextWindows:
       draft.authMode === "custom" ? contextWindowsInput(draft) : undefined,
     promptPrefix:

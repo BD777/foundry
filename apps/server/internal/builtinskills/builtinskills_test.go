@@ -12,6 +12,8 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		31: "3e6b99a0b26d81f8f2ebdfa1e4295966f13107af788fae76b6098a5da67fede8", // session system alerts; MCP result budgets (paged session work, chat-capable models)
+		30: "28f5a3b00864af197a8d05acfaaa746965b5b0a3c44066243f539063e8881374", // ASC-2: App Store Connect curl examples through the gateway
 		29: "444f19bacb28eb3627771a23b1d64908d5a9a8abccb51fa494a096f19d1f1407", // MCP: skill repository source; assistant device removal always asks
 		28: "973fe7f7d3c6aa9549dccaffb6132268c4f17bdf4dab7f1abb934a125a0ef81c", // DEV-155: connector stand-ins work for what a turn leaves running
 		27: "141eadfb461c0a018bd7ddc4b14f0f22996faf89891a0fd670e0a57943ec307c", // DEV-151: model providers managed through the Foundry tools
@@ -49,14 +51,37 @@ func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	}
 }
 
+func TestFoundryOrchestrationSkillPackageHasARecordedRevision(t *testing.T) {
+	revisions := map[int]string{
+		1: "17e7abd2df2ea05d301f29931c50a3d4827b275e32e31273c2680597a8964f36",
+	}
+	claude, _ := Lookup("builtin-claude-foundry-orchestration")
+	codex, _ := Lookup("builtin-codex-foundry-orchestration")
+	if claude.Revision != codex.Revision {
+		t.Fatal("both runtimes must receive the same Foundry orchestration revision")
+	}
+	if claude.Checksum != codex.Checksum || claude.SourceDigest != codex.SourceDigest {
+		t.Fatal("both runtimes must receive the same Foundry orchestration bytes")
+	}
+	if want := revisions[claude.Revision]; want != claude.Checksum {
+		t.Fatalf("%s revision %d has unrecorded package %s; bump and record the new revision", claude.ID, claude.Revision, claude.Checksum)
+	}
+	description := strings.ToLower(claude.Description)
+	for _, trigger := range []string{"orchestrate", "brief", "review", "diff", "failed"} {
+		if !strings.Contains(description, trigger) {
+			t.Fatalf("description does not say %q: %q", trigger, claude.Description)
+		}
+	}
+}
+
 func TestBuiltInSkillsPackageLikeWorkspaceSkills(t *testing.T) {
 	claude := ForRuntime("claude")
-	if len(claude) != 2 || claude[0].Name != "skill-creator" || claude[1].Name != "foundry" {
-		t.Fatalf("claude built-ins = %+v, want skill-creator and foundry", claude)
+	if len(claude) != 3 || claude[0].Name != "skill-creator" || claude[1].Name != "foundry" || claude[2].Name != "foundry-orchestration" {
+		t.Fatalf("claude built-ins = %+v, want skill-creator, foundry and foundry-orchestration", claude)
 	}
 	codex := ForRuntime("codex")
-	if len(codex) != 1 || codex[0].Name != "foundry" || codex[0].ID != "builtin-codex-foundry" {
-		t.Fatalf("codex built-ins = %+v: Codex ships its own skill-creator; Foundry adds only foundry", codex)
+	if len(codex) != 2 || codex[0].Name != "foundry" || codex[0].ID != "builtin-codex-foundry" || codex[1].Name != "foundry-orchestration" {
+		t.Fatalf("codex built-ins = %+v: Codex ships its own skill-creator; Foundry adds foundry and foundry-orchestration", codex)
 	}
 	if codex[0].Checksum != claude[1].Checksum || claude[1].Source != "Foundry" {
 		t.Fatal("both agents get the same foundry skill")

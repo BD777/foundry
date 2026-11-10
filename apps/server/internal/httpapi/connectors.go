@@ -33,9 +33,10 @@ import (
 //     (connectors.go in internal/connectors, decided at dispatch).
 
 const (
-	connectorStatusTimeout  = 150 * time.Second
-	connectorSignInTimeout  = 150 * time.Second
-	connectorInstallTimeout = 10 * time.Minute
+	connectorStatusTimeout    = 150 * time.Second
+	connectorSignInTimeout    = 150 * time.Second
+	connectorConfigureTimeout = 30 * time.Second
+	connectorInstallTimeout   = 10 * time.Minute
 	// connectorStaleAfter: the page re-reads an online device whose reading
 	// is older than this.
 	connectorStaleAfter = 2 * time.Minute
@@ -72,6 +73,7 @@ func (s *Server) askDeviceConnector(ctx context.Context, deviceID string, descri
 		payload.AuthorizationRevision = authorization[0].AuthorizationRevision
 		payload.OperationID = authorization[0].OperationID
 		payload.SignInOptions = authorization[0].SignInOptions
+		payload.Configuration = authorization[0].Configuration
 		payload.Input = authorization[0].Input
 	}
 	request, err := json.Marshal(payload)
@@ -427,6 +429,51 @@ func (s *Server) handleInstallDeviceConnector(w http.ResponseWriter, r *http.Req
 	reply, err := s.askDeviceConnector(r.Context(), deviceID, descriptor, "install", true, connectorInstallTimeout)
 	if err != nil {
 		writeDeviceConnectorError(w, "Installing "+descriptor.Label, err)
+		return
+	}
+	state, err := s.recordReply(r.Context(), deviceID, descriptor, reply)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+// handleConfigureDeviceConnector changes only the connector's own non-secret
+// profile settings. It runs after sign-in and never changes the login scope.
+func (s *Server) handleConfigureDeviceConnector(w http.ResponseWriter, r *http.Request) {
+	deviceID, descriptor, ok := s.ownDeviceConnector(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Configuration *store.ConnectorConfiguration `json:"configuration"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if input.Configuration == nil {
+		writeError(w, http.StatusBadRequest, "configuration is required")
+		return
+	}
+	region := strings.TrimSpace(input.Configuration.Region)
+	if region == "" || len(region) > 64 {
+		writeError(w, http.StatusBadRequest, "enter the default Region")
+		return
+	}
+	reply, err := s.askDeviceConnector(
+		r.Context(),
+		deviceID,
+		descriptor,
+		"configure",
+		true,
+		connectorConfigureTimeout,
+		store.ConnectorRequestPayload{
+			Configuration: &store.ConnectorConfiguration{Region: region},
+		},
+	)
+	if err != nil {
+		writeDeviceConnectorError(w, "Changing "+descriptor.Label+" settings", err)
 		return
 	}
 	state, err := s.recordReply(r.Context(), deviceID, descriptor, reply)

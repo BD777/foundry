@@ -303,6 +303,13 @@ export const chat = {
     nameLabel: "Chat name",
     closeRename: "Close rename",
   },
+  waitingChildren: {
+    tab: "Waiting {{count}}",
+    count_one: "Waiting on {{count}} sub-session",
+    count_other: "Waiting on {{count}} sub-sessions",
+    header_one: "Waiting on {{count}}",
+    header_other: "Waiting on {{count}}",
+  },
   groups: {
     new: "New group",
     defaultName: "New group",

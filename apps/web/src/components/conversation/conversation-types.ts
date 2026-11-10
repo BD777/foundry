@@ -372,13 +372,22 @@ export type ConversationQuestionState =
 
 /**
  * Tokens of the model requests behind some steps, each request counted once.
- * Claude reports them per request; Codex only per turn, so its steps have none.
+ * Claude reports them from model streams; Codex estimates them from native
+ * token-usage updates.
  */
 export interface StepUsage {
   requests: number;
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  /** End-to-end model-request time, including time to first token. */
+  requestMs?: number;
+  /** Generation time across the requests; absent unless every request has it. */
+  generationMs?: number;
+  /** Whether strict generation time looks like genuine streaming on every request. */
+  decodeEligible?: boolean;
+  /** Whether the request time used for speed was reconstructed. */
+  timingEstimated?: boolean;
 }
 
 /** Localized failure presentation; no classification rules in the renderer. */

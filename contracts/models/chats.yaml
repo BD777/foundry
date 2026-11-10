@@ -271,7 +271,10 @@ components:
           items:
             $ref: "#/components/schemas/ChatAttachment"
         requestUsage:
-          description: "`requestUsage` is the tokens of the model request that produced this step (Claude)."
+          description:
+            "`requestUsage` is the tokens of the model request that produced this step.
+            Claude reports them when the request stream ends; Codex estimates them from
+            native token-usage updates."
           $ref: "#/components/schemas/ModelRequestUsage"
           x-go-type-skip-optional-pointer: false
         turnUsage:
@@ -362,6 +365,11 @@ components:
       properties:
         requestId:
           type: string
+        model:
+          description:
+            The model that served the request. Claude reports it in `message_start`;
+            Codex reports it in the thread's `turn_context`.
+          type: string
         inputTokens:
           description: Prompt tokens, cache reads and writes included.
           type: integer
@@ -375,3 +383,33 @@ components:
         outputTokens:
           type: integer
           format: int64
+        firstTokenMs:
+          description:
+            Milliseconds from the Worker receiving the request's `message_start` to
+            receiving its first `content_block_delta` of any kind (text, thinking or tool
+            input). This excludes request setup before `message_start`.
+          type: integer
+          format: int64
+        generationMs:
+          description:
+            Milliseconds from the Worker receiving the first `content_block_delta` to
+            receiving `message_stop`; it excludes time to first token. Clients compute
+            output tokens per second from `outputTokens` and this duration.
+          type: integer
+          format: int64
+        requestMs:
+          description:
+            Milliseconds from the request's start to its completion report. Claude starts
+            with the turn, then with each tool result, and ends at `message_stop`. Codex
+            starts with the turn, then at the previous tool completion or token-usage
+            update, and ends at the next token-usage update. It includes time to first
+            token and stream delivery, so unlike `generationMs` it is not a strict decode
+            interval.
+          type: integer
+          format: int64
+        timingEstimated:
+          description:
+            Whether request timing was reconstructed rather than observed from model
+            stream frames. Codex estimates `requestMs` from the native token usage
+            notification; it has no first-token or generation timing.
+          type: boolean

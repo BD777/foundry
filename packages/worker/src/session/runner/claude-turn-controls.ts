@@ -35,6 +35,7 @@ import {
 import {
   claudeRuntimeHasLiveWork,
   closeActiveClaudeRuntime,
+  reportClaudeTurnUsage,
 } from "./active-runtimes.js";
 import {
   claudeTurnOperationBounds,
@@ -198,6 +199,7 @@ async function cancelClaudeTurn(
     );
   }
   const answered = turn.deliveredResponse !== undefined;
+  await reportClaudeTurnUsage(turn, "canceled");
   closeActiveClaudeRuntime(runtime, new AgentSessionCanceledError());
   return { answered };
 }
@@ -237,7 +239,7 @@ export function openClaudeTurn(
     waitForBackgroundTasks: waitsForBackgroundWork(run.session),
     ...(run.session.input?.id ? { commandId: run.session.input.id } : {}),
     behindContinuation: Boolean(runtime.continuation),
-    requestUsage: new ClaudeRequestUsageTracker(),
+    requestUsage: new ClaudeRequestUsageTracker({ startedAt: run.startedAt }),
     reject: settle.reject,
     reportNativeSessionId: run.reportNativeSessionId,
     resolve: settle.resolve,

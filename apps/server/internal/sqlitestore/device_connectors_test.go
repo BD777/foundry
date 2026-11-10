@@ -13,6 +13,7 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	state := store.DeviceConnectorState{DeviceID: "dev_a", Kind: "corpcli", Status: store.DeviceConnectorReady, Installed: true,
 		Version: "0.170.0", InstallSource: "device", SignedIn: true, Identity: "someone", Sites: []string{"cn"},
 		ExpiresAt: "2026-11-13T16:39:56Z", CheckedAt: "2026-10-15T00:00:00Z",
+		Configuration:  &store.ConnectorConfiguration{Region: "us-east-1"},
 		Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}}
 	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
 		t.Fatal(err)
@@ -31,6 +32,9 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	}
 	if len(states[0].Authorizations) != 1 || states[0].Authorizations[0].Status != "ready" || states[0].Authorizations[0].ID != "feishu_web_session" {
 		t.Fatalf("authorization metadata was lost: %+v", states[0])
+	}
+	if states[0].Configuration == nil || states[0].Configuration.Region != "us-east-1" {
+		t.Fatalf("configuration metadata was lost: %+v", states[0])
 	}
 	// What the worker checked of a session's environment is kept and replaced.
 	holds := false
@@ -75,22 +79,27 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	}
 }
 
-// A database made before session checks gets the column when the server starts.
-func TestDeviceConnectorStatesGainTheSessionCheckColumn(t *testing.T) {
+// A database made before session checks and configuration gets both columns
+// when the server starts.
+func TestDeviceConnectorStatesGainTheSessionCheckColumns(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	if _, err := db.conn().ExecContext(ctx, `ALTER TABLE device_connector_states DROP COLUMN session_check`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.conn().ExecContext(ctx, `ALTER TABLE device_connector_states DROP COLUMN configuration`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.setupDeviceConnectors(ctx); err != nil {
 		t.Fatal(err)
 	}
 	state := store.DeviceConnectorState{DeviceID: "dev_a", Kind: "corpcli", Status: store.DeviceConnectorReady, SignedIn: true, CheckedAt: "2026-10-15T00:00:00Z",
-		SessionCheck: &store.DeviceConnectorSessionCheck{Usable: true, CheckedAt: "2026-10-15T00:00:00Z"}}
+		Configuration: &store.ConnectorConfiguration{Region: "eu-west-1"},
+		SessionCheck:  &store.DeviceConnectorSessionCheck{Usable: true, CheckedAt: "2026-10-15T00:00:00Z"}}
 	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
 		t.Fatal(err)
 	}
-	if states, err := db.ListDeviceConnectorStates(ctx, []string{"dev_a"}); err != nil || len(states) != 1 || states[0].SessionCheck == nil || !states[0].SessionCheck.Usable {
+	if states, err := db.ListDeviceConnectorStates(ctx, []string{"dev_a"}); err != nil || len(states) != 1 || states[0].SessionCheck == nil || !states[0].SessionCheck.Usable || states[0].Configuration == nil || states[0].Configuration.Region != "eu-west-1" {
 		t.Fatalf("states = %+v, %v", states, err)
 	}
 }

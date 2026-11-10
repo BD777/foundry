@@ -22,6 +22,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { errorText, relativeWhen } from "./account-format";
 import { useConnectorInstalls } from "./connector-installs";
 import { DeviceConnectorRow } from "./device-connector-row";
+import { DeviceConnectorConfiguration } from "./device-connector-configuration";
 import {
   ExtensionInstallDialog,
   type ExtensionInstallTarget,
@@ -454,7 +455,24 @@ export function DeviceHeldConnector({
                   )
                 }
                 state={stateOf(device, kind)}
-              />
+              >
+                {kind === "aws" && stateOf(device, kind)?.installed ? (
+                  <DeviceConnectorConfiguration
+                    deviceId={device.deviceId}
+                    disabled={busy === device.deviceId}
+                    kind={kind}
+                    onSaved={() =>
+                      onNotice(
+                        t("deviceHeld.configuration.regionSaved", {
+                          device: device.name,
+                        }),
+                      )
+                    }
+                    onState={(next) => showState(device.deviceId, next)}
+                    state={stateOf(device, kind)!}
+                  />
+                ) : null}
+              </DeviceConnectorRow>
             ))}
           </DividedList>
         </SectionPanel>

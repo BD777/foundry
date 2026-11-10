@@ -58,7 +58,7 @@ export function DeviceSignInDialog({
     <Dialog
       description={
         target
-          ? t(
+          ? `${t(
               target.authorization
                 ? "authorization.dialogDescription"
                 : "deviceSignIn.description",
@@ -66,7 +66,7 @@ export function DeviceSignInDialog({
                 name: target.label,
                 device: target.deviceName,
               },
-            )
+            )}${target.kind === "aws" ? ` ${t("deviceSignIn.awsPermissions")}` : ""}`
           : ""
       }
       layout="compact"

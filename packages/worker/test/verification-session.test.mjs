@@ -15,6 +15,7 @@ import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 // A verifier checks another session's work: it reads and runs commands that
 // only read, in a sandbox that keeps the workspace read-only, with tools
@@ -43,6 +44,9 @@ const { verificationDirectory, verificationExecution } =
   await import("../dist/session/verification-session.js");
 const { runWorkspaceSession } = await import("../dist/session/index.js");
 const { sandboxAvailable } = await import("../dist/sandbox/index.js");
+const { foundryStatePath } = await import("../dist/platform/state-root.js");
+const { activateRuntime } =
+  await import("../dist/harness/agent-runtime/state.js");
 test.after(() => closeAllActiveRuntimes());
 
 const ambient = {
@@ -165,6 +169,53 @@ test("a verifier's Codex leaves its commands to the verifier's sandbox", async (
     /turns per message/,
   );
 });
+
+test(
+  "a sandboxed verifier starts when agent-update bookkeeping is unavailable",
+  { skip: !sandboxAvailable("writable_tree") },
+  async (t) => {
+    const session = verifier("claude");
+    const path = workspace();
+    const tools = join(root, "verifier-runtime-tools");
+    const previousTools = process.env.FOUNDRY_TOOLS_ROOT;
+    process.env.FOUNDRY_TOOLS_ROOT = tools;
+    activateRuntime("claude", {
+      executable: cli,
+      version: "0.0.0-test",
+      sdkEntry: fileURLToPath(
+        new URL("./fixtures/fake-native-sdk.mjs", import.meta.url),
+      ),
+      generation: "verifier-agent-updates-test",
+    });
+    t.after(() => {
+      if (previousTools === undefined) delete process.env.FOUNDRY_TOOLS_ROOT;
+      else process.env.FOUNDRY_TOOLS_ROOT = previousTools;
+    });
+    const execution = verificationExecution(session, path, ambient);
+    const updatePath = foundryStatePath("agent-updates", "claude.json");
+    rmSync(updatePath, { recursive: true, force: true });
+    mkdirSync(updatePath, { recursive: true });
+    t.after(() => rmSync(updatePath, { recursive: true, force: true }));
+
+    execution.sandbox.env.FOUNDRY_TOOLS_ROOT = tools;
+    const result = await runWorkspaceSession({
+      cwd: execution.cwd,
+      session,
+      profile: {
+        id: "claude_verifier_sandbox",
+        runtime: "claude",
+        label: "Claude",
+        connectionType: "env",
+        env: { ANTHROPIC_API_KEY: "test-only" },
+      },
+      emit: async () => {},
+      emitSetup: async () => {},
+      reportNativeSessionId: () => {},
+      sandbox: execution.sandbox,
+    });
+    assert.equal(result.response, "answer");
+  },
+);
 
 test("a verifier runs in the workspace read-only, with a scratch directory emptied each turn", () => {
   const path = workspace();

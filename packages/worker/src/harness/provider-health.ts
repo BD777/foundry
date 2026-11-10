@@ -1,5 +1,9 @@
 import { claudeAccount, codexAccount } from "./native/native-account.js";
-import { nativeCli, outdatedNote } from "./native/native-cli.js";
+import {
+  nativeCli,
+  nativeCliWithUpdate,
+  outdatedNote,
+} from "./native/native-cli.js";
 import { officialSkills } from "./official-skills.js";
 import type { ProviderHealth, WorkerRuntimeId } from "@bd777/foundry-protocol";
 
@@ -13,7 +17,7 @@ let claudeLocalHealthCache:
 /** Local readiness of each native runtime: can it run, and is it signed in. */
 export function providerHealthData(): ProviderHealth[] {
   return (["claude", "codex"] as const).map((provider) => {
-    const cli = nativeCli(provider);
+    const cli = nativeCliWithUpdate(provider);
     const health = providerHealthFor(provider, cli.installed);
     const note = outdatedNote(provider, cli);
     const official = officialSkills(provider);

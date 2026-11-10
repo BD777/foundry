@@ -35,6 +35,18 @@ func publicRoute() accessRule { return accessRule{kind: "public", check: allow} 
 // signedIn routes serve the caller's own account (profile, pairing tokens).
 func signedIn() accessRule { return accessRule{kind: "signed-in", check: allow} }
 
+// accountOnly routes report person-level data and never accept a device or
+// session credential.
+func accountOnly() accessRule {
+	return accessRule{kind: "account", check: func(_ *Server, w http.ResponseWriter, r *http.Request) bool {
+		if actor := actorFromContext(r.Context()); actor.Kind != ActorAccount || actor.AccountID() == "" {
+			writeForbidden(w, "A signed-in account is required.")
+			return false
+		}
+		return true
+	}}
+}
+
 // personOnly routes act for the signed-in person on their own assistant: a
 // device credential or a session token never reaches them, so neither can
 // accept a proposal or change a setting (docs/personal-agent.md §4).
@@ -305,6 +317,7 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/invites/{id}", s.handleRevokeInvite, adminOnly()),
 
 		agent(fn("GET /api/foundry-data", s.handleFoundryData, filtered())),
+		fn("GET /api/usage-stats", s.handleGetUsageStats, accountOnly()),
 		fn("GET /api/workspaces", s.handleListWorkspaces, filtered()),
 		// The target device comes from the body.
 		fn("POST /api/workspaces", s.handleCreateWorkspace, inHandler()),
@@ -426,6 +439,15 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
 		// And who owns the device it checks on (in handler).
 		fn("POST /api/profiles/{id}/check", s.handleCheckProfile, connectionOwner("id")),
+		// Model learning and the default execution model (model_notes.go).
+		fn("GET /api/model-notes", s.handleListModelNotes, accountOnly()),
+		fn("POST /api/model-notes", s.handleAppendModelNote, accountOnly()),
+		fn("PUT /api/model-notes/{id}", s.handleUpdateModelNote, accountOnly()),
+		fn("DELETE /api/model-notes/{id}", s.handleDeleteModelNote, accountOnly()),
+		fn("GET /api/execution-default", s.handleGetExecutionDefault, accountOnly()),
+		fn("PUT /api/execution-default", s.handleSetExecutionDefault, accountOnly()),
+		fn("GET /api/workspaces/{id}/execution-default", s.handleGetWorkspaceExecutionDefault, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/execution-default", s.handleSetWorkspaceExecutionDefault, workspaceRole(member, pathWorkspace("id"))),
 
 		// External accounts (external_accounts.go): a person's own logins at
 		// third-party platforms; a workspace's bindings.
@@ -474,10 +496,22 @@ func (s *Server) routeTable() []route {
 		fn("PATCH /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("PUT /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("DELETE /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
+		// App Store Connect keeps one team key on the server; only its owner
+		// validates, replaces or revokes it. Sessions get per-tool stand-ins.
+		fn("GET /api/connectors/appstoreconnect/keys", s.handleListAppStoreConnectKeys, personOnly()),
+		fn("POST /api/connectors/appstoreconnect/keys", s.handleCreateAppStoreConnectKey, personOnly()),
+		fn("PUT /api/connectors/appstoreconnect/keys/{appId}", s.handleReplaceAppStoreConnectKey, personOnly()),
+		fn("DELETE /api/connectors/appstoreconnect/keys/{appId}", s.handleRevokeAppStoreConnectKey, personOnly()),
+		fn("GET /api/connectors/appstoreconnect/accounts/{accountId}/apps", s.handleListAppStoreConnectApps, externalAccountOwner("accountId")),
+		fn("POST /api/connectors/appstoreconnect/session-handle", s.handleAppStoreConnectSessionHandle, daemonProtocol()),
+		fn("GET /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
+		fn("POST /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
+		fn("PATCH /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
 		fn("GET /api/connectors", s.handleConnectorCatalog, signedIn()),
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
+		fn("PUT /api/devices/{deviceId}/connectors/{kind}/configuration", s.handleConfigureDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/extensions", s.handleInstallDeviceExtension, deviceOwner("deviceId")),
 		fn("DELETE /api/devices/{deviceId}/extensions/{extensionId}", s.handleRemoveDeviceExtension, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),

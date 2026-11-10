@@ -155,6 +155,73 @@ func (s *Store) ListAgentSessionChildren(ctx context.Context, workspaceID, paren
 		ORDER BY created_at ASC, id ASC LIMIT 200`, workspaceID, parentID)
 }
 
+// OutstandingChildTurns reads direct children by the parent_session_id
+// index, with the two ways a child's current turn can belong to its parent:
+// the input's sentBySessionId, or an inbox message the parent sent that was
+// merged into that current input as the turn.
+func (s *Store) OutstandingChildTurns(ctx context.Context, parentIDs []string) (map[string][]store.OutstandingChildTurn, error) {
+	parents := uniqueNonEmptyStrings(parentIDs)
+	result := make(map[string][]store.OutstandingChildTurn)
+	const parentsPerQuery = 400
+	for start := 0; start < len(parents); start += parentsPerQuery {
+		end := min(start+parentsPerQuery, len(parents))
+		batch := parents[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, len(batch))
+		for index, parentID := range batch {
+			args[index] = parentID
+		}
+		rows, err := s.reader().QueryContext(ctx, `SELECT agent_sessions.parent_session_id,
+				agent_sessions.id,
+				agent_sessions.status,
+				CASE WHEN COALESCE(json_extract(agent_sessions.payload_json, '$.input.sentBySessionId'), '') = agent_sessions.parent_session_id
+					OR EXISTS (
+						SELECT 1 FROM session_inbox inbox
+						WHERE inbox.session_id = agent_sessions.id
+							AND inbox.sender_session_id = agent_sessions.parent_session_id
+							AND inbox.delivered_as = 'turn'
+							AND inbox.delivered_input_id = COALESCE(json_extract(agent_sessions.payload_json, '$.input.id'), '')
+					) THEN 1 ELSE 0 END
+			FROM agent_sessions
+			WHERE agent_sessions.parent_session_id IN (`+placeholders+`)
+				AND `+visibleAgentSessionSQL, args...)
+		if err != nil {
+			return nil, fmt.Errorf("read outstanding child turns: %w", err)
+		}
+		for rows.Next() {
+			var parentID string
+			var turn store.OutstandingChildTurn
+			var startedByParent int
+			if err := rows.Scan(&parentID, &turn.SessionID, &turn.Status, &startedByParent); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan outstanding child turn: %w", err)
+			}
+			turn.ParentSessionID = parentID
+			turn.StartedByParent = startedByParent != 0
+			result[parentID] = append(result[parentID], turn)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, fmt.Errorf("close outstanding child turns: %w", err)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("read outstanding child turns: %w", err)
+		}
+	}
+	return result, nil
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 // autoGroupBaseName derives a deterministic, LLM-free group name from the
 // parent title: drop leading symbols, trim by runes, fall back to the default
 // group name for placeholders.

@@ -8,6 +8,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
+import { errorMessage } from "../../platform/utils.js";
 
 type Runtime = "claude" | "codex";
 
@@ -105,7 +106,15 @@ function nativeRuntimeUpdate(
   runtime: Runtime,
   installed: boolean,
 ): NativeCli["update"] {
-  const update = runtimeUpdateState(runtime);
+  let update: ReturnType<typeof runtimeUpdateState>;
+  try {
+    update = runtimeUpdateState(runtime);
+  } catch (error) {
+    console.error(
+      `Reading ${runtime} runtime-update bookkeeping failed; continuing without it: ${errorMessage(error)}`,
+    );
+    return undefined;
+  }
   if (!update) return undefined;
   if (
     !installed &&
@@ -117,17 +126,26 @@ function nativeRuntimeUpdate(
   return { state, checkedAt, target, sdkTarget, current, detail, nextCheckAt };
 }
 
-/** The device's program for a runtime, with its version against the minimum. */
+/**
+ * The device's program for a runtime, with its version against the minimum.
+ * This only inspects the program. Runtime-update bookkeeping belongs to the
+ * daemon and is added by nativeCliWithUpdate().
+ */
 export function nativeCli(runtime: Runtime): NativeCli {
   const cached = cache.get(runtime);
-  if (cached && cached.until > Date.now())
-    return {
-      ...cached.value,
-      update: nativeRuntimeUpdate(runtime, cached.value.installed),
-    };
+  if (cached && cached.until > Date.now()) return cached.value;
   const value = detectNativeCli(runtime);
   cache.set(runtime, { until: Date.now() + 60_000, value });
   return value;
+}
+
+/** Daemon-facing program status, including the Worker's own update bookkeeping. */
+export function nativeCliWithUpdate(runtime: Runtime): NativeCli {
+  const cli = nativeCli(runtime);
+  return {
+    ...cli,
+    update: nativeRuntimeUpdate(runtime, cli.installed),
+  };
 }
 
 function detectNativeCli(runtime: Runtime): NativeCli {
@@ -139,7 +157,6 @@ function detectNativeCli(runtime: Runtime): NativeCli {
     return {
       installed: false,
       installCommand,
-      update: nativeRuntimeUpdate(runtime, false),
     };
   const version = parseCliVersion(found.versionOutput);
   const minimumVersion = minimumCliVersion(runtime);
@@ -148,7 +165,6 @@ function detectNativeCli(runtime: Runtime): NativeCli {
     version,
     path: commandPath(found.command),
     generation: `${runtimeDescriptor(runtime)?.generation ?? commandPath(found.command)}:${version}:${nativeAccountFingerprint(runtime)}`,
-    update: nativeRuntimeUpdate(runtime, true),
     minimumVersion,
     outdated: Boolean(
       version && minimumVersion && isOlderVersion(version, minimumVersion),

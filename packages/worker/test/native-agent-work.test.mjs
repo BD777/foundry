@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CodexNativeWork } from "../dist/native-work/codex.js";
+import { claudeBackgroundWork } from "../dist/native-work/claude.js";
 
 function fixture(version = "0.163.0") {
   const rows = new Map([
@@ -24,7 +25,8 @@ function fixture(version = "0.163.0") {
     ],
   ]);
   const calls = [],
-    snapshots = [];
+    snapshots = [],
+    batches = [];
   let failed = false;
   const client = {
     async request(method, params) {
@@ -43,13 +45,17 @@ function fixture(version = "0.163.0") {
     client,
     "native-owner",
     version,
-    (task) => snapshots.push(task),
+    (tasks) => {
+      batches.push(tasks);
+      snapshots.push(...tasks);
+    },
   );
   return {
     observer,
     rows,
     calls,
     snapshots,
+    batches,
     fail() {
       failed = true;
     },
@@ -59,6 +65,8 @@ function fixture(version = "0.163.0") {
 test("Codex stops exactly the freshly enumerated terminal and verifies removal", async () => {
   const f = fixture();
   await f.observer.refresh();
+  assert.equal(f.batches.length, 1);
+  assert.equal(f.batches[0].length, 2);
   assert.equal(f.observer.canStop("native-owner:terminal:command-a:11"), true);
   await f.observer.stop("native-owner:terminal:command-a:11");
   assert.equal(f.rows.has("11"), false);
@@ -154,15 +162,54 @@ test("list absence proves no running terminal but never fabricates a successful 
   await f.observer.refresh();
   f.rows.delete("11");
   await f.observer.refresh();
+  assert.equal(f.batches.length, 2);
+  assert.equal(f.batches[1].length, 1);
   const last = f.snapshots.filter((t) => t.id.endsWith(":11")).at(-1);
   assert.equal(last.observation.status, "unknown");
   assert.ok(last.observation.endedAt);
+  await f.observer.refresh();
+  assert.equal(
+    f.batches.length,
+    2,
+    "an already reported missing terminal is not published again",
+  );
   f.observer.closedAfterExit();
   assert.equal(
     f.observer.inspect("native-owner:terminal:command-b:22"),
     "stopped",
   );
   assert.equal(f.observer.canStop("native-owner:terminal:command-b:22"), false);
+});
+
+test("an ended nested Claude subagent is terminal at its transcript end in another time zone", () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "America/Toronto";
+  try {
+    const endedAt = "2026-11-08T13:21:24.561404443Z";
+    const task = claudeBackgroundWork(
+      {
+        id: "nested",
+        provider: "claude",
+        kind: "subagent",
+        description: "nested task",
+        status: "ended",
+        startedAt: "2026-11-08T13:19:25.986986694Z",
+        endedAt,
+        hasOutput: true,
+      },
+      {
+        sessionId: "native",
+        version: "2.1.311",
+        canStop: () => false,
+      },
+    );
+    assert.equal(task.observation.status, "stopped");
+    assert.equal(task.observation.at, endedAt);
+    assert.ok(Date.parse(task.observation.at) <= Date.now());
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
 });
 
 test("a recycled process id cannot redirect an old task stop to a new command", async () => {

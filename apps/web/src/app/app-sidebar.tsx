@@ -50,6 +50,8 @@ export function AppSidebar({
   const account = useAccountSession();
   const { t } = useTranslation("shell");
   const { review, running, activeSkills, pending } = counts;
+  const pageTitle =
+    activeView === "workspace" ? t("nav.overview") : t(`views.${activeView}`);
   const sections = useMemo<Array<SidebarNavSection<SidebarView>>>(
     () =>
       withAccountNav(
@@ -102,6 +104,7 @@ export function AppSidebar({
       onNavSelect={onNavSelect}
       onThemeToggle={preferences.toggleThemeMode}
       onToggleCollapsed={preferences.toggleSidebarCollapsed}
+      pageTitle={pageTitle}
       status={status}
       theme={preferences.themeMode}
     />

@@ -171,6 +171,9 @@ type AgentSession struct {
 	// ParentSessionID `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 
+	// WaitingChildCount `waitingChildCount` is how many direct sub-sessions this session is waiting on: active turns whose current input it started, or ended children that are themselves waiting on such descendants up to four levels deep. Absent or 0 when none.
+	WaitingChildCount int `json:"waitingChildCount,omitempty"`
+
 	// QuestionsTo `questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: "person", who holds this chat (a prompt waits in the turn for a while); "parent", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.
 	QuestionsTo string `json:"questionsTo,omitempty"`
 
@@ -281,7 +284,7 @@ type AgentSessionEventMetadata struct {
 	// SubagentUsage `subagentUsage` is what a Claude subagent has used so far, on its progress and completion events.
 	SubagentUsage *SubagentUsage `json:"subagentUsage,omitempty"`
 
-	// RequestUsage `requestUsage` is a model request's final tokens (Claude), reported when its stream ends; the event itself is not shown.
+	// RequestUsage `requestUsage` is a model request's tokens, reported when Claude's stream ends or from Codex's native token-usage update; the event itself is not shown.
 	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
 
 	// ContextUsage `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts.
@@ -400,7 +403,22 @@ type AgentSubagentTranscriptMessage struct {
 // AgentTurnUsage What one turn cost, as the agent's SDK reported it. Token counts share one meaning across providers: `inputTokens` is every prompt token the model read, and cache reads/writes are parts of it, not additions to it.
 type AgentTurnUsage struct {
 	// DurationMs Wall time from the runtime taking the turn to its final result.
-	DurationMs       int64 `json:"durationMs"`
+	DurationMs int64 `json:"durationMs"`
+
+	// Outcome How the turn ended. Completed turns set it too, so statistics can include failed and canceled turns without inferring their outcome from a separate event.
+	Outcome string `json:"outcome,omitempty"`
+
+	// Model The model that served the turn; when several did, the last one.
+	Model string `json:"model,omitempty"`
+
+	// ModelMs Model work in the turn, from Claude's `duration_api_ms`; tool and other wall time are excluded. Codex values are estimates and set `timingEstimated`.
+	ModelMs int64 `json:"modelMs,omitempty"`
+
+	// TtftMs Time to the first model output token in the turn. Claude values prefer `ttft_stream_ms`, the first streamed content frame when partial messages are enabled, and fall back to `ttft_ms`, the first complete assistant message; Codex values are estimates and set `timingEstimated`.
+	TtftMs int64 `json:"ttftMs,omitempty"`
+
+	// TimingEstimated Whether `modelMs` and `ttftMs` were reconstructed from wall and tool-item timing rather than reported by the provider. Codex sets this to true; Claude reports the values directly.
+	TimingEstimated  bool  `json:"timingEstimated,omitempty"`
 	InputTokens      int64 `json:"inputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`

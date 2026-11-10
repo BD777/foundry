@@ -82,6 +82,8 @@ type mcpSessionItem struct {
 	ActivityAt      string `json:"activityAt,omitempty"`
 }
 
+const defaultMCPSessionListLimit = 20
+
 func (s *Server) deviceLabels(ctx context.Context) map[string]string {
 	labels := map[string]string{}
 	if devices, err := s.store.ListDevices(ctx); err == nil {
@@ -112,7 +114,7 @@ func (s *Server) listSessionsForMCP(call mcpCall) (string, error) {
 		Archived:    mcpArgString(args, "archived"),
 		WorkspaceID: call.workspace,
 		Cursor:      mcpArgString(args, "cursor"),
-		Limit:       mcpArgNumber(args, "limit", 0),
+		Limit:       mcpArgNumber(args, "limit", defaultMCPSessionListLimit),
 	}
 	if query.Archived != "" && query.Archived != "exclude" && query.Archived != "include" && query.Archived != "only" {
 		return "", invalid("archived must be exclude, only or include")

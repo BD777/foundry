@@ -25,6 +25,7 @@ import {
   InlineCode,
   markdownBlocks,
   markdownLinkClass,
+  MarkdownSourceContext,
   useMarkdownTranslations,
 } from "./markdown-blocks";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
@@ -97,11 +98,13 @@ function splitMarkdownImageTags(text: string): MarkdownSegment[] {
 
 function MarkdownImage({
   alignEnd,
+  fallback,
   image,
   onPreview,
 }: {
   /** A person's own message keeps its images at the end. */
   alignEnd?: boolean;
+  fallback?: "status" | "alt";
   image: ParsedImageTag;
   onPreview?: (image: ParsedImageTag) => void;
 }) {
@@ -115,6 +118,7 @@ function MarkdownImage({
     >
       <LocalImage
         alt={image.alt}
+        fallback={fallback}
         key={image.path}
         path={image.path}
         onPreview={onPreview ? () => onPreview(image) : undefined}
@@ -437,6 +441,12 @@ const markdownRemarkPlugins = [
 // answers stay standard Markdown, where a single newline is a soft break.
 const typedTextRemarkPlugins = [...markdownRemarkPlugins, remarkBreaks];
 
+// Foundry's table component owns expansion, so Streamdown's built-in
+// fullscreen action is disabled. Copy/download retain Streamdown's defaults.
+const markdownControls: NonNullable<StreamdownProps["controls"]> = {
+  table: { fullscreen: false },
+};
+
 const fencedCache = new WeakMap<Components, Record<string, Components>>();
 
 /** The components with the code block that fits the diagram plugin's state. */
@@ -458,11 +468,15 @@ function withFencedBlocks(
 function MarkdownText({
   children,
   components = markdownComponents,
+  controls = markdownControls,
+  tableMaxHeight,
   streaming,
   typedText,
 }: {
   children: string;
   components?: Components;
+  controls?: StreamdownProps["controls"];
+  tableMaxHeight?: StreamdownProps["tableMaxHeight"];
   streaming: boolean;
   typedText: boolean;
 }) {
@@ -473,26 +487,32 @@ function MarkdownText({
   // whenever the transcript scrolls it back in, and references defined in a
   // later paragraph resolve.
   return (
-    <Streamdown
-      animated={streamingTextAnimation}
-      className={markdownFlowClassName}
-      components={withFencedBlocks(components, !streaming)}
-      isAnimating={streaming}
-      // Streamdown retains the last successful SVG. A changed settled source
-      // or theme needs a fresh renderer, including valid -> invalid edits.
-      key={streaming ? "streaming" : `${mermaid.config?.theme}:${children}`}
-      mode={streaming ? "streaming" : "static"}
-      mermaid={mermaid}
-      parseIncompleteMarkdown={streaming}
-      // Incomplete diagram syntax stays readable as code until the turn ends.
-      plugins={streaming ? undefined : markdownPlugins}
-      rehypePlugins={markdownRehypePlugins}
-      remarkPlugins={typedText ? typedTextRemarkPlugins : markdownRemarkPlugins}
-      translations={translations}
-      skipHtml
-    >
-      {children}
-    </Streamdown>
+    <MarkdownSourceContext.Provider value={children}>
+      <Streamdown
+        animated={streamingTextAnimation}
+        className={markdownFlowClassName}
+        components={withFencedBlocks(components, !streaming)}
+        controls={controls}
+        isAnimating={streaming}
+        // Streamdown retains the last successful SVG. A changed settled source
+        // or theme needs a fresh renderer, including valid -> invalid edits.
+        key={streaming ? "streaming" : `${mermaid.config?.theme}:${children}`}
+        mode={streaming ? "streaming" : "static"}
+        mermaid={mermaid}
+        parseIncompleteMarkdown={streaming}
+        // Incomplete diagram syntax stays readable as code until the turn ends.
+        plugins={streaming ? undefined : markdownPlugins}
+        rehypePlugins={markdownRehypePlugins}
+        remarkPlugins={
+          typedText ? typedTextRemarkPlugins : markdownRemarkPlugins
+        }
+        tableMaxHeight={tableMaxHeight}
+        translations={translations}
+        skipHtml
+      >
+        {children}
+      </Streamdown>
+    </MarkdownSourceContext.Provider>
   );
 }
 
@@ -509,24 +529,33 @@ function preserveLiteralListMarkers(text: string): string {
 
 export function MarkdownContent({
   children,
+  controls,
   deviceFiles = false,
   fileReferences,
   fileRoot,
+  imageFallback,
   onImagePreview,
   onOpenFileReference,
   streaming = false,
+  tableMaxHeight,
   typedText = false,
 }: {
   children: ReactNode;
+  /** Streamdown's public controls config; omitted keeps Foundry's defaults. */
+  controls?: StreamdownProps["controls"];
   /** Verified paths to link; nothing is linked while the text streams. */
   fileReferences?: ConversationFileReference[];
   /** The workspace folder: a path inside it links only once verified. */
   fileRoot?: string;
   /** The viewer owns the device: its files outside the workspace link too. */
   deviceFiles?: boolean;
+  /** Image loading/error presentation; exports use alt text, never a spinner. */
+  imageFallback?: "status" | "alt";
   onImagePreview?: (image: ParsedImageTag) => void;
   onOpenFileReference?: (reference: ConversationFileReference) => void;
   streaming?: boolean;
+  /** Streamdown's public table-height limit; `0` renders every row. */
+  tableMaxHeight?: StreamdownProps["tableMaxHeight"];
   /** A person's own message: literal list markers and line breaks. */
   typedText?: boolean;
 }) {
@@ -571,6 +600,7 @@ export function MarkdownContent({
         segment.kind === "image" ? (
           <MarkdownImage
             alignEnd={typedText}
+            fallback={imageFallback}
             image={segment.image}
             key={`image-${index}`}
             onPreview={onImagePreview}
@@ -578,8 +608,10 @@ export function MarkdownContent({
         ) : segment.text.trim() ? (
           <MarkdownText
             components={components}
+            controls={controls}
             key={`text-${index}:${linked}`}
             streaming={streaming}
+            tableMaxHeight={tableMaxHeight}
             typedText={typedText}
           >
             {segment.text}

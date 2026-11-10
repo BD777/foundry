@@ -30,6 +30,7 @@ func TestIntegrationStartersHonourTheSwitch(t *testing.T) {
 		"feishu-event-connections": probeFeishuBots,
 		"connectors-keep-alive":    probeConnectorsKeepAlive,
 		"skill-repository-checks":  probeSkillRepositoryChecks,
+		"usage-price-refresh":      probeUsagePriceRefresh,
 	}
 	listed := map[string]bool{}
 	for _, starter := range (&Server{}).integrationStarters() {
@@ -178,6 +179,16 @@ func probeSkillRepositoryChecks(t *testing.T, sw *integrations.Switch) (*Server,
 	server.skillRepos = source
 	server.skillRepositoryFirstCheck = 5 * time.Millisecond
 	return server, func() int { return int(source.reads.Load()) }, nil
+}
+
+func probeUsagePriceRefresh(t *testing.T, sw *integrations.Switch) (*Server, func() int, func(*testing.T)) {
+	trap, reached := egressTrap(t)
+	server := NewServerWithOptions(newTestStore(t), ServerOptions{
+		AllowedOrigin: accountsTestOrigin,
+		Integrations:  sw,
+	})
+	server.usagePriceSource = trap.URL
+	return server, reached, nil
 }
 
 // With integrations off, what a person or a session asks of an integration

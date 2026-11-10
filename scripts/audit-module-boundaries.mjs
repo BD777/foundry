@@ -48,6 +48,10 @@ const baselinePath = resolve(
 export const workerModules = {
   platform: { dependsOn: [], folders: ["platform"] },
   device: { dependsOn: ["platform"], folders: ["device"] },
+  concurrency: {
+    dependsOn: ["platform", "device"],
+    folders: ["concurrency"],
+  },
   sandbox: { dependsOn: ["platform"], folders: ["sandbox"] },
   "candidate-store": { dependsOn: ["platform"], folders: ["candidate-store"] },
   transport: { dependsOn: ["device"], folders: ["transport"] },
@@ -148,6 +152,10 @@ export const serverPackages = {
   // as the package here, so workspacedigest importing the rules is no cycle.
   personalagent: ["store", "sessions", "workspacedigest", "redact", "textcut"],
   sessionwork: ["store"],
+  usagestats: ["store", "jsonempty"],
+  // Session system alerts: failed, canceled or stuck children, told to the
+  // session that started the turn.
+  sessionalerts: ["store", "sessions", "textcut"],
   // The session lifecycle; httpapi implements its ports and never the
   // reverse.
   sessions: ["store", "eventstream", "browserevent"],
@@ -184,9 +192,9 @@ export const serverPackages = {
  */
 export const sealedServerPackages = {
   externalaccounts:
-    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   gateway:
-    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
 };

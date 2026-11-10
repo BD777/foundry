@@ -100,6 +100,41 @@ const realFetch = globalThis.fetch;
 /** The server's answers: a saved provider echoes its input. */
 function serveProfiles({ path, body }) {
   if (path.endsWith("/models")) return Response.json([{ id: "gpt-5.6" }]);
+  if (path === "/api/execution-default")
+    return Response.json({
+      saved: {
+        providerId: "p1",
+        runtime: "codex",
+        model: "gpt-5",
+        effort: "high",
+        scope: "global",
+      },
+      effective: {
+        providerId: "p1",
+        runtime: "codex",
+        model: "gpt-5",
+        effort: "high",
+        scope: "global",
+      },
+    });
+  if (path === "/api/model-notes")
+    return Response.json({
+      total: 1,
+      offset: 0,
+      notes: [
+        {
+          id: "note_1",
+          providerKind: "api",
+          providerId: "p1",
+          runtime: "codex",
+          model: "gpt-5",
+          body: "Give exact files and commands.",
+          authorUserId: "user_1",
+          authorName: "Alice",
+          createdAt: "2026-11-10T10:00:00Z",
+        },
+      ],
+    });
   if (path.startsWith("/api/profiles") && body)
     return Response.json({
       ...profile,
@@ -108,6 +143,63 @@ function serveProfiles({ path, body }) {
     });
   return Response.json(profile);
 }
+
+test("each provider model shows its orchestration notes", async () => {
+  const view = await renderFeature();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  assert.match(
+    view.query("section")?.textContent ?? "",
+    /Default execution model/,
+  );
+  assert.match(view.container.textContent, /Relay · gpt-5 · High/);
+  assert.doesNotMatch(view.container.textContent, /\bp1\b/);
+  const headings = [...view.container.querySelectorAll("h2,h3")];
+  const endpoints = headings.find(
+    (heading) => heading.textContent === "API endpoints",
+  );
+  const notes = headings.find(
+    (heading) => heading.textContent === "Orchestration notes",
+  );
+  assert.ok(endpoints);
+  assert.ok(notes);
+  assert.ok(
+    endpoints.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  const provider = [...view.container.querySelectorAll("summary")].find(
+    (node) => node.textContent.includes("Relay"),
+  );
+  assert.ok(provider);
+  await act(async () => {
+    provider.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  const model = [...provider.parentElement.querySelectorAll("summary")].find(
+    (node) => node.textContent.includes("gpt-5"),
+  );
+  assert.ok(model);
+  await act(async () => {
+    model.click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  assert.match(model.parentElement.textContent, /Alice/);
+  assert.match(
+    model.parentElement.textContent,
+    /Give exact files and commands/,
+  );
+  assert.ok(
+    model.parentElement.querySelector(
+      'button[aria-label="Edit note for gpt-5"]',
+    ),
+  );
+  assert.ok(
+    view.requests.some(
+      (request) =>
+        request.method === "GET" && request.path === "/api/model-notes",
+    ),
+  );
+});
 
 async function renderFeature(overrides = {}, serve = serveProfiles) {
   const container = window.document.createElement("div");
@@ -143,6 +235,9 @@ async function renderFeature(overrides = {}, serve = serveProfiles) {
 
   const query = (selector) => window.document.querySelector(selector);
   const buttonWithText = (text) =>
+    [...window.document.querySelectorAll(".fdy-profile-card")].find(
+      (button) => button.textContent.includes(text),
+    ) ??
     [...window.document.querySelectorAll("button")].find((button) =>
       button.textContent.includes(text),
     );
@@ -185,8 +280,18 @@ async function unmount(root) {
   globalThis.fetch = realFetch;
 }
 
+const operationalRequests = (view) =>
+  view.requests.filter(
+    (request) =>
+      !(
+        request.method === "GET" &&
+        request.path === "/api/execution-default"
+      ),
+  );
 const sent = (view) =>
-  view.requests.map((request) => `${request.method} ${request.path}`);
+  operationalRequests(view).map(
+    (request) => `${request.method} ${request.path}`,
+  );
 
 test("profiles are flat cards and editing uses a modal with write-only credentials", async () => {
   const view = await renderFeature();
@@ -204,7 +309,7 @@ test("profiles are flat cards and editing uses a modal with write-only credentia
   await view.type('input[aria-label="Profile API key"]', "sk-rotated");
   await view.clickButton("Save provider");
   assert.deepEqual(sent(view), ["PUT /api/profiles/p1"]);
-  assert.equal(view.requests[0].body.apiKey, "sk-rotated");
+  assert.equal(operationalRequests(view)[0].body.apiKey, "sk-rotated");
   assert.deepEqual(view.events, [
     { type: "profiles.changed" },
     { type: "notice.requested", message: "Relay saved." },
@@ -220,7 +325,7 @@ test("clearing a sealed credential takes a deliberate second click", async () =>
   await view.clickButton("Relay");
 
   await view.clickButton("Clear credential");
-  assert.deepEqual(view.requests, []);
+  assert.deepEqual(operationalRequests(view), []);
   assert.ok(view.buttonWithText("Clear it for good?"));
 
   await view.clickButton("Clear it for good?");
@@ -234,7 +339,7 @@ test("deleting a profile also needs the second click", async () => {
   await view.clickButton("Relay");
 
   await view.clickButton("Delete");
-  assert.deepEqual(view.requests, []);
+  assert.deepEqual(operationalRequests(view), []);
 
   await view.clickButton("Delete this provider?");
   assert.deepEqual(sent(view), ["DELETE /api/profiles/p1"]);
@@ -419,6 +524,56 @@ test("each model's context window shows where it comes from and saves the person
   assert.deepEqual(saved.body.contextWindows, {
     "gpt-5.5": 400_000,
     "ark/60b-0614c": 150_000,
+  });
+
+  await unmount(view.root);
+});
+
+test("each model can set custom input, cache and output prices", async () => {
+  const relay = { ...profile, models: ["gpt-5"] };
+  const view = await renderFeature({ profiles: [relay] });
+  await view.clickButton("Relay");
+  const section = [...window.document.querySelectorAll("details")].find(
+    (details) =>
+      details.querySelector("summary").textContent === "Custom model prices",
+  );
+  assert.ok(section, "missing the custom model prices section");
+  await act(async () => {
+    section.open = true;
+    section.dispatchEvent(new window.Event("toggle"));
+  });
+
+  await view.type(
+    '[aria-label="Input price for gpt-5 per one million tokens"]',
+    "2.5",
+  );
+  assert.match(section.textContent, /Enter all four prices/);
+  assert.equal(view.buttonWithText("Save provider").disabled, true);
+
+  await view.type(
+    '[aria-label="Cache-read price for gpt-5 per one million tokens"]',
+    "0.25",
+  );
+  await view.type(
+    '[aria-label="Cache-write price for gpt-5 per one million tokens"]',
+    "3.125",
+  );
+  await view.type(
+    '[aria-label="Output price for gpt-5 per one million tokens"]',
+    "10",
+  );
+  assert.doesNotMatch(section.textContent, /Enter all four prices/);
+  assert.equal(view.buttonWithText("Save provider").disabled, false);
+
+  await view.clickButton("Save provider");
+  const saved = view.requests.find((request) => request.method === "PUT");
+  assert.deepEqual(saved.body.modelPrices, {
+    "gpt-5": {
+      inputPerMillion: 2.5,
+      cacheReadPerMillion: 0.25,
+      cacheWritePerMillion: 3.125,
+      outputPerMillion: 10,
+    },
   });
 
   await unmount(view.root);

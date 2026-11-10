@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ import { ControlOutcomeUnknownError } from "../dist/session/session-control.js";
 import { writeAgentSessionCompletionMarker } from "../dist/session/session-helpers.js";
 import { SessionExecutionRegistry } from "../dist/session/session-state.js";
 import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
+import { writeFileAtomicAsync } from "../dist/platform/storage.js";
 
 const pause = (ms = 0) => new Promise((done) => setTimeout(done, ms));
 
@@ -220,7 +222,7 @@ test("an Issue's sessions wait for each other and say why; a once worker asks fo
   );
 });
 
-function host(t, root) {
+function host(t, root, options = {}) {
   const received = [];
   const { runs, run } = controlledRuns();
   let changes = 0;
@@ -231,6 +233,7 @@ function host(t, root) {
     changed: () => changes++,
     failed: (error) => assert.fail(error),
     run,
+    ...options,
   });
   const socket = {
     readyState: 1,
@@ -248,14 +251,15 @@ test("the host's claims outlive it: a repeated dispatch never reruns, an interru
   const finished = { session: session("sess_finished") };
   const interrupted = { session: session("sess_interrupted") };
   const request = (payload) => ({ workspacePath: "/work", payload });
-  assert.deepEqual(first.executions.run(request(finished)), {
+  assert.deepEqual(await first.executions.run(request(finished)), {
     status: "active",
   });
-  first.executions.run(request(interrupted));
+  await first.executions.run(request(interrupted));
   await pause();
   assert.equal(first.changes(), 2, "each accepted input is announced");
   first.runs[0].resolve();
   await pause();
+  await first.executions.flush();
   assert.deepEqual(
     first.executions.active().map((claim) => claim.sessionId),
     ["sess_interrupted"],
@@ -273,22 +277,176 @@ test("the host's claims outlive it: a repeated dispatch never reruns, an interru
 
   // The host process is replaced while sess_interrupted runs.
   const second = host(t, root);
-  second.executions.reportInterrupted();
+  await second.executions.reportInterrupted();
   const report = second.received.find(
     (envelope) =>
       envelope.type === "session_completed" &&
       envelope.payload.sessionId === "sess_interrupted",
   );
   assert.equal(report.payload.error, executionHostStoppedError);
-  assert.deepEqual(second.executions.run(request(finished)), {
+  assert.deepEqual(await second.executions.run(request(finished)), {
     status: "completed",
   });
-  assert.deepEqual(second.executions.run(request(interrupted)), {
+  assert.deepEqual(await second.executions.run(request(interrupted)), {
     status: "completed",
   });
   await pause();
   assert.equal(second.runs.length, 0, "neither input runs a second time");
   assert.deepEqual(second.executions.active(), []);
+});
+
+test("claims migrate to active plus the recent completion window in one compact write", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "host-claims-migration-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const now = Date.now();
+  const recent = new Date(now - 60 * 60 * 1000).toISOString();
+  const stale = new Date(now - 25 * 60 * 60 * 1000).toISOString();
+  const active = `sess_${now}_active`;
+  const recentDone = `sess_${now}_recent`;
+  const staleDone = `sess_${now}_stale`;
+  const legacyDone = `sess_${now - 48 * 60 * 60 * 1000}_legacy`;
+  writeFileSync(
+    join(root, "claims.json"),
+    `${JSON.stringify(
+      {
+        [`${active}/input_active`]: {
+          sessionId: active,
+          inputId: "input_active",
+          status: "active",
+        },
+        [`${recentDone}/input_recent`]: {
+          sessionId: recentDone,
+          inputId: "input_recent",
+          status: "completed",
+          completedAt: recent,
+        },
+        [`${staleDone}/input_stale`]: {
+          sessionId: staleDone,
+          inputId: "input_stale",
+          status: "completed",
+          completedAt: stale,
+        },
+        [`${legacyDone}/input_legacy`]: {
+          sessionId: legacyDone,
+          inputId: "input_legacy",
+          status: "completed",
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  let writes = 0;
+  const first = host(t, root, {
+    claimWriteDelayMs: 1_000,
+    writeClaims: async (path, contents, options) => {
+      writes++;
+      await writeFileAtomicAsync(path, contents, options);
+    },
+  });
+
+  await first.executions.flush();
+
+  const raw = readFileSync(join(root, "claims.json"), "utf8");
+  const migrated = JSON.parse(raw);
+  assert.equal(writes, 1, "the startup cleanup is coalesced into one write");
+  assert.equal(raw.trim().split("\n").length, 1, "claims are stored compactly");
+  assert.deepEqual(
+    Object.values(migrated)
+      .map((claim) => claim.sessionId)
+      .sort(),
+    [active, recentDone].sort(),
+  );
+  assert.deepEqual(first.executions.active(), [
+    { sessionId: active, inputId: "input_active" },
+  ]);
+});
+
+test("rapid accepted claims share one durable write", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "host-claims-batch-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let writes = 0;
+  const first = host(t, root, {
+    claimWriteDelayMs: 20,
+    writeClaims: async (path, contents, options) => {
+      writes++;
+      await writeFileAtomicAsync(path, contents, options);
+    },
+  });
+  const request = (id) => ({
+    workspacePath: "/work",
+    payload: { session: session(id) },
+  });
+
+  await Promise.all([
+    first.executions.run(request("sess_batch_a")),
+    first.executions.run(request("sess_batch_b")),
+  ]);
+
+  assert.equal(writes, 1);
+  assert.deepEqual(
+    first.executions
+      .active()
+      .map((claim) => claim.sessionId)
+      .sort(),
+    ["sess_batch_a", "sess_batch_b"],
+  );
+});
+
+test("a coalesced claims write preserves a claim added by another host", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "host-claims-merge-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const first = host(t, root, { claimWriteDelayMs: 20 });
+  const local = "sess_merge_local";
+  const remote = "sess_merge_remote";
+
+  const writing = first.executions.run({
+    workspacePath: "/work",
+    payload: { session: session(local) },
+  });
+  writeFileSync(
+    join(root, "claims.json"),
+    JSON.stringify({
+      [`${remote}/input_remote`]: {
+        sessionId: remote,
+        inputId: "input_remote",
+        status: "active",
+      },
+    }),
+  );
+  await writing;
+
+  assert.deepEqual(
+    Object.values(JSON.parse(readFileSync(join(root, "claims.json"), "utf8")))
+      .map((claim) => claim.sessionId)
+      .sort(),
+    [local, remote],
+  );
+});
+
+test("a pending coalesced claim write flushes on process exit", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "host-claims-exit-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, "claims.json");
+  const storageURL = new URL("../dist/platform/storage.js", import.meta.url)
+    .href;
+  const script = `
+    import { CoalescedJSONWriter } from ${JSON.stringify(storageURL)};
+    const state = {};
+    const writer = new CoalescedJSONWriter(${JSON.stringify(path)}, () => state, { delayMs: 60_000 });
+    state.claim = { status: "active" };
+    writer.change();
+    process.exit(0);
+  `;
+  const child = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", script],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+    claim: { status: "active" },
+  });
 });
 
 test("the host applies a steer at most once and reports an ended input stopped", async (t) => {
@@ -321,7 +479,7 @@ test("the host applies a steer at most once and reports an ended input stopped",
   );
   await assert.rejects(executions.steer({ ...steer(), inputId: undefined }));
 
-  executions.run({
+  await executions.run({
     workspacePath: "/work",
     payload: { session: session("sess_ended") },
   });

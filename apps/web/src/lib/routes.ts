@@ -1,5 +1,5 @@
 import {
-  assistantSettingsSectionFrom,
+  assistantSettingsSectionValue,
   type AssistantSettingsSection,
 } from "./assistant-settings-sections";
 import {
@@ -26,6 +26,7 @@ export type NavView =
   | "settings"
   | "profiles"
   | "connectors"
+  | "usage"
   | "workspaceConnectors"
   | "library"
   | "workspace"
@@ -73,13 +74,15 @@ export function parseAppRoute(pathname: string): AppRoute {
     // the shell turns back to the workspace when the person chose so.
     case undefined:
       return { view: "assistant" };
-    case "assistant":
+    case "assistant": {
+      const assistantSection = assistantSettingsSectionValue(segments[2]);
       return id === "settings"
         ? {
             view: "assistantSettings",
-            assistantSection: assistantSettingsSectionFrom(segments[2]),
+            ...(assistantSection ? { assistantSection } : {}),
           }
         : { view: "assistant" };
+    }
     case "locations":
       // /locations/<device> brings that device's workspaces into view.
       return id
@@ -126,6 +129,8 @@ export function parseAppRoute(pathname: string): AppRoute {
       return { view: "profiles", providerTab: providerTabFrom(undefined) };
     case "connectors":
       return { view: "connectors", connectorTab: connectorTypeFrom(id) };
+    case "usage":
+      return { view: "usage" };
     case "resources":
       return { view: "resources" };
     // The page was "External accounts"; its accounts are the Feishu tab now.
@@ -170,7 +175,9 @@ export function pathForAppRoute(route: AppRoute): string {
     case "assistant":
       return "/assistant";
     case "assistantSettings":
-      return `/assistant/settings/${route.assistantSection ?? assistantSettingsSectionFrom(undefined)}`;
+      return route.assistantSection
+        ? `/assistant/settings/${route.assistantSection}`
+        : "/assistant/settings";
     case "locations":
       return route.selectedDeviceId
         ? `/locations/${encodePathSegment(route.selectedDeviceId)}`
@@ -203,6 +210,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return `/model-providers/${route.providerTab ?? providerTabFrom(undefined)}`;
     case "connectors":
       return `/connectors/${route.connectorTab ?? defaultConnectorType}`;
+    case "usage":
+      return "/usage";
     case "resources":
       return "/resources";
     case "workspaceConnectors":
@@ -241,6 +250,7 @@ const appSections = new Set([
   "profiles",
   "connections",
   "connectors",
+  "usage",
   "resources",
   "external-accounts",
   "runs",

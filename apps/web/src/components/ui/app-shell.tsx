@@ -1,4 +1,5 @@
 import {
+  Menu,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,13 +9,17 @@ import {
 import {
   Fragment,
   useEffect,
+  useId,
   useRef,
+  useState,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
+import { Dialog } from "./dialog";
+import { navHeadingClass, navItemClass } from "./nav-list";
 import { ScrollArea } from "./scroll-area";
 import { StatusIndicator, type StatusItem } from "./status-indicator";
 import { ToastProvider, type ToastPlacement } from "./toast";
@@ -148,6 +153,8 @@ export interface SidebarNavSection<T extends string> {
 
 export interface FoundrySidebarProps<T extends string> {
   activeItemId?: T;
+  /** The current page, shown beside the menu button on narrow screens. */
+  pageTitle: string;
   brandName?: string;
   collapsed?: boolean;
   /** A control beside the theme button, such as the interface language. */
@@ -166,6 +173,7 @@ export interface FoundrySidebarProps<T extends string> {
 
 export function FoundrySidebar<T extends string>({
   activeItemId,
+  pageTitle,
   brandName = "Foundry",
   collapsed = false,
   languageControl,
@@ -176,26 +184,77 @@ export function FoundrySidebar<T extends string>({
   status,
   theme = "light",
 }: FoundrySidebarProps<T>) {
+  const { t } = useTranslation("shell");
+  const [narrowMenuOpen, setNarrowMenuOpen] = useState(false);
+  const narrowMenuId = useId();
+  const selectNavItem = (id: T) => {
+    setNarrowMenuOpen(false);
+    onNavSelect(id);
+  };
+  const navigation = (select: (id: T) => void) => (
+    <SidebarNav
+      activeItemId={activeItemId}
+      onSelect={select}
+      sections={navSections}
+    />
+  );
+
   return (
-    <aside
-      className="fdy-sidebar group/sidebar flex min-h-0 w-[262px] flex-none flex-col bg-canvas transition-[width] duration-150 ease-out-strong min-[861px]:data-[collapsed=true]:w-16 max-[860px]:min-h-auto max-[860px]:w-full"
-      data-collapsed={collapsed ? "true" : "false"}
-    >
-      <SidebarBrand
-        collapsed={collapsed}
-        name={brandName}
-        languageControl={languageControl}
-        onThemeToggle={onThemeToggle}
-        onToggleCollapsed={onToggleCollapsed}
-        status={status}
-        theme={theme}
-      />
-      <SidebarNav
-        activeItemId={activeItemId}
-        onSelect={onNavSelect}
-        sections={navSections}
-      />
-    </aside>
+    <>
+      <aside
+        className="fdy-sidebar group/sidebar flex min-h-0 w-[262px] flex-none flex-col bg-canvas transition-[width] duration-150 ease-out-strong min-[861px]:data-[collapsed=true]:w-16 max-[860px]:hidden"
+        data-collapsed={collapsed ? "true" : "false"}
+      >
+        <SidebarBrand
+          collapsed={collapsed}
+          name={brandName}
+          languageControl={languageControl}
+          onThemeToggle={onThemeToggle}
+          onToggleCollapsed={onToggleCollapsed}
+          status={status}
+          theme={theme}
+        />
+        {navigation(onNavSelect)}
+      </aside>
+
+      <header className="fdy-mobile-bar sticky top-0 z-20 flex h-14 min-w-0 flex-none items-center gap-2 border-b border-line-strong bg-canvas px-3 min-[861px]:hidden">
+        <Button
+          aria-controls={narrowMenuId}
+          aria-expanded={narrowMenuOpen}
+          aria-haspopup="dialog"
+          aria-label={t("sidebar.menu")}
+          className="h-9 flex-none gap-1.5 rounded-md px-2.5 text-sm active:scale-100"
+          onClick={() => setNarrowMenuOpen(true)}
+          title={t("sidebar.menu")}
+          variant="ghost"
+        >
+          <Menu size={18} />
+          <span>{t("sidebar.menu")}</span>
+        </Button>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-md leading-[1.3] font-semibold text-ink">
+            {pageTitle}
+          </span>
+        </div>
+        <SidebarInterfaceControls
+          className="ml-0 flex-none rounded-none bg-transparent p-0 [--fdy-select-icon-size:32px]"
+          languageControl={languageControl}
+          onThemeToggle={onThemeToggle}
+          theme={theme}
+        />
+      </header>
+
+      <Dialog
+        bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
+        contentId={narrowMenuId}
+        onClose={() => setNarrowMenuOpen(false)}
+        open={narrowMenuOpen}
+        side="left"
+        title={brandName}
+      >
+        {navigation(selectNavItem)}
+      </Dialog>
+    </>
   );
 }
 
@@ -221,13 +280,6 @@ export function SidebarBrand({
   status = [],
   theme = "light",
 }: SidebarBrandProps) {
-  const { t } = useTranslation("shell");
-  const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
-  const ThemeIcon = theme === "dark" ? Sun : Moon;
-  const themeLabel =
-    theme === "dark" ? t("sidebar.lightMode") : t("sidebar.darkMode");
-  const collapseLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
-
   return (
     <div
       className={cn(
@@ -255,30 +307,66 @@ export function SidebarBrand({
           </strong>
         </span>
       )}
-      <span
-        className={cn(
-          "fdy-sidebar-brand-actions ml-auto inline-flex items-center gap-0.5 rail:ml-0 rail:flex-col rail:gap-0 rail:rounded-xl rail:bg-surface rail:p-1 rail:[--fdy-select-icon-size:32px]",
-        )}
-        role="group"
-        aria-label={t("sidebar.interfaceControls")}
+      <SidebarInterfaceControls
+        className="fdy-sidebar-brand-actions ml-auto rail:ml-0 rail:flex-col rail:gap-0 rail:rounded-xl rail:bg-surface rail:p-1 rail:[--fdy-select-icon-size:32px]"
+        collapsed={collapsed}
+        languageControl={languageControl}
+        onThemeToggle={onThemeToggle}
+        onToggleCollapsed={onToggleCollapsed}
+        theme={theme}
+      />
+    </div>
+  );
+}
+
+interface SidebarInterfaceControlsProps {
+  className?: string;
+  collapsed?: boolean;
+  languageControl?: ReactNode;
+  onThemeToggle?: () => void;
+  onToggleCollapsed?: () => void;
+  theme: FoundryThemeMode;
+}
+
+function SidebarInterfaceControls({
+  className,
+  collapsed = false,
+  languageControl,
+  onThemeToggle,
+  onToggleCollapsed,
+  theme,
+}: SidebarInterfaceControlsProps) {
+  const { t } = useTranslation("shell");
+  const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+  const ThemeIcon = theme === "dark" ? Sun : Moon;
+  const themeLabel =
+    theme === "dark" ? t("sidebar.lightMode") : t("sidebar.darkMode");
+  const collapseLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
+
+  return (
+    <span
+      className={cn("inline-flex items-center gap-0.5", className)}
+      role="group"
+      aria-label={t("sidebar.interfaceControls")}
+    >
+      {languageControl}
+      <Button
+        aria-label={themeLabel}
+        aria-pressed={theme === "dark"}
+        className={cn(brandButtonClass, "rail:size-8 max-[860px]:size-8")}
+        onClick={onThemeToggle}
+        size="icon"
+        title={themeLabel}
+        variant="ghost"
       >
-        {languageControl}
-        <Button
-          aria-label={themeLabel}
-          aria-pressed={theme === "dark"}
-          className={cn(brandButtonClass, "rail:size-8")}
-          onClick={onThemeToggle}
-          size="icon"
-          title={themeLabel}
-          variant="ghost"
-        >
-          <ThemeIcon size={15} />
-        </Button>
+        <ThemeIcon size={15} />
+      </Button>
+      {onToggleCollapsed ? (
         <Button
           aria-label={collapseLabel}
           className={cn(
             brandButtonClass,
-            "fdy-sidebar-collapse-button rail:size-8 max-[860px]:hidden",
+            "fdy-sidebar-collapse-button rail:size-8",
           )}
           onClick={onToggleCollapsed}
           size="icon"
@@ -287,8 +375,8 @@ export function SidebarBrand({
         >
           <CollapseIcon size={15} />
         </Button>
-      </span>
-    </div>
+      ) : null}
+    </span>
   );
 }
 
@@ -322,12 +410,12 @@ export function SidebarNav<T extends string>({
 
   return (
     <ScrollArea
-      className="fdy-sidebar-nav-scroll min-h-0 w-full flex-1 max-[860px]:flex-none max-[860px]:border-b max-[860px]:border-line-strong"
-      direction="both"
-      viewportClassName="overscroll-contain max-[860px]:scroll-px-3"
+      className="fdy-sidebar-nav-scroll min-h-0 w-full flex-1"
+      direction="vertical"
+      viewportClassName="overscroll-contain"
     >
       <nav
-        className="fdy-sidebar-nav block min-w-0 px-3 pt-0.5 pb-3 rail:px-0 max-[860px]:flex max-[860px]:w-max max-[860px]:min-w-full max-[860px]:gap-5 max-[860px]:px-3 max-[860px]:py-2"
+        className="fdy-sidebar-nav block min-w-0 px-3 pt-0.5 pb-3 rail:px-0"
         onKeyDown={(event) => {
           if (
             event.defaultPrevented ||
@@ -373,21 +461,26 @@ export function SidebarNav<T extends string>({
           <Fragment key={section.id}>
             {section.dividerBefore ? (
               <div
-                className="fdy-sidebar-scope-divider mt-3.5 border-t border-line-strong rail:mx-3 rail:my-4 max-[860px]:m-0 max-[860px]:flex-none max-[860px]:self-stretch max-[860px]:border-t-0 max-[860px]:border-l max-[860px]:border-line-strong"
+                className="fdy-sidebar-scope-divider mt-3.5 border-t border-line-strong rail:mx-3 rail:my-4"
                 aria-hidden="true"
               />
             ) : null}
             <section
-              className="fdy-sidebar-nav-section group/section rail:[section+&]:mt-[18px] max-[860px]:flex-none"
+              className="fdy-sidebar-nav-section group/section rail:[section+&]:mt-[18px]"
               data-section-id={section.id}
               aria-label={section.label}
             >
-              <span className="fdy-sidebar-nav-heading flex items-center gap-2 px-3 pt-4 pb-2 text-2xs leading-[1.4] font-semibold text-ink-faint uppercase group-first/section:pt-2 rail:hidden max-[860px]:sticky max-[860px]:left-3 max-[860px]:w-max max-[860px]:px-2.5 max-[860px]:pt-0 max-[860px]:pb-[5px] max-[860px]:group-first/section:pt-0">
+              <span
+                className={cn(
+                  navHeadingClass,
+                  "fdy-sidebar-nav-heading group-first/section:pt-2 rail:hidden",
+                )}
+              >
                 {section.label}
               </span>
-              <div className="fdy-sidebar-nav-items max-[860px]:flex max-[860px]:items-center max-[860px]:gap-1">
+              <div className="fdy-sidebar-nav-items">
                 {section.header ? (
-                  <div className="fdy-sidebar-section-header mb-1 min-w-0 max-[860px]:m-0 max-[860px]:w-[168px]">
+                  <div className="fdy-sidebar-section-header mb-1 min-w-0">
                     {section.header}
                   </div>
                 ) : null}
@@ -417,11 +510,9 @@ export function SidebarNav<T extends string>({
 }
 
 const navLinkClass = cn(
-  "fdy-sidebar-nav-link mb-0.5 min-h-[35px] w-full min-w-0 justify-start gap-2.5 rounded-md px-3 py-[9px] text-md leading-[1.25] text-ink-muted",
-  "flex h-auto border-0",
-  "data-[state=active]:bg-selected data-[state=active]:text-ink data-[state=active]:shadow-selected data-[state=active]:hover:bg-selected",
+  navItemClass,
+  "fdy-sidebar-nav-link",
   "rail:mx-auto rail:mb-1 rail:min-h-10 rail:w-10 rail:justify-center rail:gap-0 rail:rounded-lg rail:p-0 rail:data-[state=idle]:hover:bg-control-ghost-hover",
-  "max-[860px]:mb-0 max-[860px]:min-h-9 max-[860px]:w-auto max-[860px]:flex-none max-[860px]:gap-[7px] max-[860px]:px-2.5 max-[860px]:py-2 max-[860px]:whitespace-nowrap",
 );
 
 interface SidebarNavButtonProps<T extends string> {
@@ -464,7 +555,7 @@ function SidebarNavButton<T extends string>({
         </span>
         <span
           className={cn(
-            "fdy-sidebar-nav-label min-w-0 flex-1 truncate text-left leading-[1.25] rail:hidden max-[860px]:flex-none",
+            "fdy-sidebar-nav-label min-w-0 flex-1 truncate text-left leading-[1.25] rail:hidden",
             active && "font-semibold",
           )}
         >

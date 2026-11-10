@@ -23,7 +23,10 @@ import { noteSessionInput } from "../session/session-control.js";
 import { readAgentSessionCompletionMarker } from "../session/session-helpers.js";
 import { isVerificationSession } from "../session/session-roles.js";
 import { slotWaitNotice } from "../session/slot-wait.js";
-import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
+import {
+  sessionAdmissionClass,
+  type ConcurrentTaskScheduler,
+} from "../platform/task-scheduler.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationDirectory } from "../session/verification-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
@@ -56,6 +59,8 @@ export interface ExecutionCoreOptions {
   failed: (error: unknown) => void;
   /** Runs one input; tests replace it. */
   run?: RunInput;
+  /** Persists the accepted claim before the native input starts. */
+  beforeRun?: () => Promise<void>;
 }
 
 /**
@@ -207,6 +212,7 @@ export class ExecutionCore {
       scheduler.schedule(
         sessionSchedulingKey(session),
         async () => {
+          await this.options.beforeRun?.();
           slotWait.started(scheduler.load());
           console.log(
             payload.issue && session.role === "issue_execution"
@@ -227,6 +233,12 @@ export class ExecutionCore {
           }
         },
         slotWait.onWait,
+        {
+          admissionClass: sessionAdmissionClass(session),
+          runtime: session.provider,
+          sessionId: session.id,
+          workspaceId: session.workspaceId,
+        },
       ),
       this.options.failed,
     );

@@ -17,6 +17,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
+import { devNull } from "node:os";
 import {
   appendFile,
   copyFile,
@@ -560,6 +561,8 @@ class ComputeSession implements ProviderSession {
     const dir = await inside(folder.base, args.dir ?? "repo", "dir");
     const env: NodeJS.ProcessEnv = {
       ...this.context.env(),
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_NOSYSTEM: "1",
       GIT_TERMINAL_PROMPT: "0",
     };
     const git = findOnPath("git", env, this.context.platform);

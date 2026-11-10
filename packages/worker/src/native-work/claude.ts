@@ -14,6 +14,9 @@ export function claudeBackgroundWork(
   context: ClaudeWorkContext,
 ): NativeWorkTask {
   const kind = task.kind === "subagent" ? "agent" : "process";
+  // Claude's "ended" means the task disappeared without a notification.
+  // Its end is still known, so it belongs in history rather than live work.
+  const status = task.status === "ended" ? "stopped" : task.status;
   return {
     id: task.id,
     kind,
@@ -29,8 +32,8 @@ export function claudeBackgroundWork(
         : "unavailable",
     ),
     observation: {
-      status: task.status === "ended" ? "unknown" : task.status,
-      at: new Date().toISOString(),
+      status,
+      at: task.endedAt ?? new Date().toISOString(),
       startedAt: task.startedAt,
       endedAt: task.endedAt,
       exitCode: task.exitCode,

@@ -136,6 +136,7 @@ async function runCodexTurn(
     });
     const state: CodexTurnState = {
       inputId: session.input?.id,
+      startedAt,
       emit,
       reportNativeSessionId,
       files,
@@ -201,7 +202,7 @@ async function finishCodexTurn(
   writeFileSync(resultPath, `${response}\n`);
   const fileReferences = await state.files.finish(state.finalResult);
   await state.emit(sessionEventLabels.codexTurnEnd, resultPath, undefined, {
-    ...turnUsageMetadata(state.usage, startedAt),
+    ...turnUsageMetadata(state.usage, startedAt, "completed"),
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   });
   return { nativeSessionId: state.nativeSessionId, response };

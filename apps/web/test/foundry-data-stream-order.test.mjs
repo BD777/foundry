@@ -243,6 +243,17 @@ test("issues and devices changed by live events keep their streamed state", () =
 
 test("a device status event with the whole device replaces it; the viewer's own fields stay", () => {
   const runtimeSettings = { defaultProfileId: "p1" };
+  const runtimeState = {
+    capturedAt: "2026-10-09T00:00:00Z",
+    mode: "adaptive",
+    limit: 3,
+    running: 1,
+    queued: 1,
+    hardHold: false,
+    reasons: [],
+    signals: {},
+    estimates: [],
+  };
   const sharesSystemAccountWith = [
     { deviceId: "dev-2", deviceLabel: "Mac", ownerName: "Ann" },
   ];
@@ -255,6 +266,7 @@ test("a device status event with the whole device replaces it; the viewer's own 
         lastSeenLabel: "online",
         owned: true,
         runtimeSettings,
+        runtimeState,
         sharesSystemAccountWith,
         worker: { version: "1.0.0" },
         workerUpdate: { startedAt: "2026-10-09T00:00:00Z" },
@@ -282,7 +294,13 @@ test("a device status event with the whole device replaces it; the viewer's own 
   ]);
   assert.deepEqual(
     next.devices[0],
-    { ...whole, owned: true, runtimeSettings, sharesSystemAccountWith },
+    {
+      ...whole,
+      owned: true,
+      runtimeSettings,
+      runtimeState,
+      sharesSystemAccountWith,
+    },
     "a finished update and other fields the event leaves out are gone",
   );
   assert.equal(

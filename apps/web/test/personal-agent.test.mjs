@@ -312,6 +312,17 @@ globalThis.fetch = async (input, init = {}) => {
       return json({ ...assistantSession, status: "running" });
     case "POST /api/agent-sessions":
       return json({ ...assistantSession, id: "sess_new" }, 201);
+    case "GET /api/profiles":
+      return json([]);
+    case "GET /api/execution-default":
+      return json({
+        effective: {
+          providerId: "",
+          runtime: "claude",
+          model: "",
+          scope: "none",
+        },
+      });
     case "PUT /api/personal-agent/settings":
       return json({ ...agent, settings: body });
     case "POST /api/personal-agent/timezone":
@@ -845,6 +856,69 @@ test("settings: loosening the rules takes a second confirmation", async () => {
   await page.unmount();
 });
 
+test("settings navigation groups sections and marks the current page", async () => {
+  overview = { agent, homeDeviceOnline: true };
+  const page = await render(AssistantSettings, {
+    section: "rules",
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  const nav = page.container.querySelector(
+    '[data-assistant-settings-nav="desktop"]',
+  );
+  assert.ok(nav);
+  assert.equal(nav.getAttribute("aria-label"), "Settings sections");
+  assert.deepEqual(
+    [...nav.querySelectorAll("h2")].map((node) => node.textContent),
+    ["Assistant", "Work", "Reach & limits"],
+  );
+  const current = nav.querySelector('[aria-current="page"]');
+  assert.equal(current?.textContent.trim(), "When to ask me");
+  assert.equal(current?.getAttribute("href"), "/assistant/settings/rules");
+  assert.equal(
+    page.container
+      .querySelector("a[href='/assistant/settings']")
+      ?.textContent.trim(),
+    "All settings",
+  );
+  await page.unmount();
+});
+
+test("settings navigation shows a linked grouped index when no section is open", async () => {
+  overview = { agent, homeDeviceOnline: true };
+  const page = await render(AssistantSettings, {
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  const index = page.container.querySelector(
+    '[data-assistant-settings-nav="index"]',
+  );
+  assert.ok(index);
+  assert.equal(index.querySelector("[aria-current]"), null);
+  assert.equal(
+    index
+      .querySelector("a[href='/assistant/settings/rules']")
+      ?.textContent.includes("When to ask me"),
+    true,
+  );
+  assert.match(index.textContent, /What it knows about you/);
+  assert.match(index.textContent, /Which model handles each kind of work/);
+  assert.match(index.textContent, /How much it can run and spend/);
+  assert.equal(
+    page.container
+      .querySelector(
+        '[data-assistant-settings-nav="desktop"] [aria-current="page"]',
+      )
+      ?.getAttribute("href"),
+    "/assistant/settings/status",
+  );
+  await page.unmount();
+});
+
 test("settings: the simple interface is saved with the settings and reaches the shell", async () => {
   overview = { agent, homeDeviceOnline: true };
   calls = [];
@@ -1273,6 +1347,7 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
       ),
     ].find((b) => b.textContent.trim() === name);
   const text = page.container.textContent;
+  assert.doesNotMatch(text, /Default execution model/);
   // Every flow, with when it runs.
   for (const title of [
     "Conversation and planning",
@@ -1356,6 +1431,7 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     ),
     "true",
   );
+
   await act(async () =>
     radio("Project summaries", "Same as the assistant").click(),
   );
@@ -1364,6 +1440,62 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     profileId: "device_default",
   });
   assert.equal(draft.runDefault.model, "smart-model");
+
+  // A model catalog read stays inside its select: the busy trigger shows the
+  // wait without adding a helper row that changes the three-column layout.
+  const finishModels = [];
+  const regularFetch = globalThis.fetch;
+  agentProfiles.push(profile("slow_models", "home", "codex"));
+  globalThis.fetch = (input, init = {}) => {
+    const url = new URL(String(input), "https://foundry.example");
+    if (
+      (init.method ?? "GET").toUpperCase() === "POST" &&
+      url.pathname === "/api/agent-profiles/models"
+    )
+      return new Promise((resolve) => {
+        finishModels.push(() =>
+          resolve(
+            new Response(JSON.stringify([{ id: "slow-model" }]), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          ),
+        );
+      });
+    return regularFetch(input, init);
+  };
+  draft = {
+    ...draft,
+    runDefault: {
+      profileId: "slow_models",
+      runtime: "codex",
+      model: "slow-model",
+      effort: "low",
+    },
+  };
+  await rerender();
+  const loadingModel = select("Conversation and planning Model");
+  assert.equal(loadingModel.getAttribute("aria-busy"), "true");
+  assert.equal(loadingModel.disabled, true);
+  assert.ok(loadingModel.querySelector("svg.fdy-spinner"));
+  assert.equal(
+    select("Conversation and planning Model provider").disabled,
+    false,
+  );
+  assert.equal(
+    select("Conversation and planning Reasoning effort").disabled,
+    false,
+  );
+  await act(async () => {
+    finishModels.forEach((finish) => finish());
+    await settle();
+  });
+  globalThis.fetch = regularFetch;
+  assert.equal(select("Conversation and planning Model").disabled, false);
+  assert.equal(
+    select("Conversation and planning Model").hasAttribute("aria-busy"),
+    false,
+  );
   await page.unmount();
 });
 

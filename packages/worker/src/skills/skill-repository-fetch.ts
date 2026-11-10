@@ -32,6 +32,7 @@ import type {
   ReadRepositoryRefsPayload,
 } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "../platform/state-root.js";
+import { workerProxyEnvironment } from "../platform/server-link/server-proxy.js";
 import {
   findCommand,
   npmRegistryArgs,
@@ -167,12 +168,19 @@ function git(
   args: string[],
   cwd?: string,
   config: string[] = [],
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   return runCommand(
     "git",
     [...config.flatMap((entry) => ["-c", entry]), ...args],
-    { cwd },
+    { cwd, env },
   );
+}
+
+function remoteEnvironment(remote: string): NodeJS.ProcessEnv {
+  return remote.startsWith("https://")
+    ? workerProxyEnvironment(remote)
+    : process.env;
 }
 
 function npmCommand(): string {
@@ -208,7 +216,7 @@ export async function readRepositoryRefs(
           "--json",
           ...registryArgs(pkg, request.registry),
         ],
-        { cwd: work, env: toolEnvironment() },
+        { cwd: work, env: toolEnvironment(request.registry) },
       );
       const parsed = JSON.parse(out) as {
         "dist-tags"?: Record<string, string>;
@@ -232,13 +240,18 @@ export async function readRepositoryRefs(
     if (!refPattern.test(pattern) || pattern.includes(".."))
       throw new Error(`invalid ref ${pattern}`);
   return {
-    refs: await git([
-      "ls-remote",
-      ...(request.tags ? ["--tags"] : []),
-      "--",
-      request.remote,
-      ...patterns,
-    ]),
+    refs: await git(
+      [
+        "ls-remote",
+        ...(request.tags ? ["--tags"] : []),
+        "--",
+        request.remote,
+        ...patterns,
+      ],
+      undefined,
+      [],
+      remoteEnvironment(request.remote),
+    ),
   };
 }
 
@@ -288,6 +301,7 @@ async function checkoutRef(
       ],
       dir,
       config,
+      remoteEnvironment(remote),
     );
   if (!ref) await fetch("HEAD");
   else {
@@ -414,7 +428,7 @@ export async function fetchSkillRepository(
           work,
           ...registryArgs(pkg, request.registry),
         ],
-        { cwd: work, env: toolEnvironment() },
+        { cwd: work, env: toolEnvironment(request.registry) },
       );
       const packed = (JSON.parse(out) as { version?: string }[])[0];
       const file = readdirSync(work).find((name) => name.endsWith(".tgz"));
@@ -480,6 +494,7 @@ export async function remoteCommit(
     ["ls-remote", "--", remote, ...patterns],
     undefined,
     config,
+    remoteEnvironment(remote),
   );
   const lines = out
     .split("\n")
