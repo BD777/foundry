@@ -54,8 +54,30 @@ else
     die "FOUNDRY_SESSION_TOKEN is not set, as in every Claude Code or Codex session's commands: lease the device's compute with acquire_resource (forCommands: true) and pass the lease, FOUNDRY_LEASE_TOKEN=<commandToken> $0 <leaseId> …"
 fi
 
-# json <expression>: evaluates a JavaScript expression over the JSON on stdin (as v).
-json() { node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{const v=JSON.parse(s);const r=eval(process.argv[1]);process.stdout.write(r===undefined||r===null?"":typeof r==="string"?r:JSON.stringify(r))})' "$1"; }
+# json <expression>: evaluates a JavaScript expression over the first JSON value on
+# stdin (as v), ignoring notices the CLI prints after it.
+json() { node -e '
+  let s="";
+  process.stdin.on("data",c=>s+=c).on("end",()=>{
+    const start=s.search(/[\[{]/);
+    let depth=0, quoted=false, escaped=false, end=-1;
+    for(let i=start;i>=0&&i<s.length;i++){
+      const ch=s[i];
+      if(quoted){
+        if(escaped) escaped=false;
+        else if(ch==="\\") escaped=true;
+        else if(ch==="\"") quoted=false;
+        continue;
+      }
+      if(ch==="\"") quoted=true;
+      else if(ch==="{"||ch==="[") depth++;
+      else if((ch==="}"||ch==="]")&&--depth===0){end=i+1;break}
+    }
+    if(start<0||end<0) throw new Error("no JSON value in CLI output");
+    const v=JSON.parse(s.slice(start,end));
+    const r=eval(process.argv[1]);
+    process.stdout.write(r===undefined||r===null?"":typeof r==="string"?r:JSON.stringify(r))
+  })' "$1"; }
 
 # operate <args JSON file> <op>: one compute operation; prints its result's text.
 operate() {
@@ -163,7 +185,11 @@ else
   base="$(git merge-base HEAD origin/main)" || die "HEAD shares no commit with origin/main"
 fi
 git diff --binary "$base" >"$work/changes.diff"
-git ls-files --others --exclude-standard -z >"$work/untracked.list"
+# Worktrees share dependencies through untracked node_modules symlinks; they are not source.
+git ls-files --others --exclude-standard -z |
+  while IFS= read -r -d '' path; do
+    case "$path" in node_modules | */node_modules) ;; *) printf '%s\0' "$path" ;; esac
+  done >"$work/untracked.list"
 tar -czf "$work/untracked.tar.gz" --null -T "$work/untracked.list"
 log "base $base; diff $(wc -c <"$work/changes.diff" | tr -d ' ') bytes, $(tr -cd '\0' <"$work/untracked.list" | wc -c | tr -d ' ') untracked files"
 
@@ -199,16 +225,16 @@ if [ "$(cat .git/remote-check-deps 2>/dev/null)" != "$want" ]; then
 fi && pnpm --filter @bd777/foundry-protocol build'
 job deps 1800 "$deps" || die "installing dependencies failed (output above)"
 
-# bash 4 or newer: macOS' own is 3.2.
+# Prefer Homebrew bash, but use the device's own bash (3.2 on macOS) as the fallback.
 quoted=""
 [ ${#check_args[@]} -eq 0 ] || quoted="$(printf '%q ' "${check_args[@]}")"
-check_line="cd repo && for b in /opt/homebrew/bin/bash /usr/local/bin/bash bash; do
-  if command -v \"\$b\" >/dev/null 2>&1 && [ \"\$(\"\$b\" -c 'echo \${BASH_VERSINFO[0]}')\" -ge 4 ]; then
+check_line="cd repo && for b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+  if [ -x \"\$b\" ]; then
     \"\$b\" scripts/check-changed.sh $quoted; exit \$?
   fi
-done; echo 'no bash 4 or newer on this device (brew install bash)'; exit 2"
+done; bash scripts/check-changed.sh $quoted"
 set +e
-job check 1800 "$check_line"
+job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$check_line"
 status=$?
 set -e
 exit $status
