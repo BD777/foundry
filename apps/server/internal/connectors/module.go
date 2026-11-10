@@ -15,6 +15,7 @@ import (
 // in the secret store; of the second, only on the device.
 type Store interface {
 	CloudflareStore
+	store.AppStoreConnectStore
 	store.DeviceConnectorStore
 	externalaccounts.ConnectorAccessStore
 }
@@ -28,6 +29,8 @@ type Module struct {
 	// ServerHeld runs the server-held connectors' accounts and apps. Only
 	// the connector HTTP files and the Feishu gateway and channel use it.
 	ServerHeld *externalaccounts.Service
+	// AppStoreConnect is the server-held App Store Connect gateway.
+	AppStoreConnect *AppStoreConnectGateway
 	// Devices keeps what devices read of their device-held connectors and
 	// which workspaces may use them.
 	Devices *DeviceHeld
@@ -42,7 +45,11 @@ func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switc
 	serverHeld := externalaccounts.NewService(st, secrets, nil)
 	serverHeld.Integrations = sw
 	catalog := DefaultCatalog()
-	return &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog), Cloudflare: NewCloudflareGateway(st, serverHeld), ToolChecks: gateway.NewChecks()}
+	return &Module{
+		catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog),
+		Cloudflare: NewCloudflareGateway(st, serverHeld), AppStoreConnect: NewAppStoreConnectGateway(st, serverHeld),
+		ToolChecks: gateway.NewChecks(),
+	}
 }
 
 // Catalog lists every connector.

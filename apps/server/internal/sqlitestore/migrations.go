@@ -29,6 +29,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupDeviceCredentials,
 		s.setupOwnership,
 		s.setupExternalAccounts,
+		s.setupAppStoreConnect,
 		s.setupFeishuGateway,
 		// Before the prune, which walks their workspace-owned rows.
 		s.setupDeviceConnectors,

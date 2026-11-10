@@ -64,6 +64,7 @@ type Backend interface {
 	store.ResourceStore
 	store.ResourceLeaseStore
 	store.LeaseCommandTokenStore
+	store.AppStoreConnectStore
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
 	store.PersonalAgentStore
@@ -279,6 +280,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations, server.hub)
 	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
 	server.connectors.Cloudflare.UseNativeWork(server.hub)
+	server.connectors.AppStoreConnect.UseNativeWork(server.hub)
 	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}

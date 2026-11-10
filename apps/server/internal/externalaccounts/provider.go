@@ -196,6 +196,13 @@ type SecretChecker interface {
 	CheckAppSecret(ctx context.Context, app AppCredentials) error
 }
 
+// KeyProvider validates a non-OAuth team API key before Foundry seals it.
+// Implementations make one provider-authenticated read and never retain the
+// supplied private key outside the secret store.
+type KeyProvider interface {
+	CheckKey(ctx context.Context, issuerID, keyID, privateKey string) error
+}
+
 // AppRegistration is step one of creating an app for the person: the page
 // they open to confirm it, and how to poll for the result.
 type AppRegistration struct {

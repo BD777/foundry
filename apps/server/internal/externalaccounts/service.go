@@ -113,7 +113,7 @@ type Service struct {
 // the server has none) and the providers.
 func NewService(st Store, secrets SecretKeeper, registry *Registry) *Service {
 	if registry == nil {
-		registry = NewRegistry(&Feishu{}, NewCloudflare())
+		registry = NewRegistry(&Feishu{}, NewCloudflare(), NewAppStoreConnect())
 	}
 	return &Service{
 		store:             st,
