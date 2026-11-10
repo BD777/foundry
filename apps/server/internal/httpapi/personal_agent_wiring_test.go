@@ -15,6 +15,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // nextChatRun is the next run of a session that is not Foundry's own (a
@@ -32,7 +33,8 @@ func (d *digestDaemon) nextChatRun() wsRunSessionPayload {
 // assistant, with its instructions, and its input carries Foundry's context
 // for the turn after the person's words; the stored input stays theirs. A
 // later run whose only news is the time and the work in progress has the
-// same instructions byte for byte. A helper the assistant starts is an
+// same instructions byte for byte and no project index, which opened the
+// conversation. A helper the assistant starts is an
 // ordinary session.
 func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	f := newDigestFixture(t)
@@ -97,6 +99,51 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	}
 	if !strings.HasPrefix(second.Session.Input.Prompt, "and the next one\n\n") || !strings.Contains(second.Session.Input.Prompt, "add an export") {
 		t.Fatalf("the second turn's context misses the new task: %q", second.Session.Input.Prompt)
+	}
+	// The project index opens the conversation; the resumed one already has it.
+	const index = "Projects and computers, current index:\n"
+	if !strings.Contains(prompt1, index) || strings.Contains(second.Session.Input.Prompt, index) {
+		t.Fatalf("the index should open the conversation only:\nfirst %q\nsecond %q", prompt1, second.Session.Input.Prompt)
+	}
+}
+
+func TestAssistantTurnContextCarriesItsPersonsProjectIndex(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	bob, err := f.db.CreateUser(ctx, store.NewUser{Username: "bob-index", PasswordHash: "h", Role: store.RoleMember})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_bob_index", Label: "Bob's computer", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_bob_private", Name: "Bob private", LocalPath: "/home/bob/private"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.db.SetWorkspaceMember(ctx, "ws_bob_private", bob.ID, store.WorkspaceRoleOwner, bob.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	agent, err := f.db.GetPersonalAgent(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := f.server.assistant.PromptInput(ctx, agent, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := prompt.TurnContext(input)
+	if !strings.Contains(input.L0Index, "ws_budget") || !strings.Contains(turn, "- 『Budget』 (ws_budget)") {
+		t.Fatalf("Alice's project is absent from the turn's index:\n%s", turn)
+	}
+	if strings.Contains(input.L0Index, "ws_bob_private") || strings.Contains(turn, "Bob private") {
+		t.Fatalf("Bob's private project entered Alice's turn:\n%s", turn)
+	}
+	if tokens := workspacedigest.EstimateTokens(input.L0Index); tokens > personalagent.L0IndexMaxTokens {
+		t.Fatalf("the turn's index takes %d tokens, more than %d", tokens, personalagent.L0IndexMaxTokens)
+	}
+	if strings.Count(turn, "Projects and computers, current index:\n") != 1 {
+		t.Fatalf("the turn's context repeats its index:\n%s", turn)
 	}
 }
 

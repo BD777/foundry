@@ -12,6 +12,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // What a run of the person's assistant gets (docs/personal-agent.md §12),
@@ -22,9 +23,9 @@ import (
 // about the person and change only with its settings; and the turn's
 // context (prompt.TurnContext: the time, what the person confirmed about
 // themselves, their requests and rules, which computers are online, the
-// work it follows up), added to the turn's input as Foundry's words. The
-// input stored for the turn stays the person's own, which is what
-// `remember` judges.
+// work it follows up and the budgeted project index), added to the turn's
+// input as Foundry's words. The input stored for the turn stays the
+// person's own, which is what `remember` judges.
 
 // Run is what a run of the person's assistant is given.
 type Run struct {
@@ -45,6 +46,12 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 	input, err := s.PromptInput(ctx, agent, time.Now())
 	if err != nil {
 		return run, true, err
+	}
+	// The project index opens a conversation; a turn that resumes one already
+	// has it in its history, so it is not repeated (find_workspace reads the
+	// current state).
+	if session.NativeSessionID != "" {
+		input.L0Index = ""
 	}
 	turnContext := prompt.TurnContext(input)
 	if entry, err := s.store.PersonalAgentInboxByInput(ctx, agent.UserID, session.Input.ID); err == nil {
@@ -124,6 +131,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	l0Index := workspacedigest.Index(workspaces, devices, now)
 	places, err := s.ownDevicePlacements(ctx, devices, now)
 	if err != nil {
 		return prompt.Input{}, err
@@ -150,6 +158,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Memory:                        memory,
 		Workspaces:                    workspaces,
 		Devices:                       devices,
+		L0Index:                       l0Index,
 		Places:                        places,
 		Tasks:                         s.WithTaskWaits(ctx, tasks),
 		List:                          list,

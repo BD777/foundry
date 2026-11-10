@@ -15,6 +15,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outputs")
@@ -22,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
+	"2026-11-10.2": "03ec0bea5367e340fd8cc92d84ca8ad9d6afbed85bc2191c0bcfead809b1e792", // project index opens each conversation
 	"2026-11-10.1": "7c7e2555657dac302e514781dac1ec3fabe88ab1ee9c921a3c1f5d2705a70568", // device removal always asks
 	"2026-10-30.1": "3598a48427e1294664fa26b93cbce452055d31c7b287223a49514a50eed3c0ff",
 	"2026-10-30.2": "26c1ca07ffc97e094070c94b3afc42d479c379f9865e119f79ec41ac47ef0111",
@@ -156,6 +158,22 @@ func TestAgentsFileGolden(t *testing.T) {
 
 func TestTurnContextGolden(t *testing.T) {
 	golden(t, "turn_context_full", prompt.TurnContext(fullInput()))
+}
+
+func TestTurnContextIncludesTheProjectIndex(t *testing.T) {
+	out := prompt.TurnContext(fullInput())
+	for _, line := range []string{
+		"Projects and computers, current index:\n",
+		"- 『家庭记账』 (ws_budget)",
+		"- 『Personal blog』 (ws_blog)",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("the turn's context lacks %q:\n%s", line, out)
+		}
+	}
+	if strings.Count(out, "Projects and computers, current index:\n") != 1 {
+		t.Fatalf("the turn's context repeats its index:\n%s", out)
+	}
 }
 
 func TestComputersGolden(t *testing.T) {
@@ -301,7 +319,7 @@ func fullInput() prompt.Input {
 		{DeviceID: "dev_nas", AllowWork: false},
 	}
 	yes := true
-	return prompt.Input{
+	in := prompt.Input{
 		Now:             now,
 		PersonName:      "林梅",
 		Settings:        settings,
@@ -348,4 +366,6 @@ func fullInput() prompt.Input {
 		ConnectorsURL:                 "https://foundry.example/connectors",
 		SettingsURL:                   "https://foundry.example/assistant/settings",
 	}
+	in.L0Index = workspacedigest.Index(in.Workspaces, in.Devices, in.Now)
+	return in
 }
