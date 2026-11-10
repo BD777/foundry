@@ -79,7 +79,7 @@ export default defineConfig({
     },
   },
   plugins: [tailwindcss(), react(), foundryBuildVersion()],
-  optimizeDeps: { include: ["react-diff-view", "diff"] },
+  optimizeDeps: { include: ["react-diff-view", "diff", "modern-screenshot"] },
   server: {
     port: 31983,
     // Serve only the web app and what it imports. Vite's default is the whole

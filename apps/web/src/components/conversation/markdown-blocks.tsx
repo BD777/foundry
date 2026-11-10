@@ -1,7 +1,7 @@
-import * as RadixDialog from "@radix-ui/react-dialog";
-import { Check, Copy, Download, Maximize2, X } from "lucide-react";
+import { Check, Copy, Download, Maximize2 } from "lucide-react";
 import {
   cloneElement,
+  createContext,
   isValidElement,
   useContext,
   useRef,
@@ -30,6 +30,7 @@ import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { CodeBlock, codeBlockActionClass } from "../ui/code-block";
 import { Checkbox } from "../ui/field";
+import { Dialog } from "../ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +45,7 @@ import {
   RecordsRow,
   RecordsTable,
 } from "../ui/records-table";
+import { Tooltip } from "../ui/tooltip";
 
 /*
  * What Streamdown's `components` prop replaces, and what it cannot.
@@ -98,8 +100,18 @@ const diagramFrame = cn(
   "mb-0 gap-0 rounded-lg border-0 bg-surface p-2 shadow-card",
 );
 
+interface MarkdownTranslations extends StreamdownTranslations {
+  expandTable: string;
+  tableDialog: string;
+}
+
+/** The Markdown source Streamdown is parsing for this block. */
+export const MarkdownSourceContext = createContext<string | undefined>(
+  undefined,
+);
+
 /** The words of Streamdown's controls, in the viewer's language. */
-export function useMarkdownTranslations(): StreamdownTranslations {
+export function useMarkdownTranslations(): MarkdownTranslations {
   const { t } = useTranslation("conversation");
   return {
     ...defaultTranslations,
@@ -202,6 +214,51 @@ function downloadText(name: string, content: string, type: string): void {
 
 const tableActionClass = codeBlockActionClass;
 
+function commonIndent(lines: string[]): string {
+  let prefix: string | undefined;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const indent = /^[\t ]*/.exec(line)?.[0] ?? "";
+    if (prefix === undefined) {
+      prefix = indent;
+      continue;
+    }
+    let length = 0;
+    while (
+      length < prefix.length &&
+      length < indent.length &&
+      prefix[length] === indent[length]
+    )
+      length++;
+    prefix = prefix.slice(0, length);
+  }
+  return prefix ?? "";
+}
+
+/** The exact Markdown for a table, without a list or blockquote container. */
+export function markdownTableSource(
+  source: string | undefined,
+  node: ExtraProps["node"],
+): string | undefined {
+  const start = node?.position?.start.offset;
+  const end = node?.position?.end.offset;
+  if (
+    !source ||
+    typeof start !== "number" ||
+    typeof end !== "number" ||
+    end <= start
+  )
+    return undefined;
+  const lines = source
+    .slice(start, end)
+    .replace(/\r\n/g, "\n")
+    .replace(/^\n+|\n+$/g, "")
+    .split("\n")
+    .map((line) => line.replace(/^[\t ]*(?:>[\t ]?)+/, ""));
+  const indent = commonIndent(lines);
+  return lines.map((line) => line.slice(indent.length)).join("\n");
+}
+
 /** The table's data, read from the rendered table the actions sit beside. */
 function tableDataOf(frame: HTMLElement | null) {
   const table = frame?.querySelector("table");
@@ -209,13 +266,15 @@ function tableDataOf(frame: HTMLElement | null) {
 }
 
 function TableActions({
-  fullscreen,
+  expand,
   frame,
-  onFullscreen,
+  markdown,
+  onExpand,
 }: {
   frame: () => HTMLElement | null;
-  fullscreen: boolean;
-  onFullscreen?: () => void;
+  markdown?: string;
+  expand: boolean;
+  onExpand?: () => void;
 }) {
   const { controls, isAnimating } = useContext(StreamdownContext);
   const t = useMarkdownTranslations();
@@ -229,6 +288,16 @@ function TableActions({
       ? controls.table.csvSeparator
       : undefined;
   async function copyAs(format: "md" | "csv" | "tsv") {
+    if (format === "md" && markdown !== undefined) {
+      try {
+        await navigator.clipboard.writeText(markdown);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      } catch {
+        /* The clipboard is not available here; nothing was copied. */
+      }
+      return;
+    }
     const data = tableDataOf(frame());
     if (!data) return;
     const text =
@@ -246,6 +315,10 @@ function TableActions({
     }
   }
   function downloadAs(format: "csv" | "markdown") {
+    if (format === "markdown" && markdown !== undefined) {
+      downloadText("table.md", markdown, "text/markdown");
+      return;
+    }
     const data = tableDataOf(frame());
     if (!data) return;
     if (format === "csv")
@@ -258,6 +331,7 @@ function TableActions({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
+              aria-label={t.copyTable}
               className={tableActionClass}
               disabled={isAnimating}
               size="icon"
@@ -293,6 +367,7 @@ function TableActions({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
+              aria-label={t.downloadTable}
               className={tableActionClass}
               disabled={isAnimating}
               size="icon"
@@ -318,42 +393,54 @@ function TableActions({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
-      {fullscreen && onFullscreen ? (
-        <Button
-          className={tableActionClass}
-          disabled={isAnimating}
-          onClick={onFullscreen}
-          size="icon"
-          title={t.viewFullscreen}
-          variant="ghost"
-        >
-          <Maximize2 size={14} />
-        </Button>
+      {expand && onExpand ? (
+        <Tooltip content={t.expandTable}>
+          <Button
+            aria-label={t.expandTable}
+            className={tableActionClass}
+            disabled={isAnimating}
+            onClick={onExpand}
+            size="icon"
+            variant="ghost"
+          >
+            <Maximize2 size={14} />
+          </Button>
+        </Tooltip>
       ) : null}
     </>
   );
 }
 
-function MarkdownTable({ children }: ComponentPropsWithoutRef<"table">) {
-  const { controls } = useContext(StreamdownContext);
+function MarkdownTable({
+  children,
+  node,
+}: ComponentPropsWithoutRef<"table"> & ExtraProps) {
+  const { controls, tableMaxHeight } = useContext(StreamdownContext);
+  const source = useContext(MarkdownSourceContext);
   const translations = useMarkdownTranslations();
   const frame = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const fullscreen = controlOn(controls, "table", "fullscreen");
-  const shown =
-    fullscreen ||
-    controlOn(controls, "table", "copy") ||
-    controlOn(controls, "table", "download");
+  const markdown = markdownTableSource(source, node);
+  const actionsOn =
+    typeof controls === "boolean" ? controls : controls.table !== false;
+  const tall =
+    tableMaxHeight !== 0 &&
+    tableMaxHeight !== "0" &&
+    tableMaxHeight !== "none" &&
+    tableMaxHeight !== "Infinity";
   return (
     <>
       <div className={frameFlow} data-frame="true" ref={frame}>
         <RecordsTable
+          scrollLabel={translations.tableDialog}
+          tall={tall}
           toolbar={
-            shown ? (
+            actionsOn ? (
               <TableActions
+                expand
                 frame={() => frame.current}
-                fullscreen={fullscreen}
-                onFullscreen={() => setExpanded(true)}
+                markdown={markdown}
+                onExpand={() => setExpanded(true)}
               />
             ) : undefined
           }
@@ -362,34 +449,27 @@ function MarkdownTable({ children }: ComponentPropsWithoutRef<"table">) {
         </RecordsTable>
       </div>
       {expanded ? (
-        <RadixDialog.Root open onOpenChange={setExpanded}>
-          <RadixDialog.Portal>
-            <RadixDialog.Content
-              aria-describedby={undefined}
-              className="fixed inset-0 z-100 flex flex-col bg-surface outline-none"
-            >
-              <RadixDialog.Title className="sr-only">
-                {translations.viewFullscreen}
-              </RadixDialog.Title>
-              <div className="flex items-center justify-end gap-1 p-4">
-                <TableActions frame={() => frame.current} fullscreen={false} />
-                <RadixDialog.Close asChild>
-                  <Button
-                    className={tableActionClass}
-                    size="icon"
-                    title={translations.exitFullscreen}
-                    variant="ghost"
-                  >
-                    <X size={18} />
-                  </Button>
-                </RadixDialog.Close>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto p-4 pt-0">
-                <RecordsTable tall={false}>{children}</RecordsTable>
-              </div>
-            </RadixDialog.Content>
-          </RadixDialog.Portal>
-        </RadixDialog.Root>
+        <Dialog
+          headerActions={
+            <TableActions
+              expand={false}
+              frame={() => frame.current}
+              markdown={markdown}
+            />
+          }
+          onClose={() => setExpanded(false)}
+          open
+          size="viewport"
+          title={translations.tableDialog}
+        >
+          <RecordsTable
+            className="border border-line shadow-none"
+            scrollLabel={translations.tableDialog}
+            tall={false}
+          >
+            {children}
+          </RecordsTable>
+        </Dialog>
       ) : null}
     </>
   );
@@ -544,7 +624,7 @@ export const markdownBlocks: Components = {
   li: MarkdownListItem,
   blockquote: MarkdownBlockquote,
   input: MarkdownInput,
-  table: withoutNode(MarkdownTable),
+  table: MarkdownTable,
   thead: withoutNode(RecordsHead),
   tbody: withoutNode(RecordsBody),
   tr: withoutNode(RecordsRow),

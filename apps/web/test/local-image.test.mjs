@@ -44,10 +44,16 @@ async function mounted(fetchImage, inspect) {
   const render = async (
     path = "/ws/.foundry/attachments/shot.png",
     onPreview = () => {},
+    props = {},
   ) => {
     await act(async () =>
       root.render(
-        createElement(LocalImage, { path, alt: "Screenshot", onPreview }),
+        createElement(LocalImage, {
+          path,
+          alt: "Screenshot",
+          onPreview,
+          ...props,
+        }),
       ),
     );
   };
@@ -149,6 +155,24 @@ test("offline is distinguished from missing; missing is not retried automaticall
     async ({ container }) => {
       await wait();
       assert.match(container.textContent, /device is offline/);
+    },
+  );
+});
+
+test("an export fallback never renders the loading placeholder", async () => {
+  await mounted(
+    () => Promise.resolve(new Response("missing", { status: 404 })),
+    async ({ container, render }) => {
+      await render("/ws/.foundry/attachments/missing.png", undefined, {
+        fallback: "alt",
+      });
+      await wait(50);
+      assert.doesNotMatch(container.textContent, /Loading image from device/);
+      assert.match(container.textContent, /Screenshot/);
+      assert.equal(
+        container.firstElementChild.getAttribute("data-image-state"),
+        "error",
+      );
     },
   );
 });
