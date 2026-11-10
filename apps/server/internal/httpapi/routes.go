@@ -35,6 +35,18 @@ func publicRoute() accessRule { return accessRule{kind: "public", check: allow} 
 // signedIn routes serve the caller's own account (profile, pairing tokens).
 func signedIn() accessRule { return accessRule{kind: "signed-in", check: allow} }
 
+// accountOnly routes report person-level data and never accept a device or
+// session credential.
+func accountOnly() accessRule {
+	return accessRule{kind: "account", check: func(_ *Server, w http.ResponseWriter, r *http.Request) bool {
+		if actor := actorFromContext(r.Context()); actor.Kind != ActorAccount || actor.AccountID() == "" {
+			writeForbidden(w, "A signed-in account is required.")
+			return false
+		}
+		return true
+	}}
+}
+
 // personOnly routes act for the signed-in person on their own assistant: a
 // device credential or a session token never reaches them, so neither can
 // accept a proposal or change a setting (docs/personal-agent.md §4).
@@ -305,6 +317,7 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/invites/{id}", s.handleRevokeInvite, adminOnly()),
 
 		agent(fn("GET /api/foundry-data", s.handleFoundryData, filtered())),
+		fn("GET /api/usage-stats", s.handleGetUsageStats, accountOnly()),
 		fn("GET /api/workspaces", s.handleListWorkspaces, filtered()),
 		// The target device comes from the body.
 		fn("POST /api/workspaces", s.handleCreateWorkspace, inHandler()),

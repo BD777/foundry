@@ -63,6 +63,10 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	// An event sent again (its acknowledgement was late) is acknowledged
 	// again and nothing else: no new time, no stream, no cache change.
 	stored, err := c.recordSessionEvent(ctx, payload.Event)
+	if err == nil && payload.Event.Metadata != nil &&
+		(payload.Event.Metadata.TurnUsage != nil || payload.Event.Metadata.RequestUsage != nil) {
+		c.hub.recordUsageEvent(ctx, payload.Event)
+	}
 	if err == nil && payload.Event.Metadata != nil {
 		err = c.observeNativeAccountHold(ctx, payload.Event.SessionID, payload.Event.Metadata.NativeAccountInputID, payload.Event.Metadata.NativeAccountError)
 	}
@@ -161,6 +165,10 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 
 		c.setActiveSession(payload.SessionID, false)
 		c.clearDispatchedSession(payload.SessionID)
+		c.hub.recordUsage(ctx, existing, store.AgentSessionEvent{
+			SessionID: existing.ID,
+			At:        existing.CompletedAt,
+		})
 		// A session the server already settled (a stale reconcile) still
 		// hands over the Issue result the device recorded.
 		c.hub.settleIssueSession(ctx, existing, payload.IssueResult, payload.ClarificationResult)
@@ -171,6 +179,12 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 	// A new input can be queued after the read above. Fence the actual write,
 	// not just this handler's initial snapshot, before accepting a replay.
 	session, applied, err := c.hub.store.SettleAgentSessionInput(ctx, payload.SessionID, payload.InputID, payload.Response, payload.NativeSessionID, payload.Error)
+	if err == nil {
+		c.hub.recordUsage(ctx, session, store.AgentSessionEvent{
+			SessionID: session.ID,
+			At:        session.CompletedAt,
+		})
+	}
 	if err == nil && !applied {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil

@@ -2969,6 +2969,89 @@ interface components {
       binary: boolean;
     };
     /** @enum {string} */
+    UsageStatsGranularity: "hour" | "day";
+    /** @enum {string} */
+    UsageStatsDimension:
+      | "entry"
+      | "device"
+      | "workspace"
+      | "provider"
+      | "model"
+      | "runtime"
+      | "user";
+    /** @description One cost_source's share of a usage group. */
+    UsageStatsCostSource: {
+      /** @enum {string} */
+      source: "reported" | "estimated" | "custom" | "unknown";
+      /** Format: int64 */
+      turns: number;
+      /** Format: double */
+      costUsd: number;
+    };
+    /** @description One time bucket and selected dimension combination. */
+    UsageStatsPoint: {
+      /** @description An RFC 3339 hour boundary or a YYYY-MM-DD day. */
+      bucket: string;
+      userId?: string;
+      entry?: string;
+      deviceId?: string;
+      workspaceId?: string;
+      /** @description The profile/provider label recorded with the usage. */
+      provider?: string;
+      model?: string;
+      runtime?: string;
+      /** Format: int64 */
+      turns: number;
+      /** Format: int64 */
+      requests: number;
+      /** Format: int64 */
+      inputTokens: number;
+      /** Format: int64 */
+      cacheReadTokens: number;
+      /** Format: int64 */
+      cacheWriteTokens: number;
+      /** Format: int64 */
+      outputTokens: number;
+      /** Format: int64 */
+      reasoningTokens: number;
+      /** Format: double */
+      costUsd: number;
+      costSources: components["schemas"]["UsageStatsCostSource"][];
+      /**
+       * Format: double
+       * @description Output tokens divided by measured generation time.
+       */
+      averageTokensPerSecond?: number;
+      /**
+       * Format: double
+       * @description Median output tokens per second across measured requests.
+       */
+      medianTokensPerSecond?: number;
+      /**
+       * Format: int64
+       * @description Median first-token latency across measured requests.
+       */
+      ttftP50Ms?: number;
+      /**
+       * Format: int64
+       * @description 90th-percentile first-token latency across measured requests.
+       */
+      ttftP90Ms?: number;
+    };
+    UsageStatsResult: {
+      from: string;
+      to: string;
+      granularity: components["schemas"]["UsageStatsGranularity"];
+      groupBy: components["schemas"]["UsageStatsDimension"][];
+      items: components["schemas"]["UsageStatsPoint"][];
+      /** Format: int64 */
+      total: number;
+      /** Format: int64 */
+      limit: number;
+      /** Format: int64 */
+      offset: number;
+    };
+    /** @enum {string} */
     WorkspaceAccessRole: "viewer" | "member" | "maintainer" | "owner";
     /**
      * @description Every workspace is a project except each person's Personal Agent Workspace.
@@ -3526,6 +3609,13 @@ export type PromotedSkill = components["schemas"]["PromotedSkill"];
 export type SessionSkillRef = components["schemas"]["SessionSkillRef"];
 export type SessionSkillBundle = components["schemas"]["SessionSkillBundle"];
 export type SkillFileInfo = components["schemas"]["SkillFileInfo"];
+export type UsageStatsGranularity =
+  components["schemas"]["UsageStatsGranularity"];
+export type UsageStatsDimension = components["schemas"]["UsageStatsDimension"];
+export type UsageStatsCostSource =
+  components["schemas"]["UsageStatsCostSource"];
+export type UsageStatsPoint = components["schemas"]["UsageStatsPoint"];
+export type UsageStatsResult = components["schemas"]["UsageStatsResult"];
 export type WorkspaceAccessRole = components["schemas"]["WorkspaceAccessRole"];
 export type WorkspaceKind = components["schemas"]["WorkspaceKind"];
 export type WorkspaceProjection = components["schemas"]["WorkspaceProjection"];
