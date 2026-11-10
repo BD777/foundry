@@ -4,9 +4,9 @@
 // assistant's folder, which Claude Code and Codex read natively; the worked
 // examples go beside it (ExamplesFile). Nothing about the person is written
 // there: what the assistant knows about them (memory, their own requests,
-// their rules) is TurnContext, added to each turn's input with the time,
-// which computers are online and the work it follows up; projects and
-// computers are read with tools (find_workspace, list_computers: Computers).
+// their rules) is TurnContext, added to each turn's input with the time, which
+// computers are online, the budgeted project index and the work it follows
+// up; details come from tools (find_workspace, list_computers: Computers).
 //
 // The few limits it applies mirror personalagent/defaults.go (prompt_test
 // checks they agree).
@@ -31,7 +31,7 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-11-10.1"
+const Version = "2026-11-10.2"
 
 // Limits mirrored from personalagent/defaults.go.
 const (
@@ -81,6 +81,9 @@ type Input struct {
 	Workspaces []store.WorkspaceDigest
 	// Devices are the digests of the devices the person owns.
 	Devices []store.DeviceDigest
+	// L0Index is the current project and device index, already limited by
+	// personalagent.L0IndexMaxEntries and personalagent.L0IndexMaxTokens.
+	L0Index string
 	// Places are those devices' labels and detected facts, by device id.
 	Places map[string]store.DevicePlacement
 	// Tasks are the assistant's pa_tasks; only unfinished ones are shown.
@@ -181,9 +184,10 @@ const (
 
 // TurnContext is what Foundry adds to each turn's input of an assistant
 // session: the time now, what the person confirmed about themselves, their
-// own requests and rules, which computers are online, the open items of
-// their list, the work the assistant follows up and where their direct
-// chat went before it. It is Foundry's, never the person's words.
+// own requests and rules, which computers are online, the project index,
+// the open items of their list, the work the assistant follows up and where
+// their direct chat went before it. It is Foundry's, never the person's
+// words.
 func TurnContext(in Input) string {
 	location := timeLocation(in)
 	var out strings.Builder
@@ -216,6 +220,11 @@ func TurnContext(in Input) string {
 	}
 	if len(offline) > 0 {
 		fmt.Fprintf(&out, "Computers offline now: %s.\n", strings.Join(offline, ", "))
+	}
+	if index := strings.TrimSpace(in.L0Index); index != "" {
+		out.WriteString("Projects and computers, current index:\n")
+		out.WriteString(index)
+		out.WriteString("\n")
 	}
 	names := map[string]string{}
 	for _, digest := range in.Workspaces {

@@ -24,6 +24,15 @@ you can plan):
   the person does not own: never
 Computers online now: "MacBook".
 Computers offline now: "Home server".
+Projects and computers, current index:
+Computers (2):
+- Home server (dev_nas) · Linux · offline · runs Codex · 0 projects
+- MacBook (dev_mac) · macOS · online · runs Claude Code, Codex · 0 projects
+Projects (4), most recently active first:
+- 『家庭记账』 (ws_budget) · on MacBook · active 2026-10-14 · verified 2026-10-14 — 记家庭开销的小网页，按月汇总。
+- 『Company admin site』 (ws_admin) · on Office PC · active 2026-10-13 · you are member · verified 2026-10-14 — The team's internal admin site.
+- 『Personal blog』 (ws_blog) · on Home server, offline · active 2026-10-12 · verified 2026-10-12, stale — Her personal blog, built with Hugo.
+- 『Quarterly reports』 (ws_reports) · on Office PC, folder unavailable · you are viewer · verified 2026-10-05, stale — Finance reports.
 The person's list, open (their plans; change it with update_list):
 - "回猎头的微信消息" [pai_wechat]: "下班后"; reminder at 2026-10-15 18:30
 - "把 Atlas 和 Tag 流程合并的文档改完" [pai_doc]: "下午开会前"; your task task_1
