@@ -3,13 +3,17 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
 /*
- * shadcn/ui's Popover on Radix: a small floating panel on the floating
- * surface tokens (see tooltip.tsx).
+ * shadcn/ui's Popover on Radix: a small interactive panel. Floating matches
+ * tooltips; panel follows the app surface for interactive content.
  */
 const popoverSurface = `z-110 max-h-[var(--radix-popover-content-available-height,calc(100dvh-24px))]
   max-w-[min(360px,var(--radix-popover-content-available-width,calc(100vw-24px)))] overflow-auto
-  rounded-md border border-floating-line bg-floating px-3 py-2.5 text-xs font-semibold
-  leading-[1.45] text-floating-ink shadow-drop [overflow-wrap:anywhere]`;
+  rounded-md border px-3 py-2.5 text-xs font-semibold leading-[1.45] [overflow-wrap:anywhere]`;
+
+const popoverAppearance = {
+  floating: "border-floating-line bg-floating text-floating-ink shadow-drop",
+  panel: "border-line-strong bg-panel text-ink shadow-card",
+} as const;
 
 /**
  * A small floating panel opened by click, Enter or Space and closed by Escape
@@ -22,17 +26,25 @@ export function Popover({
   trigger,
   label,
   openOnHover = false,
+  appearance = "floating",
 }: {
   children: ReactNode;
   className?: string;
   trigger: ReactNode;
   label?: string;
+  /** Floating is for passive detail; panel follows the app's themed surface. */
+  appearance?: keyof typeof popoverAppearance;
   /** Hover/focus preview, with click/touch pinning and normal dismissal. */
   openOnHover?: boolean;
 }) {
   if (openOnHover)
     return (
-      <PreviewPopover trigger={trigger} label={label} className={className}>
+      <PreviewPopover
+        appearance={appearance}
+        trigger={trigger}
+        label={label}
+        className={className}
+      >
         {children}
       </PreviewPopover>
     );
@@ -43,7 +55,11 @@ export function Popover({
         <PopoverPrimitive.Content
           aria-label={label}
           align="start"
-          className={cn(popoverSurface, className)}
+          className={cn(
+            popoverSurface,
+            popoverAppearance[appearance],
+            className,
+          )}
           collisionPadding={12}
           sideOffset={6}
         >
@@ -61,11 +77,13 @@ function PreviewPopover({
   children,
   className,
   label,
+  appearance,
 }: {
   trigger: ReactNode;
   children: ReactNode;
   className?: string;
   label?: string;
+  appearance: keyof typeof popoverAppearance;
 }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -137,7 +155,11 @@ function PreviewPopover({
           align="start"
           sideOffset={6}
           collisionPadding={12}
-          className={cn(popoverSurface, className)}
+          className={cn(
+            popoverSurface,
+            popoverAppearance[appearance],
+            className,
+          )}
           onPointerEnter={clear}
           onPointerLeave={leave}
           onFocus={clear}

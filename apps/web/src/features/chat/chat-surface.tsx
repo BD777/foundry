@@ -1,21 +1,15 @@
 import { ChatArchiveFeedback } from "./archive/chat-archive-feedback";
 import { sidebarWorkCounts } from "./context/chat-work-state";
-import { ChevronLeft, MessagesSquare, PanelRight, Target } from "lucide-react";
+import { ChatThreadHeader } from "./chat-thread-header";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "../../components/ui/button";
 import { ImagePreview } from "../../components/conversation/local-image";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./context/chat-context-card";
-import { GoalStatusBadge } from "./context/chat-context-goal";
-import type { ChatGoalItem } from "./chat-types";
 import { ChatDetailPanel } from "./detail/chat-detail-panel";
 import {
   ChatScreen,
   ChatThread,
-  ChatThreadTitle,
-  ConversationHeader,
 } from "../../components/conversation/conversation-frame";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
@@ -35,6 +29,7 @@ import { useOnlyMine } from "./thread/only-mine";
 import { useSessionWork } from "./context/use-session-work";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { cn } from "../../lib/cn";
+import { waitingChildSessions } from "./waiting-children-status";
 
 export type {
   ChatAgentOption,
@@ -114,6 +109,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const { detail } = panel;
   const work = useSessionWork(contextCard?.status?.sessionId);
   const workCounts = sidebarWorkCounts(work.list?.items ?? []);
+  const waitingChildren = useMemo(
+    () => waitingChildSessions(work.list?.items ?? []),
+    [work.list],
+  );
+  const waitingChildCount = props.waitingChildCount ?? 0;
   const workNotice =
     workCounts.timers || workCounts.agents ? (
       <ChatWorkCountNote
@@ -132,6 +132,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       props.backgroundWork?.subagentIds.length ||
       props.backgroundWork?.timerRun,
     ),
+    waitingChildCount,
   );
   // Stable, so the memoized chat list does not render for transcript events.
   const latestCallbacks = useRef({
@@ -187,6 +188,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onBack={showList}
             onToggleContext={panel.toggle}
             title={chatTitle}
+            waitingChildCount={waitingChildCount}
+            waitingChildren={waitingChildren}
+            workspaceId={workspaceId}
           />
           <ChatDetailSplitPane
             detail={
@@ -317,97 +321,5 @@ export function ChatSurface(props: ChatSurfaceProps) {
         />
       ) : null}
     </ChatScreen>
-  );
-}
-
-/**
- * The open chat's title, the narrow screens' way back to the list, and the
- * context panel toggle (`contextOpen` undefined: the chat has no panel).
- */
-function ChatThreadHeader({
-  contextOpen,
-  goal,
-  foldedTurns,
-  onBack,
-  onlyMine,
-  onOnlyMineChange,
-  onToggleContext,
-  title,
-}: {
-  contextOpen: boolean | undefined;
-  /**
-   * The open session's goal: where the details panel is a card over the
-   * chat, the header names its status and opens the panel.
-   */
-  goal?: ChatGoalItem;
-  /** Turns the person did not start, folded or hidden now. */
-  foldedTurns: number;
-  onlyMine: boolean;
-  onOnlyMineChange: (onlyMine: boolean) => void;
-  onBack: () => void;
-  onToggleContext: () => void;
-  title: ReactNode;
-}) {
-  const { t } = useTranslation("chat");
-  return (
-    <ConversationHeader>
-      <Button
-        className="hidden flex-none pl-1 max-[860px]:inline-flex"
-        onClick={onBack}
-        size="sm"
-        variant="ghost"
-      >
-        <ChevronLeft size={16} />
-        {t("list.title")}
-      </Button>
-      <ChatThreadTitle title={title} />
-      <div className="inline-flex flex-none items-center gap-2">
-        {goal && contextOpen !== undefined ? (
-          <Button
-            aria-expanded={contextOpen}
-            className="hidden max-[1360px]:inline-flex"
-            onClick={onToggleContext}
-            size="sm"
-            variant="ghost"
-          >
-            <Target aria-hidden="true" size={14} />
-            <span className="max-[600px]:sr-only">{t("goal.title")}</span>
-            <GoalStatusBadge goal={goal} />
-          </Button>
-        ) : null}
-        {foldedTurns > 0 || onlyMine ? (
-          <Button
-            aria-pressed={onlyMine}
-            className="data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
-            data-active={onlyMine ? "true" : "false"}
-            onClick={() => onOnlyMineChange(!onlyMine)}
-            size="sm"
-            title={t(onlyMine ? "onlyMine.offHint" : "onlyMine.onHint")}
-            variant="ghost"
-          >
-            <MessagesSquare aria-hidden="true" size={14} />
-            <span className="max-[600px]:sr-only">
-              {onlyMine && foldedTurns > 0
-                ? t("onlyMine.hidden", { count: foldedTurns })
-                : t("onlyMine.label")}
-            </span>
-          </Button>
-        ) : null}
-        {contextOpen !== undefined ? (
-          <Button
-            aria-label={
-              contextOpen ? t("contextCard.hide") : t("contextCard.show")
-            }
-            className="hidden max-[1360px]:inline-flex data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
-            data-active={contextOpen ? "true" : "false"}
-            onClick={onToggleContext}
-            size="icon"
-            variant="ghost"
-          >
-            <PanelRight size={16} />
-          </Button>
-        ) : null}
-      </div>
-    </ConversationHeader>
   );
 }

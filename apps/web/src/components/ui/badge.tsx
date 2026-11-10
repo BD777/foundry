@@ -13,6 +13,7 @@ export const badgeVariants = cva(
   {
     variants: {
       size: {
+        xs: "fdy-badge-xs h-5 gap-1 px-1.5 text-2xs",
         sm: "fdy-badge-sm h-[22px] px-2.5 text-xs",
         md: "fdy-badge-md h-6 px-3 text-sm",
       },

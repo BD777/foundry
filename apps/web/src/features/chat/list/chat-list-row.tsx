@@ -19,6 +19,7 @@ import type { ChatListItem } from "../chat-surface-types";
 import type { ChatGroupMenuProps } from "./chat-group-menu";
 import { ChatListRowMenu } from "./chat-list-row-menu";
 import { ChatRenameDialog, useChatRename } from "./chat-rename-dialog";
+import { WaitingChildrenStatus } from "../waiting-children-status";
 
 export const ChatListRow = memo(function ChatListRow({
   chat,
@@ -76,7 +77,7 @@ export const ChatListRow = memo(function ChatListRow({
                   </span>
                 ) : null}
               </span>
-              {chat.updateTime ? (
+              {chat.updateTime && !chat.waitingChildCount ? (
                 <time
                   className="flex-none text-2xs font-medium whitespace-nowrap text-ink-faint tabular-nums"
                   dateTime={chat.updateTime.dateTime}
@@ -116,6 +117,9 @@ const warningMark = cn(statusMark, "text-warning-text");
  */
 function ChatRowStatus({ chat }: { chat: ChatListItem }) {
   const { t } = useTranslation("chat");
+  if (chat.waitingChildCount) {
+    return <WaitingChildrenStatus compact count={chat.waitingChildCount} />;
+  }
   if (chat.status === "waiting") {
     const label = t("listRow.waitingForDevice", { device: chat.waitingFor });
     return (

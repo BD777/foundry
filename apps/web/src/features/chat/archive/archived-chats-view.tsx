@@ -29,7 +29,7 @@ export function ArchivedChatsView({
   onRetry: () => Promise<unknown>;
 }) {
   const { t, i18n } = useTranslation("chat");
-  useChatDocumentTitle(t("archive.title"), false, false);
+  useChatDocumentTitle(t("archive.title"), false, false, 0);
   const layout = useChatLayout(workspaceId);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());

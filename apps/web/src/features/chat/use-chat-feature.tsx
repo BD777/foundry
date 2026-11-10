@@ -35,6 +35,7 @@ import { chatComposerChoices, chatSortValue } from "./thread/chat-model";
 import {
   chatHasQueue,
   chatSessionLink,
+  latestThreadSession,
   sessionLinkView,
   unlistedLinkedSessionIds,
 } from "./session/chat-session-model";
@@ -676,6 +677,11 @@ export function useChatFeature({
         workspaceId={workspaceId}
         agentActive={agentActive}
         agentActiveSessionId={activeSession?.id}
+        waitingChildCount={
+          (selectedThread
+            ? latestThreadSession(selectedThread)?.waitingChildCount
+            : 0) ?? 0
+        }
         agentOptions={agentOptions}
         agentPickerActions={[...connectionSetups.actions, ...readinessActions]}
         attachmentUploading={attachments.uploading}
