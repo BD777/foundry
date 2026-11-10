@@ -9,6 +9,7 @@
 - 新增 usage statistics 契约、SQLite 表和索引，以请求身份去重，保留模型、时间、token、成本与失败状态。
 - Server 在回合与模型请求事件路径写入统计，写入失败不阻断会话主流程，并按确定性时间窗口回填已有会话。
 - 新增统计查询 API，支持按范围、模型和维度聚合；权限沿用工作区访问规则。
+- usage 表登记为历史事实：工作区迁移不重写原 device id，删除设备/工作区/会话不抹除用量记录。
 - 模块边界审计与 Server、store、回填和 API 测试同步更新。
 
 ## 部署与版本证据
@@ -21,6 +22,7 @@
 - Server `go build ./...`
 - Server `go vet ./...`
 - `go test ./internal/httpapi ./internal/sqlitestore ./internal/usagestats -run '<usage stats tests>'`
+- 设备删除、workspace migration 与 owned-row 分类测试
 
 ## 限制
 
