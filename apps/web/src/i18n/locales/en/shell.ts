@@ -44,6 +44,7 @@ export const shell = {
   },
   sidebar: {
     interfaceControls: "Interface controls",
+    menu: "Menu",
     globalScope: "Global",
     workspaceScope: "Workspace: {{workspace}}",
     open: "Open {{label}}",

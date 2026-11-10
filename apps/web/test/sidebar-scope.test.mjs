@@ -283,3 +283,39 @@ test("brand controls form an accessible function group outside navigation", asyn
   assert.ok(buttons.every((b) => b.getAttribute("aria-label") && b.title));
   await v.close();
 });
+
+test("narrow navigation opens the current page in a left drawer and closes on selection", async () => {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  window.happyDOM.setViewport({ width: 390, height: 844 });
+  const v = await mounted({ activeView: "assistantSettings" });
+  try {
+    const trigger = v.container.querySelector(".fdy-mobile-bar button");
+    assert.equal(trigger.getAttribute("aria-label"), "Menu");
+    assert.equal(trigger.getAttribute("aria-expanded"), "false");
+    // A pointer click focuses the button in a browser; happy-dom's click does not.
+    trigger.focus();
+    await act(async () => trigger.click());
+
+    const dialog = document.querySelector('[role="dialog"]');
+    assert.ok(dialog);
+    assert.equal(dialog.dataset.side, "left");
+    assert.ok(dialog.querySelector('[data-nav-id="devices"]'));
+    assert.equal(
+      dialog.querySelector('[aria-current="page"]').dataset.navId,
+      "assistantSettings",
+    );
+    assert.equal(trigger.getAttribute("aria-expanded"), "true");
+
+    await act(async () =>
+      dialog.querySelector('[data-nav-id="devices"]').click(),
+    );
+    assert.equal(v.selected.at(-1), "devices");
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    assert.equal(trigger.getAttribute("aria-expanded"), "false");
+    assert.equal(document.activeElement, trigger);
+  } finally {
+    await v.close();
+    window.happyDOM.setViewport({ width, height });
+  }
+});
