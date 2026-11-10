@@ -14,7 +14,8 @@ export interface NativeWorkTask {
   spec?: WorkSpec;
   observation: Omit<WorkObservation, "confirmedRevision">;
 }
-export type NativeWorkSink = (task: NativeWorkTask) => void;
+/** One inventory change set; the supervisor persists the batch once. */
+export type NativeWorkSink = (tasks: readonly NativeWorkTask[]) => void;
 export function nativeWorkInfo(
   runtime: NativeWorkInfo["runtime"],
   version: string,

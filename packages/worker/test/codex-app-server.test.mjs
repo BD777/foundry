@@ -29,11 +29,14 @@ const rl=require('node:readline').createInterface({input:process.stdin});
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 const notify=(method,params)=>send({method,params:{threadId:process.env.MODE==='provider-moved'?'forked':'native',...params}});
 let refreshed=false;
+let foundryMcp='failed';
 rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send({id:r.id,result});
 if(r.method==='initialize')return reply({});
+if(r.method==='mcpServerStatus/list')return reply({data:[{name:'foundry',runtimeStatus:foundryMcp,authStatus:'bearerToken'}]});
+if(r.method==='config/mcpServer/reload'){foundryMcp='connected';reply({});return notify('mcpServer/startupStatus/updated',{name:'foundry',status:'ready'});}
 if(r.method==='thread/resume'&&process.env.MODE==='provider-moved')return send({id:r.id,error:{code:-32600,message:'This chat uses foundry_a, but your current provider is foundry_b.',data:{type:'modelProviderMismatch'}}});
 if(r.method==='thread/fork')return reply({thread:{id:r.params.threadId==='native'&&r.params.config.model_provider==='foundry_b'?'forked':'wrong'}});
-if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
+if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);const result=reply({thread:{id:'native'}});if(r.params.config?.mcp_servers?.foundry)setTimeout(()=>notify('mcpServer/startupStatus/updated',{name:'foundry',status:'failed',error:'connect refused'}),25);return result;}
 if(r.method==='thread/inject_items'){if(process.env.MODE==='refresh-rejected')return send({id:r.id,error:{message:'refresh rejected'}});const item=r.params.items[0];refreshed=r.params.threadId==='native'&&item.role==='developer'&&item.content[0].text==='CURRENT_CATALOG';return reply({});}
 if(process.env.MODE.startsWith('overflow')){globalThis.calls=(globalThis.calls||[]);globalThis.calls.push(r.method);const full={message:"Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",codexErrorInfo:'contextWindowExceeded'};const starts=globalThis.calls.filter(m=>m==='turn/start').length;
 if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:{id}});reply({turn:{id}});if(starts===1||process.env.MODE==='overflow-twice')return notify('turn/completed',{turn:{id,status:'failed',error:full}});notify('item/completed',{turnId:id,item:{id:'answer',type:'agentMessage',text:'CONTINUED:'+r.params.input[0].text,phase:'final_answer'}});return notify('turn/completed',{turn:{id,status:'completed'}});}
@@ -71,6 +74,51 @@ if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'tur
     options.nativeSessionId,
   );
 }
+
+test("a Codex MCP failure reconnects through the app-server protocol", async (t) => {
+  const { clearOutOfBandSessionEventSink, setOutOfBandSessionEventSink } =
+    await import("../dist/session/session-state.js");
+  const { reconnectRegisteredFoundryTools } =
+    await import("../dist/session/runner/foundry-tools-supervisor.js");
+  const events = [];
+  const sink = (sessionId, event) => events.push({ sessionId, ...event });
+  setOutOfBandSessionEventSink(sink);
+  t.after(() => clearOutOfBandSessionEventSink(sink));
+
+  const thread = fixture(t, "normal", {
+    workSessionId: "sess_codex_mcp",
+    config: {
+      mcp_servers: {
+        foundry: { url: "http://127.0.0.1/api/mcp" },
+      },
+    },
+  });
+  t.after(() => thread.close());
+  const { events: turnEvents } = await thread.runStreamed("start");
+  const waitForLabel = async (label) => {
+    const deadline = Date.now() + 1_000;
+    while (!events.some((event) => event.label === label)) {
+      if (Date.now() >= deadline) throw new Error(`${label} did not arrive`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  await waitForLabel("Foundry tools unavailable");
+  await reconnectRegisteredFoundryTools();
+  await waitForLabel("Foundry tools reconnected");
+  await thread.steer("finish");
+  for await (const _event of turnEvents) {
+    // Drain the turn so its process closes before the test ends.
+  }
+  assert.deepEqual(
+    events.map((event) => [event.label, event.sessionId]),
+    [
+      ["Foundry tools unavailable", "sess_codex_mcp"],
+      ["Foundry tools reconnected", "sess_codex_mcp"],
+    ],
+  );
+});
+
 test("same native owner steers the exact turn, retaining phases and usage", async (t) => {
   const thread = fixture(t);
   const { events } = await thread.runStreamed("start");

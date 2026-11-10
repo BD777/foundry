@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -7,23 +7,53 @@ import { redactSecrets } from "../platform/secret-redaction.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
 import type { SessionWork } from "@bd777/foundry-protocol";
 
+export interface HostCommandResult {
+  status: number;
+  stdout: string;
+  stderr: string;
+}
 export type HostCommand = (
   argv: string[],
   input?: string,
-) => { status: number; stdout: string; stderr: string };
+) => HostCommandResult | Promise<HostCommandResult>;
 export const hostCommand: HostCommand = (argv, input) => {
-  const result = spawnSync(argv[0]!, argv.slice(1), {
-    input,
-    encoding: "utf8",
-    timeout: 5000,
-    maxBuffer: 1024 * 1024,
+  return new Promise<HostCommandResult>((resolve, reject) => {
+    const child = spawn(argv[0]!, argv.slice(1), {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (error?: Error, status = -1) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve({ status, stdout, stderr });
+    };
+    const overflow = () => {
+      child.kill("SIGKILL");
+      finish(new Error(`${argv[0]} output exceeded 1 MiB`));
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new Error(`${argv[0]} timed out after 5000 ms`));
+    }, 5000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (stdout.length > 1024 * 1024) overflow();
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+      if (stderr.length > 1024 * 1024) overflow();
+    });
+    child.once("error", (error) => finish(error));
+    child.once("close", (status) => finish(undefined, status ?? -1));
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(input);
   });
-  if (result.error) throw result.error;
-  return {
-    status: result.status ?? -1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
 };
 export interface HostSchedule {
   id: string;
@@ -78,6 +108,11 @@ export function cronEntries(raw: string): HostSchedule[] {
  * paths supplied by a browser are trusted as a control target. */
 export class HostSchedules {
   private sources: Record<string, RecordedSource> = {};
+  private cachedScan?: {
+    at: number;
+    value: { entries: HostSchedule[]; errors: string[] };
+  };
+  private scanning?: Promise<{ entries: HostSchedule[]; errors: string[] }>;
   constructor(
     private readonly path: string,
     private readonly command: HostCommand = hostCommand,
@@ -91,11 +126,39 @@ export class HostSchedules {
   private save() {
     writePrivateJSONAtomic(this.path, this.sources);
   }
-  scan(): { entries: HostSchedule[]; errors: string[] } {
+  /**
+   * Inventory changes slowly, so callers share a short cache. Tool boundaries
+   * request a fresh read without blocking the caller's event handler.
+   */
+  scan(
+    options: { fresh?: boolean; maxAgeMs?: number } = {},
+  ): Promise<{ entries: HostSchedule[]; errors: string[] }> {
+    const maxAgeMs = options.maxAgeMs ?? 30_000;
+    if (
+      !options.fresh &&
+      this.cachedScan &&
+      Date.now() - this.cachedScan.at < maxAgeMs
+    )
+      return Promise.resolve(this.cachedScan.value);
+    if (this.scanning) return this.scanning;
+    this.scanning = this.scanUncached()
+      .then((value) => {
+        this.cachedScan = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        this.scanning = undefined;
+      });
+    return this.scanning;
+  }
+  private async scanUncached(): Promise<{
+    entries: HostSchedule[];
+    errors: string[];
+  }> {
     const entries: HostSchedule[] = [],
       errors: string[] = [];
     try {
-      const result = this.command(["crontab", "-l"]);
+      const result = await this.command(["crontab", "-l"]);
       if (
         result.status !== 0 &&
         !/no crontab|not found|no table/i.test(result.stderr)
@@ -107,7 +170,7 @@ export class HostSchedules {
     }
     if (process.platform === "linux")
       try {
-        const result = this.command([
+        const result = await this.command([
           "systemctl",
           "--user",
           "list-timers",
@@ -139,7 +202,7 @@ export class HostSchedules {
         for (const file of existsSync(folder) ? readdirSync(folder) : []) {
           if (!file.endsWith(".plist")) continue;
           const path = join(folder, file);
-          const parsed = this.command([
+          const parsed = await this.command([
             "plutil",
             "-convert",
             "json",
@@ -152,7 +215,7 @@ export class HostSchedules {
           if (!job.StartInterval && !job.StartCalendarInterval) continue;
           if (typeof job.Label !== "string" || !/^[\w.\-]+$/.test(job.Label))
             continue;
-          const actual = this.command([
+          const actual = await this.command([
             "launchctl",
             "print",
             `gui/${process.getuid?.()}/${job.Label}`,
@@ -189,12 +252,19 @@ export class HostSchedules {
       throw new Error("No verified local source mapping for this OS task");
     if (item.management !== "managed")
       throw new Error("OS task ownership must be established before control");
-    if (known.entry.source === "crontab")
-      return this.applyCron(item, known.entry);
-    if (known.entry.source === "launchd")
-      return this.applyLaunchd(item, known.entry);
+    this.cachedScan = undefined;
+    if (known.entry.source === "crontab") {
+      const result = await this.applyCron(item, known.entry);
+      this.cachedScan = undefined;
+      return result;
+    }
+    if (known.entry.source === "launchd") {
+      const result = await this.applyLaunchd(item, known.entry);
+      this.cachedScan = undefined;
+      return result;
+    }
     const name = known.entry.raw;
-    const result = this.command([
+    const result = await this.command([
       "systemctl",
       "--user",
       item.desiredState === "enabled" ? "enable" : "disable",
@@ -204,7 +274,7 @@ export class HostSchedules {
     if (result.status !== 0)
       throw new Error(result.stderr || "systemd control failed");
     if (item.desiredState === "stopped" || item.desiredState === "removed") {
-      const triggers = this.command([
+      const triggers = await this.command([
         "systemctl",
         "--user",
         "show",
@@ -222,9 +292,14 @@ export class HostSchedules {
         .filter(Boolean)) {
         if (!/^[\w@.\-]+\.service$/.test(service))
           throw new Error("Unexpected systemd service identity");
-        const stopped = this.command(["systemctl", "--user", "stop", service]);
+        const stopped = await this.command([
+          "systemctl",
+          "--user",
+          "stop",
+          service,
+        ]);
         if (stopped.status !== 0) throw new Error(stopped.stderr);
-        const actual = this.command([
+        const actual = await this.command([
           "systemctl",
           "--user",
           "is-active",
@@ -234,17 +309,23 @@ export class HostSchedules {
           throw new Error("Triggered service termination is unconfirmed");
       }
     }
-    const check = this.command(["systemctl", "--user", "is-active", name]);
+    const check = await this.command([
+      "systemctl",
+      "--user",
+      "is-active",
+      name,
+    ]);
     const active = check.stdout.trim() === "active";
     if (active !== (item.desiredState === "enabled"))
       throw new Error("systemd state has not converged");
+    this.cachedScan = undefined;
     return { active };
   }
-  private applyCron(
+  private async applyCron(
     item: SessionWork,
     source: HostSchedule,
-  ): { active: boolean } {
-    const first = this.command(["crontab", "-l"]);
+  ): Promise<{ active: boolean }> {
+    const first = await this.command(["crontab", "-l"]);
     if (first.status !== 0)
       throw new Error("Cannot read crontab before control");
     const lines = first.stdout.split("\n");
@@ -260,7 +341,7 @@ export class HostSchedules {
       );
     const enabled = item.desiredState === "enabled";
     lines[indexes[0]!] = enabled ? source.raw : paused;
-    const beforeCommit = this.command(["crontab", "-l"]);
+    const beforeCommit = await this.command(["crontab", "-l"]);
     if (
       beforeCommit.stdout !== first.stdout ||
       beforeCommit.status !== first.status
@@ -269,13 +350,13 @@ export class HostSchedules {
         "Crontab changed concurrently; retry from a fresh inventory",
       );
     const next = lines.join("\n");
-    const written = this.command(
+    const written = await this.command(
       ["crontab", "-"],
       next.endsWith("\n") ? next : next + "\n",
     );
     if (written.status !== 0)
       throw new Error(written.stderr || "Crontab write failed");
-    const check = this.command(["crontab", "-l"]);
+    const check = await this.command(["crontab", "-l"]);
     if (check.status !== 0 || check.stdout.trimEnd() !== next.trimEnd())
       throw new Error("Crontab write could not be verified");
     // Removing a source cannot prove the previously detached command ended.
@@ -285,10 +366,10 @@ export class HostSchedules {
       );
     return { active: enabled };
   }
-  private applyLaunchd(
+  private async applyLaunchd(
     item: SessionWork,
     entry: HostSchedule,
-  ): { active: boolean } {
+  ): Promise<{ active: boolean }> {
     if (item.desiredState === "paused")
       throw new Error(
         "launchd cannot pause future triggers independently of its current run; use Stop",
@@ -296,22 +377,27 @@ export class HostSchedules {
     const target = `gui/${process.getuid?.()}/${entry.id}`,
       domain = `gui/${process.getuid?.()}`;
     const enabled = item.desiredState === "enabled";
-    const policy = this.command([
+    const policy = await this.command([
       "launchctl",
       enabled ? "enable" : "disable",
       target,
     ]);
     if (policy.status !== 0) throw new Error(policy.stderr);
-    const initial = this.command(["launchctl", "print", target]);
+    const initial = await this.command(["launchctl", "print", target]);
     if (enabled && initial.status !== 0) {
-      const run = this.command(["launchctl", "bootstrap", domain, entry.raw]);
+      const run = await this.command([
+        "launchctl",
+        "bootstrap",
+        domain,
+        entry.raw,
+      ]);
       if (run.status !== 0) throw new Error(run.stderr);
     }
     if (!enabled && initial.status === 0) {
-      const run = this.command(["launchctl", "bootout", target]);
+      const run = await this.command(["launchctl", "bootout", target]);
       if (run.status !== 0) throw new Error(run.stderr);
     }
-    const actual = this.command(["launchctl", "print", target]);
+    const actual = await this.command(["launchctl", "print", target]);
     if ((actual.status === 0) !== enabled)
       throw new Error("launchd state has not converged");
     return { active: enabled };

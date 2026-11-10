@@ -1,20 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   mkdirSync,
+  existsSync,
   writeFileSync,
   readFileSync,
   rmSync,
   readdirSync,
+  realpathSync,
+  statSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import {
   codexCatalogWithWindow,
   codexModelCatalogArguments,
 } from "../dist/harness/agent-runtime/codex-model-catalog.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
 import { CodexAppServerThread } from "../dist/session/runner/codex-app-server.js";
 
 const window = {
@@ -34,6 +40,38 @@ const nativeModel = {
   shell_type: "unified_exec",
 };
 const bundled = { models: [nativeModel, { ...nativeModel, slug: "gpt-5.5" }] };
+
+function executableCachePath(command) {
+  const program = realpathSync.native(command);
+  const stat = statSync(program, { bigint: true });
+  const identity = createHash("sha256")
+    .update([program, stat.size, stat.mtimeNs].join("\0"))
+    .digest("hex");
+  return foundryStatePath(
+    "native-runtime",
+    "codex-models",
+    `bundled-${identity}.json`,
+  );
+}
+
+function catalogPath(args) {
+  assert.equal(args[0], "-c");
+  assert.match(args[1], /^model_catalog_json=/);
+  return JSON.parse(args[1].slice("model_catalog_json=".length));
+}
+
+async function captureConsoleError(promise) {
+  const original = console.error;
+  const messages = [];
+  console.error = (...args) => messages.push(args.join(" "));
+  try {
+    return { value: await promise, messages };
+  } catch (error) {
+    return { error, messages };
+  } finally {
+    console.error = original;
+  }
+}
 
 test("relay aliases retain native capabilities and get both window bounds", () => {
   const original = structuredClone(bundled);
@@ -99,29 +137,231 @@ test("cancellation stops the native catalog reader before an app-server starts",
   });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 75);
-  const thread = new CodexAppServerThread(
-    command,
-    { PATH: process.env.PATH },
-    {},
-    {
-      workingDirectory: root,
-      model: window.model,
-      contextWindow: window,
-    },
-  );
   const started = Date.now();
   try {
-    const pending = thread.runStreamed("unused", { signal: controller.signal });
     await assert.rejects(
-      thread.runStreamed("duplicate", { signal: controller.signal }),
-      /already running/,
+      codexModelCatalogArguments(
+        command,
+        { PATH: process.env.PATH },
+        root,
+        window,
+        controller.signal,
+      ),
+      /interrupted/,
     );
-    await assert.rejects(pending, /interrupted/);
     assert.ok(Date.now() - started < 2000);
   } finally {
     clearTimeout(timer);
     controller.abort();
   }
+});
+
+test("a native catalog cache hit does not execute Codex again", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-hit-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    calls = join(root, "calls");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');
+console.log(${JSON.stringify(JSON.stringify(bundled))});`,
+    { mode: 0o700 },
+  );
+  const env = { PATH: process.env.PATH };
+  const first = await codexModelCatalogArguments(command, env, root, window);
+  const second = await codexModelCatalogArguments(command, env, root, window);
+  assert.deepEqual(second, first);
+  assert.equal(readFileSync(calls, "utf8"), "x");
+  assert.deepEqual(
+    JSON.parse(readFileSync(executableCachePath(command), "utf8")),
+    bundled,
+  );
+});
+
+test("a shared disk cache is read without executing Codex", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-disk-hit-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    calls = join(root, "calls");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');
+process.exit(9);`,
+    { mode: 0o700 },
+  );
+  const cache = executableCachePath(command);
+  mkdirSync(dirname(cache), { recursive: true });
+  writeFileSync(cache, JSON.stringify(bundled));
+  const args = await codexModelCatalogArguments(
+    command,
+    { PATH: process.env.PATH },
+    root,
+    window,
+  );
+  assert.equal(
+    JSON.parse(readFileSync(catalogPath(args), "utf8")).models[0]
+      .max_context_window,
+    window.tokens,
+  );
+  assert.equal(existsSync(calls), false);
+});
+
+test("an issue execution keeps its native catalog cache in memory", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-issue-cache-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    calls = join(root, "calls"),
+    executionRoot = join(root, "sessions");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');
+console.log(${JSON.stringify(JSON.stringify(bundled))});`,
+    { mode: 0o700 },
+  );
+  const env = {
+    PATH: process.env.PATH,
+    FOUNDRY_EXECUTION_SESSION_ROOT: executionRoot,
+  };
+  const first = await codexModelCatalogArguments(command, env, root, window);
+  const second = await codexModelCatalogArguments(command, env, root, window);
+  assert.deepEqual(second, first);
+  assert.equal(readFileSync(calls, "utf8"), "x");
+  assert.ok(catalogPath(first).startsWith(join(executionRoot, "codex-models")));
+  assert.equal(existsSync(executableCachePath(command)), false);
+});
+
+test("changing the Codex executable identity reads the catalog again", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-identity-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    calls = join(root, "calls");
+  const writeCatalog = (catalog, suffix = "") =>
+    writeFileSync(
+      command,
+      `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');
+console.log(${JSON.stringify(JSON.stringify(catalog))});${suffix}`,
+      { mode: 0o700 },
+    );
+  writeCatalog(bundled);
+  const env = { PATH: process.env.PATH };
+  const first = catalogPath(
+    await codexModelCatalogArguments(command, env, root, window),
+  );
+  const updated = structuredClone(bundled);
+  updated.models[0].base_instructions = "changed native instructions";
+  writeCatalog(updated, "\n// identity changed");
+  const later = new Date(Date.now() + 2_000);
+  utimesSync(command, later, later);
+  const second = catalogPath(
+    await codexModelCatalogArguments(command, env, root, window),
+  );
+  assert.notEqual(second, first);
+  assert.equal(readFileSync(calls, "utf8"), "xx");
+  assert.equal(
+    JSON.parse(readFileSync(second, "utf8")).models[0].base_instructions,
+    "changed native instructions",
+  );
+});
+
+test("concurrent cache misses share one native catalog read", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-concurrent-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    calls = join(root, "calls");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');
+setTimeout(()=>console.log(${JSON.stringify(JSON.stringify(bundled))}), 100);`,
+    { mode: 0o700 },
+  );
+  const env = { PATH: process.env.PATH };
+  const args = await Promise.all([
+    codexModelCatalogArguments(command, env, root, window),
+    codexModelCatalogArguments(command, env, root, {
+      ...window,
+      tokens: 400000,
+    }),
+  ]);
+  assert.notEqual(catalogPath(args[0]), catalogPath(args[1]));
+  assert.equal(readFileSync(calls, "utf8"), "x");
+});
+
+test("native catalog read failures retry once and expose safe classes", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-failure-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const writeCommand = (body) => {
+    const command = join(root, `codex-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(command, `#!${process.execPath}\n${body}`, { mode: 0o700 });
+    return command;
+  };
+  const cases = [
+    {
+      command: writeCommand("setInterval(()=>{},1000);"),
+      expected: /timeout/,
+      env: {
+        PATH: process.env.PATH,
+        FOUNDRY_CODEX_MODEL_CATALOG_TIMEOUT_MS: "100",
+      },
+    },
+    {
+      command: writeCommand(
+        "console.error('SECRET_CREDENTIAL');process.exit(7);",
+      ),
+      expected: /exit code 7/,
+      env: { PATH: process.env.PATH },
+    },
+    {
+      command: writeCommand("process.stdout.write('SECRET_CREDENTIAL');"),
+      expected: /invalid JSON/,
+      env: { PATH: process.env.PATH },
+    },
+  ];
+  for (const item of cases) {
+    const result = await captureConsoleError(
+      codexModelCatalogArguments(item.command, item.env, root, window),
+    );
+    assert.match(result.error.message, item.expected);
+    assert.doesNotMatch(result.error.message, /SECRET_CREDENTIAL/);
+    assert.equal(result.messages.length, 1);
+    assert.match(result.messages[0], item.expected);
+    assert.doesNotMatch(result.messages[0], /SECRET_CREDENTIAL/);
+  }
+});
+
+test("a failed native catalog read succeeds on its one retry", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-catalog-retry-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const command = join(root, "codex"),
+    attempts = join(root, "attempts");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+const fs=require('node:fs');
+let count=0;
+try{count=Number(fs.readFileSync(${JSON.stringify(attempts)}, 'utf8'));}catch{}
+count++;
+fs.writeFileSync(${JSON.stringify(attempts)}, String(count));
+if(count===1)process.exit(9);
+console.log(${JSON.stringify(JSON.stringify(bundled))});`,
+    { mode: 0o700 },
+  );
+  const args = await codexModelCatalogArguments(
+    command,
+    { PATH: process.env.PATH },
+    root,
+    window,
+  );
+  assert.equal(readFileSync(attempts, "utf8"), "2");
+  assert.equal(
+    JSON.parse(readFileSync(catalogPath(args), "utf8")).models[0]
+      .max_context_window,
+    window.tokens,
+  );
 });
 
 test("startup catalogs are immutable across concurrent windows and native metadata changes", async (t) => {
@@ -178,6 +418,8 @@ test("startup catalogs are immutable across concurrent windows and native metada
     `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(updated))});\n`,
     { mode: 0o700 },
   );
+  const updatedAt = new Date(Date.now() + 2_000);
+  utimesSync(command, updatedAt, updatedAt);
   assert.notEqual(path(await materialize(window)), firstPath);
   // A failed native metadata read must fail visibly, without exposing stderr
   // or continuing with Codex's small unknown-model default.
@@ -186,12 +428,14 @@ test("startup catalogs are immutable across concurrent windows and native metada
     `#!${process.execPath}\nconsole.error('SECRET_CREDENTIAL');process.exit(1);\n`,
     { mode: 0o700 },
   );
-  await assert.rejects(
-    materialize(window),
-    (error) =>
-      /Cannot read Codex/.test(error.message) &&
-      !error.message.includes("SECRET_CREDENTIAL"),
-  );
+  const failedAt = new Date(Date.now() + 4_000);
+  utimesSync(command, failedAt, failedAt);
+  const failure = await captureConsoleError(materialize(window));
+  assert.match(failure.error.message, /Cannot read Codex.*exit code 1/);
+  assert.doesNotMatch(failure.error.message, /SECRET_CREDENTIAL/);
+  assert.equal(failure.messages.length, 1);
+  assert.match(failure.messages[0], /exit code 1/);
+  assert.doesNotMatch(failure.messages[0], /SECRET_CREDENTIAL/);
   assert.deepEqual(await materialize(undefined), []);
 });
 

@@ -24,7 +24,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { daemonRequestHeaders } from "../transport/server-http.js";
 import { foundryStatePath } from "../platform/state-root.js";
-import { writeFileAtomic } from "../platform/storage.js";
+import { writeFileAtomic, writeFileAtomicAsync } from "../platform/storage.js";
 import { WorkProcesses } from "./processes.js";
 import { readNativeSchedules } from "./native-schedules.js";
 import { HostSchedules, type HostSchedule } from "./host-schedules.js";
@@ -82,6 +82,12 @@ const requestTimeoutMs = 30_000;
 // A control the device has not yet confirmed keeps the regular pace this
 // long; one it cannot confirm (a process it cannot stop) then backs off.
 const controlFollowMs = 2 * 60_000;
+/** Work inventory changes are coalesced into this write cadence. */
+const defaultSaveBatchMs = 500;
+/** Completed work stays local while it is recent or among the latest items. */
+const recentWorkMs = 7 * 24 * 60 * 60_000;
+const recentItemsPerSession = 10;
+const historyDirectory = "history";
 
 /**
  * What a sweep compares to decide whether an item changed: everything but
@@ -101,8 +107,65 @@ function workFingerprint(item: SessionWork): string {
           )
         : value;
   return JSON.stringify(
-    canonical({ ...item, observation: { ...item.observation, at: "" } }),
+    canonical({
+      ...item,
+      updatedAt: "",
+      observation: {
+        ...item.observation,
+        at: "",
+        ...(["unknown", "completed", "failed", "stopped"].includes(
+          item.observation.status,
+        )
+          ? { endedAt: "" }
+          : {}),
+      },
+    }),
   );
+}
+
+function workTimestamp(item: SessionWork): number {
+  for (const value of [
+    item.observation.endedAt,
+    item.observation.at,
+    item.updatedAt,
+    item.createdAt,
+  ]) {
+    const parsed = Date.parse(value || "");
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function workEnded(item: SessionWork): boolean {
+  return Boolean(
+    item.observation.endedAt ||
+    ["completed", "failed", "stopped"].includes(item.observation.status),
+  );
+}
+
+/** Reads one monthly local history file; server lists remain user-facing. */
+export function readWorkHistory(root: string, month: string): SessionWork[] {
+  const path = join(root, historyDirectory, `${month}.jsonl`);
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const byId = new Map<string, SessionWork>();
+  for (const line of raw.split("\n")) {
+    if (!line) continue;
+    const item = JSON.parse(line) as SessionWork;
+    byId.set(item.id, item);
+  }
+  return [...byId.values()];
+}
+
+interface WorkSupervisorOptions {
+  saveBatchMs?: number;
+  /** Test/benchmark receipt; also useful for operational instrumentation. */
+  onPersist?: (bytes: number) => void;
 }
 
 export function workIdentity(
@@ -129,6 +192,11 @@ export class WorkSupervisor {
   private controlsSeen = new Map<string, { revision: number; at: number }>();
   private coverageSent = { key: "", at: 0 };
   private saved = "";
+  private dirty = false;
+  private saveTimer?: NodeJS.Timeout;
+  private flushing?: Promise<void>;
+  private readonly saveBatchMs: number;
+  private readonly onPersist?: (bytes: number) => void;
   private ticking = false;
   private draining = false;
   private serverURL = "";
@@ -154,7 +222,7 @@ export class WorkSupervisor {
   private readonly hosts: HostSchedules;
   private toolBaselines = new Map<
     string,
-    { sessionId: string; ids: Set<string> }
+    { sessionId: string; ids: Promise<Set<string>> }
   >();
   private coverage = {
     schedulerVersion: "unknown",
@@ -167,7 +235,10 @@ export class WorkSupervisor {
   constructor(
     private readonly root: string,
     private readonly request: typeof fetch = fetch,
+    options: WorkSupervisorOptions = {},
   ) {
+    this.saveBatchMs = Math.max(0, options.saveBatchMs ?? defaultSaveBatchMs);
+    this.onPersist = options.onPersist;
     mkdirSync(root, { recursive: true, mode: 0o700 });
     this.processes = new WorkProcesses(join(root, "processes"));
     this.hosts = new HostSchedules(join(root, "host-sources.json"));
@@ -183,6 +254,10 @@ export class WorkSupervisor {
       }
       this.stoppedThreads = new Set(saved.stoppedThreads || []);
       this.cursor = saved.cursor || "";
+      if (this.pruneRetired(Date.now())) {
+        this.dirty = true;
+        this.flushSync();
+      }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
@@ -251,8 +326,31 @@ export class WorkSupervisor {
     );
   }
   observeNativeWork(sessionId: string, task: NativeWorkTask) {
+    this.observeNativeWorkBatch(sessionId, [task]);
+  }
+  observeNativeWorkBatch(
+    sessionId: string,
+    tasks: readonly NativeWorkTask[],
+  ): boolean {
+    const changed = this.applyNativeWorkBatch(sessionId, tasks);
+    if (changed) {
+      this.save();
+      this.wake();
+    }
+    return changed;
+  }
+  private applyNativeWorkBatch(
+    sessionId: string,
+    tasks: readonly NativeWorkTask[],
+  ): boolean {
+    let changed = false;
+    for (const task of tasks)
+      changed = this.applyNativeWork(sessionId, task) || changed;
+    return changed;
+  }
+  private applyNativeWork(sessionId: string, task: NativeWorkTask): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
+    if (!session) return false;
     const source = task.native.runtime;
     const id = workIdentity(sessionId, source, task.id);
     const previous = this.items.get(id);
@@ -263,9 +361,9 @@ export class WorkSupervisor {
       !previous.native &&
       previous.management === "managed"
     )
-      return;
+      return false;
     const before = previous && workFingerprint(previous);
-    const observedAt = previous?.observation.at;
+    const previousObservation = previous?.observation;
     const updatedAt = previous?.updatedAt;
     const item: SessionWork = previous ?? {
       id,
@@ -328,14 +426,13 @@ export class WorkSupervisor {
         Date.now() - (this.reported.get(id) || 0) >= observationRefreshMs
       )
     ) {
-      item.observation.at = observedAt!;
+      item.observation = previousObservation!;
       item.updatedAt = updatedAt!;
-      return;
+      return false;
     }
     this.items.set(id, item);
     this.pending.set(id, item);
-    this.save();
-    this.wake();
+    return true;
   }
   observeBackground(
     sessionId: string,
@@ -345,16 +442,17 @@ export class WorkSupervisor {
   ) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    for (const task of tasks)
-      this.observeNativeWork(
-        sessionId,
+    this.observeNativeWorkBatch(
+      sessionId,
+      tasks.map((task) =>
         claudeBackgroundWork(task, {
           sessionId: nativeSessionId || session.nativeSessionId || "",
           version,
           canStop: (id) =>
             this.runtime?.canStop?.(sessionId, id, "claude") === true,
         }),
-      );
+      ),
+    );
   }
 
   observeTimers(
@@ -366,15 +464,16 @@ export class WorkSupervisor {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     const at = new Date().toISOString();
-    for (const task of tasks)
-      this.observeNativeWork(
-        sessionId,
+    let changed = this.applyNativeWorkBatch(
+      sessionId,
+      tasks.map((task) =>
         claudeScheduledWork(task, {
           sessionId: nativeSessionId || session.nativeSessionId || "",
           version,
           canStop: () => false,
         }),
-      );
+      ),
+    );
     for (const item of this.items.values())
       if (
         item.sessionId === sessionId &&
@@ -385,6 +484,7 @@ export class WorkSupervisor {
         item.kind === "schedule" &&
         !tasks.some((task) => task.id === item.sourceId)
       ) {
+        const before = workFingerprint(item);
         item.observation = {
           ...item.observation,
           status: item.native.lastRun?.status || "stopped",
@@ -397,10 +497,14 @@ export class WorkSupervisor {
           confirmedRevision: item.revision,
         };
         item.spec.recurring = false;
+        if (workFingerprint(item) === before) continue;
         this.pending.set(item.id, item);
+        changed = true;
       }
-    this.save();
-    this.wake();
+    if (changed) {
+      this.save();
+      this.wake();
+    }
   }
   observeTimerRun(
     sessionId: string,
@@ -472,6 +576,7 @@ export class WorkSupervisor {
     const id = workIdentity(sessionId, "claude", taskId),
       existing = this.items.get(id);
     if (!existing && event.metadata?.taskType !== "local_agent") return;
+    const before = existing && workFingerprint(existing);
     const at = new Date().toISOString();
     const item: SessionWork = existing ?? {
       id,
@@ -513,29 +618,35 @@ export class WorkSupervisor {
         at,
         endedAt: at,
       };
+    if (before !== undefined && workFingerprint(item) === before) return;
     this.items.set(id, item);
     this.pending.set(id, item);
     this.save();
     this.wake();
   }
-  toolStarting(sessionId: string, toolId: string) {
+  async toolStarting(sessionId: string, toolId: string) {
     if (!this.active || !this.sessions.has(sessionId) || !toolId) return;
-    const scan = this.hosts.scan();
     this.toolBaselines.set(toolId, {
       sessionId,
-      ids: new Set(scan.entries.map((e) => `${e.source}:${e.id}`)),
+      ids: this.hosts
+        .scan()
+        .then(
+          (scan) => new Set(scan.entries.map((e) => `${e.source}:${e.id}`)),
+        ),
     });
     if (this.toolBaselines.size > 256)
       this.toolBaselines.delete(this.toolBaselines.keys().next().value!);
   }
-  toolCompleted(toolId: string) {
+  async toolCompleted(toolId: string) {
     const before = this.toolBaselines.get(toolId);
     if (!before) return;
     this.toolBaselines.delete(toolId);
+    const ids = await before.ids;
     // A tool-time delta is discovery evidence, not ownership proof: another
     // local program may have created the entry during this command.
-    for (const entry of this.hosts.scan().entries)
-      if (!before.ids.has(`${entry.source}:${entry.id}`))
+    const scan = await this.hosts.scan({ fresh: true });
+    for (const entry of scan.entries)
+      if (!ids.has(`${entry.source}:${entry.id}`))
         this.recordHost(entry, before.sessionId);
   }
   private recordHost(entry: HostSchedule, sessionId: string) {
@@ -572,18 +683,120 @@ export class WorkSupervisor {
     this.pending.set(id, item);
   }
   private save() {
-    // A sweep that changed nothing leaves the inventory (megabytes on a
-    // device with a long history) as it is on disk.
-    const inventory = JSON.stringify({
+    this.dirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = undefined;
+      void this.flush().catch((error) =>
+        console.error(`Session work inventory save: ${String(error)}`),
+      );
+    }, this.saveBatchMs);
+    this.saveTimer.unref?.();
+  }
+  private inventoryJSON(): string {
+    return JSON.stringify({
       sessions: [...this.sessions.values()],
       items: [...this.items.values()],
       pendingIds: [...this.pending.keys()],
       stoppedThreads: [...this.stoppedThreads],
       cursor: this.cursor,
     });
+  }
+  /**
+   * Move old terminal work to append-only monthly NDJSON. The server keeps the
+   * user-visible history; this local copy only supports device recovery.
+   */
+  private pruneRetired(now: number): boolean {
+    const latestBySession = new Map<string, SessionWork[]>();
+    for (const item of this.items.values()) {
+      if (this.pending.has(item.id) || !workEnded(item)) continue;
+      const at = workTimestamp(item);
+      if (now - at <= recentWorkMs) continue;
+      const latest = latestBySession.get(item.sessionId) ?? [];
+      latest.push(item);
+      latestBySession.set(item.sessionId, latest);
+    }
+    for (const latest of latestBySession.values()) {
+      latest.sort((a, b) => workTimestamp(b) - workTimestamp(a));
+      if (latest.length > recentItemsPerSession)
+        latest.length = recentItemsPerSession;
+    }
+    const retainedRecent = new Set(
+      [...latestBySession.values()].flatMap((items) =>
+        items.map((item) => item.id),
+      ),
+    );
+    const retired: SessionWork[] = [];
+    for (const item of this.items.values())
+      if (
+        workEnded(item) &&
+        !this.pending.has(item.id) &&
+        now - workTimestamp(item) > recentWorkMs &&
+        !retainedRecent.has(item.id)
+      )
+        retired.push(item);
+    if (!retired.length) return false;
+    this.archiveWork(retired);
+    for (const item of retired) this.items.delete(item.id);
+    return true;
+  }
+  private archiveWork(items: readonly SessionWork[]) {
+    const byMonth = new Map<string, SessionWork[]>();
+    for (const item of items) {
+      const at = workTimestamp(item);
+      const month = new Date(at || Date.now()).toISOString().slice(0, 7);
+      const group = byMonth.get(month) ?? [];
+      group.push(item);
+      byMonth.set(month, group);
+    }
+    const directory = join(this.root, historyDirectory);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    for (const [month, group] of byMonth) {
+      const path = join(directory, `${month}.jsonl`);
+      const previous = existsSync(path) ? readFileSync(path, "utf8") : "";
+      const appended = group
+        .map((item) => `${JSON.stringify(item)}\n`)
+        .join("");
+      if (!appended) continue;
+      writeFileAtomic(path, `${previous}${appended}`, { fsync: true });
+    }
+  }
+  /** Persist pending changes asynchronously, coalescing changes during a write. */
+  flush(): Promise<void> {
+    if (this.flushing) return this.flushing;
+    this.flushing = (async () => {
+      if (this.saveTimer) clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+      while (this.dirty) {
+        this.dirty = false;
+        if (this.pruneRetired(Date.now())) this.dirty = true;
+        const inventory = this.inventoryJSON();
+        if (inventory === this.saved) continue;
+        await writeFileAtomicAsync(
+          join(this.root, "inventory.json"),
+          `${inventory}\n`,
+          { fsync: true },
+        );
+        this.saved = inventory;
+        this.onPersist?.(Buffer.byteLength(`${inventory}\n`));
+      }
+    })().finally(() => {
+      this.flushing = undefined;
+    });
+    return this.flushing;
+  }
+  /** Synchronous exit-only fallback. Normal shutdown awaits flush(). */
+  flushSync(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    if (!this.dirty) return;
+    this.dirty = false;
+    if (this.pruneRetired(Date.now())) this.dirty = false;
+    const inventory = this.inventoryJSON();
     if (inventory === this.saved) return;
     writeFileAtomic(join(this.root, "inventory.json"), `${inventory}\n`);
     this.saved = inventory;
+    this.onPersist?.(Buffer.byteLength(`${inventory}\n`));
   }
   async start(serverURL: string, version?: string) {
     this.serverURL = serverURL;
@@ -592,10 +805,11 @@ export class WorkSupervisor {
     this.running = true;
     await this.tick();
   }
-  stop() {
+  async stop(): Promise<void> {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    await this.flush();
   }
   /** Runs the next sweep within delay ms, unless one is already due sooner. */
   private schedule(delay: number) {
@@ -838,7 +1052,7 @@ export class WorkSupervisor {
           this.pending.set(id, item);
         }
       }
-      const hostScan = this.hosts.scan();
+      const hostScan = await this.hosts.scan();
       this.coverage.hostSchedules = hostScan.errors.length
         ? "partial"
         : "observed";
@@ -920,7 +1134,7 @@ export class WorkSupervisor {
         )
           continue;
         const before = workFingerprint(item);
-        const observedAt = item.observation.at;
+        const previousObservation = item.observation;
         try {
           item.observation = await this.reconcile(item, session);
           if (
@@ -950,7 +1164,7 @@ export class WorkSupervisor {
               observationRefreshMs
           )
         ) {
-          item.observation.at = observedAt;
+          item.observation = previousObservation;
           continue;
         }
         changed.push(item);
@@ -1279,8 +1493,17 @@ export class WorkSupervisor {
 }
 
 let instance: WorkSupervisor | undefined;
+let exitHooksInstalled = false;
 export function sessionWork(): WorkSupervisor {
-  return (instance ??= new WorkSupervisor(foundryStatePath("session-work")));
+  if (!instance) {
+    instance = new WorkSupervisor(foundryStatePath("session-work"));
+    if (!exitHooksInstalled) {
+      exitHooksInstalled = true;
+      process.once("beforeExit", () => void instance?.flush());
+      process.once("exit", () => instance?.flushSync());
+    }
+  }
+  return instance;
 }
 /**
  * The supervisor only where this process owns it (started or attached a
@@ -1298,10 +1521,10 @@ export function recordWorkToolStarting(
   sessionId: string,
   toolId: string,
 ): void {
-  instance?.toolStarting(sessionId, toolId);
+  void instance?.toolStarting(sessionId, toolId);
 }
 export function recordWorkToolCompleted(toolId: string): void {
-  instance?.toolCompleted(toolId);
+  void instance?.toolCompleted(toolId);
 }
 
 export function recordNativeWork(
@@ -1309,4 +1532,11 @@ export function recordNativeWork(
   task: NativeWorkTask,
 ): void {
   instance?.observeNativeWork(sessionId, task);
+}
+
+export function recordNativeWorkBatch(
+  sessionId: string,
+  tasks: readonly NativeWorkTask[],
+): void {
+  instance?.observeNativeWorkBatch(sessionId, tasks);
 }

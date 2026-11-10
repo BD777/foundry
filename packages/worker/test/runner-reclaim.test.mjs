@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { ExecutionHostClient } from "../dist/execution-host/client.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
+import { executionHostProtocol } from "../dist/execution-host/protocol.js";
 import { reclaimExecutionService } from "../dist/execution-host/service.js";
 import { daemonCameOnline } from "../dist/daemon/daemon-health.js";
 
@@ -52,7 +53,7 @@ function healthyRunner(socketPath) {
         `${JSON.stringify({
           id: request.id,
           result: {
-            protocol: 1,
+            protocol: executionHostProtocol,
             entry: "/runtime/new/main.js",
             runtimeStamp: "new",
             serverURL,

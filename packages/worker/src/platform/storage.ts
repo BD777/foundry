@@ -10,6 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { chmod, mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
 const privateDirectoryMode = 0o700;
@@ -123,12 +124,74 @@ export function writeFileAtomic(
   }
 }
 
+/**
+ * Asynchronous form of writeFileAtomic for hot, recoverable state. The
+ * temporary write and sync happen off the event loop; rename remains atomic.
+ */
+export async function writeFileAtomicAsync(
+  path: string,
+  contents: string | Uint8Array,
+  options: AtomicWriteOptions = {},
+): Promise<void> {
+  const {
+    mode = privateFileMode,
+    directoryMode = privateDirectoryMode,
+    hardenParent = true,
+    fsync = true,
+    fsyncDirectory = false,
+    createParent = true,
+  } = options;
+  const parent = dirname(path);
+  if (createParent)
+    await mkdir(parent, { mode: directoryMode, recursive: true });
+  if (hardenParent) await chmod(parent, directoryMode);
+
+  const target = resolve(path);
+  const tempPath = resolve(
+    parent,
+    options.tempPath ??
+      `.${basename(path)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+  );
+  let descriptor: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    descriptor = await open(tempPath, "wx", mode);
+    await descriptor.writeFile(contents);
+    if (fsync) await descriptor.sync();
+    await descriptor.close();
+    descriptor = undefined;
+    if (options.exclusive && existsSync(target)) return;
+    await rename(tempPath, target);
+    await chmod(target, mode);
+    if (fsyncDirectory) {
+      descriptor = await open(parent, "r");
+      await descriptor.sync();
+      await descriptor.close();
+      descriptor = undefined;
+    }
+  } finally {
+    if (descriptor) await descriptor.close().catch(() => undefined);
+    await rm(tempPath, { force: true }).catch(() => undefined);
+  }
+}
+
 export function writePrivateJSONAtomic(
   path: string,
   value: unknown,
   options?: Omit<AtomicWriteOptions, "mode" | "directoryMode">,
 ): void {
   writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`, options);
+}
+
+export async function writePrivateJSONAtomicAsync(
+  path: string,
+  value: unknown,
+  options?: Omit<AtomicWriteOptions, "mode" | "directoryMode">,
+): Promise<void> {
+  await writeFileAtomicAsync(
+    path,
+    `${JSON.stringify(value, null, 2)}\n`,
+    options,
+  );
 }
 
 /** Alias for writePrivateJSONAtomic — writes owner-only JSON. */

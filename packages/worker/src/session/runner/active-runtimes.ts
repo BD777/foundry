@@ -390,6 +390,8 @@ export function closeActiveClaudeRuntime(
   ),
 ): void {
   runtime.closed = true;
+  runtime.foundryToolsSupervisor?.close();
+  runtime.foundryToolsSupervisor = undefined;
   forgetClaudeRuntime(runtime, reason);
   const turn = runtime.pending;
   runtime.pending = undefined;
