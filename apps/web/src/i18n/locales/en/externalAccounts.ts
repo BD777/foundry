@@ -96,6 +96,107 @@ export const externalAccounts = {
       refused: "Refused",
     },
   },
+  appstoreconnect: {
+    addKey: "Add team key",
+    refresh: "Refresh",
+    intro:
+      "App Store Connect team keys stay on the server. Sessions can manage only the apps this workspace binds, through Foundry's gateway.",
+    teamKeyTitle: "Use a team key with the App Manager role",
+    teamKeyBody:
+      "Apple team keys can access every app the team owns. Foundry never passes the .p8 or a real JWT to a session; it checks each request and permits only bound apps. Price changes and review submission stay with the person in App Store Connect.",
+    noSecretStore:
+      "The server secret store must be configured before a team key can be sealed.",
+    empty: "No App Store Connect team key has been added.",
+    addTitle: "Add an App Store Connect team key",
+    addDescription:
+      "Download a .p8 team key in App Store Connect under Users and Access → Integrations. Upload it or paste its contents with the Issuer ID and Key ID.",
+    replaceTitle: "Replace App Store Connect team key",
+    replaceDescription:
+      "Apple validates the new key before Foundry replaces the sealed one. The previous key stops working as soon as this succeeds.",
+    replace: "Replace key",
+    revoke: "Revoke key",
+    revokeTitle: "Revoke {{name}}?",
+    revokeDescription:
+      "This immediately stops every session and removes App Store Connect access from its workspace bindings.",
+    revokeBody:
+      "The team key stays in Apple. Foundry deletes its sealed copy and refuses new requests. Adding the key again requires a fresh .p8.",
+    revokeConfirm: "Revoke and stop access",
+    revokedNotice: "Revoked {{name}}; App Store Connect sessions lost access.",
+    savedNotice: "App Store Connect key {{name}} is validated and sealed.",
+    issuer: "Issuer",
+    keyId: "Key",
+    issuerLabel: "Issuer ID",
+    issuerPlaceholder: "00000000-0000-0000-0000-000000000000",
+    issuerHelp:
+      "Found above the team keys in App Store Connect. It is not secret.",
+    keyIdLabel: "Key ID",
+    keyIdPlaceholder: "ABCDE12345",
+    keyIdHelp: "The short ID beside the downloaded .p8 file. It is not secret.",
+    nameLabel: "Name (optional)",
+    namePlaceholder: "Example: Our App Store team",
+    teamKey:
+      "Apple validates this key by reading the first app in your team. No app or product is changed.",
+    privateKeyLabel: "Private key (.p8)",
+    privateKeyPlaceholder: "-----BEGIN PRIVATE KEY-----",
+    sourceLabel: "Private key input",
+    uploadFile: "Upload file",
+    pasteText: "Paste text",
+    privateKeyHelp:
+      "The .p8 is sent once to Foundry, validated, and sealed in the server secret store. It is never returned.",
+    keyDiscarded:
+      "The last .p8 was discarded from this form before submission finished. Re-select it before retrying.",
+    validating: "Validating…",
+    validate: "Validate and save",
+    validationFailed: "Apple rejected this team key",
+    editAndRetry: "Edit and retry",
+    errors: {
+      issuer: "Enter Apple's Issuer ID as a UUID.",
+      keyId: "Enter Apple's 8–16 character Key ID.",
+      privateKey: "Choose or paste Apple's .p8 private key.",
+      fileTooLarge:
+        "This file is larger than 16 KiB; choose the .p8 Apple downloaded.",
+      fileRead: "This browser could not read the selected file.",
+    },
+    loadingApps: "Checking apps visible to this key…",
+    appCount_one: "{{count}} app visible",
+    appCount_other: "{{count}} apps visible",
+    appsNotRead: "Apps have not been read yet.",
+    refreshApps: "Check apps",
+    noApps: "No apps are visible to this key.",
+    unnamedApp: "App {{id}}",
+    validatedTitle_one: "Key validated · {{count}} app visible",
+    validatedTitle_other: "Key validated · {{count}} apps visible",
+    validatedApps: "Visible apps: {{apps}}",
+    validatedNoApps:
+      "The key is valid but currently sees no apps. Check its App Manager role in App Store Connect.",
+    loadFailed: "Could not load App Store Connect keys: {{error}}",
+    workspaceAccess: "Workspace access",
+    bindingDetail:
+      "Choose the apps this workspace may manage. The team key can still access every app at Apple; Foundry refuses everything outside this selection.",
+    workspace: "Workspace",
+    chooseWorkspace: "Choose a workspace you manage",
+    loadingBinding: "Loading this workspace's App Store Connect binding…",
+    identity: "App Store Connect key",
+    chooseIdentity: "Choose a team key",
+    unverifiedApp:
+      "This saved app is not in the current list. Check the key or deselect it.",
+    accessTitle: "Session access",
+    accessDetail:
+      "Read allows GET requests. Commerce also allows creating and updating subscription groups, subscriptions, offers, localizations and review screenshots.",
+    accessRead: "Read",
+    accessReadDetail:
+      "Apps, subscription groups, subscriptions, prices and localized metadata.",
+    accessCommerce: "Read + commerce",
+    accessCommerceDetail:
+      "Also creates and updates subscription groups, subscriptions, introductory offers, localizations and review screenshots. Price changes and review submission stay in App Store Connect.",
+    saveBinding: "Save apps and access",
+    removeBinding: "Remove workspace binding",
+    boundNotice: "Bound the selected apps for {{name}} in this workspace.",
+    unboundNotice:
+      "Removed App Store Connect apps for {{name}} from this workspace.",
+    consumption:
+      "Sessions receive ASC_API_BASE_URL and a revocable ASC_API_TOKEN. curl reaches only the apps and access this workspace binds; changing the level applies to a running session at its next request.",
+  },
   page: {
     title: "Connectors",
     intro:
@@ -131,6 +232,7 @@ export const externalAccounts = {
     workspaces_other: "Bound to {{count}} workspaces",
   },
   providers: {
+    appstoreconnect: "App Store Connect",
     aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "Feishu",

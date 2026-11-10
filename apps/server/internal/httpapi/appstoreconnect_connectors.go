@@ -146,11 +146,14 @@ func (s *Server) handleAppStoreConnectGateway(w http.ResponseWriter, r *http.Req
 }
 
 func writeAppStoreConnectConnectorError(w http.ResponseWriter, err error) {
+	var keyError *externalaccounts.AppStoreConnectKeyError
 	switch {
 	case errors.Is(err, externalaccounts.ErrSecretsNotConfigured):
 		writeError(w, http.StatusPreconditionFailed, err.Error())
 	case errors.Is(err, integrations.ErrOff):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.As(err, &keyError):
+		writeError(w, http.StatusBadRequest, keyError.Error())
 	case errors.Is(err, externalaccounts.ErrAppStoreConnectKeyRejected):
 		writeError(w, http.StatusBadRequest, "App Store Connect rejected this API key; check the Issuer ID, Key ID and .p8 file")
 	case errors.Is(err, externalaccounts.ErrInvalidAppStoreConnectKey):

@@ -33,6 +33,24 @@ var (
 	ErrAppStoreConnectKeyRevoked  = errors.New("this App Store Connect API key has been revoked in Foundry")
 )
 
+// AppStoreConnectKeyError carries Apple's short, safe explanation for a key
+// check failure. It never contains the private key or a JWT.
+type AppStoreConnectKeyError struct {
+	Status int
+	Reason string
+}
+
+func (e *AppStoreConnectKeyError) Error() string {
+	if e.Reason != "" {
+		return "App Store Connect: " + e.Reason
+	}
+	return ErrAppStoreConnectKeyRejected.Error()
+}
+
+func (e *AppStoreConnectKeyError) Unwrap() error {
+	return ErrAppStoreConnectKeyRejected
+}
+
 // AppStoreConnectCredentials is one unsealed team key for one upstream call.
 // It exists in memory only for the duration of that call.
 type AppStoreConnectCredentials struct {
@@ -102,14 +120,37 @@ func (a *AppStoreConnect) CheckKey(ctx context.Context, issuerID, keyID, private
 		return errors.New("App Store Connect could not be reached")
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		return ErrAppStoreConnectKeyRejected
-	}
+	payload, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("App Store Connect key check answered HTTP %d", response.StatusCode)
+		return &AppStoreConnectKeyError{Status: response.StatusCode, Reason: appStoreConnectErrorReason(payload)}
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 	return nil
+}
+
+func appStoreConnectErrorReason(payload []byte) string {
+	var document struct {
+		Errors []struct {
+			Title  string `json:"title"`
+			Detail string `json:"detail"`
+			Code   string `json:"code"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal(payload, &document) != nil || len(document.Errors) == 0 {
+		return ""
+	}
+	first := document.Errors[0]
+	reason := strings.TrimSpace(strings.Join([]string{first.Title, first.Detail, first.Code}, ": "))
+	reason = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, reason)
+	reason = strings.Join(strings.Fields(reason), " ")
+	if len(reason) > 500 {
+		reason = reason[:500]
+	}
+	return reason
 }
 
 // Do sends an authenticated Apple API request. One cached JWT is reused for

@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 连接器：[DEV-172 App Store Connect 会话侧与连接器页（ASC-2）](DEV-172-appstoreconnect-client.md)。Connectors 页面支持 App Store Connect key 绑定、替换、撤销和状态展示；Worker 会话经 Foundry 网关调用并同步 Skill。已部署 dev，等待提交窗口逐步合入。
+
 2026-11-10 对话：[DEV-158 对话界面显示等待子会话](DEV-158-waiting-children-web.md)。会话列表行、标签页标题和打开会话的顶部胶囊显示 `waitingChildCount`，顶部可展开子会话并跳转；复用现有子会话工作清单与 projection 刷新，不新增轮询。scratch 数据库副本真实浏览器浅/深、宽/窄与键盘自验通过；已部署 dev，待人工验收。
 
 2026-11-10 收尾：[DEV-171 其余已部署改动](DEV-171-deployed-tail.md)。全局侧栏复用共享导航样式，step usage 比较补齐请求速度字段，表格 Dialog 增加单一宽度断言，并更新批次检查规则；收纳逐项拆分后的剩余部署差异。已纳入部署状态快照，等待提交窗口逐步合入。

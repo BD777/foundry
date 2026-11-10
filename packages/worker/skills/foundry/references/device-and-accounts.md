@@ -73,6 +73,57 @@ re-authorized by the person in Foundry's Connectors.
   from 127.0.0.1, the device's Worker predates `cloudflare_gateway_v2`: ask
   the person to update it. Manage zones and authorization in Connectors →
   Cloudflare.
+- **App Store Connect** (`ASC_API_BASE_URL`, `ASC_API_TOKEN`): use `curl`
+  against the official API paths and send the stand-in as a bearer token.
+  The base URL is a loopback forwarder; the server replaces the stand-in
+  with a cached Apple JWT. The .p8 and real JWT are never in the session.
+  Only apps bound to this workspace, within its `read` or `commerce` level,
+  are forwarded. Use the key's visible app ID rather than listing the whole
+  team (account-wide `/apps` is refused).
+
+  List subscription groups:
+
+  ```sh
+  curl -sS -H "Authorization: Bearer $ASC_API_TOKEN" \
+    "$ASC_API_BASE_URL/apps/<app-id>/subscriptionGroups?limit=10"
+  ```
+
+  Create a subscription under a bound subscription group:
+
+  ```sh
+  curl -sS -X POST \
+    -H "Authorization: Bearer $ASC_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"data":{"type":"subscriptions","attributes":{"name":"Yearly","productId":"com.example.yearly"},"relationships":{"subscriptionGroup":{"data":{"type":"subscriptionGroups","id":"<group-id>"}}}}}' \
+    "$ASC_API_BASE_URL/subscriptions"
+  ```
+
+  Upload a review screenshot with Apple's reserve → pre-signed upload →
+  commit sequence. Reserve it under the subscription, upload the bytes to
+  each returned `uploadOperations[].url` with that operation's method and
+  request headers, then mark the screenshot uploaded:
+
+  ```sh
+  curl -sS -X POST \
+    -H "Authorization: Bearer $ASC_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"data":{"type":"subscriptionAppStoreReviewScreenshots","attributes":{"fileName":"review.png","fileSize":12345},"relationships":{"subscription":{"data":{"type":"subscriptions","id":"<subscription-id>"}}}}}' \
+    "$ASC_API_BASE_URL/subscriptionAppStoreReviewScreenshots"
+  curl -X PUT --upload-file review.png "<pre-signed upload URL>"
+  curl -sS -X PATCH \
+    -H "Authorization: Bearer $ASC_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"data":{"type":"subscriptionAppStoreReviewScreenshots","id":"<screenshot-id>","attributes":{"uploaded":true}}}' \
+    "$ASC_API_BASE_URL/subscriptionAppStoreReviewScreenshots/<screenshot-id>"
+  ```
+
+  A refusal is an HTTP 403 with an Apple-shaped error and a `foundry`
+  object naming the reason. Price changes, review submission and requests
+  that cannot be mapped to a bound app are refused; direct the person to
+  App Store Connect for those. If a new workspace binding or level is
+  needed, ask the person to change it in Connectors → the workspace → App
+  Store Connect.
+
 - **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI,
   Tencent Cloud `tccli`, Alibaba Cloud `aliyun`, and tools connector
   extensions on the device provide): a workspace either may use
