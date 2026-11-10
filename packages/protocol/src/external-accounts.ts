@@ -1,6 +1,9 @@
 export type {
+  AppStoreConnectApp,
+  AppStoreConnectConnection,
   ExternalAccountGateway,
   ExternalAccountMaterial,
+  SaveAppStoreConnectKeyInput,
 } from "./contract.gen.js";
 /**
  * External accounts: a person's logins at third-party platforms (first:

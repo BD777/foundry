@@ -514,6 +514,32 @@ interface components {
         [key: string]: string;
       };
     };
+    /** @description SaveAppStoreConnectKeyInput stores an App Store Connect API key. The issuer and key ids are public metadata; privateKey is write-only and is sealed by the server. */
+    SaveAppStoreConnectKeyInput: {
+      issuerId: string;
+      keyId: string;
+      privateKey: string;
+      label?: string;
+    };
+    /** @description AppStoreConnectConnection is one App Store Connect key as its owner sees it: the external app and account a workspace binding names, with no private key. */
+    AppStoreConnectConnection: {
+      appId: string;
+      accountId: string;
+      label: string;
+      issuerId: string;
+      keyId: string;
+      hasKey: boolean;
+      status: string;
+      createdAt?: string;
+      updatedAt?: string;
+    };
+    /** @description AppStoreConnectApp is one App Store Connect app record a bound workspace may select. */
+    AppStoreConnectApp: {
+      id: string;
+      name?: string;
+      bundleId?: string;
+      sku?: string;
+    };
     /** @description ExternalAccountMaterial is what a worker needs to let one tool act as an account for one session: the identity, the tool's profile and the gateway handles that stand in for the app secret and the access token. No secret and no real token ever rides it: the tool reaches the provider through the server's gateway (internal/feishugateway), which swaps the handles for the real credentials. It rides run_session and is written into a tool profile the worker removes when the session ends. */
     ExternalAccountMaterial: {
       accountId: string;
@@ -3341,6 +3367,11 @@ export type DeviceConnectorState =
 export type DeviceConnectorSessionCheck =
   components["schemas"]["DeviceConnectorSessionCheck"];
 export type DeviceConnectorUse = components["schemas"]["DeviceConnectorUse"];
+export type SaveAppStoreConnectKeyInput =
+  components["schemas"]["SaveAppStoreConnectKeyInput"];
+export type AppStoreConnectConnection =
+  components["schemas"]["AppStoreConnectConnection"];
+export type AppStoreConnectApp = components["schemas"]["AppStoreConnectApp"];
 export type ExternalAccountMaterial =
   components["schemas"]["ExternalAccountMaterial"];
 export type ExternalAccountGateway =

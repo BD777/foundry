@@ -120,6 +120,22 @@ func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, act
 // revokeLocked revokes at the provider when a grant is held, then deletes
 // the sealed grant. A grant the server no longer holds is already gone.
 func (s *Service) revokeLocked(ctx context.Context, account store.ExternalAccount) error {
+	if account.Provider == "appstoreconnect" {
+		keyStore, ok := any(s.store).(store.AppStoreConnectStore)
+		if !ok {
+			return errors.New("this server store does not hold App Store Connect keys")
+		}
+		if err := keyStore.RevokeAppStoreConnectKey(ctx, account.AppID, s.Now()); err != nil {
+			return err
+		}
+		s.forgetAppStoreConnectToken(account.AppID)
+		if s.secrets != nil {
+			if err := s.secrets.DeleteSecret(ctx, AppStoreConnectKeySecretID(account.AppID)); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		return nil
+	}
 	if !s.SecretsConfigured() {
 		return nil
 	}

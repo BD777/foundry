@@ -185,9 +185,9 @@ export const serverPackages = {
  */
 export const sealedServerPackages = {
   externalaccounts:
-    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   gateway:
-    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
 };

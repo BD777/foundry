@@ -390,6 +390,22 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 					}
 				}
 				ids = clean
+			} else if account.Provider == "appstoreconnect" {
+				if len(ids) == 0 || len(ids) > 200 {
+					return errors.New("select between 1 and 200 App Store Connect apps")
+				}
+				seen := map[string]bool{}
+				clean := []string{}
+				for _, id := range ids {
+					if !regexp.MustCompile(`^[0-9]{1,32}$`).MatchString(id) {
+						return errors.New("invalid App Store Connect app")
+					}
+					if !seen[id] {
+						clean = append(clean, id)
+						seen[id] = true
+					}
+				}
+				ids = clean
 			} else {
 				ids = nil
 			}

@@ -27,6 +27,27 @@ func (e ConnectorVersionCheckCommandResult) Valid() bool {
 	}
 }
 
+// AppStoreConnectApp AppStoreConnectApp is one App Store Connect app record a bound workspace may select.
+type AppStoreConnectApp struct {
+	ID       string `json:"id"`
+	Name     string `json:"name,omitempty"`
+	BundleID string `json:"bundleId,omitempty"`
+	Sku      string `json:"sku,omitempty"`
+}
+
+// AppStoreConnectConnection AppStoreConnectConnection is one App Store Connect key as its owner sees it: the external app and account a workspace binding names, with no private key.
+type AppStoreConnectConnection struct {
+	AppID     string `json:"appId"`
+	AccountID string `json:"accountId"`
+	Label     string `json:"label"`
+	IssuerID  string `json:"issuerId"`
+	KeyID     string `json:"keyId"`
+	HasKey    bool   `json:"hasKey"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
 // ConnectorAuthorizationGroup A shared credential requirement; multiple business capabilities can use it.
 type ConnectorAuthorizationGroup struct {
 	ID       string                        `json:"id"`
@@ -427,4 +448,12 @@ type ExternalAccountMaterial struct {
 
 	// ProviderAccountID `providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret.
 	ProviderAccountID string `json:"providerAccountId,omitempty"`
+}
+
+// SaveAppStoreConnectKeyInput SaveAppStoreConnectKeyInput stores an App Store Connect API key. The issuer and key ids are public metadata; privateKey is write-only and is sealed by the server.
+type SaveAppStoreConnectKeyInput struct {
+	IssuerID   string `json:"issuerId"`
+	KeyID      string `json:"keyId"`
+	PrivateKey string `json:"privateKey,omitempty"`
+	Label      string `json:"label,omitempty"`
 }

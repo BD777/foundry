@@ -226,18 +226,19 @@ type restDecl struct {
 }
 
 var restDecls = map[string]restDecl{
-	"POST /api/daemon/pair":                          {unchecked: "request and response are anonymous structs"},
-	"GET /api/worker/release":                        {response: goShape[workerRelease]()},
-	"POST /api/daemon/attachment-previews":           {unchecked: "request is an anonymous struct; response from a map"},
-	"POST /api/daemon/chats/sync":                    {request: goShape[store.SyncChatsInput](), response: goShape[syncedChats]()},
-	"GET /api/daemon/chats/running":                  {unchecked: "response from a map"},
-	"GET /api/daemon/chats/digests":                  {unchecked: "response from a map"},
-	"GET /api/daemon/session-work":                   {unchecked: "see the handler's response"},
-	"POST /api/daemon/session-work":                  {unchecked: "request is an anonymous struct"},
-	"POST /api/daemon/sessions/{id}/work-fire":       {unchecked: "request is an anonymous struct"},
-	"POST /api/daemon/sessions/{id}/timer-fire":      {unchecked: "request is an anonymous struct; response from a map"},
-	"POST /api/daemon/sessions/{id}/session-tokens":  {unchecked: "response from a map"},
-	"POST /api/connectors/cloudflare/session-handle": {unchecked: "request is an anonymous struct"},
+	"POST /api/daemon/pair":                               {unchecked: "request and response are anonymous structs"},
+	"GET /api/worker/release":                             {response: goShape[workerRelease]()},
+	"POST /api/daemon/attachment-previews":                {unchecked: "request is an anonymous struct; response from a map"},
+	"POST /api/daemon/chats/sync":                         {request: goShape[store.SyncChatsInput](), response: goShape[syncedChats]()},
+	"GET /api/daemon/chats/running":                       {unchecked: "response from a map"},
+	"GET /api/daemon/chats/digests":                       {unchecked: "response from a map"},
+	"GET /api/daemon/session-work":                        {unchecked: "see the handler's response"},
+	"POST /api/daemon/session-work":                       {unchecked: "request is an anonymous struct"},
+	"POST /api/daemon/sessions/{id}/work-fire":            {unchecked: "request is an anonymous struct"},
+	"POST /api/daemon/sessions/{id}/timer-fire":           {unchecked: "request is an anonymous struct; response from a map"},
+	"POST /api/daemon/sessions/{id}/session-tokens":       {unchecked: "response from a map"},
+	"POST /api/connectors/cloudflare/session-handle":      {unchecked: "request is an anonymous struct"},
+	"POST /api/connectors/appstoreconnect/session-handle": {unchecked: "request is an anonymous struct"},
 }
 
 // declaredMessageTypes reads every ws*Type constant of the package.
@@ -328,8 +329,8 @@ func TestWireDeclsCoverTheDeviceProtocol(t *testing.T) {
 			t.Errorf("restDecls names %q, which is not a recorded route", pattern)
 		}
 	}
-	if len(routes) != 12 {
-		t.Errorf("recorded device routes = %d, want the 12 JSON routes of the design", len(routes))
+	if len(routes) != 13 {
+		t.Errorf("recorded device routes = %d, want the 13 JSON routes of the design", len(routes))
 	}
 }
 

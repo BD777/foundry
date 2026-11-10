@@ -487,6 +487,17 @@ func (s *Server) routeTable() []route {
 		fn("PATCH /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("PUT /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("DELETE /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
+		// App Store Connect keeps one team key on the server; only its owner
+		// validates, replaces or revokes it. Sessions get per-tool stand-ins.
+		fn("GET /api/connectors/appstoreconnect/keys", s.handleListAppStoreConnectKeys, personOnly()),
+		fn("POST /api/connectors/appstoreconnect/keys", s.handleCreateAppStoreConnectKey, personOnly()),
+		fn("PUT /api/connectors/appstoreconnect/keys/{appId}", s.handleReplaceAppStoreConnectKey, personOnly()),
+		fn("DELETE /api/connectors/appstoreconnect/keys/{appId}", s.handleRevokeAppStoreConnectKey, personOnly()),
+		fn("GET /api/connectors/appstoreconnect/accounts/{accountId}/apps", s.handleListAppStoreConnectApps, externalAccountOwner("accountId")),
+		fn("POST /api/connectors/appstoreconnect/session-handle", s.handleAppStoreConnectSessionHandle, daemonProtocol()),
+		fn("GET /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
+		fn("POST /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
+		fn("PATCH /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
 		fn("GET /api/connectors", s.handleConnectorCatalog, signedIn()),
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
