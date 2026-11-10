@@ -4,10 +4,7 @@ import { register } from "node:module";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  closeRadixDialogs,
-  flushRadixTimers,
-} from "./radix-cleanup.mjs";
+import { closeRadixDialogs, flushRadixTimers } from "./radix-cleanup.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 
 async function renderMarkdown(props, text, inspect) {
