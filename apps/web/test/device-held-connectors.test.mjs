@@ -2480,9 +2480,9 @@ test("the connector picker groups public and private connectors, shows each one'
   await settle();
   const list = () => window.document.querySelector("[cmdk-list]");
   assert.ok(list(), "the picker opens");
-  const groups = [...window.document.querySelectorAll("[cmdk-group]")].map(
-    (group) => group.querySelector("[cmdk-group-heading]").textContent,
-  );
+  const groups = [...window.document.querySelectorAll("[cmdk-group]")]
+    .map((group) => group.querySelector("[cmdk-group-heading]")?.textContent)
+    .filter(Boolean);
   assert.deepEqual(groups, [
     "PublicBuilt into Foundry",
     "PrivateFrom connector extensions on your devices, visible only to you",
