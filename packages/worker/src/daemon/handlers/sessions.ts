@@ -1,4 +1,4 @@
-import { executionHostClient } from "../../execution-host/client.js";
+import { executionHostClient } from "../../execution-host/fleet.js";
 import { reportWorkerFailure } from "../../session/worker-failure.js";
 import {
   daemonMessageTypes,

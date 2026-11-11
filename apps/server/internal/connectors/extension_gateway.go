@@ -410,6 +410,11 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 		var probeErr *externalaccounts.ExtensionProbeError
 		if errors.As(err, &probeErr) {
 			message = probeErr.Message
+			if probeErr.EdgeAccess != nil {
+				x.Outcome, x.Status = gateway.OutcomeUpstreamError, status
+				writeExtensionEdgeAccessRequired(w, status, probeErr.EdgeAccess)
+				return nil
+			}
 		}
 		x.Outcome, x.Status = gateway.OutcomeUpstreamError, status
 		writeExtensionGatewayError(w, status, gateway.ReasonUnavailable, "", "", message)
@@ -474,6 +479,22 @@ func writeExtensionGatewayError(w http.ResponseWriter, status int, reason, neede
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 	return gateway.Refused{Status: status, Message: message}
+}
+
+// writeExtensionEdgeAccessRequired answers a call whose upstream sits behind an
+// edge (Cloudflare Access) that wants a credential Foundry cannot present.
+func writeExtensionEdgeAccessRequired(w http.ResponseWriter, status int, required *store.EdgeAccessRequired) {
+	body := map[string]any{
+		"error": map[string]any{
+			"code": "FOUNDRY_EDGE_ACCESS_REQUIRED", "message": required.Message, "recoverable": false,
+		},
+		"foundry":    map[string]any{"refused": true, "reason": "edge_access_required", "where": "Settings → Edge access"},
+		"edgeAccess": required,
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 type extensionAudit struct{ gateway *ExtensionGateway }

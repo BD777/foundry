@@ -64,7 +64,10 @@ export class SessionTimers {
   /** Keeps the timers in `path`, reading the ones kept before. */
   load(path: string): void {
     this.path = path;
-    if (!existsSync(path)) return;
+    if (!existsSync(path)) {
+      if (this.sessions.size > 0) this.save();
+      return;
+    }
     hardenPrivateFile(path);
     let stored: { sessions?: KeptSession[] } = {};
     try {
@@ -75,10 +78,15 @@ export class SessionTimers {
       );
       return;
     }
+    const keptInMemory = this.sessions.size > 0;
     for (const session of stored.sessions ?? []) {
       if (!session?.sessionId || !Array.isArray(session.timers)) continue;
-      this.sessions.set(session.sessionId, session);
+      // A host that started beside an older one kept timers in memory first.
+      if (!this.sessions.has(session.sessionId))
+        this.sessions.set(session.sessionId, session);
     }
+    // Timers set before the path was known reach the file now.
+    if (keptInMemory) this.save();
     this.changed();
   }
 

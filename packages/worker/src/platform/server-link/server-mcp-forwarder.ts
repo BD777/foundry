@@ -10,6 +10,7 @@ import { redactSecrets } from "../secret-redaction.js";
 
 const routes = new Map<string, string>();
 const pending = new SingleFlight<() => void>({ keepResolved: true });
+const maxMCPRequestBytes = 1024 * 1024;
 const hopHeaders = new Set([
   "host",
   "connection",
@@ -28,7 +29,43 @@ export function serverMcpURL(url: string): string {
   return local ? new URL(target.pathname + target.search, local).href : url;
 }
 
+function mcpToolErrorBody(raw: Buffer, message: string): string {
+  let id: unknown = null;
+  try {
+    const request = JSON.parse(raw.toString("utf8")) as { id?: unknown };
+    id = request.id ?? null;
+  } catch {
+    // A malformed request is answered as a tool error only when secretFiles
+    // was parsed; otherwise the server owns request validation.
+  }
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    result: {
+      content: [{ type: "text", text: message }],
+      isError: true,
+    },
+  });
+}
+
+/** Marks a request whose secret references the Worker already resolved. */
+export const connectorInstanceSecretProxyHeader = "x-foundry-mcp-secret-proxy";
+export const connectorInstanceSecretProxyValue = "connector-instances-v1";
+
+/** A preparation failure whose message is safe to show the model. */
+export class McpRequestPreparationError extends Error {}
+
+/**
+ * Rewrites one MCP request body before it leaves the device (resolving
+ * secret references); undefined leaves the request as it is.
+ */
+export type McpRequestPreparer = (
+  raw: Buffer,
+  authorization: string,
+) => { body: Buffer } | undefined;
+
 export interface ServerMcpForwarderOptions {
+  prepareRequest?: McpRequestPreparer;
   /** Covers proxy connect, TLS negotiation and the wait for response headers. */
   firstByteTimeoutMs?: number;
   log?: (message: string) => void;
@@ -59,6 +96,7 @@ export function startServerMcpForwarder(
           ([name]) => !hopHeaders.has(name),
         ),
       );
+      delete headers[connectorInstanceSecretProxyHeader];
       const startedAt = Date.now();
       let agent;
       try {
@@ -81,42 +119,7 @@ export function startServerMcpForwarder(
         loggedFailure = true;
         logFailure(failurePhase, startedAt, error);
       };
-      const outgoing = send(
-        target,
-        { method: incoming.method, headers, agent },
-        (answer) => {
-          clearTimeout(firstByteTimer);
-          phase = "response body";
-          const forwarded = Object.fromEntries(
-            Object.entries(answer.headers).filter(
-              ([name]) => !hopHeaders.has(name),
-            ),
-          );
-          response.writeHead(answer.statusCode ?? 502, forwarded);
-          answer.pipe(response);
-          answer.on("error", (error) => {
-            logOnce(error);
-            response.destroy();
-          });
-        },
-      );
-      outgoing.once("socket", (socket) => {
-        socket.once("connect", () => {
-          phase =
-            target.protocol === "https:"
-              ? "TLS handshake"
-              : "waiting for response";
-        });
-        socket.once("secureConnect", () => {
-          phase = "waiting for response";
-        });
-      });
-      outgoing.once("proxyConnect", () => {
-        phase =
-          target.protocol === "https:"
-            ? "TLS handshake"
-            : "waiting for response";
-      });
+      let outgoing: ReturnType<typeof httpRequest> | undefined;
       const firstByteTimer = setTimeout(() => {
         const error = new Error(
           `No response headers within ${firstByteTimeoutMs / 1000}s.`,
@@ -132,31 +135,119 @@ export function startServerMcpForwarder(
             }),
           );
         }
-        outgoing.destroy(error);
+        outgoing?.destroy(error);
       }, firstByteTimeoutMs);
       firstByteTimer.unref?.();
-      outgoing.once("error", (error) => {
-        clearTimeout(firstByteTimer);
-        logOnce(error);
-        if (response.headersSent || response.writableEnded) {
-          response.destroy();
+      const forward = (body: Buffer, transformed: boolean) => {
+        if (response.destroyed || response.writableEnded) return;
+        const outgoingHeaders = { ...headers };
+        if (transformed) {
+          outgoingHeaders[connectorInstanceSecretProxyHeader] =
+            connectorInstanceSecretProxyValue;
+        }
+        outgoingHeaders["content-length"] = String(body.length);
+        outgoing = send(
+          target,
+          { method: incoming.method, headers: outgoingHeaders, agent },
+          (answer) => {
+            clearTimeout(firstByteTimer);
+            phase = "response body";
+            const forwarded = Object.fromEntries(
+              Object.entries(answer.headers).filter(
+                ([name]) => !hopHeaders.has(name),
+              ),
+            );
+            response.writeHead(answer.statusCode ?? 502, forwarded);
+            answer.pipe(response);
+            answer.on("error", (error) => {
+              logOnce(error);
+              response.destroy();
+            });
+          },
+        );
+        outgoing.once("socket", (socket) => {
+          socket.once("connect", () => {
+            phase =
+              target.protocol === "https:"
+                ? "TLS handshake"
+                : "waiting for response";
+          });
+          socket.once("secureConnect", () => {
+            phase = "waiting for response";
+          });
+        });
+        outgoing.once("proxyConnect", () => {
+          phase =
+            target.protocol === "https:"
+              ? "TLS handshake"
+              : "waiting for response";
+        });
+        outgoing.once("error", (error) => {
+          clearTimeout(firstByteTimer);
+          logOnce(error);
+          if (response.headersSent || response.writableEnded) {
+            response.destroy();
+            return;
+          }
+          response.writeHead(502, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: serverTransportError(error, target).message,
+            }),
+          );
+        });
+        outgoing.end(body);
+      };
+
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      let tooLarge = false;
+      incoming.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > maxMCPRequestBytes) {
+          tooLarge = true;
           return;
         }
-        response.writeHead(502, { "content-type": "application/json" });
-        response.end(
-          JSON.stringify({
-            error: serverTransportError(error, target).message,
-          }),
-        );
+        if (!tooLarge) chunks.push(chunk);
       });
-      incoming.pipe(outgoing);
+      incoming.once("end", () => {
+        if (tooLarge) {
+          clearTimeout(firstByteTimer);
+          response.writeHead(413, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: `MCP request is larger than ${maxMCPRequestBytes} bytes`,
+            }),
+          );
+          return;
+        }
+        const raw = Buffer.concat(chunks, bytes);
+        try {
+          const prepared = options.prepareRequest?.(
+            raw,
+            String(incoming.headers.authorization ?? ""),
+          );
+          forward(prepared?.body ?? raw, Boolean(prepared));
+        } catch (error) {
+          clearTimeout(firstByteTimer);
+          const message =
+            error instanceof McpRequestPreparationError
+              ? error.message
+              : "could not resolve secretFiles";
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+          });
+          response.end(mcpToolErrorBody(raw, redactSecrets(message)));
+        }
+      });
       incoming.on("aborted", () => {
         clearTimeout(firstByteTimer);
-        outgoing.destroy();
+        outgoing?.destroy();
       });
       response.on("close", () => {
         clearTimeout(firstByteTimer);
-        if (!response.writableEnded) outgoing.destroy();
+        if (!response.writableEnded) outgoing?.destroy();
       });
     });
     await new Promise<void>((resolve, reject) => {

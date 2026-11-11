@@ -141,6 +141,8 @@ const goStoreDir = resolve(root, "apps/server/internal/store");
 export const daemonPayloadGoNames = {
   DaemonAgentProfileInput: "CreateAgentProfileInput",
   FetchSkillRepositoryPayload: "wsFetchSkillRepository",
+  FetchRepositoryToolArchivePayload: "wsFetchRepositoryToolArchive",
+  RepositoryToolArchiveFetchedPayload: "wsRepositoryToolArchiveFetched",
   ReadRepositoryRefsPayload: "wsReadRepositoryRefs",
   RunRepairPayload: "wsRunRepair",
   // DEV-154: a bundle rollout stages, activates, removes and checks tools.

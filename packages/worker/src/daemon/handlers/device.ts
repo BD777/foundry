@@ -12,10 +12,8 @@ import {
   watchSelfUpdateFailure,
 } from "../../install/worker-self-update.js";
 import { currentSocket } from "../context.js";
-import {
-  executionHostClient,
-  RunnerTurnsChangedError,
-} from "../../execution-host/client.js";
+import { RunnerTurnsChangedError } from "../../execution-host/client.js";
+import { executionHostClient } from "../../execution-host/fleet.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../platform/utils.js";
 

@@ -4,6 +4,14 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-12 Worker：[DEV-186 执行宿主轮换（多宿主并存）与编排效率规则](DEV-186-execution-host-rollover.md)。Worker 更新后新回合交给新宿主，旧宿主只留在跑的回合并在空闲后停掉；经两轮 review 与 limen-canada、CanWendeMac-mini 真机验证。同篇记录编排效率规则（DEV-187）。已部署 dev，等待提交窗口合入。
+
+2026-11-12 连接器：[DEV-185 集成包的 MCP 与私有上游代取](DEV-185-connector-packages-mcp-private-upstream.md)。Agent 可经 `connector_packages` 管理集成包在哪些设备启用；私有上游只要有一台设备能读，就由它代取并分发，目标设备不必登录 GitHub CLI。已部署 dev，等待提交窗口合入。
+
+2026-11-12 连接器：[DEV-184 边缘访问凭据（Edge Access）](DEV-184-edge-access.md)。Cloudflare Access 等网关前置认证成为独立于连接器、按地址匹配的对象：数据与注入、Zero Trust 自动开通、`/connectors/edge-access` 页面与 MCP `edge_access`。已部署 dev，等待提交窗口合入。
+
+2026-11-12 连接器：[DEV-183 连接器实例的 MCP/CLI 管理与经设备连接的内网实例](DEV-183-connector-instances-mcp-device-lan.md)。`connector_instances` 让 Agent 管理实例，秘密只按文件引用传；loopback 地址只由验证过的设备使用；OpenLark 1.2.1 探测 `/agent/v1`；CuaDriver 在 acquire 时自动启动；byte-dev OpenLark 实例已验证。已部署 dev，等待提交窗口合入。
+
 2026-11-12 连接器：[DEV-182 连接器扩展后续](DEV-182-extension-followups.md)。bytedcli 改为纯数据扩展，bundled 扩展接管本地文件夹安装的同 id 旧版，新增公开扩展示例和 OpenLark 的 Cloudflare Access 字段，修复 Web 测试遇 DOM 断言卡死，回环地址只认校验设备。
 
 2026-11-11 收尾：[DEV-181 部署快照的剩余测试与工具配置](DEV-181-deployed-tail.md)。收纳模型心得与模型池存储测试、设备并发投影回归、统计图表依赖与审计例外、价格目录格式化排除和共享导航约定。所有代码与配置逐文件取自部署快照，最终 main 与 D 的差异只保留 devlog。已纳入部署状态快照，等待提交窗口合入。

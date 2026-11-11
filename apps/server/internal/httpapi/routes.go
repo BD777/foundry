@@ -514,6 +514,11 @@ func (s *Server) routeTable() []route {
 		// Server-held connector extensions are pure descriptor data. The
 		// person owns instances; sessions get generic stand-ins and route
 		// directory enforcement.
+		fn("GET /api/edge-access", s.handleListEdgeAccess, personOnly()),
+		fn("POST /api/edge-access", s.handleCreateEdgeAccess, personOnly()),
+		fn("POST /api/edge-access/provision", s.handleProvisionEdgeAccess, personOnly()),
+		fn("PUT /api/edge-access/{id}", s.handleReplaceEdgeAccess, personOnly()),
+		fn("DELETE /api/edge-access/{id}", s.handleDeleteEdgeAccess, personOnly()),
 		fn("GET /api/connectors/extensions/{kind}/instances", s.handleListServerHeldExtensionInstances, personOnly()),
 		fn("POST /api/connectors/extensions/{kind}/instances/probe", s.handleProbeServerHeldExtensionInstance, personOnly()),
 		fn("POST /api/connectors/extensions/{kind}/instances", s.handleCreateServerHeldExtensionInstance, personOnly()),
@@ -732,6 +737,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/daemon/sessions/{id}/timer-fire", s.handleDaemonTimerFire, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/session-tokens", s.handleDaemonSessionToken, daemonProtocol()),
 		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
+		fn("GET /api/daemon/repository-tool-archives/{id}", s.handleDaemonRepositoryToolArchive, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}
 	if s.options.EnableDevReset {

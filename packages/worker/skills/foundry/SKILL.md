@@ -81,6 +81,23 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - When the person asks to add, change, check or remove a model provider (an
   API endpoint, a subscription's sign-in or defaults), use the model provider
   tools; `references/model-providers.md` covers keys, quota and sign-in.
+- To configure a server-held extension connector such as OpenLark, use
+  `connector_instances` with an `action`: list, probe, create, update, check,
+  revoke, bind_workspace or unbind_workspace. Secrets must be
+  passed only through `secretFiles`, mapping each secret field id to a
+  `{path,key?}` reference on this session's device. `path` may be relative to
+  the workspace, absolute, or start with `~`; `key` selects a dotenv variable.
+  Never put a secret value in `fields` or another argument.
+- To enable a connector package on the person's devices, use
+  `connector_packages` with action set_devices; deviceIds replaces the
+  selection, while addDevices and removeDevices change it incrementally.
+- When a connector probe or request reports that edge access is required,
+  manage the address credential with `edge_access`: list, create, replace,
+  delete or provision. Create needs Cloudflare Access service-token secrets
+  through `secretFiles`, with references named `clientId` and
+  `clientSecret`; replace may name either one to rotate it. Provision takes the
+  `edgeAccessRequired` record and uses the connected Cloudflare account's Zero
+  Trust authorization; token values stay on Foundry and never return.
 - To make a device read a skill repository, use
   `set_skill_repository_source`; the repository id comes from the Skill Library.
 - Use your own tools for timers and background commands within a session;

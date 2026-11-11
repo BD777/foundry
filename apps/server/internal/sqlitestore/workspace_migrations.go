@@ -408,6 +408,7 @@ var workspaceMigrationKeptColumns = map[string]string{
 	"device_account_shares.shared_device_id":       "device account sharing",
 	"device_connector_states.device_id":            "the device's connectors",
 	"device_connector_visibility_checks.device_id": "the device's own connector reachability and access checks",
+	"edge_access.path_prefix":                      "a URL path prefix on a remote host, not a device file path",
 	"device_display_names.device_id":               "the device's name",
 	"device_file_access.device_id":                 "the device's file access settings",
 	"device_file_access.path":                      "the device's file access settings",

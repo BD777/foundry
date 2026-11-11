@@ -41,6 +41,10 @@ export interface SessionAmbientEnv {
   serverURL: string;
   sessionToken: string;
   workspaceID: string;
+  /** Where relative connector secretFiles paths resolve. */
+  workspacePath?: string;
+  /** False for Issue, verifier and utility work that may not read connector secrets. */
+  connectorInstanceFiles?: boolean;
 }
 
 const ambientBySession = new Map<string, SessionAmbientEnv>();
@@ -83,6 +87,18 @@ export function registerSessionAmbientEnv(
       ambientBySession.delete(sessionID);
     }
   };
+}
+
+/** The active session holding this MCP bearer token, without exposing the token. */
+export function sessionAmbientForToken(
+  token: string,
+): SessionAmbientEnv | undefined {
+  const value = token.trim();
+  if (!value) return undefined;
+  for (const ambient of ambientBySession.values()) {
+    if (ambient.sessionToken === value) return ambient;
+  }
+  return undefined;
 }
 
 /** The variable a session process reads its Foundry bearer token from. */

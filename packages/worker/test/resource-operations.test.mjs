@@ -18,6 +18,7 @@ import {
   cuaDriverGrantRun,
   cuaDriverPermissionWatchActive,
   openCuaDriverSettings,
+  prepareCuaDriverForLease,
   requestCuaDriverAccess,
   resetCuaDriverGrantRun,
   stopCuaDriverPermissionWatch,
@@ -889,6 +890,109 @@ test("permission status is read as cua-driver prints it, else loosely", () => {
   );
 });
 
+test("preparing a lease starts CuaDriver once and grants a ready daemon", async () => {
+  let now = 0;
+  let launches = 0;
+  const probes = [
+    { running: false },
+    { running: true, unknown: true },
+    {
+      running: true,
+      grants: { accessibility: true, screenRecording: true },
+    },
+  ];
+  const prepared = await prepareCuaDriverForLease({
+    platform: "darwin",
+    binary: "/Users/p/.local/bin/cua-driver",
+    now: () => now,
+    sleep: async (ms) => {
+      now += ms;
+    },
+    probe: async () => probes.shift(),
+    launch: async () => {
+      launches += 1;
+    },
+  });
+  assert.deepEqual(prepared, {
+    started: true,
+    running: true,
+    ready: true,
+    missing: [],
+  });
+  assert.equal(launches, 1);
+});
+
+test("preparing a lease leaves an already running CuaDriver alone", async () => {
+  let launches = 0;
+  const prepared = await prepareCuaDriverForLease({
+    platform: "darwin",
+    binary: "/Users/p/.local/bin/cua-driver",
+    probe: async () => ({
+      running: true,
+      grants: { accessibility: true, screenRecording: true },
+    }),
+    launch: async () => {
+      launches += 1;
+    },
+  });
+  assert.equal(prepared.started, false);
+  assert.equal(prepared.ready, true);
+  assert.equal(launches, 0);
+});
+
+test("a started daemon with a missing grant explains the exact setting", async () => {
+  let now = 0;
+  let launches = 0;
+  const probes = [
+    { running: false },
+    {
+      running: true,
+      grants: { accessibility: true, screenRecording: false },
+    },
+  ];
+  const prepared = await prepareCuaDriverForLease({
+    platform: "darwin",
+    binary: "/Users/p/.local/bin/cua-driver",
+    now: () => now,
+    sleep: async (ms) => {
+      now += ms;
+    },
+    probe: async () => probes.shift(),
+    launch: async () => {
+      launches += 1;
+    },
+  });
+  assert.deepEqual(prepared.missing, ["tcc_screen_recording"]);
+  assert.match(
+    prepared.reason,
+    /Screen Recording not granted to CuaDriver\.app/,
+  );
+  assert.match(prepared.reason, /System Settings → Privacy & Security/);
+  assert.equal(launches, 1);
+});
+
+test("a daemon that never answers fails the lease preparation within 15 seconds", async () => {
+  let now = 0;
+  let launches = 0;
+  await assert.rejects(
+    prepareCuaDriverForLease({
+      platform: "darwin",
+      binary: "/Users/p/.local/bin/cua-driver",
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      probe: async () => ({ running: false }),
+      launch: async () => {
+        launches += 1;
+      },
+    }),
+    /did not start within 15 seconds.*Accessibility and Screen Recording.*System Settings/,
+  );
+  assert.equal(launches, 1);
+  assert.equal(now, 15_000);
+});
+
 test("install runs the official installer with telemetry off, then disables telemetry", async () => {
   const runs = [];
   const folder = mkdtempSync(join(tmpdir(), "install-"));
@@ -1031,7 +1135,15 @@ test("requesting access starts CuaDriver and asks for its grants", async () => {
     await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(runs, [
     ["/Users/p/.local/bin/cua-driver", "permissions", "status", "--json"],
-    ["/usr/bin/open", "-n", "-g", "-a", "CuaDriver", "--args", "serve"],
+    [
+      "/usr/bin/open",
+      "-n",
+      "-g",
+      "-a",
+      "/Applications/CuaDriver.app",
+      "--args",
+      "serve",
+    ],
     ["/Users/p/.local/bin/cua-driver", "permissions", "grant"],
   ]);
   assert.equal(done, true);
@@ -1082,7 +1194,7 @@ test("requesting access restarts a CuaDriver daemon stuck without confirmed gran
   assert.deepEqual(runs, [
     `${bin} permissions status --json`,
     `${bin} stop`,
-    "/usr/bin/open -n -g -a CuaDriver --args serve",
+    "/usr/bin/open -n -g -a /Applications/CuaDriver.app --args serve",
     `${bin} permissions grant`,
   ]);
   resetCuaDriverGrantRun();
@@ -1200,7 +1312,9 @@ test("the live watch restarts a daemon it did not start recently, once, and veri
   );
   assert.ok(
     runs.indexOf(`${bin} stop`) <
-      runs.indexOf("/usr/bin/open -n -g -a CuaDriver --args serve"),
+      runs.indexOf(
+        "/usr/bin/open -n -g -a /Applications/CuaDriver.app --args serve",
+      ),
   );
   assert.deepEqual(cuaDriverGrantRun(), {
     state: "finished",

@@ -45,7 +45,15 @@ type ExtensionProbeError struct {
 	Status  int
 	Message string
 	Err     error
+	// EdgeAccess is set for the class edge_access_required.
+	EdgeAccess *store.EdgeAccessRequired
 }
+
+// extensionRedirectError is a refused redirect; target is where it pointed.
+type extensionRedirectError struct{ target *url.URL }
+
+func (e *extensionRedirectError) Error() string { return errExtensionRedirect.Error() }
+func (e *extensionRedirectError) Unwrap() error { return errExtensionRedirect }
 
 func (e *ExtensionProbeError) Error() string {
 	if e.Message != "" {
@@ -260,7 +268,9 @@ func publicExtensionAddr(addr netip.Addr) bool {
 }
 
 func (e *extensionEndpoint) clientFor(base *http.Client, allowInsecure bool, timeout time.Duration) *http.Client {
-	checkRedirect := func(*http.Request, []*http.Request) error { return errExtensionRedirect }
+	checkRedirect := func(request *http.Request, _ []*http.Request) error {
+		return &extensionRedirectError{target: request.URL}
+	}
 	if base != nil {
 		copied := *base
 		copied.CheckRedirect = checkRedirect
@@ -386,7 +396,7 @@ func extensionFieldValues(descriptor store.ConnectorDescriptor, input store.Conn
 	return values, ids, nil
 }
 
-func (s *Service) ProbeExtensionInstance(ctx context.Context, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput, existingSecrets map[string]string) (store.ConnectorServerHeldProbeResult, error) {
+func (s *Service) ProbeExtensionInstance(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput, existingSecrets map[string]string) (store.ConnectorServerHeldProbeResult, error) {
 	if err := s.Integrations.Err(); err != nil {
 		return store.ConnectorServerHeldProbeResult{}, err
 	}
@@ -409,7 +419,7 @@ func (s *Service) ProbeExtensionInstance(ctx context.Context, descriptor store.C
 			}
 		}
 	}
-	probed, _, err := s.probeExtension(ctx, descriptor, network, input.DeviceID, values, secrets)
+	probed, _, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
 	if err != nil {
 		return store.ConnectorServerHeldProbeResult{}, err
 	}
@@ -422,7 +432,7 @@ func (s *Service) ProbeExtensionInstance(ctx context.Context, descriptor store.C
 	return probed, nil
 }
 
-func (s *Service) probeExtension(ctx context.Context, descriptor store.ConnectorDescriptor, network, deviceID string, values, secrets map[string]string) (store.ConnectorServerHeldProbeResult, []store.ConnectorServerHeldRoute, error) {
+func (s *Service) probeExtension(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, network, deviceID string, values, secrets map[string]string) (store.ConnectorServerHeldProbeResult, []store.ConnectorServerHeldRoute, error) {
 	serverHeld := descriptor.ServerHeld
 	if serverHeld == nil {
 		return store.ConnectorServerHeldProbeResult{}, nil, fmt.Errorf("%w: connector has no serverHeld declaration", ErrInvalidExtensionInstance)
@@ -449,7 +459,7 @@ func (s *Service) probeExtension(ctx context.Context, descriptor store.Connector
 	}
 	var routes []store.ConnectorServerHeldRoute
 	for _, probe := range serverHeld.Probe {
-		payload, _, err := s.extensionJSON(probeCtx, httpClient, endpoint, probe.Method, probe.Path, serverHeld.Upstream.Headers, values, secrets, extensionProbeLimit)
+		payload, _, err := s.extensionJSON(probeCtx, ownerUserID, httpClient, endpoint, probe.Method, probe.Path, serverHeld.Upstream.Headers, values, secrets, extensionProbeLimit)
 		if err != nil {
 			var probeErr *ExtensionProbeError
 			if probe.Optional && errors.As(err, &probeErr) && probeErr.Status == http.StatusNotFound {
@@ -543,7 +553,7 @@ func secretFieldIDs(fields []store.ConnectorField, secrets map[string]string) []
 	return ids
 }
 
-func (s *Service) extensionJSON(ctx context.Context, client *http.Client, endpoint *extensionEndpoint, method, path string, headerTemplates map[string]string, values, secrets map[string]string, limit int64) ([]byte, string, error) {
+func (s *Service) extensionJSON(ctx context.Context, ownerUserID string, client *http.Client, endpoint *extensionEndpoint, method, path string, headerTemplates map[string]string, values, secrets map[string]string, limit int64) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, method, endpoint.URL(path), nil)
 	if err != nil {
 		return nil, "", &ExtensionProbeError{Class: "url_invalid", Message: "the connector probe URL is invalid", Err: err}
@@ -556,6 +566,10 @@ func (s *Service) extensionJSON(ctx context.Context, client *http.Client, endpoi
 			request.Header.Set(name, value)
 		}
 	}
+	edge, err := s.attachEdgeAccess(ctx, ownerUserID, request)
+	if err != nil {
+		return nil, "", &ExtensionProbeError{Class: "unreachable", Message: "Foundry could not read the edge access credential for this address", Err: err}
+	}
 	var response *http.Response
 	if endpoint.deviceID != "" {
 		if s.ExtensionDeviceRequest == nil {
@@ -566,9 +580,12 @@ func (s *Service) extensionJSON(ctx context.Context, client *http.Client, endpoi
 		response, err = client.Do(request)
 	}
 	if err != nil {
-		return nil, "", classifyExtensionTransportError(err)
+		return nil, "", edge.failure(err, request)
 	}
 	defer response.Body.Close()
+	if required := edge.inspect(response, request); required != nil {
+		return nil, "", required
+	}
 	bodyLimit := limit
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		bodyLimit = extensionErrorLimit
@@ -581,7 +598,7 @@ func (s *Service) extensionJSON(ctx context.Context, client *http.Client, endpoi
 		return nil, "", &ExtensionProbeError{Class: "bad_response", Message: "the connector response is larger than Foundry accepts", Status: response.StatusCode}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, "", extensionStatusError(response.StatusCode, payload)
+		return nil, "", extensionStatusError(response.StatusCode, payload, edge.redact(secrets))
 	}
 	return payload, strings.TrimSpace(response.Header.Get("ETag")), nil
 }
@@ -659,8 +676,13 @@ func classifyExtensionTransportError(err error) error {
 	return &ExtensionProbeError{Class: "unreachable", Message: "Foundry could not reach the connector server", Err: err}
 }
 
-func extensionStatusError(status int, payload []byte) *ExtensionProbeError {
+func extensionStatusError(status int, payload []byte, secrets map[string]string) *ExtensionProbeError {
 	message := extensionErrorMessage(payload)
+	for _, secret := range secrets {
+		if secret = strings.TrimSpace(secret); secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
 	probeErr := &ExtensionProbeError{Status: status}
 	switch {
 	case status == http.StatusUnauthorized:
@@ -1031,7 +1053,7 @@ func (s *Service) CreateExtensionInstance(ctx context.Context, ownerUserID strin
 		return store.ConnectorServerHeldInstance{}, err
 	}
 	secrets := extensionInputSecrets(input, descriptor, nil)
-	probe, routes, err := s.probeExtension(ctx, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}
@@ -1120,7 +1142,7 @@ func (s *Service) CheckExtensionInstance(ctx context.Context, ownerUserID, kind,
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}
-	probe, routes, err := s.probeExtension(ctx, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
 	account, accountErr := s.extensionAccount(ctx, ownerUserID, kind, app.ID)
 	if err != nil {
 		data.StatusDetail = extensionProbeDetail(err)
@@ -1179,7 +1201,7 @@ func (s *Service) ReplaceExtensionInstance(ctx context.Context, ownerUserID, kin
 		return store.ConnectorServerHeldInstance{}, err
 	}
 	secrets := extensionInputSecrets(input, descriptor, existingSecrets)
-	probe, routes, err := s.probeExtension(ctx, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}
@@ -1366,10 +1388,28 @@ func (s *Service) DoExtensionRequest(ctx context.Context, app store.ExternalProv
 	if seconds := data.Descriptor.ServerHeld.Upstream.TimeoutSeconds; seconds > 0 {
 		timeout = time.Duration(seconds) * time.Second
 	}
-	if endpoint.deviceID != "" {
-		return s.doDeviceExtensionRequest(ctx, endpoint.deviceID, request)
+	edge, err := s.attachEdgeAccess(ctx, app.OwnerUserID, request)
+	if err != nil {
+		return nil, err
 	}
-	return endpoint.clientFor(client.client, client.allowInsecure, timeout).Do(request)
+	var response *http.Response
+	if endpoint.deviceID != "" {
+		response, err = s.doDeviceExtensionRequest(ctx, endpoint.deviceID, request)
+	} else {
+		response, err = endpoint.clientFor(client.client, client.allowInsecure, timeout).Do(request)
+	}
+	if err != nil {
+		var redirect *extensionRedirectError
+		if errors.As(err, &redirect) {
+			return nil, edge.failure(err, request)
+		}
+		return nil, err
+	}
+	if required := edge.inspect(response, request); required != nil {
+		_ = response.Body.Close()
+		return nil, required
+	}
+	return response, nil
 }
 
 func NewExtensionTestClient(client *http.Client) *ExtensionClient {

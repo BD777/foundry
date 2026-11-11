@@ -582,6 +582,73 @@ export const foundryCommands: Record<
       },
     },
   },
+  connector: {
+    instances: {
+      tool: "connector_instances",
+      positional: "action",
+      flags: {
+        "--kind": flag("kind"),
+        "--instance": flag("instanceId"),
+        "--workspace": flag("workspaceId"),
+        "--label": flag("label"),
+        "--network": flag("network"),
+        "--probe-device": flag("probeDeviceId"),
+        "--fields": flag("fields", "json"),
+        "--secret-files": flag("secretFiles", "json"),
+      },
+    },
+    packages: {
+      tool: "connector_packages",
+      positional: "action",
+      flags: {
+        "--kind": flag("kind"),
+        "--devices": flag("deviceIds", "list"),
+        "--add-devices": flag("addDevices", "list"),
+        "--remove-devices": flag("removeDevices", "list"),
+      },
+    },
+  },
+  "edge-access": {
+    list: { tool: "edge_access", fixed: { action: "list" }, flags: {} },
+    create: {
+      tool: "edge_access",
+      fixed: { action: "create" },
+      flags: {
+        "--label": flag("label"),
+        "--provider": flag("provider"),
+        "--team": flag("team"),
+        "--audience": flag("audience"),
+        "--host": field("match", "host"),
+        "--path-prefix": field("match", "pathPrefix"),
+        "--secret-files": flag("secretFiles", "json"),
+      },
+    },
+    replace: {
+      tool: "edge_access",
+      positional: "id",
+      fixed: { action: "replace" },
+      flags: {
+        "--label": flag("label"),
+        "--provider": flag("provider"),
+        "--team": flag("team"),
+        "--audience": flag("audience"),
+        "--host": field("match", "host"),
+        "--path-prefix": field("match", "pathPrefix"),
+        "--secret-files": flag("secretFiles", "json"),
+      },
+    },
+    delete: {
+      tool: "edge_access",
+      positional: "id",
+      fixed: { action: "delete" },
+      flags: {},
+    },
+    provision: {
+      tool: "edge_access",
+      fixed: { action: "provision" },
+      flags: { "--required": flag("edgeAccessRequired", "json") },
+    },
+  },
   library: {
     source: {
       tool: "set_skill_repository_source",

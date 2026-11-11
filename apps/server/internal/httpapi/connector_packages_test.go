@@ -157,3 +157,51 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestRepositoryToolIsReadByAnotherDeviceAndHeldForTheTarget(t *testing.T) {
+	f := newIsolationFixture(t)
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	worker := &fakeFetchWorker{t: t, serverURL: httpServer.URL, credential: f.aliceDevice}
+	worker.connect()
+	defer worker.disconnect()
+	waitFor(t, "the reader to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+
+	tool := store.SkillBundleTool{Name: "olk", Version: strings.Repeat("a", 40), Source: "repository"}
+	request := wsInstallTool{Tool: tool, Step: "install"}
+	release, err := f.server.deliverRepositoryTool(context.Background(), "dev_alice", "dev_company", &request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Archive == nil || request.Archive.SHA256 != "digest" ||
+		!strings.HasPrefix(request.Archive.DownloadPath, "/api/daemon/repository-tool-archives/") {
+		t.Fatalf("install request: %+v", request)
+	}
+	id := strings.TrimPrefix(request.Archive.DownloadPath, "/api/daemon/repository-tool-archives/")
+	held, ok := f.server.toolArchives.get(id)
+	if !ok || held.deviceID != "dev_company" || string(held.data) != "tool-folder" {
+		t.Fatalf("held archive: %+v %v", held, ok)
+	}
+	download, err := http.NewRequest(http.MethodGet, httpServer.URL+request.Archive.DownloadPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	download.Header.Set(deviceCredentialHeader, f.aliceDevice)
+	response, err := http.DefaultClient.Do(download)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("a device other than the target downloaded the tool: %d", response.StatusCode)
+	}
+	release()
+	if _, ok := f.server.toolArchives.get(id); ok {
+		t.Fatal("the archive is still held after the install")
+	}
+
+	direct := wsInstallTool{Tool: tool, Step: "install"}
+	if _, err := f.server.deliverRepositoryTool(context.Background(), "dev_alice", "dev_alice", &direct); err != nil || direct.Archive != nil {
+		t.Fatalf("the reader installs for itself: %+v %v", direct, err)
+	}
+}

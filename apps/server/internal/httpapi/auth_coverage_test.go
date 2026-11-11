@@ -59,6 +59,29 @@ func TestEveryNonPublicAPIRouteRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestEdgeAccessProvisionIsPersonOnly(t *testing.T) {
+	f := newIsolationFixture(t)
+	var found bool
+	for _, route := range f.server.routeTable() {
+		if route.pattern == "POST /api/edge-access/provision" {
+			found = true
+			if route.rule.kind != "person" {
+				t.Fatalf("provision access rule = %q, want person", route.rule.kind)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("POST /api/edge-access/provision is not registered")
+	}
+	body := `{"provider":"cloudflare_access","team":"fixture.cloudflareaccess.com","host":"fixture.invalid","path":"/lan"}`
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/edge-access/provision", body, f.aliceDevice)),
+		http.StatusForbidden, "a device credential provisions edge access")
+	person := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/edge-access/provision", body))
+	if person.Code == http.StatusUnauthorized || person.Code == http.StatusForbidden {
+		t.Fatalf("the person did not pass the provision access rule: %d %s", person.Code, person.Body.String())
+	}
+}
+
 // isolationFixture: the first admin ("owner", alice's session) and bob each
 // paired a device that registered one workspace; alice owns a connection and
 // an issue.
@@ -76,6 +99,11 @@ type isolationFixture struct {
 func newIsolationFixture(t *testing.T) isolationFixture {
 	t.Helper()
 	server, handler := newAccountsTestServer(t)
+	return newIsolationFixtureOn(t, server, handler)
+}
+
+func newIsolationFixtureOn(t *testing.T, server *Server, handler http.Handler) isolationFixture {
+	t.Helper()
 	f := isolationFixture{server: server, handler: handler}
 	f.alice = setupOwner(t, server, handler)
 	f.bob = inviteAndJoin(t, handler, f.alice, store.RoleMember, "bob")

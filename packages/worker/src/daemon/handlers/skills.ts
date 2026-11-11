@@ -13,6 +13,7 @@ import {
   daemonMessageTypes,
   type CheckToolPayload,
   type InstallToolPayload,
+  type FetchRepositoryToolArchivePayload,
   type ToolCheckedPayload,
   type FetchSkillRepositoryPayload,
   type ReadRepositoryRefsPayload,
@@ -32,6 +33,7 @@ import {
 import {
   activateRepositoryTool,
   installRepositoryTool,
+  packRepositoryTool,
   uninstallRepositoryTool,
   type RepositoryToolSpec,
 } from "../../skills/repository-tool.js";
@@ -76,6 +78,34 @@ async function uploadRepositoryFiles(
     throw new Error(
       `uploading the files returned ${response.status}: ${await response.text()}`,
     );
+}
+
+/**
+ * Takes a repository tool's folder the server holds for this device (another
+ * device read it); the digest the server named must match.
+ */
+async function downloadToolArchive(
+  serverURL: string,
+  archive: { downloadPath: string; sha256: string },
+): Promise<Buffer> {
+  if (
+    !/^\/api\/daemon\/repository-tool-archives\/[A-Za-z0-9-]+$/.test(
+      archive.downloadPath,
+    )
+  )
+    throw new Error("the server named an unexpected download address");
+  const response = await serverFetch(`${serverURL}${archive.downloadPath}`, {
+    headers: daemonRequestHeaders(false),
+  });
+  if (!response.ok)
+    throw new Error(
+      `downloading the tool returned ${response.status}: ${await response.text()}`,
+    );
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  if (digest !== archive.sha256)
+    throw new Error("the downloaded tool does not match its digest");
+  return bytes;
 }
 
 /**
@@ -179,6 +209,26 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
           ),
       );
     })
+    .on(daemonMessageTypes.fetchRepositoryToolArchive, (envelope, ctx) => {
+      const request = envelope.payload as FetchRepositoryToolArchivePayload;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.repositoryToolArchiveFetched,
+        async () => {
+          const { archive, sha256 } = await packRepositoryTool(
+            request.tool as unknown as RepositoryToolSpec,
+          );
+          await uploadRepositoryFiles(
+            ctx.serverURL,
+            request.uploadPath,
+            archive,
+            "application/gzip",
+          );
+          return { sha256 };
+        },
+      );
+    })
     .on(daemonMessageTypes.installTool, (envelope, ctx) => {
       const payload = envelope.payload as InstallToolPayload | undefined;
       const tool = payload?.tool;
@@ -214,6 +264,14 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
                       ? repository
                         ? await installRepositoryTool(repository, {
                             activate: payload?.activate !== false,
+                            ...(payload?.archive
+                              ? {
+                                  archive: await downloadToolArchive(
+                                    ctx.serverURL,
+                                    payload.archive,
+                                  ),
+                                }
+                              : {}),
                           })
                         : await installTool(tool as ToolSpec, {
                             activate: payload?.activate !== false,

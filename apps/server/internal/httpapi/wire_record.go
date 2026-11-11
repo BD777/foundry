@@ -42,7 +42,8 @@ func recordedDeviceRoute(r route) bool {
 		return false
 	}
 	return r.rule.kind == ruleDaemon && !strings.Contains(r.pattern, "{path...}") &&
-		!strings.HasPrefix(r.pattern, "POST /api/daemon/skill-repository-fetches/")
+		!strings.HasPrefix(r.pattern, "POST /api/daemon/skill-repository-fetches/") &&
+		!strings.HasPrefix(r.pattern, "GET /api/daemon/repository-tool-archives/")
 }
 
 // maxRecordedBodyBytes bounds what a recorded exchange copies of each body;

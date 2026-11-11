@@ -1347,6 +1347,56 @@ interface components {
       /** @description The worker's long-running activities active during the stall. */
       activities?: string[];
     };
+    /**
+     * @description How the edge authenticates the caller. `basic` is reserved; the server accepts only `cloudflare_access` today.
+     * @enum {string}
+     */
+    EdgeAccessProvider: "cloudflare_access" | "basic";
+    /** @description The addresses a credential applies to. `host` matches the upstream host exactly, ignoring case and port; an empty `pathPrefix` covers the whole host. Among several matches the longest `pathPrefix` wins. */
+    EdgeAccessMatch: {
+      host: string;
+      /** @description Starts with `/`, matches on path-segment boundaries. */
+      pathPrefix?: string;
+    };
+    /** @description One edge access credential as its owner sees it. The client id and secret are sealed on the server and never returned. */
+    EdgeAccess: {
+      id: string;
+      label: string;
+      provider: components["schemas"]["EdgeAccessProvider"];
+      match: components["schemas"]["EdgeAccessMatch"];
+      /** @description Cloudflare Access team name (`<team>.cloudflareaccess.com`), when known. */
+      team?: string;
+      /** @description Access application audience tag, when known. */
+      audience?: string;
+      createdAt: string;
+      updatedAt: string;
+      /** @description When Foundry last attached this credential to an upstream request. */
+      lastUsedAt?: string;
+    };
+    EdgeAccessList: {
+      credentials: components["schemas"]["EdgeAccess"][];
+    };
+    /** @description Create (POST) or replace (PUT) body. `clientId` and `clientSecret` are the credential values (Cloudflare Access service token Client ID and Secret); both are required on create, and on replace either may be omitted to keep the sealed value. */
+    EdgeAccessInput: {
+      label: string;
+      provider: components["schemas"]["EdgeAccessProvider"];
+      match: components["schemas"]["EdgeAccessMatch"];
+      team?: string;
+      audience?: string;
+      clientId?: string;
+      clientSecret?: string;
+    };
+    /** @description An upstream address sits behind an edge that wants a credential Foundry does not hold (or held but the edge rejected). Probes, the gateway and MCP report it as the error code `edge_access_required`. */
+    EdgeAccessRequired: {
+      provider: components["schemas"]["EdgeAccessProvider"];
+      team?: string;
+      host: string;
+      path: string;
+      /** @description Set when a stored credential was attached and the edge still refused it. */
+      credentialId?: string;
+      /** @description Readable explanation with the next step. */
+      message: string;
+    };
     Digest: string;
     DateTime: string;
     JSONValue: JSONValue;
@@ -4061,6 +4111,12 @@ export type DeviceRepairAction = components["schemas"]["DeviceRepairAction"];
 export type DeviceRepairResult = components["schemas"]["DeviceRepairResult"];
 export type DeviceDisconnect = components["schemas"]["DeviceDisconnect"];
 export type WorkerStall = components["schemas"]["WorkerStall"];
+export type EdgeAccessProvider = components["schemas"]["EdgeAccessProvider"];
+export type EdgeAccessMatch = components["schemas"]["EdgeAccessMatch"];
+export type EdgeAccess = components["schemas"]["EdgeAccess"];
+export type EdgeAccessList = components["schemas"]["EdgeAccessList"];
+export type EdgeAccessInput = components["schemas"]["EdgeAccessInput"];
+export type EdgeAccessRequired = components["schemas"]["EdgeAccessRequired"];
 export type Digest = components["schemas"]["Digest"];
 export type DateTime = components["schemas"]["DateTime"];
 export type JSONValue =

@@ -104,6 +104,11 @@ const cloudflareDNSEditPaths = "POST /zones/<zone id>/dns_records, and PATCH, PU
 // cloudflareWriteBody is the request body as plain JSON data: an object for
 // POST, PATCH and PUT, nothing for DELETE.
 func cloudflareWriteBody(method string, raw json.RawMessage) (map[string]any, error) {
+	return cloudflareObjectBody(method, raw, "the DNS record, with fields such as type, name, content, ttl, proxied and comment")
+}
+
+// cloudflareObjectBody is one JSON object for a change, nothing for DELETE.
+func cloudflareObjectBody(method string, raw json.RawMessage, description string) (map[string]any, error) {
 	empty := len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null"
 	if method == http.MethodDelete {
 		if !empty {
@@ -112,7 +117,7 @@ func cloudflareWriteBody(method string, raw json.RawMessage) (map[string]any, er
 		return nil, nil
 	}
 	if empty {
-		return nil, &CloudflareRefusal{Message: method + " needs a body: the DNS record as a JSON object (type, name, content, ttl, proxied, comment…)", Reason: RefusalBadRequest}
+		return nil, &CloudflareRefusal{Message: method + " needs a body: " + description + ", as a JSON object", Reason: RefusalBadRequest}
 	}
 	if len(raw) > 16*1024 {
 		return nil, &CloudflareRefusal{Message: "the body is larger than 16 KiB", Reason: RefusalBadRequest}
@@ -152,11 +157,12 @@ func recordFields(record map[string]any) (name, kind, content string) {
 	return text("name", 255), text("type", 16), text("content", 512)
 }
 
-// cloudflareWriteAuditPath is path with its zone and record ids as ":id",
-// or "unsupported_path" for one outside /zones/<id>/….
+// cloudflareWriteAuditPath is a zone, account, application, policy or tunnel
+// path with its opaque ids as ":id", or "unsupported_path" when the request
+// never had a shape Foundry forwards.
 func cloudflareWriteAuditPath(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 2 || parts[0] != "zones" || !cloudflareZoneID.MatchString(parts[1]) || len(parts) > 6 || strings.ContainsAny(path, "\\%?#\x00\r\n") {
+	if len(parts) < 2 || (parts[0] != "zones" && parts[0] != "accounts") || !cloudflareZoneID.MatchString(parts[1]) || len(parts) > 9 || strings.ContainsAny(path, "\\%?#\x00\r\n") {
 		return "unsupported_path"
 	}
 	parts[1] = ":id"

@@ -137,11 +137,45 @@ func (s *Server) connectorPackageDeviceEligible(ctx context.Context, device stor
 	if via == "" {
 		return false, "The package names no repository-reading connector."
 	}
-	connector, err := s.connectors.Devices.ConnectorOn(ctx, device.ID, via)
+	if _, reason := s.connectorPackageReader(ctx, device, via); reason != "" {
+		return false, reason
+	}
+	return true, ""
+}
+
+// connectorPackageReader is the device that reads the package's upstream for
+// the target: the target itself when its connector can, else another device
+// of the same person whose connector can (the target then only needs the
+// platform and network; it never needs the person's sign-in). With no such
+// device the reason is the target's own, so the person sees what to connect.
+func (s *Server) connectorPackageReader(ctx context.Context, target store.DeviceProjection, via string) (store.DeviceProjection, string) {
+	ready, reason := s.deviceConnectorReady(ctx, target.ID, via)
+	if ready {
+		return target, ""
+	}
+	if owner, err := s.store.DeviceOwner(ctx, target.ID); err == nil && owner != "" {
+		if devices, err := s.ownDevices(ctx, owner); err == nil {
+			for _, other := range devices {
+				if other.ID == target.ID || s.hub.connectionFor(other.ID) == nil {
+					continue
+				}
+				if ok, _ := s.deviceConnectorReady(ctx, other.ID, via); ok {
+					return other, ""
+				}
+			}
+		}
+	}
+	return store.DeviceProjection{}, reason
+}
+
+// deviceConnectorReady says whether a device's connector can be used now,
+// and if not, what to do about it.
+func (s *Server) deviceConnectorReady(ctx context.Context, deviceID, via string) (bool, string) {
+	connector, err := s.connectors.Devices.ConnectorOn(ctx, deviceID, via)
 	if err != nil {
 		return false, fmt.Sprintf("The %s connector is not available on this device.", via)
 	}
-	states, err := s.connectors.Devices.States(ctx, []string{device.ID})
+	states, err := s.connectors.Devices.States(ctx, []string{deviceID})
 	if err != nil {
 		return false, "The device's connector state could not be read."
 	}
@@ -153,10 +187,10 @@ func (s *Server) connectorPackageDeviceEligible(ctx context.Context, device stor
 		}
 	}
 	if state == nil || !state.Installed {
-		return false, fmt.Sprintf("Install the %s connector on this device.", connector.Label)
+		return false, fmt.Sprintf("Install the %s connector on this device, or on another device of yours that can read the package's repository.", connector.Label)
 	}
 	if !state.SignedIn {
-		return false, fmt.Sprintf("Sign in to the %s connector on this device.", connector.Label)
+		return false, fmt.Sprintf("Sign in to the %s connector on this device, or on another device of yours that can read the package's repository.", connector.Label)
 	}
 	if state.Status != store.DeviceConnectorReady && state.Status != store.DeviceConnectorExpiring {
 		if state.StatusDetail != "" {
@@ -240,9 +274,22 @@ func (s *Server) handleSetConnectorPackageDevices(w http.ResponseWriter, r *http
 		writeResult(w, nil, err)
 		return
 	}
-	wanted := make([]string, 0, len(input.DeviceIDs))
+	view, err := s.setConnectorPackageDeviceSelection(r.Context(), actor.AccountID(), descriptor, devices, input.DeviceIDs)
+	if err != nil {
+		if errorStatus(err) != 0 {
+			writeResult(w, nil, err)
+			return
+		}
+		writeDeviceConnectorError(w, "Enabling "+descriptor.Label, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func connectorPackageDeviceIDs(ids []string) []string {
+	wanted := make([]string, 0, len(ids))
 	seen := map[string]bool{}
-	for _, raw := range input.DeviceIDs {
+	for _, raw := range ids {
 		id := strings.TrimSpace(raw)
 		if id == "" || seen[id] {
 			continue
@@ -250,59 +297,70 @@ func (s *Server) handleSetConnectorPackageDevices(w http.ResponseWriter, r *http
 		seen[id] = true
 		wanted = append(wanted, id)
 	}
+	return wanted
+}
+
+// setConnectorPackageDeviceSelection applies one desired device set after the
+// same ownership, eligibility and offline checks the Web page uses.
+func (s *Server) setConnectorPackageDeviceSelection(
+	ctx context.Context,
+	ownerUserID string,
+	descriptor store.ConnectorDescriptor,
+	devices []store.DeviceProjection,
+	deviceIDs []string,
+) (store.ConnectorPackageView, error) {
+	wanted := connectorPackageDeviceIDs(deviceIDs)
 	if len(wanted) == 0 {
-		writeError(w, http.StatusBadRequest, "select at least one device, or delete the package enablement")
-		return
+		return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, errors.New("select at least one device, or delete the package enablement")}
 	}
 	byID := map[string]store.DeviceProjection{}
 	for _, device := range devices {
 		byID[device.ID] = device
 	}
-	current, currentErr := s.store.GetConnectorPackage(r.Context(), actor.AccountID(), kind)
+	current, currentErr := s.store.GetConnectorPackage(ctx, ownerUserID, descriptor.Kind)
 	if currentErr != nil && !errors.Is(currentErr, store.ErrNotFound) {
-		writeResult(w, nil, currentErr)
-		return
+		return store.ConnectorPackageView{}, currentErr
 	}
 	currentSet := map[string]bool{}
 	for _, id := range current.Devices {
 		currentSet[id] = true
 	}
+	wantedSet := map[string]bool{}
 	for _, id := range wanted {
+		wantedSet[id] = true
 		device, ok := byID[id]
 		if !ok {
-			writeError(w, http.StatusBadRequest, "a selected device does not belong to you")
-			return
+			return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, errors.New("a selected device does not belong to you")}
 		}
 		if currentSet[id] {
 			if s.hub.connectionFor(id) == nil {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("%s is offline; reconnect it before changing the package", device.Label))
-				return
+				return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, fmt.Errorf("%s is offline; reconnect it before changing the package", device.Label)}
 			}
 			continue
 		}
 		online := s.hub.connectionFor(id) != nil
-		if eligible, reason := s.connectorPackageDeviceEligible(r.Context(), device, descriptor, online); !eligible {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s: %s", device.Label, reason))
-			return
+		if eligible, reason := s.connectorPackageDeviceEligible(ctx, device, descriptor, online); !eligible {
+			return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, fmt.Errorf("%s: %s", device.Label, reason)}
 		}
 	}
 	for _, id := range current.Devices {
-		if seen[id] {
+		if wantedSet[id] {
 			continue
 		}
+		device, ok := byID[id]
+		if !ok {
+			return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, errors.New("a selected device no longer belongs to you")}
+		}
 		if s.hub.connectionFor(id) == nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s is offline; reconnect it before removing the package", byID[id].Label))
-			return
+			return store.ConnectorPackageView{}, &statusError{http.StatusBadRequest, fmt.Errorf("%s is offline; reconnect it before removing the package", device.Label)}
 		}
 	}
-	_, err = s.applyConnectorPackageDevices(r.Context(), actor.AccountID(), descriptor, wanted)
+	_, err := s.applyConnectorPackageDevices(ctx, ownerUserID, descriptor, wanted)
 	if err != nil {
-		writeDeviceConnectorError(w, "Enabling "+descriptor.Label, err)
-		return
+		return store.ConnectorPackageView{}, err
 	}
 	s.projectionsChanged("", fieldConnectorPackages)
-	view, err := s.connectorPackageView(context.WithoutCancel(r.Context()), actor.AccountID(), descriptor, devices)
-	writeResult(w, view, err)
+	return s.connectorPackageView(context.WithoutCancel(ctx), ownerUserID, descriptor, devices)
 }
 
 func (s *Server) handleDeleteConnectorPackage(w http.ResponseWriter, r *http.Request) {
@@ -363,7 +421,11 @@ func (s *Server) applyConnectorPackageDevices(ctx context.Context, ownerUserID s
 			removals = append(removals, id)
 		}
 	}
-	repository, err := s.followConnectorPackageBundle(ctx, ownerUserID, descriptor, wanted[0])
+	reader, err := s.connectorPackageReaderFor(ctx, ownerUserID, descriptor, wanted[0])
+	if err != nil {
+		return store.ConnectorPackageEnablement{}, err
+	}
+	repository, err := s.followConnectorPackageBundle(ctx, ownerUserID, descriptor, reader)
 	if err != nil {
 		return store.ConnectorPackageEnablement{}, err
 	}
@@ -400,7 +462,27 @@ func (s *Server) applyConnectorPackageDevices(ctx context.Context, ownerUserID s
 	return updated, nil
 }
 
-func (s *Server) followConnectorPackageBundle(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, readerDeviceID string) (store.SkillRepository, error) {
+// connectorPackageReaderFor picks the reader of a package's upstream for
+// enabling it, preferring the first selected device that can read it itself.
+func (s *Server) connectorPackageReaderFor(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, firstDeviceID string) (store.DeviceProjection, error) {
+	devices, err := s.ownDevices(ctx, ownerUserID)
+	if err != nil {
+		return store.DeviceProjection{}, err
+	}
+	for _, device := range devices {
+		if device.ID != firstDeviceID {
+			continue
+		}
+		reader, reason := s.connectorPackageReader(ctx, device, descriptor.Package.Upstream.Via)
+		if reason != "" {
+			return store.DeviceProjection{}, &statusError{http.StatusBadRequest, errors.New(reason)}
+		}
+		return reader, nil
+	}
+	return store.DeviceProjection{}, &statusError{http.StatusBadRequest, errors.New("a selected device does not belong to you")}
+}
+
+func (s *Server) followConnectorPackageBundle(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, readerDevice store.DeviceProjection) (store.SkillRepository, error) {
 	remote, _, err := skillrepo.NormalizeURL(descriptor.Package.Upstream.Repository)
 	if err != nil {
 		return store.SkillRepository{}, err
@@ -423,7 +505,7 @@ func (s *Server) followConnectorPackageBundle(ctx context.Context, ownerUserID s
 		return repo, nil
 	}
 	source := store.SkillRepository{
-		FetchDeviceID: readerDeviceID, FetchDeviceName: readerDeviceID,
+		FetchDeviceID: readerDevice.ID, FetchDeviceName: readerDevice.Label,
 		Subpath:       descriptor.Package.Skills.Path,
 		DeclaredTools: tools,
 	}
@@ -445,7 +527,7 @@ func (s *Server) followConnectorPackageBundle(ctx context.Context, ownerUserID s
 		URL: remote, Label: descriptor.Package.Upstream.Repository,
 		Ref: descriptor.Package.Upstream.Ref, Subpath: descriptor.Package.Skills.Path,
 		Mode: "bundle", Name: descriptor.Extension.Name, DeclaredTools: tools,
-		FetchDeviceID: readerDeviceID, FetchDeviceName: readerDeviceID,
+		FetchDeviceID: readerDevice.ID, FetchDeviceName: readerDevice.Label,
 	}, ownerUserID)
 	if err != nil {
 		return store.SkillRepository{}, err
@@ -486,7 +568,7 @@ func sameDeclaredTools(left, right []store.SkillToolDeclaration) bool {
 
 func (s *Server) enableConnectorPackageDevice(ctx context.Context, deviceID string, descriptor store.ConnectorDescriptor, repository store.SkillRepository) error {
 	for _, tool := range repository.Tools {
-		_, err := s.installBundleToolOnDevice(ctx, deviceID, tool, "install")
+		_, err := s.installBundleToolOnDevice(ctx, deviceID, repository.FetchDeviceID, tool, "install")
 		if err != nil {
 			return fmt.Errorf("installing %s: %w", tool.Name, err)
 		}
@@ -583,7 +665,7 @@ func (s *Server) uninstallPackageTools(ctx context.Context, deviceID string, rep
 		if version := installed[tool.Name]; version != "" {
 			uninstall.Version = version
 		}
-		if _, err := s.installBundleToolOnDevice(ctx, deviceID, uninstall, "uninstall"); err != nil {
+		if _, err := s.installBundleToolOnDevice(ctx, deviceID, repository.FetchDeviceID, uninstall, "uninstall"); err != nil {
 			return fmt.Errorf("uninstalling %s: %w", tool.Name, err)
 		}
 		if err := s.store.SetDeviceToolVersion(ctx, deviceID, tool.Name, ""); err != nil {

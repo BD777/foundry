@@ -108,6 +108,270 @@
     }
   },
   {
+    "name": "connector_instances",
+    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, bind_workspace or unbind_workspace. Use kind for the extension. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
+    "summary": "Configures server-held connector instances, reading secret values from device files named by secretFiles.",
+    "limits": [
+      "Only the person who started the session, on a device that person owns; not from Issue, clarification, verifier or utility sessions.",
+      "The person's assistant must allow the connector account and workspace in its permission package.",
+      "Secret values are accepted only from the session Worker after secretFiles is resolved; they never belong in model arguments or results.",
+      "Each referenced file is a regular file on the session device and is subject to Foundry's denied credential-store paths.",
+      "list returns Web-list fields and descriptor metadata only, never stored secret values."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "probe",
+            "create",
+            "update",
+            "check",
+            "revoke",
+            "bind_workspace",
+            "unbind_workspace"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "The server-held extension connector kind, such as open-lark."
+        },
+        "instanceId": {
+          "type": "string",
+          "description": "The instance id for update, check, revoke, bind_workspace and unbind_workspace."
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "The workspace to bind or unbind."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "network": {
+          "type": "string",
+          "enum": ["server", "device"],
+          "description": "Where the connector's upstream requests leave Foundry. Defaults to server."
+        },
+        "probeDeviceId": {
+          "type": "string",
+          "description": "The person's online device that probes a device-network instance."
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Non-secret field values by descriptor field id. Secret fields must not appear here."
+        },
+        "secretFiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "File on this session's device: workspace-relative, absolute, or starting with ~."
+              },
+              "key": {
+                "type": "string",
+                "description": "Optional dotenv variable name. Without it, the trimmed file is the value."
+              }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+          },
+          "description": "Secret field ids mapped to device file references. The session Worker reads and replaces these before forwarding to Foundry."
+        }
+      },
+      "required": ["action", "kind"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "connector_packages",
+    "description": "Manage a person's connector packages on their devices: list, get, set_devices or disable. list returns each package's repository, tool version, enabled devices, and every device's eligibility and reason. set_devices replaces the selection when deviceIds is supplied; without it, addDevices and removeDevices change the current selection incrementally. Removals apply before additions. Use disable for an empty selection.",
+    "summary": "Enables or disables connector packages on the devices owned by the person who started the session.",
+    "limits": [
+      "Only devices owned by the person who started the session; not from Issue, clarification, verifier or utility sessions.",
+      "The person's assistant must allow writes to the package connector on every device being added or removed.",
+      "set_devices with deviceIds is a full replacement; addDevices and removeDevices are incremental and preserve the rest of the selection.",
+      "Every device must be online and pass the same eligibility checks as the Connectors page.",
+      "Each call writes an audit event to the calling session."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "get", "set_devices", "disable"]
+        },
+        "kind": {
+          "type": "string",
+          "description": "The connector package kind, such as openlark. Required for get, set_devices and disable."
+        },
+        "deviceIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The complete device selection for set_devices. Supplying it replaces the current selection before any addDevices or removeDevices changes."
+        },
+        "addDevices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Devices to add without removing the current selection."
+        },
+        "removeDevices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Devices to remove without replacing the rest of the current selection."
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "edge_access",
+    "description": "Manage the person's edge access credentials by address: list, create, replace, delete or provision. Cloudflare Access service-token secrets must be supplied as secretFiles: {clientId:{path,key?}, clientSecret:{path,key?}}; the Worker reads them from this session's device and replaces them before forwarding to Foundry. Never put a secret value in another argument. Provision uses the connected Cloudflare account's Zero Trust authorization and returns credential metadata without secret values.",
+    "summary": "Manages edge access credentials for upstream addresses, reading Cloudflare Access secrets from device files and provisioning service tokens through the connected Cloudflare account.",
+    "limits": [
+      "Only the person who started the session, on a device that person owns; not from Issue, clarification, verifier or utility sessions.",
+      "Cloudflare Access clientId and clientSecret are accepted only from the session Worker after secretFiles is resolved; they never belong in model arguments or results.",
+      "Each referenced file is a regular file on the session device and is subject to Foundry's denied credential-store paths.",
+      "list returns credential metadata only, never stored secret values.",
+      "Provision requires the person's Cloudflare account to be connected with Zero Trust authorization; it never returns the service-token client id or secret."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "create", "replace", "delete", "provision"]
+        },
+        "id": {
+          "type": "string",
+          "description": "The edge access credential id for replace and delete."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "A readable name for the credential."
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["cloudflare_access"],
+          "description": "How the edge authenticates the caller."
+        },
+        "match": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Bare upstream host name, without scheme, port or path."
+            },
+            "pathPrefix": {
+              "type": "string",
+              "description": "Optional path prefix beginning with /. An empty prefix covers the whole host."
+            }
+          },
+          "required": ["host"],
+          "additionalProperties": false
+        },
+        "team": {
+          "type": "string",
+          "description": "Cloudflare Access team name, when known."
+        },
+        "audience": {
+          "type": "string",
+          "description": "Cloudflare Access application audience tag, when known."
+        },
+        "secretFiles": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "File on this session's device: workspace-relative, absolute, or starting with ~."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "Optional dotenv variable name. Without it, the trimmed file is the value."
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            },
+            "clientSecret": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "File on this session's device: workspace-relative, absolute, or starting with ~."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "Optional dotenv variable name. Without it, the trimmed file is the value."
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "Cloudflare Access service-token files. create needs both clientId and clientSecret; replace may name either to rotate it. The session Worker reads and replaces these before forwarding to Foundry."
+        },
+        "edgeAccessRequired": {
+          "type": "object",
+          "description": "The edge_access_required record to provision from.",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": ["cloudflare_access"]
+            },
+            "team": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "credentialId": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["provider", "host", "path", "message"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
     "name": "acquire_resource",
     "description": "Lease a resource on one of your person's devices for operate_resource: a Mac's screen (computer_use) or a device's compute. Name resourceId, several resourceIds (all or none), or a type and optionally deviceId. The lease lasts while your turn runs; when it ends it is parked up to 10 minutes (holdFor: up to 2 hours) and handed to a session that asks. A waiting session takes it 15 minutes after it began waiting; tool results warn you. Busy: waitMs queues up to that long, else you are told who holds it. Release it when done.",
     "summary": "Leases a resource on one of the person's devices (today a Mac's screen through cua-driver) to this session, waiting in a queue when it is busy.",

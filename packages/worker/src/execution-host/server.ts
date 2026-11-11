@@ -2,11 +2,13 @@
 import { createServer, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 import { chmodSync, readFileSync, unlinkSync } from "node:fs";
+import { basename } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonMessageTypes } from "@bd777/foundry-protocol";
 import { startServerMcpForwarder } from "../platform/server-link/server-mcp-forwarder.js";
+import { prepareConnectorInstanceSecretRequest } from "../session/connector-instance-secrets.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import { collectSkillSnapshotGarbage } from "../skills/skill-snapshots.js";
 import { reapPrivateInputOwners } from "../platform/process/private-input-owners.js";
@@ -35,6 +37,8 @@ import {
   closeAllActiveRuntimes,
   startIdleRuntimeSweeps,
   claudeRuntimeIsBusy,
+  closeIdleRuntimes,
+  residentSessions,
   stopClaudeBackgroundTask,
   controlCodexGoal,
 } from "../session/runner/active-runtimes.js";
@@ -50,13 +54,25 @@ import {
 import { configureSessionTokens } from "../session/session-token.js";
 import { startSessionWork } from "../daemon/session-work-runtime.js";
 import { ownPackage } from "../install/worker-identity.js";
-import { sessionWork, sessionWorkBusy } from "../session-work/supervisor.js";
+import {
+  deferSessionWork,
+  observedSessionWork,
+  resumeSessionWork,
+  sessionWorkBusy,
+} from "../session-work/supervisor.js";
 import { HostExecutions } from "./executions.js";
+import { adoptionDue, adoptStoppedHost } from "./adoption.js";
 import { executionHostPaths } from "./paths.js";
+import {
+  clearHostStopped,
+  knownHostRoots,
+  seniorHostPresent,
+} from "./roots.js";
 import { startHostLiveness } from "./liveness.js";
 import { startTurnFilesThread } from "../session/files/session-files-thread.js";
 import {
   executionHostProtocol,
+  hostRolloverCapability,
   type HostAck,
   type HostHandshake,
   type HostMethod,
@@ -81,15 +97,31 @@ const controlMethods = new Set<HostMethod>([
   "snapshot",
   "prepare_upgrade",
   "cancel_upgrade",
+  "retire",
+  "release_session",
 ]);
 
-export async function serveExecutionHost(serverURL: string): Promise<void> {
-  await startServerMcpForwarder(serverURL);
-  const paths = executionHostPaths();
-  prepareExecutionSocket();
+/**
+ * `root` is where this host lives beside others (see roots.ts); without it
+ * the host is the device's original one.
+ */
+export async function serveExecutionHost(
+  serverURL: string,
+  root?: string,
+): Promise<void> {
+  // Listeners bind port 0: each host process gets its own ports, and the
+  // sessions it starts are handed its addresses.
+  await startServerMcpForwarder(serverURL, {
+    prepareRequest: prepareConnectorInstanceSecretRequest,
+  });
+  const paths = executionHostPaths(root);
+  prepareExecutionSocket(paths);
   const entry = fileURLToPath(new URL("./main.js", import.meta.url));
   const stamp = runtimeStamp(entry);
+  clearHostStopped(paths.root);
+  const startedAt = Date.now();
   writePrivateJSONAtomic(resolve(paths.root, "identity.json"), {
+    startedAt,
     pid: process.pid,
     startTime: processIdentity(process.pid)?.startTime,
     entry,
@@ -107,6 +139,39 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   );
   const admission = new AdaptiveConcurrencyController(scheduler);
   admission.start();
+  // The device's shared work (the session work inventory, kept timers and
+  // the leftovers of earlier owners) has one owner. A host that starts while
+  // an older one runs leaves it to that one and takes it over when it is gone.
+  // Only a host that started earlier is waited for: hosts that start together
+  // would otherwise all wait for each other and nobody would own the work.
+  const seniorDeadSince = new Map<string, number>();
+  const seniorLive = () =>
+    seniorHostPresent({ root: paths.root, startedAt }, seniorDeadSince);
+  const deferredFile = resolve(paths.root, "deferred-session-work.json");
+  let standby = seniorLive();
+  const takeOverDeviceWork = () => {
+    standby = false;
+    reapConnectorLeftovers(console.error);
+    reapSessionTools(console.error);
+    clearClaudeSettingsFiles();
+    keepSessionTimers();
+    startTimerRevival(serverURL);
+    // The standby hosts that came before left the sessions they attached.
+    resumeSessionWork(
+      knownHostRoots()
+        .filter((candidate) => candidate !== paths.root)
+        .map((candidate) => resolve(candidate, "deferred-session-work.json")),
+    );
+    // The first work sweep reads every session's native records and asks the
+    // server; on a busy device it took 106 s. The runner answers the daemon
+    // meanwhile instead of looking dead to a switch (DEV-072).
+    void startSessionWork(serverURL, ownPackage().version).catch((error) =>
+      console.error(`Session work start: ${errorMessage(error)}`),
+    );
+  };
+  let started = false;
+  // A newer host serves the device: this one only finishes what it holds.
+  let retiring = false;
   const executions = new HostExecutions({
     root: paths.root,
     serverURL,
@@ -124,18 +189,9 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   // before new work is accepted. Never silently rerun its interrupted work.
   await superviseAgentProcesses();
   await executions.reportInterrupted();
-  reapConnectorLeftovers(console.error);
-  reapSessionTools(console.error);
-  clearClaudeSettingsFiles();
-  keepSessionTimers();
-  startTimerRevival(serverURL);
   configureSessionTokens(serverURL);
-  // The first work sweep reads every session's native records and asks the
-  // server; on a busy device it took 106 s. The runner answers the daemon
-  // meanwhile instead of looking dead to a switch (DEV-072).
-  void startSessionWork(serverURL, ownPackage().version).catch((error) =>
-    console.error(`Session work start: ${errorMessage(error)}`),
-  );
+  if (standby) deferSessionWork(deferredFile);
+  else takeOverDeviceWork();
   startIdleRuntimeSweeps();
   onIssueEnvironmentChange((change) =>
     transport.send(daemonMessageTypes.issueEnvironmentChanged, change),
@@ -144,6 +200,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   setSessionTurnSink((sessionId, running) =>
     transport.send(daemonMessageTypes.sessionTurn, { sessionId, running }),
   );
+  started = true;
   let owner: HostHandshake["owner"] | undefined;
   let connection: Socket | undefined;
   let operations = 0;
@@ -172,14 +229,25 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const cancelUpgrade = () => {
     if (!draining) return;
     draining = false;
-    sessionWork().setDraining(false);
-    setTimerRevivalPaused(false);
+    observedSessionWork()?.setDraining(false);
+    setTimerRevivalPaused(retiring);
     clearTimeout(drainTimer);
   };
   const write = (socket: Socket, value: HostReply | HostPush) =>
     socket.write(`${JSON.stringify(value)}\n`);
+  const pinned = (sessionId: string): boolean =>
+    executions.active().some((claim) => claim.sessionId === sessionId) ||
+    sessionHasRunningBackgroundTasks(sessionId) ||
+    residentSessions().some(
+      (resident) => resident.sessionId === sessionId && resident.busy,
+    );
   const snapshot = (): HostSnapshot => ({
     protocol: executionHostProtocol,
+    capabilities: [hostRolloverCapability],
+    retiring,
+    standby,
+    resident: residentSessions(),
+    outbox: transport.pendingCount(),
     version: ownPackage().version,
     entry,
     runtimeStamp: stamp,
@@ -200,6 +268,29 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     nativeWork: sessionsWithNativeWork(),
     runtimeState: scheduler.currentRuntimeState(),
   });
+  // Hosts that exited leave envelopes and unfinished inputs in their roots.
+  const deadSince = new Map<string, number>();
+  const adoptStoppedHosts = () => {
+    if (standby || retiring) return;
+    const now = Date.now();
+    for (const candidate of knownHostRoots()) {
+      if (candidate === paths.root) continue;
+      if (!adoptionDue(candidate, deadSince, now)) continue;
+      try {
+        const adopted = adoptStoppedHost(candidate, transport, {
+          removeRoot: candidate !== executionHostPaths().root,
+        });
+        if (adopted.envelopes || adopted.interrupted)
+          console.log(
+            `Took over ${adopted.envelopes} envelope(s) and ${adopted.interrupted} unfinished input(s) of the stopped execution host at ${basename(candidate)}.`,
+          );
+      } catch (error) {
+        console.error(
+          `Taking over the stopped execution host at ${candidate}: ${errorMessage(error)}`,
+        );
+      }
+    }
+  };
   let nextInputSweep = Date.now() + 60_000;
   const sweepInputs = () => {
     if (Date.now() < nextInputSweep || busy() || hasLiveAgentProcesses())
@@ -218,6 +309,11 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     collectSkillSnapshotGarbage({ idle: true });
   };
   const announce = () => {
+    if (started) {
+      if (standby && !seniorLive()) takeOverDeviceWork();
+      if (retiring && !draining) closeIdleRuntimes();
+      adoptStoppedHosts();
+    }
     if (connection) write(connection, { type: "snapshot", ...snapshot() });
     sweepInputs();
   };
@@ -230,7 +326,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
         mode === "now" || (mode === "boundary" ? atTurnBoundary() : !busy());
       if (ready) {
         draining = true;
-        sessionWork().setDraining(true);
+        observedSessionWork()?.setDraining(true);
         // The next runner delivers the timers these runtimes hand over.
         setTimerRevivalPaused(true);
         closeAllActiveRuntimes();
@@ -245,7 +341,27 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       cancelUpgrade();
       return {};
     },
+    retire: ({ retiring: next }) => {
+      retiring = next;
+      setTimerRevivalPaused(next || draining);
+      if (next) closeIdleRuntimes();
+      announce();
+      return { retiring };
+    },
+    release_session: ({ sessionId }) => {
+      if (pinned(sessionId)) return { released: false };
+      closeIdleRuntimes(sessionId);
+      return { released: true };
+    },
     run: (request) => {
+      if (
+        retiring &&
+        !pinned(request.payload.session.id) &&
+        !executions.hasClaim(request.payload)
+      )
+        throw new Error(
+          "Execution host is retiring; a newer host takes this session.",
+        );
       admission.settingsChanged();
       return executions.run(request);
     },

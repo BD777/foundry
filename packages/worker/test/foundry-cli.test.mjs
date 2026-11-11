@@ -363,6 +363,66 @@ test("every command calls its tool with the arguments its flags set", async (t) 
     ],
     [
       [
+        "edge-access",
+        "create",
+        "--label",
+        "OpenLark edge",
+        "--provider",
+        "cloudflare_access",
+        "--team",
+        "windeng",
+        "--host",
+        "openlark.example.com",
+        "--path-prefix",
+        "/agent",
+        "--secret-files",
+        '{"clientId":{"path":".env","key":"CF_ID"},"clientSecret":{"path":".env","key":"CF_SECRET"}}',
+      ],
+      "edge_access",
+      {
+        action: "create",
+        label: "OpenLark edge",
+        provider: "cloudflare_access",
+        team: "windeng",
+        match: { host: "openlark.example.com", pathPrefix: "/agent" },
+        secretFiles: {
+          clientId: { path: ".env", key: "CF_ID" },
+          clientSecret: { path: ".env", key: "CF_SECRET" },
+        },
+      },
+    ],
+    [["edge-access", "list"], "edge_access", { action: "list" }],
+    [
+      ["edge-access", "replace", "edge_1", "--label", "Renamed"],
+      "edge_access",
+      { action: "replace", id: "edge_1", label: "Renamed" },
+    ],
+    [
+      ["edge-access", "delete", "edge_1"],
+      "edge_access",
+      { action: "delete", id: "edge_1" },
+    ],
+    [
+      [
+        "edge-access",
+        "provision",
+        "--required",
+        '{"provider":"cloudflare_access","team":"windeng","host":"openlark.example.com","path":"/agent","message":"edge access required"}',
+      ],
+      "edge_access",
+      {
+        action: "provision",
+        edgeAccessRequired: {
+          provider: "cloudflare_access",
+          team: "windeng",
+          host: "openlark.example.com",
+          path: "/agent",
+          message: "edge access required",
+        },
+      },
+    ],
+    [
+      [
         "library",
         "source",
         "repo_1",

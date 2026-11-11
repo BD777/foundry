@@ -237,7 +237,8 @@ type ExternalAccountBinding struct {
 	ResourceIDs []string `json:"resourceIds,omitempty"`
 	// Access is what the workspace's sessions may do with those resources,
 	// a level its owner picks: "" is the provider's default (read only);
-	// Cloudflare also has "dns_edit" (DNS records of the bound zones).
+	// Cloudflare also has "dns_edit" (DNS records of the bound zones) and
+	// "zero_trust" (account-level Access and Tunnel management).
 	Access      string `json:"access,omitempty"`
 	WorkspaceID string `json:"workspaceId"`
 	AccountID   string `json:"accountId"`

@@ -101,17 +101,27 @@ func (c *Cloudflare) Describe() store.ExternalProvider {
 		ScopePreset: &store.ExternalScopePreset{Name: "Foundry read-only", Source: "Foundry", Scopes: c.PresetScopes(false)}}
 }
 
-// Cloudflare access levels of a workspace's zone binding (DEV-092): read
-// (the default), or read plus DNS record changes in the bound zones. The
-// gateway (connectors.CloudflareGateway) holds what each one allows.
+// Cloudflare access levels of a workspace binding (DEV-092): read (the
+// default), read plus DNS record changes in the bound zones, or account-level
+// Zero Trust Access and Tunnel management for the accounts those zones
+// belong to. The gateway (connectors.CloudflareGateway) holds what each one
+// allows.
 const (
-	CloudflareAccessRead    = "read"
-	CloudflareAccessDNSEdit = "dns_edit"
+	CloudflareAccessRead      = "read"
+	CloudflareAccessDNSEdit   = "dns_edit"
+	CloudflareAccessZeroTrust = "zero_trust"
 )
 
 var CloudflareAccessLevels = []store.ExternalAccessLevel{
 	{Name: CloudflareAccessRead},
 	{Name: CloudflareAccessDNSEdit, Scopes: []string{"dns.write"}},
+	{Name: CloudflareAccessZeroTrust, Scopes: []string{
+		"zone.read", "dns.read", "dns.write", "ssl-and-certificates.read",
+		"access-app.read", "access-app.write",
+		"access-policy.read", "access-policy.write",
+		"access-service-token.read", "access-service-token.write",
+		"argotunnel.read", "argotunnel.write",
+	}},
 }
 
 // CloudflareAccessLevel is the named level; "" is the default.

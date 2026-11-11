@@ -182,6 +182,14 @@ export class HostExecutions {
     await this.flush();
   }
 
+  /** Whether this input was accepted here (a repeated dispatch of it). */
+  hasClaim({ session }: HostMethods["run"]["request"]["payload"]): boolean {
+    return (
+      dispatchKey(session.id, session.dispatchId || session.input?.id) in
+      this.claims
+    );
+  }
+
   /** The inputs accepted and not yet reported. */
   active(): Array<Pick<Claim, "sessionId" | "inputId">> {
     if (this.pruneClaims()) this.persistClaims();

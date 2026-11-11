@@ -319,6 +319,59 @@ export function closeAllActiveRuntimes(): void {
   clearSessionControl();
 }
 
+/** The sessions whose agent process or thread this host holds, and which of them work. */
+export function residentSessions(): Array<{
+  sessionId: string;
+  busy: boolean;
+}> {
+  const resident = new Map<string, boolean>();
+  for (const runtime of activeClaudeRuntimes.values())
+    if (!runtime.closed)
+      resident.set(
+        runtime.foundrySessionId,
+        (resident.get(runtime.foundrySessionId) ?? false) ||
+          claudeRuntimeIsBusy(runtime),
+      );
+  for (const entry of activeCodexThreads.values())
+    if (entry.sessionId)
+      resident.set(
+        entry.sessionId,
+        (resident.get(entry.sessionId) ?? false) ||
+          entry.thread.isBusy?.() === true,
+      );
+  return [...resident].map(([sessionId, busy]) => ({ sessionId, busy }));
+}
+
+/**
+ * Closes the agent processes and threads that hold no work (no turn, no
+ * background task, no timer), of one session or of all. A busy one stays:
+ * closing it would end its work. Returns the sessions that were closed.
+ */
+export function closeIdleRuntimes(sessionId?: string): string[] {
+  const closed = new Set<string>();
+  const released = new Error("Execution host handed the session over");
+  for (const runtime of [...activeClaudeRuntimes.values()])
+    if (
+      !runtime.closed &&
+      (!sessionId || runtime.foundrySessionId === sessionId) &&
+      !claudeRuntimeIsBusy(runtime)
+    ) {
+      closeActiveClaudeRuntime(runtime, released);
+      closed.add(runtime.foundrySessionId);
+    }
+  for (const [key, entry] of [...activeCodexThreads])
+    if (
+      entry.sessionId &&
+      (!sessionId || entry.sessionId === sessionId) &&
+      entry.thread.isBusy?.() !== true
+    ) {
+      activeCodexThreads.delete(key);
+      void entry.thread.close?.().catch(() => undefined);
+      closed.add(entry.sessionId);
+    }
+  return [...closed];
+}
+
 /** A worker log line per agent process change: which process served what. */
 export function logClaudeRuntime(
   event: string,

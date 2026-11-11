@@ -13,6 +13,9 @@ import (
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
 		31: "3e6b99a0b26d81f8f2ebdfa1e4295966f13107af788fae76b6098a5da67fede8", // session system alerts; MCP result budgets (paged session work, chat-capable models)
+		32: "5b5204cd81e06b5b6b8961771d057cf26d09edc39af065b59952d9f9ca40f4fa", // connector_instances: configure connector instances with secrets by file reference
+		33: "81808432bf9f736b7eddfd42907e387cce9b00b0b7a14e084042b93da1410edc", // connector_packages: enable an integration package on chosen devices
+		34: "ea50663680d530308a05742a394f74ce323c2115316c167582f18ea425e87872", // edge_access: manage edge access credentials and provision Cloudflare Access
 		30: "28f5a3b00864af197a8d05acfaaa746965b5b0a3c44066243f539063e8881374", // ASC-2: App Store Connect curl examples through the gateway
 		29: "444f19bacb28eb3627771a23b1d64908d5a9a8abccb51fa494a096f19d1f1407", // MCP: skill repository source; assistant device removal always asks
 		28: "973fe7f7d3c6aa9549dccaffb6132268c4f17bdf4dab7f1abb934a125a0ef81c", // DEV-155: connector stand-ins work for what a turn leaves running

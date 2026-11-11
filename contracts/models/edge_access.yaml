@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: Foundry edge access
+  version: 1.0.0
+  description:
+    "Edge access credentials: gateway pre-authentication (Cloudflare Access service tokens, later
+    mTLS, Basic Auth, IAP) matched by address and independent of any connector. Part of the Foundry
+    contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript
+    types and Go models (apps/server/internal/store/edge_access_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    EdgeAccessProvider:
+      description: How the edge authenticates the caller. `basic` is reserved; the server accepts only `cloudflare_access` today.
+      type: string
+      enum: [cloudflare_access, basic]
+    EdgeAccessMatch:
+      description:
+        The addresses a credential applies to. `host` matches the upstream host exactly, ignoring
+        case and port; an empty `pathPrefix` covers the whole host. Among several matches the
+        longest `pathPrefix` wins.
+      type: object
+      required: [host]
+      additionalProperties: false
+      properties:
+        host:
+          type: string
+        pathPrefix:
+          description: Starts with `/`, matches on path-segment boundaries.
+          type: string
+    EdgeAccess:
+      description: One edge access credential as its owner sees it. The client id and secret are sealed on the server and never returned.
+      type: object
+      required: [id, label, provider, match, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        provider:
+          $ref: "#/components/schemas/EdgeAccessProvider"
+        match:
+          $ref: "#/components/schemas/EdgeAccessMatch"
+        team:
+          description: Cloudflare Access team name (`<team>.cloudflareaccess.com`), when known.
+          type: string
+        audience:
+          description: Access application audience tag, when known.
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        lastUsedAt:
+          description: When Foundry last attached this credential to an upstream request.
+          type: string
+    EdgeAccessList:
+      type: object
+      required: [credentials]
+      additionalProperties: false
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/EdgeAccess"
+    EdgeAccessInput:
+      description:
+        Create (POST) or replace (PUT) body. `clientId` and `clientSecret` are the credential
+        values (Cloudflare Access service token Client ID and Secret); both are required on create,
+        and on replace either may be omitted to keep the sealed value.
+      type: object
+      required: [label, provider, match]
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        provider:
+          $ref: "#/components/schemas/EdgeAccessProvider"
+        match:
+          $ref: "#/components/schemas/EdgeAccessMatch"
+        team:
+          type: string
+        audience:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+    EdgeAccessRequired:
+      description:
+        An upstream address sits behind an edge that wants a credential Foundry does not hold (or
+        held but the edge rejected). Probes, the gateway and MCP report it as the error code
+        `edge_access_required`.
+      type: object
+      required: [provider, host, path, message]
+      additionalProperties: false
+      properties:
+        provider:
+          $ref: "#/components/schemas/EdgeAccessProvider"
+        team:
+          type: string
+        host:
+          type: string
+        path:
+          type: string
+        credentialId:
+          description: Set when a stored credential was attached and the edge still refused it.
+          type: string
+        message:
+          description: Readable explanation with the next step.
+          type: string

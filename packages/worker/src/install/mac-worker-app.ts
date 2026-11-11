@@ -70,7 +70,7 @@ export function workerLauncherScript(input: {
     // privacy grants continue to name Foundry. Each job has its own role.
     'if [ "${FOUNDRY_SERVICE_ROLE:-}" = "execution" ]; then',
     `  export FOUNDRY_WORKER_APP=${shellQuote(workerAppName())}`,
-    '  exec "$FOUNDRY_EXECUTION_NODE" "$FOUNDRY_EXECUTION_ENTRY" "$FOUNDRY_EXECUTION_SERVER"',
+    '  exec "$FOUNDRY_EXECUTION_NODE" "$FOUNDRY_EXECUTION_ENTRY" "$FOUNDRY_EXECUTION_SERVER" ${FOUNDRY_EXECUTION_ROOT:+"$FOUNDRY_EXECUTION_ROOT"}',
     "fi",
     ...Object.entries(input.env).map(
       ([key, value]) => `export ${key}=${shellQuote(value)}`,

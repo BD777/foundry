@@ -399,7 +399,7 @@ func (r *rolloutRun) update(ctx context.Context, device *store.SkillBundleRollou
 // rolloutInstallRetries' waits (installing again is safe).
 func (r *rolloutRun) install(ctx context.Context, connection *daemonConnection, activate bool) error {
 	for _, tool := range rolloutTools(r.version) {
-		err := r.toolRequest(ctx, connection, wsInstallTool{Tool: tool, Step: "install", Activate: &activate})
+		err := r.installTool(ctx, connection, tool, activate)
 		for _, wait := range rolloutInstallRetries {
 			if err == nil || ctx.Err() != nil {
 				break
@@ -409,7 +409,7 @@ func (r *rolloutRun) install(ctx context.Context, connection *daemonConnection, 
 			case <-ctx.Done():
 			case <-time.After(wait):
 			}
-			err = r.toolRequest(ctx, connection, wsInstallTool{Tool: tool, Step: "install", Activate: &activate})
+			err = r.installTool(ctx, connection, tool, activate)
 		}
 		if err != nil {
 			return fmt.Errorf("%s %s: %w", tool.Name, tool.Version, err)
@@ -447,6 +447,18 @@ func (r *rolloutRun) recordInstalled(ctx context.Context, deviceID string) {
 	}
 	r.s.syncConnectorToolVersions(ctx)
 	r.s.projectionsChanged("", fieldDeviceTools)
+}
+
+// installTool installs one tool; a repository tool is read by the bundle's
+// reader device when it is another device.
+func (r *rolloutRun) installTool(ctx context.Context, connection *daemonConnection, tool store.SkillBundleTool, activate bool) error {
+	payload := wsInstallTool{Tool: tool, Step: "install", Activate: &activate}
+	release, err := r.s.deliverRepositoryTool(ctx, r.repo.FetchDeviceID, connection.deviceID, &payload)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return r.toolRequest(ctx, connection, payload)
 }
 
 func (r *rolloutRun) toolRequest(ctx context.Context, connection *daemonConnection, payload wsInstallTool) error {

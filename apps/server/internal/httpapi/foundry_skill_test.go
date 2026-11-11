@@ -115,6 +115,9 @@ func TestFoundrySkillShowsWhatAgentsGet(t *testing.T) {
 		"acquire_resource":            {"session", "issue_execution"},
 		"feishu_events":               {"session", "issue_execution"},
 		"remember":                    {"personal_agent"},
+		"connector_instances":         {"session", "personal_agent"},
+		"connector_packages":          {"session", "personal_agent"},
+		"edge_access":                 {"session", "personal_agent"},
 		"set_skill_repository_source": {"session", "personal_agent"},
 	} {
 		if !slices.Equal(roles[tool], want) {

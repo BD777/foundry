@@ -56,13 +56,17 @@ export function CloudflareAccessLevels({
       ? t("cloudflare.accessRead")
       : level === "dns_edit"
         ? t("cloudflare.accessDnsEdit")
-        : level;
+        : level === "zero_trust"
+          ? t("cloudflare.accessZeroTrust")
+          : level;
   const detail = (level: string) =>
     level === "read"
       ? t("cloudflare.accessReadDetail")
       : level === "dns_edit"
         ? t("cloudflare.accessDnsEditDetail")
-        : "";
+        : level === "zero_trust"
+          ? t("cloudflare.accessZeroTrustDetail")
+          : "";
   const currentLevel = options.find((l) => l.name === current);
   const lost = currentLevel
     ? missingAccessScopes(currentLevel, account.grantedScopes)

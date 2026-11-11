@@ -52,6 +52,7 @@ const serverMessages = [
   "runRepair",
   "readRepositoryRefs",
   "fetchSkillRepository",
+  "fetchRepositoryToolArchive",
   "installTool",
   "checkTool",
   "connectorRequest",
@@ -92,6 +93,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 79);
+  assert.equal(expected.length, 80);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

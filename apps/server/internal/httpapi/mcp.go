@@ -155,6 +155,9 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	if repositorySourceMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant change where their skill repositories are read")}
 	}
+	if (connectorInstanceMCPTools[name] || connectorPackageMCPTools[name] || edgeAccessMCPTools[name]) && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available to Issue, clarification or verifier sessions")}
+	}
 	if modelProviderMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant manage their model providers")}
 	}
@@ -471,6 +474,9 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"get_model_notes":       mcpTextTool((*Server).getModelNotesForMCP),
 	"append_model_note":     mcpTextTool((*Server).appendModelNoteForMCP),
 	"get_execution_default": mcpTextTool((*Server).getExecutionDefaultForMCP),
+	"connector_instances":   mcpTextTool((*Server).connectorInstancesForMCP),
+	"connector_packages":    mcpTextTool((*Server).connectorPackagesForMCP),
+	"edge_access":           mcpTextTool((*Server).edgeAccessForMCP),
 	// Skill repositories (mcp_skill_repositories.go).
 	"set_skill_repository_source": mcpTextTool((*Server).setSkillRepositorySourceForMCP),
 }
