@@ -39,6 +39,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// Before the prune, which walks their workspace-owned rows.
 		s.setupDeviceConnectors,
 		s.setupConnectorPackages,
+		s.setupEdgeAccess,
 		s.setupPersonalAgents,
 		s.setupPermissionPackages,
 		s.setupPersonalAgentMaintenance,

@@ -18,7 +18,10 @@ import {
   SearchSelect,
   type SearchSelectOption,
 } from "../../components/ui/search-select";
-import type { ConnectorType } from "../../lib/connector-types";
+import {
+  edgeAccessConnectorTab,
+  type ConnectorType,
+} from "../../lib/connector-types";
 import { errorText } from "./account-format";
 import {
   connectorDescription,
@@ -303,6 +306,7 @@ export interface ConnectorPickerProps {
   value: ConnectorType;
   onChange: (kind: ConnectorType) => void;
   onRestrictedSelect?: (selection: ConnectorRestricted) => void;
+  onEdgeAccessSelect: () => void;
 }
 
 /**
@@ -315,6 +319,7 @@ export function ConnectorPicker({
   catalog,
   devices,
   restricted = [],
+  onEdgeAccessSelect,
   onChange,
   onRestrictedSelect,
   value,
@@ -429,6 +434,13 @@ export function ConnectorPicker({
       onOpenChange={setPickerOpen}
       open={pickerOpen}
       searchPlaceholder={t("page.picker.search")}
+      trailingOption={{
+        value: edgeAccessConnectorTab,
+        label: t("edgeAccess.title"),
+        detail: t("edgeAccess.listDetail"),
+        keywords: ["cloudflare", "access", "service", "token", "edge"],
+        onSelect: onEdgeAccessSelect,
+      }}
       value={value}
     />
   );

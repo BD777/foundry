@@ -1,4 +1,5 @@
 import { startServerMcpForwarder } from "./platform/server-link/server-mcp-forwarder.js";
+import { prepareConnectorInstanceSecretRequest } from "./session/connector-instance-secrets.js";
 import { closeAllActiveRuntimes } from "./session/runner/active-runtimes.js";
 import { sessionWork } from "./session-work/supervisor.js";
 import { stopAllEvidenceHTTPServices } from "./issue/evidence/evidence-http-service.js";
@@ -9,7 +10,7 @@ import {
   executionHostClient,
   startExecutionHost,
   stopExecutionHost,
-} from "./execution-host/client.js";
+} from "./execution-host/fleet.js";
 import { writePrivateJSONAtomic } from "./platform/storage.js";
 import { registerKnownSecret } from "./platform/secret-redaction.js";
 import { startStallMonitor } from "./platform/stall-monitor.js";
@@ -164,7 +165,9 @@ export async function connect(args: string[]): Promise<void> {
   noteDaemonHealth({});
   // Reattach the OS-managed execution owner before reporting live claims.
   // The worker still supervises its own short-lived inspection processes.
-  await startServerMcpForwarder(serverURLFromArgs(args));
+  await startServerMcpForwarder(serverURLFromArgs(args), {
+    prepareRequest: prepareConnectorInstanceSecretRequest,
+  });
   await startExecutionHost(serverURLFromArgs(args));
   await superviseAgentProcesses();
   // Connector profiles and tool folders a previous process made for its

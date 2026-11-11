@@ -6,12 +6,20 @@ export class ApiError extends Error {
   status: number;
   /** The server's machine-readable reason, when it gives one. */
   code?: string;
+  /** The server's structured error body, when it gives one. */
+  details?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -211,9 +219,13 @@ export function apiErrorOf(
   path: string,
   status: number,
 ): ApiError {
-  let payload: { error?: unknown; code?: unknown } | undefined;
+  let payload: Record<string, unknown> | undefined;
   try {
-    payload = JSON.parse(body);
+    const parsed: unknown = JSON.parse(body);
+    payload =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
   } catch {
     payload = undefined;
   }
@@ -229,6 +241,7 @@ export function apiErrorOf(
     message.replace(/^Error: /, ""),
     status,
     typeof payload?.code === "string" ? payload.code : undefined,
+    payload,
   );
 }
 

@@ -90,8 +90,8 @@ export function executionServiceEnvironment(
   );
 }
 
-export function prepareExecutionSocket(): void {
-  const { root, socketRoot } = executionHostPaths();
+export function prepareExecutionSocket(paths = executionHostPaths()): void {
+  const { root, socketRoot } = paths;
   for (const path of new Set([root, socketRoot])) {
     mkdirSync(path, { recursive: true, mode: 0o700 });
     const info = lstatSync(path);
@@ -152,12 +152,32 @@ function command(
   );
 }
 
+/** A host beside the original one is told its own root; the original is not. */
+function rootArguments(paths: ReturnType<typeof executionHostPaths>): string[] {
+  return paths.root === executionHostPaths().root ? [] : [paths.root];
+}
+
+let warnedDirectLaunch = false;
+/**
+ * The installed launcher predates FOUNDRY_EXECUTION_ROOT, so a host beside the
+ * original one starts as a plain node process, without the Foundry app identity
+ * that macOS privacy grants (screen, accessibility, files) are tied to. The
+ * launcher is rewritten by the next install or update of the Worker app.
+ */
+function warnDirectLaunch(): void {
+  if (warnedDirectLaunch) return;
+  warnedDirectLaunch = true;
+  console.error(
+    "Execution host starts without the Foundry app launcher (the installed launcher is older than host rollover): macOS privacy grants made to Foundry do not apply to it. Run `foundry-worker update` or `install` to rewrite the launcher.",
+  );
+}
+
 export async function launchExecutionService(
   entry: string,
   serverURL: string,
+  paths = executionHostPaths(),
 ): Promise<void> {
-  const paths = executionHostPaths();
-  prepareExecutionSocket();
+  prepareExecutionSocket(paths);
   const env = executionServiceEnvironment();
   if (process.platform === "darwin") {
     const domain = `gui/${process.getuid!()}`;
@@ -167,13 +187,18 @@ export async function launchExecutionService(
       await command("/bin/launchctl", ["print", `${domain}/${paths.label}`]);
       return;
     } catch {}
-    let args = [process.execPath, entry, serverURL];
+    let args = [process.execPath, entry, serverURL, ...rootArguments(paths)];
     if (
       existsSync(workerAppExecutable()) &&
       existsSync(workerLauncherPath()) &&
       readFileSync(workerLauncherPath(), "utf8").includes(
         "FOUNDRY_EXECUTION_ENTRY",
-      )
+      ) &&
+      // An older launcher cannot pass the root of a host beside another.
+      (!rootArguments(paths).length ||
+        readFileSync(workerLauncherPath(), "utf8").includes(
+          "FOUNDRY_EXECUTION_ROOT",
+        ))
     ) {
       args = [workerAppExecutable()];
       Object.assign(env, {
@@ -181,8 +206,17 @@ export async function launchExecutionService(
         FOUNDRY_EXECUTION_NODE: process.execPath,
         FOUNDRY_EXECUTION_ENTRY: entry,
         FOUNDRY_EXECUTION_SERVER: serverURL,
+        ...(rootArguments(paths)[0]
+          ? { FOUNDRY_EXECUTION_ROOT: rootArguments(paths)[0]! }
+          : {}),
       });
     }
+    if (
+      args[0] === process.execPath &&
+      rootArguments(paths).length &&
+      existsSync(workerAppExecutable())
+    )
+      warnDirectLaunch();
     writeFileAtomic(
       paths.plist,
       executionLaunchAgent({
@@ -226,11 +260,13 @@ export async function launchExecutionService(
     process.execPath,
     entry,
     serverURL,
+    ...rootArguments(paths),
   ]);
 }
 
-export async function stopExecutionService(): Promise<void> {
-  const paths = executionHostPaths();
+export async function stopExecutionService(
+  paths = executionHostPaths(),
+): Promise<void> {
   if (process.platform === "darwin") {
     // The app's PID and the Node execution owner's PID are not the same.
     // launchd removes the job, then any surviving recorded owner is stopped
@@ -274,7 +310,7 @@ export async function stopExecutionService(): Promise<void> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    clearSocket();
+    clearSocket(paths);
     return;
   }
   try {
@@ -282,7 +318,7 @@ export async function stopExecutionService(): Promise<void> {
   } catch (error) {
     if (!/not loaded|not found/.test(String(error))) throw error;
   }
-  clearSocket();
+  clearSocket(paths);
 }
 
 /**
@@ -326,8 +362,7 @@ export async function reclaimExecutionService(
     );
 }
 
-function clearSocket(): void {
-  const paths = executionHostPaths();
+function clearSocket(paths = executionHostPaths()): void {
   try {
     unlinkSync(paths.socket);
   } catch (error) {

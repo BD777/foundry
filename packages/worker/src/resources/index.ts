@@ -54,13 +54,16 @@ export { unpackArchive, ArchiveError } from "./archive.js";
 export {
   cuaDriverEnv,
   cuaDriverGrantRun,
+  cuaDriverLeasePrepareRequest,
   cuaDriverPermissionWatchActive,
   cuaDriverSettingsPanes,
   isCuaDriverSettingsPane,
   openCuaDriverSettings,
+  prepareCuaDriverForLease,
   requestCuaDriverAccess,
   stopCuaDriverPermissionWatch,
   watchCuaDriverPermissions,
+  type CuaDriverLeasePreparation,
   type CuaDriverSettingsPane,
   resetCuaDriverGrantRun,
   resolveCuaDriverBinary,
@@ -70,8 +73,12 @@ export {
   createCuaDriverDetector,
   cuaDriverGrantDetailKeys,
   cuaDriverScreenControlDetector,
-  parseCuaDriverPermissions,
 } from "./detectors/computer-use-cua-driver.js";
+export {
+  parseCuaDriverPermissions,
+  type CuaDriverGrants,
+  type CuaDriverPermissions,
+} from "./cua-driver-permissions.js";
 export { installResourceBackend, type InstallOptions } from "./install.js";
 export {
   discoverComputerUse,

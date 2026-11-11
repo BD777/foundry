@@ -69,7 +69,7 @@ export const externalAccounts = {
     filterPlaceholder: "Scope or product, e.g. dns",
     noPermissionMatch: "No permission matches “{{filter}}”.",
     foundryUses:
-      "Foundry uses: your identity; the zones, DNS records and certificates of the zones each workspace selects; and DNS record changes in workspaces you set to DNS edit.",
+      "Foundry uses: your identity; the zones, DNS records and certificates of the zones each workspace selects; DNS record changes in workspaces you set to DNS edit; and, in workspaces you set to Zero Trust, Access applications, policies, service tokens and Tunnel configuration.",
     reauthorize: "Re-authorize",
     revoke: "Disconnect authorization",
     revokeDetail:
@@ -79,7 +79,7 @@ export const externalAccounts = {
     connected:
       "Cloudflare identity connected. Review the zones enabled for each workspace.",
     authorizeDetail:
-      "Open the official Cloudflare page in this browser and approve the permissions Foundry may use (DNS edit needs DNS write). Return here to select workspace zones. Closing this dialog does not revoke an approval already being verified.",
+      "Open the official Cloudflare page in this browser and approve the permissions Foundry may use. DNS edit needs DNS write. Zero Trust needs Account > Access: Apps and Policies Edit, Account > Access: Service Tokens Edit, and Account > Cloudflare Tunnel Edit (or Read for tunnel checks). Return here to select workspace zones. Closing this dialog does not revoke an approval already being verified.",
     preparing: "Preparing official authorization…",
     waiting: "Waiting for your approval on Cloudflare…",
     verifying: "Verifying your Cloudflare identity…",
@@ -109,8 +109,11 @@ export const externalAccounts = {
     accessDnsEdit: "Read + DNS edit",
     accessDnsEditDetail:
       "Also create, update and delete DNS records in the selected zones, such as A records or ACME TXT challenges. Each change is listed under Activity on the identity.",
+    accessZeroTrust: "Read + DNS edit + Zero Trust",
+    accessZeroTrustDetail:
+      "Also manage Access applications, policies and service tokens, and update Tunnel ingress for the Cloudflare accounts of the selected zones. Foundry never creates a Bypass policy; automations use Service Auth only. Each change is listed under Activity.",
     accessNeedsScopes:
-      "Needs {{scopes}}, which this authorization does not include. Use Re-authorize on the identity and allow DNS write on Cloudflare's page.",
+      "Needs {{scopes}}, which this authorization does not include. Use Re-authorize on the identity and allow the matching Cloudflare permissions: DNS Write; Access: Apps and Policies Edit; Access: Service Tokens Edit; Cloudflare Tunnel Edit or Read.",
     accessGrantLost:
       "This workspace is set to {{level}}, but the authorization no longer includes {{scopes}}: changes are refused until you re-authorize.",
     accessSaved: "Session access set to {{level}}.",
@@ -285,6 +288,100 @@ export const externalAccounts = {
     loadFailed: "Could not load Feishu accounts: {{error}}",
     secretsMissing:
       "This server has no secret-store key, so it cannot keep logins. An administrator has to configure one before accounts can be connected.",
+  },
+  edgeAccess: {
+    title: "Edge access",
+    listDetail: "Service tokens for Cloudflare Access",
+    intro:
+      "Foundry attaches these credentials only to matching connector requests. Client IDs and secrets stay sealed on the server and are never shown again.",
+    add: "Add credential",
+    emptyTitle: "No edge access credentials",
+    emptyBody:
+      "Add one when a connector address is protected by Cloudflare Access.",
+    providers: {
+      cloudflare_access: "Cloudflare Access",
+      basic: "Basic authentication",
+    },
+    team: "Team {{team}}",
+    replace: "Replace",
+    delete: "Delete",
+    matchLabel: "Match",
+    wholeHost: "whole host",
+    lastUsedLabel: "Last used",
+    neverUsed: "Never used yet",
+    addTitle: "Add edge access credential",
+    addDescription:
+      "Enter a Cloudflare Access service token. Foundry uses it only for requests to the matching host and path.",
+    replaceTitle: "Replace edge access credential",
+    replaceDescription:
+      "Enter the full service token again. The sealed token is never read back into this form.",
+    identityTitle: "Cloudflare identity",
+    fields: {
+      label: "Name",
+      labelPlaceholder: "Example: OpenLark production",
+      host: "Host",
+      hostPlaceholder: "openlark.example.com",
+      hostHint: "The exact upstream host, without a scheme, port or path.",
+      pathPrefix: "Path prefix",
+      pathPrefixPlaceholder: "/api",
+      pathPrefixHint:
+        "Optional. Starts with /. Leave empty to cover the whole host. The longest matching prefix wins.",
+      team: "Cloudflare team",
+      teamPlaceholder: "team-name",
+      audience: "Access audience",
+      audiencePlaceholder: "Audience tag (optional)",
+      clientId: "Client ID",
+      clientIdPlaceholder: "Service token client ID",
+      clientSecret: "Client secret",
+      clientSecretPlaceholder: "Service token secret",
+      secretHint:
+        "Both token fields are required on add and replace. They are sent once and never returned by Foundry.",
+    },
+    save: "Add credential",
+    saveReplacement: "Replace credential",
+    saving: "Saving…",
+    created: "Added edge access credential {{name}}.",
+    replaced: "Replaced edge access credential {{name}}.",
+    deleted: "Deleted edge access credential {{name}}.",
+    deleteTitle: "Delete this edge access credential?",
+    deleteDescription: "The credential for {{name}} will be removed.",
+    deleteConsequence:
+      "Connector requests through this address will then be blocked by Cloudflare.",
+    deleteConfirm: "Delete credential",
+    loading: "Loading edge access credentials…",
+    loadFailed: "Could not load edge access credentials",
+    retry: "Try again",
+    errors: {
+      label: "Enter a name for this credential.",
+      hostRequired: "Enter the upstream host.",
+      host: "Enter only the host, without a scheme or path.",
+      path: "The path prefix must start with /.",
+      clientId: "Enter the Cloudflare Access client ID.",
+      clientSecret: "Enter the Cloudflare Access client secret.",
+    },
+  },
+  edgeAccessRequired: {
+    withTeam:
+      "This address is behind Cloudflare Access (team {{team}}), so it needs an edge access credential.",
+    withoutTeam:
+      "This address is behind Cloudflare Access, so it needs an edge access credential.",
+    addCredential: "Add credential",
+    provision: "Provision automatically",
+    provisioning: "Provisioning…",
+    provisionDetail:
+      "Foundry can create the Cloudflare Access application, policy and service token when the Cloudflare connector has Zero Trust authorization.",
+    zeroTrustRequired: "Authorize Zero Trust first in Connectors › Cloudflare.",
+    authorizeZeroTrust: "Open Cloudflare",
+    provisionFailed: "Could not provision edge access: {{error}}",
+    provisioned: "Edge access is ready ({{name}}).",
+    provisionedDetail:
+      "Created a Cloudflare Access credential for {{host}}{{path}}.",
+    ingressMissing:
+      "The Tunnel is still missing this route. Add it in Cloudflare.",
+    ingressHostname: "Hostname",
+    ingressPath: "Path",
+    ingressWholeHost: "Whole host",
+    ingressService: "Service",
   },
   serverHeld: {
     add: "Add instance",

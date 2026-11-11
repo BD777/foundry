@@ -24,7 +24,7 @@ import {
 } from "../platform/server-link/connection-reports.js";
 import { readAgentRuntimeSettings } from "../device/device.js";
 import { adaptiveConcurrencyFloor } from "../device/device.js";
-import { executionHostClient } from "../execution-host/client.js";
+import { executionHostClient } from "../execution-host/fleet.js";
 import { isDeviceRemovedSignal } from "../device/device-removal.js";
 import { recordActivity } from "./diagnostics.js";
 import { meterSocket } from "../platform/server-link/send-meter.js";

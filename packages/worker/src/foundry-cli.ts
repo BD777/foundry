@@ -14,6 +14,7 @@
  *   foundry assistant <verb>    the assistant's memory, rules, tasks and the person's list
  *   foundry device list         devices, whether online, and what they offer
  *   foundry profile|model list  runnable profiles and their models
+ *   foundry edge-access <verb>  list, add, replace, delete or provision edge credentials
  *   foundry skill [name]        print or install a bundled skill
  *
  * Operational worker commands remain on the separate `foundry-worker` bin.

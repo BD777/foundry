@@ -35,9 +35,10 @@ type cloudflareCall struct {
 	path   string
 	query  url.Values
 	// body is a change's body, read once, at most maxCloudflareBody+1 bytes.
-	body json.RawMessage
-	zone string
-	rest []string
+	body      json.RawMessage
+	zone      string
+	rest      []string
+	zeroTrust *cloudflareZeroTrustCall
 }
 
 // cloudflarePath is the Cloudflare API path a gateway request names: below
@@ -76,6 +77,18 @@ func (g *CloudflareGateway) Enter(r *http.Request) gateway.Entry {
 	return entry
 }
 
+// cloudflareClassifyBody reads a change once for classification and puts it
+// back for the confirmation service's exact-request digest.
+func cloudflareClassifyBody(r *http.Request) json.RawMessage {
+	if r.Body == nil || r.Body == http.NoBody {
+		return nil
+	}
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, maxCloudflareBody))
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw
+}
+
 // Holdings (gateway.Entitlements): the zones the session's workspace bound
 // to the grant's account, and the access level it set.
 func (g *CloudflareGateway) Holdings(ctx context.Context, lease *gateway.Lease) (gateway.Holdings, *gateway.Denial) {
@@ -86,15 +99,55 @@ func (g *CloudflareGateway) Holdings(ctx context.Context, lease *gateway.Lease) 
 	if bound.account.ID != lease.Account.ID {
 		return gateway.Holdings{}, &gateway.Denial{Reason: gateway.ReasonAccessEnded}
 	}
-	return gateway.Holdings{Level: accessOf(bound.binding), Resources: bound.binding.ResourceIDs, GrantedScopes: lease.Account.GrantedScopes}, nil
+	level := accessOf(bound.binding)
+	resources := append([]string(nil), bound.binding.ResourceIDs...)
+	if level == externalaccounts.CloudflareAccessZeroTrust {
+		resources = append(resources, g.zeroTrustAccountIDs(ctx, lease, bound)...)
+	}
+	return gateway.Holdings{Level: level, Resources: resources, GrantedScopes: lease.Account.GrantedScopes}, nil
 }
 
-// Classify (gateway.Provider): a read of a bound zone needs the read level;
-// a change needs the level whose rules allow its method and path.
+// Classify (gateway.Provider): zone reads need the read level, zone changes
+// need the level whose rules allow them, and account-level Zero Trust calls
+// need the zero_trust level for an account one of the bound zones belongs to.
 func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gateway.Need, *gateway.Denial) {
 	method, path, query := strings.ToUpper(r.Method), cloudflarePath(r), r.URL.Query()
 	call := &cloudflareCall{method: method, path: path, query: query}
 	need := gateway.Need{Payload: call}
+	zeroTrust, knownZeroTrust := classifyCloudflareZeroTrust(method, path)
+	if knownZeroTrust || strings.HasPrefix(path, "/accounts/") {
+		if !knownZeroTrust {
+			if method != http.MethodGet {
+				need.Write = true
+				need.Detail = &CloudflareWriteDetail{WorkspaceID: lease.Session.WorkspaceID, Method: method, Path: cloudflareWriteAuditPath(path), Result: "refused"}
+			}
+			return need, &gateway.Denial{Reason: RefusalPathNotAllowed, Message: method + " " + cloudflareWriteAuditPath(path) + " is outside what Foundry's Cloudflare Zero Trust access allows"}
+		}
+		call.zeroTrust = &zeroTrust
+		need.Level = externalaccounts.CloudflareAccessZeroTrust
+		need.Resource = zeroTrust.account
+		need.Write = zeroTrust.write
+		if zeroTrust.write {
+			detail := &CloudflareWriteDetail{WorkspaceID: lease.Session.WorkspaceID, Method: method, Path: cloudflareWriteAuditPath(path), Result: "refused"}
+			need.Detail = detail
+			need.Risk = "cloudflare_zero_trust_write"
+			need.RiskSummary = "The assistant wants to change Cloudflare Zero Trust (" + method + " " + cloudflareWriteAuditPath(path) + ")."
+			call.body = cloudflareClassifyBody(r)
+		}
+		if method == http.MethodGet {
+			if err := validateCloudflareZeroTrustRead(path, query); err != nil {
+				return need, asDenial(err)
+			}
+		} else {
+			if len(query) > 0 {
+				return need, &gateway.Denial{Reason: RefusalQueryNotAllow, Message: method + " takes no query parameters; put the fields in the JSON body"}
+			}
+			if err := validateCloudflareZeroTrustWrite(method, path); err != nil {
+				return need, asDenial(err)
+			}
+		}
+		return need, nil
+	}
 	if method == http.MethodGet {
 		if err := validateCloudflareRead(path, query); err != nil {
 			return need, asDenial(err)
@@ -112,7 +165,7 @@ func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gat
 	need.Write = true
 	need.Risk = "dns_change"
 	need.RiskSummary = "The assistant wants to change DNS in Cloudflare (" + method + " " + cloudflareWriteAuditPath(path) + ")."
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, maxCloudflareBody))
+	raw := cloudflareClassifyBody(r)
 	call.body = raw
 	// A refused attempt names the record it was for, too.
 	var attempted map[string]any
@@ -221,19 +274,28 @@ func (g *CloudflareGateway) Upstream(w http.ResponseWriter, r *http.Request, x *
 	}
 
 	detail := x.Need.Detail.(*CloudflareWriteDetail)
-	detail.ZoneID = call.zone
-	if len(call.rest) == 2 {
-		detail.RecordID = call.rest[1]
-	}
-	body, err := cloudflareWriteBody(call.method, call.body)
-	if err != nil {
-		return asDenial(err)
-	}
-	detail.RecordName, detail.RecordType, detail.Content = recordFields(body)
-	if call.method == http.MethodDelete {
-		// The log names what was removed, not only its id.
-		if before, e := g.accounts.CloudflareRead(ctx, account, call.path, nil, use); e == nil {
-			detail.RecordName, detail.RecordType, detail.Content = recordFields(resultObject(before))
+	var body map[string]any
+	var err error
+	if call.zeroTrust != nil {
+		body, err = cloudflareZeroTrustBody(call.method, call.body)
+		if err != nil {
+			return asDenial(err)
+		}
+	} else {
+		detail.ZoneID = call.zone
+		if len(call.rest) == 2 {
+			detail.RecordID = call.rest[1]
+		}
+		body, err = cloudflareWriteBody(call.method, call.body)
+		if err != nil {
+			return asDenial(err)
+		}
+		detail.RecordName, detail.RecordType, detail.Content = recordFields(body)
+		if call.method == http.MethodDelete {
+			// The log names what was removed, not only its id.
+			if before, e := g.accounts.CloudflareRead(ctx, account, call.path, nil, use); e == nil {
+				detail.RecordName, detail.RecordType, detail.Content = recordFields(resultObject(before))
+			}
 		}
 	}
 	result, err := g.accounts.CloudflareRequest(ctx, account, call.method, call.path, nil, body, use)
@@ -256,10 +318,20 @@ func (g *CloudflareGateway) Upstream(w http.ResponseWriter, r *http.Request, x *
 		if detail.Error == "" {
 			detail.Error = "Cloudflare did not report success"
 		}
+		if call.zeroTrust != nil && cloudflareZeroTrustResponseHasSecret(call.method, call.path) {
+			result = redactCloudflareClientSecrets(result)
+		}
 		writeCloudflareResult(w, result)
 		return nil
 	}
 	detail.Result = "succeeded"
+	if call.zeroTrust != nil {
+		if cloudflareZeroTrustResponseHasSecret(call.method, call.path) {
+			result = redactCloudflareClientSecrets(result)
+		}
+		writeCloudflareResult(w, result)
+		return nil
+	}
 	if name, kind, content := recordFields(resultObject(result)); name != "" {
 		detail.RecordName, detail.RecordType, detail.Content = name, kind, content
 	}

@@ -18,6 +18,7 @@ export * from "./api/agent-defaults";
 export * from "./api/chats";
 export * from "./api/connectors";
 export * from "./api/devices";
+export * from "./api/edge-access";
 export * from "./api/evidence";
 export * from "./api/external-connection-setup";
 export * from "./api/device-placement";

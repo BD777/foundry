@@ -58,9 +58,11 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
   const level = (name?: string) =>
     name === "dns_edit"
       ? t("cloudflare.accessDnsEdit")
-      : name === "read"
-        ? t("cloudflare.accessRead")
-        : (name ?? "");
+      : name === "zero_trust"
+        ? t("cloudflare.accessZeroTrust")
+        : name === "read"
+          ? t("cloudflare.accessRead")
+          : (name ?? "");
   return (
     <details className={scopesDisclosureClass}>
       <summary className={scopesSummaryClass}>

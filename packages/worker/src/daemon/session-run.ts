@@ -6,9 +6,13 @@ import { executeIssue } from "../issue/issue-execution.js";
 import type { SessionAmbientEnv } from "../session/session-ambient.js";
 import type { SessionRole } from "../session/session-role.js";
 import { writePersonalAgentFiles } from "../session/personal-agent-files.js";
+import {
+  isUtilitySession,
+  isVerificationSession,
+} from "../session/session-roles.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
-import { sessionWork } from "../session-work/supervisor.js";
+import { attachSessionWork } from "../session-work/supervisor.js";
 import { trackScheduledWork } from "./session-work-runtime.js";
 import { holdUntilNativeWorkEnds } from "../session/runner/active-runtimes.js";
 /** One agent turn of the session. */
@@ -19,7 +23,7 @@ export async function runAgentSession(
   payload: RunSessionPayload,
 ): Promise<void> {
   const { session } = payload;
-  sessionWork().attach(session, workspacePath);
+  attachSessionWork(session, workspacePath);
   const untrackWork = trackScheduledWork(
     session.id,
     session.input?.timerFire?.id,
@@ -28,6 +32,13 @@ export async function runAgentSession(
     serverURL: serverURL,
     sessionToken: payload.sessionToken ?? "",
     workspaceID: session.workspaceId,
+    workspacePath,
+    connectorInstanceFiles:
+      !session.issueId &&
+      session.role !== "issue_execution" &&
+      session.role !== "issue_clarification" &&
+      !isVerificationSession(session) &&
+      !isUtilitySession(session),
   };
   const execute = (role: SessionRole) =>
     executeAgentSession(

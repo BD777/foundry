@@ -144,7 +144,7 @@ func TestDeviceNetworkProbePreservesPathAndRunsOnSelectedDevice(t *testing.T) {
 		}}, nil
 	}
 	descriptor := extensionTestDescriptor(upstream.URL + "/openlark")
-	result, err := service.ProbeExtensionInstance(context.Background(), descriptor, store.ConnectorServerHeldInstanceInput{
+	result, err := service.ProbeExtensionInstance(context.Background(), "owner_1", descriptor, store.ConnectorServerHeldInstanceInput{
 		Label: "OpenLark intranet", Network: ExtensionNetworkDevice, DeviceID: "byte-dev",
 		Fields: map[string]string{"baseUrl": upstream.URL + "/openlark", "token": "fixture-secret", "account": "42"},
 	}, nil)
@@ -176,7 +176,7 @@ func TestExtensionProbeExtractsOptionsRoutesAndClassifiesRedirect(t *testing.T) 
 	service := NewService(nil, nil, NewRegistry())
 	service.Extensions = NewExtensionTestClient(upstream.Client())
 	descriptor := extensionTestDescriptor(upstream.URL)
-	result, err := service.ProbeExtensionInstance(context.Background(), descriptor, store.ConnectorServerHeldInstanceInput{
+	result, err := service.ProbeExtensionInstance(context.Background(), "owner_1", descriptor, store.ConnectorServerHeldInstanceInput{
 		Label: "Acme", Fields: map[string]string{"baseUrl": upstream.URL, "token": "secret", "account": "42"},
 	}, nil)
 	if err != nil {
@@ -195,7 +195,7 @@ func TestExtensionProbeExtractsOptionsRoutesAndClassifiesRedirect(t *testing.T) 
 		},
 	}}
 	redirect.ServerHeld.Access.From = "probe:routes"
-	_, err = service.ProbeExtensionInstance(context.Background(), redirect, store.ConnectorServerHeldInstanceInput{
+	_, err = service.ProbeExtensionInstance(context.Background(), "owner_1", redirect, store.ConnectorServerHeldInstanceInput{
 		Label: "Acme", Fields: map[string]string{"baseUrl": upstream.URL, "token": "secret"},
 	}, nil)
 	var probeErr *ExtensionProbeError

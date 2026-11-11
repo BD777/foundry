@@ -20,6 +20,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), "repo-tools-home-"));
 const {
   activateRepositoryTool,
   installRepositoryTool,
+  packRepositoryTool,
   uninstallRepositoryTool,
 } = await import("../dist/skills/repository-tool.js");
 const { managedToolsBin } = await import("../dist/skills/managed-tools.js");
@@ -218,4 +219,30 @@ test("uninstalling removes current bin links and the version folder", async () =
     existsSync(join(process.env.FOUNDRY_TOOLS_ROOT, "olk", "e".repeat(40))),
     false,
   );
+});
+
+test("a device that cannot read the repository installs the folder another device packed", async () => {
+  const commit = "c".repeat(40);
+  process.env.GH_ARCHIVE = fixture(commit);
+  delete process.env.GH_FAIL;
+  const { archive, sha256 } = await packRepositoryTool(spec(commit));
+  assert.match(sha256, /^[0-9a-f]{64}$/);
+  const listing = execFileSync("tar", ["-tzf", "-"], {
+    input: archive,
+  }).toString();
+  assert.match(listing, /plugins\/open-lark\/bin\/olk/);
+
+  writeFileSync(log, "");
+  process.env.GH_FAIL = "auth";
+  await installRepositoryTool(spec(commit), { archive });
+  assert.equal(
+    readFileSync(log, "utf8"),
+    "",
+    "gh is not run for a held archive",
+  );
+  assert.equal(
+    execFileSync(join(managedToolsBin(), "olk"), ["x"]).toString(),
+    "olk c x\n",
+  );
+  delete process.env.GH_FAIL;
 });

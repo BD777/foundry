@@ -1,4 +1,4 @@
-import { executionHostClient } from "../../execution-host/client.js";
+import { executionHostClient } from "../../execution-host/fleet.js";
 import {
   daemonMessageTypes,
   type SessionTurnPayload,

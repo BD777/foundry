@@ -126,6 +126,20 @@ func (w *fakeFetchWorker) serve() {
 			_ = json.Unmarshal(envelope.Payload, &request)
 			w.record(request.Remote)
 			go func() { w.reply(envelope.ID, wsSkillRepositoryFetchedType, w.fetch(request)) }()
+		case wsFetchRepositoryToolArchiveType:
+			var request wsFetchRepositoryToolArchive
+			_ = json.Unmarshal(envelope.Payload, &request)
+			w.mu.Lock()
+			w.steps = append(w.steps, "pack:"+request.Tool.Version)
+			w.mu.Unlock()
+			go func() {
+				upload, _ := http.NewRequest(http.MethodPost, w.serverURL+request.UploadPath, strings.NewReader("tool-folder"))
+				upload.Header.Set(deviceCredentialHeader, w.credential)
+				if response, err := http.DefaultClient.Do(upload); err == nil {
+					response.Body.Close()
+				}
+				w.reply(envelope.ID, wsRepositoryToolArchiveFetchedType, wsRepositoryToolArchiveFetched{SHA256: "digest"})
+			}()
 		case wsInstallToolType:
 			var request wsInstallTool
 			_ = json.Unmarshal(envelope.Payload, &request)

@@ -49,10 +49,10 @@
   {
     "kind": "cloudflare",
     "label": "Cloudflare",
-    "description": "Sessions read the zones you allow, and change DNS where you allow it, through Foundry's gateway.",
+    "description": "Sessions read the zones you allow, change DNS, and manage Zero Trust Access and Tunnel settings where you explicitly allow it, through Foundry's gateway.",
     "descriptions": {
-      "en": "Sessions read the zones you allow, and change DNS where you allow it, through Foundry's gateway.",
-      "zh-CN": "会话经 Foundry 网关读取你允许的 zone，并在你允许时修改 DNS。"
+      "en": "Sessions read the zones you allow, change DNS, and manage Zero Trust Access and Tunnel settings where you explicitly allow it, through Foundry's gateway.",
+      "zh-CN": "会话经 Foundry 网关读取你允许的 zone、修改 DNS，并仅在你明确允许时管理 Zero Trust Access 与 Tunnel 配置。"
     },
     "holding": "server_held",
     "adapter": "cloudflare",

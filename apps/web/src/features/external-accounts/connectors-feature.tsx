@@ -18,7 +18,10 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/loading";
 import { PageSurface } from "../../components/ui/page-surface";
-import type { ConnectorType } from "../../lib/connector-types";
+import {
+  edgeAccessConnectorTab,
+  type ConnectorType,
+} from "../../lib/connector-types";
 import { errorText } from "./account-format";
 import { AddConnectorDialog } from "./add-connector-dialog";
 import { AppStoreConnectConnector } from "./appstoreconnect-connector";
@@ -36,6 +39,7 @@ import { ExtensionInstallDialog } from "./extension-install-dialog";
 import { FeishuConnector } from "./feishu-connector";
 import { PageHeader } from "../../components/ui/page-header";
 import { ServerHeldConnector } from "./server-held-connector";
+import { EdgeAccessSection } from "./edge-access";
 
 export interface ConnectorsFeatureProps {
   currentUserId: string;
@@ -74,6 +78,7 @@ export function ConnectorsFeature({
   // connector: the picker's statuses, and what a device-held tab draws
   // first. It lives while the page is open, never across sign-ins.
   const [devices, setDevices] = useState<DeviceConnectorsView>();
+  const edgeAccess = tab === edgeAccessConnectorTab;
 
   async function load() {
     try {
@@ -115,10 +120,11 @@ export function ConnectorsFeature({
     if (
       catalog?.length &&
       !awaited &&
+      !edgeAccess &&
       !catalog.some((entry) => entry.kind === tab)
     )
       onTabChange(catalog[0]!.kind);
-  }, [catalog, tab, awaited]);
+  }, [catalog, tab, awaited, edgeAccess]);
 
   async function installFromRepository() {
     setAdding(false);
@@ -147,21 +153,24 @@ export function ConnectorsFeature({
   }
 
   const connector =
-    catalog?.find((entry) => entry.kind === tab) ?? catalog?.[0];
-  const pkg = useConnectorPackage(catalog, tab);
+    catalog?.find((entry) => entry.kind === tab) ??
+    (edgeAccess ? undefined : catalog?.[0]);
+  const pkg = useConnectorPackage(catalog, edgeAccess ? "" : tab);
   return (
     <PageSurface variant="connectors">
       <PageHeader
         title={t("page.title")}
         description={t("page.intro")}
         actions={
-          <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
-            <Plus aria-hidden="true" size={14} />
-            {t("addConnector.open")}
-          </Button>
+          edgeAccess ? undefined : (
+            <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
+              <Plus aria-hidden="true" size={14} />
+              {t("addConnector.open")}
+            </Button>
+          )
         }
       />
-      {loadError ? (
+      {loadError && !edgeAccess ? (
         <Alert
           title={t("page.catalogFailed", { error: loadError })}
           tone="error"
@@ -170,20 +179,24 @@ export function ConnectorsFeature({
             {t("common:actions.retry")}
           </Button>
         </Alert>
-      ) : !catalog || !connector ? (
+      ) : !edgeAccess && (!catalog || !connector) ? (
         <Skeleton label={t("page.catalogLoading")} rows={2} variant="rows" />
       ) : (
         <>
           <ConnectorPicker
-            catalog={catalog}
+            catalog={catalog ?? []}
             devices={devices}
             onChange={(kind) => {
               setRestrictedSelection(undefined);
               onTabChange(kind);
             }}
+            onEdgeAccessSelect={() => {
+              setRestrictedSelection(undefined);
+              onTabChange(edgeAccessConnectorTab);
+            }}
             onRestrictedSelect={setRestrictedSelection}
             restricted={restricted}
-            value={connector.kind}
+            value={edgeAccess ? edgeAccessConnectorTab : connector!.kind}
           />
           {devices?.devices.flatMap((device) =>
             (device.extensionErrors ?? []).map((error) => (
@@ -200,7 +213,9 @@ export function ConnectorsFeature({
               </Alert>
             )),
           )}
-          {restrictedSelection ? (
+          {edgeAccess ? (
+            <EdgeAccessSection onNotice={props.onNotice} />
+          ) : restrictedSelection ? (
             <RestrictedConnectorDetails
               item={restrictedSelection}
               onBack={() => setRestrictedSelection(undefined)}
@@ -213,11 +228,11 @@ export function ConnectorsFeature({
           ) : (
             <>
               <CredentialHolding
-                holding={connector.holding}
-                name={connectorName(connector)}
-                signOutLocal={connector.signIn?.signOut === false}
+                holding={connector!.holding}
+                name={connectorName(connector!)}
+                signOutLocal={connector!.signIn?.signOut === false}
               />
-              {connector.package ? (
+              {connector!.package ? (
                 pkg.loading ? (
                   <Skeleton
                     label={t("connectorPackage.loading")}
@@ -258,37 +273,37 @@ export function ConnectorsFeature({
                   />
                 ) : null
               ) : null}
-              {connector.holding === "device_held" ? (
+              {connector!.holding === "device_held" ? (
                 <DeviceHeldConnector
-                  kind={connector.kind}
-                  key={connector.kind}
+                  kind={connector!.kind}
+                  key={connector!.kind}
                   lastView={devices}
                   onCatalogChanged={() => void load()}
                   onView={setDevices}
                   onNotice={props.onNotice}
                 />
-              ) : connector.kind === "feishu" ? (
+              ) : connector!.kind === "feishu" ? (
                 <FeishuConnector
                   {...props}
-                  command={connector.tool.command}
+                  command={connector!.tool.command}
                   deviceName={(id) =>
                     devices?.devices.find((device) => device.deviceId === id)
                       ?.name
                   }
                 />
-              ) : connector.kind === "cloudflare" ? (
+              ) : connector!.kind === "cloudflare" ? (
                 <CloudflareConnector
                   currentUserId={props.currentUserId}
                   onNotice={props.onNotice}
                 />
-              ) : connector.kind === "appstoreconnect" ? (
+              ) : connector!.kind === "appstoreconnect" ? (
                 <AppStoreConnectConnector
                   currentUserId={props.currentUserId}
                   onNotice={props.onNotice}
                 />
-              ) : connector.extension && connector.serverHeld ? (
+              ) : connector!.extension && connector!.serverHeld ? (
                 <ServerHeldConnector
-                  connector={connector}
+                  connector={connector!}
                   currentUserId={props.currentUserId}
                   onNotice={props.onNotice}
                 />

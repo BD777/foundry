@@ -518,6 +518,14 @@ curl are the one way in, and the gateway is the one place that decides.
 …/dns_records/<id>`), the zone to be bound, the grant to still hold the
   level's scopes, a JSON-object body of at most 16 KiB and no query. A
   workspace binds at most one Cloudflare identity.
+- Zero Trust: the `zero_trust` level adds only `/accounts/<id>/access/...`
+  and `/accounts/<id>/cfd_tunnel/...` paths, with account ids restricted to
+  accounts owned by the workspace's bound zones. Access writes create/list/
+  delete service tokens, create/read/update applications and policies, and
+  update Tunnel configuration; every Access bypass body is refused. Assistant
+  writes require its existing confirmation card. Service-token creation
+  responses are scrubbed before they leave the gateway, and auto-provisioning
+  hands the secret only to `EdgeAccessWriter` for sealing.
 - Account id: when every zone the workspace binds is in one Cloudflare
   account, the session's material carries that account's id
   (`providerAccountId`, read from the zones' `account.id`, not a secret) and

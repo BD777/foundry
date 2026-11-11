@@ -14,7 +14,7 @@ import {
 } from "../attachment-previews.js";
 import { readAttachmentPreviewChunk } from "../../workspace/image-previews.js";
 import { fileDownloadErrorCode } from "../../session/files/file-downloads.js";
-import { executionHostClient } from "../../execution-host/client.js";
+import { executionHostClient } from "../../execution-host/fleet.js";
 import {
   daemonMessageTypes,
   type ProtocolEnvelope,

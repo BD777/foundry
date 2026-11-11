@@ -14,10 +14,12 @@ import { withManagedTools } from "../../skills/managed-tools.js";
 import {
   createComputeProvider,
   createCuaDriverProvider,
+  cuaDriverLeasePrepareRequest,
   cuaDriverScreenControlDetector,
   installResourceBackend,
   isCuaDriverSettingsPane,
   openCuaDriverSettings,
+  prepareCuaDriverForLease,
   ProviderRegistry,
   requestCuaDriverAccess,
   requestMacWorkerAccess,
@@ -48,6 +50,11 @@ async function requestAccessOnDevice(requested: string): Promise<string[]> {
   if (!requested) return [];
   const recheckCuaDriver = () =>
     void resourceScanner.scanOne(cuaDriverScreenControlDetector.id);
+  if (requested === cuaDriverLeasePrepareRequest) {
+    const prepared = await prepareCuaDriverForLease();
+    await resourceScanner.scanOne(cuaDriverScreenControlDetector.id);
+    return prepared.started ? [cuaDriverBackend] : [];
+  }
   if (requested === cuaDriverBackend)
     return requestCuaDriverAccess({
       onDone: recheckCuaDriver,

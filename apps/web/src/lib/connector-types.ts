@@ -9,6 +9,9 @@ export type ConnectorType = string;
 /** The tab the Connectors page opens on when the address names none. */
 export const defaultConnectorType: ConnectorType = "feishu";
 
+/** The Connectors page's final, non-connector entry for edge credentials. */
+export const edgeAccessConnectorTab: ConnectorType = "edge-access";
+
 const kindPattern = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** The kind an address names, if it is one at all. */

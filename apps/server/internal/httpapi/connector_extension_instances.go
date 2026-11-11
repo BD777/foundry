@@ -77,7 +77,7 @@ func (s *Server) handleProbeServerHeldExtensionInstance(w http.ResponseWriter, r
 	if !s.validExtensionProbeDevice(w, r, actor.AccountID(), descriptor, input) {
 		return
 	}
-	result, err := s.connectors.ServerHeld.ProbeExtensionInstance(r.Context(), descriptor, input, nil)
+	result, err := s.connectors.ServerHeld.ProbeExtensionInstance(r.Context(), actor.AccountID(), descriptor, input, nil)
 	if err != nil {
 		writeServerHeldExtensionError(w, err)
 		return
@@ -231,6 +231,8 @@ func writeServerHeldExtensionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.As(err, &probeErr):
 		switch probeErr.Class {
+		case "edge_access_required":
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "edge_access_required", "error": probeErr.Error(), "edgeAccess": probeErr.EdgeAccess})
 		case "unauthorized", "forbidden", "url_invalid", "ssrf_blocked", "redirect_refused", "not_found", "bad_response":
 			code := "extension_" + probeErr.Class
 			if probeErr.Class == "ssrf_blocked" {
@@ -279,31 +281,41 @@ func (s *Server) extensionInstanceDevices(ctx context.Context, userID string) ([
 }
 
 func (s *Server) validExtensionProbeDevice(w http.ResponseWriter, r *http.Request, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) bool {
-	if input.Network != externalaccounts.ExtensionNetworkDevice {
+	err := s.validateExtensionProbeDevice(r.Context(), userID, descriptor, input)
+	if err == nil {
 		return true
 	}
-	owned, err := s.store.DevicesOwnedBy(r.Context(), userID)
-	if err != nil {
-		writeServerHeldExtensionError(w, err)
+	var invalid *statusError
+	if errors.As(err, &invalid) {
+		writeError(w, invalid.status, invalid.err.Error())
 		return false
+	}
+	writeServerHeldExtensionError(w, err)
+	return false
+}
+
+func (s *Server) validateExtensionProbeDevice(ctx context.Context, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) error {
+	if input.Network != externalaccounts.ExtensionNetworkDevice {
+		return nil
+	}
+	owned, err := s.store.DevicesOwnedBy(ctx, userID)
+	if err != nil {
+		return err
 	}
 	ownedSet := map[string]bool{}
 	for _, id := range owned {
 		ownedSet[id] = true
 	}
 	if !ownedSet[input.DeviceID] {
-		writeError(w, http.StatusBadRequest, "choose one of your own devices to validate this instance")
-		return false
+		return &statusError{http.StatusBadRequest, errors.New("choose one of your own devices to validate this instance")}
 	}
 	if s.hub.connectionFor(input.DeviceID) == nil {
-		writeError(w, http.StatusBadRequest, "the selected device is offline; bring it online and try again")
-		return false
+		return &statusError{http.StatusBadRequest, errors.New("the selected device is offline; bring it online and try again")}
 	}
-	if _, err := s.connectors.Devices.ServerHeldDescriptorOn(r.Context(), input.DeviceID, descriptor.Kind); err != nil {
-		writeError(w, http.StatusBadRequest, "install this connector extension on the selected device before using it there")
-		return false
+	if _, err := s.connectors.Devices.ServerHeldDescriptorOn(ctx, input.DeviceID, descriptor.Kind); err != nil {
+		return &statusError{http.StatusBadRequest, errors.New("install this connector extension on the selected device before using it there")}
 	}
-	return true
+	return nil
 }
 
 func (s *Server) extensionDeviceRequest(ctx context.Context, deviceID string, request externalaccounts.ExtensionDeviceHTTPRequest) (externalaccounts.ExtensionDeviceHTTPResponse, error) {

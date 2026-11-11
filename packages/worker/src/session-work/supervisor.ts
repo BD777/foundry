@@ -8,7 +8,7 @@ import {
   type NativeWorkTask,
 } from "../native-work/types.js";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   nextZonedWorkFire,
@@ -24,7 +24,11 @@ import {
 } from "@bd777/foundry-protocol";
 import { daemonRequestHeaders } from "../transport/server-http.js";
 import { foundryStatePath } from "../platform/state-root.js";
-import { writeFileAtomic, writeFileAtomicAsync } from "../platform/storage.js";
+import {
+  writeFileAtomic,
+  writeFileAtomicAsync,
+  writePrivateJSONAtomic,
+} from "../platform/storage.js";
 import { WorkProcesses } from "./processes.js";
 import { readNativeSchedules } from "./native-schedules.js";
 import { HostSchedules, type HostSchedule } from "./host-schedules.js";
@@ -34,6 +38,7 @@ import {
   inspectDetachedProcess,
 } from "./detached-processes.js";
 import { exponentialBackoffMs } from "../platform/backoff.js";
+import { errorMessage } from "../platform/utils.js";
 
 export interface WorkSession {
   id: string;
@@ -269,7 +274,7 @@ export class WorkSupervisor {
   configureRuntime(runtime: WorkRuntimeAdapter) {
     this.runtime = runtime;
   }
-  attach(session: AgentSession, workspacePath: string) {
+  attach(session: AttachedSession, workspacePath: string) {
     if (session.role || session.source === sessionSources.verification) return;
     this.sessions.set(session.id, {
       id: session.id,
@@ -1504,6 +1509,79 @@ export function sessionWork(): WorkSupervisor {
     }
   }
   return instance;
+}
+/**
+ * A host that starts beside an older one leaves the device's work inventory
+ * to it: attaches wait until the owner is gone. They are kept in a file of
+ * this host's own root, so the host that takes the inventory over finds the
+ * sessions even when this host was stopped first.
+ */
+type AttachedSession = Pick<
+  AgentSession,
+  "id" | "role" | "source" | "workspaceId" | "deviceId" | "nativeSessionId"
+>;
+interface DeferredAttach {
+  session: AttachedSession;
+  workspacePath: string;
+}
+let deferred:
+  { file: string; attaches: Map<string, DeferredAttach> } | undefined;
+export function deferSessionWork(file: string): void {
+  deferred ??= { file, attaches: new Map() };
+}
+export function attachSessionWork(
+  session: AttachedSession,
+  workspacePath: string,
+): void {
+  if (!deferred) {
+    sessionWork().attach(session, workspacePath);
+    return;
+  }
+  if (session.role || session.source === sessionSources.verification) return;
+  deferred.attaches.set(session.id, {
+    session: {
+      id: session.id,
+      workspaceId: session.workspaceId,
+      deviceId: session.deviceId,
+      nativeSessionId: session.nativeSessionId,
+    },
+    workspacePath,
+  });
+  try {
+    writePrivateJSONAtomic(deferred.file, [...deferred.attaches.values()]);
+  } catch (error) {
+    console.error(
+      `Could not keep the deferred session work attaches: ${errorMessage(error)}`,
+    );
+  }
+}
+/**
+ * The owner is gone: this host attaches the sessions it deferred and those
+ * other hosts left in the `inherited` files (read once, then removed).
+ */
+export function resumeSessionWork(inherited: string[] = []): void {
+  const own = deferred;
+  deferred = undefined;
+  const attaches = new Map<string, DeferredAttach>();
+  for (const file of inherited) {
+    try {
+      for (const entry of JSON.parse(
+        readFileSync(file, "utf8"),
+      ) as DeferredAttach[])
+        attaches.set(entry.session.id, entry);
+      rmSync(file, { force: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        console.error(
+          `Could not read deferred session work attaches ${file}: ${errorMessage(error)}`,
+        );
+    }
+  }
+  for (const entry of own?.attaches.values() ?? [])
+    attaches.set(entry.session.id, entry);
+  if (own) rmSync(own.file, { force: true });
+  for (const { session, workspacePath } of attaches.values())
+    sessionWork().attach(session, workspacePath);
 }
 /**
  * The supervisor only where this process owns it (started or attached a

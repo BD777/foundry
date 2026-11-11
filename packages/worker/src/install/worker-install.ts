@@ -25,8 +25,12 @@ import { serverFetch } from "../platform/server-link/server-proxy.js";
  * is already paired and installed changes nothing.
  */
 
-import { stopExecutionHost } from "../execution-host/client.js";
-import { executionHostPaths } from "../execution-host/paths.js";
+import { stopExecutionHost } from "../execution-host/fleet.js";
+import {
+  downgradeBlocker,
+  stopHostsForDowngradeVariable,
+} from "../execution-host/rollback.js";
+import { pinnedHostEntries } from "../execution-host/roots.js";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -316,15 +320,8 @@ export function pruneRuntimes(
   current: string,
   previous: string | undefined,
 ): void {
-  let pinned = "";
-  try {
-    pinned =
-      JSON.parse(
-        readFileSync(join(executionHostPaths().root, "identity.json"), "utf8"),
-      ).entry ?? "";
-  } catch {
-    /* No execution host has pinned a runtime. */
-  }
+  // Every live host pins the runtime it runs from, the draining ones too.
+  const pinned = pinnedHostEntries();
   // HOME may be a symlink (/home -> /data/home). The running module's
   // entry uses its physical path; compare physical directories before deleting.
   const canonical = (path: string): string => {
@@ -334,10 +331,10 @@ export function pruneRuntimes(
       return resolve(path);
     }
   };
-  const pinnedPath = pinned ? canonical(pinned) : "";
+  const pinnedPaths = pinned.map(canonical);
   for (const entry of readdirSync(runtimeRoot())) {
-    if (pinnedPath.startsWith(canonical(join(runtimeRoot(), entry)) + "/"))
-      continue;
+    const folder = canonical(join(runtimeRoot(), entry)) + "/";
+    if (pinnedPaths.some((path) => path.startsWith(folder))) continue;
     if (entry === "current" || entry === current || entry === previous)
       continue;
     rmSync(join(runtimeRoot(), entry), { recursive: true, force: true });
@@ -492,6 +489,23 @@ export async function installCommand(args: string[]): Promise<void> {
   reportWorkerShim(self.name);
 }
 
+/**
+ * An older Worker does not know hosts beside the original one (see
+ * execution-host/rollback.ts): going back waits for them or stops them.
+ */
+async function guardDowngrade(
+  target: string | undefined,
+  current: string | undefined,
+): Promise<void> {
+  if (!target || !current) return;
+  const blocker = downgradeBlocker(target, current);
+  if (!blocker) return;
+  if (process.env[stopHostsForDowngradeVariable] !== "1")
+    throw new Error(blocker);
+  console.log(`Stopping every execution host before going back to ${target}.`);
+  await stopExecutionHost();
+}
+
 const withoutTrailingSlash = (url: string) => url.replace(/\/+$/, "");
 
 /**
@@ -509,6 +523,7 @@ async function handOffToServedBuild(
   if (self.version === release.version) return false;
   // The handed-off run never hands off again.
   if (process.env.FOUNDRY_WORKER_HANDOFF === release.version) return false;
+  await guardDowngrade(release.version, self.version);
   console.log(
     `Installing the worker ${release.version} that ${serverURL} serves…`,
   );
@@ -670,6 +685,7 @@ async function runUpdate(args: string[]): Promise<void> {
       (await handOffToServedBuild(release, serverURL!))
     )
       return;
+    await guardDowngrade(target, current);
     // current points at installed files, not necessarily the running service.
     // A retry after installation but before restart must finish activation.
     if (target === current && !handedOff(current))

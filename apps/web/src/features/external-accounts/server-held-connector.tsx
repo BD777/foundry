@@ -7,6 +7,7 @@ import type {
   ConnectorServerHeldInstanceInput,
   ConnectorServerHeldNetworkPath,
   ConnectorServerHeldProbeResult,
+  EdgeAccessRequired,
   ExternalAccountStatus,
 } from "@bd777/foundry-protocol";
 import { ArrowLeft, Pencil, Plus, RefreshCw, ShieldOff } from "lucide-react";
@@ -49,6 +50,10 @@ import {
 } from "./connector-text";
 import { CredentialHolding } from "./credential-holding";
 import { DividedList } from "../../components/ui/divided-list";
+import {
+  EdgeAccessRequiredNotice,
+  edgeAccessRequiredOf,
+} from "./edge-access-required";
 
 type FailureCategory =
   "credential" | "input" | "network" | "response" | "service";
@@ -202,6 +207,8 @@ export function ServerHeldConnector({
   const [loading, setLoading] = useState(true);
   const [loadFailure, setLoadFailure] = useState<Failure>();
   const [actionFailure, setActionFailure] = useState<Failure>();
+  const [actionEdgeAccess, setActionEdgeAccess] =
+    useState<EdgeAccessRequired>();
   const [editor, setEditor] = useState<ConnectorServerHeldInstance>();
   const [adding, setAdding] = useState(false);
   const [checking, setChecking] = useState<string>();
@@ -238,6 +245,7 @@ export function ServerHeldConnector({
   async function check(instance: ConnectorServerHeldInstance) {
     setChecking(instance.id);
     setActionFailure(undefined);
+    setActionEdgeAccess(undefined);
     try {
       const saved = await checkServerHeldInstance(connector.kind, instance.id);
       setInstances((current) =>
@@ -245,7 +253,9 @@ export function ServerHeldConnector({
       );
       onNotice(t("serverHeld.checked", { name: saved.label }));
     } catch (cause) {
-      setActionFailure(failureOf(cause));
+      const required = edgeAccessRequiredOf(cause);
+      setActionEdgeAccess(required);
+      if (!required) setActionFailure(failureOf(cause));
       await refresh().catch(() => undefined);
     } finally {
       setChecking(undefined);
@@ -256,6 +266,7 @@ export function ServerHeldConnector({
     if (!revoking) return;
     setRevokeBusy(true);
     setActionFailure(undefined);
+    setActionEdgeAccess(undefined);
     try {
       const saved = await revokeServerHeldInstance(connector.kind, revoking.id);
       setInstances((current) =>
@@ -315,6 +326,12 @@ export function ServerHeldConnector({
         />
       ) : null}
       {loadFailure ? <FailureAlert failure={loadFailure} /> : null}
+      {actionEdgeAccess ? (
+        <EdgeAccessRequiredNotice
+          onProvisioned={() => void refresh()}
+          required={actionEdgeAccess}
+        />
+      ) : null}
       {actionFailure ? <FailureAlert failure={actionFailure} /> : null}
       {loading ? (
         <Skeleton
@@ -456,6 +473,7 @@ export function ServerHeldConnector({
           descriptor={descriptor}
           devices={devices}
           instance={editor}
+          onEdgeAccessProvisioned={() => void refresh()}
           onClose={() => {
             setAdding(false);
             setEditor(undefined);
@@ -503,12 +521,14 @@ function ServerHeldInstanceDialog({
   descriptor,
   devices,
   instance,
+  onEdgeAccessProvisioned,
   onClose,
   onSaved,
 }: {
   descriptor: ConnectorDescriptor;
   devices: ConnectorServerHeldDevice[];
   instance?: ConnectorServerHeldInstance;
+  onEdgeAccessProvisioned?: () => void;
   onClose: () => void;
   onSaved: (instance: ConnectorServerHeldInstance) => void;
 }) {
@@ -540,6 +560,8 @@ function ServerHeldInstanceDialog({
   });
   const [probe, setProbe] = useState<ConnectorServerHeldProbeResult>();
   const [failure, setFailure] = useState<Failure>();
+  const [edgeAccessRequired, setEdgeAccessRequired] =
+    useState<EdgeAccessRequired>();
   const [busy, setBusy] = useState(false);
   const replacing = Boolean(instance);
   const total = steps.length + 1;
@@ -552,6 +574,7 @@ function ServerHeldInstanceDialog({
   function setField(field: ConnectorField, value: string) {
     setValues((current) => ({ ...current, [field.id]: value }));
     setFailure(undefined);
+    setEdgeAccessRequired(undefined);
     if (formStep === 0) setProbe(undefined);
   }
 
@@ -603,12 +626,15 @@ function ServerHeldInstanceDialog({
     }
     setBusy(true);
     setFailure(undefined);
+    setEdgeAccessRequired(undefined);
     try {
       const result = await probeServerHeldInstance(descriptor.kind, inputFor());
       setProbe(result);
       if (steps.length > 1) setStep(2);
     } catch (cause) {
-      setFailure(failureOf(cause));
+      const required = edgeAccessRequiredOf(cause);
+      setEdgeAccessRequired(required);
+      if (!required) setFailure(failureOf(cause));
     } finally {
       setBusy(false);
     }
@@ -622,6 +648,7 @@ function ServerHeldInstanceDialog({
     }
     setBusy(true);
     setFailure(undefined);
+    setEdgeAccessRequired(undefined);
     try {
       const saved = replacing
         ? await replaceServerHeldInstance(
@@ -632,7 +659,9 @@ function ServerHeldInstanceDialog({
         : await createServerHeldInstance(descriptor.kind, inputFor());
       onSaved(saved);
     } catch (cause) {
-      setFailure(failureOf(cause));
+      const required = edgeAccessRequiredOf(cause);
+      setEdgeAccessRequired(required);
+      if (!required) setFailure(failureOf(cause));
     } finally {
       setBusy(false);
     }
@@ -692,6 +721,7 @@ function ServerHeldInstanceDialog({
               disabled={busy}
               onClick={() => {
                 setFailure(undefined);
+                setEdgeAccessRequired(undefined);
                 setStep((current) => Math.max(0, current - 1));
               }}
               size="sm"
@@ -750,6 +780,7 @@ function ServerHeldInstanceDialog({
                 setNetwork(value);
                 setProbe(undefined);
                 setFailure(undefined);
+                setEdgeAccessRequired(undefined);
                 if (value === "device" && !deviceId) setDeviceId(firstOnline);
               }}
               options={[
@@ -789,6 +820,7 @@ function ServerHeldInstanceDialog({
                   onChange={(value) => {
                     setDeviceId(value);
                     setFailure(undefined);
+                    setEdgeAccessRequired(undefined);
                   }}
                   options={devices.map((device) => ({
                     disabled: !device.online,
@@ -891,7 +923,14 @@ function ServerHeldInstanceDialog({
               );
             })
           : null}
-        {failure ? <FailureAlert failure={failure} /> : null}
+        {edgeAccessRequired ? (
+          <EdgeAccessRequiredNotice
+            onProvisioned={onEdgeAccessProvisioned}
+            required={edgeAccessRequired}
+          />
+        ) : failure ? (
+          <FailureAlert failure={failure} />
+        ) : null}
       </FormLayout>
     </Dialog>
   );

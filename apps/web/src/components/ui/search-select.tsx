@@ -23,6 +23,10 @@ export interface SearchSelectOption {
   status?: ReactNode;
 }
 
+export interface SearchSelectTrailingOption extends SearchSelectOption {
+  onSelect: () => void;
+}
+
 export interface SearchSelectGroup {
   key: string;
   heading: string;
@@ -41,6 +45,8 @@ export interface SearchSelectProps {
   className?: string;
   /** Page-specific content after the option groups, inside the list. */
   footer?: ReactNode;
+  /** A non-catalog choice set off after the list, on the same row style. */
+  trailingOption?: SearchSelectTrailingOption;
   /** Controlled state, for a footer action that closes the picker. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -81,6 +87,7 @@ export function SearchSelect({
   searchPlaceholder,
   value,
   footer,
+  trailingOption,
 }: SearchSelectProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -88,9 +95,11 @@ export function SearchSelect({
     if (controlledOpen === undefined) setUncontrolledOpen(next);
     onOpenChange?.(next);
   };
-  const selected = groups
-    .flatMap((group) => group.options)
-    .find((option) => option.value === value);
+  const selected =
+    groups
+      .flatMap((group) => group.options)
+      .find((option) => option.value === value) ??
+    (trailingOption?.value === value ? trailingOption : undefined);
 
   return (
     <PopoverPrimitive.Root onOpenChange={setOpen} open={open}>
@@ -183,6 +192,45 @@ export function SearchSelect({
                 ) : null,
               )}
               {footer}
+              {trailingOption ? (
+                <div className="mt-1 border-t border-line pt-1">
+                  <CommandItem
+                    className={rowClass}
+                    data-current={trailingOption.value === value || undefined}
+                    keywords={[
+                      trailingOption.label,
+                      ...(trailingOption.keywords ?? []),
+                    ]}
+                    onSelect={() => {
+                      trailingOption.onSelect();
+                      setOpen(false);
+                    }}
+                    value={`trailing:${trailingOption.value} ${trailingOption.label}`}
+                  >
+                    <Check
+                      aria-hidden="true"
+                      className={cn(
+                        "row-start-1",
+                        trailingOption.value === value
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                      size={15}
+                    />
+                    <span className="col-start-2 row-start-1 min-w-0 truncate text-sm font-[560]">
+                      {trailingOption.label}
+                    </span>
+                    <span className="col-start-3 row-start-1">
+                      {trailingOption.status}
+                    </span>
+                    {trailingOption.detail ? (
+                      <small className="col-start-2 col-end-4 min-w-0 truncate text-xs leading-[1.35] text-ink-faint">
+                        {trailingOption.detail}
+                      </small>
+                    ) : null}
+                  </CommandItem>
+                </div>
+              ) : null}
             </CommandList>
           </Command>
         </PopoverPrimitive.Content>

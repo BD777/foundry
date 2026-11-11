@@ -262,6 +262,8 @@ export const daemonMessageTypes = {
   repositoryRefsRead: "repository_refs_read",
   fetchSkillRepository: "fetch_skill_repository",
   skillRepositoryFetched: "skill_repository_fetched",
+  fetchRepositoryToolArchive: "fetch_repository_tool_archive",
+  repositoryToolArchiveFetched: "repository_tool_archive_fetched",
   runDiagnostics: "run_diagnostics",
   diagnosticsReady: "diagnostics_ready",
   runRepair: "run_repair",
@@ -815,6 +817,24 @@ export interface InstallToolPayload {
   step?: "install" | "setup" | "activate" | "remove" | "uninstall";
   /** With `install`: false stages the version without making it current. */
   activate?: boolean;
+  /**
+   * With `install` of a repository tool: the server holds the tool's folder
+   * (read by another device that can read the upstream); install from it
+   * instead of reading the repository here. `sha256` is the archive's digest.
+   */
+  archive?: { downloadPath: string; sha256: string };
+}
+
+/** fetch_repository_tool_archive: pack one repository tool's folder and upload it. */
+export interface FetchRepositoryToolArchivePayload {
+  tool: SkillBundleTool;
+  uploadPath: string;
+}
+
+/** repository_tool_archive_fetched */
+export interface RepositoryToolArchiveFetchedPayload {
+  sha256: string;
+  error?: string;
 }
 
 /** One command a tool version check runs, from the connector's catalog entry. */

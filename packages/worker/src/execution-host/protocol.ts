@@ -22,8 +22,24 @@ import type {
 /** Optional methods may be absent during a drain; a version mismatch is refused. */
 export const executionHostProtocol = 1;
 
+/**
+ * A host with this capability can run beside a newer one: it answers
+ * `retire` and `release_session`, and reports `resident` and `outbox`.
+ * An older host is only routed around and stopped once nothing runs on it.
+ */
+export const hostRolloverCapability = "rollover";
+
 export interface HostSnapshot {
   protocol: number;
+  capabilities?: string[];
+  /** Retiring: it takes no new session, only the ones it already holds. */
+  retiring?: boolean;
+  /** Started beside an older host: the device's shared work waits for it. */
+  standby?: boolean;
+  /** Sessions whose agent process or thread this host holds. */
+  resident?: Array<{ sessionId: string; busy: boolean }>;
+  /** Envelopes not yet acknowledged by the server. */
+  outbox?: number;
   entry?: string;
   runtimeStamp?: string;
   busy?: boolean;
@@ -103,6 +119,23 @@ export interface HostMethods {
   cancel_upgrade: {
     request: Record<string, never>;
     result: Record<string, never>;
+  };
+  /**
+   * A newer host serves the device: this one takes no session it does not
+   * already hold (a turn, background work, a busy agent), closes the idle
+   * agents it keeps, and pauses the timers it delivers. `false` undoes it.
+   */
+  retire: {
+    request: { retiring: boolean };
+    result: { retiring: boolean };
+  };
+  /**
+   * The session's next turn runs on a newer host: closes its idle agent
+   * here. `released` is false while the agent works; the session stays here.
+   */
+  release_session: {
+    request: { sessionId: string };
+    result: { released: boolean };
   };
 }
 

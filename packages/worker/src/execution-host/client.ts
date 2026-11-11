@@ -1,16 +1,9 @@
 /** Authenticated local control link; reconnect never starts an agent again. */
 import { connect, type Socket } from "node:net";
 import { createInterface } from "node:readline";
-import { randomBytes, randomUUID } from "node:crypto";
-import {
-  readFileSync,
-  writeFileSync,
-  realpathSync,
-  existsSync,
-  unlinkSync,
-} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   daemonMessageTypes,
   type ChatAttachment,
@@ -50,14 +43,7 @@ import {
   type HostSnapshot,
   type IssueEnvironmentRequest,
 } from "./protocol.js";
-import {
-  executionServiceSupported,
-  prepareExecutionSocket,
-  launchExecutionService,
-  stopExecutionService,
-  reclaimExecutionService,
-  runtimeStamp,
-} from "./service.js";
+export type { IssueEnvironmentRequest };
 import { errorMessage } from "../platform/utils.js";
 import { PendingReplies } from "../platform/pending-replies.js";
 
@@ -67,14 +53,12 @@ const handshakeTimeoutMs = 10_000;
 export const hostHeartbeatStaleMs = 60_000;
 
 /** The runner's own record that its event loop runs (hostHeartbeatPath). */
-export function readHostHeartbeat():
-  { pid: number; startTime: string; at: string } | undefined {
+export function readHostHeartbeat(
+  root = executionHostPaths().root,
+): { pid: number; startTime: string; at: string } | undefined {
   try {
     const beat = JSON.parse(
-      readFileSync(
-        resolve(executionHostPaths().root, "heartbeat.json"),
-        "utf8",
-      ),
+      readFileSync(resolve(root, "heartbeat.json"), "utf8"),
     );
     return typeof beat.pid === "number" && typeof beat.at === "string"
       ? beat
@@ -88,8 +72,8 @@ export function readHostHeartbeat():
 const serviceStartCapMs = 10 * 60_000;
 
 /** A runner process that is alive and beating, though not answering yet. */
-function runnerStarting(): boolean {
-  const beat = readHostHeartbeat();
+function runnerStarting(root?: string): boolean {
+  const beat = readHostHeartbeat(root);
   return Boolean(
     beat &&
     processIdentity(beat.pid)?.startTime === beat.startTime &&
@@ -99,10 +83,11 @@ function runnerStarting(): boolean {
 
 /** How long a failed switch is not tried again; new turns are not held. */
 const switchRetryMs = 5 * 60_000;
-let current: ExecutionHostClient | undefined;
-export function executionHostClient(): ExecutionHostClient | undefined {
-  return current;
-}
+/** What a client tells the device's session registry. */
+export type HostRegistry = Pick<
+  SessionExecutionRegistry,
+  "claim" | "complete" | "setNativeWork"
+>;
 
 export class ExecutionHostClient {
   private socket?: Socket;
@@ -113,7 +98,7 @@ export class ExecutionHostClient {
     HostPush,
     { type: "envelope" }
   >["envelope"][] = [];
-  private registry?: SessionExecutionRegistry;
+  private registry?: HostRegistry;
   private claimed = new Map<string, { sessionId: string; inputId: string }>();
   private connecting?: Promise<void>;
   private switching?: Promise<void>;
@@ -145,6 +130,8 @@ export class ExecutionHostClient {
     token: string,
     private readonly serverURL?: string,
     private readonly managed?: {
+      /** The host's own root when it lives beside others (roots.ts). */
+      root?: string;
       entry: string;
       stamp: string;
       start: () => Promise<void>;
@@ -158,16 +145,32 @@ export class ExecutionHostClient {
     this.token = token;
   }
 
-  attach(
-    transport: ReliableSessionTransport,
-    registry: SessionExecutionRegistry,
-  ): void {
+  attach(transport: ReliableSessionTransport, registry: HostRegistry): void {
     this.transport = transport;
     this.registry = registry;
     if (this.snapshot) this.adopt(this.snapshot);
     for (const envelope of this.earlyEnvelopes)
       transport.send(envelope.type, envelope.payload, envelope.id);
     this.earlyEnvelopes = [];
+  }
+  /** The host's latest snapshot, undefined before its first. */
+  latest(): HostSnapshot | undefined {
+    return this.snapshot;
+  }
+  connected(): boolean {
+    return Boolean(this.socket && !this.socket.destroyed);
+  }
+  /** Retiring: the host takes no session it does not hold (protocol.ts). */
+  async retire(retiring = true): Promise<void> {
+    await this.command("retire", { retiring });
+  }
+  /** Closes the session's idle agent in this host; false while it works. */
+  async releaseSession(sessionId: string): Promise<boolean> {
+    return (await this.command("release_session", { sessionId })).released;
+  }
+  /** Asks the host to stop taking work; true when it may be stopped now. */
+  async prepareStop(mode: "idle" | "boundary" | "now"): Promise<boolean> {
+    return (await this.send("prepare_upgrade", { mode })).ready;
   }
   hasSession(sessionId: string): boolean {
     if (this.heldFor(sessionId).length) return true;
@@ -241,7 +244,7 @@ export class ExecutionHostClient {
    * three handshakes in a row unanswered.
    */
   private hostWedged(): boolean {
-    const beat = readHostHeartbeat();
+    const beat = readHostHeartbeat(this.managed?.root);
     if (beat && processIdentity(beat.pid)?.startTime === beat.startTime)
       return (
         Date.now() - Date.parse(beat.at) >= hostHeartbeatStaleMs &&
@@ -254,7 +257,7 @@ export class ExecutionHostClient {
     this.reclaiming = true;
     this.noteHealth();
     this.reportRunner();
-    const beat = readHostHeartbeat();
+    const beat = readHostHeartbeat(this.managed?.root);
     const age = beat
       ? `its heartbeat is ${Math.round((Date.now() - Date.parse(beat.at)) / 1000)} s old`
       : "no heartbeat";
@@ -456,7 +459,10 @@ export class ExecutionHostClient {
         last = error;
       }
       const waited = Date.now() - started;
-      if (waited >= serviceStartCapMs || (waited >= base && !runnerStarting()))
+      if (
+        waited >= serviceStartCapMs ||
+        (waited >= base && !runnerStarting(this.managed?.root))
+      )
         break;
       await new Promise((r) => setTimeout(r, 250));
     }
@@ -871,6 +877,15 @@ export class ExecutionHostClient {
         `${JSON.stringify({ method: "ack", envelopeId } satisfies HostAck)}\n`,
       );
   }
+  /**
+   * The host is gone for good: its claims no longer pin sessions in the
+   * daemon's registry (the host's own record reports them interrupted).
+   */
+  releaseClaims(): void {
+    for (const claim of this.claimed.values())
+      this.registry?.complete(claim.sessionId, claim.inputId);
+    this.claimed = new Map();
+  }
   close(): void {
     this.closed = true;
     this.socket?.destroy();
@@ -891,73 +906,5 @@ export class RunnerTurnsChangedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RunnerTurnsChangedError";
-  }
-}
-
-/** The OS manager owns executions; a Worker only owns the control link. */
-export async function startExecutionHost(
-  serverURL: string,
-): Promise<ExecutionHostClient | undefined> {
-  if (!executionServiceSupported() || process.env.NODE_TEST_CONTEXT)
-    return undefined;
-  const paths = executionHostPaths();
-  prepareExecutionSocket();
-  try {
-    writeFileSync(paths.token, randomBytes(32).toString("hex"), {
-      mode: 0o600,
-      flag: "wx",
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-  }
-  const entry = realpathSync(
-    fileURLToPath(new URL("./main.js", import.meta.url)),
-  );
-  const client = new ExecutionHostClient(
-    paths.socket,
-    readFileSync(paths.token, "utf8").trim(),
-    serverURL,
-    {
-      entry,
-      stamp: runtimeStamp(entry),
-      start: () => launchExecutionService(entry, serverURL),
-      stop: stopExecutionService,
-      reclaim: () => reclaimExecutionService(),
-    },
-  );
-  // The connection service comes online whatever the runner does: work for
-  // it waits, and the runner is started or reclaimed in the background.
-  current = client;
-  const ready = client.open().then(() => client.refresh());
-  const timeout = new Promise<"timeout">((done) =>
-    setTimeout(done, 15_000, "timeout").unref(),
-  );
-  const outcome = await Promise.race([ready, timeout]).catch(
-    (error: unknown) => error,
-  );
-  if (
-    outcome instanceof Error &&
-    /Another live worker|authentication failed/.test(outcome.message)
-  )
-    throw outcome;
-  if (outcome !== undefined)
-    console.error(
-      `Execution host not ready yet (${outcome === "timeout" ? "still starting" : errorMessage(outcome)}); continuing and retrying in the background.`,
-    );
-  ready.catch(() => undefined);
-  return client;
-}
-
-export async function stopExecutionHost(): Promise<void> {
-  const paths = executionHostPaths();
-  const identity = resolve(paths.root, "identity.json");
-  if (!current && !existsSync(identity) && !existsSync(paths.plist)) return;
-  await current?.shutdown();
-  await stopExecutionService();
-  current = undefined;
-  try {
-    unlinkSync(identity);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }

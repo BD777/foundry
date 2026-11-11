@@ -59,5 +59,6 @@ Pointers, not specs; read the code first. Paths from the repo root.
 Working fast:
 
 - Batch independent reads, greps and checks in one turn.
+- Orchestrating sub-sessions: small fresh slices, context and test discipline, shared heavy-command lock, merge rules: [docs/agent-orchestration.md](docs/agent-orchestration.md).
 - Before reporting, run the tests and typecheck that cover what you changed. `scripts/check-changed.sh --files <files>` (`--list` shows the plan; `--since "$START"` also catches other agents' edits) runs once per batch of changes before deploy, not per edit or review round; an orchestrator runs it for its workers' merged batch. Heavy checks on another device: lease its compute with `acquire_resource` (`forCommands: true`, `holdFor: 3600`), then run `FOUNDRY_LEASE_TOKEN=<commandToken> scripts/remote-check.sh <leaseId> [--files …]` in the background. Full `pnpm verify` only for release PRs.
 - Scratch stacks (optional): `scripts/scratch-stack.sh up|shot|down <name>`. A server on a DB copy acts on its integrations (a second Feishu bot, Connectors refreshes rotating real tokens) unless `FOUNDRY_INTEGRATIONS=off`, which the script sets.

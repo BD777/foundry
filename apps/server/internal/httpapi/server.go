@@ -209,6 +209,8 @@ type Server struct {
 	// skillRepositoryFirstCheck is how long after start the followed
 	// repositories are first checked; tests shorten it.
 	skillRepositoryFirstCheck time.Duration
+	// toolArchives holds repository tool folders read for other devices.
+	toolArchives toolArchives
 	// repoUploads holds the files devices upload for repositories they read.
 	repoUploads deviceUploads
 	// toolResolver finds the tools bundles need; tests point its GitHub and

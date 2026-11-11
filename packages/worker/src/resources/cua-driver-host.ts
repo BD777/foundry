@@ -11,10 +11,16 @@ import {
   isExecutableFile,
   type ExecResult,
 } from "./exec.js";
+import {
+  parseCuaDriverPermissions,
+  type CuaDriverPermissions,
+} from "./cua-driver-permissions.js";
 import { errorMessage } from "../platform/utils.js";
 
 export const cuaDriverAppPath = "/Applications/CuaDriver.app";
 export const cuaDriverInstallerUrl = "https://cua.ai/driver/install.sh";
+/** refresh_resources request that prepares CuaDriver before a lease. */
+export const cuaDriverLeasePrepareRequest = "cua-driver:prepare";
 
 /** The cua-driver binary: the installer's symlink, the app's, then PATH. */
 export function resolveCuaDriverBinary(
@@ -118,15 +124,18 @@ async function startCuaDriverDaemon(
   run: CommandRunner,
   env: NodeJS.ProcessEnv,
   now: () => number,
+  timeoutMs = 10_000,
 ): Promise<void> {
   const started = await run(
     "/usr/bin/open",
-    ["-n", "-g", "-a", "CuaDriver", "--args", "serve"],
-    { env, timeoutMs: 10_000 },
+    ["-n", "-g", "-a", cuaDriverAppPath, "--args", "serve"],
+    { env, timeoutMs },
   );
   if (started.code !== 0)
     throw new Error(
-      `could not start CuaDriver: ${started.stderr.trim() || `exit ${started.code}`}`,
+      `could not start CuaDriver: ${
+        started.stderr.trim() || started.stdout.trim() || `exit ${started.code}`
+      }`,
     );
   daemonStartedAt = now();
 }
@@ -153,6 +162,100 @@ async function readPermissionStatus(host: Host): Promise<string> {
     })
     .catch(() => undefined);
   return status?.code === 0 ? status.stdout.trim() : "";
+}
+
+async function readPermissions(host: Host): Promise<CuaDriverPermissions> {
+  return parseCuaDriverPermissions(await readPermissionStatus(host));
+}
+
+export interface CuaDriverLeasePreparation {
+  /** This call opened CuaDriver; false when its daemon was already running. */
+  started: boolean;
+  running: boolean;
+  ready: boolean;
+  missing: string[];
+  reason?: string;
+}
+
+export const cuaDriverLeasePrepareTimeoutMs = 15_000;
+const cuaDriverLeaseProbeIntervalMs = 500;
+
+/**
+ * What still stands between a running daemon and a lease, in the person's
+ * terms. Unknown grants block because cua-driver has not verified them.
+ */
+function leaseReadiness(
+  status: CuaDriverPermissions,
+): Pick<CuaDriverLeasePreparation, "ready" | "missing" | "reason"> {
+  const grants = status.grants;
+  if (grants?.accessibility === true && grants.screenRecording === true)
+    return { ready: true, missing: [] };
+  const missing = [
+    grants?.accessibility === true ? "" : "tcc_accessibility",
+    grants?.screenRecording === true ? "" : "tcc_screen_recording",
+  ].filter(Boolean);
+  const names = [
+    grants?.accessibility === true ? "" : "Accessibility",
+    grants?.screenRecording === true ? "" : "Screen Recording",
+  ].filter(Boolean);
+  return {
+    ready: false,
+    missing,
+    reason: `${names.join(" and ")} not granted to CuaDriver.app. Grant ${names.length > 1 ? "them" : "it"} under System Settings → Privacy & Security, then request the lease again.`,
+  };
+}
+
+interface CuaDriverLeasePrepareOptions extends HostOptions {
+  timeoutMs?: number;
+  probe?: () => Promise<CuaDriverPermissions>;
+  launch?: () => Promise<void>;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Starts CuaDriver for an incoming computer_use lease, then checks it at
+ * once instead of waiting for the detector's two-minute interval. Already
+ * running means no second launch; launching and waiting share one bounded
+ * deadline. A daemon that answers before the deadline is returned even when
+ * its grants are missing, so the caller can give the exact System Settings
+ * action instead of a generic not-ready error.
+ */
+export async function prepareCuaDriverForLease(
+  options: CuaDriverLeasePrepareOptions = {},
+): Promise<CuaDriverLeasePreparation> {
+  const host = hostFor(options);
+  const timeoutMs = options.timeoutMs ?? cuaDriverLeasePrepareTimeoutMs;
+  const deadline = host.now() + timeoutMs;
+  const probe = options.probe ?? (() => readPermissions(host));
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let status = await probe();
+  const started = !status.running;
+  if (started) {
+    await (
+      options.launch ??
+      (() =>
+        startCuaDriverDaemon(
+          host.run,
+          host.env,
+          host.now,
+          Math.max(1, Math.min(10_000, deadline - host.now())),
+        ))
+    )();
+  }
+  // A just-launched daemon answers "running, unknown" until its permission
+  // check finishes. Wait for grants as well, so a Mac that already has them
+  // is leased without asking the person to do anything.
+  while ((!status.running || !status.grants) && host.now() < deadline) {
+    await sleep(Math.min(cuaDriverLeaseProbeIntervalMs, deadline - host.now()));
+    status = await probe();
+  }
+  if (!status.running)
+    throw new Error(
+      `CuaDriver did not start within ${Math.round(timeoutMs / 1000)} seconds. Open CuaDriver on the Mac once, then grant CuaDriver.app Accessibility and Screen Recording under System Settings → Privacy & Security.`,
+    );
+  return { started, running: status.running, ...leaseReadiness(status) };
 }
 
 /**

@@ -172,6 +172,91 @@ func TestSessionLeasesAndOperatesAScreen(t *testing.T) {
 	}
 }
 
+// A stopped daemon is not a dead end for an agent: acquire asks the worker
+// to start CuaDriver, waits for its fresh snapshot, and leases it.
+func TestAcquireStartsStoppedCuaDriverBeforeLease(t *testing.T) {
+	f := newReachFixture(t)
+	ctx := context.Background()
+	live := httptest.NewServer(f.handler)
+	defer live.Close()
+	created, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_alice", AgentID: "agent_alice", Provider: "claude", Prompt: "screenshot Finder",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := f.db.MintAgentSessionToken(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := store.ResourceReadiness{
+		Level: "installed", Reason: "CuaDriver is not running on this Mac. Request access starts it and asks for its permissions.",
+		Missing: []string{"cua_driver_not_running"},
+	}
+	if _, err := f.server.resources.Report(ctx, store.ResourceSource{Kind: "device", ID: "dev_alice", Label: "Alice's Mac"}, store.ResourcesReport{
+		Instances: []store.DetectedResource{{
+			Key: "computer_use/macos/console:501", Type: "computer_use", Platform: "macos", Name: "macOS screen control",
+			Detector: "computer_use.macos.cua-driver@1", Readiness: stopped,
+			Backends: []store.ResourceBackend{{ID: "cua-driver", Version: "0.35.2", Mode: "remote_ops", Readiness: stopped}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	screen := resources.InstanceID("dev_alice", "computer_use/macos/console:501")
+	var device *fakeDevice
+	device = connectFakeDevice(t, live, f.aliceDevice, map[string]any{
+		"capabilities":     []string{},
+		"activeSessionIds": []string{},
+		"device":           map[string]any{"id": "dev_alice", "label": "Alice's Mac", "status": "connected"},
+		"workspace":        map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/ws_alice"},
+	}, map[string]fakeAnswer{
+		wsRefreshResourcesType: func(payload json.RawMessage) (string, any) {
+			var request wsRefreshResourcesPayload
+			if err := json.Unmarshal(payload, &request); err != nil {
+				t.Errorf("refresh payload: %v", err)
+			}
+			if request.RequestAccess != cuaDriverLeasePrepareRequest {
+				t.Errorf("refresh requestAccess = %q", request.RequestAccess)
+			}
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				ready := store.ResourceReadiness{Ready: true, Level: "permitted"}
+				_ = device.write(map[string]any{
+					"id": "report_after_cua_start", "type": wsResourcesReportType,
+					"payload": store.ResourcesReport{Instances: []store.DetectedResource{{
+						Key: "computer_use/macos/console:501", Type: "computer_use", Platform: "macos", Name: "macOS screen control",
+						Detector: "computer_use.macos.cua-driver@1", Readiness: ready,
+						Backends: []store.ResourceBackend{{ID: "cua-driver", Version: "0.35.2", Mode: "remote_ops", Readiness: ready}},
+					}}},
+				})
+			}()
+			return wsResourcesRefreshedType, wsResourcesRefreshedPayload{Opened: []string{"cua-driver"}}
+		},
+		wsResourceResetType: func(payload json.RawMessage) (string, any) {
+			var request store.ResourceResetRequest
+			_ = json.Unmarshal(payload, &request)
+			return wsResourceResetDoneType, store.ResourceResetResult{ResourceID: request.ResourceID, Generation: request.Generation}
+		},
+	})
+	content, isError := mcpContentCall(t, f.handler, token, "acquire_resource", map[string]any{"type": "computer_use"})
+	if isError {
+		t.Fatalf("acquire = %v", content)
+	}
+	var acquired struct {
+		Lease    resources.View `json:"lease"`
+		Resource struct {
+			ID string `json:"id"`
+		} `json:"resource"`
+	}
+	if err := json.Unmarshal([]byte(content[0]["text"].(string)), &acquired); err != nil ||
+		acquired.Lease.State != store.LeaseActive || acquired.Resource.ID != screen {
+		t.Fatalf("acquired = %+v (%v)", acquired, err)
+	}
+	if len(device.received(wsRefreshResourcesType)) != 1 {
+		t.Fatalf("refresh requests = %d", len(device.received(wsRefreshResourcesType)))
+	}
+}
+
 // A model turn the agent runs on its own (Claude's follow-up after
 // background work, a timer's) leaves the session "completed"; its worker
 // tells it (session_turn), and the leases follow it: acquired in it, a

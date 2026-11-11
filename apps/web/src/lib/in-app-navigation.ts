@@ -7,7 +7,7 @@ import {
 import { issuesEnabled } from "./feature-flags";
 import { foundryIdKind } from "./foundry-ids";
 import type { AssistantSettingsSection } from "./assistant-settings-sections";
-import type { ConnectorType } from "./connector-types";
+import { edgeAccessConnectorTab, type ConnectorType } from "./connector-types";
 
 export function workspaceIdFromLocation(): string {
   if (typeof window === "undefined") return "";
@@ -363,6 +363,40 @@ export function navigateToAssistantSettings(
   section: AssistantSettingsSection,
 ): void {
   navigateAppRoute({ view: "assistantSettings", assistantSection: section });
+}
+
+/**
+ * Opens the Edge Access add dialog, scoped to the upstream address a failed
+ * connector probe named.
+ */
+export function navigateToEdgeAccessCredential(
+  host: string,
+  pathPrefix?: string,
+): void {
+  navigateAppRoute(
+    { view: "connectors", connectorTab: edgeAccessConnectorTab },
+    undefined,
+    { edgeHost: host, edgePath: pathPrefix ?? "" },
+  );
+}
+
+/** Reads and removes the one-shot Edge Access prefill parameters. */
+export function takeEdgeAccessPrefill():
+  { host: string; pathPrefix?: string } | undefined {
+  if (typeof window === "undefined") return undefined;
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get("edgeHost")?.trim() ?? "";
+  const pathPrefix = params.get("edgePath")?.trim() ?? "";
+  if (!params.has("edgeHost") && !params.has("edgePath")) return undefined;
+  params.delete("edgeHost");
+  params.delete("edgePath");
+  const search = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+  );
+  return host ? { host, ...(pathPrefix ? { pathPrefix } : {}) } : undefined;
 }
 
 /** Opens the workspace’s archived conversations. */

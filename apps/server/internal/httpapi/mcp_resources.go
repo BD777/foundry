@@ -175,6 +175,10 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 		}
 		instances = append(instances, instance)
 	}
+	instances, err = s.prepareComputerUseForLease(ctx, holder, instances)
+	if err != nil {
+		return "", err
+	}
 	request := resources.AcquireRequest{
 		SessionID: holder.sessionID, ResourceIDs: ids, Reason: mcpArgString(args, "reason"),
 		Wait: time.Duration(min(mcpArgNumber(args, "waitMs", 0), maxMCPWaitMs)) * time.Millisecond,
@@ -227,8 +231,92 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 	return encodeJSON(result)
 }
 
+// cuaDriverLeasePrepareRequest is the worker's refresh mode that starts
+// CuaDriver when needed, re-probes it within 15 seconds, and updates the
+// scanner before answering. It is not the person's Request access flow.
+const cuaDriverLeasePrepareRequest = "cua-driver:prepare"
+
+// cuaDriverNotRunning recognizes the one unready state an agent can fix on
+// its own: the backend is installed but its daemon has not been started.
+func cuaDriverNotRunning(instance store.ResourceInstance) bool {
+	if instance.Type != "computer_use" {
+		return false
+	}
+	if slices.Contains(instance.Readiness.Missing, "cua_driver_not_running") {
+		return true
+	}
+	for _, backend := range instance.Backends {
+		if backend.ID == "cua-driver" &&
+			slices.Contains(backend.Readiness.Missing, "cua_driver_not_running") {
+			return true
+		}
+	}
+	return false
+}
+
+// prepareComputerUseForLease starts a stopped CuaDriver before the lease
+// gate reads readiness. The worker waits for the daemon and reports the
+// fresh detector result; this side waits briefly for that report to land so
+// acquire is decided on the post-start state, not the two-minute snapshot.
+func (s *Server) prepareComputerUseForLease(
+	ctx context.Context,
+	holder resourceToolHolder,
+	instances []store.ResourceInstance,
+) ([]store.ResourceInstance, error) {
+	preparedDevices := map[string]bool{}
+	for _, instance := range instances {
+		if instance.Type != "computer_use" || !cuaDriverNotRunning(instance) ||
+			preparedDevices[instance.Source.ID] {
+			continue
+		}
+		preparedDevices[instance.Source.ID] = true
+		if _, err := s.hub.RefreshDeviceResources(ctx, instance.Source.ID, cuaDriverLeasePrepareRequest); err != nil {
+			return nil, &statusError{
+				http.StatusConflict,
+				fmt.Errorf("%s: could not start CuaDriver for the lease: %w", instance.Source.Label, err),
+			}
+		}
+	}
+	if len(preparedDevices) == 0 {
+		return instances, nil
+	}
+	for index, instance := range instances {
+		updated, err := s.preparedResource(ctx, holder, instance.ID)
+		if err != nil {
+			return nil, err
+		}
+		instances[index] = updated
+	}
+	return instances, nil
+}
+
+func (s *Server) preparedResource(
+	ctx context.Context,
+	holder resourceToolHolder,
+	id string,
+) (store.ResourceInstance, error) {
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		instance, err := s.resourceFor(ctx, holder, id)
+		if err != nil || !cuaDriverNotRunning(instance) {
+			return instance, err
+		}
+		select {
+		case <-ctx.Done():
+			return store.ResourceInstance{}, ctx.Err()
+		case <-deadline.C:
+			return instance, nil
+		case <-ticker.C:
+		}
+	}
+}
+
 // chooseResource picks the first usable instance of a type on the holder's
-// devices, free ones first.
+// devices, free ones first. A stopped CuaDriver is the last candidate: the
+// caller starts it and then re-evaluates its readiness.
 func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, resourceType, deviceID string) (store.ResourceInstance, error) {
 	if resourceType == "" {
 		resourceType = "computer_use"
@@ -238,11 +326,15 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 		return store.ResourceInstance{}, err
 	}
 	var busy *store.ResourceInstance
+	var startable *store.ResourceInstance
 	for index, instance := range list.Instances {
 		if instance.Source.Kind != "device" || !holder.owned[instance.Source.ID] {
 			continue
 		}
 		if _, err := resources.OperableBackend(instance); err != nil {
+			if startable == nil && cuaDriverNotRunning(instance) {
+				startable = &list.Instances[index]
+			}
 			continue
 		}
 		switch instance.State {
@@ -256,6 +348,9 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 	}
 	if busy != nil {
 		return *busy, nil
+	}
+	if startable != nil {
+		return *startable, nil
 	}
 	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("no " + resourceType + " resource on your devices is ready to lease; list_resources shows each one's readiness and what is missing")}
 }

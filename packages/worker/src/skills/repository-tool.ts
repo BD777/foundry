@@ -51,19 +51,32 @@ export interface RepositoryToolSpec {
  */
 export async function installRepositoryTool(
   spec: RepositoryToolSpec,
-  options: { activate?: boolean } = {},
+  options: {
+    activate?: boolean;
+    /**
+     * The tool's folder as another device read it (packRepositoryTool): used
+     * instead of reading the repository with this device's GitHub CLI.
+     */
+    archive?: Buffer;
+  } = {},
 ): Promise<{ name: string; version: string; sha256: string }> {
   const clean = checkedSpec(spec);
-  const gh = ghCommand();
-  if (!gh)
-    throw new Error(
-      "GitHub CLI is not installed on this device. Install GitHub CLI in Foundry first.",
-    );
-  const { owner, repo } = splitRepository(clean.repository);
   const work = mkdtempSync(join(tmpdir(), "foundry-repository-tool-"));
   const archive = join(work, "repository.tar.gz");
   try {
-    const bytes = await fetchArchive(gh, owner, repo, clean.version, archive);
+    let bytes: Buffer;
+    if (options.archive) {
+      bytes = options.archive;
+      writeFileSync(archive, bytes);
+    } else {
+      const gh = ghCommand();
+      if (!gh)
+        throw new Error(
+          "GitHub CLI is not installed on this device. Install GitHub CLI in Foundry first.",
+        );
+      const { owner, repo } = splitRepository(clean.repository);
+      bytes = await fetchArchive(gh, owner, repo, clean.version, archive);
+    }
     const folder = join(repositoryToolsRoot(), clean.name, clean.version);
     if (!existsSync(folder)) {
       const staging = join(
@@ -90,6 +103,51 @@ export async function installRepositoryTool(
       name: clean.name,
       version: clean.version,
       sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Reads one repository tool's folder at its exact commit with this device's
+ * GitHub CLI and packs only that folder (under the archive's root folder, as
+ * GitHub names it), for the server to hand to devices that cannot read the
+ * repository themselves.
+ */
+export async function packRepositoryTool(
+  spec: RepositoryToolSpec,
+): Promise<{ archive: Buffer; sha256: string }> {
+  const clean = checkedSpec(spec);
+  const gh = ghCommand();
+  if (!gh)
+    throw new Error(
+      "GitHub CLI is not installed on this device. Install GitHub CLI in Foundry first.",
+    );
+  const { owner, repo } = splitRepository(clean.repository);
+  const work = mkdtempSync(join(tmpdir(), "foundry-repository-pack-"));
+  try {
+    const full = join(work, "repository.tar.gz");
+    await fetchArchive(gh, owner, repo, clean.version, full);
+    const root = await archiveRoot(full, clean.path);
+    const unpacked = join(work, "unpacked");
+    mkdirSync(unpacked);
+    await run(
+      "tar",
+      ["-xzf", full, "-C", unpacked, "--", `${root}/${clean.path}`],
+      {
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    assertTreeInside(join(unpacked, root, clean.path));
+    const packed = join(work, "tool.tar.gz");
+    await run("tar", ["-czf", packed, "-C", unpacked, root], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const archive = readFileSync(packed);
+    return {
+      archive,
+      sha256: createHash("sha256").update(archive).digest("hex"),
     };
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -294,11 +352,7 @@ function githubFailure(repository: string, stderr: string): Error {
   );
 }
 
-async function extractPath(
-  archive: string,
-  path: string,
-  destination: string,
-): Promise<void> {
+async function archiveRoot(archive: string, path: string): Promise<string> {
   const { stdout } = await run("tar", ["-tzf", archive], {
     maxBuffer: 16 * 1024 * 1024,
   });
@@ -318,6 +372,16 @@ async function extractPath(
     )
   )
     throw new Error(`${path} is not a folder at this bundle version`);
+  return root;
+}
+
+async function extractPath(
+  archive: string,
+  path: string,
+  destination: string,
+): Promise<void> {
+  const root = await archiveRoot(archive, path);
+  const wanted = `${root}/${path}`;
   mkdirSync(destination, { recursive: true });
   await run(
     "tar",
