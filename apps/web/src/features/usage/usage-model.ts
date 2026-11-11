@@ -185,7 +185,8 @@ export function aggregateUsage(items: readonly UsageStatsPoint[]): UsageTotals {
   }
   const sources = [...costSources.values()].sort(
     (left, right) =>
-      costSourceOrder.indexOf(left.source) - costSourceOrder.indexOf(right.source),
+      costSourceOrder.indexOf(left.source) -
+      costSourceOrder.indexOf(right.source),
   );
   const estimated = sources.find((source) => source.source === "estimated");
   return {
@@ -287,11 +288,13 @@ export function groupedUsageTrend(
     );
   const visible = ranked.slice(0, maximumSeries);
   const remaining = ranked.slice(maximumSeries);
-  const series: UsageTrendSeries[] = visible.map(([groupKey, total], index) => ({
-    key: `series${index}`,
-    label: labelFor(groupKey),
-    total,
-  }));
+  const series: UsageTrendSeries[] = visible.map(
+    ([groupKey, total], index) => ({
+      key: `series${index}`,
+      label: labelFor(groupKey),
+      total,
+    }),
+  );
   const otherTotal = remaining.reduce((sum, [, total]) => sum + total, 0);
   if (otherTotal > 0) {
     series.push({
@@ -330,10 +333,7 @@ export function groupedUsageTrend(
   };
 }
 
-function usageMetricValue(
-  item: UsageStatsPoint,
-  metric: UsageMetric,
-): number {
+function usageMetricValue(item: UsageStatsPoint, metric: UsageMetric): number {
   switch (metric) {
     case "turns":
       return item.turns;

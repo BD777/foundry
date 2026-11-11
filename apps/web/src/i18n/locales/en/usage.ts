@@ -2,8 +2,7 @@
 export const usage = {
   page: {
     title: "Usage statistics",
-    intro:
-      "Turns, requests, tokens, cost and latency across Foundry sessions.",
+    intro: "Turns, requests, tokens, cost and latency across Foundry sessions.",
     selfScope: "Showing your usage",
     adminScope: "Admin view",
   },

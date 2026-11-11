@@ -54,8 +54,7 @@ const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
 const { createRoot } = await import("react-dom/client");
 const { UsageFeature } = await import("../src/features/usage/index.ts");
-const { UsageTrend } =
-  await import("../src/features/usage/usage-trend.tsx");
+const { UsageTrend } = await import("../src/features/usage/usage-trend.tsx");
 const { groupedUsageTrend, usageBuckets } =
   await import("../src/features/usage/usage-model.ts");
 
@@ -115,11 +114,7 @@ function point(
   inputTokens,
   outputTokens,
   costUsd,
-  {
-    estimatedCostUsd,
-    medianTokensPerSecond,
-    ttftP50Ms,
-  },
+  { estimatedCostUsd, medianTokensPerSecond, ttftP50Ms },
 ) {
   return {
     bucket,
@@ -239,13 +234,11 @@ test("usage renders totals, sources and breakdown, then refetches for each filte
     assert.match(text, /Issue/);
     assert.match(text, /Usage over time/);
     assert.match(
-      container.querySelector('section[aria-label="Usage statistics"]').className,
+      container.querySelector('section[aria-label="Usage statistics"]')
+        .className,
       /grid-cols-4/,
     );
-    assert.equal(
-      container.querySelectorAll("[data-usage-trend]").length,
-      1,
-    );
+    assert.equal(container.querySelectorAll("[data-usage-trend]").length, 1);
     assert.ok(container.querySelector("[data-chart]"));
     const tokens = [...container.querySelectorAll('[role="radio"]')].find(
       (node) => node.textContent.trim() === "Tokens",
@@ -253,9 +246,9 @@ test("usage renders totals, sources and breakdown, then refetches for each filte
     assert.ok(tokens);
     await act(async () => tokens.click());
     assert.equal(tokens.getAttribute("aria-checked"), "true");
-    const requestsMetric = [...container.querySelectorAll('[role="radio"]')].find(
-      (node) => node.textContent.trim() === "Requests",
-    );
+    const requestsMetric = [
+      ...container.querySelectorAll('[role="radio"]'),
+    ].find((node) => node.textContent.trim() === "Requests");
     assert.ok(requestsMetric);
     await act(async () => requestsMetric.click());
     assert.equal(requestsMetric.getAttribute("aria-checked"), "true");
@@ -264,7 +257,8 @@ test("usage renders totals, sources and breakdown, then refetches for each filte
       "the empty requests chart",
     );
     await waitFor(
-      () => requests.filter((url) => url.pathname === "/api/users").length === 1,
+      () =>
+        requests.filter((url) => url.pathname === "/api/users").length === 1,
       "the people request",
     );
 
@@ -378,11 +372,11 @@ test("a member sees only their own scope and no person picker", async () => {
       "the member's usage breakdown",
     );
     assert.match(container.textContent, /Showing your usage/);
+    assert.equal(container.querySelector('button[aria-label^="Person"]'), null);
     assert.equal(
-      container.querySelector('button[aria-label^="Person"]'),
-      null,
+      requests.filter((url) => url.pathname === "/api/users").length,
+      0,
     );
-    assert.equal(requests.filter((url) => url.pathname === "/api/users").length, 0);
     assert.ok(
       requests
         .filter((url) => url.pathname === "/api/usage-stats")
@@ -451,11 +445,7 @@ test("usage trend fills every selected bucket with zero for missing series", () 
       new Date("2026-11-01T13:00:00.000Z"),
       "hour",
     ),
-    [
-      "2026-11-01T10:00:00Z",
-      "2026-11-01T11:00:00Z",
-      "2026-11-01T12:00:00Z",
-    ],
+    ["2026-11-01T10:00:00Z", "2026-11-01T11:00:00Z", "2026-11-01T12:00:00Z"],
   );
 
   const trend = groupedUsageTrend(

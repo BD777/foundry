@@ -65,12 +65,8 @@ export function UsageTrend({
   );
   const trend = useMemo(
     () =>
-      groupedUsageTrend(
-        items,
-        dimension,
-        metric,
-        buckets,
-        (key) => (key === "other" ? t("trend.other") : groupLabel(key)),
+      groupedUsageTrend(items, dimension, metric, buckets, (key) =>
+        key === "other" ? t("trend.other") : groupLabel(key),
       ),
     [buckets, dimension, groupLabel, items, metric, t],
   );
@@ -118,10 +114,7 @@ export function UsageTrend({
         />
       </div>
       {trend.series.length === 0 || chartData.length === 0 ? (
-        <EmptyState
-          body={t("trend.emptyBody")}
-          title={t("trend.emptyTitle")}
-        />
+        <EmptyState body={t("trend.emptyBody")} title={t("trend.emptyTitle")} />
       ) : (
         <figure
           aria-label={t("trend.chartLabel")}
