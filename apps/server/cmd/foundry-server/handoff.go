@@ -150,7 +150,7 @@ func (s *supervisor) start() (*supervisedServer, error) {
 		Files: files,
 		// A child outliving its supervisor would hold the port the next
 		// one needs.
-		Sys: &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM},
+		Sys: handoffChildSysProcAttr(),
 	})
 	if err != nil {
 		return fail(fmt.Errorf("start server %s: %w", s.executable, err))
