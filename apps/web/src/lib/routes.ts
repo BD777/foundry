@@ -26,6 +26,7 @@ export type NavView =
   | "settings"
   | "profiles"
   | "connectors"
+  | "usage"
   | "workspaceConnectors"
   | "library"
   | "workspace"
@@ -128,6 +129,8 @@ export function parseAppRoute(pathname: string): AppRoute {
       return { view: "profiles", providerTab: providerTabFrom(undefined) };
     case "connectors":
       return { view: "connectors", connectorTab: connectorTypeFrom(id) };
+    case "usage":
+      return { view: "usage" };
     case "resources":
       return { view: "resources" };
     // The page was "External accounts"; its accounts are the Feishu tab now.
@@ -207,6 +210,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return `/model-providers/${route.providerTab ?? providerTabFrom(undefined)}`;
     case "connectors":
       return `/connectors/${route.connectorTab ?? defaultConnectorType}`;
+    case "usage":
+      return "/usage";
     case "resources":
       return "/resources";
     case "workspaceConnectors":
@@ -245,6 +250,7 @@ const appSections = new Set([
   "profiles",
   "connections",
   "connectors",
+  "usage",
   "resources",
   "external-accounts",
   "runs",

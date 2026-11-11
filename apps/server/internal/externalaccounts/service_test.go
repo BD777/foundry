@@ -60,6 +60,10 @@ func (h *harness) assistant(userID, workspaceID, deviceID string) store.Personal
 	if err := h.store.RegisterDaemon(h.ctx, store.DaemonRegistration{
 		Device:    store.DeviceProjection{ID: deviceID, Label: deviceID, Status: "connected", LastSeenLabel: "online"},
 		Workspace: store.WorkspaceProjection{ID: workspaceID, Name: workspaceID, LocalPath: "/tmp/" + workspaceID},
+		Agents: []store.AgentProjection{{
+			ID: "agent_" + workspaceID, WorkspaceID: workspaceID, DeviceID: deviceID, Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
 	}); err != nil {
 		h.t.Fatal(err)
 	}
@@ -71,6 +75,18 @@ func (h *harness) assistant(userID, workspaceID, deviceID string) store.Personal
 		h.t.Fatal(err)
 	}
 	return agent
+}
+
+func (h *harness) assistantSession(agent store.PersonalAgent, id string) store.AgentSession {
+	h.t.Helper()
+	session, err := h.store.CreateAgentSession(h.ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: agent.UserID, WorkspaceID: agent.WorkspaceID, AgentID: "agent_" + agent.WorkspaceID, Provider: "claude",
+		Prompt: "assistant conversation", Source: store.SessionSourceChat,
+	})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return session
 }
 
 // connect runs a device login to completion for user_owner.
@@ -436,8 +452,9 @@ func TestPersonalAgentSessionMaterialsUseOwnedAccountsWithoutABinding(t *testing
 	h.service.Handles = &recordingIssuer{}
 	account := h.connect()
 	agent := h.assistant("user_owner", "ws_pa", "dev_1")
+	session := h.assistantSession(agent, "sess_pa")
 
-	materials, err := h.service.SessionMaterials(h.ctx, agent.WorkspaceID, "sess_pa", "dev_1", "user_owner", "user_owner")
+	materials, err := h.service.SessionMaterials(h.ctx, agent.WorkspaceID, session.ID, "dev_1", "user_owner", "user_owner")
 	if err != nil || len(materials) != 1 || materials[0].AccountID != account.ID {
 		t.Fatalf("assistant without a binding: %+v (%v)", materials, err)
 	}
@@ -454,32 +471,134 @@ func TestPersonalAgentSessionMaterialsUseOwnedAccountsWithoutABinding(t *testing
 		t.Fatalf("bound project: %+v (%v)", materials, err)
 	}
 
-	if _, err := h.store.SetPersonalAgentConnectorOptOut(h.ctx, "user_owner", []string{account.ID}); err != nil {
+	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, "user_owner", []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
 		t.Fatal(err)
 	}
-	materials, err = h.service.SessionMaterials(h.ctx, agent.WorkspaceID, "sess_pa_off", "dev_1", "user_owner", "user_owner")
+	off := h.assistantSession(agent, "sess_pa_off")
+	materials, err = h.service.SessionMaterials(h.ctx, agent.WorkspaceID, off.ID, "dev_1", "user_owner", "user_owner")
 	if err != nil || len(materials) != 0 {
 		t.Fatalf("disabled assistant account: %+v (%v)", materials, err)
 	}
 
 	other := h.assistant("user_other", "ws_other_pa", "dev_other")
-	materials, err = h.service.SessionMaterials(h.ctx, other.WorkspaceID, "sess_other_pa", "dev_other", "user_other", "user_other")
+	otherSession := h.assistantSession(other, "sess_other_pa")
+	materials, err = h.service.SessionMaterials(h.ctx, other.WorkspaceID, otherSession.ID, "dev_other", "user_other", "user_other")
 	if err != nil || len(materials) != 0 {
 		t.Fatalf("another person's assistant got the account: %+v (%v)", materials, err)
 	}
 }
 
-func TestPersonalAgentOptOutOverridesBindingInAssistantWorkspace(t *testing.T) {
+func TestSessionAccountsApplyOwnerDeviceAndWorkspaceRulesToExtensionInstances(t *testing.T) {
+	h := newHarness(t)
+	app, err := h.store.CreateExternalProviderApp(h.ctx, store.ExternalProviderApp{
+		Provider: "acme-api", OwnerUserID: "user_owner", Visibility: store.ExternalAppPersonal,
+		Label: "Acme", CreatedVia: "extension",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := h.store.SaveExternalAccount(h.ctx, store.ExternalAccount{
+		AppID: app.ID, Provider: "acme-api", OwnerUserID: "user_owner",
+		Label: "Acme", Mode: store.ExternalCredentialServerHeld, Status: store.ExternalAccountReady,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetWorkspaceExternalAccounts(h.ctx, "ws_ext", "user_owner", []string{account.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name                       string
+		workspace, session, device string
+		want                       int
+	}{
+		{"owner on own device in bound workspace", "ws_ext", "user_owner", "user_owner", 1},
+		{"owner's session on someone else's device", "ws_ext", "user_owner", "user_other", 0},
+		{"other person's session", "ws_ext", "user_other", "user_owner", 0},
+		{"unbound workspace", "ws_other", "user_owner", "user_owner", 0},
+	} {
+		accounts, err := h.service.SessionAccounts(h.ctx, tc.workspace, "sess_ext", tc.session, "dev_ext", tc.device)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if len(accounts) != tc.want {
+			t.Fatalf("%s: %d accounts, want %d", tc.name, len(accounts), tc.want)
+		}
+	}
+
+	agent := h.assistant("user_owner", "ws_ext_pa", "dev_ext_pa")
+	session := h.assistantSession(agent, "sess_ext_pa")
+	accounts, err := h.service.SessionAccounts(h.ctx, agent.WorkspaceID, session.ID, "user_owner", "dev_ext_pa", "user_owner")
+	if err != nil || len(accounts) != 1 || accounts[0].ID != account.ID {
+		t.Fatalf("assistant extension account without a binding: %+v (%v)", accounts, err)
+	}
+}
+
+func TestSessionAccountsPreferAReachableDeviceNetworkInstance(t *testing.T) {
+	h := newHarness(t)
+	descriptor := store.ConnectorDescriptor{
+		Kind: "acme-api", Label: "Acme API", Holding: store.ConnectorServerHeld,
+		Adapter: "extension:acme", Tool: store.ConnectorTool{Command: "acme"},
+		ServerHeld: &store.ConnectorServerHeldSpec{
+			Fields:   []store.ConnectorField{{ID: "baseUrl", Type: "url", Required: true, Label: "URL"}},
+			Upstream: store.ConnectorServerHeldUpstream{BaseField: "baseUrl", PathPrefix: "/api"},
+			Network:  store.ConnectorServerHeldNetwork{Holdings: []string{"server", "device"}, PublicOnly: true},
+		},
+	}
+	create := func(label, network string, available []store.ConnectorServerHeldDeviceCheck) store.ExternalAccount {
+		t.Helper()
+		data, err := json.Marshal(store.ExtensionInstanceData{
+			Descriptor: descriptor, Values: map[string]string{"baseUrl": "https://acme.example"},
+			Routes:  []store.ConnectorServerHeldRoute{{Method: "GET", Path: "/api/read", Access: "read"}},
+			Network: network, AvailableDevices: available,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		app, err := h.store.CreateExternalProviderApp(h.ctx, store.ExternalProviderApp{
+			Provider: "acme-api", OwnerUserID: "user_owner", Visibility: store.ExternalAppPersonal,
+			Label: label, CreatedVia: "extension", ExtensionData: string(data),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		account, err := h.store.SaveExternalAccount(h.ctx, store.ExternalAccount{
+			AppID: app.ID, Provider: "acme-api", OwnerUserID: "user_owner",
+			Label: label, Mode: store.ExternalCredentialServerHeld, Status: store.ExternalAccountReady,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return account
+	}
+	server := create("Public", "server", nil)
+	device := create("Intranet", "device", []store.ConnectorServerHeldDeviceCheck{{
+		DeviceID: "dev_ext", Name: "byte-dev", Status: "ok", CheckedAt: "2026-11-11T00:00:00Z",
+	}})
+	if err := h.store.SetWorkspaceExternalAccounts(h.ctx, "ws_ext", "user_owner", []string{server.ID, device.ID}); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := h.service.SessionAccounts(h.ctx, "ws_ext", "sess_ext", "user_owner", "dev_ext", "user_owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 || accounts[0].ID != device.ID {
+		t.Fatalf("selected accounts = %+v, want the device-network instance", accounts)
+	}
+}
+
+func TestPersonalAgentLevelOverridesBindingInAssistantWorkspace(t *testing.T) {
 	h := newHarness(t)
 	agent := h.assistant("user_owner", "ws_pa", "dev_1")
+	session := h.assistantSession(agent, "sess_pa_bound")
 	account := store.ExternalAccount{
 		ID: "acct_pa_bound", OwnerUserID: "user_owner", Mode: store.ExternalCredentialServerHeld,
 		Status: store.ExternalAccountReady, WorkspaceIDs: []string{agent.WorkspaceID},
 	}
-	if _, err := h.store.SetPersonalAgentConnectorOptOut(h.ctx, agent.UserID, []string{account.ID}); err != nil {
+	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, agent.UserID, []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
 		t.Fatal(err)
 	}
-	policy, err := externalaccounts.ResolvePolicy(h.ctx, h.store, agent.WorkspaceID, agent.UserID)
+	policy, err := externalaccounts.ResolvePolicy(h.ctx, h.store, session)
 	if err != nil {
 		t.Fatal(err)
 	}

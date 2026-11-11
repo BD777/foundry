@@ -111,7 +111,7 @@ function MarkdownImage({
   return (
     <figure
       className={cn(
-        "mt-[1.5em] mb-[1.5em] w-fit max-w-[min(100%,520px)] first:mt-0 last:mb-0",
+        "group/image mt-[1.5em] mb-[1.5em] w-fit max-w-[min(100%,520px)] first:mt-0 last:mb-0 has-[>[data-image-state=missing]]:my-1",
         alignEnd && "ml-auto",
       )}
       data-frame="true"
@@ -123,7 +123,7 @@ function MarkdownImage({
         path={image.path}
         onPreview={onPreview ? () => onPreview(image) : undefined}
       />
-      <figcaption className="mt-[7px] text-xs leading-[1.35] text-ink-faint">
+      <figcaption className="mt-[7px] text-xs leading-[1.35] text-ink-faint group-has-[>[data-image-state=missing]]/image:hidden">
         {image.alt}
       </figcaption>
     </figure>

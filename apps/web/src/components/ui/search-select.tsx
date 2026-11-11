@@ -39,6 +39,11 @@ export interface SearchSelectProps {
   searchPlaceholder: string;
   emptyText: string;
   className?: string;
+  /** Page-specific content after the option groups, inside the list. */
+  footer?: ReactNode;
+  /** Controlled state, for a footer action that closes the picker. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -69,12 +74,20 @@ export function SearchSelect({
   ariaLabel,
   className,
   emptyText,
+  onOpenChange,
+  open: controlledOpen,
   groups,
   onChange,
   searchPlaceholder,
   value,
+  footer,
 }: SearchSelectProps) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const selected = groups
     .flatMap((group) => group.options)
     .find((option) => option.value === value);
@@ -169,6 +182,7 @@ export function SearchSelect({
                   </CommandGroup>
                 ) : null,
               )}
+              {footer}
             </CommandList>
           </Command>
         </PopoverPrimitive.Content>

@@ -7,6 +7,7 @@
  */
 import type {
   ChatAttachment,
+  DeviceRuntimeState,
   EvidenceWorkerRequest,
   ProtocolEnvelope,
   RunSessionPayload,
@@ -35,6 +36,8 @@ export interface HostSnapshot {
   ownTurns?: string[];
   /** Sessions whose agents work on their own (sessionsWithNativeWork). */
   nativeWork?: string[];
+  /** Latest sampled admission decision. */
+  runtimeState?: DeviceRuntimeState;
   version: string;
 }
 

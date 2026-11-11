@@ -19,7 +19,7 @@ export const connectorExtensionProtocol = 1;
 
 /** `foundry-extension.json`. */
 export interface ConnectorExtensionManifest {
-  manifestVersion: 1;
+  manifestVersion: 1 | 2;
   /** 1–32 lowercase letters, digits or dashes, starting with a letter. */
   id: string;
   name: string;
@@ -34,14 +34,15 @@ export interface ConnectorExtensionManifest {
    */
   entry?: { command: string; args?: string[] };
   /**
-   * The connectors it provides: device-held, adapter "extension:<id>"
-   * (both filled in by the worker when left out).
+   * The connectors it provides: device- or server-held, adapter
+   * "extension:<id>" (filled in by the worker when left out).
    */
   connectors: ConnectorDescriptor[];
   /**
-   * A declarative extension (no `entry`): how the worker drives each
-   * connector's own command line, by connector kind. In the manifest file
-   * it is written as each connector's `cli`; it never leaves the device.
+   * A declarative device-held extension (no `entry`): how the worker drives
+   * each connector's own command line, by connector kind. In the manifest
+   * file it is written as each connector's `cli`; it never leaves the device.
+   * Pure-data server-held connectors need neither `entry` nor `cli`.
    */
   cli?: Record<string, ExtensionCli>;
   /** How to install it on the owner's other devices. */
@@ -51,6 +52,11 @@ export interface ConnectorExtensionManifest {
    * and update it from there with one click.
    */
   source?: ConnectorExtensionRepository;
+  /**
+   * The old git folder an installed copy may have come from before this
+   * extension moved into the Worker. Used only by the Worker migration.
+   */
+  migrationSource?: ConnectorExtensionRepository;
 }
 
 /** An installed extension, as `foundry-worker extension list` shows it. */
@@ -64,12 +70,16 @@ export interface InstalledConnectorExtension {
   sha256: string;
   installedAt: string;
   connectors: string[];
+  /** The extension ships with the Worker. */
+  bundled?: boolean;
   /** Installed from this git folder (not a local folder). */
   source?: ConnectorExtensionRepository;
   commit?: string;
   /** The commit source.ref pointed at when last looked, and when. */
   latestCommit?: string;
   latestCheckedAt?: string;
+  /** A git-installed extension updates when its source moves; default true. */
+  autoUpdate?: boolean;
 }
 
 /**
@@ -77,10 +87,14 @@ export interface InstalledConnectorExtension {
  * update an extension from a git folder, or remove one.
  */
 export interface ExtensionRequestPayload {
-  action: "install" | "remove";
+  action: "install" | "remove" | "set-auto-update";
+  /** install: a bundled extension's id. */
+  bundledExtensionId?: string;
   source?: ConnectorExtensionRepository;
   /** remove: the extension. */
   extensionId?: string;
+  /** set-auto-update: the extension and its new setting. */
+  autoUpdate?: boolean;
 }
 
 /** extension_reply: what changed, or why nothing did. */

@@ -2,18 +2,19 @@
 
 [连接器](connectors.md) · [文档索引](README.md)
 
-Foundry 内置的连接器只有公开服务：飞书、Cloudflare（Server 持有）和 AWS CLI、GitHub CLI（设备持有）。公司内部工具、私有模型网关这类连接器不进公开仓库，而是以**连接器扩展**的形式由设备所有者装在自己的设备上。扩展是一个文件夹：一份 `foundry-extension.json` 加一个程序；Worker 按需启动这个程序，用一个小协议和它对话。Server 和 Web 不加载任何扩展代码，只按扩展声明的数据（描述符）渲染和校验。调研与取舍见 [research/connector-extensions.md](research/connector-extensions.md)。
+Foundry 内置的连接器只有公开服务：飞书、Cloudflare、App Store Connect（Server 持有）和 AWS CLI、GitHub CLI、腾讯云 CLI、阿里云 CLI（设备持有）。公司内部工具、私有模型网关这类连接器以**连接器扩展**的形式由设备所有者装在自己的设备上；官方扩展放在本仓库 `extensions/`，随 Worker 发布。扩展是一个文件夹：一份 `foundry-extension.json`，以及可选的程序或声明式 `cli`；纯数据 Server 持有型扩展两者都不需要。Worker 按需启动设备上的程序，Server 和 Web 从不加载扩展代码，只按扩展声明的数据（描述符）渲染、校验和执行通用网关。来源可见性和 bundled 更新设计见 [research/ext-bundled-and-access.md](research/ext-bundled-and-access.md)。
 
 ## 边界
 
 - **只做外层转换。** 扩展（程序或声明式）只调用工具公开的命令行，不要求工具实现 Foundry 的协议，也不把 Foundry 的东西放进工具自己的仓库。
-- **只扩展设备持有型。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）。Server 持有型（网关、逐请求检查、刷新）需要代码跑在 Server 上，只有内置的公开服务才这样做。以后要接私有 SaaS 的 Server 持有型连接器，只做纯数据（声明式 OAuth / API key + 注入模板），Server 永远不跑扩展代码。
+- **Server 持有型只接受纯数据。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）；设备持有型仍是默认。若私有部署公开可达，并且一份 API key/令牌加声明式探测、路由目录和请求头模板就能完成接入，扩展可以声明 `holding: "server_held"`。凭据封存在 Server，通用网关执行描述符；Server 永远不加载或运行扩展代码，也不会为某个产品加 Provider 分支。
 - **只由设备所有者安装，到自己的设备上。** 在设备的终端里 `foundry-worker extension add`，或在 Connectors 页上点击（从扩展发布的 git 文件夹，见“来源”）。代码由设备自己用它的 git 凭据拉取，Server 从不经手扩展代码；会话、Workspace 和 Server 都不能自行安装、更新或移除扩展。2026-11-04 本人决定取消原先“只能在本机用命令装”的限制：页面上的安装和 Install bytedcli 一样，是设备所有者明确点击、在自己设备上以自己身份运行的代码，安全边界不变，易用性高得多。
 - **扩展以设备用户身份运行，不是沙箱。** 和会话本身一样信任设备所有者装的东西；Worker 只给它普通环境（`HOME`、`PATH`、语言、代理与 CA 变量），从不给 Worker 自己的凭据，也不读它的 stderr。
 
 ## 安装与登记
 
 ```sh
+foundry-worker extension add open-lark                 # this Worker's bundled copy
 foundry-worker extension add ./my-company-connector   # 从本地文件夹安装或更新，打印一行 JSON
 foundry-worker extension add https://github.com/acme/tools.git --path foundry-extension [--ref main]
 foundry-worker extension update my-company            # 从安装时的仓库取最新提交
@@ -22,9 +23,11 @@ foundry-worker extension remove my-company
 ```
 
 - `add` 把文件夹复制到 `~/.foundry/extensions/<id>/current/`，记录文件内容的 SHA-256（`~/.foundry/extensions/registry.json`）。每次启动扩展前核对一次，文件被改过就拒绝启动，提示重新 `add`。同样的文件夹再 `add` 是 `unchanged`；内容变了是 `updated`，原子替换。
+- 官方扩展由 Worker 包内的 `extensions/<id>/` 安装，不需要仓库地址或 git。页面上的“安装到这台设备”与 `foundry-worker extension add <id>` 等价。
 - 拒绝：协议版本不匹配、id/manifest 不合法、含符号链接、超过 4000 个文件或 256 MiB、连接器 kind 与内置连接器或其他扩展重名。退出码：2 不合法，3 kind 冲突，4 未安装，5 仓库拉取失败。
 - 扩展自己的私有目录 `~/.foundry/extensions/<id>/data/`，更新时保留，卸载时删除；卸载同时删掉它提供的模型服务。
-- 运行中的 Worker 在一次心跳（约 25 秒）内上报变化，从页面装的立即上报；Server 校验每个描述符（`internal/connectors/extensions.go`、`descriptor_checks.go`）后存到设备记录上，只给设备所有者看，只在那台设备上提供。
+- 运行中的 Worker 在一次心跳（约 25 秒）内上报变化，从页面装的立即上报；Server 校验每个描述符（`internal/connectors/extensions.go`、`descriptor_checks.go`）后存到设备记录上，只给设备所有者看。bundled 扩展即使尚未安装，也以 `state: "available"` 上报，供页面显示一键安装。
+- 被 Server 拒绝的描述符不会静默消失：Server 记录设备、扩展 id、kind 和原因，并把同一条原因保存在设备记录里；Connectors 页在该设备上显示“扩展描述不合法”和具体原因。`foundry-worker extension add` 也会先用对齐的规则（包括 `serverHeld` 的字段、探测、模板、canonical HTTP header、网络限制）校验本地 manifest。
 
 ## Manifest
 
@@ -43,7 +46,7 @@ foundry-worker extension remove my-company
 ```
 
 - `entry.command`：绝对路径、`${extensionDir}/…`、`node`（Worker 自己的 Node.js）或设备 PATH 上的命令名（另查 `~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）。`args` 里的 `${extensionDir}`、`${dataDir}` 会被替换。
-- `connectors[]`：连接器描述符（`packages/protocol/src/connectors.ts` `ConnectorDescriptor`），与内置目录 `catalog.json` 同一份结构。Worker 把它们设为设备持有型、`adapter: "extension:<id>"`，并附上 `extension`（id、名称、版本）与 `setup`。
+- `connectors[]`：连接器描述符（`packages/protocol/src/connectors.ts` `ConnectorDescriptor`），与内置目录 `catalog.json` 同一份结构。Worker 填入 `adapter: "extension:<id>"`，并附上 `extension`（id、名称、版本）与 `setup`。普通连接器是设备持有型；只有纯数据 `serverHeld` 声明才是服务器持有型。
 - `source`：扩展发布所在的 git 文件夹（见“来源”）。有了它，其他设备在页面上一键安装、更新。
 - `setup`：没有 `source` 时，在其他设备上安装它的一行命令（或说明页），连接器页面对没装它的设备显示并可复制。
 
@@ -51,10 +54,40 @@ foundry-worker extension remove my-company
 
 `source` 是 `{ "git": 远程地址, "path": 仓库里的文件夹, "ref": 分支或标签 }`，`path` 缺省为仓库根，`ref` 缺省为默认分支。远程地址只接受 https（地址里不能带用户名或令牌）、`ssh://` 和 `host:path` 形式；Server 与 Worker 都检查（`descriptor_checks.go` `CheckExtensionRepository`、`manifest.ts` `parseExtensionRepository`）。
 
+官方扩展没有 `source`，而是由 Worker 包携带。Worker 每次启动按 id 和 SHA-256 比较已安装副本：有变化就原子更新，`data/` 目录保留。未安装的设备只看到可安装条目，不会自动装上。旧的 Limen git 安装通过 manifest 的 `migrationSource` 认领；迁移后 source/commit 清空、bundled 置为 true，登录、profile、绑定和到期记录不变。
+
 - **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，这次拉取的 git 命令行里带上 gh 的凭据助手（`sources.ts` 的 `gitConfigFor`），用这份登录；Foundry 不改本人的全局 git 配置（DEV-128 起登录不再运行 `gh auth setup-git`）。没有权限时报 git 自己的话（例如 repository not found）。
 - **装了什么。** 只复制 `path` 那个文件夹（不含 `.git` 和仓库其他文件），之后和本地文件夹一样校验、记录摘要；注册表额外记 `source`、安装的 `commit`。
-- **更新。** Worker 每 6 小时用 `git ls-remote` 看一次 `ref` 现在的提交（`latestCommit`），和安装的不同时，设备行显示“仓库有更新的提交”和“Update”按钮；更新就是从同一来源再装一次。
-- **页面上。** 没装的设备在连接器标签下各有“Install <扩展>”；“Add a connector”可以填仓库地址装第一个；设备行菜单里有“从这台设备移除”。都先弹确认，写明拉什么、装到哪、以你的身份运行。接口：`POST /api/devices/{deviceId}/extensions`（`{source}`）、`DELETE /api/devices/{deviceId}/extensions/{id}`，只有设备所有者能调用，经守护连接的 `extension_request` 交给设备。
+- **更新。** 从 git 安装的扩展默认自动更新。Worker 每 6 小时用 `git ls-remote` 看一次 `ref` 现在的提交；变了就直接从同一来源原子更新。人可以关掉“自动更新”，此时保留 `latestCommit` 和手动 Update。bundled 扩展随 Worker 更新。
+- **页面上。** 没装 bundled 扩展的设备显示“安装到这台设备”，直接安装，不填仓库、不跑 git；从 git 安装仍先确认要拉的仓库。已安装的 git 扩展有自动更新开关，设备行菜单里有“从这台设备移除”。接口：`POST /api/devices/{deviceId}/extensions`（`{bundledExtensionId}` 或 `{source}`）、`PATCH /api/devices/{deviceId}/extensions/{extensionId}`（自动更新）、`DELETE /api/devices/{deviceId}/extensions/{extensionId}`，只有设备所有者能调用，经守护连接的 `extension_request` 交给设备。
+
+### 按来源可见
+
+连接器的静态描述符可声明两类门槛，两者都满足才可见：
+
+```json
+{
+  "requires": [
+    {
+      "kind": "tcp_reachable",
+      "host": "intranet.example",
+      "port": 443,
+      "label": "Company network"
+    }
+  ],
+  "access": {
+    "via": "github",
+    "repository": "owner/private-repository",
+    "hint": "Read the private repository to make this connector available.",
+    "hints": { "zh-CN": "需要能读取私有仓库，此连接器才会显示。" }
+  }
+}
+```
+
+- `requires` 由设备做无凭据的 TCP 检查。只要所有者任意一台设备可达，就满足这一项。
+- `access.via` 必须是同一台设备上已有的设备持有型连接器，并且该连接器描述符声明 `repositoryAccess`。GitHub CLI 用 `["api", "repos/{repository}", "--silent"]` 和 `repositoryFormat: "github"` 读取仓库，账号就是设备上这份 Foundry GitHub 登录。
+- Server 校验 `via` 指向可检查仓库的连接器；不合格的描述符不保存。检查在设备上执行，结果只含 `ok`、`no_access`、`not_signed_in`、`unreachable`、`error`、非秘密账号名和短原因，Server 按设备与仓库缓存 24 小时。
+- 没有任何设备同时满足两类条件时，连接器不进主列表，而是进选择器底部默认收起的“需要权限的连接器”。页面逐台设备说明网络与仓库检查结果，并提供“重新检查”。工作区绑定和会话派发只使用可见连接器。
 
 ## 描述符：一份数据描述所有差异
 
@@ -69,6 +102,8 @@ foundry-worker extension remove my-company
 | 到期       | `expiryReminderDays`                             | 进入窗口后提醒                                                                                                                                                                                                                                                                   |
 | 隔离       | `isolationEnv`                                   | 不能用这份登录的会话拿到的变量                                                                                                                                                                                                                                                   |
 | 提供什么   | `provides.tool`、`provides.modelAccess.runtimes` | 后者见“模型接入”                                                                                                                                                                                                                                                                 |
+| 服务器保管 | `serverHeld`                                     | 仅扩展可用；字段/步骤、探测与 JSON Pointer 提取、路由目录、按探测值映射读写权限、上游前缀与请求头模板、会话 env（含 `probeMap`）、公网 HTTPS 限制。Server 只执行数据，不运行扩展代码                                                                                             |
+| 来源可见性 | `access`、`repositoryAccess`                     | `access` 声明连接器要通过哪个 Foundry 连接器读取哪个仓库；被指向的连接器用 `repositoryAccess` 声明 argv 模板。与 `requires` 同时满足才显示                                                                                                                                       |
 
 只有一种 `guided` 方式且不需要填写时，点“登录”直接开始；否则先选方式、填字段。描述符的长度与形状由 Server 统一校验，扩展上报的不合法描述符直接丢弃。
 
@@ -91,7 +126,9 @@ stdin/stdout 上的 JSON-RPC 2.0，每行一条消息；stdout 只走协议，st
 
 ## 声明式扩展
 
-工具本身有带 JSON 输出的命令行时，扩展可以不写程序：manifest 不写 `entry`，每个连接器写一段 `cli`，说明用哪些参数调用 `tool.command`、从它的 JSON 回答里哪里读什么。Worker 自己按这段数据回答协议里的方法（`extensions/declarative.ts`），上层（设备持有型运行时、模型接入、页面）和程序扩展完全一样。`cli` 只留在设备上，上报给 Server 的描述符里没有它。一个扩展要么是程序（`entry`），要么是声明式（每个连接器都有 `cli`），不能混用。
+工具本身有带 JSON 输出的命令行时，扩展可以不写程序：manifest 不写 `entry`，每个设备持有型连接器写一段 `cli`，说明用哪些参数调用 `tool.command`、从它的 JSON 回答里哪里读什么。Worker 自己按这段数据回答协议里的方法（`extensions/declarative.ts`），上层（设备持有型运行时、模型接入、页面）和程序扩展完全一样。`cli` 只留在设备上，上报给 Server 的描述符里没有它。
+
+另一类无程序扩展是纯数据 `serverHeld`：它不提供协议方法，也没有 `entry`/`cli`。Server 校验字段与模板、探测并保存路由目录和令牌权限；`access.allowBy.value` 引用一个探测值（如 `probe:capabilities/scope`），`map` 将 `full`/`read` 等值映射到 `read`/`write` 路由权限，`otherwise` 是未知值的回退。会话 env 的 `{probeMap:<probe-id>/<name>|match=value|*=default}` 由 Server 用同一份探测值渲染。会话经通用网关访问；只读权限只放行目录里的 `read` 路由，完整权限可放行 `write`，Personal Agent 的写请求另受权限包约束并要求确认。一个无 `entry` 的 manifest 里，每个连接器必须二选一：设备持有型带 `cli`，或服务器持有型带 `serverHeld`。
 
 | 键                 | 作用                                                                                                                                                                                                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,7 +1,11 @@
 import type {
   AgentSession,
+  ConnectorAccountPermission,
+  ConnectorAccessLevel,
   PersonalAgent,
   PersonalAgentActionRecord,
+  PersonalAgentConnector,
+  PersonalAgentConnectorsView,
   PersonalAgentListItem,
   PersonalAgentListItemInput,
   PersonalAgentInboxEntry,
@@ -24,35 +28,26 @@ import { request } from "./http";
 const base = "/api/personal-agent";
 const id = (value: string) => encodeURIComponent(value);
 
-/** One connector account the assistant may use. */
-export interface PersonalAgentConnector {
-  id: string;
-  kind: string;
-  label: string;
-  holding: string;
-  deviceId?: string;
-  deviceName?: string;
-  status?: string;
-  enabled: boolean;
-}
-
-export interface PersonalAgentConnectors {
-  connectors: PersonalAgentConnector[];
-}
+export type {
+  ConnectorAccountPermission,
+  ConnectorAccessLevel,
+  PersonalAgentConnector,
+  PersonalAgentConnectorsView,
+};
 
 export function getPersonalAgent(): Promise<PersonalAgentOverview> {
   return request("GET", base);
 }
 
-export function getPersonalAgentConnectors(): Promise<PersonalAgentConnectors> {
+export function getPersonalAgentConnectors(): Promise<PersonalAgentConnectorsView> {
   return request("GET", `${base}/connectors`);
 }
 
-/** Replaces the full set of connector accounts the assistant may not use. */
+/** Replaces every connector-account override; omitted accounts become write. */
 export function setPersonalAgentConnectors(
-  disabled: string[],
-): Promise<PersonalAgentConnectors> {
-  return request("PUT", `${base}/connectors`, { body: { disabled } });
+  levels: ConnectorAccountPermission[],
+): Promise<PersonalAgentConnectorsView> {
+  return request("PUT", `${base}/connectors`, { body: { levels } });
 }
 
 export function capturePersonalAgentInbox(

@@ -98,7 +98,10 @@ export function PlacesSection({
           );
           const sharers = accountSharers(device);
           return (
-            <li className="fdy-pa-place grid gap-2 first:pt-0" key={device.id}>
+            <li
+              className="fdy-pa-place grid min-w-0 gap-2 wrap-anywhere first:pt-0"
+              key={device.id}
+            >
               <ButtonRow gap="wide">
                 <strong>{device.label}</strong>
                 <Badge
@@ -159,7 +162,7 @@ export function PlacesSection({
         >
           <SelectMenu
             ariaLabel={t("settings.places.preferred")}
-            className="max-w-full min-w-55"
+            className="w-full"
             onChange={(preferredDeviceId) => change({ preferredDeviceId })}
             options={[
               ...(draft.preferredDeviceId &&

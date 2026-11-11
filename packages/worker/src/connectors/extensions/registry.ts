@@ -21,6 +21,7 @@ import {
   saveConnectorModelProviders,
 } from "../../harness/connector-model-providers.js";
 import { foundryStatePath } from "../../platform/state-root.js";
+import { workerPackagePath } from "../../platform/package-root.js";
 import {
   tryReadJSONFile,
   writePrivateJSONAtomic,
@@ -161,6 +162,15 @@ export interface ExtensionChange {
   extension?: InstalledConnectorExtension;
 }
 
+export interface ExtensionOrigin {
+  source?: ConnectorExtensionRepository;
+  commit?: string;
+  bundled?: boolean;
+  autoUpdate?: boolean;
+  /** Do not move an extension kept in a private data folder. */
+  migrateFrom?: ConnectorExtensionRepository[];
+}
+
 /**
  * Installs (or updates) the extension in sourceDir: a copy of its files,
  * swapped in at once, with their digest. builtinKinds are connector kinds
@@ -170,7 +180,7 @@ export interface ExtensionChange {
 export function addExtension(
   sourceDir: string,
   builtinKinds: string[] = [],
-  origin?: { source: ConnectorExtensionRepository; commit: string },
+  origin?: ExtensionOrigin,
 ): ExtensionChange {
   const source = resolve(sourceDir);
   if (!existsSync(source) || !lstatSync(source).isDirectory())
@@ -218,7 +228,11 @@ export function addExtension(
     throw new ExtensionError(
       "id_conflict",
       `${manifest.id} is already installed from ${
-        previous.source ? "another source" : "a local folder"
+        previous.bundled
+          ? "the Worker"
+          : previous.source
+            ? "another source"
+            : "a local folder"
       }; remove it before installing this one`,
     );
   const parent = join(extensionsRoot(), manifest.id);
@@ -260,19 +274,32 @@ export function addExtension(
 
 function sameSource(
   installed: InstalledConnectorExtension,
-  origin: { source: ConnectorExtensionRepository } | undefined,
+  origin: ExtensionOrigin | undefined,
 ): boolean {
+  if (origin?.bundled)
+    return (
+      installed.bundled === true ||
+      Boolean(
+        installed.source &&
+        origin.migrateFrom?.some(
+          (source) =>
+            JSON.stringify(source) === JSON.stringify(installed.source),
+        ),
+      )
+    );
   return (
+    installed.bundled !== true &&
     JSON.stringify(installed.source ?? null) ===
-    JSON.stringify(origin?.source ?? null)
+      JSON.stringify(origin?.source ?? null)
   );
 }
 
 function sameOrigin(
   installed: InstalledConnectorExtension,
-  origin: { source: ConnectorExtensionRepository; commit: string } | undefined,
+  origin: ExtensionOrigin | undefined,
 ): boolean {
   return (
+    installed.bundled === origin?.bundled &&
     installed.commit === origin?.commit &&
     JSON.stringify(installed.source ?? null) ===
       JSON.stringify(origin?.source ?? null)
@@ -281,24 +308,159 @@ function sameOrigin(
 
 function withOrigin(
   installed: InstalledConnectorExtension,
-  origin: { source: ConnectorExtensionRepository; commit: string } | undefined,
+  origin: ExtensionOrigin | undefined,
 ): InstalledConnectorExtension {
   const {
     source: _source,
     commit: _commit,
     latestCommit: _latest,
     latestCheckedAt: _checked,
+    bundled: _bundled,
+    autoUpdate: _autoUpdate,
     ...rest
   } = installed;
-  return origin
+  if (origin?.bundled) return { ...rest, bundled: true };
+  return origin?.source
     ? {
         ...rest,
         source: origin.source,
         commit: origin.commit,
         latestCommit: origin.commit,
         latestCheckedAt: new Date().toISOString(),
+        autoUpdate: origin.autoUpdate ?? installed.autoUpdate ?? true,
       }
     : rest;
+}
+
+/** Turns automatic source updates on or off for a git-installed extension. */
+export function setExtensionAutoUpdate(
+  id: string,
+  enabled: boolean,
+): InstalledConnectorExtension {
+  const installed = readRegistry();
+  const extension = installed.find((item) => item.id === id);
+  if (!extension)
+    throw new ExtensionError("not_found", `no extension ${id} is installed`);
+  if (extension.bundled || !extension.source)
+    throw new ExtensionError(
+      "invalid_input",
+      `${id} does not update from a git source`,
+    );
+  const next = { ...extension, autoUpdate: enabled };
+  writeRegistry(installed.map((item) => (item.id === id ? next : item)));
+  return next;
+}
+
+export interface BundledExtension {
+  /** The folder shipped in the Worker package. */
+  dir: string;
+  manifest: ConnectorExtensionManifest;
+}
+
+/** Where this Worker build keeps its bundled extension folders. */
+export function bundledExtensionsRoot(): string | undefined {
+  for (const candidate of [
+    process.env.FOUNDRY_BUNDLED_EXTENSIONS_DIR,
+    workerPackagePath("extensions"),
+    workerPackagePath("..", "..", "extensions"),
+  ]) {
+    if (candidate && existsSync(candidate)) return resolve(candidate);
+  }
+  return undefined;
+}
+
+/**
+ * The extension folders shipped with this Worker. A broken one is logged and
+ * left out; it cannot affect an installed extension.
+ */
+export function bundledExtensions(
+  log: (message: string) => void = console.warn,
+): BundledExtension[] {
+  const root = bundledExtensionsRoot();
+  if (!root) return [];
+  const found: BundledExtension[] = [];
+  for (const name of readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()) {
+    const dir = join(root, name);
+    if (!existsSync(join(dir, manifestFileName))) continue;
+    try {
+      found.push({ dir, manifest: readManifest(dir) });
+    } catch (error) {
+      log(
+        `bundled connector extension ${name} is not usable: ${String(error)}`,
+      );
+    }
+  }
+  return found;
+}
+
+/** A bundled extension's folder, by its manifest id. */
+export function bundledExtensionDir(id: string): string | undefined {
+  return bundledExtensions().find((item) => item.manifest.id === id)?.dir;
+}
+
+/**
+ * Existing official extensions moved into the Worker are recognized by the
+ * old source folder, `extensions/<manifest id>`, not by a hard-coded
+ * product name. A source elsewhere keeps its id conflict refusal.
+ */
+function legacyBundledOrigin(
+  manifest: ConnectorExtensionManifest,
+): ExtensionOrigin {
+  return {
+    bundled: true,
+    migrateFrom: manifest.migrationSource ? [manifest.migrationSource] : [],
+  };
+}
+
+/**
+ * Updates installed bundled extensions from this Worker's copies. Their
+ * private data folder is untouched by addExtension. A first-time install is
+ * a person's explicit action and is not done here.
+ */
+export function syncBundledExtensions(builtinKinds: string[] = []): string[] {
+  const changes: string[] = [];
+  const installed = new Map(
+    readRegistry().map((extension) => [extension.id, extension]),
+  );
+  for (const bundled of bundledExtensions()) {
+    const previous = installed.get(bundled.manifest.id);
+    if (!previous) continue;
+    if (
+      !previous.bundled &&
+      !legacyBundledOrigin(bundled.manifest).migrateFrom?.some(
+        (source) => JSON.stringify(source) === JSON.stringify(previous.source),
+      )
+    )
+      continue;
+    const change = addExtension(
+      bundled.dir,
+      builtinKinds,
+      legacyBundledOrigin(bundled.manifest),
+    );
+    if (change.action !== "unchanged") changes.push(change.action);
+  }
+  return changes;
+}
+
+/** Installs one bundled extension at the owner's explicit request. */
+export function installBundledExtension(
+  id: string,
+  builtinKinds: string[] = [],
+): ExtensionChange {
+  const bundled = bundledExtensions().find((item) => item.manifest.id === id);
+  if (!bundled)
+    throw new ExtensionError(
+      "not_found",
+      `this Worker does not include an extension named ${id}`,
+    );
+  return addExtension(
+    bundled.dir,
+    builtinKinds,
+    legacyBundledOrigin(bundled.manifest),
+  );
 }
 
 /**

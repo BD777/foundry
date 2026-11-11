@@ -9,36 +9,76 @@
  */
 
 import type {
+  ConnectorConfiguration,
   ConnectorDescriptor,
   ConnectorExtensionSource,
+  ConnectorRequirementsCheck,
+  ConnectorSourceAccessCheck,
   DeviceConnectorState,
+  ConnectorExtensionError,
 } from "./contract.gen.js";
 export type {
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationScope,
   ConnectorAuthorizationState,
+  ConnectorConfiguration,
   ConnectorDescriptor,
   ConnectorExtensionRepository,
   ConnectorExtensionSource,
   ConnectorField,
   ConnectorHolding,
+  ConnectorExtensionError,
   ConnectorModelAccess,
   ConnectorOption,
+  ConnectorPackage,
+  ConnectorPackageDevice,
+  ConnectorPackageSkills,
+  ConnectorPackageTool,
+  ConnectorPackageUpstream,
+  ConnectorPackageView,
   ConnectorPermissions,
   ConnectorProvides,
   ConnectorRequirement,
   ConnectorScopeChange,
   ConnectorScopeSource,
+  ConnectorServerHeldSpec,
+  ConnectorServerHeldAccess,
+  ConnectorServerHeldAccessBy,
+  ConnectorServerHeldAccessLevel,
+  ConnectorServerHeldAccessLevels,
+  ConnectorServerHeldFieldOptions,
+  ConnectorServerHeldInstance,
+  ConnectorServerHeldInstanceInput,
+  ConnectorServerHeldInstancesView,
+  ConnectorServerHeldDevice,
+  ConnectorServerHeldDeviceCheck,
+  ConnectorServerHeldNetwork,
+  ConnectorServerHeldNetworkPath,
+  ConnectorServerHeldOptionsExtract,
+  ConnectorServerHeldProbe,
+  ConnectorServerHeldProbeExtract,
+  ConnectorServerHeldProbeResult,
+  ConnectorServerHeldProbeValues,
+  ConnectorServerHeldRoute,
+  ConnectorServerHeldRoutesExtract,
+  ConnectorServerHeldSession,
+  ConnectorServerHeldStep,
+  ConnectorServerHeldUpstream,
+  ConnectorRepositoryAccess,
+  ConnectorRequirementsCheck,
   ConnectorSetup,
   ConnectorShowWhen,
   ConnectorSignIn,
   ConnectorSignInMethod,
   ConnectorSignInRepeat,
+  ConnectorSourceAccess,
+  ConnectorSourceAccessCheck,
   ConnectorTool,
   DeviceConnectorSessionCheck,
   DeviceConnectorState,
   DeviceConnectorStatus,
   DeviceConnectorUse,
+  SetConnectorPackageDevicesInput,
 } from "./contract.gen.js";
 
 export type ConnectorAuthorizationChallenge =
@@ -89,6 +129,8 @@ export interface DeviceConnectorDevice {
   extensionKinds?: string[];
   /** The extensions installed on the device, with their source and commits. */
   extensions?: ConnectorExtensionSource[];
+  /** Descriptors the server refused for an extension on this device. */
+  extensionErrors?: ConnectorExtensionError[];
   /**
    * Connector kinds being read on the device right now; their states are
    * the last readings until the read lands (the page polls meanwhile).
@@ -97,6 +139,27 @@ export interface DeviceConnectorDevice {
   /** Installs running on the device, with their latest progress. */
   progress?: ConnectorProgressPayload[];
   states: DeviceConnectorState[];
+}
+
+/** One device's explanation for a connector in the restricted group. */
+export interface ConnectorRestrictedDevice {
+  deviceId: string;
+  name: string;
+  online: boolean;
+  requirementsCheck?: ConnectorRequirementsCheck;
+  accessCheck?: ConnectorRestrictedAccessCheck;
+  /** The via connector's displayed name, when it is still known. */
+  viaLabel?: string;
+}
+
+export interface ConnectorRestrictedAccessCheck extends ConnectorSourceAccessCheck {
+  via: string;
+}
+
+/** A connector hidden from the main picker until one device can use it. */
+export interface ConnectorRestricted {
+  connector: ConnectorDescriptor;
+  devices: ConnectorRestrictedDevice[];
 }
 
 /** The device-held part of the Connectors page. */
@@ -151,12 +214,16 @@ export interface SetWorkspaceDeviceConnectorsInput {
 
 export type DeviceConnectorAction =
   | "status"
+  | "requirements"
+  | "repository_access"
   | "install"
+  | "configure"
   | "sign_in_begin"
   | "sign_in_poll"
   | "sign_in_dismiss"
   | "sign_in_input"
-  | "sign_out";
+  | "sign_out"
+  | "extension_request";
 
 /** connector_request: one action on a device-held connector. */
 export interface ConnectorRequestPayload {
@@ -167,10 +234,35 @@ export interface ConnectorRequestPayload {
   authorizationId?: string;
   authorizationRevision?: number;
   operationId?: string;
-  /** sign_in_begin: what the person chose (connector-specific, e.g. AWS method and Region). */
+  /** sign_in_begin: what the person chose (connector-specific, e.g. AWS method). */
   signInOptions?: Record<string, string>;
+  /** configure: non-secret profile settings the person changed. */
+  configuration?: ConnectorConfiguration;
   /** sign_in_input: what the person typed (an authorization code). */
   input?: string;
+  /** repository_access: the repository the provider connector should read. */
+  repository?: string;
+  /** extension_request: one upstream exchange for a server-held instance. */
+  extension?: ConnectorExtensionHTTPRequest;
+}
+
+/** One HTTP exchange a device performs for a server-held extension instance. */
+export interface ConnectorExtensionHTTPRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  /** Base64-encoded request body. */
+  body?: string;
+  timeoutSeconds: number;
+}
+
+/** What the device observed from that upstream exchange. */
+export interface ConnectorExtensionHTTPResponse {
+  status: number;
+  headers: Record<string, string[]>;
+  /** Base64-encoded response body. */
+  body: string;
+  error?: string;
 }
 
 /** connector_reply */
@@ -180,6 +272,10 @@ export interface ConnectorReplyPayload {
   /** deviceId and expiringSince are the server's to fill. */
   state?: DeviceConnectorState;
   signIn?: DeviceConnectorSignIn;
+  /** requirements/repository_access: a non-secret visibility result. */
+  requirementsCheck?: ConnectorRequirementsCheck;
+  sourceAccessCheck?: ConnectorSourceAccessCheck;
+  extension?: ConnectorExtensionHTTPResponse;
   error?: string;
 }
 
@@ -205,4 +301,5 @@ export interface ConnectorProgressPayload {
  */
 export interface ConnectorCatalogView {
   connectors: ConnectorDescriptor[];
+  restrictedConnectors?: ConnectorRestricted[];
 }

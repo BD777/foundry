@@ -22,6 +22,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -122,6 +123,13 @@ func (g *AppStoreConnectGateway) UseNativeWork(work gateway.NativeWork) {
 	g.pipeline.Work = work
 }
 
+// UsePermission makes every gateway call re-read the assistant package and
+// route risk writes through confirmation.
+func (g *AppStoreConnectGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
+	g.pipeline.Permission = st
+	g.pipeline.Confirm = confirm
+}
+
 func appStoreConnectHandleKind(handle string) string {
 	if strings.HasPrefix(handle, appStoreConnectHandlePrefix) {
 		return store.FeishuHandleUser
@@ -161,7 +169,7 @@ func (g *AppStoreConnectGateway) bindingFor(ctx context.Context, session store.A
 	if err != nil || deviceOwner != owner {
 		return none, ErrAppStoreConnectAccess
 	}
-	policy, err := externalaccounts.ResolvePolicy(ctx, g.store, session.WorkspaceID, owner)
+	policy, err := externalaccounts.ResolvePolicy(ctx, g.store, session)
 	if err != nil {
 		return none, err
 	}
@@ -195,6 +203,9 @@ func (g *AppStoreConnectGateway) bindingFor(ctx context.Context, session store.A
 	}
 	if len(binding.AppIDs) == 0 {
 		return none, &AppStoreConnectRefusal{Message: "this session has no App Store Connect apps bound to its workspace; the key owner selects apps in Connectors → this workspace → App Store Connect", Reason: gateway.ReasonNoGrant}
+	}
+	if !policy.Write(accountID) {
+		binding.Access = appStoreConnectReadLevel
 	}
 	return binding, nil
 }
@@ -305,6 +316,9 @@ func (g *AppStoreConnectGateway) Classify(r *http.Request, lease *gateway.Lease)
 		need.Level = appStoreConnectReadLevel
 	} else {
 		need.Level = appStoreConnectCommerceLevel
+		need.Write = true
+		need.Risk = "appstoreconnect_change"
+		need.RiskSummary = "The assistant wants to change App Store Connect (" + call.Method + " " + appStoreConnectAuditPath(call.Path) + ")."
 	}
 	return need, nil
 }
@@ -582,6 +596,12 @@ func (g *AppStoreConnectGateway) Refuse(w http.ResponseWriter, r *http.Request, 
 		refusal.Message = "that App is not bound to this workspace; the key owner selects apps in Connectors → this workspace → App Store Connect"
 	case gateway.ReasonAccessLevel:
 		refusal.Message = fmt.Sprintf("%s %s needs the %s access level; this binding has %s", r.Method, appStoreConnectAuditPath(r.URL.Path), denial.Needed, denial.Current)
+	case gateway.ReasonConnectorOff:
+		refusal.Message = "the person did not give the assistant access to this App Store Connect key; they change that in Assistant settings → Connectors"
+	case gateway.ReasonConnectorRead:
+		refusal.Message = "the assistant has read-only access to this App Store Connect key; this change needs write access in Assistant settings → Connectors"
+	case gateway.ReasonNeedsConfirmation:
+		refusal.Message = denial.Summary + " Accept proposal " + denial.ProposalID + " before repeating this exact request."
 	case gateway.ReasonRateLimited:
 		status = http.StatusTooManyRequests
 		w.Header().Set("Retry-After", strconv.Itoa(int(denial.Wait/time.Second)+1))

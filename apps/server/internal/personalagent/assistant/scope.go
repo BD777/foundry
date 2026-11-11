@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -42,8 +43,13 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 	if err != nil {
 		return Scope{}, err
 	}
+	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		return Scope{}, err
+	}
+	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
 	for workspaceID, role := range roles {
-		scope.owner[workspaceID] = role == store.WorkspaceRoleOwner
+		scope.owner[workspaceID] = access.WorkspaceAllowed(workspaceID) && role == store.WorkspaceRoleOwner
 	}
 	devices, err := s.store.DevicesOwnedBy(ctx, agent.UserID)
 	if err != nil {

@@ -135,6 +135,9 @@ test("output speed uses generation time and hides noisy samples", async () => {
   assert.equal(formatOutputSpeed(100, 10_000), "10 tok/s");
   assert.equal(formatOutputSpeed(249, 25_000), "10 tok/s");
   assert.equal(formatOutputSpeed(85, 4000, true), "≈21 tok/s");
+  assert.equal(formatOutputSpeed(1_000, 500, true), undefined);
+  assert.equal(formatOutputSpeed(2_000, 1_000, true), undefined);
+  assert.equal(formatOutputSpeed(1_000, 1_000, true), "≈1,000 tok/s");
   assert.equal(formatOutputSpeed(19, 4000), undefined);
   assert.equal(formatOutputSpeed(85, 199), undefined);
   assert.equal(formatOutputSpeed(85, 0), undefined);
@@ -171,6 +174,24 @@ test("a turn's displayed output speed follows the same noise rules", async () =>
   assert.match(
     turnUsageSummary({ ...timed, timingEstimated: true }),
     /≈42 tok\/s$/,
+  );
+  assert.doesNotMatch(
+    turnUsageSummary({
+      ...timed,
+      outputTokens: 1_000,
+      modelMs: 500,
+      timingEstimated: true,
+    }),
+    /tok\/s/,
+  );
+  assert.doesNotMatch(
+    turnUsageSummary({
+      ...timed,
+      outputTokens: 2_000,
+      modelMs: 1_000,
+      timingEstimated: true,
+    }),
+    /tok\/s/,
   );
 });
 

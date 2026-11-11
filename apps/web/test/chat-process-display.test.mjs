@@ -63,6 +63,21 @@ test("coalesces tool lifecycle pairs into result language for the viewer", () =>
   });
 });
 
+test("one-line failures keep their full text available to expand", () => {
+  const detail =
+    "API Error: Request rejected (429) · upstream account quota usage limit has been reached; an account becomes available again at 07:42 UTC";
+  const rows = processDisplayRows([{ title: "Session failed", detail }], false);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].snippet, detail);
+  assert.equal(rows[0].detail, detail);
+
+  const usedTools = processDisplayRows(
+    [{ title: "Using tool", detail: "Bash\n\n```json\n{}\n```" }],
+    false,
+  );
+  assert.equal(usedTools[0].detail, "");
+});
+
 test("keeps repeated completed actions as separate rows", () => {
   const items = [
     {

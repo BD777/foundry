@@ -148,6 +148,8 @@ export const skills: Translation<typeof en> = {
       defaultBranchVersion: "默认分支 @ {{version}}",
       paused: "已暂停更新",
       from: "来自 {{label}}",
+      connector: "属于 {{name}} 连接器",
+      linkedSkill: "由此连接器打开",
       updatedTo: "已更新到 {{tag}}",
       rolledBackTo: "已回退到 {{tag}}，自动更新已暂停",
       changed_one: "改动 {{count}} 个",

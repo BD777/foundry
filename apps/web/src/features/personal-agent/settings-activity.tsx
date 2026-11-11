@@ -10,6 +10,7 @@ import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { Skeleton } from "../../components/ui/loading";
 import { PaMuted } from "./pa-muted";
 import { DividedList } from "../../components/ui/divided-list";
+import { SettingsGroup } from "./settings-field";
 
 type OutcomeKey = "auto" | "confirmed" | "proposed" | "refused" | "failed";
 
@@ -81,17 +82,23 @@ export function ActivitySection({
 
   if (error)
     return (
-      <Alert tone="error" title={t("settings.activity.loadFailed")}>
-        <p>{error}</p>
-        <Button onClick={() => void read()} size="sm">
-          {t("retry")}
-        </Button>
-      </Alert>
+      <SettingsGroup title={t("settings.activity.title")}>
+        <Alert tone="error" title={t("settings.activity.loadFailed")}>
+          <p>{error}</p>
+          <Button onClick={() => void read()} size="sm">
+            {t("retry")}
+          </Button>
+        </Alert>
+      </SettingsGroup>
     );
   if (!records)
-    return <Skeleton label={t("loading")} rows={4} variant="rows" />;
+    return (
+      <SettingsGroup title={t("settings.activity.title")}>
+        <Skeleton label={t("loading")} rows={4} variant="rows" />
+      </SettingsGroup>
+    );
   return (
-    <>
+    <SettingsGroup title={t("settings.activity.title")}>
       <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
         {t("settings.activity.intro")}
       </PaMuted>
@@ -131,6 +138,6 @@ export function ActivitySection({
       ) : (
         <PaMuted>{t("settings.activity.empty")}</PaMuted>
       )}
-    </>
+    </SettingsGroup>
   );
 }

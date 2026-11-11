@@ -1,6 +1,6 @@
 import type { ToastTone } from "../../components/ui/toast";
 import { ToastFeedback } from "../../components/ui/toast";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
@@ -30,15 +30,25 @@ import {
 } from "./connection-devices";
 import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
+import { useRequestedProvider } from "./use-requested-provider";
+import { useProfileRequests } from "./use-profile-requests";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 import { ownedDeviceCandidates } from "../../lib/devices";
 import { SubscriptionsSection } from "./subscriptions-section";
 import { EnvironmentProviders } from "./device-providers";
 import type { NativeRuntime } from "./device-accounts";
-import { ProviderFilters, type RuntimeFilter } from "./provider-filters";
+import {
+  filterConnections,
+  ProviderFilters,
+  runtimesFor,
+  type RuntimeFilter,
+} from "./provider-filters";
 import type { ProviderTab } from "../../lib/provider-tabs";
 import { EndpointsSection, ProviderTabsControl } from "./provider-sections";
+import { ModelNotesSection, noteKindsForTab } from "./model-notes";
+import { ModelPoolsSection } from "./model-pools";
+import { GlobalExecutionDefault } from "./global-execution-default";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -82,24 +92,17 @@ export function ProfilesFeature({
   const shownDevices = deviceFilter
     ? ownDevices.filter((device) => device.id === deviceFilter)
     : ownDevices;
-  const runtimes: NativeRuntime[] =
-    runtimeFilter === "all" ? ["claude", "codex"] : [runtimeFilter];
+  const runtimes = runtimesFor(runtimeFilter);
   const shownProfiles = agentProfiles.filter((row) =>
     runtimes.includes(row.runtime as NativeRuntime),
   );
   const refresh = () => Promise.resolve(onEvent({ type: "profiles.changed" }));
   const connections = profiles.filter(isModelConnection);
-  const shownConnections = connections.filter(
-    (profile) =>
-      runtimes.includes(profile.runtime as NativeRuntime) &&
-      (!deviceFilter ||
-        deviceProfiles.some(
-          (row) =>
-            row.deviceId === deviceFilter &&
-            row.profileId === profile.id &&
-            row.enabled,
-        )),
-  );
+  const shownConnections = filterConnections(connections, {
+    runtimes,
+    deviceId: deviceFilter,
+    deviceProfiles,
+  });
   const state = useProfilesState(connections);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,6 +115,15 @@ export function ProfilesFeature({
   const catalogDevice = catalogDeviceId
     ? onlineDevices.find((device) => device.id === catalogDeviceId)
     : onlineDevices[0];
+  const { request, change } = useProfileRequests({
+    notify: (message, tone) =>
+      void onEvent({
+        type: "notice.requested",
+        message,
+        ...(tone ? { tone } : {}),
+      }),
+    changed: () => onEvent({ type: "profiles.changed" }),
+  });
   const models = useModelCatalog({
     deviceId: catalogDevice?.id,
     draft: state.draft,
@@ -119,34 +131,6 @@ export function ProfilesFeature({
       request(() => listAgentModels(profile, { reuse })),
     updateDraft: state.updateDraft,
   });
-  // A server request the page also hears about when it fails.
-  async function request<T>(send: () => Promise<T>): Promise<T> {
-    try {
-      return await send();
-    } catch (error) {
-      void onEvent({
-        tone: "error",
-        type: "notice.requested",
-        message: t("page.saveFailed"),
-      });
-      throw error;
-    }
-  }
-  // A change is shown once the page has read it, then the page says so.
-  function change(
-    send: () => Promise<ProfileDefinition>,
-    notice: (label: string) => string,
-  ): Promise<ProfileDefinition> {
-    return request(async () => {
-      const profile = await send();
-      await onEvent({ type: "profiles.changed" });
-      void onEvent({
-        type: "notice.requested",
-        message: notice(profile.label),
-      });
-      return profile;
-    });
-  }
   async function run(action: () => Promise<unknown>) {
     setSaving(true);
     setError("");
@@ -167,20 +151,20 @@ export function ProfilesFeature({
     models.reset();
     setModalOpen(true);
   }
-  // A link to one provider (?provider=<id>, e.g. from a device's promoted
-  // provider) opens its editor once the list has it. The URL is read once.
-  const requestedProfile = useRef(readPageQuery("provider"));
-  useEffect(() => {
-    const profileId = requestedProfile.current;
-    if (!profileId || !connections.some((row) => row.id === profileId)) return;
-    requestedProfile.current = "";
-    replacePageQuery({ provider: "" });
+  useRequestedProvider(connections, (profileId) => {
     onTabChange("endpoints");
     open(profileId);
   });
   return (
     <PageSurface variant="profiles">
       <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <GlobalExecutionDefault
+        profiles={agentProfiles}
+        servers={connections}
+        onNotice={(message, tone) =>
+          void onEvent({ type: "notice.requested", message, tone })
+        }
+      />
       <ProviderTabsControl tab={tab} onTabChange={onTabChange} />
       <ProviderFilters
         devices={ownDevices}
@@ -221,6 +205,21 @@ export function ProfilesFeature({
           onRefresh={refresh}
         />
       )}
+      <ModelPoolsSection
+        agentProfiles={shownProfiles}
+        kinds={noteKindsForTab(tab)}
+        onNotice={(message, tone) =>
+          void onEvent({ type: "notice.requested", message, tone })
+        }
+        profiles={shownConnections}
+        runtimes={runtimes}
+      />
+      <ModelNotesSection
+        agentProfiles={shownProfiles}
+        kinds={noteKindsForTab(tab)}
+        profiles={shownConnections}
+        runtimes={runtimes}
+      />
       <Dialog
         busy={saving || models.busy}
         description={t("page.modalDescription")}

@@ -877,11 +877,17 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 }
 
 func TestLifecycleMessagesAboutAnEarlierInputAreStale(t *testing.T) {
-	session := store.AgentSession{ID: "sess_a", Input: store.SessionInput{ID: "in_2"}}
-	if !staleSessionInput(session, "in_1") {
+	session := store.AgentSession{ID: "sess_a", DispatchID: "dispatch_2", Input: store.SessionInput{ID: "in_2"}}
+	if !staleSessionInput(session, "in_1", "") {
 		t.Fatal("a completion for an earlier input must not settle the current one")
 	}
-	if staleSessionInput(session, "in_2") || staleSessionInput(session, "") {
+	if staleSessionInput(session, "in_2", "") || staleSessionInput(session, "", "") {
 		t.Fatal("the current input, or a message without an input id, is not stale")
+	}
+	if !staleSessionInput(session, "in_2", "dispatch_1") {
+		t.Fatal("a completion for an earlier retry dispatch must not settle the current one")
+	}
+	if staleSessionInput(session, "in_2", "dispatch_2") {
+		t.Fatal("the current retry dispatch was treated as stale")
 	}
 }

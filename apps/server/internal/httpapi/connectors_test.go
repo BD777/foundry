@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,17 +35,34 @@ type fakeConnectorWorker struct {
 	writeMu sync.Mutex
 	// AWS browser sign-in: what the page chose and typed, and whether the
 	// device signed in.
-	awsOptions  map[string]string
-	awsInput    string
-	awsSignedIn bool
+	awsOptions       map[string]string
+	awsInput         string
+	awsSignedIn      bool
+	awsConfiguration *store.ConnectorConfiguration
 	// Extension requests the device received, and the error it answers
 	// installs with when set.
-	extensionRequests []store.ExtensionRequestPayload
-	extensionError    string
+	extensionRequests  []store.ExtensionRequestPayload
+	extensionHTTP      []store.ConnectorExtensionHTTPRequest
+	extensionError     string
+	deviceID           string
+	deviceLabel        string
+	reportedConnectors []any
 }
 
 func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	w.t.Helper()
+	deviceID := w.deviceID
+	if deviceID == "" {
+		deviceID = "dev_alice"
+	}
+	deviceLabel := w.deviceLabel
+	if deviceLabel == "" {
+		deviceLabel = "alice-mac"
+	}
+	connectors := w.reportedConnectors
+	if connectors == nil {
+		connectors = []any{corpcliExtension()}
+	}
 	headers := http.Header{}
 	headers.Set(deviceCredentialHeader, credential)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(serverURL, "http")+"/api/daemon/ws", headers)
@@ -52,7 +72,7 @@ func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	w.conn = conn
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"device":    map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online", "connectors": []any{corpcliExtension()}},
+		"device":    map[string]any{"id": deviceID, "label": deviceLabel, "status": "connected", "lastSeenLabel": "online", "connectors": connectors},
 		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
@@ -68,6 +88,40 @@ func corpcliExtension() map[string]any {
 		"isolationEnv":        map[string]any{"CORPCLI_PROFILE": "foundry-no-login"},
 		"signIn":              map[string]any{"methods": []any{map[string]any{"id": "device", "kind": "guided", "label": "Scan a code"}}},
 		"authorizationGroups": []any{map[string]any{"id": "feishu_web_session", "revision": 1, "label": "Web session", "capabilities": []any{"web"}, "credential": "native_web_session"}},
+	}
+}
+
+func acmeServerHeldExtension() map[string]any {
+	return map[string]any{
+		"kind": "acme-api", "label": "Acme API", "holding": "server_held", "adapter": "extension:acme",
+		"extension": map[string]any{"id": "acme", "name": "Acme tools", "version": "1.0.0"},
+		"tool":      map[string]any{"command": "acme"},
+		"serverHeld": map[string]any{
+			"instances": "many",
+			"fields": []any{
+				map[string]any{"id": "baseUrl", "type": "url", "required": true, "label": "Acme address"},
+				map[string]any{"id": "readToken", "type": "secret", "required": true, "label": "Read token"},
+				map[string]any{"id": "account", "type": "select", "required": false, "label": "Account", "optionsFrom": "probe:accounts"},
+			},
+			"steps": []any{[]any{"baseUrl", "readToken"}, []any{"account"}},
+			"probe": []any{
+				map[string]any{
+					"id": "accounts", "method": "GET", "path": "/agent/v1/accounts",
+					"extract": map[string]any{"options": map[string]any{"items": "/accounts", "value": "/id", "label": "/name"}},
+				},
+				map[string]any{
+					"id": "routes", "method": "GET", "path": "/agent/v1/",
+					"extract": map[string]any{"routes": map[string]any{"items": "/routes", "method": "/method", "path": "/path", "access": "/access"}},
+				},
+			},
+			"upstream": map[string]any{
+				"baseField": "baseUrl", "pathPrefix": "/agent/v1",
+				"headers": map[string]any{"Authorization": "Bearer {secret:readToken}"},
+			},
+			"access":  map[string]any{"from": "probe:routes", "default": "deny", "allow": []any{"read"}},
+			"session": map[string]any{"env": map[string]any{"ACME_BASE": "{gatewayBase}", "ACME_TOKEN": "{standIn}"}},
+			"network": map[string]any{"holdings": []any{"server", "device"}, "publicOnly": true},
+		},
 	}
 }
 
@@ -120,8 +174,59 @@ func (w *fakeConnectorWorker) serve() {
 		w.actions = append(w.actions, request.Action)
 		reply := store.ConnectorReplyPayload{}
 		switch {
+		case request.Action == "extension_request" && request.Extension != nil:
+			w.extensionHTTP = append(w.extensionHTTP, *request.Extension)
+			body, _ := base64.StdEncoding.DecodeString(request.Extension.Body)
+			httpRequest, err := http.NewRequest(request.Extension.Method, request.Extension.URL, strings.NewReader(string(body)))
+			if err == nil {
+				for name, value := range request.Extension.Headers {
+					httpRequest.Header.Set(name, value)
+				}
+				client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+					return http.ErrUseLastResponse
+				}}
+				response, requestErr := client.Do(httpRequest)
+				if requestErr != nil {
+					reply.Error = requestErr.Error()
+				} else {
+					payload, _ := io.ReadAll(response.Body)
+					_ = response.Body.Close()
+					headers := map[string][]string{}
+					for name, values := range response.Header {
+						headers[name] = values
+					}
+					reply.Extension = &store.ConnectorExtensionHTTPResponse{
+						Status: response.StatusCode, Headers: headers,
+						Body: base64.StdEncoding.EncodeToString(payload),
+					}
+				}
+			} else {
+				reply.Error = err.Error()
+			}
+		case request.Action == "requirements":
+			reply.RequirementsCheck = &store.ConnectorRequirementsCheck{
+				OK: true, CheckedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+		case request.Action == "repository_access":
+			reply.SourceAccessCheck = &store.ConnectorSourceAccessCheck{
+				Status: "ok", Identity: "reader", CheckedAt: time.Now().UTC().Format(time.RFC3339),
+			}
 		case request.Connector.Kind == "aws" && request.Action == "status" && w.awsOptions != nil:
-			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut}
+			configuration := w.awsConfiguration
+			if configuration == nil {
+				configuration = &store.ConnectorConfiguration{Region: "us-east-1"}
+			}
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut, Configuration: configuration}
+			if w.awsSignedIn {
+				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
+			}
+		case request.Connector.Kind == "aws" && request.Action == "configure":
+			w.awsConfiguration = request.Configuration
+			configuration := w.awsConfiguration
+			if configuration == nil {
+				configuration = &store.ConnectorConfiguration{Region: "us-east-1"}
+			}
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut, Configuration: configuration}
 			if w.awsSignedIn {
 				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
 			}
@@ -359,6 +464,62 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/check", "", http.StatusConflict)
 }
 
+func TestServerHeldExtensionDeviceNetworkProbesThroughTheDaemon(t *testing.T) {
+	f := newIsolationFixture(t)
+	var upstreamCalls []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls = append(upstreamCalls, r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer fixture-secret" {
+			http.Error(w, "missing token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/openlark/agent/v1/accounts":
+			_, _ = w.Write([]byte(`{"accounts":[{"id":"42","name":"Ada"}]}`))
+		case "/openlark/agent/v1/":
+			_, _ = w.Write([]byte(`{"routes":[{"method":"GET","path":"/agent/v1/read","access":"read"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	worker := &fakeConnectorWorker{
+		t: t, reportedConnectors: []any{acmeServerHeldExtension()},
+	}
+	worker.connect(httpServer.URL, f.aliceDevice)
+	defer worker.disconnect()
+	waitFor(t, "the extension device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+
+	body := `{"label":"Intranet OpenLark","network":"device","deviceId":"dev_alice","fields":{` +
+		`"baseUrl":"` + upstream.URL + `/openlark","readToken":"fixture-secret","account":"42"}}`
+	probe := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/connectors/extensions/acme-api/instances/probe", body))
+	expectStatus(t, probe, http.StatusOK, "probe through daemon")
+	var result store.ConnectorServerHeldProbeResult
+	if err := json.Unmarshal(probe.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Network != "device" || result.ProbeDeviceID != "dev_alice" || len(result.AvailableDevices) != 1 {
+		t.Fatalf("probe result = %+v", result)
+	}
+	if len(worker.extensionHTTP) < 2 {
+		t.Fatalf("device requests = %+v", worker.extensionHTTP)
+	}
+	for _, call := range worker.extensionHTTP {
+		if !strings.HasPrefix(call.URL, upstream.URL+"/openlark/agent/v1/") {
+			t.Fatalf("device URL = %s", call.URL)
+		}
+		if call.Headers["Authorization"] != "Bearer fixture-secret" {
+			t.Fatalf("device headers = %#v", call.Headers)
+		}
+	}
+	if strings.Join(upstreamCalls, ",") != "/openlark/agent/v1/accounts,/openlark/agent/v1/" {
+		t.Fatalf("upstream calls = %v", upstreamCalls)
+	}
+}
+
 func TestWorkspaceConnectorsExcludeUnrelatedOwnedDevices(t *testing.T) {
 	f := newIsolationFixture(t)
 	pairOverHTTP(t, f.handler, f.alice, "alice-other-machine", "dev_alice_other")
@@ -498,7 +659,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 		}
 	}
 
-	begin := `{"requestId":"aws-1","signInOptions":{"method":"console","region":"eu-west-1"}}`
+	begin := `{"requestId":"aws-1","signInOptions":{"method":"console"}}`
 	var signIn store.DeviceConnectorSignIn
 	waitFor(t, "the AWS sign-in page", func() bool {
 		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/aws/sign-in", begin, http.StatusAccepted), &signIn)
@@ -510,7 +671,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	worker.mu.Lock()
 	options := worker.awsOptions
 	worker.mu.Unlock()
-	if options["method"] != "console" || options["region"] != "eu-west-1" {
+	if options["method"] != "console" || options["region"] != "" {
 		t.Fatalf("options on the device = %+v", options)
 	}
 	codePath := "/api/devices/dev_alice/connectors/aws/sign-in/code"
@@ -533,6 +694,14 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	if signIn.State == nil || !signIn.State.SignedIn || signIn.State.Identity != "arn:aws:iam::123456789012:user/me" {
 		t.Fatalf("completed = %+v", signIn)
 	}
+
+	// The default Region is a profile setting after sign-in, not a login scope.
+	var configured store.DeviceConnectorState
+	_ = json.Unmarshal(call(f.alice, http.MethodPut, "/api/devices/dev_alice/connectors/aws/configuration", `{"configuration":{"region":"ap-south-1"}}`, http.StatusOK), &configured)
+	if configured.Configuration == nil || configured.Configuration.Region != "ap-south-1" {
+		t.Fatalf("configured AWS state = %+v", configured)
+	}
+	call(f.bob, http.MethodPut, "/api/devices/dev_alice/connectors/aws/configuration", `{"configuration":{"region":"eu-west-1"}}`, http.StatusNotFound)
 }
 
 // A running install's progress, as the device reports it, is listed with the
@@ -581,6 +750,55 @@ func reportCorpExtension(t *testing.T, f isolationFixture) {
 	body["device"].(map[string]any)["connectors"] = []any{extension}
 	raw, _ := json.Marshal(body)
 	registerDeviceForTest(t, f.server, string(raw))
+}
+
+// A refused extension descriptor is kept with the device and shown to its
+// owner instead of disappearing silently.
+func TestRefusedExtensionDescriptorIsSavedWithItsDevice(t *testing.T) {
+	f := newIsolationFixture(t)
+	rawManifest, err := os.ReadFile("../../../../extensions/open-lark/foundry-extension.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Connectors []map[string]any `json:"connectors"`
+	}
+	if err := json.Unmarshal(rawManifest, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	descriptor := manifest.Connectors[0]
+	descriptor["holding"] = store.ConnectorServerHeld
+	descriptor["adapter"] = "extension:open-lark"
+	descriptor["extension"] = map[string]any{
+		"id": "open-lark", "name": "OpenLark", "version": "1.0.0",
+	}
+	serverHeld := descriptor["serverHeld"].(map[string]any)
+	upstream := serverHeld["upstream"].(map[string]any)
+	headers := upstream["headers"].(map[string]any)
+	headers["x-open-lark-account"] = headers["X-Open-Lark-Account"]
+	delete(headers, "X-Open-Lark-Account")
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(registrationBody("dev_alice", "ws_alice")), &body); err != nil {
+		t.Fatal(err)
+	}
+	body["device"].(map[string]any)["connectors"] = []any{descriptor}
+	raw, _ := json.Marshal(body)
+	registerDeviceForTest(t, f.server, string(raw))
+
+	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/connectors/devices", ""))
+	expectStatus(t, recorder, http.StatusOK, "GET /api/connectors/devices")
+	var view store.DeviceConnectorsView
+	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Devices) != 1 || len(view.Devices[0].ExtensionErrors) != 1 {
+		t.Fatalf("view = %+v", view)
+	}
+	refused := view.Devices[0].ExtensionErrors[0]
+	if refused.ExtensionID != "open-lark" || refused.Kind != "openlark" || !strings.Contains(refused.Reason, "canonical form") {
+		t.Fatalf("refused = %+v", refused)
+	}
 }
 
 // An extension installs on the owner's own device from a git folder the

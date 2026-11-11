@@ -54,7 +54,7 @@ func TestDefaultSkillsFollowTheWorkspaceOwner(t *testing.T) {
 	for _, ref := range refs {
 		got[ref.Name] = ref.SkillID
 	}
-	if len(refs) != 3 || got["review"] != ownReview.ID || got["notes"] != notes.ID || got["foundry"] != "builtin-codex-foundry" {
+	if len(refs) != 4 || got["foundry-orchestration"] != "builtin-codex-foundry-orchestration" || got["review"] != ownReview.ID || got["notes"] != notes.ID || got["foundry"] != "builtin-codex-foundry" {
 		t.Fatalf("alice's workspace gets %+v, want her own review plus default notes (and Foundry's built-in)", refs)
 	}
 

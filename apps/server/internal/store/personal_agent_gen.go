@@ -2,6 +2,21 @@
 
 package store
 
+import (
+	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
+)
+
+// ConnectorAccessLevel What one assistant may do through one connector account.
+type ConnectorAccessLevel = string
+
+// ConnectorAccountPermission One connector account's override in a permission package. An account with no entry uses the package default, write.
+type ConnectorAccountPermission struct {
+	AccountID string `json:"accountId"`
+
+	// Level What one assistant may do through one connector account.
+	Level ConnectorAccessLevel `json:"level"`
+}
+
 // ContextPatchReply defines model for ContextPatchReply.
 type ContextPatchReply struct {
 	OperationID string `json:"operationId"`
@@ -11,4 +26,64 @@ type ContextPatchReply struct {
 	State       string `json:"state"`
 	Error       string `json:"error,omitempty"`
 	Code        string `json:"code,omitempty"`
+}
+
+// PermissionDeviceResources What an assistant may lease directly; resources stay visible either way.
+type PermissionDeviceResources struct {
+	// DirectLeaseAllowed Device ids whose resources the assistant may lease itself.
+	DirectLeaseAllowed jsonempty.List[string] `json:"directLeaseAllowed"`
+}
+
+// PermissionListRule An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
+type PermissionListRule struct {
+	Include jsonempty.List[string] `json:"include"`
+	Exclude jsonempty.List[string] `json:"exclude"`
+}
+
+// PermissionPackage One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none.
+type PermissionPackage struct {
+	ID string `json:"id"`
+
+	// Owner The Foundry user id the package belongs to.
+	Owner string `json:"owner"`
+
+	// Workspaces An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
+	Workspaces        PermissionListRule                         `json:"workspaces"`
+	ConnectorAccounts jsonempty.List[ConnectorAccountPermission] `json:"connectorAccounts"`
+
+	// DevicesResources What an assistant may lease directly; resources stay visible either way.
+	DevicesResources PermissionDeviceResources `json:"devicesResources"`
+
+	// Skills An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
+	Skills PermissionListRule `json:"skills"`
+}
+
+// PersonalAgentConnector One connector account as the Assistant settings list it.
+type PersonalAgentConnector struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Label      string `json:"label"`
+	Holding    string `json:"holding"`
+	DeviceID   string `json:"deviceId,omitempty"`
+	DeviceName string `json:"deviceName,omitempty"`
+	Status     string `json:"status,omitempty"`
+
+	// Level What one assistant may do through one connector account.
+	Level ConnectorAccessLevel `json:"level"`
+
+	// Enabled Kept for older clients; equivalent to level not being "off".
+	Enabled bool `json:"enabled"`
+}
+
+// PersonalAgentConnectorsView defines model for PersonalAgentConnectorsView.
+type PersonalAgentConnectorsView struct {
+	Connectors jsonempty.List[PersonalAgentConnector] `json:"connectors"`
+}
+
+// SetPersonalAgentConnectorLevelsInput Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package default, write.
+type SetPersonalAgentConnectorLevelsInput struct {
+	Levels []ConnectorAccountPermission `json:"levels,omitempty"`
+
+	// Disabled Legacy form of levels; these accounts become "off".
+	Disabled []string `json:"disabled,omitempty"`
 }

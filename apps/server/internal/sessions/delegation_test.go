@@ -196,6 +196,36 @@ func TestWaitingChildCountsMergedInboxDelivery(t *testing.T) {
 	}
 }
 
+func TestTurnInitiatorFallsBackToTheDeliveredInboxMessage(t *testing.T) {
+	f := newDelegationFixture(t)
+	ctx := context.Background()
+	parent := f.root("parent")
+	child := f.finish(f.child(parent, "child"))
+	child, err := f.db.SendAgentSessionInput(ctx, child.ID, store.SendAgentSessionInput{
+		Prompt: "turn with older attribution", InputID: "input_older_attribution",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+		SessionID: child.ID, InputID: "input_from_parent", SenderSessionID: parent.ID,
+		Prompt: "continue", RequestedDelivery: store.DeliveryTurnEnd,
+	}, store.SessionInboxRules{Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := f.db.ChangeSessionInboxItem(ctx, child.ID, item.Item.InputID, store.SessionInboxChange{
+		From: []string{store.InboxHeld}, State: store.InboxDelivered,
+		DeliveredAs: "turn", DeliveredInputID: child.Input.ID,
+	}); err != nil || !changed {
+		t.Fatalf("mark merged inbox item delivered: changed=%v err=%v", changed, err)
+	}
+	sender, err := f.service.TurnInitiator(ctx, child)
+	if err != nil || sender != parent.ID {
+		t.Fatalf("turn initiator = %q, %v; want %s", sender, err, parent.ID)
+	}
+}
+
 func TestWaitingChildCountsTransitiveChild(t *testing.T) {
 	f := newDelegationFixture(t)
 	parent := f.root("parent")

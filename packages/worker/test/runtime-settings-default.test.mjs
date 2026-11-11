@@ -1,7 +1,5 @@
-// DEV-084: without the owner's choice a device runs as many turns at once
-// as its hardware allows; the owner's choice wins and can be withdrawn.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,65 +11,106 @@ delete process.env.FOUNDRY_EXECUTOR_SETTINGS;
 test.after(() => rmSync(root, { recursive: true, force: true }));
 
 const {
-  hardwareMaxConcurrentTasks,
+  deviceHardware,
   normalizeAgentRuntimeSettings,
   readAgentRuntimeSettings,
   runtimeSettingsPath,
   writeAgentRuntimeSettings,
 } = await import("../dist/device/device.js");
+const { adaptiveConcurrencyFloor } =
+  await import("../dist/concurrency/admission-policy.js");
 
-const GiB = 1024 ** 3;
+const floor = () => adaptiveConcurrencyFloor(deviceHardware().cpus);
 
-test("one turn per 4 GiB and per 2 CPUs, the smaller, from 1 to 16", () => {
-  assert.equal(hardwareMaxConcurrentTasks(252 * GiB, 64), 16);
-  assert.equal(hardwareMaxConcurrentTasks(32 * GiB, 16), 8);
-  assert.equal(hardwareMaxConcurrentTasks(64 * GiB, 10), 5);
-  assert.equal(hardwareMaxConcurrentTasks(16 * GiB, 8), 4);
-  assert.equal(hardwareMaxConcurrentTasks(7.5 * GiB, 2), 1);
-  assert.equal(hardwareMaxConcurrentTasks(2 * GiB, 2), 1);
+test("the adaptive floor is four through 16 turns by CPU count", () => {
+  assert.equal(adaptiveConcurrencyFloor(64), 16);
+  assert.equal(adaptiveConcurrencyFloor(10), 16);
+  assert.equal(adaptiveConcurrencyFloor(8), 16);
+  assert.equal(adaptiveConcurrencyFloor(3), 6);
+  assert.equal(adaptiveConcurrencyFloor(2), 4);
+  assert.equal(adaptiveConcurrencyFloor(1), 4);
+  assert.equal(adaptiveConcurrencyFloor(undefined), 4);
 });
 
-test("no owner choice: the hardware default, and its source", () => {
+test("adaptive is the default and its legacy field carries the floor", () => {
   const settings = readAgentRuntimeSettings();
-  assert.equal(settings.maxConcurrentTasksSource, "hardware");
-  assert.equal(settings.maxConcurrentTasks, hardwareMaxConcurrentTasks());
-  assert.equal(
-    settings.hardwareMaxConcurrentTasks,
-    hardwareMaxConcurrentTasks(),
-  );
+  assert.equal(settings.mode, "adaptive");
+  assert.equal(settings.maxConcurrentTasks, floor());
+  assert.equal(settings.hardwareMaxConcurrentTasks, floor());
   assert.ok(settings.hardware.memoryGiB > 0 && settings.hardware.cpus > 0);
 });
 
-test("the owner's choice wins; saving 0 returns to the hardware default", () => {
+test("forced mode and adaptive mode both write the legacy field", () => {
   const owned = writeAgentRuntimeSettings({
     activeRuntimeTtlMs: 30 * 60_000,
-    maxConcurrentTasks: 10,
+    mode: "forced",
+    forcedLimit: 10,
   });
-  assert.equal(owned.maxConcurrentTasks, 10);
-  assert.equal(owned.maxConcurrentTasksSource, "owner");
-  assert.equal(readAgentRuntimeSettings().maxConcurrentTasks, 10);
-  const back = writeAgentRuntimeSettings({
+  assert.equal(owned.mode, "forced");
+  assert.equal(owned.forcedLimit, 10);
+  assert.deepEqual(
+    (({ maxConcurrentTasks, maxConcurrentTasksSource }) => ({
+      maxConcurrentTasks,
+      maxConcurrentTasksSource,
+    }))(JSON.parse(readFileSync(runtimeSettingsPath, "utf8"))),
+    { maxConcurrentTasks: 10, maxConcurrentTasksSource: "owner" },
+  );
+
+  const adaptive = writeAgentRuntimeSettings({
     activeRuntimeTtlMs: 30 * 60_000,
-    maxConcurrentTasks: 0,
+    mode: "adaptive",
   });
-  assert.equal(back.maxConcurrentTasksSource, "hardware");
-  assert.equal(back.maxConcurrentTasks, hardwareMaxConcurrentTasks());
-  assert.equal(back.activeRuntimeTtlMs, 30 * 60_000);
+  assert.equal(adaptive.mode, "adaptive");
+  assert.equal(adaptive.forcedLimit, undefined);
+  assert.equal(adaptive.maxConcurrentTasks, floor());
+  assert.equal(adaptive.activeRuntimeTtlMs, 30 * 60_000);
   const stored = JSON.parse(readFileSync(runtimeSettingsPath, "utf8"));
-  assert.equal("maxConcurrentTasks" in stored, false, "no owner value kept");
+  assert.equal(stored.maxConcurrentTasks, floor());
+  assert.equal(stored.maxConcurrentTasksSource, "hardware");
+  assert.equal(stored.mode, "adaptive");
 });
 
-test("settings handed to a sandboxed child keep their source", () => {
-  const hardware = normalizeAgentRuntimeSettings({
+test("an explicit old fixed setting migrates to the same forced limit", () => {
+  writeFileSync(
+    runtimeSettingsPath,
+    JSON.stringify({
+      activeRuntimeTtlMs: 60_000,
+      maxConcurrentTasks: 6,
+    }),
+  );
+  const migrated = readAgentRuntimeSettings();
+  assert.equal(migrated.mode, "forced");
+  assert.equal(migrated.forcedLimit, 6);
+  const stored = JSON.parse(readFileSync(runtimeSettingsPath, "utf8"));
+  assert.equal(stored.mode, "forced");
+  assert.equal(stored.forcedLimit, 6);
+  assert.equal(stored.maxConcurrentTasks, 6);
+});
+
+test("an old hardware-derived value becomes adaptive", () => {
+  writeFileSync(
+    runtimeSettingsPath,
+    JSON.stringify({
+      activeRuntimeTtlMs: 60_000,
+      maxConcurrentTasks: 7,
+      maxConcurrentTasksSource: "hardware",
+    }),
+  );
+  const migrated = readAgentRuntimeSettings();
+  assert.equal(migrated.mode, "adaptive");
+  assert.equal(migrated.maxConcurrentTasks, floor());
+  const stored = JSON.parse(readFileSync(runtimeSettingsPath, "utf8"));
+  assert.equal(stored.mode, "adaptive");
+  assert.equal(stored.maxConcurrentTasks, floor());
+});
+
+test("the environment limit remains forced", () => {
+  process.env.FOUNDRY_MAX_CONCURRENT_TASKS = "6";
+  const forced = normalizeAgentRuntimeSettings({
     activeRuntimeTtlMs: 60_000,
-    maxConcurrentTasks: 99,
-    maxConcurrentTasksSource: "hardware",
+    mode: "adaptive",
   });
-  assert.equal(hardware.maxConcurrentTasks, hardwareMaxConcurrentTasks());
-  const owner = normalizeAgentRuntimeSettings({
-    activeRuntimeTtlMs: 60_000,
-    maxConcurrentTasks: 99,
-  });
-  assert.equal(owner.maxConcurrentTasks, 16);
-  assert.equal(owner.maxConcurrentTasksSource, "owner");
+  delete process.env.FOUNDRY_MAX_CONCURRENT_TASKS;
+  assert.equal(forced.mode, "forced");
+  assert.equal(forced.forcedLimit, 6);
 });

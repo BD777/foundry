@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -71,6 +72,9 @@ func normalizeProfileInput(input *store.SaveProfileInput, addMissingVersion bool
 	if message := normalizeCodexTransport(input); message != "" {
 		return message
 	}
+	if message := normalizeModelPrices(input); message != "" {
+		return message
+	}
 	if input.AuthMode == "official" {
 		// An official login runs with the CLI's own windows.
 		input.BaseURL = ""
@@ -85,6 +89,34 @@ func normalizeProfileInput(input *store.SaveProfileInput, addMissingVersion bool
 		return endpointErrorMessages[code]
 	}
 	input.BaseURL = baseURL
+	return ""
+}
+
+// normalizeModelPrices trims model ids and rejects a price that could not be
+// charged. A missing map keeps the stored prices; an empty map clears them.
+func normalizeModelPrices(input *store.SaveProfileInput) string {
+	if input.ModelPrices == nil {
+		return ""
+	}
+	cleaned := make(map[string]store.ProfileModelPrice, len(input.ModelPrices))
+	for model, price := range input.ModelPrices {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return "modelPrices needs a model id for every price"
+		}
+		for _, value := range []float64{
+			price.InputPerMillion,
+			price.CacheReadPerMillion,
+			price.CacheWritePerMillion,
+			price.OutputPerMillion,
+		} {
+			if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+				return fmt.Sprintf("modelPrices: %s must have non-negative dollar prices", model)
+			}
+		}
+		cleaned[model] = price
+	}
+	input.ModelPrices = cleaned
 	return ""
 }
 
@@ -225,6 +257,9 @@ func (s *Server) updateServerProfile(ctx context.Context, id string, input store
 	}
 	if input.ContextWindows == nil {
 		input.ContextWindows = current.ContextWindows
+	}
+	if input.ModelPrices == nil {
+		input.ModelPrices = current.ModelPrices
 	}
 	if strings.TrimSpace(input.CodexTransport) == "" {
 		input.CodexTransport = current.CodexTransport
@@ -468,6 +503,7 @@ func profileSaveInput(profile store.ProfileDefinition) store.SaveProfileInput {
 		BaseURL:              profile.BaseURL,
 		Model:                profile.Model,
 		Models:               profile.Models,
+		ModelPrices:          profile.ModelPrices,
 		ContextWindows:       profile.ContextWindows,
 		PromptPrefix:         profile.PromptPrefix,
 		ClaudeEffort:         profile.ClaudeEffort,

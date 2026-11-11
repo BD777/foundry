@@ -134,7 +134,7 @@ test("a timeout retries once, then a visible reason and manual retry recover", a
   );
 });
 
-test("offline is distinguished from missing; missing is not retried automatically and copy translates", async () => {
+test("a missing file is a compact terminal placeholder with its path behind disclosure", async () => {
   let calls = 0;
   await mounted(
     () => {
@@ -142,19 +142,41 @@ test("offline is distinguished from missing; missing is not retried automaticall
       return Promise.resolve(new Response("missing", { status: 404 }));
     },
     async ({ container, i18n }) => {
-      assert.match(container.textContent, /not found/);
+      assert.match(container.textContent, /Original image deleted/);
+      assert.match(container.textContent, /shot\.png/);
+      assert.equal(
+        container.firstElementChild.getAttribute("data-image-state"),
+        "missing",
+      );
+      assert.equal(container.querySelector("button"), null);
+      assert.match(
+        container.querySelector("details").textContent,
+        /\/ws\/\.foundry\/attachments\/shot\.png/,
+      );
       await act(async () => i18n.changeLanguage("zh-CN"));
-      assert.match(container.textContent, /设备上未找到/);
-      assert.match(container.querySelector("button").textContent, /重试图片/);
+      assert.match(container.textContent, /原始图片已删除/);
       await wait();
       assert.equal(calls, 1);
     },
   );
+});
+
+test("an offline read stays retryable in a quiet status row", async () => {
   await mounted(
     () => Promise.resolve(new Response("offline", { status: 409 })),
     async ({ container }) => {
       await wait();
       assert.match(container.textContent, /device is offline/);
+      assert.match(container.textContent, /Image could not be loaded/);
+      assert.equal(
+        container.firstElementChild.getAttribute("data-image-state"),
+        "error",
+      );
+      assert.match(
+        container.querySelector("button").textContent,
+        /Retry image/,
+      );
+      assert.equal(container.querySelector("[data-tone=error]"), null);
     },
   );
 });
@@ -171,7 +193,7 @@ test("an export fallback never renders the loading placeholder", async () => {
       assert.match(container.textContent, /Screenshot/);
       assert.equal(
         container.firstElementChild.getAttribute("data-image-state"),
-        "error",
+        "missing",
       );
     },
   );
@@ -264,7 +286,7 @@ test("image reads allow private HTTP caching and keep a slow read alive until un
   await mounted(
     (_, options) => {
       modes.push(options.cache);
-      return Promise.resolve(new Response("missing", { status: 404 }));
+      return Promise.resolve(new Response("unavailable", { status: 400 }));
     },
     async ({ container }) => {
       await wait(30);

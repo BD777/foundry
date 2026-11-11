@@ -81,12 +81,36 @@ type DeviceConnectorDevice struct {
 	// Extensions are the extensions installed on the device: version,
 	// source and the commits it installed and sees upstream.
 	Extensions []ConnectorExtensionSource `json:"extensions,omitempty"`
+	// ExtensionErrors are descriptors the server refused, by extension and kind.
+	ExtensionErrors []ConnectorExtensionError `json:"extensionErrors,omitempty"`
 	// Checking: connector kinds being read on the device right now; their
 	// states are the last readings until the read lands.
 	Checking []string `json:"checking,omitempty"`
 	// Progress: installs running on the device, their latest report each.
 	Progress []ConnectorProgressPayload `json:"progress,omitempty"`
 	States   []DeviceConnectorState     `json:"states"`
+}
+
+// ConnectorRestrictedDevice is one device's evidence for a connector in the
+// restricted group. A nil check means the device has not answered yet.
+type ConnectorRestrictedDevice struct {
+	DeviceID          string                          `json:"deviceId"`
+	Name              string                          `json:"name"`
+	Online            bool                            `json:"online"`
+	RequirementsCheck *ConnectorRequirementsCheck     `json:"requirementsCheck,omitempty"`
+	AccessCheck       *ConnectorRestrictedAccessCheck `json:"accessCheck,omitempty"`
+	ViaLabel          string                          `json:"viaLabel,omitempty"`
+}
+
+type ConnectorRestrictedAccessCheck struct {
+	ConnectorSourceAccessCheck
+	Via string `json:"via"`
+}
+
+// ConnectorRestricted is a connector that no device can currently see.
+type ConnectorRestricted struct {
+	Connector ConnectorDescriptor         `json:"connector"`
+	Devices   []ConnectorRestrictedDevice `json:"devices"`
 }
 
 // DeviceConnectorsView is the device-held part of the Connectors page.
@@ -148,16 +172,44 @@ type ConnectorRequestPayload struct {
 	Fresh                 bool                `json:"fresh,omitempty"`
 	// SignInOptions: what the person chose for sign_in_begin (connector-specific).
 	SignInOptions map[string]string `json:"signInOptions,omitempty"`
+	// Configuration: non-secret profile settings a configure action changes.
+	Configuration *ConnectorConfiguration `json:"configuration,omitempty"`
 	// Input: what the person typed for sign_in_input (an authorization code).
 	Input string `json:"input,omitempty"`
+	// Repository: repository_access checks this source through the connector.
+	Repository string `json:"repository,omitempty"`
+	// Extension: extension_request is one upstream exchange for a server-held
+	// connector instance whose network path leaves through this device.
+	Extension *ConnectorExtensionHTTPRequest `json:"extension,omitempty"`
+}
+
+// ConnectorExtensionHTTPRequest is one HTTP exchange a device performs for a
+// server-held extension instance. Headers may contain the instance's rendered
+// upstream credential; they stay in process memory and are never logged.
+type ConnectorExtensionHTTPRequest struct {
+	Method         string            `json:"method"`
+	URL            string            `json:"url"`
+	Headers        map[string]string `json:"headers"`
+	Body           string            `json:"body,omitempty"`
+	TimeoutSeconds int               `json:"timeoutSeconds"`
+}
+
+// ConnectorExtensionHTTPResponse is what the device observed upstream.
+type ConnectorExtensionHTTPResponse struct {
+	Status  int                 `json:"status"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+	Error   string              `json:"error,omitempty"`
 }
 
 // ExtensionRequestPayload is extension_request: for the device's owner,
 // install or update an extension from a git folder, or remove one.
 type ExtensionRequestPayload struct {
-	Action      string                        `json:"action"`
-	Source      *ConnectorExtensionRepository `json:"source,omitempty"`
-	ExtensionID string                        `json:"extensionId,omitempty"`
+	Action             string                        `json:"action"`
+	BundledExtensionID string                        `json:"bundledExtensionId,omitempty"`
+	Source             *ConnectorExtensionRepository `json:"source,omitempty"`
+	ExtensionID        string                        `json:"extensionId,omitempty"`
+	AutoUpdate         bool                          `json:"autoUpdate"`
 }
 
 // InstalledExtension is what the device says it installed (no paths kept).
@@ -180,10 +232,34 @@ type ExtensionReplyPayload struct {
 
 // ConnectorReplyPayload is connector_reply.
 type ConnectorReplyPayload struct {
-	AuthorizationImage string                 `json:"authorizationImage,omitempty"`
-	State              *DeviceConnectorState  `json:"state,omitempty"`
-	SignIn             *DeviceConnectorSignIn `json:"signIn,omitempty"`
-	Error              string                 `json:"error,omitempty"`
+	AuthorizationImage string                          `json:"authorizationImage,omitempty"`
+	State              *DeviceConnectorState           `json:"state,omitempty"`
+	SignIn             *DeviceConnectorSignIn          `json:"signIn,omitempty"`
+	RequirementsCheck  *ConnectorRequirementsCheck     `json:"requirementsCheck,omitempty"`
+	SourceAccessCheck  *ConnectorSourceAccessCheck     `json:"sourceAccessCheck,omitempty"`
+	Extension          *ConnectorExtensionHTTPResponse `json:"extension,omitempty"`
+	Error              string                          `json:"error,omitempty"`
+}
+
+const (
+	ConnectorVisibilityRequirements = "requirements"
+	ConnectorVisibilityRepository   = "repository"
+)
+
+// ConnectorVisibilityCheck is the last non-secret visibility check the
+// server kept for one device. It is cached for a day and refreshed through
+// the device's connector runtime.
+type ConnectorVisibilityCheck struct {
+	DeviceID    string `json:"deviceId"`
+	Result      string `json:"result"`
+	Kind        string `json:"kind"`
+	Via         string `json:"via,omitempty"`
+	Repository  string `json:"repository,omitempty"`
+	Status      string `json:"status"`
+	Identity    string `json:"identity,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	Requirement string `json:"requirement,omitempty"`
+	CheckedAt   string `json:"checkedAt"`
 }
 
 // DeviceConnectorStore keeps what devices read of their device-held
@@ -202,10 +278,18 @@ type DeviceConnectorStore interface {
 	// DeviceExtensionConnectors lists, per device named, the connectors its
 	// extensions provide as its last registration reported them.
 	DeviceExtensionConnectors(ctx context.Context, deviceIDs []string) (map[string][]ConnectorDescriptor, error)
+	// SaveConnectorVisibilityCheck replaces one cached check.
+	SaveConnectorVisibilityCheck(ctx context.Context, check ConnectorVisibilityCheck) error
+	// ListConnectorVisibilityChecks lists cached checks for the devices named.
+	ListConnectorVisibilityChecks(ctx context.Context, deviceIDs []string) ([]ConnectorVisibilityCheck, error)
+	// DeleteConnectorVisibilityChecks drops cached checks for a device and,
+	// when non-empty, only those that used the connector kind via.
+	DeleteConnectorVisibilityChecks(ctx context.Context, deviceID, via string) error
 }
 
 // ConnectorCatalogView is GET /api/connectors: the built-in connectors and
 // those extensions on the caller's own devices provide.
 type ConnectorCatalogView struct {
-	Connectors []ConnectorDescriptor `json:"connectors"`
+	Connectors           []ConnectorDescriptor `json:"connectors"`
+	RestrictedConnectors []ConnectorRestricted `json:"restrictedConnectors,omitempty"`
 }

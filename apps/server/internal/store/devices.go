@@ -1,5 +1,7 @@
 package store
 
+import "context"
+
 // DaemonCapabilityVerificationSessions: the worker runs a verification
 // session in a sandbox that keeps the workspace read-only while it runs
 // commands. A worker declares it only while that sandbox (bubblewrap on
@@ -15,7 +17,19 @@ const DaemonCapabilityNativeSignIn = "native_sign_in"
 // (check_agent_profile).
 const DaemonCapabilityProfileCheck = "profile_check"
 
+// DaemonCapabilityDispatchRetry: the worker gives every automatic model retry
+// a fresh dispatch identity, so the same logical input can run again without
+// its durable completion marker suppressing the retry.
+const DaemonCapabilityDispatchRetry = "dispatch_retry"
+
 type UpsertAgentRuntimeSettingsInput struct {
 	DeviceID string               `json:"deviceId,omitempty"`
 	Settings AgentRuntimeSettings `json:"settings"`
+}
+
+// DeviceRuntimeStateStore keeps the latest admission sample a worker
+// reported. The server stores it as-is; it does not calculate resource
+// limits.
+type DeviceRuntimeStateStore interface {
+	SaveDeviceRuntimeState(ctx context.Context, deviceID string, state DeviceRuntimeState) error
 }

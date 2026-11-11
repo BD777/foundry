@@ -247,9 +247,14 @@ export interface SkillBundleMember {
  * follows the bundle's when the package has it, else its latest.
  */
 export interface SkillToolDeclaration {
-  source: "uv" | "npm";
-  package: string;
+  source: "uv" | "npm" | "repository";
   command: string;
+  /** npm/PyPI package; empty for a repository tool. */
+  package?: string;
+  /** repository tool: folder in the bundle's own upstream repository. */
+  path?: string;
+  /** repository tool: command names mapped to files under path. */
+  bins?: Record<string, string>;
 }
 
 /** A bundle as workspaces choose it. */

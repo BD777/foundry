@@ -49,6 +49,16 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"session-inbox", func(ctx context.Context) {
 			everyAfter(ctx, sessions.InboxPumpInterval, s.sessionService.InboxKicks(), s.sessionService.PumpInbox)
 		}},
+		{"session-alerts", func(ctx context.Context) {
+			everyAfter(ctx, sessionAlertPumpInterval, nil, func(ctx context.Context) {
+				s.sessionAlerts.Pump(ctx, time.Now().UTC())
+			})
+		}},
+		{"session-retries", func(ctx context.Context) {
+			everyAfter(ctx, sessionRetryPumpInterval, nil, func(ctx context.Context) {
+				s.sessionRetries.Pump(ctx, time.Now().UTC())
+			})
+		}},
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},

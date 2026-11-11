@@ -507,7 +507,8 @@ type wsSessionStartedPayload struct {
 	SessionID string `json:"sessionId"`
 	// InputID names the input this lifecycle message belongs to; a message
 	// about an earlier input of the session is stale and ignored.
-	InputID string `json:"inputId,omitempty"`
+	InputID    string `json:"inputId,omitempty"`
+	DispatchID string `json:"dispatchId,omitempty"`
 }
 
 // wsSessionTurnPayload: the session's agent runs a turn of its own
@@ -529,6 +530,7 @@ type wsSessionNativeSessionIDPayload struct {
 type wsSessionCompletedPayload struct {
 	SessionID       string `json:"sessionId"`
 	InputID         string `json:"inputId,omitempty"`
+	DispatchID      string `json:"dispatchId,omitempty"`
 	NativeSessionID string `json:"nativeSessionId,omitempty"`
 	Response        string `json:"response,omitempty"`
 	Error           string `json:"error,omitempty"`

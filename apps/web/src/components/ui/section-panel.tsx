@@ -7,6 +7,7 @@ import { MutedText } from "./text";
 export const sectionPanelVariants = cva("grid min-w-0", {
   variants: {
     spacing: {
+      flush: "gap-4 p-0",
       cozy: "gap-3 p-4.5",
       roomy: "gap-3.5 p-4.5",
       wide: "gap-4 p-5.5",

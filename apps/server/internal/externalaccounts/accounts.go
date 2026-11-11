@@ -12,6 +12,37 @@ import (
 
 // Accounts lists the person's accounts with their status brought up to date.
 func (s *Service) Accounts(ctx context.Context, userID string) ([]store.ExternalAccount, error) {
+	accounts, err := s.allAccounts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	apps, err := s.store.ListExternalProviderApps(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	extensionApps := map[string]bool{}
+	for _, app := range apps {
+		if app.OwnerUserID == userID && app.CreatedVia == "extension" {
+			extensionApps[app.ID] = true
+		}
+	}
+	filtered := accounts[:0]
+	for _, account := range accounts {
+		if !extensionApps[account.AppID] {
+			filtered = append(filtered, account)
+		}
+	}
+	return filtered, nil
+}
+
+// AccountsIncludingExtensions lists every server-held account, including
+// private extension instances, for surfaces that must let their owner grant
+// or revoke access (the Personal Agent permission package).
+func (s *Service) AccountsIncludingExtensions(ctx context.Context, userID string) ([]store.ExternalAccount, error) {
+	return s.allAccounts(ctx, userID)
+}
+
+func (s *Service) allAccounts(ctx context.Context, userID string) ([]store.ExternalAccount, error) {
 	accounts, err := s.store.ListExternalAccounts(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -120,6 +151,16 @@ func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, act
 // revokeLocked revokes at the provider when a grant is held, then deletes
 // the sealed grant. A grant the server no longer holds is already gone.
 func (s *Service) revokeLocked(ctx context.Context, account store.ExternalAccount) error {
+	if app, appErr := s.store.GetExternalProviderApp(ctx, account.AppID); appErr == nil && app.CreatedVia == "extension" {
+		// Generic connector extensions keep their write-only fields under
+		// one sealed map. Metadata remains for the instance page.
+		if s.secrets != nil {
+			if err := s.secrets.DeleteSecret(ctx, ExtensionSecretID(account.AppID)); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		return nil
+	}
 	if account.Provider == "appstoreconnect" {
 		keyStore, ok := any(s.store).(store.AppStoreConnectStore)
 		if !ok {

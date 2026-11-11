@@ -11,6 +11,14 @@ const allowedInlineStyles = new Map([
     },
   ],
   [
+    "components/ui/chart.tsx",
+    {
+      reason:
+        "a data series' colour reaches its swatch through a scoped CSS custom property",
+      requiredSnippet: "--fdy-chart-swatch",
+    },
+  ],
+  [
     "components/ui/confidence-meter.tsx",
     {
       reason:

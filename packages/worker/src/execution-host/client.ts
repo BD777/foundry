@@ -16,6 +16,7 @@ import {
   type ChatAttachment,
   type DeviceRunner,
   type DeviceRunnerDetail,
+  type DeviceRuntimeState,
   type RunSessionPayload,
   type EvidenceWorkerRequest,
 } from "@bd777/foundry-protocol";
@@ -174,6 +175,12 @@ export class ExecutionHostClient {
       this.snapshot?.claims.some((claim) => claim.sessionId === sessionId) ===
         true || this.snapshot?.background.includes(sessionId) === true
     );
+  }
+  /** The runner's latest admission sample, or none while it is unavailable. */
+  runtimeState(): DeviceRuntimeState | undefined {
+    return this.socket && !this.socket.destroyed
+      ? this.snapshot?.runtimeState
+      : undefined;
   }
   owns(sessionId: string, inputId: string): boolean {
     if (this.held.has(`${sessionId}/${inputId}`)) return true;

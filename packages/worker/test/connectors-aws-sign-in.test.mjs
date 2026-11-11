@@ -13,6 +13,7 @@ import {
   parseAwsSignInOptions,
   parseConsoleSignIn,
   parseDeviceCodeSignIn,
+  resolveAwsRegion,
   signInFailure,
 } from "../dist/connectors/aws-sign-in.js";
 import { awsAdapter } from "../dist/connectors/aws.js";
@@ -31,47 +32,64 @@ const descriptor = JSON.parse(
 ).find((x) => x.kind === "aws");
 
 test("the page's choices are checked before anything runs", () => {
-  assert.deepEqual(
-    parseAwsSignInOptions({ method: "console", region: "eu-west-1" }),
-    {
-      method: "console",
-      region: "eu-west-1",
-    },
-  );
+  assert.deepEqual(parseAwsSignInOptions({ method: "console" }), {
+    method: "console",
+  });
   assert.deepEqual(
     parseAwsSignInOptions({
       method: "sso",
-      region: "us-east-1",
       startUrl: "https://my-company.awsapps.com/start",
       accountId: "1234-5678-9012",
       roleName: "ReadOnly",
     }),
     {
       method: "sso",
-      region: "us-east-1",
       startUrl: "https://my-company.awsapps.com/start",
-      ssoRegion: "us-east-1",
+      accountId: "123456789012",
+      roleName: "ReadOnly",
+    },
+  );
+  assert.deepEqual(
+    parseAwsSignInOptions({
+      method: "sso",
+      startUrl: "https://my-company.awsapps.com/start",
+      ssoRegion: "eu-west-2",
+      accountId: "123456789012",
+      roleName: "ReadOnly",
+    }),
+    {
+      method: "sso",
+      startUrl: "https://my-company.awsapps.com/start",
+      ssoRegion: "eu-west-2",
       accountId: "123456789012",
       roleName: "ReadOnly",
     },
   );
   for (const [options, message] of [
     [{}, /Choose how/],
-    [{ method: "console", region: "nowhere" }, /AWS Region/],
-    [{ method: "sso", region: "us-east-1", startUrl: "http://x" }, /start URL/],
+    [{ method: "sso", startUrl: "http://x" }, /start URL/],
     [
       {
         method: "sso",
-        region: "us-east-1",
+        ssoRegion: "nowhere",
+        startUrl: "https://a.awsapps.com/start",
+        accountId: "123456789012",
+        roleName: "R",
+      },
+      /IAM Identity Center/,
+    ],
+    [
+      {
+        method: "sso",
         startUrl: "https://a.awsapps.com/start",
         accountId: "12",
+        roleName: "R",
       },
       /12-digit/,
     ],
     [
       {
         method: "sso",
-        region: "us-east-1",
         startUrl: "https://a.awsapps.com/start",
         accountId: "123456789012",
         roleName: "a b",
@@ -81,7 +99,6 @@ test("the page's choices are checked before anything runs", () => {
     [
       {
         method: "sso",
-        region: "us-east-1",
         startUrl: "https://a.awsapps.com/start; rm -rf",
         accountId: "123456789012",
         roleName: "R",
@@ -90,6 +107,43 @@ test("the page's choices are checked before anything runs", () => {
     ],
   ])
     assert.throws(() => parseAwsSignInOptions(options), message);
+});
+
+test("the default Region is the profile, then the environment, then us-east-1", async () => {
+  const run = (profile) => async (args) => {
+    assert.deepEqual(args, [
+      "configure",
+      "get",
+      "region",
+      "--profile",
+      "default",
+    ]);
+    return { stdout: profile, stderr: "", code: 0 };
+  };
+  assert.deepEqual(
+    await resolveAwsRegion(run("eu-west-1\n"), {
+      AWS_REGION: "ap-south-1",
+      AWS_DEFAULT_REGION: "sa-east-1",
+    }),
+    { region: "eu-west-1", source: "profile" },
+  );
+  assert.deepEqual(
+    await resolveAwsRegion(run(""), {
+      AWS_REGION: "ap-south-1",
+      AWS_DEFAULT_REGION: "sa-east-1",
+    }),
+    { region: "ap-south-1", source: "environment" },
+  );
+  assert.deepEqual(
+    await resolveAwsRegion(run(""), {
+      AWS_DEFAULT_REGION: "sa-east-1",
+    }),
+    { region: "sa-east-1", source: "environment" },
+  );
+  assert.deepEqual(await resolveAwsRegion(run(""), {}), {
+    region: "us-east-1",
+    source: "default",
+  });
 });
 
 test("the CLI's sign-in prompts are read as AWS prints them", () => {
@@ -128,9 +182,12 @@ test("the CLI's sign-in prompts are read as AWS prints them", () => {
  * succeeds for "good-code"), sso login (prints a device code, then succeeds)
  * and sts get-caller-identity (signed in once a login succeeded).
  */
-function fakeAws(root, version = "2.39.1") {
+function fakeAws(root, version = "2.39.1", config = {}) {
   const state = join(root, "state.json");
-  writeFileSync(state, JSON.stringify({ config: {}, signedIn: false }));
+  writeFileSync(
+    state,
+    JSON.stringify({ config, signedIn: false, commands: [] }),
+  );
   const script = join(root, "aws");
   writeFileSync(
     script,
@@ -143,8 +200,10 @@ const args = process.argv.slice(2);
 if (args[0] === "--version") { console.log("aws-cli/${version} Python/3.14"); process.exit(0); }
 const profile = args[args.indexOf("--profile") + 1] || "default";
 if (args[0] === "configure" && args[1] === "get") { console.log((state.config[profile] ?? {})[args[2]] ?? ""); process.exit(0); }
-if (args[0] === "configure" && args[1] === "set") { (state.config[profile] ??= {})[args[2]] = args[3]; save(); process.exit(0); }
+if (args[0] === "configure" && args[1] === "set") { state.commands.push(args); (state.config[profile] ??= {})[args[2]] = args[3]; save(); process.exit(0); }
 if (args[0] === "login") {
+  state.commands.push(args);
+  save();
   process.stdout.write("Browser will not be automatically opened.\\nPlease visit the following URL:\\n\\nhttps://us-east-1.signin.aws.amazon.com/v1/authorize?response_type=code&state=s\\n\\nEnter the authorization code displayed in your browser: ");
   let input = "";
   process.stdin.on("data", (d) => { input += d; if (input.includes("\\n")) {
@@ -191,13 +250,15 @@ const op = (n) => `operation-${n}-${"x".repeat(20)}`;
 test("console sign-in: the device shows the AWS page, takes the pasted code and signs in", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "fdy-aws-signin-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const aws = fakeAws(root);
+  const aws = fakeAws(root, "2.39.1", {
+    default: { region: "eu-west-1" },
+  });
   const connectors = runtime(root);
   const begin = await connectors.handle({
     action: "sign_in_begin",
     connector: descriptor,
     operationId: op(1),
-    signInOptions: { method: "console", region: "eu-west-1" },
+    signInOptions: { method: "console" },
   });
   assert.equal(begin.error, undefined, begin.error);
   assert.equal(begin.signIn.status, "pending");
@@ -208,6 +269,16 @@ test("console sign-in: the device shows the AWS page, takes the pasted code and 
   );
   // The default profile got a Region, as sessions need one.
   assert.equal(aws.read().config.default.region, "eu-west-1");
+  assert.ok(
+    aws
+      .read()
+      .commands.some(
+        (args) =>
+          args[0] === "login" &&
+          args.includes("--remote") &&
+          args.includes("eu-west-1"),
+      ),
+  );
 
   const pending = await connectors.handle({
     action: "sign_in_poll",
@@ -256,7 +327,7 @@ test("console sign-in: a wrong code is the CLI's reason; dismissal ends the wait
     action: "sign_in_begin",
     connector: descriptor,
     operationId: op(2),
-    signInOptions: { method: "console", region: "us-east-1" },
+    signInOptions: { method: "console" },
   });
   await connectors.handle({
     action: "sign_in_input",
@@ -280,7 +351,7 @@ test("console sign-in: a wrong code is the CLI's reason; dismissal ends the wait
     action: "sign_in_begin",
     connector: descriptor,
     operationId: op(3),
-    signInOptions: { method: "console", region: "us-east-1" },
+    signInOptions: { method: "console" },
   });
   await connectors.handle({
     action: "sign_in_dismiss",
@@ -307,7 +378,6 @@ test("IAM Identity Center: settings from the page, then a device code the person
     operationId: op(4),
     signInOptions: {
       method: "sso",
-      region: "eu-central-1",
       startUrl: "https://my-company.awsapps.com/start",
       ssoRegion: "us-east-1",
       accountId: "123456789012",
@@ -326,7 +396,7 @@ test("IAM Identity Center: settings from the page, then a device code the person
     sso_region: "us-east-1",
     sso_account_id: "123456789012",
     sso_role_name: "Developer",
-    region: "eu-central-1",
+    region: "us-east-1",
   };
   // Until it succeeded only the staging profile has them: the default
   // profile (sessions') is untouched by a sign-in that fails.
@@ -358,10 +428,33 @@ test("an AWS CLI too old for browser sign-in says to update first", async (t) =>
     action: "sign_in_begin",
     connector: descriptor,
     operationId: op(5),
-    signInOptions: { method: "console", region: "us-east-1" },
+    signInOptions: { method: "console" },
   });
   assert.match(
     begin.error ?? begin.signIn?.error ?? "",
     /needs AWS CLI 2\.32\.0 or newer \(this device has 2\.27\.0\)/,
   );
+});
+
+test("the AWS profile's default Region is read and changed without signing in", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "fdy-aws-signin-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const aws = fakeAws(root, "2.39.1", {
+    default: { region: "us-east-1" },
+  });
+  const connectors = runtime(root);
+  const before = await connectors.handle({
+    action: "status",
+    connector: descriptor,
+    fresh: true,
+  });
+  assert.deepEqual(before.state.configuration, { region: "us-east-1" });
+  const changed = await connectors.handle({
+    action: "configure",
+    connector: descriptor,
+    configuration: { region: "eu-west-1" },
+  });
+  assert.equal(changed.error, undefined, changed.error);
+  assert.deepEqual(changed.state.configuration, { region: "eu-west-1" });
+  assert.equal(aws.read().config.default.region, "eu-west-1");
 });

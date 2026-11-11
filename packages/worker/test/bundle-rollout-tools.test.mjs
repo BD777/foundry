@@ -70,6 +70,7 @@ async function serve(routes) {
 
 test("the worker announces bundle rollouts", () => {
   assert.ok(availableDaemonCapabilities().includes("bundle_rollout_v1"));
+  assert.ok(availableDaemonCapabilities().includes("dispatch_retry"));
 });
 
 test("a staged release stays out of bin until activated, and only a version that is not current is removed", async () => {

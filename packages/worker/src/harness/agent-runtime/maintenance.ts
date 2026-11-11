@@ -12,18 +12,37 @@ import { processIdentity } from "../../platform/process/agent-processes.js";
 import { foundryToolsRoot } from "../../platform/state-root.js";
 import { writePrivateJSONAtomic } from "../../platform/storage.js";
 
-type Owner = { pid: number; startTime: string };
-const pause = () => new Promise<void>((done) => setTimeout(done, 50));
-function owner(): Owner {
-  const startTime = processIdentity(process.pid)?.startTime;
-  if (!startTime) throw new Error("Cannot identify runtime lease owner.");
-  return { pid: process.pid, startTime };
+export type RuntimeOwner = { pid: number; startTime: string };
+export interface RuntimeOwnerProvider {
+  /** This process, as it must appear in a lease file. */
+  current(): RuntimeOwner;
+  /** When a process started, or undefined when it no longer exists. */
+  startTime(pid: number): string | undefined;
 }
+
+const pause = () => new Promise<void>((done) => setTimeout(done, 50));
+const processOwnerProvider: RuntimeOwnerProvider = {
+  current() {
+    const startTime = processIdentity(process.pid)?.startTime;
+    if (!startTime) throw new Error("Cannot identify runtime lease owner.");
+    return { pid: process.pid, startTime };
+  },
+  startTime(pid) {
+    return processIdentity(pid)?.startTime;
+  },
+};
+let ownerProvider = processOwnerProvider;
+
+/** Replace process discovery for a host that already knows lease ownership. */
+export function setRuntimeOwnerProvider(provider?: RuntimeOwnerProvider): void {
+  ownerProvider = provider ?? processOwnerProvider;
+}
+
 function stale(path: string): boolean {
   try {
-    const held = JSON.parse(readFileSync(path, "utf8")) as Owner;
-    const identity = processIdentity(held.pid);
-    if (identity) return identity.startTime !== held.startTime;
+    const held = JSON.parse(readFileSync(path, "utf8")) as RuntimeOwner;
+    const startTime = ownerProvider.startTime(held.pid);
+    if (startTime) return startTime !== held.startTime;
     try {
       process.kill(held.pid, 0);
       return false;
@@ -74,7 +93,10 @@ async function gate<T>(
     }
   }
   try {
-    writePrivateJSONAtomic(resolve(lock, "owner.json"), owner());
+    writePrivateJSONAtomic(
+      resolve(lock, "owner.json"),
+      ownerProvider.current(),
+    );
     for (const name of readdirSync(dir)) {
       if (
         (name.startsWith("reader-") || name === "writer.json") &&
@@ -103,7 +125,7 @@ export async function acquireRuntime(
     const release = await gate(runtime, (dir) => {
       if (readdirSync(dir).includes("writer.json")) return undefined;
       const path = resolve(dir, `reader-${randomUUID()}.json`);
-      writePrivateJSONAtomic(path, owner());
+      writePrivateJSONAtomic(path, ownerProvider.current());
       return () => rmSync(path, { force: true });
     });
     if (release) return release;
@@ -122,7 +144,7 @@ export function tryMaintainRuntime(
     )
       return undefined;
     const path = resolve(dir, "writer.json");
-    writePrivateJSONAtomic(path, owner());
+    writePrivateJSONAtomic(path, ownerProvider.current());
     return () => rmSync(path, { force: true });
   });
 }

@@ -576,7 +576,10 @@ function skillFiles(root, prefix = "") {
 test("the foundry skill ships with the CLI, same as the server's built-in, and installs", async () => {
   const listed = await foundry(["skill", "list"]);
   assert.equal(listed.code, 0, listed.stderr);
-  assert.deepEqual(listed.stdout.trim().split("\n"), ["foundry"]);
+  assert.deepEqual(listed.stdout.trim().split("\n"), [
+    "foundry",
+    "foundry-orchestration",
+  ]);
   const bundled = join(packageDir, "skills", "foundry");
   const builtin = resolve(
     packageDir,

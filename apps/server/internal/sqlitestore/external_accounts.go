@@ -37,7 +37,8 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			tenant_name TEXT NOT NULL DEFAULT '',
 			names_checked_at TEXT NOT NULL DEFAULT '',
 			names_detail TEXT NOT NULL DEFAULT '',
-			org_domain TEXT NOT NULL DEFAULT ''
+			org_domain TEXT NOT NULL DEFAULT '',
+			extension_data TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS external_accounts (
 			id TEXT PRIMARY KEY,
@@ -93,6 +94,15 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite external accounts: %w", err)
 		}
 	}
+	var extensionDataPresent int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('external_provider_apps') WHERE name = 'extension_data'`).Scan(&extensionDataPresent); err != nil {
+		return fmt.Errorf("migrate sqlite external accounts: %w", err)
+	}
+	if extensionDataPresent == 0 {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE external_provider_apps ADD COLUMN extension_data TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return fmt.Errorf("migrate sqlite external accounts: %w", err)
+		}
+	}
 	return s.setupExternalCodeLogins(ctx)
 }
 
@@ -109,24 +119,31 @@ func (s *Store) CreateExternalProviderApp(ctx context.Context, app store.Externa
 	now := formatTime(time.Now())
 	app.CreatedAt, app.UpdatedAt = now, now
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO external_provider_apps
-		(id, provider, owner_user_id, visibility, label, client_id, base_url, created_via, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		app.ID, app.Provider, app.OwnerUserID, string(app.Visibility), app.Label, app.ClientID, app.BaseURL, app.CreatedVia, now, now); err != nil {
+		(id, provider, owner_user_id, visibility, label, client_id, base_url, created_via, created_at, updated_at, extension_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		app.ID, app.Provider, app.OwnerUserID, string(app.Visibility), app.Label, app.ClientID, app.BaseURL, app.CreatedVia, now, now, cmpOrJSON(app.ExtensionData)); err != nil {
 		return store.ExternalProviderApp{}, fmt.Errorf("create external provider app: %w", err)
 	}
 	return app, nil
 }
 
 const externalAppColumns = `id, provider, owner_user_id, visibility, label, client_id, base_url, created_via,
-	app_name, tenant_name, org_domain, names_checked_at, names_detail, created_at, updated_at`
+	app_name, tenant_name, org_domain, names_checked_at, names_detail, created_at, updated_at, extension_data`
 
 func scanExternalApp(row interface{ Scan(dest ...any) error }) (store.ExternalProviderApp, error) {
 	var app store.ExternalProviderApp
 	var visibility string
 	err := row.Scan(&app.ID, &app.Provider, &app.OwnerUserID, &visibility, &app.Label, &app.ClientID, &app.BaseURL, &app.CreatedVia,
-		&app.AppName, &app.TenantName, &app.OrgDomain, &app.NamesCheckedAt, &app.NamesDetail, &app.CreatedAt, &app.UpdatedAt)
+		&app.AppName, &app.TenantName, &app.OrgDomain, &app.NamesCheckedAt, &app.NamesDetail, &app.CreatedAt, &app.UpdatedAt, &app.ExtensionData)
 	app.Visibility = store.ExternalAppVisibility(visibility)
 	return app, err
+}
+
+func cmpOrJSON(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "{}"
+	}
+	return value
 }
 
 func (s *Store) GetExternalProviderApp(ctx context.Context, id string) (store.ExternalProviderApp, error) {
@@ -169,6 +186,37 @@ func (s *Store) SetExternalProviderAppNames(ctx context.Context, id string, name
 		return store.ErrExternalAppNotFound
 	}
 	return nil
+}
+
+func (s *Store) SaveExternalProviderAppExtensionData(ctx context.Context, id, data string) (store.ExternalProviderApp, error) {
+	if strings.TrimSpace(data) == "" {
+		data = "{}"
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE external_provider_apps
+		SET extension_data = ?, updated_at = ? WHERE id = ?`, data, formatTime(time.Now()), id)
+	if err != nil {
+		return store.ExternalProviderApp{}, fmt.Errorf("record external provider app extension data: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return store.ExternalProviderApp{}, store.ErrExternalAppNotFound
+	}
+	return s.GetExternalProviderApp(ctx, id)
+}
+
+func (s *Store) UpdateExternalProviderAppExtension(ctx context.Context, id, label, clientID, baseURL, data string) (store.ExternalProviderApp, error) {
+	if strings.TrimSpace(data) == "" {
+		data = "{}"
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE external_provider_apps
+		SET label = ?, client_id = ?, base_url = ?, extension_data = ?, updated_at = ? WHERE id = ?`,
+		label, clientID, baseURL, data, formatTime(time.Now()), id)
+	if err != nil {
+		return store.ExternalProviderApp{}, fmt.Errorf("update external provider app extension: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return store.ExternalProviderApp{}, store.ErrExternalAppNotFound
+	}
+	return s.GetExternalProviderApp(ctx, id)
 }
 
 func (s *Store) DeleteExternalProviderApp(ctx context.Context, id string) error {

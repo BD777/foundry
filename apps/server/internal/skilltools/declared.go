@@ -33,8 +33,9 @@ const maxDeclaredTools = 4
 var npmToolPackage = regexp.MustCompile(`^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]{0,213}$`)
 
 // CheckDeclarations checks the programs a bundle declares: Python packages
-// installed with uv or npm packages, each command once. A command defaults
-// to the package's name (without its scope).
+// installed with uv, npm packages, or a folder of the bundle's own
+// repository, each command once. An npm or uv command defaults to the
+// package's name; a repository tool names its command and bins.
 func CheckDeclarations(tools []store.SkillToolDeclaration) ([]store.SkillToolDeclaration, error) {
 	if len(tools) > maxDeclaredTools {
 		return nil, fmt.Errorf("a bundle declares at most %d tools", maxDeclaredTools)
@@ -42,26 +43,64 @@ func CheckDeclarations(tools []store.SkillToolDeclaration) ([]store.SkillToolDec
 	seen := map[string]bool{}
 	clean := make([]store.SkillToolDeclaration, 0, len(tools))
 	for _, tool := range tools {
-		tool = store.SkillToolDeclaration{Source: strings.TrimSpace(tool.Source), Package: strings.TrimSpace(tool.Package), Command: strings.TrimSpace(tool.Command)}
-		if tool.Command == "" {
+		tool = store.SkillToolDeclaration{
+			Source: strings.TrimSpace(tool.Source), Package: strings.TrimSpace(tool.Package),
+			Command: strings.TrimSpace(tool.Command), Path: strings.TrimSpace(tool.Path), Bins: tool.Bins,
+		}
+		if tool.Command == "" && tool.Source != "repository" {
 			tool.Command = path.Base(tool.Package)
 		}
 		switch {
-		case tool.Source != "uv" && tool.Source != "npm":
-			return nil, errors.New(`a declared tool installs with uv or npm: set its source to "uv" or "npm" and name its package`)
+		case tool.Source != "uv" && tool.Source != "npm" && tool.Source != "repository":
+			return nil, errors.New(`a declared tool installs with uv, npm or repository`)
 		case tool.Source == "npm" && !npmToolPackage.MatchString(tool.Package):
 			return nil, fmt.Errorf("%q is not an npm package name", tool.Package)
 		case tool.Source == "uv" && !pypiPackageName.MatchString(tool.Package):
 			return nil, fmt.Errorf("%q is not a PyPI package name", tool.Package)
+		case tool.Source == "repository" && (tool.Package != "" || tool.Path == "" || len(tool.Bins) == 0):
+			return nil, errors.New("a repository tool names its path and bins, not a package")
 		case !toolCommandName.MatchString(tool.Command):
 			return nil, fmt.Errorf("%q is not a command name", tool.Command)
 		case seen[tool.Command]:
 			return nil, fmt.Errorf("%s is declared twice", tool.Command)
 		}
+		if tool.Source == "repository" {
+			if err := checkDeclarationPath(tool.Path); err != nil {
+				return nil, fmt.Errorf("%s path: %w", tool.Command, err)
+			}
+			if len(tool.Bins) > 32 {
+				return nil, fmt.Errorf("%s lists too many bins", tool.Command)
+			}
+			if _, ok := tool.Bins[tool.Command]; !ok {
+				return nil, fmt.Errorf("%s bins includes the command", tool.Command)
+			}
+			for name, entry := range tool.Bins {
+				if !toolCommandName.MatchString(name) {
+					return nil, fmt.Errorf("%q is not a command name", name)
+				}
+				if err := checkDeclarationPath(entry); err != nil {
+					return nil, fmt.Errorf("%s bin %s: %w", tool.Command, name, err)
+				}
+			}
+		} else if tool.Path != "" || len(tool.Bins) > 0 {
+			return nil, fmt.Errorf("%s names a path or bins without repository source", tool.Command)
+		}
 		seen[tool.Command] = true
 		clean = append(clean, tool)
 	}
 	return clean, nil
+}
+
+func checkDeclarationPath(value string) error {
+	if value == "" || len(value) > 300 || strings.HasPrefix(value, "/") || strings.ContainsAny(value, "\\\x00\r\n") {
+		return errors.New("the path must stay inside the repository")
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return errors.New("the path must stay inside the repository")
+		}
+	}
+	return nil
 }
 
 // WithDeclared puts a bundle's declared tools into tools, at their versions
@@ -90,6 +129,18 @@ func (r Resolver) WithDeclared(ctx context.Context, source skillrepo.Source, rep
 				continue
 			}
 			result = append(result, npmTool(tool.Command, resolved, tool.Package, Registry(repo), nil))
+			continue
+		}
+		if tool.Source == "repository" {
+			commit := repo.Commit
+			if commit == "" {
+				problems = append(problems, fmt.Errorf("reading %s's repository version: the bundle names no commit", tool.Command))
+				continue
+			}
+			result = append(result, store.SkillBundleTool{
+				Name: tool.Command, Version: commit, Source: "repository",
+				Repository: repo.URL, Path: tool.Path, Bins: tool.Bins,
+			})
 			continue
 		}
 		resolved, err := r.pypiVersion(ctx, tool.Package, version)

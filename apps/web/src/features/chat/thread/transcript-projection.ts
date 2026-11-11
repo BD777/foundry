@@ -8,6 +8,7 @@ import type {
 } from "../../../components/conversation/conversation-types";
 import type { ChatViewMessage } from "../chat-types";
 import { i18n } from "../../../i18n";
+import { estimatedOutputTimingReliable } from "../../../lib/format";
 
 type ModelRequestUsageWithTiming = ModelRequestUsage & {
   requestMs?: number;
@@ -122,14 +123,18 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     } else {
       generationMs += usage.generationMs;
     }
-    if (
-      usage.requestMs === undefined ||
-      !Number.isFinite(usage.requestMs) ||
-      usage.requestMs < 0
-    ) {
+    const requestTime =
+      usage.requestMs !== undefined &&
+      Number.isFinite(usage.requestMs) &&
+      usage.requestMs >= 0 &&
+      (usage.timingEstimated !== true ||
+        estimatedOutputTimingReliable(usage.outputTokens, usage.requestMs))
+        ? usage.requestMs
+        : undefined;
+    if (requestTime === undefined) {
       everyRequestHasRequestTime = false;
     } else {
-      requestMs += usage.requestMs;
+      requestMs += requestTime;
     }
     const firstTokenMs =
       usage.firstTokenMs !== undefined &&

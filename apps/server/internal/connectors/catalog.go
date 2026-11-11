@@ -35,6 +35,7 @@ var (
 	envValuePatten        = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 	hostPattern           = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
 	minimumVersionPattern = regexp.MustCompile(`^\d{1,4}\.\d{1,4}\.\d{1,4}$`)
+	repositoryPattern     = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,38})/[A-Za-z0-9_.-]{1,100}|https://[^\s@/]+/\S+)$`)
 )
 
 // ParseCatalog reads and checks a catalog: kinds unique and well formed, a
@@ -56,6 +57,14 @@ func ParseCatalog(data []byte) (*Catalog, error) {
 		catalog.byKind[descriptor.Kind] = descriptor
 		catalog.descriptors = append(catalog.descriptors, descriptor)
 	}
+	for _, descriptor := range catalog.descriptors {
+		if descriptor.Package == nil {
+			continue
+		}
+		if err := catalog.checkConnectorPackage(*descriptor.Package, nil); err != nil {
+			return nil, fmt.Errorf("connector catalog: %s: %w", descriptor.Kind, err)
+		}
+	}
 	return catalog, nil
 }
 
@@ -72,15 +81,49 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	if !commandPattern.MatchString(descriptor.Tool.Command) {
 		return fmt.Errorf("needs a tool command")
 	}
+	if descriptor.RepositoryAccess != nil {
+		if descriptor.Holding != store.ConnectorDeviceHeld {
+			return fmt.Errorf("repositoryAccess belongs to a device-held connector")
+		}
+		if err := checkRepositoryAccess(*descriptor.RepositoryAccess); err != nil {
+			return err
+		}
+	}
+	if descriptor.Access != nil {
+		if err := checkSourceAccess(*descriptor.Access); err != nil {
+			return err
+		}
+	}
+	if descriptor.AccessCheck != nil || descriptor.RequirementsCheck != nil {
+		return fmt.Errorf("visibility results are filled by the server")
+	}
 	if err := checkVersionCheck(descriptor.Tool.VersionCheck); err != nil {
 		return err
+	}
+	if descriptor.Package != nil {
+		if descriptor.Extension == nil {
+			return fmt.Errorf("only an extension connector declares a package")
+		}
+		if err := checkConnectorPackageShape(*descriptor.Package); err != nil {
+			return err
+		}
 	}
 	switch descriptor.Holding {
 	case store.ConnectorServerHeld:
 		if len(descriptor.Requires) > 0 || len(descriptor.IsolationEnv) > 0 {
 			return fmt.Errorf("a server-held connector declares no device requirement or isolation")
 		}
+		if descriptor.Extension != nil {
+			if descriptor.ServerHeld == nil {
+				return fmt.Errorf("a server-held extension connector declares serverHeld data")
+			}
+		} else if descriptor.ServerHeld != nil {
+			return fmt.Errorf("only an extension connector may declare serverHeld data")
+		}
 	case store.ConnectorDeviceHeld:
+		if descriptor.ServerHeld != nil {
+			return fmt.Errorf("serverHeld data belongs to a server-held connector")
+		}
 		switch descriptor.Tool.Source {
 		case "npm":
 			if descriptor.Tool.Package == "" || descriptor.Tool.Registry == "" {
@@ -119,6 +162,11 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 			return fmt.Errorf("model access is device-held and serves the claude runtime")
 		}
 	}
+	if descriptor.ServerHeld != nil {
+		if err := checkServerHeld(descriptor); err != nil {
+			return err
+		}
+	}
 	if descriptor.Setup != nil {
 		if err := checkSetup(*descriptor.Setup); err != nil {
 			return err
@@ -138,6 +186,42 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 		}
 	}
 	return nil
+}
+
+func checkRepositoryAccess(access store.ConnectorRepositoryAccess) error {
+	if len(access.Args) == 0 || len(access.Args) > 20 {
+		return fmt.Errorf("repositoryAccess.args lists 1 to 20 arguments")
+	}
+	placeholders := 0
+	for _, arg := range access.Args {
+		if arg == "" || len(arg) > 500 || strings.ContainsAny(arg, "\x00\n") {
+			return fmt.Errorf("repositoryAccess arguments are short plain strings")
+		}
+		placeholders += strings.Count(arg, "{repository}")
+		if strings.ContainsAny(strings.ReplaceAll(arg, "{repository}", ""), "{}") {
+			return fmt.Errorf("repositoryAccess uses only the {repository} placeholder")
+		}
+	}
+	if placeholders != 1 {
+		return fmt.Errorf("repositoryAccess uses {repository} exactly once")
+	}
+	if access.RepositoryFormat != "" && access.RepositoryFormat != "raw" && access.RepositoryFormat != "github" {
+		return fmt.Errorf("repositoryAccess.repositoryFormat is raw or github")
+	}
+	return nil
+}
+
+func checkSourceAccess(access store.ConnectorSourceAccess) error {
+	if !kindPattern.MatchString(access.Via) {
+		return fmt.Errorf("access.via names a connector kind")
+	}
+	if !repositoryPattern.MatchString(access.Repository) || len(access.Repository) > 500 {
+		return fmt.Errorf("access.repository is owner/repo or an https address")
+	}
+	if err := checkText("access hint", access.Hint, maxDescription, false); err != nil {
+		return err
+	}
+	return checkLocalized("access hints", access.Hints, maxDescription)
 }
 
 // DefaultCatalog is the embedded catalog.json.

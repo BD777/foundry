@@ -70,6 +70,19 @@ export interface AtomicWriteOptions {
   exclusive?: boolean;
 }
 
+export interface CoalescedJSONWriterOptions extends AtomicWriteOptions {
+  /** How long changes accumulate before one write (default 50 ms). */
+  delayMs?: number;
+  /** Reconciles external changes immediately before each snapshot. */
+  prepare?: () => void;
+  /** Tests may observe or replace the asynchronous atomic write. */
+  write?: (
+    path: string,
+    contents: string,
+    options: AtomicWriteOptions,
+  ) => Promise<void>;
+}
+
 /**
  * Replaces path atomically: readers see the old or the new file, never half
  * of one. The defaults suit Foundry's private state.
@@ -192,6 +205,131 @@ export async function writePrivateJSONAtomicAsync(
     `${JSON.stringify(value, null, 2)}\n`,
     options,
   );
+}
+
+/**
+ * Coalesces rapid changes into one compact, atomic JSON write. A flush is a
+ * barrier: it does not resolve until a snapshot containing every change made
+ * before the call is durable.
+ */
+export class CoalescedJSONWriter<T> {
+  private readonly delayMs: number;
+  private readonly write: NonNullable<CoalescedJSONWriterOptions["write"]>;
+  private readonly waiters = new Set<{
+    target: number;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }>();
+  private revision = 0;
+  private persistedRevision = 0;
+  private timer?: ReturnType<typeof setTimeout>;
+  private running?: Promise<void>;
+  private failure?: unknown;
+
+  constructor(
+    private readonly path: string,
+    private readonly snapshot: () => T,
+    private readonly options: CoalescedJSONWriterOptions = {},
+  ) {
+    this.delayMs = options.delayMs ?? 50;
+    this.write = options.write ?? writeFileAtomicAsync;
+    process.once("exit", () => {
+      try {
+        this.flushSync();
+      } catch {
+        // Exit cannot report a write failure; normal barriers still do.
+      }
+    });
+  }
+
+  /** Marks the snapshot changed and resolves after this revision is durable. */
+  change(): Promise<void> {
+    this.revision++;
+    this.schedule();
+    return this.waitFor(this.revision);
+  }
+
+  /** Waits for every change made before the call to become durable. */
+  flush(): Promise<void> {
+    if (!this.timer && this.revision > this.persistedRevision)
+      this.ensureRunning();
+    return this.waitFor(this.revision);
+  }
+
+  /**
+   * Last-resort exit path. It writes the newest in-memory snapshot with the
+   * same file fsync used by normal atomic writes.
+   */
+  flushSync(): void {
+    if (this.revision <= this.persistedRevision) return;
+    this.options.prepare?.();
+    writeFileAtomic(
+      this.path,
+      `${JSON.stringify(this.snapshot())}\n`,
+      this.options,
+    );
+    this.persistedRevision = this.revision;
+    this.resolveWaiters(this.revision);
+  }
+
+  private schedule(): void {
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      if (this.revision > this.persistedRevision) this.ensureRunning();
+    }, this.delayMs);
+  }
+
+  private ensureRunning(): void {
+    if (this.running) return;
+    this.running = this.drain()
+      .catch((error: unknown) => {
+        this.failure = error;
+        this.rejectWaiters(error);
+      })
+      .finally(() => {
+        this.running = undefined;
+        if (this.revision > this.persistedRevision && !this.failure)
+          this.ensureRunning();
+      });
+  }
+
+  private async drain(): Promise<void> {
+    while (this.revision > this.persistedRevision) {
+      const target = this.revision;
+      this.options.prepare?.();
+      await this.write(
+        this.path,
+        `${JSON.stringify(this.snapshot())}\n`,
+        this.options,
+      );
+      this.persistedRevision = target;
+      this.resolveWaiters(target);
+    }
+  }
+
+  private waitFor(target: number): Promise<void> {
+    if (this.persistedRevision >= target) return Promise.resolve();
+    if (this.failure) return Promise.reject(this.failure);
+    return new Promise((resolve, reject) => {
+      this.waiters.add({ target, resolve, reject });
+    });
+  }
+
+  private resolveWaiters(target: number): void {
+    for (const waiter of [...this.waiters])
+      if (waiter.target <= target) {
+        this.waiters.delete(waiter);
+        waiter.resolve();
+      }
+  }
+
+  private rejectWaiters(error: unknown): void {
+    for (const waiter of [...this.waiters]) {
+      this.waiters.delete(waiter);
+      waiter.reject(error);
+    }
+  }
 }
 
 /** Alias for writePrivateJSONAtomic — writes owner-only JSON. */

@@ -148,7 +148,7 @@ func (s *Server) handleListAgentModels(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, models, err)
 }
 
-func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store.CreateAgentProfileInput) (any, error) {
+func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store.CreateAgentProfileInput) ([]store.AgentModelOption, error) {
 	return s.readAgentModels(ctx, actor, profile, false)
 }
 
@@ -156,7 +156,7 @@ func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store
 // from the server's copy unless refresh (agent_model_catalog.go). A session
 // token is confined to its own device and workspace. A refusal is a
 // statusError; any other err is an ordinary failure.
-func (s *Server) readAgentModels(ctx context.Context, actor Actor, profile store.CreateAgentProfileInput, refresh bool) (any, error) {
+func (s *Server) readAgentModels(ctx context.Context, actor Actor, profile store.CreateAgentProfileInput, refresh bool) ([]store.AgentModelOption, error) {
 	if profile.Command != "" || len(profile.Env) > 0 {
 		return nil, &statusError{http.StatusBadRequest, errors.New("command and env are local-only profile fields")}
 	}

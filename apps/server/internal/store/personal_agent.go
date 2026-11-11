@@ -80,27 +80,29 @@ var PersonalAgentActions = []string{
 // PersonalAgentProposalRelaxRules is the proposal kind of loosening rules.
 const PersonalAgentProposalRelaxRules = "relax_rules"
 
+// PersonalAgentProposalConnectorWrite is one risk write through a connector.
+// Accepting it allows the same request once; the gateway consumes it.
+const PersonalAgentProposalConnectorWrite = "connector_write"
+
 // PersonalAgentPolicy maps each managed action to its decision.
 type PersonalAgentPolicy map[string]string
 
 // PersonalAgent is a person's assistant (table personal_agents).
 type PersonalAgent struct {
-	UserID        string                `json:"userId"`
-	WorkspaceID   string                `json:"workspaceId"`
-	HomeDeviceID  string                `json:"homeDeviceId"`
-	State         string                `json:"state"`
-	Settings      PersonalAgentSettings `json:"settings"`
-	PromptVersion string                `json:"promptVersion"`
-	CreatedAt     string                `json:"createdAt"`
-	UpdatedAt     string                `json:"updatedAt"`
-	StoppedAt     string                `json:"stoppedAt,omitempty"`
+	UserID              string                `json:"userId"`
+	WorkspaceID         string                `json:"workspaceId"`
+	HomeDeviceID        string                `json:"homeDeviceId"`
+	State               string                `json:"state"`
+	Settings            PersonalAgentSettings `json:"settings"`
+	PermissionPackageID string                `json:"permissionPackageId"`
+	PromptVersion       string                `json:"promptVersion"`
+	CreatedAt           string                `json:"createdAt"`
+	UpdatedAt           string                `json:"updatedAt"`
+	StoppedAt           string                `json:"stoppedAt,omitempty"`
 	// FormerWorkspaceIDs are the workspaces the assistant lived in before it
 	// moved (archived projects of the person's now), oldest first: its
 	// earlier conversations are there.
 	FormerWorkspaceIDs []string `json:"formerWorkspaceIds,omitempty"`
-	// ConnectorOptOut is the connector accounts the assistant may not use.
-	// Empty means every connector account the person owns is allowed.
-	ConnectorOptOut []string `json:"connectorOptOut,omitempty"`
 }
 
 // PersonalAgentSettings is what the settings panel edits (settings_json).
@@ -564,9 +566,9 @@ type PersonalAgentStore interface {
 	// when the person or the workspace already has one.
 	CreatePersonalAgent(ctx context.Context, agent PersonalAgent) (PersonalAgent, error)
 	SavePersonalAgentSettings(ctx context.Context, userID string, settings PersonalAgentSettings) (PersonalAgent, error)
-	// SetPersonalAgentConnectorOptOut replaces the connector accounts the
-	// assistant may not use.
-	SetPersonalAgentConnectorOptOut(ctx context.Context, userID string, accountIDs []string) (PersonalAgent, error)
+	// SetPersonalAgentConnectorLevels replaces the connector-account overrides
+	// in the assistant's permission package. Omitted accounts use write.
+	SetPersonalAgentConnectorLevels(ctx context.Context, userID string, levels []ConnectorAccountPermission) (PersonalAgent, error)
 	// FillPersonalAgentTimezone sets the assistant's time zone to timezone
 	// only while it has none: a zone the person chose is never replaced.
 	FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (PersonalAgent, error)

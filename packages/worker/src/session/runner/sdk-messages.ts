@@ -19,6 +19,7 @@ import type {
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
 import {
+  diagnoseWorkerFailure,
   processDetails,
   processLabels,
   sessionEventLabels,
@@ -102,6 +103,44 @@ export function claudeApiErrorMessage(
     code:
       sdkString(record.error) || sdkString(inner?.stop_reason) || "api_error",
   };
+}
+
+const claudeQuotaExhaustedError =
+  "The model provider rejected this request because the account quota or billing limit is exhausted. Foundry did not retry it.";
+
+function claudeQuotaError(detail = ""): string {
+  const providerDetail = detail.trim();
+  return providerDetail
+    ? `${providerDetail}\n\n${claudeQuotaExhaustedError}`
+    : claudeQuotaExhaustedError;
+}
+
+/**
+ * A structured billing/quota rejection from Claude is terminal. Detect it on
+ * the first retry notification or synthetic API-error frame so the SDK does
+ * not spend its retry budget against an account that cannot recover.
+ */
+export function claudeQuotaExhaustion(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const record = message as Record<string, unknown>;
+  if (record.type === "system" && record.subtype === "api_retry") {
+    const failure = diagnoseWorkerFailure({
+      status: record.error_status,
+      code: record.error,
+    });
+    return failure.code === "model_quota_exhausted"
+      ? claudeQuotaError()
+      : undefined;
+  }
+  const apiError = claudeApiErrorMessage(message);
+  if (!apiError) return undefined;
+  const failure = diagnoseWorkerFailure({
+    code: record.error || apiError.code,
+    message: apiError.text,
+  });
+  return failure.code === "model_quota_exhausted"
+    ? claudeQuotaError(apiError.text)
+    : undefined;
 }
 
 /** Human-readable wording for terminal-reason codes the SDK reports. */

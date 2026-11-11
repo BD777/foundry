@@ -20,6 +20,7 @@ import { sharing as enSharing } from "./locales/en/sharing";
 import { shell as enShell } from "./locales/en/shell";
 import { skills as enSkills } from "./locales/en/skills";
 import { ui as enUi } from "./locales/en/ui";
+import { usage as enUsage } from "./locales/en/usage";
 import { workspaces as enWorkspaces } from "./locales/en/workspaces";
 import { account as zhAccount } from "./locales/zh-CN/account";
 import { agents as zhAgents } from "./locales/zh-CN/agents";
@@ -43,6 +44,7 @@ import { sharing as zhSharing } from "./locales/zh-CN/sharing";
 import { shell as zhShell } from "./locales/zh-CN/shell";
 import { skills as zhSkills } from "./locales/zh-CN/skills";
 import { ui as zhUi } from "./locales/zh-CN/ui";
+import { usage as zhUsage } from "./locales/zh-CN/usage";
 import { workspaces as zhWorkspaces } from "./locales/zh-CN/workspaces";
 
 /**
@@ -73,6 +75,7 @@ export const en = {
   shell: enShell,
   skills: enSkills,
   ui: enUi,
+  usage: enUsage,
   workspaces: enWorkspaces,
 };
 
@@ -101,6 +104,7 @@ export const resources = {
     shell: zhShell,
     skills: zhSkills,
     ui: zhUi,
+    usage: zhUsage,
     workspaces: zhWorkspaces,
   },
 } satisfies Record<string, Record<keyof typeof en, unknown>>;

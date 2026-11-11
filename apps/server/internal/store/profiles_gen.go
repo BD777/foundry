@@ -6,6 +6,78 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for ExecutionModelDefaultProviderKind.
+const (
+	ExecutionModelDefaultProviderKindAPI          ExecutionModelDefaultProviderKind = "api"
+	ExecutionModelDefaultProviderKindDiscovered   ExecutionModelDefaultProviderKind = "discovered"
+	ExecutionModelDefaultProviderKindEnvironment  ExecutionModelDefaultProviderKind = "environment"
+	ExecutionModelDefaultProviderKindSubscription ExecutionModelDefaultProviderKind = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the ExecutionModelDefaultProviderKind enum.
+func (e ExecutionModelDefaultProviderKind) Valid() bool {
+	switch e {
+	case ExecutionModelDefaultProviderKindAPI:
+		return true
+	case ExecutionModelDefaultProviderKindDiscovered:
+		return true
+	case ExecutionModelDefaultProviderKindEnvironment:
+		return true
+	case ExecutionModelDefaultProviderKindSubscription:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ModelPoolProviderKind.
+const (
+	ModelPoolProviderKindAPI          ModelPoolProviderKind = "api"
+	ModelPoolProviderKindDiscovered   ModelPoolProviderKind = "discovered"
+	ModelPoolProviderKindEnvironment  ModelPoolProviderKind = "environment"
+	ModelPoolProviderKindSubscription ModelPoolProviderKind = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the ModelPoolProviderKind enum.
+func (e ModelPoolProviderKind) Valid() bool {
+	switch e {
+	case ModelPoolProviderKindAPI:
+		return true
+	case ModelPoolProviderKindDiscovered:
+		return true
+	case ModelPoolProviderKindEnvironment:
+		return true
+	case ModelPoolProviderKindSubscription:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ModelPoolInputProviderKind.
+const (
+	ModelPoolInputProviderKindAPI          ModelPoolInputProviderKind = "api"
+	ModelPoolInputProviderKindDiscovered   ModelPoolInputProviderKind = "discovered"
+	ModelPoolInputProviderKindEnvironment  ModelPoolInputProviderKind = "environment"
+	ModelPoolInputProviderKindSubscription ModelPoolInputProviderKind = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the ModelPoolInputProviderKind enum.
+func (e ModelPoolInputProviderKind) Valid() bool {
+	switch e {
+	case ModelPoolInputProviderKindAPI:
+		return true
+	case ModelPoolInputProviderKindDiscovered:
+		return true
+	case ModelPoolInputProviderKindEnvironment:
+		return true
+	case ModelPoolInputProviderKindSubscription:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NativeSignInAction.
 const (
 	NativeSignInActionBegin   NativeSignInAction = "begin"
@@ -264,6 +336,43 @@ type CreateAgentProfileInput struct {
 	Env                  map[string]string    `json:"env,omitempty"`
 }
 
+// ExecutionDefaultScope defines model for ExecutionDefaultScope.
+type ExecutionDefaultScope = string
+
+// ExecutionDefaultsView The saved execution default at this level, the effective one after workspace fallback, and where it came from.
+type ExecutionDefaultsView struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+
+	// Saved The model a person's orchestrator uses for delegated execution when a child names no model.
+	Saved *ExecutionModelDefault `json:"saved,omitempty"`
+
+	// Effective The model a person's orchestrator uses for delegated execution when a child names no model.
+	Effective ExecutionModelDefault `json:"effective"`
+}
+
+// ExecutionModelDefault The model a person's orchestrator uses for delegated execution when a child names no model.
+type ExecutionModelDefault struct {
+	ProviderKind ExecutionModelDefaultProviderKind `json:"providerKind,omitempty"`
+	ProviderID   string                            `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime"`
+	Model   string          `json:"model,omitempty"`
+
+	// ModelPoolID When set, a new session allocates one member from this group.
+	ModelPoolID string `json:"modelPoolId,omitempty"`
+
+	// Pool The saved group, resolved when the default is read.
+	Pool      *ModelPool            `json:"pool,omitempty"`
+	Effort    string                `json:"effort,omitempty"`
+	Scope     ExecutionDefaultScope `json:"scope"`
+	UpdatedBy string                `json:"updatedBy,omitempty"`
+	UpdatedAt string                `json:"updatedAt,omitempty"`
+}
+
+// ExecutionModelDefaultProviderKind defines model for ExecutionModelDefault.ProviderKind.
+type ExecutionModelDefaultProviderKind string
+
 // ExternalConnectionSetupInfo ExternalConnectionSetupInfo is what a gateway registered with `foundry-worker connection add --setup-command …`: one shell line the device's own account runs, never a secret.
 type ExternalConnectionSetupInfo struct {
 	// Command One shell line the device's own account runs; never a secret.
@@ -281,6 +390,84 @@ type ExternalConnectionSetupInfo struct {
 
 // ExternalConnectionSignIn How the installer signs the person in to the gateway.
 type ExternalConnectionSignIn = string
+
+// ModelNote ModelNote is one observation an orchestrator recorded about a specific model.
+type ModelNote struct {
+	ID           string `json:"id"`
+	ProviderKind string `json:"providerKind"`
+	ProviderID   string `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime"`
+	Model   string          `json:"model"`
+
+	// Body What the orchestrator learned about handing work to this model.
+	Body         string `json:"body"`
+	AuthorUserID string `json:"authorUserId"`
+	AuthorName   string `json:"authorName"`
+
+	// AuthorSessionID The agent session that appended the note; absent for a person.
+	AuthorSessionID string `json:"authorSessionId,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
+}
+
+// ModelNoteInput ModelNoteInput appends one note to a provider's model.
+type ModelNoteInput struct {
+	ProviderKind string `json:"providerKind"`
+	ProviderID   string `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime"`
+	Model   string          `json:"model"`
+	Body    string          `json:"body"`
+}
+
+// ModelNotePage One page of model notes, newest first.
+type ModelNotePage struct {
+	Total      int                       `json:"total"`
+	Offset     int                       `json:"offset"`
+	NextOffset int                       `json:"nextOffset,omitempty"`
+	Notes      jsonempty.List[ModelNote] `json:"notes"`
+}
+
+// ModelPool A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model.
+type ModelPool struct {
+	ID           string                `json:"id"`
+	ProviderKind ModelPoolProviderKind `json:"providerKind"`
+	ProviderID   string                `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime   NativeRuntimeID                 `json:"runtime"`
+	Label     string                          `json:"label"`
+	Members   jsonempty.List[ModelPoolMember] `json:"members"`
+	CreatedAt string                          `json:"createdAt"`
+	UpdatedAt string                          `json:"updatedAt"`
+}
+
+// ModelPoolProviderKind defines model for ModelPool.ProviderKind.
+type ModelPoolProviderKind string
+
+// ModelPoolInput Create or replace one equivalent-model group.
+type ModelPoolInput struct {
+	ProviderKind ModelPoolInputProviderKind `json:"providerKind"`
+	ProviderID   string                     `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID                 `json:"runtime"`
+	Label   string                          `json:"label"`
+	Members jsonempty.List[ModelPoolMember] `json:"members"`
+}
+
+// ModelPoolInputProviderKind defines model for ModelPoolInput.ProviderKind.
+type ModelPoolInputProviderKind string
+
+// ModelPoolMember One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight.
+type ModelPoolMember struct {
+	Model           string `json:"model"`
+	TokensPerMinute int64  `json:"tokensPerMinute,omitempty"`
+	Weight          int    `json:"weight,omitempty"`
+}
 
 // NativeAccountHold NativeAccountHold is Foundry's durable block, not an online health claim.
 type NativeAccountHold struct {
@@ -427,6 +614,9 @@ type ProfileDefinition struct {
 	// Models The models this profile offers. `model` is the default; everything here is selectable in chat and issue runs. Native discovery fills it where a CLI can enumerate, and anything the user adds stays.
 	Models []string `json:"models,omitempty"`
 
+	// ModelPrices `modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are US dollars per one million input, cache-read, cache-write and output tokens.
+	ModelPrices map[string]ProfileModelPrice `json:"modelPrices,omitempty"`
+
 	// ContextWindows `contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker).
 	ContextWindows       map[string]int64     `json:"contextWindows,omitempty"`
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
@@ -454,6 +644,14 @@ type ProfileDefinition struct {
 	// PromotedFrom `promotedFrom` is set when the profile was promoted from a provider in a device's own configuration.
 	PromotedFrom   *ProfilePromotionSource `json:"promotedFrom,omitempty"`
 	UpdatedAtLabel string                  `json:"updatedAtLabel"`
+}
+
+// ProfileModelPrice Custom prices for one model, in US dollars per one million tokens. A complete entry replaces LiteLLM's estimate for turns through this provider.
+type ProfileModelPrice struct {
+	InputPerMillion      float64 `json:"inputPerMillion"`
+	CacheReadPerMillion  float64 `json:"cacheReadPerMillion"`
+	CacheWritePerMillion float64 `json:"cacheWritePerMillion"`
+	OutputPerMillion     float64 `json:"outputPerMillion"`
 }
 
 // ProfileOrigin `device` profiles are discovered by a daemon on one machine and cannot move.

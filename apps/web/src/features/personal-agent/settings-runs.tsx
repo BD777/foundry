@@ -107,7 +107,7 @@ export function RoleRuns({
                     ? t("runs.inputMoved")
                     : t("runs.settled");
           return (
-            <li key={run.id} className="grid gap-1.5">
+            <li key={run.id} className="grid min-w-0 gap-1.5 wrap-anywhere">
               <p>
                 {isFlow(run.role)
                   ? t(`settings.models.flows.${run.role}.title`)

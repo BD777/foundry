@@ -12,6 +12,7 @@
 
 import { execFileSync } from "node:child_process";
 import {
+  cpSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -78,6 +79,19 @@ try {
     const extracted = join(work, `x-${name}`);
     mkdirSync(extracted);
     run("tar", ["xzf", join(raw, tarball), "-C", extracted]);
+    if (name === "worker") {
+      rmSync(join(extracted, "package", "extensions"), {
+        recursive: true,
+        force: true,
+      });
+      cpSync(
+        join(root, "extensions"),
+        join(extracted, "package", "extensions"),
+        {
+          recursive: true,
+        },
+      );
+    }
     const manifestPath = join(extracted, "package", "package.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     manifest.version = version;

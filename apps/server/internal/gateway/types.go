@@ -43,6 +43,14 @@ type Need struct {
 	Resource string
 	// Level is the lowest access level that allows the request; "" needs none.
 	Level string
+	// Write says the request changes something upstream. The assistant's
+	// permission package must be write for it.
+	Write bool
+	// Risk marks a write that needs the person's confirmation before it runs.
+	// Empty means the write is ordinary.
+	Risk string
+	// RiskSummary is what the confirmation card says the call will do.
+	RiskSummary string
 	// Otherwise is the denial that stands when the resource is held: a
 	// request no level allows (its resource is still checked first, so a
 	// caller learns of a resource it does not hold before anything else).
@@ -104,6 +112,11 @@ const (
 	ReasonBadRequest     = "bad_request"
 	ReasonRateLimited    = "rate_limited"
 	ReasonUnavailable    = "unavailable"
+	ReasonConnectorOff   = "connector_off"
+	ReasonConnectorRead  = "connector_read_only"
+	// ReasonNeedsConfirmation: the assistant may write, but this risk write
+	// waits for the person to accept the proposal named by ProposalID.
+	ReasonNeedsConfirmation = "needs_confirmation"
 	// ReasonInternal: the check itself failed (Err says how).
 	ReasonInternal = "internal"
 )
@@ -123,7 +136,42 @@ type Denial struct {
 	Missing  []string
 	// Wait is how long until a rate-limited call may be made.
 	Wait time.Duration
-	Err  error
+	// ProposalID and Summary name the confirmation card for a risk write.
+	ProposalID string
+	Summary    string
+	ExpiresAt  string
+	Err        error
+}
+
+// ConfirmationRequest is a risk write one assistant asked to make.
+type ConfirmationRequest struct {
+	Lease *Lease
+	Need  Need
+	// Method, Path, Query and BodyDigest identify the exact call the person
+	// is approving.
+	Method      string
+	Path        string
+	Query       string
+	BodyDigest  string
+	Fingerprint string
+	Summary     string
+}
+
+// ConfirmationDecision says whether the exact request was accepted. Pending
+// proposals are returned with Approved false so the caller can be told which
+// card is waiting.
+type ConfirmationDecision struct {
+	Approved   bool
+	ProposalID string
+	Summary    string
+	ExpiresAt  string
+}
+
+// Confirmer creates or consumes one risk write's confirmation. Review must be
+// idempotent while a proposal is pending and consume an accepted proposal at
+// most once.
+type Confirmer interface {
+	Review(context.Context, ConfirmationRequest) (ConfirmationDecision, *Denial)
 }
 
 func (d *Denial) outcome() string {

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { handleActiveClaudeMessage } from "../dist/session/runner/claude-messages.js";
-import { claudeProcessEvent } from "../dist/session/runner/sdk-messages.js";
+import {
+  claudeProcessEvent,
+  claudeQuotaExhaustion,
+} from "../dist/session/runner/sdk-messages.js";
 
 test("Claude API throttling is visible without finishing the active run or leaking diagnostics", async () => {
   const directory = mkdtempSync(join(tmpdir(), "foundry-claude-retry-"));
@@ -100,5 +103,97 @@ test("Claude retry events tolerate absent or invalid SDK metadata", () => {
       retry_delay_ms: 1501,
     }).detail,
     "HTTP 503 · Retry 1 · continuing in 2s",
+  );
+});
+
+test("Claude quota exhaustion stops before another SDK retry", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-claude-quota-"));
+  const events = [];
+  const rejections = [];
+  let closedQuery = 0;
+  const turn = {
+    emit: async (label, detail, level) => events.push({ label, detail, level }),
+    finalResult: "",
+    partialResult: "",
+    openTaskIds: new Set(),
+    messagesPath: join(directory, "messages.jsonl"),
+    resultPath: join(directory, "result.md"),
+    reject: (error) => rejections.push(error),
+    resolve: () => undefined,
+    liveness: { observe: () => [], close: () => undefined },
+  };
+  const runtime = {
+    closed: false,
+    key: "quota_test",
+    lastUsed: 0,
+    nativeSessionId: "native_quota",
+    foundrySessionId: "sess_quota",
+    pending: turn,
+    input: { close: () => undefined },
+    query: { close: () => closedQuery++ },
+    background: { close: () => undefined },
+    questions: { close: () => undefined },
+    timers: { close: () => [], announcedFire: () => undefined },
+  };
+  try {
+    await handleActiveClaudeMessage(runtime, {
+      type: "system",
+      subtype: "api_retry",
+      attempt: 1,
+      max_retries: 10,
+      retry_delay_ms: 1000,
+      error_status: 429,
+      error: "billing_error",
+    });
+    assert.equal(runtime.closed, true);
+    assert.equal(runtime.pending, undefined);
+    assert.equal(closedQuery, 1);
+    assert.equal(events.length, 0, "quota rejection is not a rate-limit retry");
+    assert.equal(rejections.length, 1);
+    assert.match(rejections[0].message, /quota or billing limit is exhausted/);
+
+    await handleActiveClaudeMessage(runtime, {
+      type: "assistant",
+      is_api_error_message: true,
+      error: "billing_error",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "API Error: Request rejected (429) · upstream account quota usage limit has been reached",
+          },
+        ],
+      },
+    });
+    assert.equal(
+      rejections.length,
+      1,
+      "the closed runtime ignores queued frames",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Claude quota detection uses the structured billing code before text", () => {
+  assert.match(
+    claudeQuotaExhaustion({
+      type: "assistant",
+      is_api_error_message: true,
+      error: "billing_error",
+      message: {
+        content: [{ type: "text", text: "Request rejected" }],
+      },
+    }),
+    /quota or billing limit is exhausted/,
+  );
+  assert.equal(
+    claudeQuotaExhaustion({
+      type: "system",
+      subtype: "api_retry",
+      error_status: 429,
+      error: "rate_limit",
+    }),
+    undefined,
   );
 });

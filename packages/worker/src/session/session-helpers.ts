@@ -284,7 +284,8 @@ export function inputScopedMessage(
 
 function completionMarkerPath(
   workspacePath: string,
-  session: Pick<AgentSession, "id"> & Partial<Pick<AgentSession, "input">>,
+  session: Pick<AgentSession, "id" | "dispatchId"> &
+    Partial<Pick<AgentSession, "input">>,
 ): string {
   return resolve(
     sessionInputDirectory(
@@ -315,11 +316,11 @@ export function writeAgentSessionCompletionMarker(
 export function readAgentSessionCompletionMarker(
   workspacePath: string,
   sessionId: string,
-  inputId: string,
+  dispatchId: string,
 ): AgentSessionCompletionMarker | undefined {
   const markerPath = completionMarkerPath(workspacePath, {
     id: sessionId,
-    input: inputId ? { id: inputId, prompt: "" } : undefined,
+    dispatchId,
   });
   if (!existsSync(markerPath)) return undefined;
   const marker = JSON.parse(

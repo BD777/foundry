@@ -102,6 +102,21 @@ type Service struct {
 	// Handles issues the gateway handles a session's device holds in place
 	// of the app secret and the access token; nil gives sessions nothing.
 	Handles HandleIssuer
+	// Extensions validates and probes pure-data server-held connector
+	// extensions. Tests set its resolver or HTTP client to reach a local
+	// fake.
+	Extensions *ExtensionClient
+	// AllowSessionAccount, when set, decides whether an extension's
+	// server-held account is available on the session's device (the device
+	// must report the connector). Built-in providers do not call it.
+	AllowSessionAccount func(ctx context.Context, account store.ExternalAccount, deviceID string) (bool, error)
+	// ExtensionDeviceRequest runs one upstream HTTP exchange on an owned
+	// device for a device-network extension instance. Headers may carry the
+	// rendered credential, so implementations must keep them in memory.
+	ExtensionDeviceRequest func(ctx context.Context, deviceID string, request ExtensionDeviceHTTPRequest) (ExtensionDeviceHTTPResponse, error)
+	// ExtensionCheckDevices checks which of the owner's online devices can
+	// reach a device-network instance and records their display metadata.
+	ExtensionCheckDevices func(ctx context.Context, descriptor store.ConnectorDescriptor, baseURL, probeDeviceID string) ([]store.ConnectorServerHeldDeviceCheck, error)
 
 	authorizationEpochs sync.Map
 	loginsMu            sync.Mutex
@@ -127,6 +142,7 @@ func NewService(st Store, secrets SecretKeeper, registry *Registry) *Service {
 		LoginGrace:        10 * time.Minute,
 		Logf:              log.Printf,
 		logins:            map[string]*pendingLogin{},
+		Extensions:        &ExtensionClient{},
 	}
 }
 

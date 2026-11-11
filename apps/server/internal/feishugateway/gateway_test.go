@@ -2,9 +2,12 @@ package feishugateway
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 )
 
 func TestBlocklist(t *testing.T) {
@@ -26,6 +29,25 @@ func TestBlocklist(t *testing.T) {
 	} {
 		if got := blocked(tc.method, tc.path) != ""; got != tc.blocked {
 			t.Errorf("%s %s blocked=%v, want %v", tc.method, tc.path, got, tc.blocked)
+		}
+	}
+}
+
+func TestClassifyMarksWritesAndRiskWrites(t *testing.T) {
+	g := &Gateway{}
+	for _, tc := range []struct {
+		method, path string
+		write, risk  bool
+	}{
+		{http.MethodGet, "/open-apis/im/v1/messages", false, false},
+		{http.MethodPost, "/open-apis/im/v1/messages", true, true},
+		{http.MethodDelete, "/open-apis/drive/v1/files/file_1", true, true},
+		{http.MethodPost, "/open-apis/contact/v3/users/batch_get_id", true, false},
+	} {
+		request := httptest.NewRequest(tc.method, tc.path, nil)
+		need, denial := g.Classify(request, &gateway.Lease{})
+		if denial != nil || need.Write != tc.write || (need.Risk != "") != tc.risk {
+			t.Errorf("%s %s: need=%+v denial=%+v", tc.method, tc.path, need, denial)
 		}
 	}
 }

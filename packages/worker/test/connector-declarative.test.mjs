@@ -304,7 +304,7 @@ test("a declarative manifest is checked: cli without entry only, templates name 
   );
   assert.throws(
     () => parseExtensionManifest(variant((_, c) => delete c.cli)),
-    /declares its cli/,
+    /declares cli or serverHeld/,
   );
   assert.throws(
     () =>

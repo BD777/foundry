@@ -33,6 +33,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 			home_device_id TEXT NOT NULL,
 			state TEXT NOT NULL,
 			settings_json TEXT NOT NULL,
+			permission_package_id TEXT NOT NULL DEFAULT '',
 			prompt_version TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
@@ -163,16 +164,16 @@ func inStatuses(column string, statuses []string) (string, []any) {
 	return " AND " + column + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(statuses)), ", ") + ")", args
 }
 
-const personalAgentColumns = `user_id, workspace_id, home_device_id, state, settings_json, prompt_version, created_at, updated_at, stopped_at, connector_opt_out`
+const personalAgentColumns = `user_id, workspace_id, home_device_id, state, settings_json, permission_package_id, prompt_version, created_at, updated_at, stopped_at`
 
 // personalAgentRead is what reading an assistant selects.
 const personalAgentRead = personalAgentColumns + `, former_workspace_ids`
 
 func scanPersonalAgent(row interface{ Scan(...any) error }) (store.PersonalAgent, error) {
 	var agent store.PersonalAgent
-	var settings, former, connectorOptOut string
+	var settings, former string
 	if err := row.Scan(&agent.UserID, &agent.WorkspaceID, &agent.HomeDeviceID, &agent.State, &settings,
-		&agent.PromptVersion, &agent.CreatedAt, &agent.UpdatedAt, &agent.StoppedAt, &connectorOptOut, &former); err != nil {
+		&agent.PermissionPackageID, &agent.PromptVersion, &agent.CreatedAt, &agent.UpdatedAt, &agent.StoppedAt, &former); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return store.PersonalAgent{}, store.ErrNotFound
 		}
@@ -183,9 +184,6 @@ func scanPersonalAgent(row interface{ Scan(...any) error }) (store.PersonalAgent
 	}
 	if err := json.Unmarshal([]byte(former), &agent.FormerWorkspaceIDs); err != nil {
 		return store.PersonalAgent{}, fmt.Errorf("personal agent former workspaces: %w", err)
-	}
-	if err := json.Unmarshal([]byte(connectorOptOut), &agent.ConnectorOptOut); err != nil {
-		return store.PersonalAgent{}, fmt.Errorf("personal agent connector opt-out: %w", err)
 	}
 	return agent, nil
 }
@@ -222,23 +220,20 @@ func (s *Store) createPersonalAgent(ctx context.Context, agent store.PersonalAge
 	if err != nil {
 		return store.PersonalAgent{}, err
 	}
-	optOut := agent.ConnectorOptOut
-	if optOut == nil {
-		optOut = []string{}
-	}
-	connectorOptOut, err := json.Marshal(optOut)
-	if err != nil {
-		return store.PersonalAgent{}, err
-	}
 	now := paNow()
 	agent.CreatedAt, agent.UpdatedAt = now, now
 	if agent.State == "" {
 		agent.State = store.PersonalAgentActive
 	}
+	pkg, err := s.createDefaultPermissionPackage(ctx, agent.UserID)
+	if err != nil {
+		return store.PersonalAgent{}, err
+	}
+	agent.PermissionPackageID = pkg.ID
 	result, err := s.conn().ExecContext(ctx, `INSERT INTO personal_agents (`+personalAgentColumns+`)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, '', ?
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ''
 		WHERE NOT EXISTS (SELECT 1 FROM personal_agents WHERE user_id = ? OR workspace_id = ?)`,
-		agent.UserID, agent.WorkspaceID, agent.HomeDeviceID, agent.State, string(settings), agent.PromptVersion, now, now, string(connectorOptOut),
+		agent.UserID, agent.WorkspaceID, agent.HomeDeviceID, agent.State, string(settings), agent.PermissionPackageID, agent.PromptVersion, now, now,
 		agent.UserID, agent.WorkspaceID)
 	if err != nil {
 		return store.PersonalAgent{}, fmt.Errorf("create personal agent: %w", err)
@@ -276,25 +271,28 @@ func (s *Store) SavePersonalAgentSettings(ctx context.Context, userID string, se
 	return saved, err
 }
 
-func (s *Store) SetPersonalAgentConnectorOptOut(ctx context.Context, userID string, accountIDs []string) (store.PersonalAgent, error) {
-	seen := map[string]bool{}
-	clean := make([]string, 0, len(accountIDs))
-	for _, accountID := range accountIDs {
-		accountID = strings.TrimSpace(accountID)
-		if accountID == "" || seen[accountID] {
-			continue
+func (s *Store) SetPersonalAgentConnectorLevels(ctx context.Context, userID string, levels []store.ConnectorAccountPermission) (store.PersonalAgent, error) {
+	var saved store.PersonalAgent
+	err := s.withTx(ctx, func(tx *Store) error {
+		agent, err := tx.GetPersonalAgent(ctx, userID)
+		if err != nil {
+			return err
 		}
-		seen[accountID] = true
-		clean = append(clean, accountID)
-	}
-	encoded, err := json.Marshal(clean)
-	if err != nil {
-		return store.PersonalAgent{}, err
-	}
-	if err := s.updatePersonalAgent(ctx, userID, `connector_opt_out = ?, updated_at = ?`, string(encoded), paNow()); err != nil {
-		return store.PersonalAgent{}, err
-	}
-	return s.GetPersonalAgent(ctx, userID)
+		pkg, err := tx.GetPermissionPackage(ctx, userID, agent.PermissionPackageID)
+		if err != nil {
+			return err
+		}
+		pkg.ConnectorAccounts = levels
+		if _, err := tx.SavePermissionPackage(ctx, pkg); err != nil {
+			return err
+		}
+		if err := tx.updatePersonalAgent(ctx, userID, `updated_at = ?`, paNow()); err != nil {
+			return err
+		}
+		saved, err = tx.GetPersonalAgent(ctx, userID)
+		return err
+	})
+	return saved, err
 }
 
 func (s *Store) FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (store.PersonalAgent, error) {

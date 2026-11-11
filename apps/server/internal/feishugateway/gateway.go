@@ -51,6 +51,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -167,6 +168,13 @@ func (g *Gateway) UseChecks(checks *gateway.Checks) {
 // (gateway.SessionLive).
 func (g *Gateway) UseNativeWork(work gateway.NativeWork) {
 	g.pipeline.Work = work
+}
+
+// UsePermission makes every gateway call re-read the assistant package and
+// route risk writes through confirmation.
+func (g *Gateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
+	g.pipeline.Permission = st
+	g.pipeline.Confirm = confirm
 }
 
 // SetRates replaces the per-session and per-app limits.

@@ -32,22 +32,63 @@ func TestPersonalAgentIsOnePerPersonAndWorkspace(t *testing.T) {
 	}
 }
 
-func TestPersonalAgentConnectorOptOutDefaultsEmptyAndReplaces(t *testing.T) {
+func TestPersonalAgentPermissionPackageDefaultsAndConnectorLevels(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	created, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "user_a", WorkspaceID: "ws_pa", HomeDeviceID: "dev_a"})
-	if err != nil || len(created.ConnectorOptOut) != 0 {
+	if err != nil || created.PermissionPackageID == "" {
 		t.Fatalf("created = %+v (%v)", created, err)
 	}
-	agent, err := db.SetPersonalAgentConnectorOptOut(ctx, "user_a", []string{" acct_b ", "acct_a", "acct_b", ""})
+	pkg, err := db.GetPermissionPackage(ctx, "user_a", created.PermissionPackageID)
+	if err != nil || len(pkg.Workspaces.Include) != 0 || len(pkg.Workspaces.Exclude) != 0 ||
+		len(pkg.ConnectorAccounts) != 0 || len(pkg.DevicesResources.DirectLeaseAllowed) != 0 ||
+		len(pkg.Skills.Include) != 0 || len(pkg.Skills.Exclude) != 0 {
+		t.Fatalf("default package = %+v (%v)", pkg, err)
+	}
+	agent, err := db.SetPersonalAgentConnectorLevels(ctx, "user_a", []store.ConnectorAccountPermission{
+		{AccountID: "acct_b", Level: store.ConnectorAccessLevelOff},
+		{AccountID: "acct_a", Level: store.ConnectorAccessLevelRead},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(agent.ConnectorOptOut) != 2 || agent.ConnectorOptOut[0] != "acct_b" || agent.ConnectorOptOut[1] != "acct_a" {
-		t.Fatalf("opt-out = %v", agent.ConnectorOptOut)
+	pkg, err = db.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil || len(pkg.ConnectorAccounts) != 2 ||
+		pkg.ConnectorAccounts[0].AccountID != "acct_b" || pkg.ConnectorAccounts[0].Level != store.ConnectorAccessLevelOff ||
+		pkg.ConnectorAccounts[1].AccountID != "acct_a" || pkg.ConnectorAccounts[1].Level != store.ConnectorAccessLevelRead {
+		t.Fatalf("levels = %+v (%v)", pkg.ConnectorAccounts, err)
 	}
-	agent, err = db.SetPersonalAgentConnectorOptOut(ctx, "user_a", nil)
-	if err != nil || len(agent.ConnectorOptOut) != 0 {
-		t.Fatalf("cleared = %+v (%v)", agent, err)
+	agent, err = db.SetPersonalAgentConnectorLevels(ctx, "user_a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err = db.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil || len(pkg.ConnectorAccounts) != 0 {
+		t.Fatalf("cleared = %+v (%v)", pkg.ConnectorAccounts, err)
+	}
+}
+
+func TestPermissionPackageMigrationCarriesLegacyConnectorOptOut(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	created, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "user_legacy", WorkspaceID: "ws_legacy", HomeDeviceID: "dev_legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.conn().ExecContext(ctx, `UPDATE personal_agents
+		SET permission_package_id = '', connector_opt_out = '["acct_off"]'
+		WHERE user_id = ?`, created.UserID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.setupPermissionPackages(ctx); err != nil {
+		t.Fatal(err)
+	}
+	agent, err := db.GetPersonalAgent(ctx, created.UserID)
+	if err != nil || agent.PermissionPackageID == "" || agent.PermissionPackageID == created.PermissionPackageID {
+		t.Fatalf("migrated assistant = %+v (%v)", agent, err)
+	}
+	pkg, err := db.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil || len(pkg.ConnectorAccounts) != 1 ||
+		pkg.ConnectorAccounts[0].AccountID != "acct_off" || pkg.ConnectorAccounts[0].Level != store.ConnectorAccessLevelOff {
+		t.Fatalf("migrated package = %+v (%v)", pkg, err)
 	}
 }
 

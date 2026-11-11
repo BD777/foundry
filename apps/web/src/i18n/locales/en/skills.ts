@@ -153,6 +153,8 @@ export const skills = {
       defaultBranchVersion: "default branch @ {{version}}",
       paused: "Updates paused",
       from: "from {{label}}",
+      connector: "Belongs to the {{name}} connector",
+      linkedSkill: "Opened from this connector",
       updatedTo: "Updated to {{tag}}",
       rolledBackTo: "Rolled back to {{tag}}; automatic updates paused",
       changed_one: "{{count}} changed",

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -123,6 +124,14 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		return prompt.Input{}, err
+	}
+	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
+	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
+		return !access.WorkspaceAllowed(record.Digest.WorkspaceID)
+	})
 	workspaces := make([]store.WorkspaceDigest, len(records))
 	for i, record := range records {
 		workspaces[i] = record.Digest

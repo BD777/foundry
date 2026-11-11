@@ -5,6 +5,10 @@ import {
   ClaudeRequestUsageTracker,
   claudeRequestUsage,
 } from "../dist/session/usage/turn-usage.js";
+import {
+  CodexRequestTimingTracker,
+  estimatedTimingReliable,
+} from "../dist/session/usage/codex-request-timing.js";
 
 const zero = {
   input_tokens: 0,
@@ -21,6 +25,75 @@ const assistant = (id, block, usage = zero) => ({
   type: "assistant",
   parent_tool_use_id: null,
   message: { id, role: "assistant", content: [block], usage },
+});
+const at = (time) => Date.parse(`2026-11-10T${time}Z`);
+
+// Replayed from sess_1794327035048822408: four parallel MCP calls ran for
+// about eight seconds; the next response then emitted reasoning and three
+// command calls. Its usage update arrived after those commands completed.
+test("a Codex usage update belongs to the response that ended before its tools", () => {
+  const tracker = new CodexRequestTimingTracker({
+    startedAt: at("16:26:20.000"),
+  });
+  for (const [id, time] of [
+    ["mcp-1", "16:26:20.418"],
+    ["mcp-2", "16:26:20.461"],
+    ["mcp-3", "16:26:21.516"],
+    ["mcp-4", "16:26:21.857"],
+  ])
+    tracker.observe("item/started", {
+      item: { id, type: "mcpToolCall", startedAtMs: at(time) },
+    });
+  for (const [id, time] of [
+    ["mcp-1", "16:26:27.591"],
+    ["mcp-2", "16:26:27.593"],
+    ["mcp-3", "16:26:27.660"],
+    ["mcp-4", "16:26:28.419"],
+  ])
+    tracker.observe("item/completed", {
+      item: { id, type: "mcpToolCall", completedAtMs: at(time) },
+    });
+  assert.ok(tracker.takeRequestMs() > 0);
+
+  tracker.observe("item/started", {
+    item: {
+      id: "reasoning-36",
+      type: "reasoning",
+      startedAtMs: at("16:26:35.012"),
+    },
+  });
+  tracker.observe("item/completed", {
+    item: {
+      id: "reasoning-36",
+      type: "reasoning",
+      completedAtMs: at("16:27:07.107"),
+    },
+  });
+  for (const [id, time] of [
+    ["command-1", "16:27:11.099"],
+    ["command-2", "16:27:11.100"],
+    ["command-3", "16:27:11.231"],
+  ])
+    tracker.observe("item/started", {
+      item: { id, type: "commandExecution", startedAtMs: at(time) },
+    });
+  for (const [id, time] of [
+    ["command-1", "16:27:12.113"],
+    ["command-2", "16:27:12.249"],
+    ["command-3", "16:27:12.639"],
+  ])
+    tracker.observe("item/completed", {
+      item: { id, type: "commandExecution", completedAtMs: at(time) },
+    });
+
+  // The usage update arrived at 16:27:13.978, long after the tool results.
+  const requestMs = tracker.takeRequestMs();
+  assert.equal(requestMs, 42_812);
+  const speed = 3_950 / (requestMs / 1_000);
+  assert.ok(speed >= 50 && speed <= 300, `speed was ${speed} tok/s`);
+  assert.equal(estimatedTimingReliable(3_950, requestMs), true);
+  assert.equal(estimatedTimingReliable(100, 500), false);
+  assert.equal(estimatedTimingReliable(2_000, 1_000), false);
 });
 
 // What a relay sends: every assistant block and message_start report zeros;

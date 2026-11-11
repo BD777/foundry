@@ -55,6 +55,21 @@ at(60,()=>notify('item/completed',{turnId:'turn-late',item:{id:'tool-late',type:
 at(150,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14},total:{inputTokens:10,cachedInputTokens:3,outputTokens:4,totalTokens:14}}}));
 at(220,()=>notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:20,cachedInputTokens:6,outputTokens:6,totalTokens:26},total:{inputTokens:30,cachedInputTokens:9,outputTokens:10,totalTokens:40}}}));
 at(260,()=>{notify('item/completed',{turnId:'turn-late',item:{id:'answer',type:'agentMessage',text:'finished',phase:'final_answer'}});notify('turn/completed',{turn:{id:'turn-late',status:'completed'}});});return;}
+if(r.method==='turn/start'&&process.env.MODE==='terminal-ws-405'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});return notify('turn/completed',{turn:{id:'turn-1',status:'failed',error:{message:'unexpected status 405 Method Not Allowed: Method Not Allowed, url: wss://tokenhub.example/v1/responses',codexErrorInfo:{httpConnectionFailed:{httpStatusCode:405}}}}});}
+if(r.method==='turn/start'&&process.env.MODE==='usage-timeline'){const base=Date.now();notify('turn/started',{turn:{id:'turn-timeline',startedAtMs:base}});reply({turn:{id:'turn-timeline'}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'reasoning-1',type:'reasoning',startedAtMs:base+2000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'reasoning-1',type:'reasoning',completedAtMs:base+4000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'commentary-1',type:'agentMessage',phase:'commentary',text:'working',completedAtMs:base+4500}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'tool-1',type:'commandExecution',startedAtMs:base+5000}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'tool-2',type:'commandExecution',startedAtMs:base+5200}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'tool-1',type:'commandExecution',completedAtMs:base+12000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'tool-2',type:'commandExecution',completedAtMs:base+15000}});
+notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:100,cachedInputTokens:80,outputTokens:1500,totalTokens:1600},total:{inputTokens:100,cachedInputTokens:80,outputTokens:1500,totalTokens:1600}}});
+notify('item/started',{turnId:'turn-timeline',item:{id:'reasoning-2',type:'reasoning',startedAtMs:base+16000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'reasoning-2',type:'reasoning',completedAtMs:base+18000}});
+notify('item/completed',{turnId:'turn-timeline',item:{id:'answer',type:'agentMessage',phase:'final_answer',text:'finished',completedAtMs:base+19000}});
+notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:200,cachedInputTokens:180,outputTokens:800,totalTokens:1000},total:{inputTokens:300,cachedInputTokens:260,outputTokens:2300,totalTokens:2600}}});
+notify('turn/completed',{turn:{id:'turn-timeline',status:'completed'}});return;}
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});setTimeout(()=>notify('turn/completed',{turn:{id:'turn-1',status:'completed'}}),50);return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
@@ -176,7 +191,7 @@ test("a turn sums every token usage update and emits three request records", asy
     assert.equal(request.timingEstimated, true);
     assert.equal(request.firstTokenMs, undefined);
     assert.equal(request.generationMs, undefined);
-    assert.ok(request.requestMs >= 20 && request.requestMs < 150);
+    assert.equal(request.requestMs, undefined);
   }
   assert.equal(seen.at(-1).type, "turn.completed");
   assert.deepEqual(seen.at(-1).usage, {
@@ -188,7 +203,7 @@ test("a turn sums every token usage update and emits three request records", asy
   });
 });
 
-test("a delayed first token usage update keeps request time and turn totals", async (t) => {
+test("a delayed token usage update keeps tokens without inventing timing", async (t) => {
   const thread = fixture(t, "usage-late");
   const { events } = await thread.runStreamed("start");
   const seen = [];
@@ -198,8 +213,8 @@ test("a delayed first token usage update keeps request time and turn totals", as
     .filter((event) => event.type === "foundry.model_request_usage")
     .map((event) => event.requestUsage);
   assert.equal(requests.length, 2);
-  assert.ok(requests[0].requestMs >= 50);
-  assert.ok(requests[1].requestMs >= 20);
+  assert.equal(requests[0].requestMs, undefined);
+  assert.equal(requests[1].requestMs, undefined);
   assert.equal(requests[0].inputTokens, 10);
   assert.equal(requests[1].inputTokens, 20);
   assert.deepEqual(seen.at(-1).usage, {
@@ -207,6 +222,36 @@ test("a delayed first token usage update keeps request time and turn totals", as
     cached_input_tokens: 9,
     cache_write_input_tokens: 0,
     output_tokens: 10,
+    reasoning_output_tokens: 0,
+  });
+});
+
+test("a replayed item timeline gives usage updates their response time", async (t) => {
+  const thread = fixture(t, "usage-timeline");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+
+  const requests = seen
+    .filter((event) => event.type === "foundry.model_request_usage")
+    .map((event) => event.requestUsage);
+  assert.deepEqual(
+    requests.map((request) => request.requestMs),
+    [5200, 4000],
+  );
+  assert.deepEqual(
+    requests.map((request) => request.outputTokens),
+    [1500, 800],
+  );
+  for (const request of requests) {
+    const speed = request.outputTokens / (request.requestMs / 1000);
+    assert.ok(speed >= 50 && speed <= 300, `speed was ${speed} tok/s`);
+  }
+  assert.deepEqual(seen.at(-1).usage, {
+    input_tokens: 300,
+    cached_input_tokens: 260,
+    cache_write_input_tokens: 0,
+    output_tokens: 2300,
     reasoning_output_tokens: 0,
   });
 });
@@ -259,6 +304,19 @@ test("tool mapping retains outcomes", () => {
     }).changes,
     [{ path: "a", kind: "add" }],
   );
+});
+
+test("a terminal turn preserves Codex's structured HTTP failure", async (t) => {
+  const thread = fixture(t, "terminal-ws-405");
+  const { events } = await thread.runStreamed("start");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+  assert.equal(seen.at(-1).type, "turn.failed");
+  assert.deepEqual(seen.at(-1).error, {
+    message:
+      "unexpected status 405 Method Not Allowed: Method Not Allowed, url: wss://tokenhub.example/v1/responses",
+    codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 405 } },
+  });
 });
 
 test("native startup can exceed the control deadline without replaying a turn", async (t) => {

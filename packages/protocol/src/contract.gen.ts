@@ -300,7 +300,7 @@ interface components {
        */
       reason?: "bootstrap_available" | "cli_upgrade" | "check_failed";
     };
-    /** @description ConnectorField is one field a sign-in method asks for, rendered by the Web; its value reaches the device's adapter as SignInOptions[ID]. */
+    /** @description ConnectorField is one field a sign-in method or a server-held instance form asks for, rendered by the Web. */
     ConnectorField: {
       /** @description 1–32 letters, digits or underscores, starting with a letter. */
       id: string;
@@ -321,6 +321,8 @@ interface components {
       pattern?: string;
       /** @description select: the choices. */
       options?: components["schemas"]["ConnectorOption"][];
+      /** @description select: fill the choices from a server-held probe (`probe:<probe-id>`) instead of static options. */
+      optionsFrom?: string;
       /** @description Shown only while another field of the method holds one of these values. */
       showWhen?: components["schemas"]["ConnectorShowWhen"];
     };
@@ -332,6 +334,8 @@ interface components {
         [key: string]: string;
       };
     };
+    /** @description A list of choices for one select field. */
+    ConnectorOptionList: components["schemas"]["ConnectorOption"][];
     /** @description ConnectorShowWhen shows a field only while another holds one of Equals. */
     ConnectorShowWhen: {
       field: string;
@@ -391,12 +395,112 @@ interface components {
       id: string;
       name: string;
       version: string;
+      /** @description The extension ships with the Worker. */
+      bundled?: boolean;
+      /**
+       * @description "installed" is on this device; "available" ships with the Worker but is not installed there. An absent state means installed, for descriptors reported by older Workers.
+       * @enum {string}
+       */
+      state?: "installed" | "available";
+      /** @description A git-installed extension updates when its source moves; default true. */
+      autoUpdate?: boolean;
       /** @description Where its files come from, so other devices can install it too. */
       source?: components["schemas"]["ConnectorExtensionRepository"];
       /** @description The commit this device installed, when installed from source. */
       commit?: string;
       /** @description The commit source.ref is at now, when the device last looked. */
       latestCommit?: string;
+    };
+    /** @description A device-held connector can check whether its own login can read a source repository. The Worker runs this argv with the connector's ordinary Foundry environment. */
+    ConnectorRepositoryAccess: {
+      /** @description Exactly one {repository} placeholder may appear. */
+      args: string[];
+      /**
+       * @description `github` accepts an owner/repo or GitHub URL and passes owner/repo; raw passes the declared value.
+       * @enum {string}
+       */
+      repositoryFormat?: "raw" | "github";
+    };
+    /** @description A connector is visible only when one of the owner's devices can read the repository through the named Foundry connector. */
+    ConnectorSourceAccess: {
+      /** @description A connector kind that declares repositoryAccess. */
+      via: string;
+      /** @description owner/repo or an https repository address. */
+      repository: string;
+      hint?: string;
+      hints?: {
+        [key: string]: string;
+      };
+    };
+    /** @description A device's last check of one source repository through a Foundry connector. */
+    ConnectorSourceAccessCheck: {
+      /** @enum {string} */
+      status: "ok" | "no_access" | "not_signed_in" | "unreachable" | "error";
+      checkedAt: string;
+      /** @description The non-secret account name of the connector login used. */
+      identity?: string;
+      /** @description A short non-secret message from the connector. */
+      detail?: string;
+    };
+    /** @description A device's last check of a connector's declared visibility requirements, such as tcp_reachable. */
+    ConnectorRequirementsCheck: {
+      ok: boolean;
+      checkedAt: string;
+      /** @description The first requirement the device did not meet. */
+      requirement?: string;
+    };
+    /** @description ConnectorPackage names the upstream Skill bundle and CLI a connector ships with. The bundle follows the upstream; its recorded commit is also the repository tool's version. */
+    ConnectorPackage: {
+      upstream: components["schemas"]["ConnectorPackageUpstream"];
+      skills: components["schemas"]["ConnectorPackageSkills"];
+      /** @description Programs from folders of the bundle's own upstream repository. */
+      tools: components["schemas"]["ConnectorPackageTool"][];
+    };
+    /** @description A GitHub repository whose Skills and tools move as one bundle version. */
+    ConnectorPackageUpstream: {
+      /** @description The connector whose Foundry-managed login reads the repository. */
+      via: string;
+      /** @description A normalized https GitHub repository address. */
+      repository: string;
+      /** @description A branch or tag; empty follows the default release or branch. */
+      ref?: string;
+    };
+    /** @description The folder in Upstream holding the bundle's Skill folders. */
+    ConnectorPackageSkills: {
+      path: string;
+    };
+    /** @description A CLI from a folder of the package's upstream repository. */
+    ConnectorPackageTool: {
+      command: string;
+      /** @enum {string} */
+      source: "repository";
+      /** @description The folder in Upstream holding the tool's files. */
+      path: string;
+      /** @description Command names mapped to relative files under Path. */
+      bins: {
+        [key: string]: string;
+      };
+    };
+    /** @description One of the owner's devices in a package view, and whether it may be selected. */
+    ConnectorPackageDevice: {
+      deviceId: string;
+      name: string;
+      online: boolean;
+      selected: boolean;
+      eligible: boolean;
+      /** @description Why the device cannot be selected, when Eligible is false. */
+      reason?: string;
+    };
+    /** @description A package at the person level, its bundle, and where it is enabled. */
+    ConnectorPackageView: {
+      connector: components["schemas"]["ConnectorDescriptor"];
+      enabled: boolean;
+      repositoryId?: string;
+      devices: components["schemas"]["ConnectorPackageDevice"][];
+    };
+    /** @description Replace the devices on which a package is enabled. */
+    SetConnectorPackageDevicesInput: {
+      deviceIds: string[];
     };
     /** @description A folder of a git repository holding an extension (docs/connector-extensions.md). The device fetches it with its own git credentials (SSH keys, credential helpers such as GitHub CLI's). */
     ConnectorExtensionRepository: {
@@ -417,6 +521,206 @@ interface components {
      * @enum {string}
      */
     ConnectorHolding: "server_held" | "device_held";
+    /** @description ConnectorServerHeld declares a pure-data server-held connector supplied by an extension. Foundry probes and proxies it generically; extension code never runs on the server. */
+    ConnectorServerHeldSpec: {
+      /** @enum {string} */
+      instances: "one" | "many";
+      fields: components["schemas"]["ConnectorField"][];
+      /** @description Field ids grouped into the form's steps; presentation data for Web. */
+      steps: components["schemas"]["ConnectorServerHeldStep"][];
+      probe: components["schemas"]["ConnectorServerHeldProbe"][];
+      upstream: components["schemas"]["ConnectorServerHeldUpstream"];
+      access: components["schemas"]["ConnectorServerHeldAccess"];
+      session: components["schemas"]["ConnectorServerHeldSession"];
+      network: components["schemas"]["ConnectorServerHeldNetwork"];
+    };
+    /** @description One group of field ids in a server-held instance form. */
+    ConnectorServerHeldStep: string[];
+    ConnectorServerHeldProbeExtract: {
+      /** @description Probe id to display name to JSON pointer. */
+      values?: {
+        [key: string]: string;
+      };
+      options?: components["schemas"]["ConnectorServerHeldOptionsExtract"];
+      routes?: components["schemas"]["ConnectorServerHeldRoutesExtract"];
+    };
+    ConnectorServerHeldOptionsExtract: {
+      /** @description JSON pointer to the array of option objects. */
+      items: string;
+      /** @description JSON pointer inside each item to its value. */
+      value: string;
+      /** @description JSON pointer inside each item to its label. */
+      label: string;
+    };
+    ConnectorServerHeldRoutesExtract: {
+      /** @description JSON pointer to the array of route objects. */
+      items: string;
+      /** @description JSON pointer inside each route to its HTTP method. */
+      method: string;
+      /** @description JSON pointer inside each route to its path template. */
+      path: string;
+      /** @description JSON pointer inside each route to read/write classification. */
+      access: string;
+      /** @description Optional JSON pointer inside each route to its resource domain. */
+      domain?: string;
+    };
+    ConnectorServerHeldProbe: {
+      id: string;
+      method: string;
+      /** @description Path appended to the upstream base; must name a declared base field. */
+      path: string;
+      /** @description A 404 from this probe is skipped and later probes continue. */
+      optional?: boolean;
+      extract?: components["schemas"]["ConnectorServerHeldProbeExtract"];
+    };
+    ConnectorServerHeldUpstream: {
+      /** @description Id of a declared URL field that holds the upstream base. */
+      baseField: string;
+      /** @description Only paths at or below this prefix may reach the upstream. */
+      pathPrefix: string;
+      /** @description Templates for upstream request headers. Only this object may use `{secret:<field-id>}`. */
+      headers?: {
+        [key: string]: string;
+      };
+      requestBodyLimitBytes?: number;
+      responseBodyLimitBytes?: number;
+      timeoutSeconds?: number;
+    };
+    ConnectorServerHeldAccess: {
+      /** @description `probe:<probe-id>` whose route extraction supplies the directory. */
+      from: string;
+      /** @enum {string} */
+      default: "deny";
+      /** @description Fixed route access levels. Use with descriptors saved before probe-based access, or as a fallback when every route has the same permission. */
+      allow?: components["schemas"]["ConnectorServerHeldAccessLevels"];
+      allowBy?: components["schemas"]["ConnectorServerHeldAccessBy"];
+    };
+    /** @description Route access levels selected by a value extracted during probing. */
+    ConnectorServerHeldAccessBy: {
+      /** @description `probe:<probe-id>/<extracted-name>` whose probed value chooses the allowed route access levels. */
+      value: string;
+      /** @description Probe values to the route access levels they allow. */
+      map: {
+        [key: string]: components["schemas"]["ConnectorServerHeldAccessLevels"];
+      };
+      /** @description Route access levels for a probe value absent from `map`; omitted means no route access. */
+      otherwise?: components["schemas"]["ConnectorServerHeldAccessLevels"];
+    };
+    /** @enum {string} */
+    ConnectorServerHeldAccessLevel: "read" | "write";
+    ConnectorServerHeldAccessLevels: components["schemas"]["ConnectorServerHeldAccessLevel"][];
+    ConnectorServerHeldSession: {
+      /** @description Session environment templates. Secret references are not allowed. */
+      env: {
+        [key: string]: string;
+      };
+    };
+    ConnectorServerHeldNetwork: {
+      /** @description The network paths instances of this connector may choose. */
+      holdings: components["schemas"]["ConnectorServerHeldNetworkPath"][];
+      /** @description Applies only to instances on the server path. */
+      publicOnly: boolean;
+    };
+    /**
+     * @description Where an instance's upstream requests leave Foundry.
+     * @enum {string}
+     */
+    ConnectorServerHeldNetworkPath: "server" | "device";
+    /** @description One of the owner's devices and whether it can reach an instance's upstream. */
+    ConnectorServerHeldDevice: {
+      deviceId: string;
+      name: string;
+      online: boolean;
+    };
+    /** @description The recorded reachability of one device for an instance. */
+    ConnectorServerHeldDeviceCheck: {
+      deviceId: string;
+      name: string;
+      status: string;
+      checkedAt: string;
+      detail?: string;
+    };
+    /** @description One route from a server-held extension's validated probe. */
+    ConnectorServerHeldRoute: {
+      method: string;
+      path: string;
+      access: string;
+      domain?: string;
+    };
+    ConnectorServerHeldProbeValues: {
+      [key: string]: string;
+    };
+    ConnectorServerHeldFieldOptions: {
+      [key: string]: components["schemas"]["ConnectorOption"][];
+    };
+    /** @description One server-held extension instance as its owner sees it. Secrets are never returned. */
+    ConnectorServerHeldInstance: {
+      id: string;
+      accountId: string;
+      kind: string;
+      label: string;
+      network: components["schemas"]["ConnectorServerHeldNetworkPath"];
+      /** @description The device that validated the instance and is re-checked by default. */
+      probeDeviceId?: string;
+      /** @description Devices whose sessions can use this instance on the device network path. */
+      availableDevices?: components["schemas"]["ConnectorServerHeldDeviceCheck"][];
+      status: string;
+      statusDetail?: string;
+      /**
+       * @description The permission Foundry derived from the token at the last validation.
+       * @enum {string}
+       */
+      access?: "read" | "write";
+      version?: string;
+      routeCount?: number;
+      /** @description Non-secret field values. */
+      values: {
+        [key: string]: string;
+      };
+      /** @description Ids of secret fields whose value is sealed. */
+      secretFields: string[];
+      fieldOptions: {
+        [key: string]: components["schemas"]["ConnectorOptionList"];
+      };
+      probeValues: {
+        [key: string]: string;
+      };
+      createdAt: string;
+      updatedAt: string;
+    };
+    ConnectorServerHeldInstanceInput: {
+      label: string;
+      fields: {
+        [key: string]: string;
+      };
+      network: components["schemas"]["ConnectorServerHeldNetworkPath"];
+      /** @description The owner's online device that validates a device-network instance. */
+      deviceId?: string;
+    };
+    ConnectorServerHeldProbeResult: {
+      values: {
+        [key: string]: string;
+      };
+      secretFields: string[];
+      probeValues: {
+        [key: string]: string;
+      };
+      fieldOptions: {
+        [key: string]: components["schemas"]["ConnectorOptionList"];
+      };
+      version?: string;
+      routeCount?: number;
+      network?: components["schemas"]["ConnectorServerHeldNetworkPath"];
+      probeDeviceId?: string;
+      availableDevices?: components["schemas"]["ConnectorServerHeldDeviceCheck"][];
+    };
+    ConnectorServerHeldInstancesView: {
+      kind: string;
+      descriptor: components["schemas"]["ConnectorDescriptor"];
+      instances: components["schemas"]["ConnectorServerHeldInstance"][];
+      /** @description The owner's devices, for choosing the device that validates an instance. */
+      devices: components["schemas"]["ConnectorServerHeldDevice"][];
+    };
     /** @description ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it. */
     ConnectorDescriptor: {
       authorizationGroups?: components["schemas"]["ConnectorAuthorizationGroup"][];
@@ -440,6 +744,16 @@ interface components {
       provides?: components["schemas"]["ConnectorProvides"];
       /** @description Set for a connector an extension on the device provides. */
       extension?: components["schemas"]["ConnectorExtensionSource"];
+      /** @description This connector can check source-repository access with its own device-held login. */
+      repositoryAccess?: components["schemas"]["ConnectorRepositoryAccess"];
+      /** @description The upstream Skill bundle and CLI this connector ships with; it follows the same upstream revision and only joins sessions that receive this connector. */
+      package?: components["schemas"]["ConnectorPackage"];
+      /** @description The connector is visible only when this repository is readable through the named connector on at least one of the owner's devices. */
+      access?: components["schemas"]["ConnectorSourceAccess"];
+      /** @description The Worker's cached result for access.via; never authored in a manifest. */
+      accessCheck?: components["schemas"]["ConnectorSourceAccessCheck"];
+      /** @description The Worker's cached result for requires; used as a visibility gate until a connector can check the repository. */
+      requirementsCheck?: components["schemas"]["ConnectorRequirementsCheck"];
       setup?: components["schemas"]["ConnectorSetup"];
       requires?: components["schemas"]["ConnectorRequirement"][];
       /** @description A device-held login this close to its expiry is "expiring". */
@@ -448,6 +762,8 @@ interface components {
       isolationEnv?: {
         [key: string]: string;
       };
+      /** @description Pure-data server-held behavior. Only an extension connector may set it. */
+      serverHeld?: components["schemas"]["ConnectorServerHeldSpec"];
     };
     /**
      * @description Where a device-held connector stands on one device.
@@ -461,6 +777,11 @@ interface components {
       | "not_installed"
       | "unavailable"
       | "error";
+    /** @description Non-secret settings read from a device-held connector's active profile. It never holds a credential. */
+    ConnectorConfiguration: {
+      /** @description The default Region the tool's active profile uses when a command names none. */
+      region?: string;
+    };
     /** @description DeviceConnectorState is a device-held connector on one device as last read there. It never holds a credential. */
     DeviceConnectorState: {
       authorizations?: components["schemas"]["ConnectorAuthorizationState"][];
@@ -469,6 +790,8 @@ interface components {
       status: components["schemas"]["DeviceConnectorStatus"];
       /** @description Why it is unavailable or failed (a requirement's label, an error). */
       statusDetail?: string;
+      /** @description Non-secret settings read from the connector's active profile. */
+      configuration?: components["schemas"]["ConnectorConfiguration"];
       installed: boolean;
       version?: string;
       /**
@@ -558,6 +881,10 @@ interface components {
       displayName?: string;
       /** @description `providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret. */
       providerAccountId?: string;
+      /** @description Environment templates for a server-held extension's session. Worker renders `{gatewayBase}` and `{standIn}`; field references are already rendered by Server. */
+      sessionEnvironment?: {
+        [key: string]: string;
+      };
     };
     /** @description ExternalAccountGateway is a session's way through the server's gateway for one account: the server path the device's loopback forwarder sends the tool's requests under, and the opaque handles the tool holds in place of the app secret, the user access token and the user refresh token. A handle is useless without the device's credential and dies with the session. */
     ExternalAccountGateway: {
@@ -570,6 +897,13 @@ interface components {
       userHandle: string;
       /** @description Stands in for the user refresh token; the gateway answers its refresh. */
       refreshHandle?: string;
+    };
+    /** @description ConnectorExtensionError is one descriptor a device reported but the server refused. */
+    ConnectorExtensionError: {
+      extensionId: string;
+      extensionName: string;
+      kind: string;
+      reason: string;
     };
     /** @description DeviceAccountShare is another person's device under the same system account of the same computer (DeviceProjection.SharesSystemAccountWith). */
     DeviceAccountShare: {
@@ -596,6 +930,8 @@ interface components {
       status: "connected" | "disconnected";
       lastSeenLabel: string;
       runtimeSettings?: components["schemas"]["AgentRuntimeSettings"];
+      /** @description `runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it. */
+      runtimeState?: components["schemas"]["DeviceRuntimeState"];
       /** @description `owned` reports whether the caller owns (and may manage) the device. */
       owned?: boolean;
       /** @description `managedRoots` are the folders, resolved, the Personal Agent may create projects in, reported by its worker. */
@@ -606,6 +942,8 @@ interface components {
       capabilities?: string[];
       /** @description `connectors` are what extensions installed on the device provide, as its worker reports them (docs/connector-extensions.md); shown to its owner only. */
       connectors?: components["schemas"]["ConnectorDescriptor"][];
+      /** @description `extensionErrors` are extension descriptors the server refused, kept so the owner can see which device and extension need fixing. */
+      extensionErrors?: components["schemas"]["ConnectorExtensionError"][];
       /** @description `worker` is the build the device's worker runs and the command that updates it there, reported at registration (0.5.7 and later). */
       worker?: components["schemas"]["DeviceWorker"];
       /** @description `system` describes the machine, reported at registration (0.5.7 and later). */
@@ -751,14 +1089,26 @@ interface components {
     };
     AgentRuntimeSettings: {
       activeRuntimeTtlMs: number;
-      /** @description `maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default. */
-      maxConcurrentTasks: number;
       /**
-       * @description `maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it out.
+       * @description `adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).
+       * @enum {string}
+       */
+      mode?: "adaptive" | "forced";
+      /** @description The owner's fixed limit while `mode` is `forced` (1–16). */
+      forcedLimit?: number;
+      /** @description Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive. */
+      maxConcurrentTasks?: number;
+      /**
+       * @description Deprecated compatibility projection for older clients. New settings use `mode`.
        * @enum {string}
        */
       maxConcurrentTasksSource?: "owner" | "hardware";
-      /** @description What this device's hardware allows by default. */
+      /**
+       * @description `adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.
+       * @enum {string}
+       */
+      migrationNotice?: "adaptive_migrated";
+      /** @description Compatibility mirror of this device's adaptive parallel floor. */
       hardwareMaxConcurrentTasks?: number;
       /** @description The memory and CPUs that default is computed from. */
       hardware?: components["schemas"]["DeviceHardware"];
@@ -768,6 +1118,66 @@ interface components {
       /** Format: double */
       memoryGiB: number;
       cpus: number;
+    };
+    /** @description DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported. */
+    DeviceRuntimeState: {
+      capturedAt: string;
+      /** @enum {string} */
+      mode: "adaptive" | "forced";
+      limit: number;
+      /** @description Total turns running, limited and limit-exempt. */
+      running: number;
+      /** @description Total turns waiting, limited and limit-exempt. */
+      queued: number;
+      /** @description Turns running against the adaptive or forced limit. */
+      runningLimited?: number;
+      /** @description Human and orchestration-parent turns running outside the limit. */
+      runningExempt?: number;
+      /** @description Turns waiting for an adaptive or forced-limit slot. */
+      queuedLimited?: number;
+      /** @description Limit-exempt turns waiting only behind the same conversation. */
+      queuedExempt?: number;
+      /** @description While true, no new turn starts regardless of the limit. */
+      hardHold: boolean;
+      /** @description Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode. */
+      reasons: string[];
+      signals: components["schemas"]["DeviceResourceSignals"];
+      estimates: components["schemas"]["DeviceTurnEstimate"][];
+    };
+    /** @description The host resource signals behind one admission decision. */
+    DeviceResourceSignals: {
+      cpuCount?: number;
+      /** Format: double */
+      cpuPressurePercent?: number;
+      /** Format: double */
+      loadAverage1?: number;
+      /** Format: int64 */
+      memoryAvailableBytes?: number;
+      /** Format: double */
+      memoryPressurePercent?: number;
+      /** Format: int64 */
+      memoryTotalBytes?: number;
+      /** Format: int64 */
+      swapFreeBytes?: number;
+    };
+    /** @description DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime. */
+    DeviceTurnEstimate: {
+      workspaceId?: string;
+      runtime?: string;
+      /**
+       * @description `prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.
+       * @enum {string}
+       */
+      source?: "prior" | "observed";
+      /** Format: int64 */
+      typicalRssBytes: number;
+      /**
+       * Format: int64
+       * @description The 90th percentile of observed per-turn peak RSS.
+       */
+      peakRssBytes: number;
+      /** Format: double */
+      averageCpuCores: number;
     };
     DaemonRegistration: {
       /** @description `capabilities` name the protocol features this worker implements. Most are always declared; the server checks only those a worker withholds while it cannot run them (verification_sessions without its sandbox, and those an older execution host still running lacks). */
@@ -1830,6 +2240,58 @@ interface components {
       error?: string;
       code?: string;
     };
+    /**
+     * @description What one assistant may do through one connector account.
+     * @enum {string}
+     */
+    ConnectorAccessLevel: "off" | "read" | "write";
+    /** @description An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one. */
+    PermissionListRule: {
+      include: string[];
+      exclude: string[];
+    };
+    /** @description One connector account's override in a permission package. An account with no entry uses the package default, write. */
+    ConnectorAccountPermission: {
+      accountId: string;
+      level: components["schemas"]["ConnectorAccessLevel"];
+    };
+    /** @description What an assistant may lease directly; resources stay visible either way. */
+    PermissionDeviceResources: {
+      /** @description Device ids whose resources the assistant may lease itself. */
+      directLeaseAllowed: string[];
+    };
+    /** @description One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none. */
+    PermissionPackage: {
+      id: string;
+      /** @description The Foundry user id the package belongs to. */
+      owner: string;
+      workspaces: components["schemas"]["PermissionListRule"];
+      connectorAccounts: components["schemas"]["ConnectorAccountPermission"][];
+      devicesResources: components["schemas"]["PermissionDeviceResources"];
+      skills: components["schemas"]["PermissionListRule"];
+    };
+    /** @description One connector account as the Assistant settings list it. */
+    PersonalAgentConnector: {
+      id: string;
+      kind: string;
+      label: string;
+      holding: string;
+      deviceId?: string;
+      deviceName?: string;
+      status?: string;
+      level: components["schemas"]["ConnectorAccessLevel"];
+      /** @description Kept for older clients; equivalent to level not being "off". */
+      enabled: boolean;
+    };
+    PersonalAgentConnectorsView: {
+      connectors: components["schemas"]["PersonalAgentConnector"][];
+    };
+    /** @description Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package default, write. */
+    SetPersonalAgentConnectorLevelsInput: {
+      levels?: components["schemas"]["ConnectorAccountPermission"][];
+      /** @description Legacy form of levels; these accounts become "off". */
+      disabled?: string[];
+    };
     ContextPatchReply: {
       operationId: string;
       path: string;
@@ -2127,6 +2589,17 @@ interface components {
      * @enum {string}
      */
     CodexTransportMode: "auto" | "websocket" | "https";
+    /** @description Custom prices for one model, in US dollars per one million tokens. A complete entry replaces LiteLLM's estimate for turns through this provider. */
+    ProfileModelPrice: {
+      /** Format: double */
+      inputPerMillion: number;
+      /** Format: double */
+      cacheReadPerMillion: number;
+      /** Format: double */
+      cacheWritePerMillion: number;
+      /** Format: double */
+      outputPerMillion: number;
+    };
     /** @description ProfileDefinition is a control-plane owned profile. It carries no DeviceID and no status: reachability belongs to the device that runs it. */
     ProfileDefinition: {
       id: string;
@@ -2138,6 +2611,10 @@ interface components {
       model?: string;
       /** @description The models this profile offers. `model` is the default; everything here is selectable in chat and issue runs. Native discovery fills it where a CLI can enumerate, and anything the user adds stays. */
       models?: string[];
+      /** @description `modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are US dollars per one million input, cache-read, cache-write and output tokens. */
+      modelPrices?: {
+        [key: string]: components["schemas"]["ProfileModelPrice"];
+      };
       /** @description `contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker). */
       contextWindows?: {
         [key: string]: number;
@@ -2186,6 +2663,91 @@ interface components {
       profileId: string;
       /** @description `deviceBound`: the base URL is the device's own loopback address, which no other device can reach, so the profile may run only on that device. */
       deviceBound?: boolean;
+    };
+    /** @description One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight. */
+    ModelPoolMember: {
+      model: string;
+      /** Format: int64 */
+      tokensPerMinute?: number;
+      weight?: number;
+    };
+    /** @description A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model. */
+    ModelPool: {
+      id: string;
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      label: string;
+      members: components["schemas"]["ModelPoolMember"][];
+      createdAt: string;
+      updatedAt: string;
+    };
+    /** @description Create or replace one equivalent-model group. */
+    ModelPoolInput: {
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      label: string;
+      members: components["schemas"]["ModelPoolMember"][];
+    };
+    /** @description ModelNote is one observation an orchestrator recorded about a specific model. */
+    ModelNote: {
+      id: string;
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model: string;
+      /** @description What the orchestrator learned about handing work to this model. */
+      body: string;
+      authorUserId: string;
+      authorName: string;
+      /** @description The agent session that appended the note; absent for a person. */
+      authorSessionId?: string;
+      createdAt: string;
+      updatedAt?: string;
+    };
+    /** @description One page of model notes, newest first. */
+    ModelNotePage: {
+      total: number;
+      offset: number;
+      nextOffset?: number;
+      notes: components["schemas"]["ModelNote"][];
+    };
+    /** @description ModelNoteInput appends one note to a provider's model. */
+    ModelNoteInput: {
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model: string;
+      body: string;
+    };
+    /** @enum {string} */
+    ExecutionDefaultScope: "global" | "workspace" | "none";
+    /** @description The model a person's orchestrator uses for delegated execution when a child names no model. */
+    ExecutionModelDefault: {
+      /** @enum {string} */
+      providerKind?: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
+      model?: string;
+      /** @description When set, a new session allocates one member from this group. */
+      modelPoolId?: string;
+      /** @description The saved group, resolved when the default is read. */
+      pool?: components["schemas"]["ModelPool"];
+      effort?: string;
+      scope: components["schemas"]["ExecutionDefaultScope"];
+      updatedBy?: string;
+      updatedAt?: string;
+    };
+    /** @description The saved execution default at this level, the effective one after workspace fallback, and where it came from. */
+    ExecutionDefaultsView: {
+      workspaceId?: string;
+      saved?: components["schemas"]["ExecutionModelDefault"];
+      effective: components["schemas"]["ExecutionModelDefault"];
     };
     AgentProjection: {
       accountHold?: components["schemas"]["NativeAccountHold"];
@@ -2707,6 +3269,7 @@ interface components {
       | "execution_host_stopped"
       | "disk_full"
       | "model_rate_limit"
+      | "model_quota_exhausted"
       | "skill_preparation_timeout"
       | "turn_limit";
     /** @description WorkerFailure is a versioned diagnosis; the server preserves it without guessing causes. */
@@ -2803,6 +3366,10 @@ interface components {
       profileId?: string;
       profileFingerprint?: string;
       profileLabel?: string;
+      /** @description The equivalent-model group this session was allocated from. Foundry uses it to choose another id after a model rate limit. */
+      modelPoolId?: string;
+      /** @description Identifies this dispatch of the current input. It equals the input id until an automatic retry gives the same logical input a fresh native execution identity. */
+      dispatchId?: string;
       /** @description "digest": a Personal Agent digest summary session (read-only). */
       source?: components["schemas"]["SessionSource"];
       /**
@@ -2867,13 +3434,21 @@ interface components {
       /** @description `checksumsUrl` is the release's checksum list, when it publishes one. */
       checksumsUrl?: string;
       /**
-       * @description `source` is where it installs from: "" (a GitHub release download), "npm" (the npm package Package at Version) or "uv" (the Python package Package at Version, through uv).
+       * @description `source` is where it installs from: "" (a GitHub release download), "npm" (the npm package Package at Version), "uv" (the Python package Package at Version, through uv) or "repository" (files at Path in the bundle repository at commit Version).
        * @enum {string}
        */
-      source?: "npm" | "uv";
+      source?: "npm" | "uv" | "repository";
       package?: string;
       /** @description `registry` is where an npm tool installs from: "" the public registry, an https URL that registry, or "device" each device's own npm settings (its npmrc and scoped registries). */
       registry?: string;
+      /** @description For a repository tool, the upstream git repository. Version is the commit the bundle recorded, so the tool and Skills are always from one upstream revision. */
+      repository?: string;
+      /** @description The folder in the repository holding the tool's files. */
+      path?: string;
+      /** @description Commands to expose, mapped to files relative to Path. The bundle tool Name must be one of them. */
+      bins?: {
+        [key: string]: string;
+      };
       /** @description `setup` is a step the tool needs after installing (e.g. downloading its browser), run only when the person asks. */
       setup?: components["schemas"]["SkillToolSetup"];
       /** @description `signIn` is the command a person runs once in a terminal on each device after installing (e.g. "auth login"); Foundry only shows it. */
@@ -3342,6 +3917,7 @@ export type ConnectorAuthorizationState =
   components["schemas"]["ConnectorAuthorizationState"];
 export type ConnectorField = components["schemas"]["ConnectorField"];
 export type ConnectorOption = components["schemas"]["ConnectorOption"];
+export type ConnectorOptionList = components["schemas"]["ConnectorOptionList"];
 export type ConnectorShowWhen = components["schemas"]["ConnectorShowWhen"];
 export type ConnectorSignInMethod =
   components["schemas"]["ConnectorSignInMethod"];
@@ -3355,13 +3931,82 @@ export type ConnectorModelAccess =
   components["schemas"]["ConnectorModelAccess"];
 export type ConnectorExtensionSource =
   components["schemas"]["ConnectorExtensionSource"];
+export type ConnectorRepositoryAccess =
+  components["schemas"]["ConnectorRepositoryAccess"];
+export type ConnectorSourceAccess =
+  components["schemas"]["ConnectorSourceAccess"];
+export type ConnectorSourceAccessCheck =
+  components["schemas"]["ConnectorSourceAccessCheck"];
+export type ConnectorRequirementsCheck =
+  components["schemas"]["ConnectorRequirementsCheck"];
+export type ConnectorPackage = components["schemas"]["ConnectorPackage"];
+export type ConnectorPackageUpstream =
+  components["schemas"]["ConnectorPackageUpstream"];
+export type ConnectorPackageSkills =
+  components["schemas"]["ConnectorPackageSkills"];
+export type ConnectorPackageTool =
+  components["schemas"]["ConnectorPackageTool"];
+export type ConnectorPackageDevice =
+  components["schemas"]["ConnectorPackageDevice"];
+export type ConnectorPackageView =
+  components["schemas"]["ConnectorPackageView"];
+export type SetConnectorPackageDevicesInput =
+  components["schemas"]["SetConnectorPackageDevicesInput"];
 export type ConnectorExtensionRepository =
   components["schemas"]["ConnectorExtensionRepository"];
 export type ConnectorSetup = components["schemas"]["ConnectorSetup"];
 export type ConnectorHolding = components["schemas"]["ConnectorHolding"];
+export type ConnectorServerHeldSpec =
+  components["schemas"]["ConnectorServerHeldSpec"];
+export type ConnectorServerHeldStep =
+  components["schemas"]["ConnectorServerHeldStep"];
+export type ConnectorServerHeldProbeExtract =
+  components["schemas"]["ConnectorServerHeldProbeExtract"];
+export type ConnectorServerHeldOptionsExtract =
+  components["schemas"]["ConnectorServerHeldOptionsExtract"];
+export type ConnectorServerHeldRoutesExtract =
+  components["schemas"]["ConnectorServerHeldRoutesExtract"];
+export type ConnectorServerHeldProbe =
+  components["schemas"]["ConnectorServerHeldProbe"];
+export type ConnectorServerHeldUpstream =
+  components["schemas"]["ConnectorServerHeldUpstream"];
+export type ConnectorServerHeldAccess =
+  components["schemas"]["ConnectorServerHeldAccess"];
+export type ConnectorServerHeldAccessBy =
+  components["schemas"]["ConnectorServerHeldAccessBy"];
+export type ConnectorServerHeldAccessLevel =
+  components["schemas"]["ConnectorServerHeldAccessLevel"];
+export type ConnectorServerHeldAccessLevels =
+  components["schemas"]["ConnectorServerHeldAccessLevels"];
+export type ConnectorServerHeldSession =
+  components["schemas"]["ConnectorServerHeldSession"];
+export type ConnectorServerHeldNetwork =
+  components["schemas"]["ConnectorServerHeldNetwork"];
+export type ConnectorServerHeldNetworkPath =
+  components["schemas"]["ConnectorServerHeldNetworkPath"];
+export type ConnectorServerHeldDevice =
+  components["schemas"]["ConnectorServerHeldDevice"];
+export type ConnectorServerHeldDeviceCheck =
+  components["schemas"]["ConnectorServerHeldDeviceCheck"];
+export type ConnectorServerHeldRoute =
+  components["schemas"]["ConnectorServerHeldRoute"];
+export type ConnectorServerHeldProbeValues =
+  components["schemas"]["ConnectorServerHeldProbeValues"];
+export type ConnectorServerHeldFieldOptions =
+  components["schemas"]["ConnectorServerHeldFieldOptions"];
+export type ConnectorServerHeldInstance =
+  components["schemas"]["ConnectorServerHeldInstance"];
+export type ConnectorServerHeldInstanceInput =
+  components["schemas"]["ConnectorServerHeldInstanceInput"];
+export type ConnectorServerHeldProbeResult =
+  components["schemas"]["ConnectorServerHeldProbeResult"];
+export type ConnectorServerHeldInstancesView =
+  components["schemas"]["ConnectorServerHeldInstancesView"];
 export type ConnectorDescriptor = components["schemas"]["ConnectorDescriptor"];
 export type DeviceConnectorStatus =
   components["schemas"]["DeviceConnectorStatus"];
+export type ConnectorConfiguration =
+  components["schemas"]["ConnectorConfiguration"];
 export type DeviceConnectorState =
   components["schemas"]["DeviceConnectorState"];
 export type DeviceConnectorSessionCheck =
@@ -3376,6 +4021,8 @@ export type ExternalAccountMaterial =
   components["schemas"]["ExternalAccountMaterial"];
 export type ExternalAccountGateway =
   components["schemas"]["ExternalAccountGateway"];
+export type ConnectorExtensionError =
+  components["schemas"]["ConnectorExtensionError"];
 export type DeviceAccountShare = components["schemas"]["DeviceAccountShare"];
 export type DeviceAccountIdentity =
   components["schemas"]["DeviceAccountIdentity"];
@@ -3394,6 +4041,10 @@ export type DeviceWorker = components["schemas"]["DeviceWorker"];
 export type AgentRuntimeSettings =
   components["schemas"]["AgentRuntimeSettings"];
 export type DeviceHardware = components["schemas"]["DeviceHardware"];
+export type DeviceRuntimeState = components["schemas"]["DeviceRuntimeState"];
+export type DeviceResourceSignals =
+  components["schemas"]["DeviceResourceSignals"];
+export type DeviceTurnEstimate = components["schemas"]["DeviceTurnEstimate"];
 export type DaemonRegistration = components["schemas"]["DaemonRegistration"];
 export type WorkerConnectionReport =
   components["schemas"]["WorkerConnectionReport"];
@@ -3522,6 +4173,20 @@ export type KnowledgeDocument = components["schemas"]["KnowledgeDocument"];
 export type KnowledgeSourceReview =
   components["schemas"]["KnowledgeSourceReview"];
 export type KnowledgeReply = components["schemas"]["KnowledgeReply"];
+export type ConnectorAccessLevel =
+  components["schemas"]["ConnectorAccessLevel"];
+export type PermissionListRule = components["schemas"]["PermissionListRule"];
+export type ConnectorAccountPermission =
+  components["schemas"]["ConnectorAccountPermission"];
+export type PermissionDeviceResources =
+  components["schemas"]["PermissionDeviceResources"];
+export type PermissionPackage = components["schemas"]["PermissionPackage"];
+export type PersonalAgentConnector =
+  components["schemas"]["PersonalAgentConnector"];
+export type PersonalAgentConnectorsView =
+  components["schemas"]["PersonalAgentConnectorsView"];
+export type SetPersonalAgentConnectorLevelsInput =
+  components["schemas"]["SetPersonalAgentConnectorLevelsInput"];
 export type ContextPatchReply = components["schemas"]["ContextPatchReply"];
 export type NativeRuntimeId = components["schemas"]["NativeRuntimeId"];
 export type WorkerRuntimeId = components["schemas"]["WorkerRuntimeId"];
@@ -3566,6 +4231,7 @@ export type ExternalConnectionSetupInfo =
   components["schemas"]["ExternalConnectionSetupInfo"];
 export type ProfileAuthMode = components["schemas"]["ProfileAuthMode"];
 export type CodexTransportMode = components["schemas"]["CodexTransportMode"];
+export type ProfileModelPrice = components["schemas"]["ProfileModelPrice"];
 export type ProfileDefinition = components["schemas"]["ProfileDefinition"];
 export type CodexTransport = components["schemas"]["CodexTransport"];
 export type CodexTransportObservation =
@@ -3574,6 +4240,18 @@ export type CodexTransportReport =
   components["schemas"]["CodexTransportReport"];
 export type ProfilePromotionSource =
   components["schemas"]["ProfilePromotionSource"];
+export type ModelPoolMember = components["schemas"]["ModelPoolMember"];
+export type ModelPool = components["schemas"]["ModelPool"];
+export type ModelPoolInput = components["schemas"]["ModelPoolInput"];
+export type ModelNote = components["schemas"]["ModelNote"];
+export type ModelNotePage = components["schemas"]["ModelNotePage"];
+export type ModelNoteInput = components["schemas"]["ModelNoteInput"];
+export type ExecutionDefaultScope =
+  components["schemas"]["ExecutionDefaultScope"];
+export type ExecutionModelDefault =
+  components["schemas"]["ExecutionModelDefault"];
+export type ExecutionDefaultsView =
+  components["schemas"]["ExecutionDefaultsView"];
 export type AgentProjection = components["schemas"]["AgentProjection"];
 export type CreateAgentProfileInput =
   components["schemas"]["CreateAgentProfileInput"];

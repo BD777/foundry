@@ -8,6 +8,7 @@ import {
   withoutOneMillionSuffix,
 } from "@bd777/foundry-protocol";
 import { count, optionalRecord } from "../../platform/json-values.js";
+import { estimatedTimingReliable } from "./codex-request-timing.js";
 
 /** Token and model timing usage without the turn's wall duration. */
 export type TurnTokenUsage = Omit<AgentTurnUsage, "durationMs">;
@@ -87,19 +88,26 @@ export function codexTurnUsage(
   const usage = optionalRecord(turn?.usage);
   if (!usage) return undefined;
   const timing = optionalRecord(turn?.timing);
-  const modelMs = milliseconds(timing?.modelMs);
+  const outputTokens = count(usage.output_tokens);
+  const estimated = timing?.timingEstimated === true;
+  const reportedModelMs = milliseconds(timing?.modelMs);
+  const modelMs =
+    reportedModelMs !== undefined &&
+    (!estimated || estimatedTimingReliable(outputTokens, reportedModelMs))
+      ? reportedModelMs
+      : undefined;
   const ttftMs = milliseconds(timing?.ttftMs);
   const servedModel = modelName(model ?? turn?.model);
   return {
     inputTokens: count(usage.input_tokens),
     cacheReadTokens: count(usage.cached_input_tokens),
     cacheWriteTokens: count(usage.cache_write_input_tokens),
-    outputTokens: count(usage.output_tokens),
+    outputTokens,
     ...(servedModel ? { model: servedModel } : {}),
     reasoningTokens: count(usage.reasoning_output_tokens),
     ...(modelMs !== undefined ? { modelMs } : {}),
     ...(ttftMs !== undefined ? { ttftMs } : {}),
-    ...(timing?.timingEstimated === true ? { timingEstimated: true } : {}),
+    ...(estimated ? { timingEstimated: true } : {}),
   };
 }
 

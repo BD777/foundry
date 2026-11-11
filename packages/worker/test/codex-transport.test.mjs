@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { CodexTransportLearner, codexTransportPlan, codexWebsocketFallback } =
-  await import("../dist/session/runner/codex-transport.js");
+const {
+  CodexTransportLearner,
+  codexTransportPlan,
+  codexWebsocketFailure,
+  codexWebsocketFallback,
+} = await import("../dist/session/runner/codex-transport.js");
 const { codexProfileConfig } =
   await import("../dist/session/runner/codex-options.js");
 
@@ -94,6 +98,14 @@ const reconnectEvent = {
   message:
     "Reconnecting... 2/5 (unexpected status 404 Not Found: Unknown error, url: ws://127.0.0.1:18731/v1/responses)",
 };
+const terminalFailureEvent = {
+  type: "turn.failed",
+  error: {
+    message:
+      "unexpected status 405 Method Not Allowed: Method Not Allowed, url: wss://tokenhub.example/v1/responses",
+    codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 405 } },
+  },
+};
 
 test("the fallback notice is recognized and its reason kept", () => {
   assert.equal(
@@ -105,6 +117,44 @@ test("the fallback notice is recognized and its reason kept", () => {
     codexWebsocketFallback({
       type: "item.completed",
       item: { type: "error", message: "Model metadata for `x` not found." },
+    }),
+    undefined,
+  );
+  assert.equal(codexWebsocketFailure(reconnectEvent), undefined);
+  assert.equal(
+    codexWebsocketFailure(terminalFailureEvent),
+    terminalFailureEvent.error.message,
+  );
+  assert.equal(
+    codexWebsocketFailure({
+      type: "turn.failed",
+      error: {
+        message:
+          "unexpected status 405 Method Not Allowed, url: https://tokenhub.example/v1/responses",
+        codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 405 } },
+      },
+    }),
+    undefined,
+  );
+  assert.equal(
+    codexWebsocketFailure({
+      type: "turn.failed",
+      error: {
+        message:
+          "unexpected status 500 Internal Server Error, url: wss://tokenhub.example/v1/responses",
+        codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 500 } },
+      },
+    }),
+    undefined,
+  );
+  assert.equal(
+    codexWebsocketFailure({
+      type: "item.completed",
+      item: {
+        type: "error",
+        message:
+          "unexpected status 405 Method Not Allowed, url: wss://tokenhub.example/v1/responses",
+      },
     }),
     undefined,
   );
@@ -136,6 +186,24 @@ test("a trial reports HTTPS on the fallback, once", async () => {
     transport: "https",
     detail:
       "unexpected status 404 Not Found: Unknown error, url: ws://127.0.0.1:18731/v1/responses",
+  });
+});
+
+test("a terminal WebSocket 405 is learned as HTTPS before the next process", async () => {
+  const { events, emit } = recorder();
+  const learner = new CodexTransportLearner(
+    { websockets: true, learn: "fallback" },
+    profile,
+    emit,
+  );
+  await learner.observe(terminalFailureEvent, false);
+  await learner.observe({ type: "turn.completed" }, true);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].metadata.codexTransport, {
+    profileId: "prof_gw",
+    baseUrl: "http://127.0.0.1:9/v1",
+    transport: "https",
+    detail: terminalFailureEvent.error.message,
   });
 });
 

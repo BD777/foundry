@@ -1,19 +1,16 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
-import {
-  getPersonalAgentConnectors,
-  setPersonalAgentConnectors,
-  type PersonalAgentConnector,
-} from "../../api";
+import type {
+  ConnectorAccessLevel,
+  ConnectorAccountPermission,
+  PersonalAgentConnector,
+} from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { FieldHint } from "../../components/ui/field";
-import { LoadingState, Spinner } from "../../components/ui/loading";
-import { Switch } from "../../components/ui/switch";
-import { ToastFeedback } from "../../components/ui/toast";
-import { serverErrorText } from "../../lib/errors";
+import { LoadingState } from "../../components/ui/loading";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import { defaultConnectorType } from "../../lib/connector-types";
 import { SettingsGroup } from "./settings-field";
@@ -26,6 +23,16 @@ interface ConnectorGroup {
 
 const isServerHeld = (connector: PersonalAgentConnector) =>
   connector.holding === "server_held";
+
+/** The complete override list sent by the settings save line. */
+export function connectorLevels(
+  connectors: readonly PersonalAgentConnector[],
+): ConnectorAccountPermission[] {
+  return connectors.map((connector) => ({
+    accountId: connector.id,
+    level: connector.level,
+  }));
+}
 
 /** Server-held accounts first, then one group per device. */
 function connectorGroups(
@@ -78,60 +85,23 @@ type ConnectorStatus = (typeof connectorStatuses)[number];
 const isConnectorStatus = (status: string): status is ConnectorStatus =>
   (connectorStatuses as readonly string[]).includes(status);
 
+const connectorLevelValues: ConnectorAccessLevel[] = ["off", "read", "write"];
+
 /** Which connector accounts the assistant may use. */
-export function ConnectorsSection() {
+export function ConnectorsSection({
+  connectors,
+  disabled = false,
+  loadError,
+  onChange,
+  onRetry,
+}: {
+  connectors?: PersonalAgentConnector[];
+  disabled?: boolean;
+  loadError: string;
+  onChange: (accountId: string, level: ConnectorAccessLevel) => void;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation("personalAgent");
-  const [connectors, setConnectors] = useState<PersonalAgentConnector[]>();
-  const [loadError, setLoadError] = useState("");
-  const [readVersion, setReadVersion] = useState(0);
-  const [savingId, setSavingId] = useState<string>();
-  const [saveError, setSaveError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    setLoadError("");
-    getPersonalAgentConnectors().then(
-      (view) => {
-        if (!active) return;
-        setConnectors(view.connectors);
-      },
-      (reason: unknown) => {
-        if (!active) return;
-        setConnectors(undefined);
-        setLoadError(serverErrorText(reason));
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [readVersion]);
-
-  async function toggle(
-    account: PersonalAgentConnector,
-    enabled: boolean,
-  ): Promise<void> {
-    if (savingId || !connectors) return;
-    const previous = connectors;
-    const next = connectors.map((connector) =>
-      connector.id === account.id ? { ...connector, enabled } : connector,
-    );
-    setConnectors(next);
-    setSavingId(account.id);
-    setSaveError("");
-    try {
-      const answer = await setPersonalAgentConnectors(
-        next
-          .filter((connector) => !connector.enabled)
-          .map((connector) => connector.id),
-      );
-      setConnectors(answer.connectors);
-    } catch (reason) {
-      setConnectors(previous);
-      setSaveError(serverErrorText(reason));
-    } finally {
-      setSavingId(undefined);
-    }
-  }
 
   const groups = connectors ? connectorGroups(connectors) : [];
   return (
@@ -140,10 +110,7 @@ export function ConnectorsSection() {
       {loadError ? (
         <Alert
           actions={
-            <Button
-              onClick={() => setReadVersion((value) => value + 1)}
-              size="sm"
-            >
+            <Button onClick={onRetry} size="sm">
               {t("settings.connectors.retry")}
             </Button>
           }
@@ -187,9 +154,11 @@ export function ConnectorsSection() {
                   account.status && isConnectorStatus(account.status)
                     ? t(`settings.connectors.status.${account.status}`)
                     : t("settings.connectors.unknownStatus");
+                const unsupportedDeviceRead =
+                  account.holding === "device_held" && account.level === "read";
                 return (
                   <div
-                    className="flex min-w-0 items-center gap-2.5 py-2.5 first:pt-0 last:pb-0"
+                    className="grid min-w-0 gap-2 py-3 first:pt-0 last:pb-0 sm:flex sm:items-center sm:gap-3"
                     key={account.id}
                   >
                     <div className="min-w-0 flex-1">
@@ -210,19 +179,29 @@ export function ConnectorsSection() {
                             })}
                       </p>
                     </div>
-                    <span className="flex size-3.5 flex-none items-center justify-center text-ink-muted">
-                      {savingId === account.id ? <Spinner size={12} /> : null}
-                    </span>
-                    <Switch
-                      aria-busy={savingId === account.id}
-                      aria-label={t("settings.connectors.switchLabel", {
-                        label: account.label,
-                      })}
-                      checked={account.enabled}
-                      onCheckedChange={(enabled) =>
-                        void toggle(account, enabled)
-                      }
-                    />
+                    <div className="grid min-w-0 gap-1 sm:ml-auto sm:max-w-sm sm:justify-items-end">
+                      <SegmentedControl<ConnectorAccessLevel>
+                        aria-label={t("settings.connectors.switchLabel", {
+                          label: account.label,
+                        })}
+                        onValueChange={(level) => onChange(account.id, level)}
+                        options={connectorLevelValues.map((value) => ({
+                          disabled,
+                          label: t(`settings.connectors.levels.${value}`),
+                          value,
+                        }))}
+                        size="sm"
+                        value={account.level}
+                      />
+                      {unsupportedDeviceRead ? (
+                        <FieldHint
+                          className="max-w-sm sm:text-right"
+                          tone="warning"
+                        >
+                          {t("settings.connectors.deviceReadHint")}
+                        </FieldHint>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -230,11 +209,6 @@ export function ConnectorsSection() {
           </SettingsGroup>
         ))
       )}
-      {saveError ? (
-        <ToastFeedback tone="error" title={t("settings.connectors.saveFailed")}>
-          {saveError}
-        </ToastFeedback>
-      ) : null}
     </>
   );
 }

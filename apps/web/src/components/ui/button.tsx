@@ -39,6 +39,8 @@ export const buttonVariants = cva(
          */
         bare: "fdy-button-bare rounded-(--fdy-radius-md) text-inherit active:scale-100",
         nav: "fdy-button-nav text-inherit hover:bg-hover-2",
+        /** A page's own navigation: a fainter hover behind the selected fill. */
+        navSurface: "fdy-button-nav text-inherit hover:bg-hover",
         icon: "fdy-button-icon text-inherit hover:bg-hover-2",
         /** Reads as a link inside text; acts as a button (opens in-app). */
         link: "fdy-button-link rounded-md text-(--fdy-info-text) hover:underline underline-offset-3",

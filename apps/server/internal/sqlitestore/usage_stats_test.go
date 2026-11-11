@@ -123,6 +123,47 @@ func TestUsageTerminalUpdatePreservesReportedUsage(t *testing.T) {
 	}
 }
 
+func TestUsageRepriceUpdatesDailyCostAndPreservesReported(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	estimated := usageTurnForTest("sess_estimated", "input_estimated", "2026-11-11T02:00:00Z")
+	estimated.InputTokens, estimated.OutputTokens = 1_000, 1_000
+	estimated.CostUSD, estimated.CostSource = 0.25, store.UsageCostEstimated
+	reported := usageTurnForTest("sess_reported", "input_reported", "2026-11-11T03:00:00Z")
+	reported.InputTokens, reported.OutputTokens = 1_000, 1_000
+	reported.CostUSD, reported.CostSource = 7, store.UsageCostReported
+	for _, turn := range []*store.UsageTurn{&estimated, &reported} {
+		if err := db.RecordUsage(ctx, store.UsageRecord{Turn: turn}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	updated, err := db.UpdateUsageCost(ctx, estimated.SessionID, estimated.InputID, 0.5, store.UsageCostCustom)
+	if err != nil || !updated {
+		t.Fatalf("reprice estimated = %v, %v", updated, err)
+	}
+	stored, found, err := db.readUsageTurn(ctx, estimated.SessionID, estimated.InputID)
+	if err != nil || !found || stored.CostUSD != 0.5 || stored.CostSource != store.UsageCostCustom {
+		t.Fatalf("repriced turn = %+v, %v, %v", stored, found, err)
+	}
+	updated, err = db.UpdateUsageCost(ctx, reported.SessionID, reported.InputID, 1, store.UsageCostEstimated)
+	if err != nil || updated {
+		t.Fatalf("reprice reported = %v, %v", updated, err)
+	}
+	stored, _, err = db.readUsageTurn(ctx, reported.SessionID, reported.InputID)
+	if err != nil || stored.CostUSD != 7 || stored.CostSource != store.UsageCostReported {
+		t.Fatalf("reported turn changed = %+v, %v", stored, err)
+	}
+	var cost float64
+	if err := db.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_usd), 0) FROM usage_daily
+		WHERE day = '2026-11-11' AND user_id = ?`, estimated.UserID).Scan(&cost); err != nil {
+		t.Fatal(err)
+	}
+	if cost != 7.5 {
+		t.Fatalf("daily cost = %v, want 7.5", cost)
+	}
+}
+
 func TestUsageRetentionDeletesOnlyOldRequests(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()

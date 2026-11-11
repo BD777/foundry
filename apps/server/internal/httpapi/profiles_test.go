@@ -1034,6 +1034,60 @@ func TestProfileContextWindowsPerModel(t *testing.T) {
 	}
 }
 
+func TestProfileModelPricesPerModel(t *testing.T) {
+	server := NewServer(newSecretTestStore(t))
+	created := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles", `{
+		"runtime":"claude",
+		"label":"Relay",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal",
+		"models":["claude-sonnet-4-5"],
+		"modelPrices":{" claude-sonnet-4-5 ":{
+			"inputPerMillion":3,
+			"cacheReadPerMillion":0.3,
+			"cacheWritePerMillion":3.75,
+			"outputPerMillion":15
+		}}
+	}`, http.StatusCreated))
+	if price := created.ModelPrices["claude-sonnet-4-5"]; price.InputPerMillion != 3 ||
+		price.CacheReadPerMillion != 0.3 || len(created.ModelPrices) != 1 {
+		t.Fatalf("created model prices = %+v", created.ModelPrices)
+	}
+
+	kept := decodeProfileForTest(t, requestForTest(t, server, http.MethodPut, "/api/profiles/"+created.ID, `{
+		"runtime":"claude",
+		"label":"Relay renamed",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal"
+	}`, http.StatusOK))
+	if kept.ModelPrices["claude-sonnet-4-5"].OutputPerMillion != 15 {
+		t.Fatalf("update without prices dropped them: %+v", kept.ModelPrices)
+	}
+
+	cleared := decodeProfileForTest(t, requestForTest(t, server, http.MethodPut, "/api/profiles/"+created.ID, `{
+		"runtime":"claude",
+		"label":"Relay renamed",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal",
+		"modelPrices":{}
+	}`, http.StatusOK))
+	if len(cleared.ModelPrices) != 0 {
+		t.Fatalf("empty model prices did not clear: %+v", cleared.ModelPrices)
+	}
+
+	requestForTest(t, server, http.MethodPost, "/api/profiles", `{
+		"runtime":"claude",
+		"label":"Bad prices",
+		"baseUrl":"https://relay.internal",
+		"modelPrices":{"m":{
+			"inputPerMillion":-1,
+			"cacheReadPerMillion":0,
+			"cacheWritePerMillion":0,
+			"outputPerMillion":0
+		}}
+	}`, http.StatusBadRequest)
+}
+
 func TestPromoteRejectsExternalConnection(t *testing.T) {
 	backing := newSecretTestStore(t)
 	server := NewServer(backing)

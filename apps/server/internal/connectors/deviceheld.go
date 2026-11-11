@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -19,11 +20,15 @@ var ErrUnknownConnector = errors.New("no device-held connector of that kind")
 // ErrNotDeviceOwner: a binding names a device the caller does not own.
 var ErrNotDeviceOwner = errors.New("only a device's owner binds its connectors")
 
+var connectorRegionPattern = regexp.MustCompile(
+	`^[a-z]{2}(-[a-z]+)+-\d{1,2}$`,
+)
+
 // DeviceHeld is the device-held kind: the credential stays on the device
 // and the server keeps what the device read of it (never a token), with the
 // expiry reminder, and which workspaces may use which device's login.
 type DeviceHeld struct {
-	store   store.DeviceConnectorStore
+	store   DeviceHeldStore
 	access  externalaccounts.ConnectorAccessStore
 	catalog *Catalog
 	// Now is the clock; tests move it.
@@ -38,6 +43,7 @@ type DeviceHeld struct {
 type DeviceHeldStore interface {
 	store.DeviceConnectorStore
 	externalaccounts.ConnectorAccessStore
+	DevicesOwnedBy(context.Context, string) ([]string, error)
 }
 
 // NewDeviceHeld builds the service over the store and the catalog.
@@ -95,6 +101,16 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 	}
 	reading.DeviceID = deviceID
 	reading.CheckedAt = d.Now().UTC().Format(time.RFC3339)
+	if reading.Configuration != nil {
+		region := strings.TrimSpace(reading.Configuration.Region)
+		if region == "" || !connectorRegionPattern.MatchString(region) {
+			reading.Configuration = nil
+		} else {
+			reading.Configuration = &store.ConnectorConfiguration{
+				Region: region,
+			}
+		}
+	}
 	if reading.ExpiresAt != "" {
 		if expiry, err := parseTime(reading.ExpiresAt); err == nil {
 			reading.ExpiresAt = expiry.UTC().Format(time.RFC3339)
@@ -212,8 +228,18 @@ func (d *DeviceHeld) SetBindings(ctx context.Context, workspaceID, userID string
 		if binding.DeviceID == "" || ownsDevice == nil || !ownsDevice(binding.DeviceID) {
 			return fmt.Errorf("%w: %s", ErrNotDeviceOwner, binding.DeviceID)
 		}
-		if _, err := d.ConnectorOn(ctx, binding.DeviceID, binding.Kind); err != nil {
+		descriptor, err := d.ConnectorOn(ctx, binding.DeviceID, binding.Kind)
+		if err != nil {
 			return err
+		}
+		if connectorHasVisibilityGate(descriptor) {
+			visible, err := d.VisibleKinds(ctx, []string{binding.DeviceID})
+			if err != nil {
+				return err
+			}
+			if !visible[binding.Kind] {
+				return ErrUnknownConnector
+			}
 		}
 		key := binding.Kind + "\x00" + binding.DeviceID
 		if seen[key] {
@@ -263,6 +289,10 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 	if len(connectors) == 0 {
 		return nil, nil
 	}
+	visible, err := d.VisibleKinds(ctx, []string{session.DeviceID})
+	if err != nil {
+		return nil, err
+	}
 	states, err := d.States(ctx, []string{session.DeviceID})
 	if err != nil {
 		return nil, err
@@ -271,12 +301,15 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 	if err != nil {
 		return nil, err
 	}
-	policy, err := externalaccounts.ResolvePolicy(ctx, d.access, session.WorkspaceID, session.CreatedByUserID)
+	policy, err := externalaccounts.ResolvePolicy(ctx, d.access, session)
 	if err != nil {
 		return nil, err
 	}
 	var uses []store.DeviceConnectorUse
 	for _, descriptor := range connectors {
+		if connectorHasVisibilityGate(descriptor) && !visible[descriptor.Kind] {
+			continue
+		}
 		use := store.DeviceConnectorUse{Kind: descriptor.Kind, Adapter: descriptor.Adapter, Label: descriptor.Label, Command: descriptor.Tool.Command}
 		accountID := externalaccounts.DeviceAccountID(session.DeviceID, descriptor.Kind)
 		assistantDisabled := policy.PersonalAgent() && !policy.Allows(accountID)

@@ -4,28 +4,34 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-type personalAgentConnector struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	Label      string `json:"label"`
-	Holding    string `json:"holding"`
-	DeviceID   string `json:"deviceId,omitempty"`
-	DeviceName string `json:"deviceName,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Enabled    bool   `json:"enabled"`
+func (s *Server) handlePersonalAgentPermissionPackage(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	pkg, err := s.store.GetPermissionPackage(r.Context(), agent.UserID, agent.PermissionPackageID)
+	writeResult(w, pkg, err)
 }
 
-type personalAgentConnectorsView struct {
-	Connectors []personalAgentConnector `json:"connectors"`
-}
-
-type setPersonalAgentConnectorsInput struct {
-	Disabled []string `json:"disabled"`
+func (s *Server) handleSavePersonalAgentPermissionPackage(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var pkg store.PermissionPackage
+	if !decodeJSONRequest(w, r, &pkg) {
+		return
+	}
+	pkg.ID = agent.PermissionPackageID
+	pkg.Owner = agent.UserID
+	saved, err := s.store.SavePermissionPackage(r.Context(), pkg)
+	writeResult(w, saved, err)
 }
 
 func (s *Server) handlePersonalAgentConnectors(w http.ResponseWriter, r *http.Request) {
@@ -46,11 +52,30 @@ func (s *Server) handleSetPersonalAgentConnectors(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	var input setPersonalAgentConnectorsInput
+	var input store.SetPersonalAgentConnectorLevelsInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	agent, err := s.store.SetPersonalAgentConnectorOptOut(r.Context(), agent.UserID, input.Disabled)
+	levels := map[string]string{}
+	for _, level := range input.Levels {
+		accountID := strings.TrimSpace(level.AccountID)
+		if accountID == "" {
+			continue
+		}
+		levels[accountID] = level.Level
+	}
+	for _, accountID := range input.Disabled {
+		accountID = strings.TrimSpace(accountID)
+		if accountID != "" {
+			levels[accountID] = store.ConnectorAccessLevelOff
+		}
+	}
+	clean := make([]store.ConnectorAccountPermission, 0, len(levels))
+	for accountID, level := range levels {
+		clean = append(clean, store.ConnectorAccountPermission{AccountID: accountID, Level: level})
+	}
+	sort.Slice(clean, func(i, j int) bool { return clean[i].AccountID < clean[j].AccountID })
+	agent, err := s.store.SetPersonalAgentConnectorLevels(r.Context(), agent.UserID, clean)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -63,20 +88,32 @@ func (s *Server) handleSetPersonalAgentConnectors(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, view)
 }
 
-func (s *Server) personalAgentConnectors(ctx context.Context, agent store.PersonalAgent) (personalAgentConnectorsView, error) {
-	view := personalAgentConnectorsView{Connectors: []personalAgentConnector{}}
-	disabled := make(map[string]bool, len(agent.ConnectorOptOut))
-	for _, accountID := range agent.ConnectorOptOut {
-		disabled[accountID] = true
+func (s *Server) personalAgentConnectors(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgentConnectorsView, error) {
+	view := store.PersonalAgentConnectorsView{Connectors: []store.PersonalAgentConnector{}}
+	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		return view, err
 	}
-	accounts, err := s.connectors.ServerHeld.Accounts(ctx, agent.UserID)
+	levels := map[string]string{}
+	for _, account := range pkg.ConnectorAccounts {
+		levels[account.AccountID] = account.Level
+	}
+	levelOf := func(accountID string) string {
+		if level := levels[accountID]; level != "" {
+			return level
+		}
+		return store.ConnectorAccessLevelWrite
+	}
+	accounts, err := s.connectors.ServerHeld.AccountsIncludingExtensions(ctx, agent.UserID)
 	if err != nil {
 		return view, err
 	}
 	for _, account := range accounts {
-		view.Connectors = append(view.Connectors, personalAgentConnector{
+		level := levelOf(account.ID)
+		view.Connectors = append(view.Connectors, store.PersonalAgentConnector{
 			ID: account.ID, Kind: account.Provider, Label: account.Label,
-			Holding: store.ConnectorServerHeld, Status: string(account.Status), Enabled: !disabled[account.ID],
+			Holding: store.ConnectorServerHeld, Status: string(account.Status),
+			Level: level, Enabled: level != store.ConnectorAccessLevelOff,
 		})
 	}
 	devices, err := s.ownDevices(ctx, agent.UserID)
@@ -108,9 +145,11 @@ func (s *Server) personalAgentConnectors(ctx context.Context, agent store.Person
 		if label == "" {
 			label = state.Kind
 		}
-		view.Connectors = append(view.Connectors, personalAgentConnector{
+		level := levelOf(accountID)
+		view.Connectors = append(view.Connectors, store.PersonalAgentConnector{
 			ID: accountID, Kind: state.Kind, Label: label, Holding: store.ConnectorDeviceHeld,
-			DeviceID: state.DeviceID, DeviceName: names[state.DeviceID], Status: state.Status, Enabled: !disabled[accountID],
+			DeviceID: state.DeviceID, DeviceName: names[state.DeviceID], Status: state.Status,
+			Level: level, Enabled: level != store.ConnectorAccessLevelOff,
 		})
 	}
 	sort.Slice(view.Connectors, func(i, j int) bool {

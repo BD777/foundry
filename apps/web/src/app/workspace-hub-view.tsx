@@ -1,7 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
-import { WorkspaceAgentDefaultFeature } from "../features/agent-defaults";
+import {
+  WorkspaceAgentDefaultFeature,
+  WorkspaceExecutionDefaultFeature,
+} from "../features/agent-defaults";
 import { AssetsFeature } from "../features/assets";
 import { ChannelsFeature } from "../features/channels";
 import { WorkspaceConnectorsFeature } from "../features/external-accounts";
@@ -9,6 +12,7 @@ import { SharingFeature } from "../features/sharing";
 import { SkillsFeature } from "../features/skills";
 import {
   WorkspaceHub,
+  WorkspaceConcurrencySummary,
   WorkspaceOverview,
   type WorkspaceSection,
 } from "../features/workspaces";
@@ -57,15 +61,26 @@ export function WorkspaceHubView({
       ) : null}
       {section === "settings" ? (
         <div className="grid min-w-0 gap-4">
+          <WorkspaceConcurrencySummary device={device} />
           {data.workspace.id ? (
-            <WorkspaceAgentDefaultFeature
-              key={data.workspace.id}
-              deviceId={data.workspace.deviceId}
-              onNotice={setNotice}
-              profiles={data.agentProfiles}
-              readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
-              workspaceId={data.workspace.id}
-            />
+            <>
+              <WorkspaceAgentDefaultFeature
+                key={data.workspace.id}
+                deviceId={data.workspace.deviceId}
+                onNotice={setNotice}
+                profiles={data.agentProfiles}
+                readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
+                workspaceId={data.workspace.id}
+              />
+              <WorkspaceExecutionDefaultFeature
+                key={`${data.workspace.id}:execution`}
+                onNotice={setNotice}
+                profiles={data.agentProfiles}
+                readOnlyReason={workspaceDenial(data.workspace, "member")}
+                servers={data.profiles}
+                workspaceId={data.workspace.id}
+              />
+            </>
           ) : null}
           {device && !device.owned ? (
             <Alert title={t("settings.managedByOwner")}>

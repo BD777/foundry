@@ -1,5 +1,38 @@
 /** Connectors: external services sessions use as the person (Feishu first). */
 export const externalAccounts = {
+  connectorPackage: {
+    title: "Where to enable",
+    description:
+      "Choose the devices where this package installs its tools and brings its Skills. A new device is never selected automatically.",
+    enabled: "Enabled",
+    notEnabled: "Not enabled",
+    selected: "Enabled on this device.",
+    available: "Online now. Select this device to enable the package here.",
+    unavailable: "Cannot enable: {{reason}}",
+    selectDevice: "Enable the package on {{device}}",
+    reasons: {
+      offline: "the device is offline.",
+      platformUnknown: "the device has not reported a supported platform.",
+      platformUnsupported: "Foundry tools run on Linux and macOS only.",
+      nodeMissing: "the device has no Node.js runtime for repository tools.",
+      unavailable: "the device is not ready for this package.",
+      connectorUnavailable: "{{connector}} is not available on this device.",
+      installConnector: "install the {{connector}} connector on this device.",
+      signInConnector: "sign in to the {{connector}} connector on this device.",
+    },
+    tools: "Tools in this package",
+    versionPending: "version available after a device is enabled",
+    skills: "Skills in this bundle",
+    skillsPending: "Skills appear here after the bundle is followed.",
+    save: "Save devices",
+    saving: "Saving devices…",
+    saved: "Package devices saved.",
+    saveFailed: "Could not save devices: {{error}}",
+    loading: "Loading this package…",
+    loadFailed: "Could not load this package: {{error}}",
+    notListed:
+      "This package is not listed for any of your devices. Install its extension on a device first.",
+  },
   cloudflare: {
     authorizeSelected: "Continue to Cloudflare",
     usePreset: "Use Foundry's read-only set",
@@ -216,12 +249,133 @@ export const externalAccounts = {
       needsSignIn: "Needs sign-in",
       notSetUp: "Not set up",
     },
+    restricted: {
+      title_one: "Needs access ({{count}})",
+      title_other: "Needs access ({{count}})",
+      notChecked: "Not checked on this device yet.",
+      requirementFailed:
+        "Needs to reach {{label}} ({{host}}:{{port}}). This device cannot connect; use it on a device on that network.",
+      requirementMet: "Can reach {{label}}.",
+      accessMet: "{{via}} account {{account}} can read {{repository}}.",
+      accessMetAnonymous: "{{via}} can read {{repository}}.",
+      notSignedIn:
+        "{{via}} is not signed in on this device, so it cannot read {{repository}}.",
+      noAccess:
+        "{{via}} account {{account}} cannot read {{repository}}. If you should have access, switch to an account that does.",
+      noAccessAnonymous:
+        "{{via}} cannot read {{repository}}. If you should have access, sign in with an account that does.",
+      accessFailed:
+        "Could not check {{repository}} through {{via}} on this device: {{detail}}",
+      openConnector: "Connectors › {{via}}",
+      recheck: "Check again",
+      rechecking: "Checking…",
+      allDevicesNeedAccess_one: "1 device does not meet the conditions",
+      allDevicesNeedAccess_other:
+        "{{count}} devices do not meet the conditions",
+      someDevicesNeedAccess_one: "1 device needs attention",
+      someDevicesNeedAccess_other: "{{count}} devices need attention",
+      readyToRecheck: "All checks now pass; check again",
+      noDevices: "No device check has reported yet",
+      back: "Back to connectors",
+      details: "{{connector}} access details",
+    },
     catalogLoading: "Loading connectors…",
     catalogFailed: "Could not load connectors: {{error}}",
     loading: "Loading Feishu accounts…",
     loadFailed: "Could not load Feishu accounts: {{error}}",
     secretsMissing:
       "This server has no secret-store key, so it cannot keep logins. An administrator has to configure one before accounts can be connected.",
+  },
+  serverHeld: {
+    add: "Add instance",
+    noSecretStore:
+      "The server secret store must be configured before {{connector}} can seal credentials.",
+    loading: "Loading {{connector}} instances…",
+    empty: "No {{connector}} instance has been added.",
+    check: "Validate again",
+    checking: "Validating…",
+    checked: "Validated {{name}}.",
+    checkedAt: "Checked {{when}}",
+    accessRead: "Read-only",
+    accessWrite: "Read/write",
+    version: "version {{version}}",
+    routeCount_one: "{{count}} allowed route",
+    routeCount_other: "{{count}} allowed routes",
+    resultDetail: "Result: {{detail}}",
+    replaceToken: "Replace token",
+    revoke: "Revoke",
+    addTitle: "Add a {{connector}} instance",
+    addDescription:
+      "Fill the connection fields reported by the connector extension. Foundry validates them before sealing any secret.",
+    replaceTitle: "Replace {{connector}} credentials",
+    replaceDescription:
+      "Foundry validates the connection again before replacing anything. Leave a sealed secret blank to keep it.",
+    validate: "Validate",
+    continue: "Continue",
+    update: "Validate and save",
+    save: "Validate and add",
+    validating: "Validating…",
+    saving: "Saving…",
+    back: "Back",
+    step: "Step {{current}} of {{total}}",
+    probePassed: "Probe passed · {{routes}}",
+    savedNotice: "{{name}} is validated and saved.",
+    updatedNotice: "Updated {{name}} after validating it.",
+    labelLabel: "Instance name",
+    labelPlaceholder: "Example: Production",
+    labelHelp:
+      "Optional. This name appears in the instance list and workspace bindings.",
+    whereTitle: "Where should Foundry connect?",
+    networkServer: "Foundry server direct (public)",
+    networkDevice: "Via a device (internal)",
+    networkServerHelp:
+      "The Foundry server connects directly. Use a public HTTPS address.",
+    networkDeviceHelp:
+      "One of your devices validates the address and forwards requests. HTTP, private addresses and path prefixes are allowed.",
+    probeDevice: "Device used for validation",
+    chooseDevice: "Choose one of your online devices",
+    deviceOffline: "{{device}} is offline; bring it online to validate here.",
+    availableOn: "Available on {{devices}}",
+    noAvailableDevice:
+      "No reachable device is recorded. Validate the instance on a device that can reach this address.",
+    deviceNetworkScope:
+      "Sessions on other devices do not receive this instance.",
+    validateForOptions: "Validate the previous step to load choices",
+    chooseOption: "Choose an option",
+    secretKeep: "Leave blank to keep the sealed value",
+    secretSealed:
+      "This value is sealed on the server. Leave it blank to keep it, or enter a replacement.",
+    fieldRequired: "{{field}} is required.",
+    fieldUrl: "{{field}} must be a complete URL.",
+    revokeTitle: "Revoke {{name}}?",
+    revokeDescription:
+      "This immediately stops every session using this instance and removes its workspace bindings.",
+    revokeBody:
+      "Foundry deletes the sealed credential and refuses new requests. The credential still exists at the service; rotate it there if it may have leaked. A revoked instance cannot be restored.",
+    revokeConfirm: "Revoke and stop access",
+    revokedNotice: "Revoked {{name}}; sessions lost access.",
+    errors: {
+      credential: {
+        title: "Credential rejected",
+        body: "The service refused the credential. Replace the token or secret, then validate again.",
+      },
+      input: {
+        title: "Check the connection fields",
+        body: "A required value is missing or does not match the connector's declared format.",
+      },
+      network: {
+        title: "Service unreachable",
+        body: "Foundry or the selected device could not reach the service. Check the address, device network, DNS, certificate, redirects and timeout.",
+      },
+      response: {
+        title: "Unexpected service response",
+        body: "The service answered, but not with the JSON and route catalogue this connector expects.",
+      },
+      service: {
+        title: "Validation could not run",
+        body: "Foundry or the connector service could not complete validation. Try again shortly.",
+      },
+    },
   },
   list: {
     emptyTitle: "No Feishu accounts yet",
@@ -497,16 +651,33 @@ export const externalAccounts = {
     },
   },
   deviceHeld: {
-    publishedIn: "Published in {{repository}}.",
     notInstalledTitle: "Devices without {{extension}}",
     notInstalledInstall:
       "{{extension}} is not on {{devices}}. Install it there from the repository it is published in:",
     offlineInstall: "Offline; install it once the device is back",
     installExtension: "Install {{extension}}",
+    installBundled: "Install on this device",
+    installBundledTitle: "Install {{extension}} on a device",
+    unavailableInstall:
+      "This device does not meet the connector's requirements",
+    bundled: "Bundled with the Worker",
+    bundledNotInstalled: "Install {{extension}} on:",
+    extensionSourceGit:
+      "{{extension}} extension {{version}}, published in {{repository}}.",
+    extensionSourceBundled:
+      "{{extension}} extension {{version}}, bundled with the Worker.",
+    extensionSourceLocal:
+      "{{extension}} extension {{version}}, installed from a local folder.",
+    autoUpdate: "Auto-update",
+    autoUpdateOn: "Updates automatically when the repository moves.",
+    autoUpdateOff: "Manual updates; a newer commit is shown here.",
+    updatesWithWorker: "Updates with the Worker.",
     extensionInstalled: "{{extension}} is installed on {{device}}.",
     extensionUpdated: "{{extension}} on {{device}} is updated.",
     extensionUnchanged: "{{extension}} on {{device}} is already the newest.",
     extensionRemoved: "{{extension}} is removed from {{device}}.",
+    extensionDescriptorInvalid:
+      "Invalid {{extension}} descriptor on {{device}}",
     updateExtension: "Update {{extension}}",
     extensionUpdateAvailable:
       "{{extension}} has a newer commit in its repository ({{commit}})",
@@ -516,9 +687,9 @@ export const externalAccounts = {
       "Its connectors leave this device, with the extension’s own data and the model providers it gave. The tool’s own login stays on the device.",
     removeExtensionAction: "Remove",
     offlineUnknown: "Device offline",
-    fromExtension: "From the {{extension}} extension, version {{version}}.",
-    emptyExtensionBody:
-      "Install its extension on a device to use {{name}} there. Add a connector explains how.",
+    emptyExtensionBody: "No device has installed {{name}} yet.",
+    emptyExtensionAddBody:
+      "This extension is not bundled. Use Add a connector to install it from its source.",
     notInstalledOn:
       "Not on {{devices}}: install the {{extension}} extension there to use it.",
     givesModels:
@@ -571,6 +742,18 @@ export const externalAccounts = {
     checkedNotice: "Read {{name}} on {{device}} again.",
     signedOut: "{{name}} on {{device}} is signed out.",
     signedInNotice: "{{name}} is signed in on {{device}}.",
+    configuration: {
+      region: "Default Region: {{region}}",
+      change: "Change",
+      regionLabel: "Default AWS Region",
+      regionHint:
+        "Used only when an AWS command names no Region. It does not limit the identity's permissions.",
+      regionInvalid: "Default AWS Region doesn’t look right.",
+      regionPlaceholder: "us-east-1",
+      save: "Save Region",
+      cancel: "Cancel",
+      regionSaved: "Default AWS Region updated on {{device}}.",
+    },
   },
   authorization: {
     dialogTitle: "Authorize {{name}}",
@@ -661,6 +844,8 @@ export const externalAccounts = {
     title: "Sign in to {{name}}",
     description:
       "{{device}} starts {{name}}'s own sign-in; the sign-in stays on that device.",
+    awsPermissions:
+      "Permissions come from the AWS identity you sign in with; to limit scope, use a role in AWS with narrower permissions. Foundry controls which workspaces and sessions can use this login.",
     starting: "Asking {{device}} to start the sign-in…",
     approveTitle: "Approve on the sign-in page",
     approveBody:
@@ -766,10 +951,12 @@ export const externalAccounts = {
     nativeBoundary:
       "Your own sessions use this device’s ready login automatically. Sharing applies only to this workspace and device; turning it off keeps your own access. Manage device logins in Connectors.",
 
-    rule: "Feishu accounts follow their workspace grants. Device logins apply only on their execution device.",
+    rule: "Server-held accounts follow their workspace grants. Device logins apply only on their execution device.",
     binding: {
       feishu:
         "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
+      serverHeld:
+        "Choose which of your {{provider}} instances this workspace may use. A revoked instance is unavailable until you add a new one.",
     },
     useDevice: "Sessions on {{device}} use its {{name}} sign-in",
     members: "Share with sessions other members start on {{device}}",

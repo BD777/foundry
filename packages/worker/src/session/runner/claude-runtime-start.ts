@@ -329,7 +329,11 @@ function attachClaudeProcessOutput(
   options.stderr = onStderr;
   // In the daemon the CLI leads a process group that dies with the
   // worker; the SDK then hands stderr to this spawn, not to the option.
-  const spawnAgent = claudeAgentSpawn(onStderr);
+  const spawnAgent = claudeAgentSpawn(onStderr, false, {
+    runtime: "claude",
+    sessionId: run.session.id,
+    workspaceId: run.session.workspaceId,
+  });
   if (spawnAgent)
     options.spawnClaudeCodeProcess = (
       spawnOptions: Parameters<typeof spawnAgent>[0],
@@ -412,7 +416,11 @@ export function sendClaudeTurnPrompt(
       parent_tool_use_id: null,
       type: "user",
       // The Foundry input is Claude's user message: one identity.
-      ...(session.input ? { uuid: session.input.id as UUID } : {}),
+      ...(session.dispatchId || session.input
+        ? {
+            uuid: (session.dispatchId || session.input?.id) as UUID,
+          }
+        : {}),
     });
   try {
     if (!startOptions) {

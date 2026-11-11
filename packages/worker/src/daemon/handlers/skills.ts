@@ -29,6 +29,12 @@ import {
   runToolSetup,
   type ToolSpec,
 } from "../../skills/managed-tools.js";
+import {
+  activateRepositoryTool,
+  installRepositoryTool,
+  uninstallRepositoryTool,
+  type RepositoryToolSpec,
+} from "../../skills/repository-tool.js";
 import { checkTool } from "../../skills/tool-check.js";
 import { prepareConnectorCheck } from "../../connectors/index.js";
 import {
@@ -175,7 +181,7 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
     })
     .on(daemonMessageTypes.installTool, (envelope, ctx) => {
       const payload = envelope.payload as InstallToolPayload | undefined;
-      const tool = payload?.tool as ToolSpec | undefined;
+      const tool = payload?.tool;
       return reply(
         ctx,
         envelope,
@@ -183,18 +189,36 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
         async () => {
           if (!tool) throw new Error("no tool to install");
           const step = payload?.step ?? "install";
+          const repository =
+            tool.source === "repository"
+              ? (tool as unknown as RepositoryToolSpec)
+              : undefined;
           const done =
             step === "setup"
-              ? await runToolSetup(tool)
+              ? await runToolSetup(tool as ToolSpec)
               : step === "activate"
-                ? activateTool(tool.name, tool.version)
+                ? repository
+                  ? activateRepositoryTool(repository)
+                  : activateTool(tool.name, tool.version)
                 : step === "remove"
-                  ? removeToolVersion(tool.name, tool.version)
-                  : step === "install"
-                    ? await installTool(tool, {
-                        activate: payload?.activate !== false,
-                      })
-                    : undefined;
+                  ? repository
+                    ? uninstallRepositoryTool(repository)
+                    : removeToolVersion(tool.name, tool.version)
+                  : step === "uninstall"
+                    ? repository
+                      ? uninstallRepositoryTool(repository)
+                      : unsupportedStep(
+                          "only repository tools support uninstall",
+                        )
+                    : step === "install"
+                      ? repository
+                        ? await installRepositoryTool(repository, {
+                            activate: payload?.activate !== false,
+                          })
+                        : await installTool(tool as ToolSpec, {
+                            activate: payload?.activate !== false,
+                          })
+                      : undefined;
           if (!done) throw new Error(`unknown install_tool step ${step}`);
           return {
             name: done.name,
@@ -295,4 +319,8 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
         packageSkillDirectory(root, dirName),
       );
     });
+}
+
+function unsupportedStep(message: string): never {
+  throw new Error(message);
 }

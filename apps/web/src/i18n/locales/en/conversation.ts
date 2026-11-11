@@ -13,7 +13,7 @@ export const conversation = {
     failed: "Image could not be loaded",
     offline: "The device is offline. Reconnect it, then retry.",
     slow: "The device took too long to send the image. Try again.",
-    missing: "The image was not found on the device.",
+    missing: "Original image deleted",
     removed:
       "This screenshot was removed: a chat keeps its newest 200 screenshots (50 MB).",
     unavailable:

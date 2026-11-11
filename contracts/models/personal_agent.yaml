@@ -11,6 +11,146 @@ x-oapi-codegen:
 paths: {}
 components:
   schemas:
+    ConnectorAccessLevel:
+      description: What one assistant may do through one connector account.
+      type: string
+      enum:
+        - "off"
+        - read
+        - write
+      x-go-type: string
+    PermissionListRule:
+      description: >-
+        An include/exclude rule. An empty include list means every object the
+        person can already reach; exclude always removes one.
+      type: object
+      required:
+        - include
+        - exclude
+      additionalProperties: false
+      properties:
+        include:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+    ConnectorAccountPermission:
+      description: >-
+        One connector account's override in a permission package. An account
+        with no entry uses the package default, write.
+      type: object
+      required:
+        - accountId
+        - level
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+        level:
+          $ref: "#/components/schemas/ConnectorAccessLevel"
+    PermissionDeviceResources:
+      description: What an assistant may lease directly; resources stay visible either way.
+      type: object
+      required:
+        - directLeaseAllowed
+      additionalProperties: false
+      properties:
+        directLeaseAllowed:
+          description: Device ids whose resources the assistant may lease itself.
+          type: array
+          items:
+            type: string
+    PermissionPackage:
+      description: >-
+        One assistant's permissions. Workspace and skill rules default to all
+        visible, connector accounts default to write, and direct resource
+        leases default to none.
+      type: object
+      x-stored: true
+      required:
+        - id
+        - owner
+        - workspaces
+        - connectorAccounts
+        - devicesResources
+        - skills
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        owner:
+          description: The Foundry user id the package belongs to.
+          type: string
+        workspaces:
+          $ref: "#/components/schemas/PermissionListRule"
+        connectorAccounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAccountPermission"
+        devicesResources:
+          $ref: "#/components/schemas/PermissionDeviceResources"
+        skills:
+          $ref: "#/components/schemas/PermissionListRule"
+    PersonalAgentConnector:
+      description: One connector account as the Assistant settings list it.
+      type: object
+      required:
+        - id
+        - kind
+        - label
+        - holding
+        - level
+        - enabled
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        holding:
+          type: string
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+        status:
+          type: string
+        level:
+          $ref: "#/components/schemas/ConnectorAccessLevel"
+        enabled:
+          description: Kept for older clients; equivalent to level not being "off".
+          type: boolean
+    PersonalAgentConnectorsView:
+      type: object
+      required:
+        - connectors
+      additionalProperties: false
+      properties:
+        connectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentConnector"
+    SetPersonalAgentConnectorLevelsInput:
+      description: >-
+        Replace the connector-account levels in the assistant's permission
+        package. Omitted accounts return to the package default, write.
+      type: object
+      additionalProperties: false
+      properties:
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAccountPermission"
+        disabled:
+          description: Legacy form of levels; these accounts become "off".
+          type: array
+          items:
+            type: string
     ContextPatchReply:
       type: object
       required:

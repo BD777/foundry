@@ -45,7 +45,12 @@ export function AssistantSettingsNav({
         {assistantSettingsGroups.map((group) => (
           <NavGroup key={group.id} label={t(`settings.groups.${group.id}`)}>
             {group.sections.map((section) => (
-              <NavItem asChild current={section === selected} key={section}>
+              <NavItem
+                asChild
+                current={section === selected}
+                key={section}
+                tone="surface"
+              >
                 <AppLink
                   href={settingsHref(section)}
                   onClick={() => onSelect(section)}

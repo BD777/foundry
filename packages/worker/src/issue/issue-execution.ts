@@ -136,8 +136,9 @@ function issueExecutionRole(
   ambient: SessionAmbientEnv,
   store: ExecutionStore,
 ): SessionRole {
-  // The attempt is the session: its id names the run and its records.
-  const runId = session.id;
+  // The dispatch names the run; a model retry gets a fresh native execution
+  // record while staying the same logical session input.
+  const runId = session.dispatchId?.trim() || session.id;
   const retained = store.environment(workspaceId, issue.id);
   const runDir = retained
     ? store.runDirectory(retained, runId)

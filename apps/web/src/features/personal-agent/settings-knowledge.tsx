@@ -425,33 +425,37 @@ export function KnowledgeSection({
                   : "knowledge.retryInitialHint",
               )}
             </FieldHint>
-            <SelectMenu
-              ariaLabel={t("knowledge.moveDevice")}
-              disabled={busy}
-              value={moveDevice}
-              onChange={(value) => {
-                setMoveDevice(value);
-                setMoveWorkspace("");
-              }}
-              options={ownedDeviceCandidates(devices).map((d) => ({
-                value: d.id,
-                label: d.label,
-              }))}
-            />
-            <SelectMenu
-              ariaLabel={t("knowledge.moveWorkspace")}
-              disabled={busy || !moveDevice}
-              value={moveWorkspace}
-              onChange={setMoveWorkspace}
-              options={workspaces
-                .filter(
-                  (w) =>
-                    w.deviceId === moveDevice &&
-                    w.accessRole === "owner" &&
-                    !w.archivedAt,
-                )
-                .map((w) => ({ value: w.id, label: w.name }))}
-            />
+            <SettingsField label={t("knowledge.moveDevice")}>
+              <SelectMenu
+                ariaLabel={t("knowledge.moveDevice")}
+                disabled={busy}
+                value={moveDevice}
+                onChange={(value) => {
+                  setMoveDevice(value);
+                  setMoveWorkspace("");
+                }}
+                options={ownedDeviceCandidates(devices).map((d) => ({
+                  value: d.id,
+                  label: d.label,
+                }))}
+              />
+            </SettingsField>
+            <SettingsField label={t("knowledge.moveWorkspace")}>
+              <SelectMenu
+                ariaLabel={t("knowledge.moveWorkspace")}
+                disabled={busy || !moveDevice}
+                value={moveWorkspace}
+                onChange={setMoveWorkspace}
+                options={workspaces
+                  .filter(
+                    (w) =>
+                      w.deviceId === moveDevice &&
+                      w.accessRole === "owner" &&
+                      !w.archivedAt,
+                  )
+                  .map((w) => ({ value: w.id, label: w.name }))}
+              />
+            </SettingsField>
             <SettingsField
               label={t("knowledge.movePath")}
               htmlFor="pa-memory-move-path"
@@ -625,15 +629,17 @@ export function KnowledgeSection({
           </SettingsGroup>
           <SettingsGroup title={t("knowledge.domainTitle")}>
             <FieldHint>{t("knowledge.domainHint")}</FieldHint>
-            <SelectMenu
-              ariaLabel={t("knowledge.domainWorkspace")}
-              value={domain}
-              disabled={busy}
-              onChange={setDomain}
-              options={workspaces
-                .filter((w) => w.accessRole === "owner" && !w.archivedAt)
-                .map((w) => ({ value: w.id, label: w.name }))}
-            />
+            <SettingsField label={t("knowledge.domainWorkspace")}>
+              <SelectMenu
+                ariaLabel={t("knowledge.domainWorkspace")}
+                value={domain}
+                disabled={busy}
+                onChange={setDomain}
+                options={workspaces
+                  .filter((w) => w.accessRole === "owner" && !w.archivedAt)
+                  .map((w) => ({ value: w.id, label: w.name }))}
+              />
+            </SettingsField>
             <Button
               disabled={busy || !domain}
               onClick={() =>
@@ -659,26 +665,28 @@ export function KnowledgeSection({
           </SettingsGroup>
 
           {vaults.length > 1 ? (
-            <SelectMenu
-              ariaLabel={t("knowledge.source")}
-              value={active?.id ?? ""}
-              onChange={(value) => {
-                setSelected(value);
-                setRetryFolder("");
-                setReviewHash("");
-                setExpiry("");
-                setEntry(undefined);
-                setTitle("");
-                setBody("");
-              }}
-              options={vaults.map((v) => ({
-                value: v.id,
-                label:
-                  workspaces.find((w) => w.id === v.workspaceId)?.name ??
-                  v.workspaceId,
-                detail: v.kind,
-              }))}
-            />
+            <SettingsField label={t("knowledge.source")}>
+              <SelectMenu
+                ariaLabel={t("knowledge.source")}
+                value={active?.id ?? ""}
+                onChange={(value) => {
+                  setSelected(value);
+                  setRetryFolder("");
+                  setReviewHash("");
+                  setExpiry("");
+                  setEntry(undefined);
+                  setTitle("");
+                  setBody("");
+                }}
+                options={vaults.map((v) => ({
+                  value: v.id,
+                  label:
+                    workspaces.find((w) => w.id === v.workspaceId)?.name ??
+                    v.workspaceId,
+                  detail: v.kind,
+                }))}
+              />
+            </SettingsField>
           ) : null}
           {active?.kind === "domain" ? (
             <>
@@ -817,15 +825,20 @@ export function KnowledgeSection({
             />
           </SettingsField>
           <SettingsField
+            className="max-w-2xl"
             label={t("knowledge.body")}
             htmlFor="pa-knowledge-body"
           >
             <Textarea
+              className="w-full"
               id="pa-knowledge-body"
               value={body}
               disabled={busy}
               maxLength={128 * 1024}
               onChange={(e) => setBody(e.target.value)}
+              resize="vertical"
+              rows={6}
+              tone="boxed"
             />
           </SettingsField>
           <SettingsField
@@ -871,27 +884,31 @@ export function KnowledgeSection({
           {entry ? (
             <SettingsGroup title={t("knowledge.publishTitle")}>
               <FieldHint>{t("knowledge.publishHint")}</FieldHint>
-              <SelectMenu
-                ariaLabel={t("knowledge.target")}
-                value={target}
-                disabled={busy}
-                onChange={(value) => {
-                  setTarget(value);
-                  setProfile("");
-                }}
-                options={workspaces
-                  .filter((w) => w.accessRole !== "viewer" && !w.archivedAt)
-                  .map((w) => ({ value: w.id, label: w.name }))}
-              />
-              <SelectMenu
-                ariaLabel={t("knowledge.account")}
-                value={profile}
-                disabled={busy || !target}
-                onChange={setProfile}
-                options={profiles
-                  .filter((p) => p.deviceId === targetWorkspace?.deviceId)
-                  .map((p) => ({ value: p.id, label: p.label }))}
-              />
+              <SettingsField label={t("knowledge.target")}>
+                <SelectMenu
+                  ariaLabel={t("knowledge.target")}
+                  value={target}
+                  disabled={busy}
+                  onChange={(value) => {
+                    setTarget(value);
+                    setProfile("");
+                  }}
+                  options={workspaces
+                    .filter((w) => w.accessRole !== "viewer" && !w.archivedAt)
+                    .map((w) => ({ value: w.id, label: w.name }))}
+                />
+              </SettingsField>
+              <SettingsField label={t("knowledge.account")}>
+                <SelectMenu
+                  ariaLabel={t("knowledge.account")}
+                  value={profile}
+                  disabled={busy || !target}
+                  onChange={setProfile}
+                  options={profiles
+                    .filter((p) => p.deviceId === targetWorkspace?.deviceId)
+                    .map((p) => ({ value: p.id, label: p.label }))}
+                />
+              </SettingsField>
               <SettingsField
                 label={t("knowledge.purpose")}
                 htmlFor="pa-knowledge-purpose"

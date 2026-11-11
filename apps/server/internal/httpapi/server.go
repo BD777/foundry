@@ -14,14 +14,17 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessionalerts"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/usagestats"
 	"github.com/foundry-dev/foundry/apps/server/internal/wirerecord"
 )
 
@@ -65,9 +68,12 @@ type Backend interface {
 	store.ResourceLeaseStore
 	store.LeaseCommandTokenStore
 	store.AppStoreConnectStore
+	store.ExtensionServerHeldStore
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
+	store.ConnectorPackageStore
 	store.PersonalAgentStore
+	store.PermissionPackageStore
 	store.PersonalAgentListStore
 	store.WorkspaceDigestStore
 	store.DevicePlacementStore
@@ -76,6 +82,7 @@ type Backend interface {
 	store.WorkStore
 	store.WorkChangeStore
 	store.SessionInboxStore
+	store.SessionAlertStore
 	store.PendingItemStore
 	store.AgentDefaultStore
 	store.ChatArchiveStore
@@ -131,8 +138,10 @@ type Server struct {
 	feishu         *feishu.WSManager
 	feishuEvents   *feishuevents.Hub
 	options        ServerOptions
-	startedAt      time.Time
-	store          Backend
+	// usagePriceSource is LiteLLM's raw catalog URL; tests point it at a trap.
+	usagePriceSource string
+	startedAt        time.Time
+	store            Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
 	// connectors is the Connectors module: people's third-party logins
@@ -141,6 +150,9 @@ type Server struct {
 	connectors *connectors.Module
 	// connectorRefreshes are the Connectors page's background reads.
 	connectorRefreshes connectorReads
+	// connectorVisibility refreshes gated connector checks without blocking
+	// the page on a slow network or provider.
+	connectorVisibility connectorReads
 	// drain is whether the server is shutting down and which requests are
 	// open (drain.go).
 	drain drainState
@@ -169,6 +181,11 @@ type Server struct {
 	// sessionService is the session lifecycle: start, dispatch, messages,
 	// stop and inboxes, over the ports in session_ports.go.
 	sessionService *sessions.Service
+	// sessionAlerts reports system incidents of turns another session
+	// started, separately from their result reports.
+	sessionAlerts *sessionalerts.Service
+	// sessionRetries keeps model rate-limit retries durable across restarts.
+	sessionRetries *sessionRetryService
 	// issueService is an Issue's lifecycle, whichever entry asks, over the
 	// port in issue_ports.go.
 	issueService *issues.Service
@@ -249,6 +266,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		chats:                     chats,
 		dataChanges:               data,
 		options:                   options,
+		usagePriceSource:          usagestats.DefaultPriceSourceURL,
 		startedAt:                 time.Now().UTC(),
 		store:                     store,
 		loginLimiter:              newLoginLimiter(),
@@ -257,6 +275,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		toolResolver:              skilltools.Resolver{ReleaseAPI: "https://api.github.com", PyPIAPI: "https://pypi.org"},
 	}
 	server.sessionService = newSessionService(server, sessionEvents)
+	server.sessionRetries = newSessionRetryService(server)
+	server.sessionAlerts = newSessionAlerts(server)
 	server.issueService = newIssueService(server, issueEvents)
 	server.runs = run.New(store, runAccounts{server})
 	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
@@ -271,16 +291,24 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.wire = server.wire
 	server.chatQueueKicks = newWorkGroup(server.hub.work)
 	server.initAccounts()
-	server.connectors = connectors.New(store, store, options.Integrations)
+	server.connectors = connectors.New(store, store, options.Integrations, personalagent.ProposalTTL)
+	server.connectors.ServerHeld.ExtensionDeviceRequest = server.extensionDeviceRequest
+	server.connectors.ServerHeld.ExtensionCheckDevices = server.checkExtensionDevices
+	if server.connectors.Confirmations != nil {
+		server.connectors.Confirmations.OnCreated = server.assistant.ProposalCreated
+		server.connectors.Confirmations.OnChanged = server.assistant.ProposalChanged
+	}
 	server.hub.connectors = server.connectors
 	server.resources = newResourceService(store, server.hub, stream)
 	server.hub.resources = server.resources
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations, server.hub)
+	server.feishuGateway.UsePermission(store, server.connectors.Confirmations)
 	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
 	server.connectors.Cloudflare.UseNativeWork(server.hub)
 	server.connectors.AppStoreConnect.UseNativeWork(server.hub)
+	server.connectors.Extensions.UseNativeWork(server.hub)
 	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
@@ -290,6 +318,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.awaitSessionStart = server.sessionService.AwaitStart
 	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
 	server.hub.questionSettled = server.observeQuestionSettled
+	server.hub.retrySessionFailure = server.sessionRetries.Failed
+	server.hub.sessionRetryStarted = server.sessionRetries.Started
+	server.hub.sessionRetryDone = server.sessionRetries.Completed
 	sessionEvents.Presented = server.presentSession
 	sessionEvents.Panel = server.sessionPanelOf
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
@@ -332,13 +363,13 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 			workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles,
 			resourceLeaseReactions{server},
 		}, server.assistant.Observers(), []sessions.ChangeObserver{
-			inbox, childReportReactions{server},
+			sessionAlertReactions{server}, inbox, childReportReactions{server},
 			pendingReactions{server}, workspaceDigestReactions{server}, waitingChildReactions{server}, server.issueService.Observer(),
 		}),
 		// An event added to its transcript: its Feishu card, the chat's
 		// queued messages, its inbox, pending items, a child's question to
 		// its parent.
-		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, inbox, pendingReactions{server}, childQuestionReactions{server}},
+		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, sessionAlertReactions{server}, inbox, pendingReactions{server}, childQuestionReactions{server}},
 		// A device's report that it ended, once the device was answered:
 		// naming what it answered.
 		Ends: []sessions.EndObserver{server.titles},

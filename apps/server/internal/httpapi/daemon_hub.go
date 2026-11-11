@@ -28,11 +28,16 @@ type DaemonHub struct {
 	// settleIssueSession hands what an Issue's session produced, once it
 	// ended, to the Issue (issues.Service.Settle).
 	settleIssueSession func(ctx context.Context, session store.AgentSession, execution *store.CompleteIssueInput, clarification *store.ClarificationResponse)
-	skillWarmMu        sync.Mutex
-	skillWarmDirty     bool
-	skillWarmRunning   bool
-	skillScans         map[string]*skillScan
-	skillScansMu       sync.Mutex
+	// retrySessionFailure turns a model rate-limit failure into a durable
+	// retry instead of a terminal turn. It reports whether it did.
+	retrySessionFailure func(ctx context.Context, session store.AgentSession, failure string) (bool, error)
+	sessionRetryStarted func(ctx context.Context, session store.AgentSession)
+	sessionRetryDone    func(ctx context.Context, session store.AgentSession, failed bool)
+	skillWarmMu         sync.Mutex
+	skillWarmDirty      bool
+	skillWarmRunning    bool
+	skillScans          map[string]*skillScan
+	skillScansMu        sync.Mutex
 	// skillScanAnswers keeps each device's last scan answer (skills.go).
 	skillScanAnswers keptSkillScans
 	// onDeviceConnected runs once per daemon hello, until that socket closes.
@@ -295,9 +300,16 @@ func (h *DaemonHub) issueOnDevice(ctx context.Context, issueID, deviceID string)
 // that no other event carries (device_status_changed carries the device).
 func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.DaemonRegistration) (store.DaemonChanges, error) {
 	if h.connectors != nil {
-		registration.Device.Connectors = h.connectors.SanitizeDeviceConnectors(registration.Device.Connectors)
+		connectors, extensionErrors := h.connectors.SanitizeDeviceConnectors(registration.Device.Connectors)
+		registration.Device.Connectors = connectors
+		registration.Device.ExtensionErrors = extensionErrors
+		for _, refused := range extensionErrors {
+			h.connectors.ServerHeld.Logf("refused connector extension descriptor device=%s extension=%s kind=%s reason=%s",
+				registration.Device.ID, refused.ExtensionID, refused.Kind, refused.Reason)
+		}
 	} else {
 		registration.Device.Connectors = nil
+		registration.Device.ExtensionErrors = nil
 	}
 	changes, err := h.store.RegisterDaemonChanges(ctx, registration)
 	if err != nil {

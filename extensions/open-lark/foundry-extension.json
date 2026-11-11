@@ -1,0 +1,185 @@
+{
+  "manifestVersion": 2,
+  "id": "open-lark",
+  "name": "OpenLark",
+  "version": "1.2.0",
+  "protocol": 1,
+  "connectors": [
+    {
+      "kind": "openlark",
+      "label": "OpenLark",
+      "labels": {
+        "en": "OpenLark",
+        "zh-CN": "OpenLark"
+      },
+      "description": "Use an OpenLark deployment through Foundry's gateway, directly or from a device that can reach it.",
+      "descriptions": {
+        "en": "Use an OpenLark deployment through Foundry's gateway, directly or from a device that can reach it.",
+        "zh-CN": "会话经 Foundry 的网关使用你添加的 OpenLark 部署，可由服务器直连，也可经能访问它的设备转发。"
+      },
+      "tool": {
+        "command": "olk"
+      },
+      "package": {
+        "upstream": {
+          "via": "github",
+          "repository": "https://github.com/nwverse/open-lark",
+          "ref": "main"
+        },
+        "skills": {
+          "path": "plugins/open-lark/skills"
+        },
+        "tools": [
+          {
+            "command": "olk",
+            "source": "repository",
+            "path": "plugins/open-lark",
+            "bins": {
+              "olk": "bin/olk",
+              "olk-ctx": "bin/olk-ctx"
+            }
+          }
+        ]
+      },
+      "access": {
+        "via": "github",
+        "repository": "https://github.com/nwverse/open-lark",
+        "hint": "Read the nwverse/open-lark repository with GitHub CLI to make this connector available.",
+        "hints": {
+          "en": "Read the nwverse/open-lark repository with GitHub CLI to make this connector available.",
+          "zh-CN": "需要会用 GitHub CLI 读取 nwverse/open-lark 仓库的权限，此连接器才会显示。"
+        }
+      },
+      "provides": {
+        "tool": true
+      },
+      "serverHeld": {
+        "instances": "many",
+        "fields": [
+          {
+            "id": "baseUrl",
+            "type": "url",
+            "required": true,
+            "label": "OpenLark address",
+            "labels": {
+              "zh-CN": "OpenLark 地址"
+            },
+            "help": "For Foundry server direct access, enter the public HTTPS root. For device access, enter an HTTP or HTTPS address reachable from that device. Both forms may include an OpenLark path prefix such as `https://host/openlark`, but not `/agent/v1`, a query or a fragment.",
+            "helps": {
+              "zh-CN": "由 Foundry 服务器直连时，填写公网 HTTPS 根地址；经设备连接时，填写该设备能访问的 HTTP 或 HTTPS 地址。两种方式都可以带 OpenLark 子路径（例如 `https://host/openlark`），但不要追加 `/agent/v1`、查询串或片段。"
+            },
+            "placeholder": "https://open-lark.example.com"
+          },
+          {
+            "id": "readToken",
+            "type": "secret",
+            "required": true,
+            "label": "Agent token",
+            "labels": {
+              "zh-CN": "Agent 令牌"
+            },
+            "help": "Recommended: paste `OPEN_LARK_AGENT_TOKEN` so Foundry can read and write. To let Foundry only read, paste `OPEN_LARK_AGENT_READ_TOKEN` instead. Foundry checks the token's actual scope during validation, seals it on the server, and shows read/write or read-only on the instance.",
+            "helps": {
+              "zh-CN": "推荐填写 `OPEN_LARK_AGENT_TOKEN`，允许 Foundry 读写。若只想让 Foundry 读取，填写 `OPEN_LARK_AGENT_READ_TOKEN`。Foundry 校验令牌时会读取它的实际权限，把令牌封存在服务器上，并在实例列表中显示「读写」或「只读」。"
+            }
+          },
+          {
+            "id": "account",
+            "type": "select",
+            "required": false,
+            "label": "Lark account",
+            "labels": {
+              "zh-CN": "飞书账号"
+            },
+            "help": "Leave empty to use OpenLark's primary account, or choose one after the address and token pass validation.",
+            "helps": {
+              "zh-CN": "留空时使用 OpenLark 的主账号；地址和令牌校验通过后，也可以从探测出的列表中选择账号。"
+            },
+            "optionsFrom": "probe:accounts"
+          }
+        ],
+        "steps": [["baseUrl", "readToken"], ["account"]],
+        "probe": [
+          {
+            "id": "capabilities",
+            "method": "GET",
+            "path": "/agent/v1/capabilities",
+            "optional": true,
+            "extract": {
+              "values": {
+                "version": "/version",
+                "scope": "/token/scope"
+              }
+            }
+          },
+          {
+            "id": "accounts",
+            "method": "GET",
+            "path": "/agent/v1/accounts",
+            "optional": true,
+            "extract": {
+              "options": {
+                "items": "/accounts",
+                "value": "/id",
+                "label": "/name"
+              }
+            }
+          },
+          {
+            "id": "routes",
+            "method": "GET",
+            "path": "/agent/v1/",
+            "extract": {
+              "routes": {
+                "items": "/routes",
+                "method": "/method",
+                "path": "/path",
+                "access": "/access",
+                "domain": "/domain"
+              }
+            }
+          }
+        ],
+        "upstream": {
+          "baseField": "baseUrl",
+          "pathPrefix": "/agent/v1",
+          "headers": {
+            "Authorization": "Bearer {secret:readToken}",
+            "X-Open-Lark-Account": "{field:account}"
+          },
+          "requestBodyLimitBytes": 8388608,
+          "responseBodyLimitBytes": 16777216,
+          "timeoutSeconds": 60
+        },
+        "access": {
+          "from": "probe:routes",
+          "default": "deny",
+          "allowBy": {
+            "value": "probe:capabilities/scope",
+            "map": {
+              "full": ["read", "write"],
+              "read": ["read"]
+            },
+            "otherwise": ["read"]
+          }
+        },
+        "session": {
+          "env": {
+            "OPEN_LARK_AGENT_BASE": "{gatewayBase}",
+            "OPEN_LARK_AGENT_TOKEN": "{standIn}",
+            "OPEN_LARK_AGENT_READ_TOKEN": "{standIn}",
+            "OPEN_LARK_MCP_READ_ONLY": "{probeMap:capabilities/scope|full=0|*=1}",
+            "OPEN_LARK_ACCOUNT": "{field:account}",
+            "OPEN_LARK_PROFILE": "",
+            "OPEN_LARK_ENV_FILE": "",
+            "OL_WRITE": ""
+          }
+        },
+        "network": {
+          "holdings": ["server", "device"],
+          "publicOnly": true
+        }
+      }
+    }
+  ]
+}

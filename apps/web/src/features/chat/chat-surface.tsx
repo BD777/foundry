@@ -29,7 +29,7 @@ import { useOnlyMine } from "./thread/only-mine";
 import { useSessionWork } from "./context/use-session-work";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { cn } from "../../lib/cn";
-import { waitingChildSessions } from "./waiting-children-status";
+import { waitingChildWorkIds } from "./waiting-children-status";
 
 export type {
   ChatAgentOption,
@@ -109,8 +109,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const { detail } = panel;
   const work = useSessionWork(contextCard?.status?.sessionId);
   const workCounts = sidebarWorkCounts(work.list?.items ?? []);
-  const waitingChildren = useMemo(
-    () => waitingChildSessions(work.list?.items ?? []),
+  const waitingChildIds = useMemo(
+    () => waitingChildWorkIds(work.list?.items ?? []),
     [work.list],
   );
   const waitingChildCount = props.waitingChildCount ?? 0;
@@ -186,11 +186,12 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onOnlyMineChange={setOnlyMine}
             contextOpen={contextCard ? panel.open : undefined}
             onBack={showList}
+            onRevealWaitingChildren={
+              contextCard ? () => panel.revealRows(waitingChildIds) : undefined
+            }
             onToggleContext={panel.toggle}
             title={chatTitle}
             waitingChildCount={waitingChildCount}
-            waitingChildren={waitingChildren}
-            workspaceId={workspaceId}
           />
           <ChatDetailSplitPane
             detail={

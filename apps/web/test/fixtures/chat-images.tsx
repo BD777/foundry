@@ -59,7 +59,7 @@ function Fixture() {
       <article className="fdy-markdown max-w-[660px]">
         <MarkdownContent onImagePreview={setPreview}>
           {
-            'A recovered image:\n<image path="/synthetic/.foundry/attachments/interrupted.png" name="Recovered screenshot">\nA slow device:\n<image path="/synthetic/.foundry/attachments/slow.png" name="Slow screenshot">\nAn offline device:\n<image path="/synthetic/.foundry/attachments/offline.png" name="Offline screenshot">\nA missing image:\n<image path="/synthetic/.foundry/attachments/missing.png" name="Missing screenshot">'
+            '<image path="/synthetic/.foundry/attachments/missing/install-light.png" name="Install screenshot">\n<image path="/synthetic/.foundry/attachments/missing/launch-plan.png" name="Launch plan">\n<image path="/synthetic/.foundry/attachments/missing/retry-state.png" name="Retry state">\n<image path="/synthetic/.foundry/attachments/offline.png" name="Offline screenshot">'
           }
         </MarkdownContent>
       </article>
