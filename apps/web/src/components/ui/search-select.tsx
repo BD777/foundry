@@ -193,7 +193,7 @@ export function SearchSelect({
               )}
               {footer}
               {trailingOption ? (
-                <div className="mt-1 border-t border-line pt-1">
+                <CommandGroup className="mt-1 border-t border-line pt-1">
                   <CommandItem
                     className={rowClass}
                     data-current={trailingOption.value === value || undefined}
@@ -229,7 +229,7 @@ export function SearchSelect({
                       </small>
                     ) : null}
                   </CommandItem>
-                </div>
+                </CommandGroup>
               ) : null}
             </CommandList>
           </Command>
