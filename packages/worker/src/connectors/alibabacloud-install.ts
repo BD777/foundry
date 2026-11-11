@@ -27,7 +27,8 @@ import { linkTool, toolLinkFree } from "./tool-links.js";
  * either way. The program goes to ~/.local/share/aliyun-cli/<version>/aliyun
  * and is linked from Foundry's tools (sessions find it first) and from
  * ~/.local/bin when no other aliyun is there or on PATH. Downloads use the
- * device's HTTP(S)_PROXY settings; the result is checked with `aliyun version`.
+ * Worker's saved outbound proxy (or its environment fallback); the result is
+ * checked with `aliyun version`.
  */
 
 const latestRelease = "https://github.com/aliyun/aliyun-cli/releases/latest";

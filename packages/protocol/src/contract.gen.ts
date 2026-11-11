@@ -571,6 +571,13 @@ interface components {
       /** @description Stands in for the user refresh token; the gateway answers its refresh. */
       refreshHandle?: string;
     };
+    /** @description ConnectorExtensionError is one descriptor a device reported but the server refused. */
+    ConnectorExtensionError: {
+      extensionId: string;
+      extensionName: string;
+      kind: string;
+      reason: string;
+    };
     /** @description DeviceAccountShare is another person's device under the same system account of the same computer (DeviceProjection.SharesSystemAccountWith). */
     DeviceAccountShare: {
       deviceId: string;
@@ -596,6 +603,8 @@ interface components {
       status: "connected" | "disconnected";
       lastSeenLabel: string;
       runtimeSettings?: components["schemas"]["AgentRuntimeSettings"];
+      /** @description `runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it. */
+      runtimeState?: components["schemas"]["DeviceRuntimeState"];
       /** @description `owned` reports whether the caller owns (and may manage) the device. */
       owned?: boolean;
       /** @description `managedRoots` are the folders, resolved, the Personal Agent may create projects in, reported by its worker. */
@@ -606,6 +615,8 @@ interface components {
       capabilities?: string[];
       /** @description `connectors` are what extensions installed on the device provide, as its worker reports them (docs/connector-extensions.md); shown to its owner only. */
       connectors?: components["schemas"]["ConnectorDescriptor"][];
+      /** @description `extensionErrors` are extension descriptors the server refused, kept so the owner can see which device and extension need fixing. */
+      extensionErrors?: components["schemas"]["ConnectorExtensionError"][];
       /** @description `worker` is the build the device's worker runs and the command that updates it there, reported at registration (0.5.7 and later). */
       worker?: components["schemas"]["DeviceWorker"];
       /** @description `system` describes the machine, reported at registration (0.5.7 and later). */
@@ -751,14 +762,26 @@ interface components {
     };
     AgentRuntimeSettings: {
       activeRuntimeTtlMs: number;
-      /** @description `maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default. */
-      maxConcurrentTasks: number;
       /**
-       * @description `maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it out.
+       * @description `adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).
+       * @enum {string}
+       */
+      mode?: "adaptive" | "forced";
+      /** @description The owner's fixed limit while `mode` is `forced` (1–16). */
+      forcedLimit?: number;
+      /** @description Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive. */
+      maxConcurrentTasks?: number;
+      /**
+       * @description Deprecated compatibility projection for older clients. New settings use `mode`.
        * @enum {string}
        */
       maxConcurrentTasksSource?: "owner" | "hardware";
-      /** @description What this device's hardware allows by default. */
+      /**
+       * @description `adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.
+       * @enum {string}
+       */
+      migrationNotice?: "adaptive_migrated";
+      /** @description Compatibility mirror of this device's adaptive parallel floor. */
       hardwareMaxConcurrentTasks?: number;
       /** @description The memory and CPUs that default is computed from. */
       hardware?: components["schemas"]["DeviceHardware"];
@@ -768,6 +791,66 @@ interface components {
       /** Format: double */
       memoryGiB: number;
       cpus: number;
+    };
+    /** @description DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported. */
+    DeviceRuntimeState: {
+      capturedAt: string;
+      /** @enum {string} */
+      mode: "adaptive" | "forced";
+      limit: number;
+      /** @description Total turns running, limited and limit-exempt. */
+      running: number;
+      /** @description Total turns waiting, limited and limit-exempt. */
+      queued: number;
+      /** @description Turns running against the adaptive or forced limit. */
+      runningLimited?: number;
+      /** @description Human and orchestration-parent turns running outside the limit. */
+      runningExempt?: number;
+      /** @description Turns waiting for an adaptive or forced-limit slot. */
+      queuedLimited?: number;
+      /** @description Limit-exempt turns waiting only behind the same conversation. */
+      queuedExempt?: number;
+      /** @description While true, no new turn starts regardless of the limit. */
+      hardHold: boolean;
+      /** @description Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode. */
+      reasons: string[];
+      signals: components["schemas"]["DeviceResourceSignals"];
+      estimates: components["schemas"]["DeviceTurnEstimate"][];
+    };
+    /** @description The host resource signals behind one admission decision. */
+    DeviceResourceSignals: {
+      cpuCount?: number;
+      /** Format: double */
+      cpuPressurePercent?: number;
+      /** Format: double */
+      loadAverage1?: number;
+      /** Format: int64 */
+      memoryAvailableBytes?: number;
+      /** Format: double */
+      memoryPressurePercent?: number;
+      /** Format: int64 */
+      memoryTotalBytes?: number;
+      /** Format: int64 */
+      swapFreeBytes?: number;
+    };
+    /** @description DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime. */
+    DeviceTurnEstimate: {
+      workspaceId?: string;
+      runtime?: string;
+      /**
+       * @description `prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.
+       * @enum {string}
+       */
+      source?: "prior" | "observed";
+      /** Format: int64 */
+      typicalRssBytes: number;
+      /**
+       * Format: int64
+       * @description The 90th percentile of observed per-turn peak RSS.
+       */
+      peakRssBytes: number;
+      /** Format: double */
+      averageCpuCores: number;
     };
     DaemonRegistration: {
       /** @description `capabilities` name the protocol features this worker implements. Most are always declared; the server checks only those a worker withholds while it cannot run them (verification_sessions without its sandbox, and those an older execution host still running lacks). */
@@ -3376,6 +3459,8 @@ export type ExternalAccountMaterial =
   components["schemas"]["ExternalAccountMaterial"];
 export type ExternalAccountGateway =
   components["schemas"]["ExternalAccountGateway"];
+export type ConnectorExtensionError =
+  components["schemas"]["ConnectorExtensionError"];
 export type DeviceAccountShare = components["schemas"]["DeviceAccountShare"];
 export type DeviceAccountIdentity =
   components["schemas"]["DeviceAccountIdentity"];
@@ -3394,6 +3479,10 @@ export type DeviceWorker = components["schemas"]["DeviceWorker"];
 export type AgentRuntimeSettings =
   components["schemas"]["AgentRuntimeSettings"];
 export type DeviceHardware = components["schemas"]["DeviceHardware"];
+export type DeviceRuntimeState = components["schemas"]["DeviceRuntimeState"];
+export type DeviceResourceSignals =
+  components["schemas"]["DeviceResourceSignals"];
+export type DeviceTurnEstimate = components["schemas"]["DeviceTurnEstimate"];
 export type DaemonRegistration = components["schemas"]["DaemonRegistration"];
 export type WorkerConnectionReport =
   components["schemas"]["WorkerConnectionReport"];

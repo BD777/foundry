@@ -92,8 +92,8 @@ export function finishedFoldLabel(finished: string, failed?: string): string {
  */
 export function useRevealedRow(
   reveal: { ids: string[] } | undefined,
-): (id: string) => (element: HTMLButtonElement | null) => void {
-  const rows = useRef(new Map<string, HTMLButtonElement>());
+): (id: string) => (element: HTMLElement | null) => void {
+  const rows = useRef(new Map<string, HTMLElement>());
   useEffect(() => {
     const first = reveal?.ids[0];
     const row = first ? rows.current.get(first) : undefined;

@@ -19,6 +19,8 @@ import { workspaceFolderPresent } from "./workspace/workspace-registration.js";
 import { readDaemonConfig, writeDaemonConfig } from "./platform/config.js";
 import { ReliableSessionTransport } from "./transport/transport.js";
 import { ConcurrentTaskScheduler } from "./platform/task-scheduler.js";
+import { AdaptiveConcurrencyController } from "./concurrency/admission-controller.js";
+import { adaptiveConcurrencyFloor } from "./device/device.js";
 import { SessionExecutionRegistry } from "./session/session-state.js";
 import { getDevice, readAgentRuntimeSettings } from "./device/device.js";
 import {
@@ -266,9 +268,16 @@ async function connectWebSocket(args: string[]): Promise<void> {
     startAgentUpdates();
     if (!host) startIdleRuntimeSweeps();
   }
+  const initialRuntimeSettings = readAgentRuntimeSettings();
   const taskScheduler = new ConcurrentTaskScheduler(
-    readAgentRuntimeSettings().maxConcurrentTasks,
+    initialRuntimeSettings.mode === "forced"
+      ? (initialRuntimeSettings.forcedLimit ?? 1)
+      : adaptiveConcurrencyFloor(initialRuntimeSettings.hardware?.cpus),
   );
+  const admission = host
+    ? undefined
+    : new AdaptiveConcurrencyController(taskScheduler);
+  admission?.start();
 
   // Consecutive reconnects without a session that ran.
   let reconnects = 0;

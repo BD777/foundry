@@ -1010,6 +1010,18 @@
         }
       }
     },
+    "ConnectorExtensionError": {
+      "description": "ConnectorExtensionError is one descriptor a device reported but the server refused.",
+      "type": "object",
+      "required": ["extensionId", "extensionName", "kind", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "extensionId": { "type": "string" },
+        "extensionName": { "type": "string" },
+        "kind": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
     "DeviceAccountShare": {
       "description": "DeviceAccountShare is another person's device under the same system account of the same computer (DeviceProjection.SharesSystemAccountWith).",
       "type": "object",
@@ -1055,6 +1067,10 @@
         "status": { "type": "string", "enum": ["connected", "disconnected"] },
         "lastSeenLabel": { "type": "string" },
         "runtimeSettings": { "$ref": "#/$defs/AgentRuntimeSettings" },
+        "runtimeState": {
+          "description": "`runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it.",
+          "$ref": "#/$defs/DeviceRuntimeState"
+        },
         "owned": {
           "description": "`owned` reports whether the caller owns (and may manage) the device.",
           "type": "boolean"
@@ -1077,6 +1093,11 @@
           "description": "`connectors` are what extensions installed on the device provide, as its worker reports them (docs/connector-extensions.md); shown to its owner only.",
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorDescriptor" }
+        },
+        "extensionErrors": {
+          "description": "`extensionErrors` are extension descriptors the server refused, kept so the owner can see which device and extension need fixing.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorExtensionError" }
         },
         "worker": {
           "description": "`worker` is the build the device's worker runs and the command that updates it there, reported at registration (0.5.7 and later).",
@@ -1346,21 +1367,35 @@
     },
     "AgentRuntimeSettings": {
       "type": "object",
-      "required": ["activeRuntimeTtlMs", "maxConcurrentTasks"],
+      "required": ["activeRuntimeTtlMs"],
       "additionalProperties": false,
       "properties": {
         "activeRuntimeTtlMs": { "type": "integer" },
+        "mode": {
+          "description": "`adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).",
+          "type": "string",
+          "enum": ["adaptive", "forced"]
+        },
+        "forcedLimit": {
+          "description": "The owner's fixed limit while `mode` is `forced` (1–16).",
+          "type": "integer"
+        },
         "maxConcurrentTasks": {
-          "description": "`maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default.",
+          "description": "Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive.",
           "type": "integer"
         },
         "maxConcurrentTasksSource": {
-          "description": "`maxConcurrentTasksSource` is \"owner\" or \"hardware\"; workers before DEV-084 leave it out.",
+          "description": "Deprecated compatibility projection for older clients. New settings use `mode`.",
           "type": "string",
           "enum": ["owner", "hardware"]
         },
+        "migrationNotice": {
+          "description": "`adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.",
+          "type": "string",
+          "enum": ["adaptive_migrated"]
+        },
         "hardwareMaxConcurrentTasks": {
-          "description": "What this device's hardware allows by default.",
+          "description": "Compatibility mirror of this device's adaptive parallel floor.",
           "type": "integer"
         },
         "hardware": {
@@ -1377,6 +1412,100 @@
       "properties": {
         "memoryGiB": { "type": "number" },
         "cpus": { "type": "integer" }
+      }
+    },
+    "DeviceRuntimeState": {
+      "description": "DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported.",
+      "type": "object",
+      "required": [
+        "capturedAt",
+        "mode",
+        "limit",
+        "running",
+        "queued",
+        "hardHold",
+        "reasons",
+        "signals",
+        "estimates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "capturedAt": { "type": "string" },
+        "mode": { "type": "string", "enum": ["adaptive", "forced"] },
+        "limit": { "type": "integer" },
+        "running": {
+          "type": "integer",
+          "description": "Total turns running, limited and limit-exempt."
+        },
+        "queued": {
+          "type": "integer",
+          "description": "Total turns waiting, limited and limit-exempt."
+        },
+        "runningLimited": {
+          "type": "integer",
+          "description": "Turns running against the adaptive or forced limit."
+        },
+        "runningExempt": {
+          "type": "integer",
+          "description": "Human and orchestration-parent turns running outside the limit."
+        },
+        "queuedLimited": {
+          "type": "integer",
+          "description": "Turns waiting for an adaptive or forced-limit slot."
+        },
+        "queuedExempt": {
+          "type": "integer",
+          "description": "Limit-exempt turns waiting only behind the same conversation."
+        },
+        "hardHold": {
+          "description": "While true, no new turn starts regardless of the limit.",
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "signals": { "$ref": "#/$defs/DeviceResourceSignals" },
+        "estimates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DeviceTurnEstimate" }
+        }
+      }
+    },
+    "DeviceResourceSignals": {
+      "description": "The host resource signals behind one admission decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpuCount": { "type": "integer" },
+        "cpuPressurePercent": { "type": "number" },
+        "loadAverage1": { "type": "number" },
+        "memoryAvailableBytes": { "type": "integer" },
+        "memoryPressurePercent": { "type": "number" },
+        "memoryTotalBytes": { "type": "integer" },
+        "swapFreeBytes": { "type": "integer" }
+      }
+    },
+    "DeviceTurnEstimate": {
+      "description": "DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime.",
+      "type": "object",
+      "required": ["typicalRssBytes", "peakRssBytes", "averageCpuCores"],
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "runtime": { "type": "string" },
+        "source": {
+          "description": "`prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.",
+          "type": "string",
+          "enum": ["prior", "observed"]
+        },
+        "typicalRssBytes": { "type": "integer" },
+        "peakRssBytes": {
+          "description": "The 90th percentile of observed per-turn peak RSS.",
+          "type": "integer"
+        },
+        "averageCpuCores": { "type": "number" }
       }
     },
     "DaemonRegistration": {

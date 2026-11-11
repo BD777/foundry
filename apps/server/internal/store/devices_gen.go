@@ -10,17 +10,34 @@ import (
 type AgentRuntimeSettings struct {
 	ActiveRuntimeTTLMs int `json:"activeRuntimeTtlMs"`
 
-	// MaxConcurrentTasks `maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default.
-	MaxConcurrentTasks int `json:"maxConcurrentTasks"`
+	// Mode `adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).
+	Mode string `json:"mode,omitempty"`
 
-	// MaxConcurrentTasksSource `maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it out.
+	// ForcedLimit The owner's fixed limit while `mode` is `forced` (1–16).
+	ForcedLimit int `json:"forcedLimit,omitempty"`
+
+	// MaxConcurrentTasks Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive.
+	MaxConcurrentTasks int `json:"maxConcurrentTasks,omitempty"`
+
+	// MaxConcurrentTasksSource Deprecated compatibility projection for older clients. New settings use `mode`.
 	MaxConcurrentTasksSource string `json:"maxConcurrentTasksSource,omitempty"`
 
-	// HardwareMaxConcurrentTasks What this device's hardware allows by default.
+	// MigrationNotice `adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.
+	MigrationNotice string `json:"migrationNotice,omitempty"`
+
+	// HardwareMaxConcurrentTasks Compatibility mirror of this device's adaptive parallel floor.
 	HardwareMaxConcurrentTasks int `json:"hardwareMaxConcurrentTasks,omitempty"`
 
 	// Hardware The memory and CPUs that default is computed from.
 	Hardware *DeviceHardware `json:"hardware,omitempty"`
+}
+
+// ConnectorExtensionError ConnectorExtensionError is one descriptor a device reported but the server refused.
+type ConnectorExtensionError struct {
+	ExtensionID   string `json:"extensionId"`
+	ExtensionName string `json:"extensionName"`
+	Kind          string `json:"kind"`
+	Reason        string `json:"reason"`
 }
 
 // DaemonRegistration defines model for DaemonRegistration.
@@ -129,6 +146,9 @@ type DeviceProjection struct {
 	LastSeenLabel   string                `json:"lastSeenLabel"`
 	RuntimeSettings *AgentRuntimeSettings `json:"runtimeSettings,omitempty"`
 
+	// RuntimeState `runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it.
+	RuntimeState *DeviceRuntimeState `json:"runtimeState,omitempty"`
+
 	// Owned `owned` reports whether the caller owns (and may manage) the device.
 	Owned bool `json:"owned,omitempty"`
 
@@ -143,6 +163,9 @@ type DeviceProjection struct {
 
 	// Connectors `connectors` are what extensions installed on the device provide, as its worker reports them (docs/connector-extensions.md); shown to its owner only.
 	Connectors []ConnectorDescriptor `json:"connectors,omitempty"`
+
+	// ExtensionErrors `extensionErrors` are extension descriptors the server refused, kept so the owner can see which device and extension need fixing.
+	ExtensionErrors []ConnectorExtensionError `json:"extensionErrors,omitempty"`
 
 	// Worker `worker` is the build the device's worker runs and the command that updates it there, reported at registration (0.5.7 and later).
 	Worker *DeviceWorker `json:"worker,omitempty"`
@@ -179,6 +202,17 @@ type DeviceRepairResult struct {
 
 	// Values What changed, e.g. the forgotten folders.
 	Values map[string]DiagnosticValue `json:"values,omitempty"`
+}
+
+// DeviceResourceSignals The host resource signals behind one admission decision.
+type DeviceResourceSignals struct {
+	CPUCount              int     `json:"cpuCount,omitempty"`
+	CPUPressurePercent    float64 `json:"cpuPressurePercent,omitempty"`
+	LoadAverage1          float64 `json:"loadAverage1,omitempty"`
+	MemoryAvailableBytes  int64   `json:"memoryAvailableBytes,omitempty"`
+	MemoryPressurePercent float64 `json:"memoryPressurePercent,omitempty"`
+	MemoryTotalBytes      int64   `json:"memoryTotalBytes,omitempty"`
+	SwapFreeBytes         int64   `json:"swapFreeBytes,omitempty"`
 }
 
 // DeviceRunner DeviceRunner is a worker's session runner (execution host): its version and whether it waits to switch to the connection service's newer one. State is current, pending, switching or failed (protocol DeviceRunner).
@@ -237,6 +271,41 @@ type DeviceRunnerTurn struct {
 	Background bool `json:"background,omitempty"`
 }
 
+// DeviceRuntimeState DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported.
+type DeviceRuntimeState struct {
+	CapturedAt string `json:"capturedAt"`
+	Mode       string `json:"mode"`
+	Limit      int    `json:"limit"`
+
+	// Running Total turns running, limited and limit-exempt.
+	Running int `json:"running"`
+
+	// Queued Total turns waiting, limited and limit-exempt.
+	Queued int `json:"queued"`
+
+	// RunningLimited Turns running against the adaptive or forced limit.
+	RunningLimited int `json:"runningLimited,omitempty"`
+
+	// RunningExempt Human and orchestration-parent turns running outside the limit.
+	RunningExempt int `json:"runningExempt,omitempty"`
+
+	// QueuedLimited Turns waiting for an adaptive or forced-limit slot.
+	QueuedLimited int `json:"queuedLimited,omitempty"`
+
+	// QueuedExempt Limit-exempt turns waiting only behind the same conversation.
+	QueuedExempt int `json:"queuedExempt,omitempty"`
+
+	// HardHold While true, no new turn starts regardless of the limit.
+	HardHold bool `json:"hardHold"`
+
+	// Reasons Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode.
+	Reasons jsonempty.List[string] `json:"reasons"`
+
+	// Signals The host resource signals behind one admission decision.
+	Signals   DeviceResourceSignals              `json:"signals"`
+	Estimates jsonempty.List[DeviceTurnEstimate] `json:"estimates"`
+}
+
 // DeviceServiceState DeviceServiceState is the login service that keeps a worker running, as the worker reads it without administrator rights.
 type DeviceServiceState struct {
 	Manager string `json:"manager"`
@@ -277,6 +346,20 @@ type DeviceSystem struct {
 
 	// Service `service` is how the worker is kept running there (DEV-088).
 	Service *DeviceServiceState `json:"service,omitempty"`
+}
+
+// DeviceTurnEstimate DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime.
+type DeviceTurnEstimate struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Runtime     string `json:"runtime,omitempty"`
+
+	// Source `prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.
+	Source          string `json:"source,omitempty"`
+	TypicalRssBytes int64  `json:"typicalRssBytes"`
+
+	// PeakRssBytes The 90th percentile of observed per-turn peak RSS.
+	PeakRssBytes    int64   `json:"peakRssBytes"`
+	AverageCPUCores float64 `json:"averageCpuCores"`
 }
 
 // DeviceWorker defines model for DeviceWorker.

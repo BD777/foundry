@@ -8,10 +8,7 @@ import {
 } from "../../components/conversation/conversation-frame";
 import type { ChatGoalItem } from "./chat-types";
 import { GoalStatusBadge } from "./context/chat-context-goal";
-import {
-  WaitingChildrenStatus,
-  type WaitingChildSession,
-} from "./waiting-children-status";
+import { WaitingChildrenStatus } from "./waiting-children-status";
 
 /**
  * The open chat's title, waiting children, narrow screens' way back to the
@@ -24,11 +21,10 @@ export function ChatThreadHeader({
   onBack,
   onlyMine,
   onOnlyMineChange,
+  onRevealWaitingChildren,
   onToggleContext,
   title,
   waitingChildCount,
-  waitingChildren,
-  workspaceId,
 }: {
   contextOpen: boolean | undefined;
   /**
@@ -41,11 +37,10 @@ export function ChatThreadHeader({
   onlyMine: boolean;
   onOnlyMineChange: (onlyMine: boolean) => void;
   onBack: () => void;
+  onRevealWaitingChildren?: () => void;
   onToggleContext: () => void;
   title: ReactNode;
   waitingChildCount?: number;
-  waitingChildren?: readonly WaitingChildSession[];
-  workspaceId?: string;
 }) {
   const { t } = useTranslation("chat");
   return (
@@ -61,9 +56,8 @@ export function ChatThreadHeader({
       </Button>
       <ChatThreadTitle title={title} />
       <WaitingChildrenStatus
-        children={waitingChildren}
         count={waitingChildCount ?? 0}
-        workspaceId={workspaceId}
+        onOpen={onRevealWaitingChildren}
       />
       <div className="inline-flex flex-none items-center gap-2">
         {goal && contextOpen !== undefined ? (

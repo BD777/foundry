@@ -27,13 +27,21 @@ export function slotWaitNotice(
       since = now();
       send(
         processLabels.waitingForSlot,
-        wait.sameKey
-          ? "This conversation's previous turn is still running on this device; this turn starts when it ends."
-          : `${wait.running} of ${wait.limit} turns are running on this device; this turn starts when one ends. The limit is in the device's settings.`,
+        wait.hardHold
+          ? "This device is low on available memory, so new turns are held until memory frees. Existing turns keep running."
+          : wait.sameKey
+            ? "This conversation's previous turn is still running on this device; this turn starts when it ends."
+            : `${wait.runningLimited} of ${wait.limit} limited turns are running on this device; this turn starts when one ends.${wait.runningExempt > 0 ? ` ${wait.runningExempt} additional turn${wait.runningExempt === 1 ? " is" : "s are"} exempt from the limit.` : ""} The limit is in the device's settings.${wait.reasons.includes("cpu_pressure_high") ? " The adaptive limit is reduced while CPU pressure stays high." : ""}`,
       );
     },
     /** The turn starts with `running` turns running, itself included. */
-    started(load: { running: number; limit: number }): void {
+    started(load: {
+      running: number;
+      runningLimited: number;
+      limit: number;
+      hardHold?: boolean;
+      reasons?: string[];
+    }): void {
       if (since === undefined) return;
       const seconds = Math.max(1, Math.round((now() - since) / 1000));
       const waited =
@@ -42,7 +50,7 @@ export function slotWaitNotice(
           : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
       send(
         processLabels.waitedForSlot,
-        `Started after waiting ${waited}; ${load.running} of ${load.limit} turns are running on this device.`,
+        `Started after waiting ${waited}; ${load.runningLimited} of ${load.limit} limited turns are running on this device.`,
       );
     },
   };

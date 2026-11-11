@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-11 Worker：[DEV-176 自适应并发、执行宿主清理与下载代理](DEV-176-adaptive-concurrency-execution-host.md)。并发改为有下限的自适应准入并放行人回合与等待子会话的父回合；执行宿主合并并清理 claim、在退出时落盘；连接器与工具下载复用 Worker 保存的代理。已纳入部署状态快照，等待提交窗口合入。
+
 2026-11-11 开发工具：[DEV-173 开发工具与测试稳定性](DEV-173-dev-tooling-stability.md)。`check-changed.sh` 兼容 macOS Bash 3.2，远程检查支持 `REMOTE_CHECK_TIMEOUT`；Radix cleanup 与 usage 历史保留已分别随阻塞 PR #249、#252 提前合入。已部署 dev，等待提交窗口逐步合入。
 
 2026-11-10 连接器：[DEV-172 App Store Connect 会话侧与连接器页（ASC-2）](DEV-172-appstoreconnect-client.md)。Connectors 页面支持 App Store Connect key 绑定、替换、撤销和状态展示；Worker 会话经 Foundry 网关调用并同步 Skill。已部署 dev，等待提交窗口逐步合入。

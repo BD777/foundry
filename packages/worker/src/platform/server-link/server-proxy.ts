@@ -215,6 +215,110 @@ class ServerDispatcher extends Dispatcher {
 }
 const dispatcher = new ServerDispatcher();
 
+async function fetchWithWorkerDispatcher(
+  input: Parameters<typeof undiciFetch>[0],
+  init?: Parameters<typeof undiciFetch>[1],
+): Promise<Response> {
+  return (await undiciFetch(input, {
+    ...init,
+    dispatcher,
+  } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+}
+
+function safeErrorCode(error: unknown): string {
+  const code =
+    (error as { cause?: { code?: string }; code?: string })?.cause?.code ??
+    (error as { code?: string })?.code;
+  return code && /^[A-Z_0-9]+$/.test(code) ? code : "";
+}
+
+/** The route a request would take, with no proxy credentials. */
+export function outboundRoute(target: string | URL): string {
+  const proxy = resolveServerProxy(target).url;
+  return proxy ? `proxy ${describeProxy(proxy)}` : "direct";
+}
+
+/**
+ * Fetch with the Worker's outbound proxy rules and an error safe to show.
+ * Use this for downloads whose failure is reported to the person; server
+ * requests use serverFetch below for its server-specific wording.
+ */
+export const workerFetch: typeof fetch = async (input, init) => {
+  const target = input instanceof Request ? input.url : String(input);
+  try {
+    return await fetchWithWorkerDispatcher(
+      input as Parameters<typeof undiciFetch>[0],
+      init as Parameters<typeof undiciFetch>[1],
+    );
+  } catch (error) {
+    const code = safeErrorCode(error);
+    const safe = new Error(
+      `Worker outbound request (${outboundRoute(target)}) failed${code ? ` (${code})` : ""}.`,
+    );
+    safe.name = error instanceof Error ? error.name : "Error";
+    if (code) Object.assign(safe, { code });
+    throw safe;
+  }
+};
+
+/**
+ * Standard proxy variables for a child program. With a target, this resolves
+ * the same setting, environment fallback and NO_PROXY rule as workerFetch;
+ * without one, it still exposes a saved Worker proxy to npm, uv, git and
+ * extension processes.
+ */
+export function workerProxyEnvironment(
+  target?: string | URL,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const next = { ...env };
+  const saved = readWorkerProxy();
+  const resolved = target
+    ? resolveServerProxy(target, env)
+    : {
+        url:
+          saved?.url ||
+          env.FOUNDRY_PROXY ||
+          env.HTTPS_PROXY ||
+          env.https_proxy ||
+          env.ALL_PROXY ||
+          env.all_proxy ||
+          env.HTTP_PROXY ||
+          env.http_proxy,
+        noProxy: saved?.noProxy ?? env.NO_PROXY ?? env.no_proxy ?? "",
+      };
+  if (!target && !saved) return next;
+  for (const name of [
+    "FOUNDRY_PROXY",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+  ])
+    delete next[name];
+  if (!resolved.url) return next;
+  const proxy = validateProxyURL(resolved.url);
+  for (const name of [
+    "FOUNDRY_PROXY",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+  ])
+    next[name] = proxy;
+  if (resolved.noProxy) {
+    next.NO_PROXY = resolved.noProxy;
+    next.no_proxy = resolved.noProxy;
+  }
+  return next;
+}
+
 /**
  * Fetch with per-origin NO_PROXY. It is the fetch of the undici package the
  * dispatcher comes from: Node's own fetch bundles another undici, and Node 26
@@ -225,17 +329,15 @@ export const serverFetch: typeof fetch = async (input, init) => {
   const target = input instanceof Request ? input.url : String(input);
   const proxy = resolveServerProxy(target).url;
   try {
-    return (await undiciFetch(
+    return await fetchWithWorkerDispatcher(
       input as Parameters<typeof undiciFetch>[0],
-      { ...init, dispatcher } as Parameters<typeof undiciFetch>[1],
-    )) as unknown as Response;
+      init as Parameters<typeof undiciFetch>[1],
+    );
   } catch (error) {
     if (!proxy) throw error;
     // Libraries can put userinfo in messages/causes. Export only classification.
-    const code =
-      (error as { cause?: { code?: string }; code?: string })?.cause?.code ??
-      (error as { code?: string })?.code;
-    const safeCode = code && /^[A-Z_0-9]+$/.test(code) ? ` (${code})` : "";
+    const code = safeErrorCode(error);
+    const safeCode = code ? ` (${code})` : "";
     const name = error instanceof Error ? error.name : "Error";
     const safe = new Error(
       `Foundry server request via proxy ${describeProxy(proxy)} failed${safeCode}. Check the proxy address, authentication and reachability.`,

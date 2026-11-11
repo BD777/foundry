@@ -25,6 +25,7 @@ import {
 
 export interface AgentSessionCompletionMarker {
   completedAt: string;
+  dispatchId?: string;
   nativeSessionId?: string;
   response: string;
   sessionId: string;
@@ -303,6 +304,9 @@ export function writeAgentSessionCompletionMarker(
   const markerPath = completionMarkerPath(workspacePath, session);
   const marker: AgentSessionCompletionMarker = {
     completedAt: new Date().toISOString(),
+    ...(session.dispatchId?.trim()
+      ? { dispatchId: session.dispatchId.trim() }
+      : {}),
     nativeSessionId: result.nativeSessionId,
     response: result.response,
     sessionId: session.id,
@@ -316,6 +320,7 @@ export function readAgentSessionCompletionMarker(
   workspacePath: string,
   sessionId: string,
   inputId: string,
+  dispatchId = "",
 ): AgentSessionCompletionMarker | undefined {
   const markerPath = completionMarkerPath(workspacePath, {
     id: sessionId,
@@ -327,7 +332,8 @@ export function readAgentSessionCompletionMarker(
   ) as AgentSessionCompletionMarker;
   return marker.sessionId === sessionId &&
     marker.status === "completed" &&
-    marker.response?.trim()
+    marker.response?.trim() &&
+    (!dispatchId.trim() || marker.dispatchId === dispatchId.trim())
     ? marker
     : undefined;
 }

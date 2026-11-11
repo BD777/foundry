@@ -296,9 +296,6 @@ export const chat: Translation<typeof en> = {
     count_other: "等待 {{count}} 个子会话",
     header_one: "等待 {{count}} 个子会话",
     header_other: "等待 {{count}} 个子会话",
-    open: "查看 {{count}} 个等待中的子会话",
-    title: "子会话",
-    untitled: "未命名子会话",
   },
   groups: {
     new: "新建分组",
@@ -468,7 +465,13 @@ export const chat: Translation<typeof en> = {
       },
       model_rate_limit: {
         title: "模型服务触发用量限制",
-        summary: "模型服务因用量达到限制而拒绝了本次请求。",
+        summary:
+          "模型服务暂时限制了请求频率。Foundry 会对限流退避重试，或改用模型池中其他可用模型。",
+      },
+      model_quota_exhausted: {
+        title: "模型账号额度已耗尽",
+        summary:
+          "模型服务报告该账号的额度或账单限制已耗尽。本次运行未自动重试。",
       },
       skill_preparation_timeout: {
         title: "设备上的技能准备超时",
@@ -487,7 +490,9 @@ export const chat: Translation<typeof en> = {
       free_space:
         "请释放执行设备的磁盘空间，并排查持续占用空间的来源，再发送“继续”恢复任务；本次任务不会自动重试。",
       wait_for_quota:
-        "等待模型服务额度恢复，或选择其他可用模型、连接后，再发送“继续”。",
+        "等待限流解除，或选择其他可用模型、连接后，再发送“继续”。",
+      restore_quota:
+        "恢复该账号的额度或余额，或切换到其他账号后再发送“继续”。本次运行未自动重试。",
       check_skills:
         "请检查执行设备的磁盘空间及工作区技能包大小，解决准备问题后再发送“继续”。",
       continue_turn: "发送“继续”以继续任务。",

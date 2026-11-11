@@ -16,6 +16,30 @@ test("terminal failures distinguish device, provider and unknown, without guessi
       '{"error":{"message":"invalid_request_error: throttle by model gateway: user tpm rate limit exceeded"}}',
       "model_rate_limit",
     ],
+    ["API Error: 429 rate_limit_error", "model_rate_limit"],
+    ["API Error: 429 Too Many Requests", "model_rate_limit"],
+    ["model request failed: exceeded retry limit", "model_rate_limit"],
+    [
+      "API Error: Request rejected (429) · upstream account quota usage limit has been reached; an account becomes available again at 07:42 UTC",
+      "model_quota_exhausted",
+    ],
+    ["openai: insufficient_quota", "model_quota_exhausted"],
+    ["Your credit balance is too low", "model_quota_exhausted"],
+    [
+      { status: 429, code: "billing_error", message: "Request rejected" },
+      "model_quota_exhausted",
+    ],
+    [
+      {
+        error: {
+          status: 429,
+          type: "rate_limit_error",
+          message: "too many requests",
+        },
+      },
+      "model_rate_limit",
+    ],
+    ["GitHub API rate limit exceeded for 10.0.0.1", "unknown"],
     [
       "Workspace draft scan timed out; reduce the draft package size and retry.",
       "skill_preparation_timeout",
@@ -27,6 +51,10 @@ test("terminal failures distinguish device, provider and unknown, without guessi
     assert.equal(diagnoseWorkerFailure(error).code, code);
   assert.equal(workerFailurePolicies.execution_host_stopped.location, "device");
   assert.equal(workerFailurePolicies.model_rate_limit.location, "provider");
+  assert.equal(
+    workerFailurePolicies.model_quota_exhausted.location,
+    "provider",
+  );
 });
 
 test("future or malformed metadata falls back; prototype names are not valid codes", () => {

@@ -135,6 +135,7 @@ export async function executeAgentSession(
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
       inputId,
+      ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
       error: "Session canceled before it started.",
     });
     return;
@@ -258,6 +259,7 @@ export async function executeAgentSession(
   transport.send(daemonMessageTypes.sessionStarted, {
     sessionId: session.id,
     inputId,
+    ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
   });
   try {
     // Until the agent runs, a cancel stops the preparation.
@@ -388,6 +390,7 @@ export async function executeAgentSession(
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
       inputId,
+      ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
       nativeSessionId: result.nativeSessionId,
       response: redactTranscriptText(result.response),
       ...settled,
@@ -408,6 +411,7 @@ export async function executeAgentSession(
       transport.send(daemonMessageTypes.sessionCompleted, {
         sessionId: session.id,
         inputId,
+        ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
         ...stopped,
       });
   } finally {

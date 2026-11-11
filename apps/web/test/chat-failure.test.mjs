@@ -135,7 +135,14 @@ test("Chinese presentation and provider failures use specific locations and reco
       "user tpm rate limit exceeded",
     );
     assert.equal(rate.failureDiagnostic.location, "故障位置：模型服务");
-    assert.match(rate.failureDiagnostic.guidance, /额度恢复/);
+    assert.match(rate.failureDiagnostic.guidance, /限流解除/);
+    const quota = agentSessionFailureMessage(
+      session,
+      "API Error: Request rejected (429) · upstream account quota usage limit has been reached",
+    );
+    assert.match(quota.title, /额度已耗尽/);
+    assert.match(quota.text, /未自动重试/);
+    assert.match(quota.failureDiagnostic.guidance, /切换到其他账号/);
   } finally {
     await i18n.changeLanguage("en");
   }

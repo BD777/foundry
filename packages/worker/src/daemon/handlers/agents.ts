@@ -12,6 +12,7 @@ import {
   type UpsertAgentRuntimeSettingsPayload,
 } from "@bd777/foundry-protocol";
 import { writeAgentRuntimeSettings } from "../../device/device.js";
+import { adaptiveConcurrencyFloor } from "../../device/device.js";
 import { listAgentModelsConfig } from "../../harness/models.js";
 import { installNativeCli } from "../../harness/native/native-cli-install.js";
 import {
@@ -391,7 +392,12 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         daemonMessageTypes.agentRuntimeSettingsUpserted,
         () => {
           const settings = writeAgentRuntimeSettings(payload.settings);
-          ctx.taskScheduler.setMaxConcurrentTasks(settings.maxConcurrentTasks);
+          ctx.taskScheduler.configureAdmission({
+            limit:
+              settings.mode === "forced"
+                ? (settings.forcedLimit ?? 1)
+                : adaptiveConcurrencyFloor(settings.hardware?.cpus),
+          });
           ctx.announceAdditionalIssueCapacity();
           const registration = ctx.roster.currentRegistration();
           if (hasWorkspace(registration)) ctx.roster.register(registration);

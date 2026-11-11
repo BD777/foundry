@@ -15,6 +15,7 @@ for (const key of [
   "Element",
   "HTMLElement",
   "HTMLInputElement",
+  "HTMLFormElement",
   "MutationObserver",
   "ResizeObserver",
   "CustomEvent",
@@ -46,11 +47,13 @@ globalThis.EventSource = class {
 const { createRoot: createReactRoot } = await import("react-dom/client");
 const { ToastProvider } = await import("../src/components/ui/toast.tsx");
 const mountedRoots = new Set();
+const nativeFetch = globalThis.fetch;
 afterEach(async () => {
   await act(async () => {
     for (const root of [...mountedRoots]) root.unmount();
   });
   document.body.replaceChildren();
+  globalThis.fetch = nativeFetch;
 });
 function createRoot(container) {
   const root = createReactRoot(container);
@@ -217,6 +220,266 @@ test("a device shared through a workspace is browse-only and shows the caller's 
   );
   assert.doesNotMatch(text, /Rename|Add workspace/);
   await view.cleanup();
+});
+
+function runtimeDevice(overrides = {}) {
+  return {
+    id: "a",
+    label: "Studio",
+    status: "connected",
+    owned: true,
+    runtimeSettings: {
+      activeRuntimeTtlMs: 900000,
+      mode: "adaptive",
+      hardwareMaxConcurrentTasks: 4,
+      hardware: { memoryGiB: 8, cpus: 4 },
+    },
+    runtimeState: {
+      capturedAt: "2026-11-10T12:00:00Z",
+      mode: "adaptive",
+      limit: 4,
+      running: 3,
+      queued: 3,
+      runningLimited: 2,
+      runningExempt: 1,
+      queuedLimited: 1,
+      queuedExempt: 2,
+      hardHold: false,
+      reasons: [],
+      signals: {
+        cpuCount: 4,
+        cpuPressurePercent: 45,
+        memoryAvailableBytes: Math.round(4.2 * 1024 ** 3),
+        memoryPressurePercent: 12,
+        memoryTotalBytes: Math.round(7.5 * 1024 ** 3),
+      },
+      estimates: [
+        {
+          workspaceId: "wa",
+          runtime: "claude",
+          source: "observed",
+          typicalRssBytes: 400 * 1024 ** 2,
+          peakRssBytes: Math.round(1.5 * 1024 ** 3),
+          averageCpuCores: 0.3,
+        },
+        {
+          workspaceId: "wb",
+          runtime: "codex",
+          source: "observed",
+          typicalRssBytes: 600 * 1024 ** 2,
+          peakRssBytes: 2 * 1024 ** 3,
+          averageCpuCores: 0.5,
+        },
+        {
+          workspaceId: "ws_d0c1d5f5-9300-4bd6-beaa-520ad69cf137",
+          runtime: "codex",
+          typicalRssBytes: 500 * 1024 ** 2,
+          peakRssBytes: Math.round(1.8 * 1024 ** 3),
+          averageCpuCores: 0.4,
+        },
+        {
+          source: "prior",
+          typicalRssBytes: 400 * 1024 ** 2,
+          peakRssBytes: Math.round(1.5 * 1024 ** 3),
+          averageCpuCores: 0.3,
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+async function mockRuntimeSettingsFetch(onSave) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("/api/devices/runtime-settings")) {
+      const body = JSON.parse(String(init.body));
+      onSave(body);
+      return new Response(
+        JSON.stringify({
+          ...body.settings,
+          hardwareMaxConcurrentTasks: 4,
+          hardware: { memoryGiB: 8, cpus: 4 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (String(url).includes("/api/worker/release"))
+      return new Response("bad gateway", { status: 502 });
+    return new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+async function setInputValue(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  ).set;
+  await act(async () => {
+    setter.call(input, String(value));
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+}
+
+async function waitFor(predicate, label) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (predicate()) return;
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  assert.fail(`timed out waiting for ${label}`);
+}
+
+test("device concurrency shows the adaptive limit, load, signals and per-workspace estimates", async () => {
+  const view = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [runtimeDevice()],
+  });
+  try {
+    const text = view.container.textContent;
+    assert.match(text, /Current concurrency/);
+    assert.match(text, /Adaptive/);
+    assert.match(text, /Limited turns2 running \/ 1 queued/);
+    assert.match(text, /Exempt turns1 running \/ 2 queued/);
+    assert.match(text, /CPU cores4/);
+    assert.match(text, /4\.2 GB \/ 7\.5 GB/);
+    assert.match(text, /CPU pressure45%/);
+    assert.match(text, /Project A/);
+    assert.match(text, /Project B/);
+    assert.match(text, /Unknown workspace · ws_d0c1d5f5/);
+    assert.doesNotMatch(text, /ws_d0c1d5f5-9300-4bd6-beaa-520ad69cf137/);
+    assert.match(text, /Default estimate/);
+    assert.match(text, /typical 400 MB/);
+    assert.match(text, /peak 1\.5 GB/);
+    assert.match(text, /0\.3 CPU/);
+
+    const toggle = view.container.querySelector('[role="switch"]');
+    assert.ok(toggle);
+    await act(async () => toggle.click());
+    assert.match(view.container.textContent, /Forced limit enabled/);
+    assert.match(
+      view.container.textContent,
+      /may exceed the adaptive limit and make the device slower/,
+    );
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("adaptive and forced concurrency save the new settings shape", async () => {
+  const saved = [];
+  const restore = await mockRuntimeSettingsFetch((body) => saved.push(body));
+  try {
+    const adaptive = await setup({
+      selectedDeviceId: "a",
+      section: "settings",
+      devices: [runtimeDevice()],
+    });
+    await adaptive.click("Save settings");
+    await waitFor(() => saved.length === 1, "adaptive settings save");
+    await adaptive.cleanup();
+
+    const forcedDevice = runtimeDevice({
+      runtimeSettings: {
+        activeRuntimeTtlMs: 900000,
+        mode: "forced",
+        forcedLimit: 7,
+        hardwareMaxConcurrentTasks: 4,
+        hardware: { memoryGiB: 8, cpus: 4 },
+      },
+      runtimeState: {
+        ...runtimeDevice().runtimeState,
+        mode: "forced",
+        limit: 7,
+      },
+    });
+    const forced = await setup({
+      selectedDeviceId: "a",
+      section: "settings",
+      devices: [forcedDevice],
+    });
+    assert.equal(
+      forced.container
+        .querySelector('[role="switch"]')
+        .getAttribute("aria-checked"),
+      "true",
+    );
+    assert.match(forced.container.textContent, /Forced limit enabled/);
+    const input = forced.container.querySelector('input[type="number"]');
+    assert.ok(input);
+    await setInputValue(input, 8);
+    await forced.click("Save settings");
+    await waitFor(() => saved.length === 2, "forced settings save");
+    await forced.cleanup();
+
+    assert.deepEqual(
+      saved.map((row) => row.settings),
+      [
+        { activeRuntimeTtlMs: 900000, mode: "adaptive" },
+        { activeRuntimeTtlMs: 900000, mode: "forced", forcedLimit: 8 },
+      ],
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("hardHold is prominent and the adaptive migration notice can be dismissed once", async () => {
+  window.localStorage.clear();
+  const device = runtimeDevice({
+    runtimeSettings: {
+      ...runtimeDevice().runtimeSettings,
+      migrationNotice: "adaptive_migrated",
+    },
+    runtimeState: {
+      ...runtimeDevice().runtimeState,
+      hardHold: true,
+      reasons: ["memory_hard_hold"],
+    },
+  });
+  const first = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [device],
+  });
+  try {
+    const hold = [...first.container.querySelectorAll(".fdy-alert")].find(
+      (alert) =>
+        alert.querySelector('[data-slot="alert-title"]')?.textContent ===
+        "Memory is too low; new tasks are paused",
+    );
+    assert.ok(hold);
+    assert.equal(hold.getAttribute("data-tone"), "error");
+    assert.match(first.container.textContent, /Concurrency is now adaptive/);
+    await first.click("Dismiss");
+    assert.doesNotMatch(
+      first.container.textContent,
+      /Concurrency is now adaptive/,
+    );
+  } finally {
+    await first.cleanup();
+  }
+
+  const second = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [device],
+  });
+  try {
+    assert.doesNotMatch(
+      second.container.textContent,
+      /Concurrency is now adaptive/,
+    );
+  } finally {
+    window.localStorage.clear();
+    await second.cleanup();
+  }
 });
 
 test("adding a device opens one dialog that also shows how to check or repair a device", async () => {

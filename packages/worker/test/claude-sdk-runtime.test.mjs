@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activateRuntime } from "../dist/harness/agent-runtime/state.js";
 import { loadClaudeSdk } from "../dist/harness/agent-runtime/claude-sdk.js";
-import { tryMaintainRuntime } from "../dist/harness/agent-runtime/maintenance.js";
+import {
+  setRuntimeOwnerProvider,
+  tryMaintainRuntime,
+} from "../dist/harness/agent-runtime/maintenance.js";
+
+const testOwner = {
+  pid: process.pid,
+  startTime: `test:${process.pid}:${randomUUID()}`,
+};
+setRuntimeOwnerProvider({
+  current: () => testOwner,
+  startTime: (pid) => (pid === process.pid ? testOwner.startTime : undefined),
+});
 
 test("SDK queries pin immutable versions, forward controls and release on stream completion", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "fdy-sdk-generation-"));

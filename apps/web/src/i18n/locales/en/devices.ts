@@ -360,15 +360,52 @@ export const devices = {
   settings: {
     title: "Execution settings",
     intro: "Shared by every workspace on {{device}}.",
-    maxTasks: "Maximum concurrent turns",
-    maxTasksHelpLabel: "About the turn limit",
-    maxTasksHelp: "Turns beyond the limit wait, and their chat says so.",
-    maxTasksHardware:
-      "Hardware default: {{count}} ({{memory}} GiB memory, {{cpus}} CPUs; one turn per 4 GiB and per 2 CPUs, up to 16).",
-    maxTasksSmallDevice:
-      "1 turn at a time on this device ({{memory}} GiB memory, {{cpus}} CPUs).",
-    maxTasksOwner: "Set by you. Hardware default: {{count}}.",
-    useHardwareDefault: "Use the hardware default ({{count}})",
+    liveTitle: "Current concurrency",
+    mode: {
+      adaptive: "Adaptive",
+      forced: "Forced",
+    },
+    currentLimit: "Limit",
+    running: "Running",
+    queued: "Queued",
+    limitedTurns: "Limited turns",
+    exemptTurns: "Exempt turns",
+    turnLoad: "{{running}} running / {{queued}} queued",
+    cpuCores: "CPU cores",
+    sampledAt: "Sampled {{time}}",
+    basisTitle: "Why this limit",
+    memory: "Memory available / total",
+    cpuPressure: "CPU pressure",
+    memoryPressure: "Memory pressure",
+    percent: "{{value}}%",
+    estimatesTitle: "Per-session estimates",
+    estimateMeta: "{{runtime}} · typical {{typical}} · peak {{peak}}",
+    estimateCpu: "{{cpu}} CPU",
+    defaultEstimate: "Default estimate",
+    unknownWorkspace: "Unknown workspace",
+    unknownWorkspaceWithId: "Unknown workspace · {{id}}",
+    unknownRuntime: "Unknown runtime",
+    noEstimates: "The worker has not learned per-session usage yet.",
+    liveUnavailable:
+      "The worker has not reported live capacity yet. It will appear after the next heartbeat.",
+    adaptiveHelp:
+      "Uses typical turn size and available memory (including swap) for the target, never below the parallel floor; sustained CPU pressure only lowers it to that floor.",
+    forcedToggle: "Force a limit (overclock)",
+    forcedHelp:
+      "Use this fixed limit instead of the adaptive target while the device has enough memory.",
+    forcedLimit: "Forced limit",
+    forcedLimitHint: "Whole turns from 1 to 16.",
+    invalidForcedLimit: "Enter a whole number from 1 to 16.",
+    forcedWarningTitle: "Forced limit enabled",
+    forcedWarning:
+      "This may exceed the adaptive limit and make the device slower. New tasks still pause when memory is too low.",
+    migrationTitle: "Concurrency is now adaptive",
+    migrationBody:
+      "Your previous fixed turn limit was migrated to adaptive mode. You can force a limit below if you need one.",
+    dismiss: "Dismiss",
+    hardHoldTitle: "Memory is too low; new tasks are paused",
+    hardHoldBody:
+      "Running turns continue. Queued turns start when available memory recovers.",
     runtimeCache: "Keep idle agent process (minutes)",
     runtimeCacheLabel: "Minutes to keep an idle agent process",
     runtimeCacheHint:

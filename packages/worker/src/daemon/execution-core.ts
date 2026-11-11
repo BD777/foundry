@@ -23,7 +23,10 @@ import { noteSessionInput } from "../session/session-control.js";
 import { readAgentSessionCompletionMarker } from "../session/session-helpers.js";
 import { isVerificationSession } from "../session/session-roles.js";
 import { slotWaitNotice } from "../session/slot-wait.js";
-import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
+import {
+  sessionAdmissionClass,
+  type ConcurrentTaskScheduler,
+} from "../platform/task-scheduler.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationDirectory } from "../session/verification-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
@@ -32,8 +35,8 @@ import { runAgentSession } from "./session-run.js";
 /** Who holds an input: an input is claimed once and never runs twice. */
 export interface ExecutionClaims {
   /** False when the input was claimed before. */
-  claim(sessionId: string, inputId: string): boolean;
-  complete(sessionId: string, inputId: string): void;
+  claim(sessionId: string, dispatchId: string, inputId?: string): boolean;
+  complete(sessionId: string, dispatchId: string): void;
 }
 
 export type RunInput = (
@@ -56,6 +59,8 @@ export interface ExecutionCoreOptions {
   failed: (error: unknown) => void;
   /** Runs one input; tests replace it. */
   run?: RunInput;
+  /** Persists the accepted claim before the native input starts. */
+  beforeRun?: () => Promise<void>;
 }
 
 /**
@@ -77,8 +82,17 @@ export function sessionSchedulingKey(session: AgentSession): string {
 /** What finds an input's recorded result: what recover_session carries. */
 export type RecordedSession = Pick<
   AgentSession,
-  "id" | "workspaceId" | "issueId" | "role" | "source"
+  "id" | "workspaceId" | "issueId" | "role" | "source" | "dispatchId"
 > & { input?: { id: string } };
+
+/** The native execution identity: stable input until an automatic retry. */
+export function sessionDispatchId(
+  session: Pick<AgentSession, "dispatchId"> & {
+    input?: { id: string };
+  },
+): string {
+  return session.dispatchId?.trim() || session.input?.id || "";
+}
 
 /** The report this device recorded for the input, if it already finished here. */
 export function recordedCompletion(
@@ -86,13 +100,19 @@ export function recordedCompletion(
   workspacePath: () => string,
 ): Record<string, unknown> | undefined {
   const inputId = session.input?.id || undefined;
+  const dispatchId = sessionDispatchId(session) || undefined;
   if (session.role === "issue_execution") {
     const recorded = recordedIssueCompletion(
       session.workspaceId,
       session.issueId ?? "",
-      session.id,
+      dispatchId || session.id,
     );
-    return recorded && issueSessionCompletion(session.id, inputId, recorded);
+    return (
+      recorded && {
+        ...issueSessionCompletion(session.id, inputId, recorded),
+        ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
+      }
+    );
   }
   if (session.role === "issue_clarification") {
     const report = recoveredClarificationCompletion(
@@ -101,7 +121,12 @@ export function recordedCompletion(
       session.id,
       inputId ?? "",
     );
-    return report.clarificationResult ? report : undefined;
+    return report.clarificationResult
+      ? {
+          ...report,
+          ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
+        }
+      : undefined;
   }
   // The stateRoot session-execution.ts gives the session: an Issue's other
   // sessions keep their records beside its candidate, a verifier in its own
@@ -113,12 +138,18 @@ export function recordedCompletion(
       ? verificationDirectory(session.workspaceId, session.id)
       : workspacePath();
   const marker = stateRoot
-    ? readAgentSessionCompletionMarker(stateRoot, session.id, inputId ?? "")
+    ? readAgentSessionCompletionMarker(
+        stateRoot,
+        session.id,
+        inputId ?? "",
+        session.dispatchId?.trim() ?? "",
+      )
     : undefined;
   return (
     marker && {
       sessionId: session.id,
       inputId,
+      ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
       nativeSessionId: marker.nativeSessionId,
       response: marker.response,
     }
@@ -140,10 +171,13 @@ export function recoveredCompletion(
     const stopped = recoveredIssueCompletion(
       session.workspaceId,
       session.issueId ?? "",
-      session.id,
+      session.dispatchId?.trim() || session.id,
     );
     return stopped
-      ? issueSessionCompletion(session.id, inputId, stopped)
+      ? {
+          ...issueSessionCompletion(session.id, inputId, stopped),
+          ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
+        }
       : {
           sessionId: session.id,
           inputId,
@@ -184,7 +218,8 @@ export class ExecutionCore {
     const { claims, scheduler, transport } = this.options;
     const session = payload.session;
     const inputId = session.input?.id ?? "";
-    if (!claims.claim(session.id, inputId)) return false;
+    const dispatchId = sessionDispatchId(session);
+    if (!claims.claim(session.id, dispatchId, inputId)) return false;
     // A steer of the same message arriving late must not add it to this
     // input's own turn.
     if (inputId) noteSessionInput(session.id, inputId);
@@ -199,7 +234,7 @@ export class ExecutionCore {
     }
     if (recorded) {
       transport.send(daemonMessageTypes.sessionCompleted, recorded);
-      this.settle(session, inputId);
+      this.settle(session, dispatchId);
       return true;
     }
     const slotWait = slotWaitNotice(transport, session);
@@ -207,6 +242,7 @@ export class ExecutionCore {
       scheduler.schedule(
         sessionSchedulingKey(session),
         async () => {
+          await this.options.beforeRun?.();
           slotWait.started(scheduler.load());
           console.log(
             payload.issue && session.role === "issue_execution"
@@ -223,10 +259,16 @@ export class ExecutionCore {
           } catch (error) {
             reportWorkerFailure(transport, session, error);
           } finally {
-            this.settle(session, inputId);
+            this.settle(session, dispatchId);
           }
         },
         slotWait.onWait,
+        {
+          admissionClass: sessionAdmissionClass(session),
+          runtime: session.provider,
+          sessionId: session.id,
+          workspaceId: session.workspaceId,
+        },
       ),
       this.options.failed,
     );

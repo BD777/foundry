@@ -39,6 +39,8 @@ import {
   controlCodexGoal,
 } from "../session/runner/active-runtimes.js";
 import { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
+import { AdaptiveConcurrencyController } from "../concurrency/admission-controller.js";
+import { adaptiveConcurrencyFloor } from "../concurrency/admission-policy.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
 import { keepSessionTimers } from "../session/tasks/session-timers.js";
 import {
@@ -97,9 +99,14 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   void startHostLiveness(paths.root, paths.label);
   startTurnFilesThread();
   const token = readFileSync(paths.token, "utf8").trim();
+  const initialRuntimeSettings = readAgentRuntimeSettings();
   const scheduler = new ConcurrentTaskScheduler(
-    readAgentRuntimeSettings().maxConcurrentTasks,
+    initialRuntimeSettings.mode === "forced"
+      ? (initialRuntimeSettings.forcedLimit ?? 1)
+      : adaptiveConcurrencyFloor(initialRuntimeSettings.hardware?.cpus),
   );
+  const admission = new AdaptiveConcurrencyController(scheduler);
+  admission.start();
   const executions = new HostExecutions({
     root: paths.root,
     serverURL,
@@ -116,7 +123,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   // Linux's cgroup and macOS's guardians/reaper clean the previous owner
   // before new work is accepted. Never silently rerun its interrupted work.
   await superviseAgentProcesses();
-  executions.reportInterrupted();
+  await executions.reportInterrupted();
   reapConnectorLeftovers(console.error);
   reapSessionTools(console.error);
   clearClaudeSettingsFiles();
@@ -191,6 +198,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       )
       .map((runtime) => runtime.foundrySessionId),
     nativeWork: sessionsWithNativeWork(),
+    runtimeState: scheduler.currentRuntimeState(),
   });
   let nextInputSweep = Date.now() + 60_000;
   const sweepInputs = () => {
@@ -238,9 +246,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       return {};
     },
     run: (request) => {
-      scheduler.setMaxConcurrentTasks(
-        readAgentRuntimeSettings().maxConcurrentTasks,
-      );
+      admission.settingsChanged();
       return executions.run(request);
     },
     steer: (request) => executions.steer(request),

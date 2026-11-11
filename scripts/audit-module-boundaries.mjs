@@ -48,6 +48,10 @@ const baselinePath = resolve(
 export const workerModules = {
   platform: { dependsOn: [], folders: ["platform"] },
   device: { dependsOn: ["platform"], folders: ["device"] },
+  concurrency: {
+    dependsOn: ["platform", "device"],
+    folders: ["concurrency"],
+  },
   sandbox: { dependsOn: ["platform"], folders: ["sandbox"] },
   "candidate-store": { dependsOn: ["platform"], folders: ["candidate-store"] },
   transport: { dependsOn: ["device"], folders: ["transport"] },

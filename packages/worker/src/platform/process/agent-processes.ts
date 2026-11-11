@@ -28,6 +28,7 @@ import {
 } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { setPriority } from "node:os";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { signalProcessGroup } from "./process-group.js";
@@ -52,8 +53,16 @@ export interface AgentProcessRecord {
   startTime: string;
   /** The command line it was started with. */
   argv: string[];
+  /** The Foundry turn this process group serves, when known. */
+  context?: AgentProcessContext;
   /** The worker that started it. */
   owner: { pid: number; startTime: string };
+}
+
+export interface AgentProcessContext {
+  runtime?: string;
+  sessionId?: string;
+  workspaceId?: string;
 }
 
 /** The folder of agent process records in the worker's state. */
@@ -124,6 +133,7 @@ export function recordAgentProcess(
   pid: number,
   argv: string[],
   owner: { pid: number; startTime: string },
+  context?: AgentProcessContext,
 ): void {
   const identity = processIdentity(pid);
   if (!identity) return; // Already gone.
@@ -131,6 +141,7 @@ export function recordAgentProcess(
     pid,
     startTime: identity.startTime,
     argv,
+    ...(context ? { context } : {}),
     owner,
   };
   writePrivateJSONAtomic(resolve(registry, `${pid}.json`), record, {
@@ -167,8 +178,20 @@ export function readAgentProcessRecords(
         record.argv.every((value) => typeof value === "string") &&
         Number.isInteger(record.owner?.pid) &&
         typeof record.owner?.startTime === "string"
-      )
+      ) {
+        if (
+          record.context &&
+          !["sessionId", "workspaceId", "runtime"].every(
+            (key) =>
+              record.context?.[key as keyof AgentProcessContext] ===
+                undefined ||
+              typeof record.context?.[key as keyof AgentProcessContext] ===
+                "string",
+          )
+        )
+          continue;
         records.push(record);
+      }
     } catch {
       // A record being written, or not one of ours.
     }
@@ -337,9 +360,11 @@ export function spawnAgentProcess(
   command: string,
   args: string[],
   options: SpawnOptions,
+  context?: AgentProcessContext,
 ): ChildProcess {
   if (!supervisor) {
     const child = spawn(command, args, options);
+    lowerAgentPriority(child.pid);
     child.once("close", () => closedProcesses.add(child));
     return child;
   }
@@ -357,16 +382,26 @@ export function spawnAgentProcess(
         ...args,
       ]
     : args;
-  const child = spawn(program, arguments_, { ...options, detached: true });
+  const child = spawn(program, arguments_, {
+    ...options,
+    detached: true,
+  });
+  lowerAgentPriority(child.pid);
   child.once("close", () => closedProcesses.add(child));
   groupLeaders.add(child);
   const pid = child.pid;
   if (pid) {
     try {
-      recordAgentProcess(registry, pid, [program, ...arguments_], {
-        pid: process.pid,
-        startTime: identity.startTime,
-      });
+      recordAgentProcess(
+        registry,
+        pid,
+        [program, ...arguments_],
+        {
+          pid: process.pid,
+          startTime: identity.startTime,
+        },
+        context,
+      );
     } catch (error) {
       console.error(
         `Recording agent process ${pid} failed: ${errorMessage(error)}`,
@@ -378,6 +413,28 @@ export function spawnAgentProcess(
     });
   }
   return child;
+}
+
+/** The niceness agent processes run at on Unix-like hosts. */
+export function agentNiceValue(
+  platform: NodeJS.Platform = process.platform,
+): number | undefined {
+  return platform === "linux" || platform === "darwin" ? 5 : undefined;
+}
+
+/**
+ * Renices a just-started agent process-group leader. Its children inherit
+ * the priority; the Foundry daemon and execution host keep their own. The
+ * sandbox may not carry `nice`, so use the kernel call from the parent.
+ */
+function lowerAgentPriority(pid: number | undefined): void {
+  const priority = agentNiceValue();
+  if (pid === undefined || priority === undefined) return;
+  try {
+    setPriority(pid, priority);
+  } catch {
+    // Admission still protects the host if this kernel refuses the change.
+  }
 }
 
 /**
@@ -488,16 +545,22 @@ interface ClaudeSpawnOptions {
 export function claudeAgentSpawn(
   onStderr?: (data: string) => void,
   force = false,
+  context?: AgentProcessContext,
 ): ((options: ClaudeSpawnOptions) => ChildProcess) | undefined {
   if (!supervisor && !force) return undefined;
   return ({ command, args, cwd, env, signal }) => {
-    const child = spawnAgentProcess(command, args, {
-      cwd,
-      env,
-      signal,
-      stdio: ["pipe", "pipe", onStderr ? "pipe" : "ignore"],
-      windowsHide: true,
-    });
+    const child = spawnAgentProcess(
+      command,
+      args,
+      {
+        cwd,
+        env,
+        signal,
+        stdio: ["pipe", "pipe", onStderr ? "pipe" : "ignore"],
+        windowsHide: true,
+      },
+      context,
+    );
     child.stderr?.on("data", (data: Buffer) => onStderr?.(data.toString()));
     return child;
   };
