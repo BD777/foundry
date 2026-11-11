@@ -2495,7 +2495,7 @@ test("the connector picker groups public and private connectors, shows each one'
     [...window.document.querySelectorAll("[cmdk-item] span.truncate")].map(
       (label) => label.textContent,
     );
-  assert.deepEqual(labels(), ["Feishu", "AWS CLI", "Limen"]);
+  assert.deepEqual(labels(), ["Feishu", "AWS CLI", "Limen", "Edge access"]);
   assert.match(items()[0], /Needs sign-in/);
   assert.match(items()[1], /Signed in/);
   assert.match(items()[2], /Last seen signed in/);
