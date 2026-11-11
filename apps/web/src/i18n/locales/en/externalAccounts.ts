@@ -672,6 +672,8 @@ export const externalAccounts = {
     autoUpdateOn: "Updates automatically when the repository moves.",
     autoUpdateOff: "Manual updates; a newer commit is shown here.",
     updatesWithWorker: "Updates with the Worker.",
+    localNewerThanBundled:
+      "The version installed on this device is newer, so it was not switched to the version bundled with the Worker (local {{local}}, Worker {{bundled}}).",
     extensionInstalled: "{{extension}} is installed on {{device}}.",
     extensionUpdated: "{{extension}} on {{device}} is updated.",
     extensionUnchanged: "{{extension}} on {{device}} is already the newest.",

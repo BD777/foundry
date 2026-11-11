@@ -323,12 +323,18 @@ export function DeviceConnectorRow({
           ) : null}
         </span>
       </RowMain>
-      {extension && (extension.source || extension.bundled) ? (
+      {extension &&
+      (extension.source || extension.bundled || extension.bundledVersion) ? (
         <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-ink-muted">
           <span className="min-w-0">
-            {extension.bundled
-              ? t("deviceHeld.updatesWithWorker")
-              : t("deviceHeld.autoUpdate")}
+            {extension.bundledVersion && !extension.bundled
+              ? t("deviceHeld.localNewerThanBundled", {
+                  local: extension.version,
+                  bundled: extension.bundledVersion,
+                })
+              : extension.bundled
+                ? t("deviceHeld.updatesWithWorker")
+                : t("deviceHeld.autoUpdate")}
           </span>
           {extension.bundled ? (
             <Badge tone="neutral">{t("deviceHeld.bundled")}</Badge>

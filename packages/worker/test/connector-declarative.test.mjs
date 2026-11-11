@@ -162,6 +162,7 @@ test("a declarative extension reads, signs in and out, and lists model providers
     host.call("gw", "connector.status", { kind }, 30000);
   assert.deepEqual(await status(), {
     installed: true,
+    installSource: "device",
     version: "3.4.5",
     signedIn: false,
   });

@@ -169,6 +169,11 @@ export interface ExtensionOrigin {
   autoUpdate?: boolean;
   /** Do not move an extension kept in a private data folder. */
   migrateFrom?: ConnectorExtensionRepository[];
+  /**
+   * A local folder install (no source) may be replaced by the bundled copy.
+   * Only syncBundledExtensions sets this, after comparing versions.
+   */
+  takeoverLocalFolder?: boolean;
 }
 
 /**
@@ -279,6 +284,7 @@ function sameSource(
   if (origin?.bundled)
     return (
       installed.bundled === true ||
+      Boolean(origin.takeoverLocalFolder && !installed.source) ||
       Boolean(
         installed.source &&
         origin.migrateFrom?.some(
@@ -330,6 +336,81 @@ function withOrigin(
         autoUpdate: origin.autoUpdate ?? installed.autoUpdate ?? true,
       }
     : rest;
+}
+
+interface ParsedVersion {
+  parts: number[];
+  prerelease?: string[];
+}
+
+function parseVersion(value: string): ParsedVersion | undefined {
+  const match =
+    /^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
+      value,
+    );
+  if (!match?.[1]) return undefined;
+  return {
+    parts: match[1].split(".").map(Number),
+    ...(match[2] ? { prerelease: match[2].split(".") } : {}),
+  };
+}
+
+/**
+ * Orders two manifest versions by their numeric parts, then by prerelease
+ * identifiers as semver does. undefined means they are not comparable, and
+ * the caller must keep the installed copy rather than replace it.
+ */
+export function compareExtensionVersions(
+  left: string,
+  right: string,
+): number | undefined {
+  const a = parseVersion(left);
+  const b = parseVersion(right);
+  if (!a || !b) return undefined;
+  for (
+    let index = 0;
+    index < Math.max(a.parts.length, b.parts.length);
+    index += 1
+  ) {
+    const difference = (a.parts[index] ?? 0) - (b.parts[index] ?? 0);
+    if (difference !== 0) return difference > 0 ? 1 : -1;
+  }
+  if (!a.prerelease && !b.prerelease) return 0;
+  if (!a.prerelease) return 1;
+  if (!b.prerelease) return -1;
+  for (
+    let index = 0;
+    index < Math.max(a.prerelease.length, b.prerelease.length);
+    index += 1
+  ) {
+    const one = a.prerelease[index];
+    const two = b.prerelease[index];
+    if (one === undefined) return -1;
+    if (two === undefined) return 1;
+    if (one === two) continue;
+    const oneNumber = /^\d+$/.test(one);
+    const twoNumber = /^\d+$/.test(two);
+    if (oneNumber && twoNumber) {
+      const difference = Number(one) - Number(two);
+      if (difference !== 0) return difference > 0 ? 1 : -1;
+      continue;
+    }
+    if (oneNumber !== twoNumber) return oneNumber ? -1 : 1;
+    return one > two ? 1 : -1;
+  }
+  return 0;
+}
+
+/** The bundled copy's version when the installed local copy is newer. */
+export function bundledVersionNewerThanLocal(
+  id: string,
+  localVersion: string,
+): string | undefined {
+  const bundled = bundledExtensions().find((item) => item.manifest.id === id)
+    ?.manifest.version;
+  return bundled && compareExtensionVersions(bundled, localVersion) === -1
+    ? bundled
+    : undefined;
 }
 
 /** Turns automatic source updates on or off for a git-installed extension. */
@@ -428,18 +509,28 @@ export function syncBundledExtensions(builtinKinds: string[] = []): string[] {
   for (const bundled of bundledExtensions()) {
     const previous = installed.get(bundled.manifest.id);
     if (!previous) continue;
+    const localFolder = !previous.bundled && !previous.source;
+    const legacySource =
+      !previous.bundled &&
+      Boolean(
+        legacyBundledOrigin(bundled.manifest).migrateFrom?.some(
+          (source) =>
+            JSON.stringify(source) === JSON.stringify(previous.source),
+        ),
+      );
+    if (!previous.bundled && !localFolder && !legacySource) continue;
+    // A local folder is a candidate for takeover, but never a downgrade.
+    // An incomparable version is kept as installed, too.
     if (
       !previous.bundled &&
-      !legacyBundledOrigin(bundled.manifest).migrateFrom?.some(
-        (source) => JSON.stringify(source) === JSON.stringify(previous.source),
-      )
+      (compareExtensionVersions(bundled.manifest.version, previous.version) ??
+        -1) < 0
     )
       continue;
-    const change = addExtension(
-      bundled.dir,
-      builtinKinds,
-      legacyBundledOrigin(bundled.manifest),
-    );
+    const change = addExtension(bundled.dir, builtinKinds, {
+      ...legacyBundledOrigin(bundled.manifest),
+      ...(localFolder ? { takeoverLocalFolder: true } : {}),
+    });
     if (change.action !== "unchanged") changes.push(change.action);
   }
   return changes;

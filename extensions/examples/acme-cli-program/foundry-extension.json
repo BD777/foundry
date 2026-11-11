@@ -1,0 +1,53 @@
+{
+  "manifestVersion": 1,
+  "id": "acme-cli-program",
+  "name": "Acme CLI (program)",
+  "version": "1.0.0",
+  "protocol": 1,
+  "entry": {
+    "command": "node",
+    "args": ["${extensionDir}/connector.mjs"]
+  },
+  "connectors": [
+    {
+      "kind": "acme-program",
+      "label": "Acme CLI",
+      "labels": {
+        "en": "Acme CLI",
+        "zh-CN": "Acme CLI"
+      },
+      "description": "Sessions on a device run the fictional acme CLI with that device's own Acme login.",
+      "descriptions": {
+        "en": "Sessions on a device run the fictional acme CLI with that device's own Acme login.",
+        "zh-CN": "设备上的会话用那台设备自己的 Acme 登录运行虚构的 acme 命令行。"
+      },
+      "tool": {
+        "command": "acme",
+        "source": "device"
+      },
+      "provides": {
+        "tool": true
+      },
+      "signIn": {
+        "signOut": false,
+        "methods": [
+          {
+            "id": "terminal",
+            "kind": "terminal",
+            "label": "In a terminal on the device",
+            "labels": {
+              "en": "In a terminal on the device",
+              "zh-CN": "在设备的终端里"
+            },
+            "description": "Run the login command where the acme CLI can open its own browser or ask for a token.",
+            "descriptions": {
+              "en": "Run the login command where the acme CLI can open its own browser or ask for a token.",
+              "zh-CN": "在 acme 命令行能打开自己的浏览器或询问令牌的地方运行登录命令。"
+            },
+            "commands": ["acme login"]
+          }
+        ]
+      }
+    }
+  ]
+}

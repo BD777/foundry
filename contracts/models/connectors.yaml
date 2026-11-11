@@ -510,6 +510,11 @@ components:
           description: The extension ships with the Worker.
           type: boolean
           x-go-type-skip-optional-pointer: false
+        bundledVersion:
+          description:
+            The bundled copy's version, when this installed local folder is newer than the
+            copy shipped with the Worker and was kept in place.
+          type: string
         state:
           description:
             '"installed" is on this device; "available" ships with the Worker but is not installed

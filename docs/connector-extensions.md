@@ -54,7 +54,7 @@ foundry-worker extension remove my-company
 
 `source` 是 `{ "git": 远程地址, "path": 仓库里的文件夹, "ref": 分支或标签 }`，`path` 缺省为仓库根，`ref` 缺省为默认分支。远程地址只接受 https（地址里不能带用户名或令牌）、`ssh://` 和 `host:path` 形式；Server 与 Worker 都检查（`descriptor_checks.go` `CheckExtensionRepository`、`manifest.ts` `parseExtensionRepository`）。
 
-官方扩展没有 `source`，而是由 Worker 包携带。Worker 每次启动按 id 和 SHA-256 比较已安装副本：有变化就原子更新，`data/` 目录保留。未安装的设备只看到可安装条目，不会自动装上。旧的 Limen git 安装通过 manifest 的 `migrationSource` 认领；迁移后 source/commit 清空、bundled 置为 true，登录、profile、绑定和到期记录不变。
+官方扩展没有 `source`，而是由 Worker 包携带。Worker 每次启动按 id 和 SHA-256 比较已安装副本：有变化就原子更新，`data/` 目录保留。同 id 的本地文件夹安装（没有 `source`）在 bundled 版本不低于本机版本时也会原地接管；本机版本更高时保留不动，并在页面上提示没有切换到随 Worker 发布的版本，不静默降级。未安装的设备只看到可安装条目，不会自动装上。旧的 Limen git 安装通过 manifest 的 `migrationSource` 认领；迁移后 source/commit 清空、bundled 置为 true，登录、profile、绑定和到期记录不变。
 
 - **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，这次拉取的 git 命令行里带上 gh 的凭据助手（`sources.ts` 的 `gitConfigFor`），用这份登录；Foundry 不改本人的全局 git 配置（DEV-128 起登录不再运行 `gh auth setup-git`）。没有权限时报 git 自己的话（例如 repository not found）。
 - **装了什么。** 只复制 `path` 那个文件夹（不含 `.git` 和仓库其他文件），之后和本地文件夹一样校验、记录摘要；注册表额外记 `source`、安装的 `commit`。
@@ -130,15 +130,20 @@ stdin/stdout 上的 JSON-RPC 2.0，每行一条消息；stdout 只走协议，st
 
 另一类无程序扩展是纯数据 `serverHeld`：它不提供协议方法，也没有 `entry`/`cli`。Server 校验字段与模板、探测并保存路由目录和令牌权限；`access.allowBy.value` 引用一个探测值（如 `probe:capabilities/scope`），`map` 将 `full`/`read` 等值映射到 `read`/`write` 路由权限，`otherwise` 是未知值的回退。会话 env 的 `{probeMap:<probe-id>/<name>|match=value|*=default}` 由 Server 用同一份探测值渲染。会话经通用网关访问；只读权限只放行目录里的 `read` 路由，完整权限可放行 `write`，Personal Agent 的写请求另受权限包约束并要求确认。一个无 `entry` 的 manifest 里，每个连接器必须二选一：设备持有型带 `cli`，或服务器持有型带 `serverHeld`。
 
-| 键                 | 作用                                                                                                                                                                                                                                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`           | 读登录：`args`，成功条件 `ok`（JSON pointer，值为 true；缺省只看退出码 0），失败时显示的 `error`/`hint`（工具自己的话）；`signedIn`（全部成立才算已登录）、`identity`/`expiresAt`（一个 pointer，或 `items` 数组里每项的 pointer，用“, ”连接）、`problems`（已登录但不可用时显示的句子） |
-| `version`          | `args` 和带一个分组的正则                                                                                                                                                                                                                                                                |
-| `signIn.<方法 id>` | 一个 `guided` 登录方式要运行的命令：参数里可写该方式的字段 `{字段 id}`，秘密字段写进 `stdin`，不进参数                                                                                                                                                                                   |
-| `signOut`          | 登出命令；`forEach` 指向状态回答里的数组时，每项运行一次，`{/name}` 读该项                                                                                                                                                                                                               |
-| `modelAccess`      | 模型服务：`items` 数组里每项（`where` 过滤）一个，`id`/`label` 模板、`model`/`models`、会话助手 `session.command`/`args`，以及读已验证身份的 `identity`（用会话助手加这些参数运行，读 `pointer`）                                                                                        |
+| 键                 | 作用                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `envelope`         | 工具统一的 JSON 信封：`ok`/`okValue` 判成功，`code`/`error`/`hint` 读错误，`data` 是下面各 pointer 读取的业务对象；调用自己的 `ok`/`error`/`hint` 优先                                                                                                                                                                                      |
+| `env`              | Foundry 自己运行工具时设置的变量（例如 `BYTEDCLI_NO_AUTO_UPGRADE=1`）；基础环境仍是白名单，隔离检查的 `isolationEnv` 会覆盖                                                                                                                                                                                                                 |
+| `status`           | 读登录：`args`，失败时显示的 `error`/`hint`（工具自己的话）；`signedIn`（全部成立才算已登录；条件可用 `equals`/`nonEmpty`/`includes`/`anyItem`/`allowMissing`）、`identity`/`sites`/`expiresAt`（pointer、`firstOf` 备选 pointer、`items` 数组里每项的 pointer，可用 `stripAfter`/`asTimestamp`）、`problems`（已登录但不可用时显示的句子） |
+| `version`          | `args` 和带一个分组的正则                                                                                                                                                                                                                                                                                                                   |
+| `signIn.<方法 id>` | 一个 `guided` 登录方式：既可以是原来的一次调用，也可以是 `begin` + `poll` 两步，加 `state` 状态映射表和 `errors` 错误码映射；参数里可写该方式的字段 `{字段 id}`、`{scratch}`，秘密字段写进 `stdin`，不进参数                                                                                                                                |
+| `authorizations`   | 描述符 `authorizationGroups[]` 的声明式实现：`read` 读组状态（有序 `rules`、`otherwise`、`onError`、`source`/`firstObject`/`upgradeWhen`）、`authorize.begin`/`poll`/`state`/`errors`、`minVersion` 版本门槛、`fallbackWhen`/`fallback` 一次性回退；不能从页面发起的组写 `terminalMessage`                                                  |
+| `signOut`          | 登出命令；`forEach` 指向状态回答里的数组时，每项运行一次，`{/name}` 读该项                                                                                                                                                                                                                                                                  |
+| `modelAccess`      | 模型服务：`items` 数组里每项（`where` 过滤）一个，`id`/`label` 模板、`model`/`models`、会话助手 `session.command`/`args`，以及读已验证身份的 `identity`（用会话助手加这些参数运行，读 `pointer`）                                                                                                                                           |
 
 模板只能写 `{home}`、该处允许的字段名和 `{/JSON pointer}`；以 `~/` 开头的值展开为家目录。不经过 shell，参数原样传给工具。Limen 的扩展就是这样写的：[extensions/limen/foundry-extension.json](../extensions/limen/foundry-extension.json)，只用 `limen status/join/remove --json` 这些公开命令。
+
+两步登录与带 continuation 的附加授权见 [research/declarative-v2.md](research/declarative-v2.md)。错误码规则可写 `code`（精确）、`contains`（子串或子串数组）或 `regex`，文案可以是字符串或 `{ "en": …, "zh-CN": … }`；授权错误会自动带上 `[CODE; phase; exit N]` 前缀，continuation 只留在设备上。bytedcli 的纯数据版见 [extensions/bytedcli/foundry-extension.json](../extensions/bytedcli/foundry-extension.json)。
 
 ## 最小示例
 
@@ -255,6 +260,18 @@ process.stdin.on("end", () => process.exit(0));
 ```
 
 只需实现描述符声明的能力所对应的方法：声明 `guided` 登录才需要 `connector.signIn.*`，`tool.source: "installer"` 才需要 `connector.install`，`provides.modelAccess` 才需要 `modelAccess.list`。收到不支持的方法时回 `-32601`，其错误消息会原样显示在页面上。要加 Foundry 引导的登录（链接、码、二维码、粘贴回的码）、附加授权或模型接入，再实现对应方法；完整的行为可参考测试用扩展 `packages/worker/test/fixtures/fake-extension/`。
+
+## 示例
+
+`extensions/examples/` 里有三个虚构服务的完整示例，每个都有 manifest 和中英文 README，可以直接安装后改成自己的服务：
+
+- [acme-cli-program](../extensions/examples/acme-cli-program)：工具的登录状态需要一点程序逻辑才能读取时选它，写一个小程序并让登录留在终端。
+- [acme-cli-declarative](../extensions/examples/acme-cli-declarative)：工具公开的命令行能用 JSON 报告状态、接收登录值并登出时选它，不用写程序。
+- [acme-api-server-held](../extensions/examples/acme-api-server-held)：私有 API 公开可达、一份令牌和声明式探测就能接入时选它，凭据封存在 Server，manifest 是纯数据。
+
+```sh
+foundry-worker extension add ./extensions/examples/acme-cli-declarative
+```
 
 ## 模型接入
 

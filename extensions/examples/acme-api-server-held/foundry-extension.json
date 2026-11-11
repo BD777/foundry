@@ -1,0 +1,163 @@
+{
+  "manifestVersion": 1,
+  "id": "acme-api-server-held",
+  "name": "Acme API (server-held)",
+  "version": "1.0.0",
+  "protocol": 1,
+  "connectors": [
+    {
+      "kind": "acme-api",
+      "label": "Acme API",
+      "labels": {
+        "en": "Acme API",
+        "zh-CN": "Acme API"
+      },
+      "description": "Connects a fictional Acme API through Foundry's gateway with a sealed token and probes declared as data.",
+      "descriptions": {
+        "en": "Connects a fictional Acme API through Foundry's gateway with a sealed token and probes declared as data.",
+        "zh-CN": "用封存的令牌和纯数据探测，经 Foundry 的网关接入一个虚构的 Acme API。"
+      },
+      "tool": {
+        "command": "acme"
+      },
+      "provides": {
+        "tool": true
+      },
+      "access": {
+        "via": "github",
+        "repository": "acme/acme-control-plane",
+        "hint": "Read the fictional acme/acme-control-plane repository to make this connector available.",
+        "hints": {
+          "en": "Read the fictional acme/acme-control-plane repository to make this connector available.",
+          "zh-CN": "需要能读取虚构仓库 acme/acme-control-plane，此连接器才会显示。"
+        }
+      },
+      "serverHeld": {
+        "instances": "many",
+        "fields": [
+          {
+            "id": "baseUrl",
+            "type": "url",
+            "required": true,
+            "label": "Deployment URL",
+            "labels": {
+              "en": "Deployment URL",
+              "zh-CN": "部署地址"
+            },
+            "help": "Copy the public HTTPS root from your Acme deployment's admin page. To reach it from a device instead, use an HTTP or HTTPS address that device can open; do not add the /agent/v1 prefix, query or fragment.",
+            "helps": {
+              "zh-CN": "从 Acme 部署的管理页面复制公网 HTTPS 根地址。若改为经设备访问，填写那台设备能打开的 HTTP 或 HTTPS 地址；不要追加 /agent/v1 前缀、查询串或片段。"
+            },
+            "placeholder": "https://acme.example.com"
+          },
+          {
+            "id": "token",
+            "type": "secret",
+            "required": true,
+            "label": "API token",
+            "labels": {
+              "en": "API token",
+              "zh-CN": "API 令牌"
+            },
+            "help": "Create a token in the Acme deployment under Settings > API tokens, or run `acme tokens create --scope read` (use `--scope full` for write access). Foundry seals it on the server and reads its scope during probing.",
+            "helps": {
+              "zh-CN": "在 Acme 部署的「设置 > API 令牌」里创建令牌，或运行 `acme tokens create --scope read`（需要写入时用 `--scope full`）。Foundry 会把令牌封存在服务器上，并在探测时读取它的 scope。"
+            }
+          },
+          {
+            "id": "account",
+            "type": "select",
+            "required": false,
+            "label": "Account",
+            "labels": {
+              "en": "Account",
+              "zh-CN": "账号"
+            },
+            "help": "Leave empty to use the deployment's default account, or pick one from the list the accounts probe returns after the URL and token pass validation.",
+            "helps": {
+              "zh-CN": "留空时使用部署的默认账号；地址和令牌校验通过后，也可以从账号探测返回的列表中选择。"
+            },
+            "optionsFrom": "probe:accounts"
+          }
+        ],
+        "steps": [["baseUrl", "token"], ["account"]],
+        "probe": [
+          {
+            "id": "capabilities",
+            "method": "GET",
+            "path": "/agent/v1/capabilities",
+            "optional": true,
+            "extract": {
+              "values": {
+                "version": "/version",
+                "scope": "/token/scope"
+              }
+            }
+          },
+          {
+            "id": "accounts",
+            "method": "GET",
+            "path": "/agent/v1/accounts",
+            "optional": true,
+            "extract": {
+              "options": {
+                "items": "/accounts",
+                "value": "/id",
+                "label": "/name"
+              }
+            }
+          },
+          {
+            "id": "routes",
+            "method": "GET",
+            "path": "/agent/v1/",
+            "extract": {
+              "routes": {
+                "items": "/routes",
+                "method": "/method",
+                "path": "/path",
+                "access": "/access",
+                "domain": "/domain"
+              }
+            }
+          }
+        ],
+        "upstream": {
+          "baseField": "baseUrl",
+          "pathPrefix": "/agent/v1",
+          "headers": {
+            "Authorization": "Bearer {secret:token}",
+            "X-Acme-Account": "{field:account}"
+          },
+          "requestBodyLimitBytes": 8388608,
+          "responseBodyLimitBytes": 16777216,
+          "timeoutSeconds": 60
+        },
+        "access": {
+          "from": "probe:routes",
+          "default": "deny",
+          "allowBy": {
+            "value": "probe:capabilities/scope",
+            "map": {
+              "full": ["read", "write"],
+              "read": ["read"]
+            },
+            "otherwise": ["read"]
+          }
+        },
+        "session": {
+          "env": {
+            "ACME_API_BASE": "{gatewayBase}",
+            "ACME_API_TOKEN": "{standIn}",
+            "ACME_API_ACCOUNT": "{field:account}",
+            "ACME_API_READ_ONLY": "{probeMap:capabilities/scope|full=0|*=1}"
+          }
+        },
+        "network": {
+          "holdings": ["server", "device"],
+          "publicOnly": true
+        }
+      }
+    }
+  ]
+}

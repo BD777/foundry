@@ -1,0 +1,439 @@
+{
+  "manifestVersion": 1,
+  "id": "bytedance",
+  "name": "ByteDance tools",
+  "version": "2.0.0",
+  "protocol": 1,
+  "connectors": [
+    {
+      "kind": "bytedcli",
+      "label": "bytedcli",
+      "description": "Sessions on a device run bytedcli with that device's own ByteCloud login.",
+      "descriptions": {
+        "en": "Sessions on a device run bytedcli with that device's own ByteCloud login.",
+        "zh-CN": "设备上的会话用那台设备自己的 ByteCloud 登录运行 bytedcli。"
+      },
+      "tool": {
+        "command": "bytedcli",
+        "source": "npm",
+        "package": "@bytedance-dev/bytedcli",
+        "registry": "device"
+      },
+      "provides": {
+        "tool": true
+      },
+      "requires": [
+        {
+          "kind": "tcp_reachable",
+          "host": "cloud.bytedance.net",
+          "port": 443,
+          "label": "ByteDance network"
+        }
+      ],
+      "expiryReminderDays": 3,
+      "isolationEnv": {
+        "BYTEDCLI_PROFILE": "foundry-no-login",
+        "LARKSUITE_CLI_PROFILE": "foundry-no-login"
+      },
+      "signIn": {
+        "methods": [
+          {
+            "id": "device",
+            "kind": "guided",
+            "label": "Scan with Feishu",
+            "labels": {
+              "en": "Scan with Feishu",
+              "zh-CN": "用飞书扫码"
+            },
+            "description": "Foundry starts bytedcli's sign-in on the device; scan the code or open the link to approve.",
+            "descriptions": {
+              "en": "Foundry starts bytedcli's sign-in on the device; scan the code or open the link to approve.",
+              "zh-CN": "Foundry 在设备上启动 bytedcli 登录；扫码或打开链接批准。"
+            }
+          },
+          {
+            "id": "terminal",
+            "kind": "terminal",
+            "label": "In a terminal on the device",
+            "labels": {
+              "en": "In a terminal on the device",
+              "zh-CN": "在设备的终端里"
+            },
+            "commands": ["bytedcli auth login"]
+          }
+        ]
+      },
+      "authorizationGroups": [
+        {
+          "id": "feishu_web_session",
+          "revision": 1,
+          "label": "Meego Web session (CN)",
+          "labels": {
+            "en": "Meego Web session (CN)",
+            "zh-CN": "Meego 网页会话（中国区）"
+          },
+          "capabilities": ["meego_goapi.cn"],
+          "credential": "native_web_session"
+        },
+        {
+          "id": "lark_cli",
+          "revision": 1,
+          "label": "Feishu CLI (bytedcli lark)",
+          "labels": {
+            "en": "Feishu CLI (bytedcli lark)",
+            "zh-CN": "飞书 CLI（bytedcli lark）"
+          },
+          "capabilities": ["lark_cli"],
+          "credential": "native_login"
+        }
+      ],
+      "cli": {
+        "envelope": {
+          "ok": "/status",
+          "okValue": "success",
+          "code": "/error/code",
+          "error": "/error/message",
+          "hint": "/error/hint",
+          "data": "/data"
+        },
+        "env": {
+          "BYTEDCLI_NO_AUTO_UPGRADE": "1",
+          "BYTEDCLI_OPEN_QR_IMAGE": "0"
+        },
+        "version": {
+          "args": ["--version"],
+          "pattern": "(\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?)"
+        },
+        "status": {
+          "args": ["--json", "auth", "status"],
+          "timeoutSeconds": 30,
+          "signedIn": [
+            {
+              "pointer": "/authenticated",
+              "equals": true
+            },
+            {
+              "pointer": "/bytecloud_auth/status",
+              "equals": "ready",
+              "allowMissing": true
+            }
+          ],
+          "identity": {
+            "pointer": "/bytecloud_auth/identity/username",
+            "stripAfter": "@"
+          },
+          "sites": {
+            "pointer": "/bytecloud_auth/site"
+          },
+          "expiresAt": {
+            "firstOf": [
+              "/login_expires_at",
+              "/bytecloud_auth/refreshTokenExpiresAt"
+            ],
+            "asTimestamp": true
+          }
+        },
+        "signIn": {
+          "device": {
+            "begin": {
+              "args": [
+                "--json",
+                "auth",
+                "login",
+                "--begin",
+                "--no-terminal-qr",
+                "--qr-image",
+                "{scratch}/sign-in.png"
+              ],
+              "timeoutSeconds": 45
+            },
+            "poll": {
+              "args": ["--json", "auth", "login", "--complete"],
+              "timeoutSeconds": 45
+            },
+            "state": {
+              "pointer": "/login_status",
+              "map": {
+                "pending": { "status": "pending" },
+                "success": { "status": "complete" },
+                "completed": { "status": "complete" },
+                "ready": { "status": "complete" },
+                "expired": { "status": "expired" }
+              },
+              "otherwise": {
+                "status": "failed",
+                "error": "bytedcli answered an unknown login status."
+              },
+              "verificationUrl": "/verification_uri_complete",
+              "requireChallenge": true,
+              "missingChallenge": "bytedcli started a sign-in without a page to approve it on"
+            },
+            "errors": [
+              {
+                "code": "BYTECLOUD_AUTH_LOGIN_DENIED",
+                "step": {
+                  "status": "denied",
+                  "error": "The sign-in was denied."
+                }
+              },
+              {
+                "code": "BYTECLOUD_AUTH_LOGIN_EXPIRED",
+                "step": { "status": "expired" }
+              }
+            ]
+          }
+        },
+        "signOut": {
+          "args": ["--json", "auth", "logout"],
+          "timeoutSeconds": 30
+        },
+        "authorizations": [
+          {
+            "group": "feishu_web_session",
+            "revision": 1,
+            "minVersion": "0.174.0",
+            "minVersionState": {
+              "status": "unavailable",
+              "reason": "cli_upgrade"
+            },
+            "upgradeMessage": "Update bytedcli to 0.174.0 or newer for this authorization.",
+            "read": {
+              "args": ["--json", "--site", "cn", "meego", "status"],
+              "timeoutSeconds": 20,
+              "rules": [
+                {
+                  "when": [
+                    { "pointer": "/providers/goapi/state", "equals": "ready" }
+                  ],
+                  "state": { "status": "ready" }
+                },
+                {
+                  "when": [
+                    {
+                      "pointer": "/providers/goapi/state",
+                      "equals": "missing"
+                    }
+                  ],
+                  "state": { "status": "needs_auth" }
+                },
+                {
+                  "when": [
+                    {
+                      "pointer": "/providers/goapi/state",
+                      "equals": "bootstrap_available"
+                    }
+                  ],
+                  "state": {
+                    "status": "unknown",
+                    "reason": "bootstrap_available"
+                  }
+                }
+              ],
+              "otherwise": {
+                "status": "unknown",
+                "verification": "not_checked",
+                "reason": "check_failed"
+              },
+              "onError": {
+                "status": "unknown",
+                "verification": "not_checked",
+                "reason": "check_failed"
+              }
+            },
+            "authorize": {
+              "begin": {
+                "args": [
+                  "--json",
+                  "--site",
+                  "cn",
+                  "auth",
+                  "login",
+                  "--begin",
+                  "--session",
+                  "--feishu",
+                  "--no-terminal-qr",
+                  "--qr-image",
+                  "{scratch}/sign-in.png"
+                ],
+                "timeoutSeconds": 30,
+                "fallbackWhen": ["FEISHU_WEB_SESSION_AUTHORIZE_PARSE_FAILED"],
+                "fallback": {
+                  "args": [
+                    "--json",
+                    "--site",
+                    "cn",
+                    "auth",
+                    "login",
+                    "--begin",
+                    "--session",
+                    "--feishu",
+                    "--no-terminal-qr",
+                    "--qr-image",
+                    "{scratch}/sign-in.png",
+                    "--session-method",
+                    "qr"
+                  ],
+                  "timeoutSeconds": 25
+                }
+              },
+              "poll": {
+                "args": [
+                  "--json",
+                  "--site",
+                  "cn",
+                  "auth",
+                  "login",
+                  "--complete",
+                  "{continuation}"
+                ],
+                "timeoutSeconds": 45
+              },
+              "state": {
+                "pointer": "/login_status",
+                "map": {
+                  "pending": { "status": "pending" },
+                  "success": {
+                    "status": "failed",
+                    "error": "The native Web session was not confirmed ready for this capability. Check its status and retry."
+                  },
+                  "completed": {
+                    "status": "failed",
+                    "error": "The native Web session was not confirmed ready for this capability. Check its status and retry."
+                  },
+                  "ready": {
+                    "status": "failed",
+                    "error": "The native Web session was not confirmed ready for this capability. Check its status and retry."
+                  },
+                  "expired": { "status": "expired" }
+                },
+                "rules": [
+                  {
+                    "when": [
+                      {
+                        "pointer": "/feishu_web_session_ready",
+                        "equals": true
+                      },
+                      {
+                        "pointer": "/meego_goapi_session_ready",
+                        "equals": true
+                      }
+                    ],
+                    "step": { "status": "complete" }
+                  }
+                ],
+                "otherwise": {
+                  "status": "failed",
+                  "error": "The device returned an unknown authorization status."
+                },
+                "qrImage": "/qr_image_path",
+                "continuation": "/complete_token",
+                "continuationPattern": "^[a-zA-Z0-9._-]{16,128}$",
+                "missingContinuation": "The device returned no usable authorization continuation."
+              },
+              "errors": [
+                {
+                  "code": "FEISHU_WEB_SESSION_AUTHORIZE_PARSE_FAILED",
+                  "step": {
+                    "status": "failed",
+                    "error": "Feishu's authorization page is incompatible with this CLI. Keep the base login. If a fresh QR attempt also fails, update bytedcli or report this code to its maintainer."
+                  }
+                },
+                {
+                  "contains": "QR_INIT",
+                  "step": {
+                    "status": "failed",
+                    "error": "The sign-in service could not issue a QR code. Check access from this device, then retry this capability. The base login is unchanged."
+                  }
+                },
+                {
+                  "contains": ["EXPIRED", "NOT_FOUND"],
+                  "step": {
+                    "status": "expired",
+                    "error": "This authorization challenge expired or is no longer available. Start this capability's authorization again."
+                  }
+                },
+                {
+                  "contains": "DENIED",
+                  "step": {
+                    "status": "denied",
+                    "error": "The provider denied this authorization. The base login is unchanged."
+                  }
+                },
+                {
+                  "contains": [
+                    "QR_NOT_SUPPORTED",
+                    "INTERACTIVE_BROWSER",
+                    "CONFIRMATION_REQUIRED"
+                  ],
+                  "step": {
+                    "status": "failed",
+                    "error": "The native CLI requires a supported local approval step for this account or site. The Web flow cannot complete that step; the base login is unchanged."
+                  }
+                },
+                {
+                  "regex": "NETWORK|TIMEOUT|ECONN|ETIMEDOUT|ENOTFOUND|CERT",
+                  "step": {
+                    "status": "failed",
+                    "error": "This device could not reach or verify the sign-in service. Check its network and proxy configuration before retrying this capability."
+                  }
+                }
+              ],
+              "noJsonMessage": "The native sign-in command returned no readable response. Check the device's CLI and network; the base login was not signed out.",
+              "defaultErrorMessage": "The native authorization failed with this provider code. Check the device's sign-in service or CLI support; the base login is unchanged."
+            }
+          },
+          {
+            "group": "lark_cli",
+            "revision": 1,
+            "read": {
+              "args": ["--json", "lark", "--no-auto-install", "auth", "status"],
+              "timeoutSeconds": 20,
+              "envelope": false,
+              "source": "stdoutThenStderr",
+              "firstObject": true,
+              "upgradeWhen": "CLI_PARSE_ERROR",
+              "rules": [
+                {
+                  "when": [
+                    { "pointer": "/ok", "equals": false },
+                    { "pointer": "/error/type", "equals": "config" }
+                  ],
+                  "state": { "status": "needs_auth" }
+                },
+                {
+                  "when": [
+                    {
+                      "pointer": "/identities",
+                      "anyItem": {
+                        "pointer": "/available",
+                        "equals": true
+                      }
+                    }
+                  ],
+                  "state": { "status": "ready" }
+                },
+                {
+                  "when": [{ "pointer": "/identities", "nonEmpty": true }],
+                  "state": { "status": "needs_auth" }
+                }
+              ],
+              "otherwise": {
+                "status": "unknown",
+                "verification": "not_checked",
+                "reason": "check_failed"
+              },
+              "onError": {
+                "status": "unknown",
+                "verification": "not_checked",
+                "reason": "check_failed"
+              }
+            },
+            "authorize": {
+              "terminalMessage": "Authorize lark-cli in a terminal on this device: bytedcli lark auth login (run bytedcli lark config init --new first if lark-cli is not set up)."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

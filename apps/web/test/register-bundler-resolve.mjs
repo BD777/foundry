@@ -2,6 +2,8 @@
 // including modules a test imports directly.
 import { register } from "node:module";
 
+import "./dom-inspect.mjs";
+
 register("./bundler-resolve.mjs", import.meta.url);
 
 // Node offers BroadcastChannel and navigator.locks, which the event stream
