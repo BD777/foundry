@@ -397,6 +397,8 @@ interface components {
       version: string;
       /** @description The extension ships with the Worker. */
       bundled?: boolean;
+      /** @description The bundled copy's version, when this installed local folder is newer than the copy shipped with the Worker and was kept in place. */
+      bundledVersion?: string;
       /**
        * @description "installed" is on this device; "available" ships with the Worker but is not installed there. An absent state means installed, for descriptors reported by older Workers.
        * @enum {string}

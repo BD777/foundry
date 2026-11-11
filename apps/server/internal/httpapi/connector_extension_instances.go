@@ -419,6 +419,11 @@ func (s *Server) checkExtensionDevices(ctx context.Context, descriptor store.Con
 		waits   sync.WaitGroup
 		results []store.ConnectorServerHeldDeviceCheck
 	)
+	// A loopback or localhost address names each device's own machine, so
+	// only the device that validated it reaches this upstream.
+	if extensionNetworkLoopback(target) {
+		return result, nil
+	}
 	for _, deviceID := range owned {
 		if deviceID == probeDeviceID || s.hub.connectionFor(deviceID) == nil {
 			continue
@@ -473,6 +478,16 @@ func (s *Server) checkExtensionDevices(ctx context.Context, descriptor store.Con
 	waits.Wait()
 	result = append(result, results...)
 	return result, nil
+}
+
+// extensionNetworkLoopback reports a host:port that only the machine itself reaches.
+func extensionNetworkLoopback(target string) bool {
+	host, _ := extensionNetworkHostPort(target)
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func extensionNetworkTarget(rawURL string) (string, error) {

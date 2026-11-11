@@ -106,3 +106,9 @@ Foundry 只按这份声明式描述符探测和转发，不在 Server 上运行�
 令牌只放行路由目录中的 `read` 路由；完整令牌也放行 `write` 路由。Personal
 Agent 的写请求还需要权限包允许写并经过确认，所有请求都会逐条审计且不记录
 令牌。
+
+## Behind Cloudflare Access / 部署在 Cloudflare Access 后面
+
+If the deployment is protected by Cloudflare Access, give Foundry a service token instead of opening a bypass: in Cloudflare Zero Trust create a service token (Access → Service Auth → Service Tokens), add a policy with the **Service Auth** action that includes it on `/agent/v1`, route `/agent/v1` in the tunnel to OpenLark's Agent port (8081), and fill the token's Client ID and Client Secret into the two optional fields. Foundry seals them with the Agent token and sends them only to the deployment.
+
+部署受 Cloudflare Access 保护时，不要开放 Bypass，而是给 Foundry 一个服务令牌：在 Cloudflare Zero Trust 里新建服务令牌（Access → Service Auth → Service Tokens），为 `/agent/v1` 加一条 Action 为 **Service Auth** 且包含该令牌的策略，在 Tunnel 里把 `/agent/v1` 转发到 OpenLark 的 Agent 端口（8081），再把令牌的 Client ID 和 Client Secret 填进两个可选字段。Foundry 会把它们和 Agent 令牌一起封存，只发给这个部署。

@@ -1,0 +1,84 @@
+{
+  "manifestVersion": 1,
+  "id": "acme-cli-declarative",
+  "name": "Acme CLI (declarative)",
+  "version": "1.0.0",
+  "protocol": 1,
+  "connectors": [
+    {
+      "kind": "acme-declarative",
+      "label": "Acme CLI",
+      "labels": {
+        "en": "Acme CLI",
+        "zh-CN": "Acme CLI"
+      },
+      "description": "The same fictional acme CLI, connected by declarative commands instead of a program.",
+      "descriptions": {
+        "en": "The same fictional acme CLI, connected by declarative commands instead of a program.",
+        "zh-CN": "同一个虚构的 acme 命令行，用声明式命令接入，不写程序。"
+      },
+      "tool": {
+        "command": "acme",
+        "source": "device"
+      },
+      "provides": {
+        "tool": true
+      },
+      "signIn": {
+        "methods": [
+          {
+            "id": "token",
+            "kind": "guided",
+            "label": "Sign in with a session token",
+            "labels": {
+              "en": "Sign in with a session token",
+              "zh-CN": "用会话令牌登录"
+            },
+            "description": "Paste a token created with `acme tokens create`. Foundry writes it to the login command's stdin.",
+            "descriptions": {
+              "en": "Paste a token created with `acme tokens create`. Foundry writes it to the login command's stdin.",
+              "zh-CN": "粘贴用 `acme tokens create` 创建的令牌。Foundry 会把它写到登录命令的 stdin。"
+            },
+            "fields": [
+              {
+                "id": "token",
+                "type": "secret",
+                "required": true,
+                "label": "Session token",
+                "labels": {
+                  "en": "Session token",
+                  "zh-CN": "会话令牌"
+                },
+                "help": "Create one with `acme tokens create`. It is passed on stdin and not kept as a plain value.",
+                "helps": {
+                  "zh-CN": "用 `acme tokens create` 创建一个。它经 stdin 传给命令，不会以明文保存。"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "cli": {
+        "status": {
+          "args": ["status", "--json"],
+          "signedIn": [{ "pointer": "/signedIn", "equals": true }],
+          "identity": { "pointer": "/user" },
+          "expiresAt": { "pointer": "/expiresAt" }
+        },
+        "version": {
+          "args": ["--version"],
+          "pattern": "^acme (\\d+\\.\\d+\\.\\d+)$"
+        },
+        "signIn": {
+          "token": {
+            "args": ["login", "--token-stdin"],
+            "stdin": "{token}"
+          }
+        },
+        "signOut": {
+          "args": ["logout"]
+        }
+      }
+    }
+  ]
+}

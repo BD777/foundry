@@ -219,6 +219,9 @@ type ConnectorExtensionSource struct {
 	// Bundled The extension ships with the Worker.
 	Bundled *bool `json:"bundled,omitempty"`
 
+	// BundledVersion The bundled copy's version, when this installed local folder is newer than the copy shipped with the Worker and was kept in place.
+	BundledVersion string `json:"bundledVersion,omitempty"`
+
 	// State "installed" is on this device; "available" ships with the Worker but is not installed there. An absent state means installed, for descriptors reported by older Workers.
 	State string `json:"state,omitempty"`
 

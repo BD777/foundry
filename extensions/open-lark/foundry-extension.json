@@ -84,6 +84,32 @@
             }
           },
           {
+            "id": "accessClientId",
+            "type": "secret",
+            "required": false,
+            "label": "Cloudflare Access client ID (optional)",
+            "labels": {
+              "zh-CN": "Cloudflare Access 客户端 ID（可选）"
+            },
+            "help": "Only when the deployment sits behind Cloudflare Access: the Client ID of a service token (Zero Trust → Access → Service Auth → Service Tokens) that an Access policy with the Service Auth action allows on `/agent/v1`. Leave empty otherwise.",
+            "helps": {
+              "zh-CN": "仅当部署在 Cloudflare Access 后面时填写：一个服务令牌的 Client ID（Zero Trust → Access → Service Auth → Service Tokens），并且要有一条 Action 为 Service Auth 的 Access 策略在 `/agent/v1` 上允许它。否则留空。"
+            }
+          },
+          {
+            "id": "accessClientSecret",
+            "type": "secret",
+            "required": false,
+            "label": "Cloudflare Access client secret (optional)",
+            "labels": {
+              "zh-CN": "Cloudflare Access 客户端密钥（可选）"
+            },
+            "help": "The Client Secret of the same service token; Cloudflare shows it only once when the token is created.",
+            "helps": {
+              "zh-CN": "同一个服务令牌的 Client Secret；Cloudflare 只在创建令牌时显示一次。"
+            }
+          },
+          {
             "id": "account",
             "type": "select",
             "required": false,
@@ -98,7 +124,10 @@
             "optionsFrom": "probe:accounts"
           }
         ],
-        "steps": [["baseUrl", "readToken"], ["account"]],
+        "steps": [
+          ["baseUrl", "readToken", "accessClientId", "accessClientSecret"],
+          ["account"]
+        ],
         "probe": [
           {
             "id": "capabilities",
@@ -145,7 +174,9 @@
           "pathPrefix": "/agent/v1",
           "headers": {
             "Authorization": "Bearer {secret:readToken}",
-            "X-Open-Lark-Account": "{field:account}"
+            "X-Open-Lark-Account": "{field:account}",
+            "Cf-Access-Client-Id": "{secret:accessClientId}",
+            "Cf-Access-Client-Secret": "{secret:accessClientSecret}"
           },
           "requestBodyLimitBytes": 8388608,
           "responseBodyLimitBytes": 16777216,

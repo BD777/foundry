@@ -25,7 +25,10 @@ import {
   modelAccessHasProblems,
   refreshExtensionModelProviders,
 } from "../dist/connectors/extensions/model-access.js";
-import { connectorModelProviders as extensionModelProviders } from "../dist/harness/connector-model-providers.js";
+import {
+  connectorModelProviders as extensionModelProviders,
+  saveConnectorModelProviders,
+} from "../dist/harness/connector-model-providers.js";
 import {
   addExtension,
   bundledExtensions,
@@ -65,6 +68,24 @@ function extensionSource(change = (manifest) => manifest) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   writeFileSync(manifestPath, JSON.stringify(change(manifest)));
   return dir;
+}
+
+function bundledExtensionSource(id, version) {
+  const dir = mkdtempSync(join(tmpdir(), `fdy-${id}-src-`));
+  cpSync(join(here, "../../../extensions", id), dir, { recursive: true });
+  const manifestPath = join(dir, "foundry-extension.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.version = version;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  return dir;
+}
+
+function removeIfInstalled(id) {
+  try {
+    removeExtension(id);
+  } catch {
+    // Not installed in this test state.
+  }
 }
 
 function serverHeldExtensionSource(change = (manifest) => manifest) {
@@ -918,6 +939,94 @@ test("bundled extensions are advertised, install without git, and migrate from t
   assert.ok(
     bundledExtensions().some((item) => item.manifest.id === "open-lark"),
   );
+});
+
+const limenModelProvider = {
+  id: "limen_default",
+  label: "Limen · default",
+  runtime: "claude",
+  model: "claude-sonnet",
+  models: ["claude-sonnet"],
+  externalConnection: {
+    executable: "limen",
+    args: ["run"],
+    identity: "limen_default",
+  },
+  connector: { kind: "limen", label: "Limen", extensionId: "limen" },
+};
+
+test("a local folder extension is replaced by the bundled newer copy, keeping its data and models", () => {
+  removeIfInstalled("limen");
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.0"), ["aws"]);
+    mkdirSync(extensionDataDir("limen"), { recursive: true });
+    writeFileSync(join(extensionDataDir("limen"), "profile.json"), "profile");
+    saveConnectorModelProviders([limenModelProvider]);
+
+    assert.deepEqual(syncBundledExtensions(["aws"]), ["updated"]);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.1");
+    assert.equal(installed.bundled, true);
+    assert.equal(installed.source, undefined);
+    assert.equal(
+      readFileSync(join(extensionDataDir("limen"), "profile.json"), "utf8"),
+      "profile",
+    );
+    assert.deepEqual(extensionModelProviders(), [limenModelProvider]);
+    const descriptor = extensionConnectorDescriptors().find(
+      (connector) => connector.kind === "limen",
+    );
+    assert.equal(descriptor.extension.bundled, true);
+    assert.equal(descriptor.extension.bundledVersion, undefined);
+  } finally {
+    removeIfInstalled("limen");
+    saveConnectorModelProviders([]);
+  }
+});
+
+test("a newer local folder extension is kept, with the bundled version shown", () => {
+  removeIfInstalled("limen");
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.2"), ["aws"]);
+    assert.deepEqual(syncBundledExtensions(["aws"]), []);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.2");
+    assert.equal(installed.bundled, undefined);
+    assert.equal(installed.source, undefined);
+    const descriptor = extensionConnectorDescriptors().find(
+      (connector) => connector.kind === "limen",
+    );
+    assert.equal(descriptor.extension.version, "0.2.2");
+    assert.equal(descriptor.extension.bundled, undefined);
+    assert.equal(descriptor.extension.bundledVersion, "0.2.1");
+  } finally {
+    removeIfInstalled("limen");
+  }
+});
+
+test("a bundled copy does not take over an extension installed from another git source", () => {
+  removeIfInstalled("limen");
+  const source = {
+    git: "https://example.com/fork/limen.git",
+    path: "extensions/limen",
+  };
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.0"), ["aws"], {
+      source,
+      commit: "c".repeat(40),
+    });
+    assert.deepEqual(syncBundledExtensions(["aws"]), []);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.0");
+    assert.deepEqual(installed.source, source);
+    assert.equal(installed.bundled, undefined);
+    assert.throws(
+      () => installBundledExtension("limen", ["aws"]),
+      (error) => error.code === "id_conflict",
+    );
+  } finally {
+    removeIfInstalled("limen");
+  }
 });
 
 test("git-installed extensions default to automatic updates and can turn them off", () => {

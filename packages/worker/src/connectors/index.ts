@@ -40,6 +40,7 @@ import {
   refreshExtensionModelProviders,
 } from "./extensions/model-access.js";
 import {
+  bundledVersionNewerThanLocal,
   bundledExtensions,
   extensionsRevision,
   installBundledExtension,
@@ -136,8 +137,14 @@ export const deviceHeldConnectors = new DeviceHeldConnectors({
 export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
   const installed = loadedExtensions();
   const installedIDs = new Set(installed.map(({ manifest }) => manifest.id));
-  const fromInstalled = installed.flatMap(({ installed, manifest }) =>
-    manifest.connectors.map((connector) => ({
+  const fromInstalled = installed.flatMap(({ installed, manifest }) => {
+    // A local folder install that stayed in place because it is newer than
+    // this Worker's copy tells the page why it did not switch.
+    const bundledVersion =
+      !installed.bundled && !installed.source
+        ? bundledVersionNewerThanLocal(manifest.id, manifest.version)
+        : undefined;
+    return manifest.connectors.map((connector) => ({
       ...connector,
       extension: {
         id: manifest.id,
@@ -145,6 +152,7 @@ export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
         version: manifest.version,
         state: "installed" as const,
         ...(installed.bundled ? { bundled: true } : {}),
+        ...(bundledVersion ? { bundledVersion } : {}),
         ...(installed.autoUpdate !== undefined
           ? { autoUpdate: installed.autoUpdate }
           : installed.source
@@ -159,8 +167,8 @@ export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
           ? { latestCommit: installed.latestCommit }
           : {}),
       },
-    })),
-  );
+    }));
+  });
   const available = bundledExtensions()
     .filter(({ manifest }) => !installedIDs.has(manifest.id))
     .flatMap(({ manifest }) =>

@@ -4,21 +4,31 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Every extension shipped in extensions/ must pass the same descriptor checks
-// the server applies to a device's report.
-func TestBundledExtensionDescriptorsPassServerChecks(t *testing.T) {
-	paths, err := filepath.Glob("../../../../extensions/*/foundry-extension.json")
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("bundled extension manifests: %v, %v", paths, err)
+// Every extension shipped in extensions/ and every example under
+// extensions/examples/ must pass the same descriptor checks the server applies
+// to a device's report.
+func TestExtensionDescriptorsPassServerChecks(t *testing.T) {
+	bundled, err := filepath.Glob("../../../../extensions/*/foundry-extension.json")
+	if err != nil || len(bundled) == 0 {
+		t.Fatalf("bundled extension manifests: %v, %v", bundled, err)
 	}
+	examples, err := filepath.Glob("../../../../extensions/examples/*/foundry-extension.json")
+	if err != nil || len(examples) < 3 {
+		t.Fatalf("example extension manifests: %v, %v", examples, err)
+	}
+	paths := append(bundled, examples...)
+	sort.Strings(paths)
 	for _, path := range paths {
 		path := path
-		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.ToSlash(path), "../../../../extensions/"), "/foundry-extension.json")
+		t.Run(name, func(t *testing.T) {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

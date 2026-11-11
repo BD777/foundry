@@ -633,6 +633,8 @@ export const externalAccounts: Translation<typeof en> = {
     autoUpdateOn: "仓库有新提交时自动更新。",
     autoUpdateOff: "手动更新；这里会显示仓库的新提交。",
     updatesWithWorker: "随 Worker 更新。",
+    localNewerThanBundled:
+      "本机安装的版本较新，未切换到随 Worker 发布的版本（本机 {{local}}，Worker {{bundled}}）。",
     extensionInstalled: "已在 {{device}} 上安装 {{extension}}。",
     extensionUpdated: "{{device}} 上的 {{extension}} 已更新。",
     extensionUnchanged: "{{device}} 上的 {{extension}} 已是最新。",
