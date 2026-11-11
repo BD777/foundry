@@ -31,13 +31,18 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -147,7 +152,12 @@ type Pipeline struct {
 	// Access resolves workspace bindings and the Personal Agent's connector
 	// opt-out. A pipeline cannot recheck a session without it.
 	Access externalaccounts.ConnectorAccessStore
-	Audit  Sink
+	// Permission is the assistant package resolver. It is required when
+	// Access belongs to a store holding assistants.
+	Permission permission.Store
+	// Confirm creates and consumes confirmation cards for risk writes.
+	Confirm Confirmer
+	Audit   Sink
 	// Levels order the access levels the connector knows, lowest first; a
 	// request needing a level is allowed to a holder of that level or a
 	// higher one. A level's Scopes must be in the account's grant.
@@ -253,6 +263,43 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 	if d == nil {
 		d = p.decide(lease, need)
 	}
+	var permissionAccess permission.Access
+	if d == nil && p.Permission != nil {
+		var err error
+		permissionAccess, err = permission.Resolve(r.Context(), p.Permission, lease.Session)
+		if err != nil {
+			d = &Denial{Reason: ReasonInternal, Err: err}
+		} else if permissionAccess.Applicable {
+			switch permissionAccess.ConnectorLevel(lease.Account.ID) {
+			case store.ConnectorAccessLevelOff:
+				d = &Denial{Reason: ReasonConnectorOff}
+			case store.ConnectorAccessLevelRead:
+				if need.Write {
+					d = &Denial{Reason: ReasonConnectorRead}
+				}
+			}
+		}
+	}
+	if d == nil && need.Risk != "" && permissionAccess.Applicable {
+		if p.Confirm == nil {
+			d = &Denial{Reason: ReasonInternal, Err: errors.New("risk write has no confirmation service")}
+		} else {
+			request, err := p.confirmationRequest(r, lease, need)
+			if err != nil {
+				d = &Denial{Reason: ReasonBadRequest, Message: err.Error()}
+			} else {
+				decision, refusal := p.Confirm.Review(r.Context(), request)
+				if refusal != nil {
+					d = refusal
+				} else if !decision.Approved {
+					d = &Denial{
+						Reason: ReasonNeedsConfirmation, ProposalID: decision.ProposalID,
+						Summary: decision.Summary, ExpiresAt: decision.ExpiresAt,
+					}
+				}
+			}
+		}
+	}
 	if d == nil && p.Unavailable != nil {
 		if err := p.Unavailable(); err != nil {
 			d = &Denial{Reason: ReasonUnavailable, Message: err.Error(), Err: err}
@@ -272,6 +319,31 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 	if x.Outcome == "" {
 		x.Outcome = OutcomeForwarded
 	}
+}
+
+func (p *Pipeline) confirmationRequest(r *http.Request, lease *Lease, need Need) (ConfirmationRequest, error) {
+	body := []byte{}
+	if r.Body != nil && r.Body != http.NoBody {
+		raw, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
+		_ = r.Body.Close()
+		r.Body = io.NopCloser(strings.NewReader(string(raw)))
+		if err != nil {
+			return ConfirmationRequest{}, fmt.Errorf("read the request to confirm it: %w", err)
+		}
+		if len(raw) > 1<<20 {
+			return ConfirmationRequest{}, errors.New("a risk write's body must be at most 1 MiB")
+		}
+		body = raw
+	}
+	sum := sha256.Sum256(body)
+	method, path := strings.ToUpper(r.Method), r.URL.EscapedPath()
+	query := r.URL.RawQuery
+	fingerprint := sha256.Sum256([]byte(lease.Grant.SessionID + "\x00" + lease.Grant.AccountID + "\x00" + method + "\x00" + path + "\x00" + query + "\x00" + hex.EncodeToString(sum[:])))
+	return ConfirmationRequest{
+		Lease: lease, Need: need, Method: method, Path: path, Query: query,
+		BodyDigest: hex.EncodeToString(sum[:]), Fingerprint: hex.EncodeToString(fingerprint[:]),
+		Summary: need.RiskSummary,
+	}, nil
 }
 
 // authenticate is step 1 and 2: the stand-in (or the grant it was already
@@ -434,7 +506,7 @@ func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Le
 	if p.Access == nil {
 		return nil, errors.New("gateway pipeline has no connector access store")
 	}
-	policy, err := externalaccounts.ResolvePolicy(ctx, p.Access, session.WorkspaceID, session.CreatedByUserID)
+	policy, err := externalaccounts.ResolvePolicy(ctx, p.Access, session)
 	if err != nil {
 		return nil, err
 	}

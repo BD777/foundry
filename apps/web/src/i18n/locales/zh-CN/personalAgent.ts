@@ -394,6 +394,7 @@ export const personalAgent: Translation<typeof en> = {
   },
   proposal: {
     kicker: "需要你点头",
+    account: "账号",
     accept: "好的",
     decline: "不用了",
     expires: "{{when}}失效",
@@ -479,6 +480,7 @@ export const personalAgent: Translation<typeof en> = {
         "以下已保存的位置引用属于已移除的电脑，工作和创建项目权限已失效。请明确选择新位置；原文件和历史位置均已保留。",
     },
     title: "助理设置",
+    description: "选择助理怎么和你说话、在哪里做事，以及什么时候先问你。",
     sectionsLabel: "设置分节",
     allSections: "全部设置",
     sections: {
@@ -736,16 +738,22 @@ export const personalAgent: Translation<typeof en> = {
       loading: "正在加载…",
     },
     connectors: {
-      intro: "助理可以使用这些账号。新账号默认开启。",
+      intro:
+        "助理可以使用这些账号。删除、对外发消息、DNS、App Store Connect 变更会先弹确认。",
       serverGroup: "服务器账号",
       unknownComputer: "未知电脑",
       serverDetail: "{{kind}} · {{status}}",
       deviceDetail: "{{kind}} · 位于 {{device}}",
-      switchLabel: "允许助理使用 {{label}}",
+      switchLabel: "{{label}} 的访问级别",
+      levels: {
+        off: "关闭",
+        read: "只读",
+        write: "读写",
+      },
+      deviceReadHint: "设备上的账号目前还拦不住写入，助理仍可能用它做修改。",
       loading: "正在加载连接账号…",
       loadFailed: "未能加载连接账号",
       retry: "重试",
-      saveFailed: "未能更改这个连接账号",
       emptyTitle: "还没有连接账号",
       emptyBody: "先连接一个账号，助理才能使用它。",
       openConnectors: "打开连接账号",
@@ -802,6 +810,7 @@ export const personalAgent: Translation<typeof en> = {
       usageNote: "用量按你的电脑上报的数字累计，没有上报的部分不计入。",
     },
     activity: {
+      title: "它改过什么",
       intro: "最近 90 天里它改过或试图改的所有东西，最新的在前。",
       empty: "还没有。",
       loadFailed: "没能加载动态",

@@ -437,6 +437,9 @@ export function availableDaemonCapabilities(): string[] {
     // versions, check_tool checks one, and run_session's toolPins give each
     // session its own tool folder (docs/skills.md, Bundle 版本).
     "bundle_rollout_v1",
+    // dispatch_retry: a retried Foundry input gets a fresh native execution
+    // identity instead of being suppressed by its earlier completion marker.
+    "dispatch_retry",
   ];
 }
 

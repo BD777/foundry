@@ -59,6 +59,7 @@ const routes = [
   { view: "profiles", providerTab: "endpoints" },
   { view: "profiles", providerTab: "environments" },
   { view: "connectors", connectorTab: "feishu" },
+  { view: "usage" },
   { view: "resources" },
 ];
 
@@ -161,6 +162,12 @@ test("global management routes and error boundaries do not inherit a workspace",
   // parameters, not path segments.
   assert.deepEqual(parseAppRoute("/resources"), { view: "resources" });
   assert.equal(pathForAppRoute({ view: "resources" }), "/resources");
+  assert.deepEqual(parseAppRoute("/usage"), { view: "usage" });
+  assert.equal(pathForAppRoute({ view: "usage" }), "/usage");
+  assert.equal(
+    viewErrorResetKey({ view: "usage", workspaceId: "ws1" }),
+    viewErrorResetKey({ view: "usage", workspaceId: "ws2" }),
+  );
   assert.equal(
     viewErrorResetKey({ view: "resources", workspaceId: "ws1" }),
     viewErrorResetKey({ view: "resources", workspaceId: "ws2" }),

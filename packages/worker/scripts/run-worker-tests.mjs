@@ -503,6 +503,7 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "evidence-integration.test.mjs",
   "evidence-judge-copy.test.mjs",
   "execution-process.test.mjs",
+  "external-connection.test.mjs",
   "issue-environments.test.mjs",
   "issue-execution.test.mjs",
   "issue-preview.test.mjs",
@@ -523,6 +524,7 @@ const MAC_SERVICE_TESTS = new Set([
   "input-maintenance.test.mjs",
   // Runtime read leases also identify their owner with macOS ps.
   "native-inspection.test.mjs",
+  "native-archive.test.mjs",
   "agent-processes.test.mjs",
   "execution-host.test.mjs",
   "watchdog.test.mjs",

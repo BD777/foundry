@@ -31,6 +31,7 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 			checked_at TEXT NOT NULL,
 			expiring_since TEXT NOT NULL DEFAULT '',
 			authorizations TEXT NOT NULL DEFAULT '[]',
+			configuration TEXT NOT NULL DEFAULT '',
 			session_check TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (device_id, kind)
 		)`,
@@ -42,6 +43,19 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 			granted_by TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			PRIMARY KEY (workspace_id, kind, device_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS device_connector_visibility_checks (
+			device_id TEXT NOT NULL,
+			result TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			via TEXT NOT NULL DEFAULT '',
+			repository TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			identity TEXT NOT NULL DEFAULT '',
+			detail TEXT NOT NULL DEFAULT '',
+			requirement TEXT NOT NULL DEFAULT '',
+			checked_at TEXT NOT NULL,
+			PRIMARY KEY (device_id, result, kind, via, repository)
 		)`,
 	}
 	for _, statement := range statements {
@@ -58,6 +72,79 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE device_connector_states ADD COLUMN session_check TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migrate sqlite device connectors: %w", err)
 		}
+	}
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('device_connector_states') WHERE name = 'configuration'`).Scan(&present); err != nil {
+		return fmt.Errorf("migrate sqlite device connectors: %w", err)
+	}
+	if present == 0 {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE device_connector_states ADD COLUMN configuration TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate sqlite device connectors: %w", err)
+		}
+	}
+	return nil
+}
+
+// SaveConnectorVisibilityCheck keeps one device's source-access or
+// requirement result. No credential or raw tool output is stored.
+func (s *Store) SaveConnectorVisibilityCheck(ctx context.Context, check store.ConnectorVisibilityCheck) error {
+	if strings.TrimSpace(check.DeviceID) == "" || strings.TrimSpace(check.Kind) == "" || strings.TrimSpace(check.Status) == "" {
+		return fmt.Errorf("a connector visibility check needs a device, kind and status")
+	}
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO device_connector_visibility_checks
+		(device_id, result, kind, via, repository, status, identity, detail, requirement, checked_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(device_id, result, kind, via, repository) DO UPDATE SET
+			status = excluded.status, identity = excluded.identity, detail = excluded.detail,
+			requirement = excluded.requirement, checked_at = excluded.checked_at`,
+		check.DeviceID, check.Result, check.Kind, check.Via, check.Repository, check.Status,
+		check.Identity, check.Detail, check.Requirement, check.CheckedAt)
+	if err != nil {
+		return fmt.Errorf("save connector visibility check: %w", err)
+	}
+	return nil
+}
+
+// ListConnectorVisibilityChecks lists cached device checks.
+func (s *Store) ListConnectorVisibilityChecks(ctx context.Context, deviceIDs []string) ([]store.ConnectorVisibilityCheck, error) {
+	checks := []store.ConnectorVisibilityCheck{}
+	if len(deviceIDs) == 0 {
+		return checks, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(deviceIDs)), ",")
+	args := make([]any, len(deviceIDs))
+	for i, id := range deviceIDs {
+		args[i] = id
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT device_id, result, kind, via, repository,
+		status, identity, detail, requirement, checked_at
+		FROM device_connector_visibility_checks WHERE device_id IN (`+placeholders+`)
+		ORDER BY device_id, result, kind, via, repository`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list connector visibility checks: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var check store.ConnectorVisibilityCheck
+		if err := rows.Scan(&check.DeviceID, &check.Result, &check.Kind, &check.Via, &check.Repository,
+			&check.Status, &check.Identity, &check.Detail, &check.Requirement, &check.CheckedAt); err != nil {
+			return nil, fmt.Errorf("read connector visibility check: %w", err)
+		}
+		checks = append(checks, check)
+	}
+	return checks, rows.Err()
+}
+
+// DeleteConnectorVisibilityChecks drops cached checks after an install or a
+// connector login change. An empty via clears every cached check on the device.
+func (s *Store) DeleteConnectorVisibilityChecks(ctx context.Context, deviceID, via string) error {
+	query := `DELETE FROM device_connector_visibility_checks WHERE device_id = ?`
+	args := []any{deviceID}
+	if via != "" {
+		query += ` AND via = ?`
+		args = append(args, via)
+	}
+	if _, err := s.conn().ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete connector visibility checks: %w", err)
 	}
 	return nil
 }
@@ -91,13 +178,21 @@ func (s *Store) saveDeviceConnectorState(ctx context.Context, state store.Device
 		}
 		sessionCheck = string(encoded)
 	}
+	configuration := ""
+	if state.Configuration != nil {
+		encoded, err := json.Marshal(state.Configuration)
+		if err != nil {
+			return err
+		}
+		configuration = string(encoded)
+	}
 	if state.CheckedAt == "" {
 		state.CheckedAt = formatTime(time.Now())
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO device_connector_states
 		(device_id, kind, status, status_detail, installed, version, install_source, latest_version,
-		 signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations, session_check)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations, configuration, session_check)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(device_id, kind) DO UPDATE SET
 			status = excluded.status, status_detail = excluded.status_detail,
 			installed = excluded.installed, version = excluded.version,
@@ -105,10 +200,11 @@ func (s *Store) saveDeviceConnectorState(ctx context.Context, state store.Device
 			signed_in = excluded.signed_in, identity = excluded.identity, sites = excluded.sites,
 			expires_at = excluded.expires_at, checked_at = excluded.checked_at,
 			expiring_since = excluded.expiring_since,
-			authorizations = excluded.authorizations, session_check = excluded.session_check`,
+			authorizations = excluded.authorizations, configuration = excluded.configuration,
+			session_check = excluded.session_check`,
 		state.DeviceID, state.Kind, state.Status, state.StatusDetail, state.Installed, state.Version,
 		state.InstallSource, state.LatestVersion, state.SignedIn, state.Identity, string(sites),
-		state.ExpiresAt, state.CheckedAt, state.ExpiringSince, string(authorizations), sessionCheck)
+		state.ExpiresAt, state.CheckedAt, state.ExpiringSince, string(authorizations), configuration, sessionCheck)
 	if err != nil {
 		return fmt.Errorf("save device connector state: %w", err)
 	}
@@ -126,7 +222,7 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 		args = append(args, id)
 	}
 	rows, err := s.reader().QueryContext(ctx, `SELECT device_id, kind, status, status_detail, installed, version,
-		install_source, latest_version, signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations, session_check
+		install_source, latest_version, signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations, configuration, session_check
 		FROM device_connector_states WHERE device_id IN (`+placeholders+`) ORDER BY device_id, kind`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list device connector states: %w", err)
@@ -134,10 +230,10 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 	defer rows.Close()
 	for rows.Next() {
 		var state store.DeviceConnectorState
-		var sites, authorizations, sessionCheck string
+		var sites, authorizations, configuration, sessionCheck string
 		if err := rows.Scan(&state.DeviceID, &state.Kind, &state.Status, &state.StatusDetail, &state.Installed,
 			&state.Version, &state.InstallSource, &state.LatestVersion, &state.SignedIn, &state.Identity, &sites,
-			&state.ExpiresAt, &state.CheckedAt, &state.ExpiringSince, &authorizations, &sessionCheck); err != nil {
+			&state.ExpiresAt, &state.CheckedAt, &state.ExpiringSince, &authorizations, &configuration, &sessionCheck); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(sites), &state.Sites); err != nil {
@@ -145,6 +241,12 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 		}
 		if err := json.Unmarshal([]byte(authorizations), &state.Authorizations); err != nil {
 			state.Authorizations = nil
+		}
+		if configuration != "" {
+			var settings store.ConnectorConfiguration
+			if json.Unmarshal([]byte(configuration), &settings) == nil {
+				state.Configuration = &settings
+			}
 		}
 		if sessionCheck != "" {
 			var check store.DeviceConnectorSessionCheck

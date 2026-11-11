@@ -2,9 +2,9 @@
   "manifestVersion": 1,
   "id": "limen",
   "name": "Limen",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "protocol": 1,
-  "source": {
+  "migrationSource": {
     "git": "https://github.com/BD777/foundry.git",
     "path": "extensions/limen"
   },
@@ -20,6 +20,15 @@
       "tool": {
         "command": "limen",
         "source": "device"
+      },
+      "access": {
+        "via": "github",
+        "repository": "https://github.com/wasd96040501/limen",
+        "hint": "Read the Limen repository with GitHub CLI to make this connector available.",
+        "hints": {
+          "en": "Read the Limen repository with GitHub CLI to make this connector available.",
+          "zh-CN": "需要会用 GitHub CLI 读取 Limen 仓库的权限，此连接器才会显示。"
+        }
       },
       "provides": {
         "modelAccess": {

@@ -7,6 +7,7 @@ import type {
 import { readDaemonConfig } from "../platform/config.js";
 import { deviceCredentialHeader } from "../transport/server-http.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
+import { serverFetch } from "../platform/server-link/server-proxy.js";
 import { startGatewayForwarder } from "./gateway-forwarder.js";
 
 const gatewayPath = "/api/connectors/cloudflare/gateway";
@@ -58,7 +59,7 @@ export async function prepareCloudflareSession(
     else {
       const device = credential();
       if (!device) throw new Error("device not paired");
-      const response = await fetch(
+      const response = await serverFetch(
         `${options.serverURL!.replace(/\/$/, "")}/api/connectors/cloudflare/session-handle`,
         {
           method: "POST",

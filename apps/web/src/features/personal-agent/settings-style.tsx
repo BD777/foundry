@@ -42,7 +42,7 @@ export function StyleSection({
       <SettingsGroup>
         <SettingsField htmlFor="fdy-pa-name" label={t("settings.style.name")}>
           <TextInput
-            className="w-[min(100%,460px)]"
+            className="w-full"
             id="fdy-pa-name"
             maxLength={40}
             onChange={(event) => change({ assistantName: event.target.value })}
@@ -54,7 +54,7 @@ export function StyleSection({
         <SettingsField label={t("settings.style.language")}>
           <SelectMenu
             ariaLabel={t("settings.style.language")}
-            className="max-w-full min-w-55"
+            className="w-full"
             onChange={(language) => change({ language })}
             options={languages}
             value={draft.language}
@@ -66,7 +66,7 @@ export function StyleSection({
           label={t("settings.style.timezone")}
         >
           <TextInput
-            className="w-[min(100%,460px)]"
+            className="w-full"
             id="fdy-pa-timezone"
             onChange={(event) =>
               change({ timezone: event.target.value.trim() })
@@ -107,6 +107,7 @@ export function StyleSection({
       </SettingsGroup>
       <SettingsGroup>
         <SettingsField
+          className="max-w-2xl"
           hint={
             <>
               {t("settings.style.extraHint")}{" "}

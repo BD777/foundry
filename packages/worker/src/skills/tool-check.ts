@@ -185,7 +185,12 @@ export async function checkTool(
   // tool by name runs this version too.
   const path = `${dirname(entry)}:${withManagedTools(process.env.PATH)}`;
   const versionTimeout = options.versionTimeoutMs ?? 5_000;
-  const wanted = version.replace(/^v/, "");
+  // A repository tool's version is the immutable bundle commit. Its CLI
+  // reports a product semver, not that commit, so running the staged entry
+  // successfully is the version proof; the version folder itself is the
+  // commit-addressed artifact.
+  const repository = payload.tool.source === "repository";
+  const wanted = repository ? undefined : version.replace(/^v/, "");
   const printed = await runEntry(
     entry,
     ["--version"],
@@ -197,7 +202,9 @@ export async function checkTool(
     kind: "version" as const,
   };
   if (reported.state === "passed")
-    reported.value = printed.output.match(printedVersion)?.[0] ?? version;
+    reported.value = repository
+      ? version
+      : (printed.output.match(printedVersion)?.[0] ?? version);
   steps.push(reported);
   if (reported.state !== "passed") {
     notRun(0, "not run: an earlier step failed");

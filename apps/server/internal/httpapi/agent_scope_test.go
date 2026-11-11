@@ -101,6 +101,54 @@ func TestAgentReachesItsPersonsWorkspaces(t *testing.T) {
 	}
 }
 
+func TestAssistantPermissionPackageFiltersWorkspaceReach(t *testing.T) {
+	f := newIsolationFixture(t)
+	ctx := context.Background()
+	db := f.server.store
+	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_alice", Label: "Device", Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: "ws_pa", Name: "Assistant", LocalPath: "/tmp/ws_pa"},
+		Agents: []store.AgentProjection{{
+			ID: "agent_pa", WorkspaceID: "ws_pa", DeviceID: "dev_alice", Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkspaceKind(ctx, "ws_pa", store.WorkspaceKindPersonalAgent); err != nil {
+		t.Fatal(err)
+	}
+	agent, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: f.aliceID, WorkspaceID: "ws_pa", HomeDeviceID: "dev_alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := db.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg.Workspaces.Exclude = []string{"ws_alice"}
+	if _, err := db.SavePermissionPackage(ctx, pkg); err != nil {
+		t.Fatal(err)
+	}
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude",
+		Prompt: "assistant conversation", Source: store.SessionSourceChat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := db.MintAgentSessionToken(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_workspaces","arguments":{}}}`
+	raw := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: body,
+		headers: map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}}).Body.String()
+	if strings.Contains(raw, `\"id\": \"ws_alice\"`) || !strings.Contains(raw, `\"id\": \"ws_pa\"`) {
+		t.Fatalf("assistant workspace reach = %s", raw)
+	}
+}
+
 // D1: an agent controls only the sessions its person started (its own
 // agents' included), even where its person is a Member beside others. It
 // still reads everyone's sessions there.

@@ -14,6 +14,7 @@ import {
   getDeviceConnectors,
   installDeviceExtension,
   removeDeviceExtension,
+  setDeviceExtensionAutoUpdate,
   signOutDeviceConnector,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -22,6 +23,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { errorText, relativeWhen } from "./account-format";
 import { useConnectorInstalls } from "./connector-installs";
 import { DeviceConnectorRow } from "./device-connector-row";
+import { DeviceConnectorConfiguration } from "./device-connector-configuration";
 import {
   ExtensionInstallDialog,
   type ExtensionInstallTarget,
@@ -43,7 +45,7 @@ import { DividedList } from "../../components/ui/divided-list";
 import { Identity } from "../../components/ui/identity";
 import { MutedText } from "../../components/ui/text";
 import { ConnectorPermissionsNote } from "./connector-permissions-note";
-import { SectionPanel } from "../../components/ui/section-panel";
+import { SectionHead, SectionPanel } from "../../components/ui/section-panel";
 import { CommandLine } from "../../components/ui/command-line";
 import {
   connectorIntroClass,
@@ -315,6 +317,8 @@ export function DeviceHeldConnector({
   );
   const without = shown.devices.filter((device) => !hasIt(device));
   const name = connectorName(connector);
+  const bundledEmptyInstall =
+    connector.extension?.bundled && offered.length === 0 && without.length > 0;
   const reminders = offered.filter((device) => {
     const status = stateOf(device, kind)?.status;
     return status === "expiring" || status === "expired";
@@ -333,6 +337,35 @@ export function DeviceHeldConnector({
       label: name,
       connector,
     });
+  const installBlocked = (
+    device: DeviceConnectorDevice,
+  ): string | undefined => {
+    if (!device.online) return t("deviceHeld.offlineInstall");
+    const state = stateOf(device, kind);
+    if (state?.status === "unavailable")
+      return (
+        state.statusDetail ?? requirement ?? t("deviceHeld.unavailableInstall")
+      );
+    return undefined;
+  };
+  const installLabel = () =>
+    connector.extension?.bundled
+      ? t("deviceHeld.installBundled")
+      : t("deviceHeld.installExtension", {
+          extension: connector.extension?.name ?? name,
+        });
+  const install = (device: DeviceConnectorDevice) =>
+    connector.extension?.source
+      ? setInstalling({
+          name: connector.extension.name,
+          source: connector.extension.source,
+          deviceId: device.deviceId,
+        })
+      : void changeExtension(device, () =>
+          installDeviceExtension(device.deviceId, {
+            bundledExtensionId: connector.extension!.id,
+          }),
+        );
 
   return (
     <div className={connectorTabClass}>
@@ -344,15 +377,20 @@ export function DeviceHeldConnector({
           </MutedText>
           {connector.extension ? (
             <MutedText as="small">
-              {t("deviceHeld.fromExtension", {
-                extension: connector.extension.name,
-                version: connector.extension.version,
-              })}
-              {connector.extension.source
-                ? ` ${t("deviceHeld.publishedIn", {
-                    repository: repositoryLabel(connector.extension.source),
-                  })}`
-                : null}
+              {t(
+                connector.extension.source
+                  ? "deviceHeld.extensionSourceGit"
+                  : connector.extension.bundled
+                    ? "deviceHeld.extensionSourceBundled"
+                    : "deviceHeld.extensionSourceLocal",
+                {
+                  extension: connector.extension.name,
+                  version: connector.extension.version,
+                  repository: connector.extension.source
+                    ? repositoryLabel(connector.extension.source)
+                    : "",
+                },
+              )}
             </MutedText>
           ) : null}
           <ConnectorPermissionsNote connector={connector} />
@@ -398,17 +436,52 @@ export function DeviceHeldConnector({
         );
       })}
       {offered.length === 0 ? (
-        <SectionPanel>
-          <EmptyState
-            body={t(
-              connector.extension
-                ? "deviceHeld.emptyExtensionBody"
-                : "deviceHeld.emptyBody",
-              { name },
-            )}
-            title={t("deviceHeld.emptyTitle", { name })}
-          />
-        </SectionPanel>
+        bundledEmptyInstall ? (
+          <SectionPanel>
+            <SectionHead
+              title={t("deviceHeld.installBundledTitle", {
+                extension: connector.extension!.name,
+              })}
+            />
+            <DividedList density="cozy">
+              {without.map((device) => {
+                const blocked = installBlocked(device);
+                return (
+                  <li
+                    className="fdy-xacc-binding-row flex min-w-0 items-center justify-between gap-3 max-[520px]:flex-wrap max-[520px]:items-start"
+                    key={device.deviceId}
+                  >
+                    <Identity as="span">
+                      <strong>{device.name}</strong>
+                      {blocked ? <small>{blocked}</small> : null}
+                    </Identity>
+                    <Button
+                      disabled={Boolean(blocked) || Boolean(busy)}
+                      onClick={() => install(device)}
+                      size="sm"
+                    >
+                      {installLabel()}
+                    </Button>
+                  </li>
+                );
+              })}
+            </DividedList>
+          </SectionPanel>
+        ) : (
+          <SectionPanel>
+            <EmptyState
+              body={t(
+                connector.extension
+                  ? connector.extension.source
+                    ? "deviceHeld.emptyExtensionBody"
+                    : "deviceHeld.emptyExtensionAddBody"
+                  : "deviceHeld.emptyBody",
+                { name },
+              )}
+              title={t("deviceHeld.emptyTitle", { name })}
+            />
+          </SectionPanel>
+        )
       ) : (
         <SectionPanel aria-busy={refreshing || undefined}>
           <DividedList density="cozy">
@@ -435,12 +508,21 @@ export function DeviceHeldConnector({
                 onSignIn={() => signIn(device)}
                 onUpdateExtension={(source) =>
                   void changeExtension(device, () =>
-                    installDeviceExtension(device.deviceId, source),
+                    installDeviceExtension(device.deviceId, { source }),
                   )
                 }
                 onRemoveExtension={(extensionId) =>
                   void changeExtension(device, () =>
                     removeDeviceExtension(device.deviceId, extensionId),
+                  )
+                }
+                onAutoUpdateExtension={(enabled) =>
+                  void changeExtension(device, () =>
+                    setDeviceExtensionAutoUpdate(
+                      device.deviceId,
+                      connector.extension!.id,
+                      enabled,
+                    ),
                   )
                 }
                 onSignOut={() =>
@@ -454,7 +536,24 @@ export function DeviceHeldConnector({
                   )
                 }
                 state={stateOf(device, kind)}
-              />
+              >
+                {kind === "aws" && stateOf(device, kind)?.installed ? (
+                  <DeviceConnectorConfiguration
+                    deviceId={device.deviceId}
+                    disabled={busy === device.deviceId}
+                    kind={kind}
+                    onSaved={() =>
+                      onNotice(
+                        t("deviceHeld.configuration.regionSaved", {
+                          device: device.name,
+                        }),
+                      )
+                    }
+                    onState={(next) => showState(device.deviceId, next)}
+                    state={stateOf(device, kind)!}
+                  />
+                ) : null}
+              </DeviceConnectorRow>
             ))}
           </DividedList>
         </SectionPanel>
@@ -468,7 +567,7 @@ export function DeviceHeldConnector({
           })}
         </MutedText>
       ) : null}
-      {without.length > 0 ? (
+      {without.length > 0 && !bundledEmptyInstall ? (
         <section
           aria-label={t("deviceHeld.notInstalledTitle", {
             extension: connector.extension?.name ?? name,
@@ -479,43 +578,38 @@ export function DeviceHeldConnector({
             {t(
               connector.extension?.source
                 ? "deviceHeld.notInstalledInstall"
-                : "deviceHeld.notInstalledOn",
+                : connector.extension?.bundled
+                  ? "deviceHeld.bundledNotInstalled"
+                  : "deviceHeld.notInstalledOn",
               {
                 devices: without.map((device) => device.name).join(", "),
                 extension: connector.extension?.name ?? name,
               },
             )}
           </MutedText>
-          {connector.extension?.source ? (
+          {connector.extension?.source || connector.extension?.bundled ? (
             <DividedList>
-              {without.map((device) => (
-                <li
-                  className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
-                  key={device.deviceId}
-                >
-                  <Identity as="span">
-                    <strong>{device.name}</strong>
-                    {!device.online ? (
-                      <small>{t("deviceHeld.offlineInstall")}</small>
-                    ) : null}
-                  </Identity>
-                  <Button
-                    disabled={!device.online || Boolean(busy)}
-                    onClick={() =>
-                      setInstalling({
-                        name: connector.extension!.name,
-                        source: connector.extension!.source,
-                        deviceId: device.deviceId,
-                      })
-                    }
-                    size="sm"
+              {without.map((device) => {
+                const blocked = installBlocked(device);
+                return (
+                  <li
+                    className="fdy-xacc-binding-row flex min-w-0 items-center justify-between gap-3 max-[520px]:flex-wrap max-[520px]:items-start"
+                    key={device.deviceId}
                   >
-                    {t("deviceHeld.installExtension", {
-                      extension: connector.extension!.name,
-                    })}
-                  </Button>
-                </li>
-              ))}
+                    <Identity as="span">
+                      <strong>{device.name}</strong>
+                      {blocked ? <small>{blocked}</small> : null}
+                    </Identity>
+                    <Button
+                      disabled={Boolean(blocked) || Boolean(busy)}
+                      onClick={() => install(device)}
+                      size="sm"
+                    >
+                      {installLabel()}
+                    </Button>
+                  </li>
+                );
+              })}
             </DividedList>
           ) : connector.setup?.command ? (
             <CommandLine>

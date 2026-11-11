@@ -32,6 +32,7 @@ export function viewErrorResetKey({
     view === "devices" ||
     view === "profiles" ||
     view === "connectors" ||
+    view === "usage" ||
     view === "resources" ||
     view === "library" ||
     view === "locations"

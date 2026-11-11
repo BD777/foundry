@@ -16,6 +16,7 @@ export const shell: Translation<typeof en> = {
     resources: "资源",
     profiles: "模型服务",
     connectors: "连接器",
+    usage: "统计",
     library: "Skill 库",
     members: "成员",
     account: "账户",
@@ -34,6 +35,7 @@ export const shell: Translation<typeof en> = {
     issues: "Issues",
     profiles: "模型服务",
     connectors: "连接器",
+    usage: "统计",
     resources: "资源",
     workspaceConnectors: "工作区连接器",
     library: "Skill 库",
@@ -101,5 +103,11 @@ export const shell: Translation<typeof en> = {
       "{{device}} 上的 Agent 和执行由配对它的账户管理。这个工作区是共享给你的。",
     manageAgents: "管理 {{device}} 上的 Agent 和执行 →",
     thisDevice: "这台设备",
+    concurrencyLimit: "这台设备当前并发上限为 {{limit}}（{{mode}}）。",
+    concurrencyMode: {
+      adaptive: "自适应",
+      forced: "强制",
+    },
+    openDeviceConcurrency: "打开 {{device}} 的执行设置 →",
   },
 };

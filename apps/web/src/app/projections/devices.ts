@@ -70,6 +70,7 @@ export function deviceEventNeedsRefresh(
 const viewerOwnDeviceFields = [
   "owned",
   "runtimeSettings",
+  "runtimeState",
   "sharesSystemAccountWith",
   "outsideFilesOff",
 ] as const satisfies readonly (keyof DeviceProjection)[];

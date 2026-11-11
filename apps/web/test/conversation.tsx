@@ -90,6 +90,31 @@ function Fixture() {
         </Button>
         <Button
           onClick={() => {
+            setActive(false);
+            setMessages((items) => [
+              ...items,
+              ...projectTranscript([
+                {
+                  id: "quota-tool",
+                  kind: "tool",
+                  status: "completed",
+                  text: 'Bash\n\n```json\n{"command":"inspect worker"}\n```',
+                  title: "Used tool",
+                },
+                {
+                  id: "quota-failure",
+                  kind: "status",
+                  title: "Session failed",
+                  text: "API Error: Request rejected (429) · upstream account quota usage limit has been reached; an account becomes available again at 07:42 UTC (in 1h27m)",
+                },
+              ]).map((message) => ({ ...message, id: message.id! })),
+            ]);
+          }}
+        >
+          Quota failure
+        </Button>
+        <Button
+          onClick={() => {
             setActive(true);
             setMessages(
               projectTranscript([

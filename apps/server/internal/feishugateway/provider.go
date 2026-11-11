@@ -78,7 +78,22 @@ func (g *Gateway) Classify(r *http.Request, _ *gateway.Lease) (gateway.Need, *ga
 	if reason := blocked(r.Method, pathOf(r)); reason != "" {
 		return gateway.Need{}, &gateway.Denial{Reason: gateway.ReasonBlocked, Message: reason}
 	}
-	return gateway.Need{Level: levelFull}, nil
+	need := gateway.Need{Level: levelFull}
+	path := pathOf(r)
+	switch {
+	case r.Method == http.MethodGet || r.Method == http.MethodHead:
+	case r.Method == http.MethodDelete:
+		need.Write = true
+		need.Risk = "delete"
+		need.RiskSummary = "The assistant wants to delete data in Feishu (" + pathTemplate(path) + ")."
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/open-apis/im/v1/messages"):
+		need.Write = true
+		need.Risk = "external_message"
+		need.RiskSummary = "The assistant wants to send a Feishu message outside Foundry."
+	default:
+		need.Write = true
+	}
+	return need, nil
 }
 
 // Refuse (gateway.Provider) answers a denied call the way Feishu answers a
@@ -126,6 +141,12 @@ func (g *Gateway) Refuse(w http.ResponseWriter, r *http.Request, denial *gateway
 		return answer(http.StatusBadRequest, 1, message)
 	case gateway.ReasonBlocked:
 		return answer(http.StatusForbidden, 99991672, "Foundry gateway: "+r.Method+" "+pathTemplate(pathOf(r))+" is not available to sessions ("+denial.Message+")")
+	case gateway.ReasonConnectorOff:
+		return answer(http.StatusForbidden, 99991672, "Foundry gateway: the person did not give the assistant access to this Feishu account")
+	case gateway.ReasonConnectorRead:
+		return answer(http.StatusForbidden, 99991672, "Foundry gateway: the assistant has read-only access to this Feishu account; the person changes that in Assistant settings → Connectors")
+	case gateway.ReasonNeedsConfirmation:
+		return answer(http.StatusForbidden, 99991672, "Foundry gateway: this change needs the person's confirmation first ("+denial.Summary+"; proposal "+denial.ProposalID+")")
 	case gateway.ReasonUnavailable:
 		return answer(http.StatusServiceUnavailable, 1, "Foundry gateway: "+denial.Message)
 	case gateway.ReasonRateLimited:

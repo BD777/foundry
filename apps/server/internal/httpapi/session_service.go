@@ -73,6 +73,9 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 		if runLikeParent && input.ProfileID == "" && input.Provider == "" {
 			if parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID); err == nil && input.WorkspaceID == parent.WorkspaceID {
 				input.Provider, input.ProfileID = parent.Provider, parent.ProfileID
+				if input.Model == "" && input.ModelPoolID == "" {
+					input.ModelPoolID = parent.ModelPoolID
+				}
 			}
 		}
 	}
@@ -91,6 +94,20 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 	}
 	if err := workspaceRefusal(scope, input.WorkspaceID, store.WorkspaceRoleMember); err != nil {
 		return err
+	}
+	if input.ModelPoolID != "" {
+		if input.Model != "" {
+			return invalid("modelPoolId cannot be combined with model")
+		}
+		pool, model, err := s.selectModelPool(ctx, actor, input.ModelPoolID, "")
+		if err != nil {
+			return err
+		}
+		if input.Provider != "" && input.Provider != pool.Runtime ||
+			input.ProfileID != "" && input.ProfileID != pool.ProviderID {
+			return invalid("modelPoolId cannot be combined with a different provider or profile")
+		}
+		input.ModelPoolID, input.Provider, input.ProfileID, input.Model = pool.ID, pool.Runtime, pool.ProviderID, model
 	}
 	// A session adopts a native chat only from the workspace it starts in,
 	// which it reaches as Member; an unassigned chat is in no workspace a

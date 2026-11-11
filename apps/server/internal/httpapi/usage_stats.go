@@ -12,6 +12,8 @@ type usageRecorder interface {
 	Record(context.Context, store.AgentSession, store.AgentSessionEvent) error
 	DeleteExpiredRequests(context.Context) (int64, error)
 	Backfill(context.Context, usagestats.BackfillOptions) error
+	RefreshPrices(context.Context, string) error
+	Reprice(context.Context, usagestats.RepriceOptions) error
 	Query(context.Context, usagestats.QueryOptions) (store.UsageStatsResult, error)
 }
 
@@ -47,4 +49,21 @@ func (h *DaemonHub) recordUsage(ctx context.Context, session store.AgentSession,
 	if err := h.usageStats.Record(ctx, session, event); err != nil {
 		log.Printf("usage stats session=%s input=%s record: %v", session.ID, session.Input.ID, err)
 	}
+}
+
+// startUsagePriceRefresh refreshes LiteLLM at start and daily, then reprices
+// historical non-reported turns with whichever snapshot is active. The
+// embedded snapshot remains authoritative when a fetch fails.
+func (s *Server) startUsagePriceRefresh(ctx context.Context) {
+	if !s.options.Integrations.On() || s.hub == nil || s.hub.usageStats == nil {
+		return
+	}
+	everyFromNow(ctx, usagestats.PriceRefreshInterval, nil, func(ctx context.Context) {
+		if err := s.hub.usageStats.RefreshPrices(ctx, s.usagePriceSource); err != nil && ctx.Err() == nil {
+			log.Printf("usage price refresh: %v (using the current snapshot)", err)
+		}
+		if err := s.hub.usageStats.Reprice(ctx, usagestats.RepriceOptions{}); err != nil && ctx.Err() == nil {
+			log.Printf("usage price reprice: %v", err)
+		}
+	})
 }

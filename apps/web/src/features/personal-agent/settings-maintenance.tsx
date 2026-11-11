@@ -143,7 +143,7 @@ export function MaintenanceSection({
       {!jobs.length ? <FieldHint>{t("maintenance.empty")}</FieldHint> : null}
       <DividedList density="cozy">
         {jobs.map((job) => (
-          <li key={job.id} className="grid gap-1.5">
+          <li key={job.id} className="grid min-w-0 gap-1.5 wrap-anywhere">
             <p>
               {workspaces.find((w) => w.id === job.workspaceId)?.name ??
                 job.workspaceId}{" "}
@@ -159,7 +159,7 @@ export function MaintenanceSection({
             {job.result ? (
               <>
                 <p>{job.result.summary}</p>
-                <ul>
+                <ul className="min-w-0 wrap-anywhere">
                   {job.result.findings.map((f, i) => (
                     <li key={i}>
                       <p>{f.summary}</p>

@@ -32,8 +32,10 @@ import type {
   ReadRepositoryRefsPayload,
 } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "../platform/state-root.js";
+import { workerProxyEnvironment } from "../platform/server-link/server-proxy.js";
 import {
   findCommand,
+  managedToolsBin,
   npmRegistryArgs,
   toolEnvironment,
 } from "./managed-tools.js";
@@ -167,12 +169,50 @@ function git(
   args: string[],
   cwd?: string,
   config: string[] = [],
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   return runCommand(
     "git",
     [...config.flatMap((entry) => ["-c", entry]), ...args],
-    { cwd },
+    { cwd, env },
   );
+}
+
+function remoteEnvironment(remote: string): NodeJS.ProcessEnv {
+  return remote.startsWith("https://")
+    ? workerProxyEnvironment(remote)
+    : process.env;
+}
+
+/**
+ * Per-command git config for a GitHub HTTPS repository: use the gh that the
+ * GitHub CLI connector installed in Foundry, with its Foundry-managed login,
+ * as the credential helper. Nothing global is changed.
+ */
+export function githubCredentialConfig(remote: string): string[] {
+  if (!/^https:\/\/github\.com\//.test(remote)) return [];
+  const managed = join(managedToolsBin(), "gh");
+  const gh = existsSync(managed) ? managed : findCommand("gh");
+  if (!gh) return [];
+  return [
+    `credential.https://github.com.helper=!${JSON.stringify(gh)} auth git-credential`,
+  ];
+}
+
+function repositoryReadError(remote: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/^https:\/\/github\.com\//.test(remote)) return new Error(message);
+  const text = message.toLowerCase();
+  const repository = remote.replace(/^https:\/\/github\.com\//, "");
+  if (
+    /authentication failed|could not read username|terminal prompts disabled|permission denied|repository not found|403|404/.test(
+      text,
+    )
+  )
+    return new Error(
+      `GitHub CLI connector must be able to read ${repository}. Sign in to the GitHub CLI connector and give it access to this repository.`,
+    );
+  return new Error(message);
 }
 
 function npmCommand(): string {
@@ -208,7 +248,7 @@ export async function readRepositoryRefs(
           "--json",
           ...registryArgs(pkg, request.registry),
         ],
-        { cwd: work, env: toolEnvironment() },
+        { cwd: work, env: toolEnvironment(request.registry) },
       );
       const parsed = JSON.parse(out) as {
         "dist-tags"?: Record<string, string>;
@@ -231,15 +271,24 @@ export async function readRepositoryRefs(
   for (const pattern of patterns)
     if (!refPattern.test(pattern) || pattern.includes(".."))
       throw new Error(`invalid ref ${pattern}`);
-  return {
-    refs: await git([
-      "ls-remote",
-      ...(request.tags ? ["--tags"] : []),
-      "--",
-      request.remote,
-      ...patterns,
-    ]),
-  };
+  try {
+    return {
+      refs: await git(
+        [
+          "ls-remote",
+          ...(request.tags ? ["--tags"] : []),
+          "--",
+          request.remote,
+          ...patterns,
+        ],
+        undefined,
+        githubCredentialConfig(request.remote),
+        remoteEnvironment(request.remote),
+      ),
+    };
+  } catch (error) {
+    throw repositoryReadError(request.remote, error);
+  }
 }
 
 /** The cache folder of one remote, and a queue so one fetch uses it at a time. */
@@ -288,6 +337,7 @@ async function checkoutRef(
       ],
       dir,
       config,
+      remoteEnvironment(remote),
     );
   if (!ref) await fetch("HEAD");
   else {
@@ -414,7 +464,7 @@ export async function fetchSkillRepository(
           work,
           ...registryArgs(pkg, request.registry),
         ],
-        { cwd: work, env: toolEnvironment() },
+        { cwd: work, env: toolEnvironment(request.registry) },
       );
       const packed = (JSON.parse(out) as { version?: string }[])[0];
       const file = readdirSync(work).find((name) => name.endsWith(".tgz"));
@@ -428,11 +478,20 @@ export async function fetchSkillRepository(
   }
   const ref = checkRef(request.ref);
   const subpath = checkSubpath(request.subpath);
-  return inCache(request.remote, async (dir) => {
-    const commit = await checkoutRef(dir, request.remote, ref);
-    await upload(packZip(collectSkillTree(dir, subpath)), "application/zip");
-    return { commit };
-  });
+  try {
+    return await inCache(request.remote, async (dir) => {
+      const commit = await checkoutRef(
+        dir,
+        request.remote,
+        ref,
+        githubCredentialConfig(request.remote),
+      );
+      await upload(packZip(collectSkillTree(dir, subpath)), "application/zip");
+      return { commit };
+    });
+  } catch (error) {
+    throw repositoryReadError(request.remote, error);
+  }
 }
 
 /**
@@ -480,6 +539,7 @@ export async function remoteCommit(
     ["ls-remote", "--", remote, ...patterns],
     undefined,
     config,
+    remoteEnvironment(remote),
   );
   const lines = out
     .split("\n")

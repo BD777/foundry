@@ -21,6 +21,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -114,6 +115,13 @@ func (g *CloudflareGateway) UseNativeWork(work gateway.NativeWork) {
 	g.pipeline.Work = work
 }
 
+// UsePermission makes every gateway call re-read the assistant package and
+// route risk writes through confirmation.
+func (g *CloudflareGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
+	g.pipeline.Permission = st
+	g.pipeline.Confirm = confirm
+}
+
 // sessionBinding is the first step of every handle issue and renewal: the
 // session must be its owner's, live (gateway.SessionLive), on the owner's
 // available device, and its workspace must bind a Cloudflare identity that
@@ -150,7 +158,7 @@ func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentS
 	if err != nil || deviceOwner != owner {
 		return none, ErrCloudflareAccess
 	}
-	policy, err := externalaccounts.ResolvePolicy(ctx, g.store, session.WorkspaceID, owner)
+	policy, err := externalaccounts.ResolvePolicy(ctx, g.store, session)
 	if err != nil {
 		return none, err
 	}
@@ -159,7 +167,7 @@ func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentS
 		if err != nil {
 			return none, err
 		}
-		binding, err := g.assistantCloudflareBinding(ctx, account, owner)
+		binding, err := g.assistantCloudflareBinding(ctx, account, owner, policy)
 		if err != nil {
 			return none, err
 		}
@@ -203,7 +211,7 @@ func (g *CloudflareGateway) assistantCloudflareAccount(ctx context.Context, owne
 	return store.ExternalAccount{}, &CloudflareRefusal{Message: "this person has no Cloudflare account the assistant may use", Reason: RefusalNoGrant}
 }
 
-func (g *CloudflareGateway) assistantCloudflareBinding(ctx context.Context, account store.ExternalAccount, owner string) (store.ExternalAccountBinding, error) {
+func (g *CloudflareGateway) assistantCloudflareBinding(ctx context.Context, account store.ExternalAccount, owner string, policy externalaccounts.Policy) (store.ExternalAccountBinding, error) {
 	binding := store.ExternalAccountBinding{
 		AccountID: account.ID, GrantedBy: owner, Access: externalaccounts.CloudflareAccessRead,
 	}
@@ -224,6 +232,9 @@ func (g *CloudflareGateway) assistantCloudflareBinding(ctx context.Context, acco
 				}
 			}
 		}
+	}
+	if !policy.Write(account.ID) {
+		binding.Access = externalaccounts.CloudflareAccessRead
 	}
 	return binding, nil
 }
@@ -407,6 +418,7 @@ func cloudflareAuditPath(path string) string {
 type connectorHandleIssuer struct {
 	cloudflare      *CloudflareGateway
 	appStoreConnect *AppStoreConnectGateway
+	extensions      *ExtensionGateway
 	other           externalaccounts.HandleIssuer
 }
 
@@ -423,10 +435,16 @@ func (i connectorHandleIssuer) IssueHandles(ctx context.Context, r externalaccou
 		}
 		return i.appStoreConnect.IssueHandles(ctx, r)
 	}
+	if r.App.CreatedVia == "extension" {
+		if i.extensions == nil {
+			return store.ExternalAccountGateway{}, ErrExtensionAccess
+		}
+		return i.extensions.IssueHandles(ctx, r)
+	}
 	return i.other.IssueHandles(ctx, r)
 }
 func (m *Module) SetGatewayIssuer(fallback externalaccounts.HandleIssuer) {
-	m.ServerHeld.Handles = connectorHandleIssuer{cloudflare: m.Cloudflare, appStoreConnect: m.AppStoreConnect, other: fallback}
+	m.ServerHeld.Handles = connectorHandleIssuer{cloudflare: m.Cloudflare, appStoreConnect: m.AppStoreConnect, extensions: m.Extensions, other: fallback}
 }
 
 func cloudflareZonePage(query url.Values) (page, perPage int) {

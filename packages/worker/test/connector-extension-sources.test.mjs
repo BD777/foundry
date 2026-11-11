@@ -30,6 +30,7 @@ import {
   extensionDir,
   listExtensions,
   removeExtension,
+  setExtensionAutoUpdate,
 } from "../dist/connectors/extensions/registry.js";
 import { parseExtensionManifest } from "../dist/connectors/extensions/manifest.js";
 
@@ -82,6 +83,7 @@ test("an extension installs from its git folder, sees a newer commit and updates
   });
   const first = await installExtensionFromRepository(source);
   assert.equal(first.action, "created");
+  setExtensionAutoUpdate("corp", false);
   const commit = git(repo, "rev-parse", "HEAD");
   assert.deepEqual(first.extension.source, source);
   assert.equal(first.extension.commit, commit);

@@ -26,12 +26,12 @@ func TestSessionsGetTheirAgentsBuiltinSkills(t *testing.T) {
 	if names["skill-creator"] != "builtin-claude-skill-creator" || names["qa"] != "skill-qa" {
 		t.Fatalf("claude refs = %+v", claude)
 	}
-	if _, ok := names["Skill-Creator"]; ok || len(claude) != 3 || names["foundry"] != "builtin-claude-foundry" {
+	if _, ok := names["Skill-Creator"]; ok || len(claude) != 4 || names["foundry"] != "builtin-claude-foundry" || names["foundry-orchestration"] != "builtin-claude-foundry-orchestration" {
 		t.Fatalf("the same-named workspace skill must give way: %+v", claude)
 	}
 	// Codex keeps its own skill-creator and gets Foundry's foundry skill.
 	codex := withBuiltinSkills(workspace, "codex")
-	if len(codex) != 3 || codex[0].SkillID != "builtin-codex-foundry" || codex[2].SkillID != "skill-own-creator" {
+	if len(codex) != 4 || codex[0].SkillID != "builtin-codex-foundry" || codex[1].SkillID != "builtin-codex-foundry-orchestration" || codex[3].SkillID != "skill-own-creator" {
 		t.Fatalf("codex refs = %+v", codex)
 	}
 }

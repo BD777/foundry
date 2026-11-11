@@ -1,10 +1,15 @@
+import type { ConnectorConfiguration } from "@bd777/foundry-protocol";
 import type {
   DeviceHeldAdapter,
   LoginReading,
   ToolResult,
 } from "./device-held.js";
 import { installAwsCli } from "./aws-install.js";
-import { AwsSignIn, parseAwsSignInOptions } from "./aws-sign-in.js";
+import {
+  AwsSignIn,
+  parseAwsSignInOptions,
+  resolveAwsRegion,
+} from "./aws-sign-in.js";
 
 // Only STS identity metadata crosses the device boundary. Never return native
 // stderr: credential_process and endpoint errors can contain secrets.
@@ -85,6 +90,24 @@ export const awsAdapter: DeviceHeldAdapter = {
         { timeoutMs: 20_000 },
       ),
     );
+  },
+  async readConfiguration(run): Promise<ConnectorConfiguration> {
+    return { region: (await resolveAwsRegion(run)).region };
+  },
+  async writeConfiguration(run, configuration) {
+    const region = configuration.region?.trim() ?? "";
+    if (!/^[a-z]{2}(-[a-z]+)+-\d{1,2}$/.test(region))
+      throw new Error("Enter an AWS Region such as us-east-1.");
+    const set = await run([
+      "configure",
+      "set",
+      "region",
+      region,
+      "--profile",
+      "default",
+    ]);
+    if (set.code !== 0)
+      throw new Error("Could not save the default Region in the AWS profile.");
   },
   async install(managedBin, progress) {
     await installAwsCli({ managedBin, progress });

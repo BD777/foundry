@@ -73,26 +73,10 @@ func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, `step must be "install" or "setup"`)
 		return
 	}
-	connection := s.hub.connectionFor(deviceID)
-	if connection == nil {
+	value, err := s.installBundleToolOnDevice(r.Context(), deviceID, *tool, step)
+	if errors.Is(err, errDeviceToolOffline) {
 		writeError(w, http.StatusConflict, "The device is offline; install the tool once it reconnects.")
 		return
-	}
-	request, err := json.Marshal(wsInstallTool{Tool: *tool, Step: step})
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	// A setup step downloads a browser (hundreds of MB); allow it longer.
-	timeout := 10 * time.Minute
-	if step == "setup" {
-		timeout = 20 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
-	defer cancel()
-	value, err := daemonRequest[wsToolInstalled](ctx, connection, wsInstallToolType, request)
-	if err == nil && value.Error != "" {
-		err = errors.New(value.Error)
 	}
 	if err != nil {
 		action := "Installing"
@@ -113,4 +97,31 @@ func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request)
 	s.syncConnectorToolVersions(r.Context())
 	s.projectionsChanged("", fieldDeviceTools)
 	writeResult(w, value, nil)
+}
+
+// errDeviceToolOffline: the device has no daemon connection to install on.
+var errDeviceToolOffline = errors.New("the device is offline")
+
+func (s *Server) installBundleToolOnDevice(ctx context.Context, deviceID string, tool store.SkillBundleTool, step string) (wsToolInstalled, error) {
+	connection := s.hub.connectionFor(deviceID)
+	if connection == nil {
+		return wsToolInstalled{}, errDeviceToolOffline
+	}
+	request, err := json.Marshal(wsInstallTool{Tool: tool, Step: step})
+	if err != nil {
+		return wsToolInstalled{}, err
+	}
+	timeout := 10 * time.Minute
+	if step == "setup" {
+		timeout = 20 * time.Minute
+	} else if step == "uninstall" || step == "remove" || step == "activate" {
+		timeout = time.Minute
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	value, err := daemonRequest[wsToolInstalled](callCtx, connection, wsInstallToolType, request)
+	if err == nil && value.Error != "" {
+		err = errors.New(value.Error)
+	}
+	return value, err
 }

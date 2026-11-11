@@ -4,6 +4,10 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-11 连接器：[DEV-175 官方扩展随 Worker 发布并按来源权限可见（E1）](DEV-175-bundled-connector-access.md)。官方扩展改为 Worker 包内安装与随包更新，git 扩展默认每 6 小时自动更新且可关闭；网络可达和 Foundry 连接器仓库读取共同决定可见性，不可见项进入默认收起的分组。Server 保留被拒描述符原因，Worker 本地执行对齐的 `serverHeld` 校验。已完成定向测试和真实 Chromium 九张截图；等待与 E2 合并、统一部署和人工验收。
+
+2026-11-11 连接器：[DEV-174 连接器扩展支持服务器保管（OpenLark 改为私有扩展）](DEV-174-connector-extension-server-held.md)。私有服务不再内置：扩展描述符新增纯数据的 `serverHeld`（表单与逐项指引、探测、上游头模板、按路由目录判定读写、会话环境模板），Server/Worker 通用实现；OpenLark 改为私有连接器仓库里的扩展，删除内置实现。
+
 2026-11-11 开发工具：[DEV-173 开发工具与测试稳定性](DEV-173-dev-tooling-stability.md)。`check-changed.sh` 兼容 macOS Bash 3.2，远程检查支持 `REMOTE_CHECK_TIMEOUT`；Radix cleanup 与 usage 历史保留已分别随阻塞 PR #249、#252 提前合入。已部署 dev，等待提交窗口逐步合入。
 
 2026-11-10 连接器：[DEV-172 App Store Connect 会话侧与连接器页（ASC-2）](DEV-172-appstoreconnect-client.md)。Connectors 页面支持 App Store Connect key 绑定、替换、撤销和状态展示；Worker 会话经 Foundry 网关调用并同步 Skill。已部署 dev，等待提交窗口逐步合入。

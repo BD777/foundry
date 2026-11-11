@@ -31,7 +31,7 @@ export const ui: Translation<typeof en> = {
     reason: {
       offline: "设备已离线。请先重新连接，再重试。",
       slow: "设备发送图片超时，请重试。",
-      missing: "设备上找不到这张图片。",
+      missing: "原始图片已删除。",
       removed: "这张画面已被清理：每个聊天只保留最新的 200 张画面（50 MB）。",
       unavailable: "无法读取这张图片。请检查设备连接后重试。",
     },

@@ -357,6 +357,8 @@ var deviceReferences = []deviceReference{
 	// No record means the person sent the input (SessionInputSender).
 	{"session_input_senders", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
 	{"session_inbox", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"session_alerts", "", `(child_session_id IN (` + deviceSessions + `) AND recipient_session_id NOT IN (` + deviceSessions + `))
+		OR (recipient_session_id IN (` + deviceSessions + `) AND child_session_id NOT IN (` + deviceSessions + `))`},
 	{"chat_queue_items", `sent_session_id = ''`, `sent_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"chat_titles", `generation_session_id = ''`, `generation_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"feishu_chat_threads", `latest_session_id = ''`, `latest_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
@@ -364,6 +366,7 @@ var deviceReferences = []deviceReference{
 	{"workspace_digests", `summary_session_id = ''`, `summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"pa_items", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
 	{"pa_memory", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
+	{"model_notes", `author_session_id = ''`, `author_session_id IN (` + deviceSessions + `)`},
 	// A task followed up for a conversation that is gone has no one to
 	// report to.
 	{"pa_tasks", "", `conversation_session_id IN (` + deviceSessions + `)`},
@@ -398,6 +401,7 @@ var deviceOwnedRows = []deviceRows{
 	{"feishu_gateway_grants", "device_id"},
 	{"device_connector_bindings", "device_id"},
 	{"device_connector_states", "device_id"},
+	{"device_connector_visibility_checks", "device_id"},
 	{"device_profiles", "device_id"},
 	{"profile_checks", "device_id"},
 	{"profile_promotions", "device_id"},

@@ -4,6 +4,7 @@ import type { ChildProcess } from "node:child_process";
 import {
   spawnAgentProcess,
   stopAgentProcessAndWait,
+  type AgentProcessContext,
 } from "../../platform/process/agent-processes.js";
 
 import { ControlOutcomeUnknownError } from "./control-error.js";
@@ -31,6 +32,7 @@ export interface CodexRpcTimeouts {
 /** Requests have bounded acknowledgements; an executing turn has no idle timeout. */
 export class CodexAppServer {
   private readonly child: ChildProcess;
+  readonly pid: number | undefined;
   readonly whenClosed: Promise<void>;
   private readonly pending = new PendingReplies<number>();
   private sequence = 0;
@@ -57,6 +59,7 @@ export class CodexAppServer {
     cwd: string,
     timeouts: Partial<CodexRpcTimeouts> = {},
     args: string[] = [],
+    context?: AgentProcessContext,
   ) {
     this.timeouts = {
       initializeMs: 60_000,
@@ -73,7 +76,9 @@ export class CodexAppServer {
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       },
+      context,
     );
+    this.pid = this.child.pid;
     this.whenClosed = new Promise((resolve) =>
       this.child.once("close", () => resolve()),
     );

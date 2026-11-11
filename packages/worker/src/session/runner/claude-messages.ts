@@ -27,6 +27,7 @@ import {
 import type { FinishedClaudeTool } from "./watchdog.js";
 import { claudeQuestionTool } from "./claude-questions.js";
 import {
+  ClaudeAgentTurnError,
   claudeAgentResultError,
   claudeApiErrorMessage,
   claudeCommandLifecycle,
@@ -35,6 +36,7 @@ import {
   claudePartialText,
   claudeProcessEvent,
   claudeProcessEvents,
+  claudeQuotaExhaustion,
   claudeTaskLifecycleChange,
   claudeTaskNotificationBookkeeping,
   isForwardedClaudeSubagentMessage,
@@ -389,6 +391,15 @@ export async function handleActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
 ): Promise<void> {
+  if (runtime.closed) return;
+  const quotaExhaustion = claudeQuotaExhaustion(message);
+  if (quotaExhaustion && runtime.pending) {
+    closeActiveClaudeRuntime(
+      runtime,
+      new ClaudeAgentTurnError("model_quota_exhausted", quotaExhaustion),
+    );
+    return;
+  }
   // Claude Code's /goal: set, checked (not yet met), met or cleared.
   const goal = claudeGoalSnapshot(message);
   if (goal) {

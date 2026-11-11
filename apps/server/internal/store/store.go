@@ -185,6 +185,10 @@ type Store interface {
 	DeleteProfile(ctx context.Context, id string) error
 	ListDeviceProfiles(ctx context.Context, deviceID string) ([]DeviceProfileBinding, error)
 	SetDeviceProfiles(ctx context.Context, input SetDeviceProfilesInput) error
+	ModelNoteStore
+	ExecutionDefaultStore
+	ModelPoolStore
+	SessionRetryStore
 
 	ListDeviceSkillRoots(ctx context.Context, deviceID string) ([]DeviceSkillRoot, error)
 	SetDeviceSkillRoots(ctx context.Context, input SetDeviceSkillRootsInput) error

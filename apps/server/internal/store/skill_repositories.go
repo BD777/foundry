@@ -241,15 +241,17 @@ type SkillBundleMember struct {
 	Revision int    `json:"revision"`
 }
 
-// SkillToolDeclaration names a program a bundle needs that its source
-// does not publish: Source "uv" installs the PyPI package Package and
-// Source "npm" the npm package Package (from the repository's registry),
-// which provides the command Command. Its version follows the bundle's when
-// the package has that version, else the package's latest.
+// SkillToolDeclaration names a program a bundle needs. Source "uv" installs
+// the PyPI package Package and Source "npm" the npm package Package (from
+// the repository's registry), which provides Command. Source "repository"
+// takes the files at Path in the bundle's own upstream repository and
+// exposes Bins; its version is the bundle commit.
 type SkillToolDeclaration struct {
-	Source  string `json:"source"`
-	Package string `json:"package"`
-	Command string `json:"command"`
+	Source  string            `json:"source"`
+	Package string            `json:"package"`
+	Command string            `json:"command"`
+	Path    string            `json:"path,omitempty"`
+	Bins    map[string]string `json:"bins,omitempty"`
 }
 
 // SkillRepositorySkill is a library skill taken from a repository folder.

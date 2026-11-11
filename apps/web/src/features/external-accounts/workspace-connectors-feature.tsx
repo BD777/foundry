@@ -1,41 +1,26 @@
 import type { ToastTone } from "../../components/ui/toast";
 import { AppStoreConnectConnector } from "./appstoreconnect-connector";
 import { CloudflareConnector } from "./cloudflare-connector";
-import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ConnectorDescriptor,
   ExternalAccount,
   WorkspaceExternalAccounts,
 } from "@bd777/foundry-protocol";
 import {
+  getConnectorCatalog,
   getWorkspaceExternalAccounts,
   setWorkspaceExternalAccounts,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Checkbox } from "../../components/ui/field";
-import { ConnectorSection } from "./connector-section";
-import { CredentialHolding } from "./credential-holding";
-import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
-import {
-  accountName,
-  accountUsable,
-  customLabel,
-  errorText,
-  personName,
-  providerLabel,
-  statusLabel,
-  statusTone,
-} from "./account-format";
+import { accountName, errorText } from "./account-format";
 import { WorkspaceAccountAuthorization } from "./workspace-account-authorization";
 import { WorkspaceDeviceConnectors } from "./workspace-device-connectors";
+import { WorkspaceServerHeldSection } from "./workspace-server-held-section";
 import { Skeleton } from "../../components/ui/loading";
-import { CheckLabel } from "../../components/ui/check-label";
-import { DividedList } from "../../components/ui/divided-list";
-import { Identity } from "../../components/ui/identity";
 import { MutedText } from "../../components/ui/text";
 
 export interface WorkspaceConnectorsFeatureProps {
@@ -65,6 +50,7 @@ function WorkspaceConnectorsContent({
 }: WorkspaceConnectorsFeatureProps) {
   const { t } = useTranslation("externalAccounts");
   const [view, setView] = useState<WorkspaceExternalAccounts>();
+  const [catalog, setCatalog] = useState<ConnectorDescriptor[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [authorizing, setAuthorizing] = useState<{
@@ -85,6 +71,18 @@ function WorkspaceConnectorsContent({
     };
   }, [workspaceId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getConnectorCatalog()
+      .then((next) => {
+        if (!cancelled) setCatalog(next.connectors);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const bound = new Set(view?.bindings.map((binding) => binding.accountId));
   const mine = (view?.accounts ?? []).filter(
     (account) => account.ownerUserId === currentUserId,
@@ -92,6 +90,22 @@ function WorkspaceConnectorsContent({
   const others = (view?.accounts ?? []).filter(
     (account) => account.ownerUserId !== currentUserId && bound.has(account.id),
   );
+  const extensionDescriptors = catalog.filter(
+    (connector) =>
+      connector.extension &&
+      connector.holding === "server_held" &&
+      connector.serverHeld,
+  );
+  const extensionKinds = new Set([
+    ...extensionDescriptors.map((connector) => connector.kind),
+    ...mine
+      .map((account) => account.provider)
+      .filter(
+        (provider) =>
+          !["feishu", "cloudflare", "appstoreconnect"].includes(provider),
+      ),
+  ]);
+  const serverHeldTypes = ["feishu", ...extensionKinds];
 
   async function toggle(account: ExternalAccount, use: boolean) {
     setBindingError("");
@@ -160,125 +174,24 @@ function WorkspaceConnectorsContent({
         />
       ) : null}
       {serverHeldTypes.map((type) => {
-        const provider = providerLabel(type);
-        const own = mine.filter((account) => account.provider === type);
-        const theirs = others.filter((account) => account.provider === type);
+        const descriptor = extensionDescriptors.find(
+          (connector) => connector.kind === type,
+        );
         return (
-          <ConnectorSection
-            actions={
-              <>
-                <Button
-                  disabled={
-                    busy || Boolean(readOnlyReason) || Boolean(authorizing)
-                  }
-                  size="sm"
-                  variant={own.length ? "secondary" : "primary"}
-                  onClick={() => setAuthorizing({})}
-                >
-                  {t("workspace.connect", { provider })}
-                </Button>
-                <Button
-                  onClick={() => navigateToConnectors(type)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  {t("workspace.manage")}
-                  <ChevronRight size={14} />
-                </Button>
-              </>
-            }
-            description={t(`workspace.binding.${type}`)}
-            holding={
-              <CredentialHolding
-                holding="server_held"
-                name={t(`providers.${type}`)}
-              />
-            }
+          <WorkspaceServerHeldSection
+            authorizing={Boolean(authorizing)}
+            bound={bound}
+            busy={busy}
+            descriptor={descriptor}
             key={type}
-            name={provider}
-          >
-            {own.length === 0 ? (
-              <MutedText>{t("workspace.empty", { provider })}</MutedText>
-            ) : (
-              <DividedList>
-                {own.map((account) => (
-                  <li
-                    className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
-                    key={account.id}
-                  >
-                    <CheckLabel>
-                      <Checkbox
-                        checked={bound.has(account.id)}
-                        disabled={
-                          busy ||
-                          Boolean(readOnlyReason) ||
-                          (!accountUsable(account) && !bound.has(account.id))
-                        }
-                        onChange={(event) =>
-                          void toggle(account, event.currentTarget.checked)
-                        }
-                      />
-                      <span>
-                        {t("workspace.use", { name: personName(account) })}
-                        {customLabel(account) ||
-                        account.appName ||
-                        organisationLabel(account) ? (
-                          <small>
-                            {[
-                              customLabel(account),
-                              account.appName,
-                              organisationLabel(account),
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
-                        ) : null}
-                        {!accountUsable(account) ? (
-                          <small>
-                            {t("workspace.notUsable", {
-                              status: statusLabel(account.status),
-                            })}
-                          </small>
-                        ) : null}
-                      </span>
-                    </CheckLabel>
-                    {!accountUsable(account) ? (
-                      <Button
-                        disabled={busy || Boolean(readOnlyReason)}
-                        size="sm"
-                        onClick={() => setAuthorizing({ account })}
-                      >
-                        {t("workspace.authorize")}
-                      </Button>
-                    ) : null}
-                    <Badge tone={statusTone(account.status)}>
-                      {statusLabel(account.status)}
-                    </Badge>
-                  </li>
-                ))}
-              </DividedList>
-            )}
-            {theirs.length > 0 ? (
-              <>
-                <MutedText>{t("workspace.others")}</MutedText>
-                <DividedList>
-                  {theirs.map((account) => (
-                    <li
-                      className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
-                      key={account.id}
-                    >
-                      <Identity as="span">
-                        <strong>{account.label}</strong>
-                      </Identity>
-                      <Badge tone={statusTone(account.status)}>
-                        {statusLabel(account.status)}
-                      </Badge>
-                    </li>
-                  ))}
-                </DividedList>
-              </>
-            ) : null}
-          </ConnectorSection>
+            kind={type}
+            mine={mine}
+            onConnect={(account) => setAuthorizing({ account })}
+            onManage={() => navigateToConnectors(type)}
+            onToggle={(account, use) => void toggle(account, use)}
+            readOnlyReason={readOnlyReason}
+            theirs={others}
+          />
         );
       })}
       <CloudflareConnector
@@ -307,5 +220,3 @@ function WorkspaceConnectorsContent({
     </div>
   );
 }
-
-const serverHeldTypes = ["feishu"] as const;

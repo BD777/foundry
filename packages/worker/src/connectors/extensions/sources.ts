@@ -1,13 +1,12 @@
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import type { ConnectorExtensionRepository } from "@bd777/foundry-protocol";
 import {
+  githubCredentialConfig,
   remoteCommit,
   withRepositoryFolder,
 } from "../../skills/skill-repository-fetch.js";
-import { findCommand, managedToolsBin } from "../../skills/managed-tools.js";
-import { defaultToolDirs } from "../device-held.js";
 import { builtinConnectorKinds } from "./builtin-kinds.js";
 import {
   ExtensionManifestError,
@@ -38,15 +37,7 @@ import {
  * login), whether or not `gh auth setup-git` ran; nothing global changes.
  */
 export function gitConfigFor(remote: string): string[] {
-  if (!/^https:\/\/github\.com\//.test(remote)) return [];
-  const managed = join(managedToolsBin(), "gh");
-  const gh = existsSync(managed)
-    ? managed
-    : findCommand("gh", defaultToolDirs());
-  if (!gh) return [];
-  return [
-    `credential.https://github.com.helper=!${JSON.stringify(gh)} auth git-credential`,
-  ];
+  return githubCredentialConfig(remote);
 }
 
 export function checkedRepository(raw: unknown): ConnectorExtensionRepository {
@@ -88,6 +79,11 @@ export async function updateExtension(id: string): Promise<ExtensionChange> {
   const installed = listExtensions().find((item) => item.id === id);
   if (!installed)
     throw new ExtensionError("not_found", `no extension ${id} is installed`);
+  if (installed.bundled)
+    throw new ExtensionError(
+      "invalid_input",
+      `${id} updates with the Worker, not from a git source`,
+    );
   if (!installed.source)
     throw new ExtensionError(
       "invalid_input",
@@ -114,7 +110,11 @@ export async function refreshLatestCommits(maxAgeMs: number): Promise<boolean> {
         extension.source.ref,
         gitConfigFor(extension.source.git),
       );
-      if (commit && noteLatestCommit(extension.id, commit)) moved = true;
+      if (!commit) continue;
+      if (extension.autoUpdate !== false && commit !== extension.commit) {
+        const change = await installExtensionFromRepository(extension.source);
+        if (change.action !== "unchanged") moved = true;
+      } else if (noteLatestCommit(extension.id, commit)) moved = true;
     } catch {
       // Offline or no access right now: the last answer stands.
     }

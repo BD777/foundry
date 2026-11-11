@@ -61,6 +61,7 @@ type Store interface {
 	store.SessionRecordStore
 	store.WorkStore
 	store.PersonalAgentStore
+	store.PermissionPackageStore
 	store.PersonalAgentListStore
 	store.PersonalAgentInboxStore
 	store.PersonalAgentRuntimeStore

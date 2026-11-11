@@ -673,6 +673,34 @@ components:
         - websocket
         - https
       x-go-type: string
+    ProfileModelPrice:
+      description:
+        Custom prices for one model, in US dollars per one million tokens. A complete
+        entry replaces LiteLLM's estimate for turns through this provider.
+      type: object
+      required:
+        - inputPerMillion
+        - cacheReadPerMillion
+        - cacheWritePerMillion
+        - outputPerMillion
+      additionalProperties: false
+      properties:
+        inputPerMillion:
+          type: number
+          format: double
+          minimum: 0
+        cacheReadPerMillion:
+          type: number
+          format: double
+          minimum: 0
+        cacheWritePerMillion:
+          type: number
+          format: double
+          minimum: 0
+        outputPerMillion:
+          type: number
+          format: double
+          minimum: 0
     ProfileDefinition:
       description:
         "ProfileDefinition is a control-plane owned profile. It carries no DeviceID and no
@@ -710,6 +738,13 @@ components:
           type: array
           items:
             type: string
+        modelPrices:
+          description:
+            "`modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are
+            US dollars per one million input, cache-read, cache-write and output tokens."
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ProfileModelPrice"
         contextWindows:
           description:
             "`contextWindows` is the person's own context window per model id, in tokens. A model
@@ -822,6 +857,245 @@ components:
             "`deviceBound`: the base URL is the device's own loopback address, which no other
             device can reach, so the profile may run only on that device."
           type: boolean
+    ModelPoolMember:
+      description:
+        One model id in an equivalent-model group. `tokensPerMinute` is that
+        id's independently metered quota; without it, allocation uses the
+        optional weight.
+      type: object
+      required:
+        - model
+      additionalProperties: false
+      properties:
+        model:
+          type: string
+        tokensPerMinute:
+          type: integer
+          format: int64
+          minimum: 0
+        weight:
+          type: integer
+          minimum: 1
+    ModelPool:
+      description:
+        A person's named equivalent-model group under one provider. Members are
+        interchangeable model ids with separate quota, such as two ids for the
+        same underlying model.
+      type: object
+      required:
+        - id
+        - providerKind
+        - providerId
+        - runtime
+        - label
+        - members
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        label:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelPoolMember"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    ModelPoolInput:
+      description: Create or replace one equivalent-model group.
+      type: object
+      required:
+        - providerKind
+        - providerId
+        - runtime
+        - label
+        - members
+      additionalProperties: false
+      properties:
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        label:
+          type: string
+        members:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ModelPoolMember"
+    ModelNote:
+      description: ModelNote is one observation an orchestrator recorded about a specific model.
+      type: object
+      required:
+        - id
+        - providerKind
+        - providerId
+        - runtime
+        - model
+        - body
+        - authorUserId
+        - authorName
+        - createdAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+          x-go-type: string
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        model:
+          type: string
+        body:
+          description: What the orchestrator learned about handing work to this model.
+          type: string
+        authorUserId:
+          type: string
+        authorName:
+          type: string
+        authorSessionId:
+          description: The agent session that appended the note; absent for a person.
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    ModelNotePage:
+      description: One page of model notes, newest first.
+      type: object
+      required:
+        - total
+        - offset
+        - notes
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+        offset:
+          type: integer
+        nextOffset:
+          type: integer
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelNote"
+    ModelNoteInput:
+      description: ModelNoteInput appends one note to a provider's model.
+      type: object
+      required:
+        - providerKind
+        - providerId
+        - runtime
+        - model
+        - body
+      additionalProperties: false
+      properties:
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+          x-go-type: string
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        model:
+          type: string
+        body:
+          type: string
+          maxLength: 12000
+    ExecutionDefaultScope:
+      type: string
+      enum:
+        - global
+        - workspace
+        - none
+      x-go-type: string
+    ExecutionModelDefault:
+      description: The model a person's orchestrator uses for delegated execution when a child names no model.
+      type: object
+      required:
+        - providerId
+        - runtime
+        - scope
+      additionalProperties: false
+      properties:
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        model:
+          type: string
+        modelPoolId:
+          description: When set, a new session allocates one member from this group.
+          type: string
+        pool:
+          description: The saved group, resolved when the default is read.
+          $ref: "#/components/schemas/ModelPool"
+          x-go-type-skip-optional-pointer: false
+        effort:
+          type: string
+        scope:
+          $ref: "#/components/schemas/ExecutionDefaultScope"
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+    ExecutionDefaultsView:
+      description: The saved execution default at this level, the effective one after workspace fallback, and where it came from.
+      type: object
+      required:
+        - effective
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        saved:
+          $ref: "#/components/schemas/ExecutionModelDefault"
+          x-go-type-skip-optional-pointer: false
+        effective:
+          $ref: "#/components/schemas/ExecutionModelDefault"
+          x-go-type-skip-optional-pointer: false
     AgentProjection:
       type: object
       required:

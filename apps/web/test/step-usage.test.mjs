@@ -211,6 +211,27 @@ test("an estimated Codex request speed is marked approximate", async () => {
   );
 });
 
+test("an unreliable estimated Codex request time is not used for speed", async () => {
+  await i18n.changeLanguage("en");
+  for (const timing of [
+    { requestMs: 999, outputTokens: 100 },
+    { requestMs: 1_000, outputTokens: 1_001 },
+  ]) {
+    const usage = stepUsage([
+      {
+        id: "a",
+        kind: "tool",
+        requestUsage: request("turn-1:1", timing.outputTokens, 1000, {
+          requestMs: timing.requestMs,
+          timingEstimated: true,
+        }),
+      },
+    ]);
+    assert.equal(usage.requestMs, undefined);
+    assert.doesNotMatch(stepUsageSummary(usage), /tok\/s/);
+  }
+});
+
 test("a Codex request event reaches its step group with estimated speed", async () => {
   await i18n.changeLanguage("en");
   const event = (id, at, fields) => ({

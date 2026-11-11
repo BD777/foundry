@@ -1,5 +1,5 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
 import type { PersonalAgentMemoryItem } from "@bd777/foundry-protocol";
@@ -25,6 +25,7 @@ import { PaMuted } from "./pa-muted";
 import { Subheading } from "../../components/ui/subheading";
 import { DividedList } from "../../components/ui/divided-list";
 import { ButtonRow } from "../../components/ui/button-row";
+import { FieldLabel, FormFieldGroup } from "../../components/ui/form-field";
 
 /** Downloads what it remembers, as JSON, through the browser. */
 function exportMemory(items: PersonalAgentMemoryItem[]): void {
@@ -117,21 +118,27 @@ export function MemorySection({
       </PaMuted>
       {!hasWorkspaceMemory ? (
         <form
-          className="flex flex-wrap gap-2"
+          className="grid max-w-sm gap-3"
           onSubmit={(event) => void add(event)}
         >
-          <TextInput
-            aria-label={t("settings.memory.addLabel")}
-            className="w-[min(100%,460px)] flex-[1_1_260px]"
-            disabled={busy}
-            maxLength={memoryItemMaxChars}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={t("settings.memory.addPlaceholder")}
-            tone="boxed"
-            value={draft}
-          />
+          <FormFieldGroup>
+            <FieldLabel htmlFor="fdy-pa-memory-add">
+              {t("settings.memory.addLabel")}
+            </FieldLabel>
+            <TextInput
+              className="w-full"
+              disabled={busy}
+              id="fdy-pa-memory-add"
+              maxLength={memoryItemMaxChars}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t("settings.memory.addPlaceholder")}
+              tone="boxed"
+              value={draft}
+            />
+          </FormFieldGroup>
           <Button
             aria-busy={busy}
+            className="justify-self-start"
             disabled={busy || !draft.trim()}
             type="submit"
             variant="primary"
@@ -219,28 +226,34 @@ function MemoryRow({
   run: (action: () => Promise<void>) => Promise<boolean>;
 }) {
   const { t } = useTranslation("personalAgent");
+  const editorId = useId();
   const [editing, setEditing] = useState<string>();
   const moving = item.status === "transferring";
   const unconfirmed = item.origin === "inferred" || item.status === "pending";
   const done = () => undefined;
 
   return (
-    <li className="grid gap-1.5">
+    <li className="grid min-w-0 gap-1.5 wrap-anywhere">
       {editing === undefined ? (
         <p className="text-sm leading-[1.55] wrap-anywhere text-ink">
           {item.content}
         </p>
       ) : (
-        <Textarea
-          aria-label={t("settings.memory.editLabel")}
-          className="w-full"
-          maxLength={memoryItemMaxChars}
-          onChange={(event) => setEditing(event.target.value)}
-          resize="vertical"
-          rows={2}
-          tone="boxed"
-          value={editing}
-        />
+        <FormFieldGroup className="max-w-2xl">
+          <FieldLabel htmlFor={editorId}>
+            {t("settings.memory.editLabel")}
+          </FieldLabel>
+          <Textarea
+            className="w-full"
+            id={editorId}
+            maxLength={memoryItemMaxChars}
+            onChange={(event) => setEditing(event.target.value)}
+            resize="vertical"
+            rows={2}
+            tone="boxed"
+            value={editing}
+          />
+        </FormFieldGroup>
       )}
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <Badge tone={unconfirmed ? "brass" : "neutral"}>

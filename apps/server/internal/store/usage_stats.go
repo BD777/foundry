@@ -109,6 +109,13 @@ type UsageBackfillState struct {
 	Completed bool
 }
 
+// UsageRepriceCursor continues a scan ordered by start time and turn identity.
+type UsageRepriceCursor struct {
+	StartedAt string
+	SessionID string
+	InputID   string
+}
+
 // UsageStatsFilter narrows both turn aggregates and request detail reads.
 type UsageStatsFilter struct {
 	From        time.Time
@@ -209,6 +216,10 @@ type UsageStatsStore interface {
 	UsageSessionEvents(ctx context.Context, sessionID string) ([]AgentSessionEvent, error)
 	// SaveUsageBackfillState advances the historical scan.
 	SaveUsageBackfillState(ctx context.Context, cursor string, completed bool) error
+	// UsageTurnsForReprice returns the next turns in a stable order.
+	UsageTurnsForReprice(ctx context.Context, after UsageRepriceCursor, limit int) ([]UsageTurn, UsageRepriceCursor, error)
+	// UpdateUsageCost changes only a non-reported turn's cost and source.
+	UpdateUsageCost(ctx context.Context, sessionID, inputID string, costUSD float64, source string) (bool, error)
 	// UsageTurnAggregates reads turn aggregates for the query API.
 	UsageTurnAggregates(ctx context.Context, query UsageTurnAggregateQuery) ([]UsageTurnAggregate, error)
 	// UsageRequestRows reads request detail for throughput/TTFT percentiles.

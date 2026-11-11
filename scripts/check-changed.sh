@@ -182,7 +182,7 @@ while IFS= read -r file; do web_tests+=("$file"); done < <(
 if [ ${#web_tests[@]} -gt 0 ]; then
   rel_tests=("${web_tests[@]#apps/web/}")
   add "web tests" "${#web_tests[@]} files" \
-    "cd apps/web && node --import ./test/register-bundler-resolve.mjs --test $(q "${rel_tests[@]}")" heavy
+    "cd apps/web && node --import ./test/register-bundler-resolve.mjs --test-timeout=120000 --test $(q "${rel_tests[@]}")" heavy
 fi
 
 # Worker: tests import ../dist, so a src change means build (which also typechecks).

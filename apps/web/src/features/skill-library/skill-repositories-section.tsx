@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import type {
+  ConnectorPackageView,
   DeviceProjection,
   DeviceTool,
   SkillRepository,
@@ -27,6 +28,9 @@ export function SkillRepositoriesSection({
   canManage,
   devices,
   deviceTools,
+  packagesByRepository,
+  requestedRepositoryId,
+  requestedSkillId,
   defaultBundleIds,
   onToggleDefaultBundle,
   onAdd,
@@ -38,6 +42,10 @@ export function SkillRepositoriesSection({
   canManage: boolean;
   devices: DeviceProjection[];
   deviceTools: DeviceTool[];
+  /** Packages whose followed bundle is a row here, by repository id. */
+  packagesByRepository: ReadonlyMap<string, ConnectorPackageView>;
+  requestedRepositoryId?: string;
+  requestedSkillId?: string;
   defaultBundleIds: Set<string>;
   onToggleDefaultBundle: (id: string) => void;
   /** Opens the add dialog, for a followed repository when given. */
@@ -110,9 +118,16 @@ export function SkillRepositoriesSection({
                   error={errors[repo.id]}
                   isDefault={defaultBundleIds.has(repo.id)}
                   key={repo.id}
+                  packageConnector={packagesByRepository.get(repo.id)}
                   onToggleDefault={() => onToggleDefaultBundle(repo.id)}
                   refresh={onChanged}
                   repo={repo}
+                  requested={requestedRepositoryId === repo.id}
+                  requestedSkillId={
+                    requestedRepositoryId === repo.id
+                      ? requestedSkillId
+                      : undefined
+                  }
                   run={(action) => void run(repo.id, action)}
                 />
               );

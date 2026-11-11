@@ -218,6 +218,28 @@ const formerSession = {
 let overview;
 let calls = [];
 let tasks = [task];
+let connectorAccounts = [
+  {
+    id: "acct_feishu",
+    kind: "feishu",
+    label: "Work Feishu",
+    holding: "server_held",
+    status: "ready",
+    level: "write",
+    enabled: true,
+  },
+  {
+    id: "dev_mac:aws",
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    deviceId: "dev_mac",
+    deviceName: "MacBook",
+    status: "ready",
+    level: "write",
+    enabled: true,
+  },
+];
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(String(input), "https://foundry.example");
   const method = (init.method ?? "GET").toUpperCase();
@@ -312,6 +334,19 @@ globalThis.fetch = async (input, init = {}) => {
       return json({ ...assistantSession, status: "running" });
     case "POST /api/agent-sessions":
       return json({ ...assistantSession, id: "sess_new" }, 201);
+    case "GET /api/profiles":
+      return json([]);
+    case "GET /api/model-pools":
+      return json([]);
+    case "GET /api/execution-default":
+      return json({
+        effective: {
+          providerId: "",
+          runtime: "claude",
+          model: "",
+          scope: "none",
+        },
+      });
     case "PUT /api/personal-agent/settings":
       return json({ ...agent, settings: body });
     case "POST /api/personal-agent/timezone":
@@ -330,6 +365,18 @@ globalThis.fetch = async (input, init = {}) => {
       return json({ providers: [], apps: [], accounts: [] });
     case "GET /api/personal-agent/actions":
       return json(actions);
+    case "GET /api/personal-agent/connectors":
+      return json({ connectors: connectorAccounts });
+    case "PUT /api/personal-agent/connectors": {
+      const levels = new Map(
+        body.levels.map((entry) => [entry.accountId, entry.level]),
+      );
+      connectorAccounts = connectorAccounts.map((connector) => {
+        const level = levels.get(connector.id) ?? "write";
+        return { ...connector, level, enabled: level !== "off" };
+      });
+      return json({ connectors: connectorAccounts });
+    }
   }
   throw new Error(`unexpected ${route}`);
 };
@@ -845,6 +892,58 @@ test("settings: loosening the rules takes a second confirmation", async () => {
   await page.unmount();
 });
 
+test("settings: connector levels share the page save line and device-held read is marked", async () => {
+  overview = { agent, homeDeviceOnline: true, usage: undefined };
+  connectorAccounts = connectorAccounts.map((connector) => ({
+    ...connector,
+    level: "write",
+    enabled: true,
+  }));
+  calls = [];
+  const page = await render(AssistantSettings, {
+    section: "connectors",
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  await settle();
+  const control = page.container.querySelector(
+    '[aria-label="Access level for AWS CLI"]',
+  );
+  assert.ok(control);
+  const read = [...control.querySelectorAll("[role=radio]")].find(
+    (node) => node.textContent.trim() === "Read only",
+  );
+  assert.ok(read);
+  await act(async () => read.click());
+  assert.match(
+    page.container.textContent,
+    /Foundry cannot stop writes through an account that lives on a device yet/,
+  );
+  assert.match(page.container.textContent, /You have unsaved changes/);
+  await act(async () => button(page.container, "Save changes").click());
+  await settle();
+  const connectorPut = calls.find(
+    (call) =>
+      call.method === "PUT" && call.path === "/api/personal-agent/connectors",
+  );
+  assert.deepEqual(connectorPut?.body, {
+    levels: [
+      { accountId: "acct_feishu", level: "write" },
+      { accountId: "dev_mac:aws", level: "read" },
+    ],
+  });
+  assert.ok(
+    !calls.some(
+      (call) =>
+        call.method === "PUT" && call.path === "/api/personal-agent/settings",
+    ),
+    "an unchanged settings draft is not written",
+  );
+  await page.unmount();
+});
+
 test("settings navigation groups sections and marks the current page", async () => {
   overview = { agent, homeDeviceOnline: true };
   const page = await render(AssistantSettings, {
@@ -866,6 +965,20 @@ test("settings navigation groups sections and marks the current page", async () 
   const current = nav.querySelector('[aria-current="page"]');
   assert.equal(current?.textContent.trim(), "When to ask me");
   assert.equal(current?.getAttribute("href"), "/assistant/settings/rules");
+  assert.equal(current?.getAttribute("data-tone"), "surface");
+  assert.match(current?.className ?? "", /data-\[state=active\]:bg-selection/);
+  assert.doesNotMatch(current?.className ?? "", /shadow-selected/);
+  assert.match(current?.className ?? "", /hover:bg-hover\b/);
+  const panel = page.container.querySelector(
+    '[data-assistant-settings-panel="rules"]',
+  );
+  assert.match(panel?.className ?? "", /fdy-panel-plain/);
+  assert.match(panel?.className ?? "", /border-0/);
+  assert.match(panel?.className ?? "", /bg-transparent/);
+  assert.match(panel?.className ?? "", /shadow-none/);
+  assert.match(panel?.className ?? "", /p-0/);
+  assert.equal(panel?.querySelector("h2")?.textContent, "When to ask me");
+  assert.match(panel?.textContent ?? "", /What it can do without asking/);
   assert.equal(
     page.container
       .querySelector("a[href='/assistant/settings']")
@@ -1038,6 +1151,28 @@ test("a proposal card answers once, then shows what became of it", async () => {
   assert.match(decided.container.textContent, /Expired — nothing was changed/);
   assert.equal(decided.container.querySelectorAll("button").length, 0);
   await decided.unmount();
+});
+
+test("a connector write proposal names the account beside its summary", async () => {
+  const connectorProposal = {
+    ...proposal,
+    kind: "connector_write",
+    spec: {
+      accountId: "acct_cf",
+      accountName: "Work Cloudflare",
+      connector: "cloudflare",
+    },
+    summary: "Delete the old DNS record?",
+  };
+  const page = await render(ProposalCard, {
+    proposal: connectorProposal,
+    onAnswer: async () => {},
+  });
+  assert.match(page.container.textContent, /Delete the old DNS record\?/);
+  assert.match(page.container.textContent, /Account:\s*Work Cloudflare/);
+  assert.ok(button(page.container, "OK"));
+  assert.ok(button(page.container, "No thanks"));
+  await page.unmount();
 });
 
 test("memory location is independent from the assistant home and survives an offline source", async () => {
@@ -1336,6 +1471,7 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
       ),
     ].find((b) => b.textContent.trim() === name);
   const text = page.container.textContent;
+  assert.doesNotMatch(text, /Default execution model/);
   // Every flow, with when it runs.
   for (const title of [
     "Conversation and planning",
@@ -1419,6 +1555,7 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     ),
     "true",
   );
+
   await act(async () =>
     radio("Project summaries", "Same as the assistant").click(),
   );
@@ -1427,6 +1564,62 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     profileId: "device_default",
   });
   assert.equal(draft.runDefault.model, "smart-model");
+
+  // A model catalog read stays inside its select: the busy trigger shows the
+  // wait without adding a helper row that changes the three-column layout.
+  const finishModels = [];
+  const regularFetch = globalThis.fetch;
+  agentProfiles.push(profile("slow_models", "home", "codex"));
+  globalThis.fetch = (input, init = {}) => {
+    const url = new URL(String(input), "https://foundry.example");
+    if (
+      (init.method ?? "GET").toUpperCase() === "POST" &&
+      url.pathname === "/api/agent-profiles/models"
+    )
+      return new Promise((resolve) => {
+        finishModels.push(() =>
+          resolve(
+            new Response(JSON.stringify([{ id: "slow-model" }]), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          ),
+        );
+      });
+    return regularFetch(input, init);
+  };
+  draft = {
+    ...draft,
+    runDefault: {
+      profileId: "slow_models",
+      runtime: "codex",
+      model: "slow-model",
+      effort: "low",
+    },
+  };
+  await rerender();
+  const loadingModel = select("Conversation and planning Model");
+  assert.equal(loadingModel.getAttribute("aria-busy"), "true");
+  assert.equal(loadingModel.disabled, true);
+  assert.ok(loadingModel.querySelector("svg.fdy-spinner"));
+  assert.equal(
+    select("Conversation and planning Model provider").disabled,
+    false,
+  );
+  assert.equal(
+    select("Conversation and planning Reasoning effort").disabled,
+    false,
+  );
+  await act(async () => {
+    finishModels.forEach((finish) => finish());
+    await settle();
+  });
+  globalThis.fetch = regularFetch;
+  assert.equal(select("Conversation and planning Model").disabled, false);
+  assert.equal(
+    select("Conversation and planning Model").hasAttribute("aria-busy"),
+    false,
+  );
   await page.unmount();
 });
 

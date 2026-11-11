@@ -2,7 +2,7 @@
 
 [Roadmap](roadmap.md) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 AWS CLI、GitHub CLI（`gh`，登录后设备上经 https 访问 GitHub 的 git 也用它）、腾讯云 CLI（`tccli`）与阿里云 CLI（`aliyun`），以及设备所有者装在设备上的[连接器扩展](connector-extensions.md)提供的连接器（公司内部 CLI、私有模型网关等，不进公开仓库），登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。内置的 **Server 持有型**是飞书（`feishu-cli`）、Cloudflare（`cf`）与 App Store Connect（`asc`），凭据和登录由 Server 保管，会话只拿可撤销的替身。内置的 **设备持有型**是 AWS CLI、GitHub CLI（`gh`，登录后设备上经 https 访问 GitHub 的 git 也用它）、腾讯云 CLI（`tccli`）与阿里云 CLI（`aliyun`），登录由 CLI 自己保存在设备上。设备所有者安装的[连接器扩展](connector-extensions.md)还可以提供私有设备持有型连接器；或者用纯数据 `serverHeld` 描述符提供公开可达、只需令牌与声明式探测/注入的 Server 持有型连接器。Server 从不运行扩展代码。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
 
 ## 设计
 
@@ -12,7 +12,7 @@
 
 | 概念                                  | 含义                                                                                                                                                           | 现状                                                                                                                                                                                                     |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 连接器类型（kind）                    | 一种外部服务及其 CLI：内置的是一条 `catalog.json` 描述数据加一个小适配器；扩展提供的是扩展 manifest 里的描述数据加扩展进程                                     | 内置：feishu、cloudflare、aws、github、tencentcloud、alibabacloud；扩展：见[连接器扩展](connector-extensions.md)                                                                                         |
+| 连接器类型（kind）                    | 一种外部服务及其 CLI：内置的是一条 `catalog.json` 描述数据加一个小适配器；扩展提供的是扩展 manifest 里的描述数据加扩展进程或纯数据网关                         | 内置：feishu、cloudflare、appstoreconnect、aws、github、tencentcloud、alibabacloud；扩展：见[连接器扩展](connector-extensions.md)                                                                        |
 | 持有方式（holding）                   | 凭据在哪里：`server_held`（Server secret store，会话经网关）或 `device_held`（只在设备上，CLI 自己保存）                                                       | 已实现两种                                                                                                                                                                                               |
 | 身份（account / login）               | 一个人在该服务上的一份登录：Server 持有型是 `external_accounts` 中的账号，设备持有型是某台设备上的一份原生登录                                                 | 已实现；同一类型可以有多个账号（例如同一个人在两个飞书租户下的两个账号）                                                                                                                                 |
 | 登录方式（sign-in methods）           | 描述符 `signIn.methods[]`：`guided`（Foundry 在设备上发起，转达链接、用户码、二维码或需粘贴回的码）或 `terminal`（给出命令，Foundry 只检查），每种可带表单字段 | 已实现；Web 统一渲染（`sign-in-chooser.tsx`）                                                                                                                                                            |
@@ -48,7 +48,7 @@
 
 ### 两种持有方式
 
-- **Server 持有型（飞书）**：行为不变，见下文“对象”到“账号生命周期”。
+- **Server 持有型**：内置飞书、Cloudflare、App Store Connect 继续用各自的 Provider 适配器，见下文“对象”到“账号生命周期”。扩展的 Server 持有型只接受纯数据 `serverHeld`：Server 校验字段和模板、探测上游、封存 secret field，并用通用网关替换替身、按探测出的路由目录判定读写。实例是一条通用 `external_provider_apps` 加 `external_accounts` 和现有 Workspace 绑定，不建产品专用表。
 - **设备持有型（AWS CLI 与扩展提供的连接器）**：凭据只在设备上，由工具自己保存。理由：私有服务通常只在内网可达；多台设备共用一份登录会互相抢刷新；把公司 SSO 凭据导出到外部 Server 有合规风险。Foundry 做的事（`packages/worker/src/connectors/device-held.ts`，内置适配器与扩展适配器实现同一接口）：
   - **检测**：内置连接器由 Worker 找到会话 PATH 上的工具（Foundry 管理的工具目录优先），扩展连接器由扩展自己报告是否安装、版本与来源。
   - **安装与升级**：`tool.source` 为 `npm` 时设备所有者点击后经 managed-tools 安装（来源用设备自己的 npm 设置，不运行 install 脚本）；`installer` 由适配器或扩展的 `connector.install` 运行厂商安装程序；`device` 由设备自己管理，Foundry 只显示版本。
@@ -98,6 +98,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
 - **2026-10-13 “外部账号”改名为 Connectors，Workspace 的“账号”页改名为 Connectors**（#125），旧 URL 重定向。
 - **2026-11-03 私有连接器以扩展的形式装在设备上（DEV-111，本人批准）**：公开仓库只内置公开服务；设备持有型连接器可由设备所有者用 `foundry-worker extension add` 安装的扩展提供（stdio JSON-RPC，[连接器扩展](connector-extensions.md)），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么。bytedcli 移到仓库外的扩展；外部模型连接（私有网关）改为提供模型接入的连接器。Server 持有型保持内置。
+- **2026-11-11 私有 Server 持有型只做声明式扩展（本人返工要求）**：Server 持有型仍对内置公开服务保留 Provider 适配器，但扩展也可提供它，条件是完全纯数据：字段、探测、上游模板和路由目录都写在描述符里，Server 只执行通用引擎，不运行扩展代码。OpenLark 从内置目录、Provider、专用表/路由和 Worker 适配器移除，改放仓库外的扩展文件夹；这是 DEV-111 边界的受控扩展，不是允许私有代码进入 Server。
 - **2026-11-04 扩展可在页面上从仓库安装，GitHub CLI 内置（DEV-114，本人批准）**：取消“只能在本机用命令装扩展”的限制。manifest 声明 `source`（git 文件夹），设备所有者在 Connectors 页点击即可装到自己的设备、更新到新提交或移除；设备用自己的 git 凭据拉取，Server 不经手扩展代码，会话、Workspace、Server 仍不能自行安装。GitHub CLI 作为公开工具内置为设备持有型连接器，私有 GitHub 仓库的扩展用它的登录装（git 拉取时 `sources.ts` 的 `gitConfigFor` 只对这次拉取加上 gh 的凭据助手；DEV-128 起登录不再运行 `gh auth setup-git`，不改本人的全局 git 配置）。描述符加 `signIn.repeat`（再次登录是新增一份登录，如另一个 Limen profile）。
 - **2026-11-04 官方订阅是 model provider，不是连接器（DEV-116，本人裁定）**：DEV-116 第一版曾把 Claude Code / Codex 的官方登录做成内置连接器 `claude-code`、`codex`；本人指出订阅没有连接器的性质（没有给会话用的工具、Workspace 绑定对它没有意义、按连接器规则隔离反而让会话跑不起来），它回答的是 Agent 跑在什么模型上。目录撤回这两项，订阅回到设备账号（`/api/devices/{deviceId}/accounts/{runtime}/sign-in` 等，设备消息 `native_sign_in`），在 [Model providers](model-providers-design.md) 页登录；两者共用的只是设备上运行 CLI 登录的实现。Limen 这类扩展提供的模型接入仍是连接器：第三方、非业界标准协议，登录与设置留在 Connectors，它给出的模型以“启动环境”显示在 Model providers。
 - **2026-10-15 连接器成为封闭模块，分 Server 持有型与设备持有型；bytedcli 是第一个设备持有型**（本人批准）。bytedcli 的登录不放 Server：Server 在 ByteDance 内网之外用不了；多台设备共用一份登录会互相抢刷新；公司 SSO 凭据导出到外部 Server 有合规风险。同时决定：连接器用描述数据声明、平台差异用小的代码适配器，不用 Go plugin 或动态加载；登录经 CLI 自己的非阻塞设备码流程（`--begin` / `--complete`）由 Web 中转验证页面，complete token 不离开设备；Foundry 自己运行 bytedcli 时设 `BYTEDCLI_NO_AUTO_UPGRADE=1`（读状态不顺带升级本人的 CLI）；不能使用设备登录的他人会话用 `BYTEDCLI_PROFILE` 指向空 profile，只防误用。
@@ -213,7 +214,7 @@ Claude Code 和 Codex 在回合结束后仍会按原生方式继续工作：转�
 
 ## AWS CLI（2026-10-23）
 
-AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效登录自动向设备所有者本人非沙箱会话下发使用说明，Workspace Connectors 的共享绑定用于其他成员。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。安装由设备所有者在设备行点击“安装 AWS CLI”（DEV-093），过程中显示下载进度（DEV-099）。登录优先走浏览器（DEV-099）：控制台登录在设备上运行 `aws login --remote`，本人把 AWS 页面显示的授权码粘贴回 Foundry；IAM Identity Center 先写入 staging profile，用 `aws sso login --use-device-code` 登录，成功后才写入 default。两种方式都需要 Worker 能力 `connector_browser_sign_in_v1`。终端命令（`aws configure sso --profile default`、`aws configure`、`aws sso login`）折叠为最后手段；退出仍在终端进行；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者无须绑定；其他成员未获共享授权或登录不可用时，会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
+AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效登录自动向设备所有者本人非沙箱会话下发使用说明，Workspace Connectors 的共享绑定用于其他成员。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。安装由设备所有者在设备行点击“安装 AWS CLI”（DEV-093），过程中显示下载进度（DEV-099）。登录优先走浏览器（DEV-099）：控制台登录在设备上运行 `aws login --remote`，本人把 AWS 页面显示的授权码粘贴回 Foundry；IAM Identity Center 先写入 staging profile，用 `aws sso login --use-device-code` 登录，成功后才写入 default。登录不要求选择默认区域：Worker 依次沿用 default profile 的 `region`、`AWS_REGION`、`AWS_DEFAULT_REGION`，都没有时用 `us-east-1`，并把该值传给需要 `--region` 的 CLI 命令。默认区域在登录后的设备详情里显示和修改，只影响未指定区域的命令，不限制 IAM 权限；权限来自登录身份或 Identity Center 权限集。两种登录方式都需要 Worker 能力 `connector_browser_sign_in_v1`。终端命令（`aws configure sso --profile default`、`aws configure`、`aws sso login`）折叠为最后手段；退出仍在终端进行；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者无须绑定；其他成员未获共享授权或登录不可用时，会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
 
 目录支持 `tool.source: "device"`（外部安装）、`"installer"`（厂商官方的当前用户安装程序，由 Worker 适配器运行）、`tool.minimumVersion`（更旧的副本显示为过旧并提供安装）和 `authentication: "local"`（终端管理）；适配器为 `packages/worker/src/connectors/aws.ts`，安装在 `aws-install.ts`：不用 sudo，布局与 AWS 官方用户级安装脚本一致（程序在 `~/.local/share/aws-cli`，`aws`、`aws_completer` 链接在 `~/.local/bin`），Linux 运行 zip 内的 `install --install-dir --bin-dir`（已有则 `--update`），macOS 以 `CurrentUserHomeDirectory` 和 customLocation 选择安装 pkg 后按文档建链接；设备有 gpg 时用 AWS 公布的密钥（FB5D…475C）校验 zip 签名，pkg 必须带 Amazon 的 Apple 签名；下载走设备的 HTTP(S)_PROXY；最后用 `aws --version` 确认是 v2，并在 Foundry 工具目录链接一份让会话优先使用。`~/.local/bin/aws` 若是别的副本（如 pip 装的 v1）不会被覆盖，失败原因会说明。Worker 以 `connector_installer_v1` 能力声明支持，旧 Worker 的行提示先更新 Worker。错误输出只映射为固定说明，不回传原始 stderr；网络失败不会当作退出登录。STS 成功不代表拥有业务权限，不推断凭据到期时间。网页 SSO、多个 profile 的单独绑定尚未实现。验证与部署见 [DEV-037](devlog/DEV-037-aws-cli-connector.md)。
 
@@ -228,6 +229,19 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
   - 退出只在终端（`signIn.signOut: false`），终端方式（含 AccessKey / API 密钥）作为最后手段列出。
 - **状态**：`tccli sts GetCallerIdentity`、`aliyun sts GetCallerIdentity`，只保留经校验的 ARN 与账号 ID；原始 stderr 不离开设备，未登录、凭据失效与网络错误分开。权限来自 CAM / RAM 策略，两家的登录都不带 scope，Foundry 不读也不推断权限（权限集说明由 DEV-136 的 `permissions` 字段补充）。
 - **隔离**：tccli 没有配置目录变量，用 `TCCLI_PROFILE=foundry-no-login` 让它找不到 profile，并清空 `TENCENTCLOUD_*` 凭据变量；显式 `--profile default` 仍能读到设备登录。aliyun 用 `ALIBABA_CLOUD_IGNORE_PROFILE=TRUE`（连 `--profile` 也不读配置文件）并清空 `ALIBABA_CLOUD_*` 凭据变量。与其他设备持有型一样只防误用；正反向会话检查（DEV-128）对两者都生效。
+
+## OpenLark（DEV-159 返工后的扩展）
+
+OpenLark 是私有部署的飞书网页会话客户端。它不再出现在内置 Public 分组，也没有 Foundry 专用的 Provider、存储表、HTTP 路由、Worker 适配器或 Web 表单。本仓库 `extensions/open-lark/` 用一份纯数据 `serverHeld` 描述符接入，并随 Worker 发布：
+
+- **安装**：设备所有者在 Connectors 页点击“安装到这台设备”，或运行 `foundry-worker extension add open-lark`。扩展只有 `foundry-extension.json` 与说明，不提供 `entry`/`cli`；Server 不接收或运行扩展代码。
+- **可见性**：描述符用 `access.via: "github"` 和 OpenLark 自己的仓库地址；只有某台设备上的 Foundry GitHub CLI 登录能读取该仓库时才显示。检查结果在“需要权限的连接器”中逐设备说明。
+- **实例**：人添加多个 OpenLark 部署。表单、字段帮助和步骤来自描述符；`POST /api/connectors/extensions/openlark/instances/probe` 先校验地址与 Agent 令牌，从 `/agent/v1/capabilities` 读取 `token.scope`，再从 `/agent/v1/accounts` 得到账号选择。实例仍写通用 `external_provider_apps`、`external_accounts`、`external_account_bindings`，非秘密探测元数据保存在 app 的通用 `extension_data`，secret field 封存在 `external-app:<appId>:extension`。
+- **上游声明**：描述符只接受 HTTPS 公网地址，DNS 解析后按已验证 IP 拨号并拒绝重定向；每次探测和网关请求都重新校验。上游前缀固定 `/agent/v1`，`Authorization` 与 `X-Open-Lark-Account` 由描述符模板从 secret/字段渲染，字段为空时不发送对应头。
+- **路由权限**：探测 `GET /agent/v1/` 得到 OpenLark 自己的 `{method,path,domain,access}` 目录；网关按目录判定，不按 HTTP method 猜。只读令牌只放行 `read`，完整令牌按探测到的 `full` scope 放行 `read` 和 `write`；未知路由在到达上游前拒绝。Personal Agent 的 `write` 还受权限包约束并要求确认，普通会话不要求确认。请求体最多 8 MiB、响应 16 MiB、60 s 超时，逐请求审计且不含令牌。
+- **会话**：Worker 按 Server 下发的 `sessionEnvironment` 起通用本机转发器，注入 `{gatewayBase}` 与 `{standIn}` 到 `OPEN_LARK_AGENT_BASE`、`OPEN_LARK_AGENT_TOKEN`、`OPEN_LARK_AGENT_READ_TOKEN`，并设置 `OPEN_LARK_MCP_READ_ONLY=1`；替身经通用 session-handle 续期。`olk` 不需要知道 Foundry 的真令牌。
+- **部署前提**：NAS/OpenLark 主机要设置 `LARK_AGENT_LEGACY=token` 与随机生成的 `OPEN_LARK_AGENT_TOKEN`，推荐把完整令牌填入实例；只读时使用另一个 `OPEN_LARK_AGENT_READ_TOKEN`。服务器保管实例必须能从公网通过 HTTPS 访问，因为令牌会经该连接传输。README 的中英文步骤在扩展文件夹内。
+- **限制**：本片不实现内网 device-held OpenLark、资源级 domain 白名单或多实例优先级。同一工作区绑定多个实例时，Worker 使用会话材料中的第一个；配套 skill 仍应按 OpenLark 仓库版本 pin 后绑定。
 
 ## 后续
 

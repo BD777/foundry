@@ -235,7 +235,9 @@ func (s *Server) childHandedOff(ctx context.Context, child store.AgentSession) s
 	answer := strings.Join(strings.Fields(child.Response), " ")
 	latest := true
 	for _, item := range items {
-		if item.SenderSessionID != child.ID || item.State == store.InboxFailed || strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
+		if item.SenderSessionID != child.ID || item.State == store.InboxFailed ||
+			strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) ||
+			strings.HasPrefix(item.Prompt, sessions.SessionAlertPrefix) {
 			continue
 		}
 		if answer != "" && strings.Join(strings.Fields(item.Prompt), " ") == answer {

@@ -20,6 +20,8 @@ export const panelVariants = cva(
         lg: "fdy-panel-radius-lg rounded-xl",
       },
       variant: {
+        /** Page content on the page's own surface: no second card boundary. */
+        plain: "fdy-panel-plain border-0 bg-transparent shadow-none",
         flat: "fdy-panel-flat border-line-strong bg-panel shadow-none",
         inset:
           "fdy-panel-inset border-line-soft bg-surface shadow-(--fdy-shadow-inset)",

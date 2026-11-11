@@ -444,6 +444,7 @@ export const personalAgent = {
   },
   proposal: {
     kicker: "Needs your OK",
+    account: "Account",
     accept: "OK",
     decline: "No thanks",
     expires: "Expires {{when}}",
@@ -529,6 +530,8 @@ export const personalAgent = {
         "These saved references belong to removed computers. Work and project creation are disabled. Choose a new location explicitly; files and previous locations have been kept.",
     },
     title: "Assistant settings",
+    description:
+      "Choose how your assistant speaks, where it works, and when it should check with you.",
     sectionsLabel: "Settings sections",
     allSections: "All settings",
     sections: {
@@ -795,16 +798,22 @@ export const personalAgent = {
     },
     connectors: {
       intro:
-        "The Assistant can use these accounts. New accounts are on by default.",
+        "The Assistant can use these accounts. Deleting, sending messages outward, DNS changes, and App Store Connect changes ask you first.",
       serverGroup: "Server accounts",
       unknownComputer: "Unknown computer",
       serverDetail: "{{kind}} · {{status}}",
       deviceDetail: "{{kind}} · on {{device}}",
-      switchLabel: "Let the Assistant use {{label}}",
+      switchLabel: "Access level for {{label}}",
+      levels: {
+        off: "Off",
+        read: "Read only",
+        write: "Read/write",
+      },
+      deviceReadHint:
+        "Foundry cannot stop writes through an account that lives on a device yet, so the assistant can still change things with it.",
       loading: "Loading connector accounts…",
       loadFailed: "Could not load connector accounts",
       retry: "Try again",
-      saveFailed: "Could not change this connector",
       emptyTitle: "No connector accounts yet",
       emptyBody: "Connect an account before the Assistant can use it.",
       openConnectors: "Open Connectors",
@@ -864,6 +873,7 @@ export const personalAgent = {
         "Usage counts what your computers report; anything they don't report isn't counted.",
     },
     activity: {
+      title: "What it changed",
       intro:
         "Everything it changed or tried to change in the last 90 days, newest first.",
       empty: "Nothing yet.",

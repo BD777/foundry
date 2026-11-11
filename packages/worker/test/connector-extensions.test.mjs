@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cpSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -24,14 +25,21 @@ import {
   modelAccessHasProblems,
   refreshExtensionModelProviders,
 } from "../dist/connectors/extensions/model-access.js";
-import { connectorModelProviders as extensionModelProviders } from "../dist/harness/connector-model-providers.js";
+import {
+  connectorModelProviders as extensionModelProviders,
+  saveConnectorModelProviders,
+} from "../dist/harness/connector-model-providers.js";
 import {
   addExtension,
+  bundledExtensions,
   extensionDataDir,
   extensionDir,
+  installBundledExtension,
   listExtensions,
   loadedExtensions,
   removeExtension,
+  setExtensionAutoUpdate,
+  syncBundledExtensions,
 } from "../dist/connectors/extensions/registry.js";
 import {
   agentProfilesForWorkspace,
@@ -60,6 +68,96 @@ function extensionSource(change = (manifest) => manifest) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   writeFileSync(manifestPath, JSON.stringify(change(manifest)));
   return dir;
+}
+
+function bundledExtensionSource(id, version) {
+  const dir = mkdtempSync(join(tmpdir(), `fdy-${id}-src-`));
+  cpSync(join(here, "../../../extensions", id), dir, { recursive: true });
+  const manifestPath = join(dir, "foundry-extension.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.version = version;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  return dir;
+}
+
+function removeIfInstalled(id) {
+  try {
+    removeExtension(id);
+  } catch {
+    // Not installed in this test state.
+  }
+}
+
+function serverHeldExtensionSource(change = (manifest) => manifest) {
+  return extensionSource((manifest) => {
+    delete manifest.entry;
+    manifest.id = "acme";
+    manifest.name = "Acme extension";
+    manifest.connectors = [
+      {
+        kind: "acme-api",
+        label: "Acme API",
+        tool: { command: "acme" },
+        serverHeld: {
+          instances: "many",
+          fields: [
+            {
+              id: "baseUrl",
+              label: "Acme HTTPS address",
+              type: "url",
+              required: true,
+            },
+          ],
+          steps: [["baseUrl"]],
+          probe: [
+            {
+              id: "capabilities",
+              method: "GET",
+              path: "/capabilities",
+              extract: {
+                values: { scope: "/token/scope" },
+              },
+            },
+            {
+              id: "routes",
+              method: "GET",
+              path: "/",
+              extract: {
+                routes: {
+                  items: "/routes",
+                  method: "/method",
+                  path: "/path",
+                  access: "/access",
+                },
+              },
+            },
+          ],
+          upstream: {
+            baseField: "baseUrl",
+            pathPrefix: "/api",
+            headers: {},
+          },
+          access: {
+            from: "probe:routes",
+            default: "deny",
+            allowBy: {
+              value: "probe:capabilities/scope",
+              map: { full: ["read", "write"], read: ["read"] },
+              otherwise: ["read"],
+            },
+          },
+          session: {
+            env: {
+              ACME_BASE: "{gatewayBase}",
+              ACME_READ_ONLY: "{probeMap:capabilities/scope|full=0|*=1}",
+            },
+          },
+          network: { holdings: ["server", "device"], publicOnly: true },
+        },
+      },
+    ];
+    return change(manifest);
+  });
 }
 
 function setState(state) {
@@ -131,6 +229,7 @@ test("an extension is installed as a checked copy, updated in place and removed"
     id: "corp",
     name: "Corp tools",
     version: "1.0.0",
+    state: "installed",
   });
   assert.equal(descriptor.setup.command, "npx corp-foundry-extension install");
 
@@ -150,6 +249,20 @@ test("an extension that is not safe or not compatible is refused", () => {
   refuse((m) => ({ ...m, id: "Corp Tools" }), /id must be/);
   refuse((m) => ({ ...m, connectors: [] }), /provides no connectors/);
   refuse((m) => ({ ...m, entry: { command: "../escape" } }), /entry.command/);
+  refuse((m) => {
+    m.connectors[0].access = { via: "GitHub", repository: "owner/repo" };
+    return m;
+  }, /access.via/);
+  refuse((m) => {
+    m.connectors[0].access = { via: "github", repository: "http://bad" };
+    return m;
+  }, /access.repository/);
+  refuse((m) => {
+    m.connectors[0].repositoryAccess = {
+      args: ["api", "repos/{owner}/{repository}"],
+    };
+    return m;
+  }, /repositoryAccess/);
   refuse((m) => m, /built in/, ["corpcli"]);
   const linked = extensionSource();
   symlinkSync("/etc/passwd", join(linked, "passwd"));
@@ -163,6 +276,71 @@ test("an extension that is not safe or not compatible is refused", () => {
         [],
       ),
     /provided by the extension corp/,
+  );
+});
+
+test("a pure-data server-held extension needs no program", () => {
+  const source = serverHeldExtensionSource();
+  addExtension(source, ["aws"]);
+  try {
+    const descriptor = extensionConnectorDescriptors().find(
+      (item) => item.kind === "acme-api",
+    );
+    assert.equal(descriptor.holding, "server_held");
+    assert.equal(descriptor.adapter, "extension:acme");
+    assert.equal(descriptor.serverHeld.instances, "many");
+    // A tool without a source is provided by its package bundle, not forced to the device.
+    assert.equal(descriptor.tool.source, undefined);
+    assert.equal(
+      descriptor.serverHeld.access.allowBy.value,
+      "probe:capabilities/scope",
+    );
+    assert.equal(
+      loadedExtensions().find((item) => item.installed.id === "acme").manifest
+        .cli,
+      undefined,
+    );
+  } finally {
+    removeExtension("acme");
+  }
+});
+
+test("server-held access and probe templates are checked with the server's rules", () => {
+  const refuse = (change, pattern) =>
+    assert.throws(
+      () => addExtension(serverHeldExtensionSource(change), ["aws"]),
+      pattern,
+    );
+  refuse((manifest) => {
+    manifest.connectors[0].serverHeld.access.allowBy.value =
+      "probe:capabilities/nope";
+    return manifest;
+  }, /allowBy.value names a value extracted by a probe/);
+  refuse((manifest) => {
+    manifest.connectors[0].serverHeld.access.allow = ["read"];
+    return manifest;
+  }, /exactly one of allow or allowBy/);
+  refuse((manifest) => {
+    manifest.connectors[0].serverHeld.session.env.ACME_READ_ONLY =
+      "{probeMap:capabilities/nope|full=0|*=1}";
+    return manifest;
+  }, /unknown template reference/);
+});
+
+test("server-held data is checked locally with the server's rules", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fdy-openlark-src-"));
+  cpSync(join(here, "../../../extensions/open-lark"), dir, {
+    recursive: true,
+  });
+  const path = join(dir, "foundry-extension.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  const headers = manifest.connectors[0].serverHeld.upstream.headers;
+  headers["x-open-lark-account"] = headers["X-Open-Lark-Account"];
+  delete headers["X-Open-Lark-Account"];
+  writeFileSync(path, JSON.stringify(manifest));
+  assert.throws(
+    () => addExtension(dir, ["aws"]),
+    /must be written in canonical form/,
   );
 });
 
@@ -710,5 +888,227 @@ test("an extension's id is not taken over by another source", () => {
   assert.deepEqual(
     listExtensions().find((item) => item.id === "corp"),
     before,
+  );
+});
+
+test("bundled extensions are advertised, install without git, and migrate from the old source", () => {
+  for (const id of ["open-lark", "limen"]) {
+    try {
+      removeExtension(id);
+    } catch {
+      // Not installed in this test state.
+    }
+  }
+  const available = extensionConnectorDescriptors().find(
+    (connector) => connector.kind === "openlark",
+  );
+  assert.equal(available.extension.state, "available");
+  assert.equal(available.extension.bundled, true);
+  assert.equal(available.extension.autoUpdate, undefined);
+  assert.equal(available.access.via, "github");
+  assert.equal(installBundledExtension("open-lark").action, "created");
+  assert.equal(
+    extensionConnectorDescriptors().find(
+      (connector) => connector.kind === "openlark",
+    ).extension.state,
+    "installed",
+  );
+
+  // An official Limen installation from the old git folder moves to the
+  // Worker copy while keeping its private data.
+  removeExtension("open-lark");
+  const legacy = {
+    git: "https://github.com/BD777/foundry.git",
+    path: "extensions/limen",
+  };
+  addExtension(join(here, "../../../extensions/limen"), ["aws"], {
+    source: legacy,
+    commit: "a".repeat(40),
+  });
+  mkdirSync(extensionDataDir("limen"), { recursive: true });
+  writeFileSync(join(extensionDataDir("limen"), "keep.txt"), "profile data");
+  syncBundledExtensions(["aws"]);
+  const migrated = listExtensions().find((item) => item.id === "limen");
+  assert.equal(migrated.bundled, true);
+  assert.equal(migrated.source, undefined);
+  assert.equal(
+    readFileSync(join(extensionDataDir("limen"), "keep.txt"), "utf8"),
+    "profile data",
+  );
+  removeExtension("limen");
+  assert.ok(
+    bundledExtensions().some((item) => item.manifest.id === "open-lark"),
+  );
+});
+
+const limenModelProvider = {
+  id: "limen_default",
+  label: "Limen · default",
+  runtime: "claude",
+  model: "claude-sonnet",
+  models: ["claude-sonnet"],
+  externalConnection: {
+    executable: "limen",
+    args: ["run"],
+    identity: "limen_default",
+  },
+  connector: { kind: "limen", label: "Limen", extensionId: "limen" },
+};
+
+test("a local folder extension is replaced by the bundled newer copy, keeping its data and models", () => {
+  removeIfInstalled("limen");
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.0"), ["aws"]);
+    mkdirSync(extensionDataDir("limen"), { recursive: true });
+    writeFileSync(join(extensionDataDir("limen"), "profile.json"), "profile");
+    saveConnectorModelProviders([limenModelProvider]);
+
+    assert.deepEqual(syncBundledExtensions(["aws"]), ["updated"]);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.1");
+    assert.equal(installed.bundled, true);
+    assert.equal(installed.source, undefined);
+    assert.equal(
+      readFileSync(join(extensionDataDir("limen"), "profile.json"), "utf8"),
+      "profile",
+    );
+    assert.deepEqual(extensionModelProviders(), [limenModelProvider]);
+    const descriptor = extensionConnectorDescriptors().find(
+      (connector) => connector.kind === "limen",
+    );
+    assert.equal(descriptor.extension.bundled, true);
+    assert.equal(descriptor.extension.bundledVersion, undefined);
+  } finally {
+    removeIfInstalled("limen");
+    saveConnectorModelProviders([]);
+  }
+});
+
+test("a newer local folder extension is kept, with the bundled version shown", () => {
+  removeIfInstalled("limen");
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.2"), ["aws"]);
+    assert.deepEqual(syncBundledExtensions(["aws"]), []);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.2");
+    assert.equal(installed.bundled, undefined);
+    assert.equal(installed.source, undefined);
+    const descriptor = extensionConnectorDescriptors().find(
+      (connector) => connector.kind === "limen",
+    );
+    assert.equal(descriptor.extension.version, "0.2.2");
+    assert.equal(descriptor.extension.bundled, undefined);
+    assert.equal(descriptor.extension.bundledVersion, "0.2.1");
+  } finally {
+    removeIfInstalled("limen");
+  }
+});
+
+test("a bundled copy does not take over an extension installed from another git source", () => {
+  removeIfInstalled("limen");
+  const source = {
+    git: "https://example.com/fork/limen.git",
+    path: "extensions/limen",
+  };
+  try {
+    addExtension(bundledExtensionSource("limen", "0.2.0"), ["aws"], {
+      source,
+      commit: "c".repeat(40),
+    });
+    assert.deepEqual(syncBundledExtensions(["aws"]), []);
+    const installed = listExtensions().find((item) => item.id === "limen");
+    assert.equal(installed.version, "0.2.0");
+    assert.deepEqual(installed.source, source);
+    assert.equal(installed.bundled, undefined);
+    assert.throws(
+      () => installBundledExtension("limen", ["aws"]),
+      (error) => error.code === "id_conflict",
+    );
+  } finally {
+    removeIfInstalled("limen");
+  }
+});
+
+test("git-installed extensions default to automatic updates and can turn them off", () => {
+  try {
+    removeExtension("corp");
+  } catch {
+    // Not installed.
+  }
+  const source = {
+    git: "https://example.com/corp.git",
+    path: "extensions/corp",
+  };
+  addExtension(extensionSource(), ["aws"], {
+    source,
+    commit: "b".repeat(40),
+  });
+  assert.equal(
+    listExtensions().find((item) => item.id === "corp").autoUpdate,
+    true,
+  );
+  assert.equal(setExtensionAutoUpdate("corp", false).autoUpdate, false);
+  assert.equal(
+    listExtensions().find((item) => item.id === "corp").autoUpdate,
+    false,
+  );
+  removeExtension("corp");
+});
+
+test("a connector checks repository access with its own login and argv", async () => {
+  const managed = mkdtempSync(join(tmpdir(), "fdy-probe-bin-"));
+  const probe = join(managed, "probe");
+  const output = join(managed, "calls.txt");
+  writeFileSync(
+    probe,
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(output)}\nexit 0\n`,
+  );
+  chmodSync(probe, 0o700);
+  const connector = {
+    kind: "probe",
+    label: "Probe",
+    holding: "device_held",
+    adapter: "probe",
+    tool: { command: "probe", source: "device" },
+    repositoryAccess: {
+      args: ["api", "repos/{repository}", "--silent"],
+      repositoryFormat: "github",
+    },
+  };
+  const adapters = {
+    probe: {
+      name: "probe",
+      runEnvironment: {},
+      clearEnvironment: [],
+      async readVersion() {
+        return "1.0.0";
+      },
+      async readLogin() {
+        return { signedIn: true, identity: "reader" };
+      },
+      async beginSignIn() {
+        return { status: "failed" };
+      },
+      async pollSignIn() {
+        return { status: "failed" };
+      },
+      async signOut() {},
+    },
+  };
+  const connectors = new DeviceHeldConnectors({
+    adapters,
+    managedBin: () => managed,
+    toolDirs: [],
+    reachable: async () => true,
+  });
+  const check = await connectors.repositoryAccessCheck(
+    connector,
+    "https://github.com/owner/repository",
+  );
+  assert.equal(check.status, "ok");
+  assert.equal(check.identity, "reader");
+  assert.equal(
+    readFileSync(output, "utf8").trim(),
+    "api repos/owner/repository --silent",
   );
 });

@@ -35,6 +35,7 @@ import {
 } from "./connector-text";
 import { Identity } from "../../components/ui/identity";
 import { RowMain } from "../../components/ui/row-main";
+import { Switch } from "../../components/ui/switch";
 
 /**
  * One device on a device-held connector's tab: who is signed in there (or
@@ -56,6 +57,7 @@ export function DeviceConnectorRow({
   onSignOut,
   onUpdateExtension,
   onRemoveExtension,
+  onAutoUpdateExtension,
   showCheck = false,
   note,
   children,
@@ -72,6 +74,8 @@ export function DeviceConnectorRow({
   /** Installs the extension again from its source (an update). */
   onUpdateExtension?: (source: ConnectorExtensionRepository) => void;
   onRemoveExtension?: (extensionId: string) => void;
+  /** Changes automatic git-source updates for this extension. */
+  onAutoUpdateExtension?: (enabled: boolean) => void;
   showCheck?: boolean;
   /** A line under who is signed in, about what the page is for. */
   note?: ReactNode;
@@ -319,6 +323,38 @@ export function DeviceConnectorRow({
           ) : null}
         </span>
       </RowMain>
+      {extension &&
+      (extension.source || extension.bundled || extension.bundledVersion) ? (
+        <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-ink-muted">
+          <span className="min-w-0">
+            {extension.bundledVersion && !extension.bundled
+              ? t("deviceHeld.localNewerThanBundled", {
+                  local: extension.version,
+                  bundled: extension.bundledVersion,
+                })
+              : extension.bundled
+                ? t("deviceHeld.updatesWithWorker")
+                : t("deviceHeld.autoUpdate")}
+          </span>
+          {extension.bundled ? (
+            <Badge tone="neutral">{t("deviceHeld.bundled")}</Badge>
+          ) : (
+            <span className="flex items-center gap-2">
+              <small>
+                {extension.autoUpdate === false
+                  ? t("deviceHeld.autoUpdateOff")
+                  : t("deviceHeld.autoUpdateOn")}
+              </small>
+              <Switch
+                aria-label={t("deviceHeld.autoUpdate")}
+                checked={extension.autoUpdate !== false}
+                disabled={locked || !onAutoUpdateExtension}
+                onCheckedChange={onAutoUpdateExtension}
+              />
+            </span>
+          )}
+        </div>
+      ) : null}
       {children}
       <DeviceAuthorizationGroups
         connector={connector}

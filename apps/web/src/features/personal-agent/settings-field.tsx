@@ -1,8 +1,13 @@
 import type { ReactNode } from "react";
 import type { PersonalAgentSettings } from "@bd777/foundry-protocol";
 import { FieldHint, Checkbox } from "../../components/ui/field";
-import { FieldLabel } from "../../components/ui/form-field";
-import { Subheading } from "../../components/ui/subheading";
+import {
+  FieldLabel,
+  FormField,
+  FormFieldGroup,
+} from "../../components/ui/form-field";
+import { SectionHeader } from "../../components/ui/page-header";
+import { cn } from "../../lib/cn";
 
 /** Applies part of a change to the settings draft. */
 export type ChangeSettings = (patch: Partial<PersonalAgentSettings>) => void;
@@ -13,23 +18,22 @@ export function SettingsField({
   hint,
   htmlFor,
   children,
+  className,
 }: {
   label: ReactNode;
   hint?: ReactNode;
   /** The control's id when it is a native field; else the label names a group. */
   htmlFor?: string;
   children: ReactNode;
+  className?: string;
 }) {
+  const Component = htmlFor ? FormField : FormFieldGroup;
   return (
-    <div className="grid min-w-0 justify-items-start gap-1.5">
-      {htmlFor ? (
-        <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
-      ) : (
-        <FieldLabel as="span">{label}</FieldLabel>
-      )}
+    <Component className={cn("w-full max-w-sm", className)}>
+      <FieldLabel as="span">{label}</FieldLabel>
       {children}
       {hint ? <FieldHint>{hint}</FieldHint> : null}
-    </div>
+    </Component>
   );
 }
 
@@ -67,7 +71,7 @@ export function SettingsGroup({
 }) {
   return (
     <div className="grid gap-3.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
-      {title ? <Subheading size="group">{title}</Subheading> : null}
+      {title ? <SectionHeader level={3} title={title} /> : null}
       {children}
     </div>
   );

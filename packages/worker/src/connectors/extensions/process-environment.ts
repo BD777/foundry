@@ -1,6 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { findCommand, toolEnvironment } from "../../skills/managed-tools.js";
+import {
+  findCommand,
+  managedToolsBin,
+  toolEnvironment,
+} from "../../skills/managed-tools.js";
 
 /**
  * What an extension's process (and a declarative extension's tool) starts
@@ -49,9 +53,13 @@ export function extensionBaseEnvironment(): NodeJS.ProcessEnv {
 /** A program named in a manifest: on PATH or in the usual user folders. */
 export function findExtensionCommand(named: string): string | undefined {
   return findCommand(named, [
+    process.env.FOUNDRY_TOOLS_BIN ?? managedToolsBin(),
     join(homedir(), ".local", "bin"),
     join(homedir(), ".npm-global", "bin"),
     join(homedir(), ".bun", "bin"),
+    join(homedir(), ".volta", "bin"),
+    join(homedir(), "Library", "pnpm"),
+    join(homedir(), ".local", "share", "pnpm"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
   ]);

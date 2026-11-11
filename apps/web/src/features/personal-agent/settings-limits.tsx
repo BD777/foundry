@@ -8,7 +8,7 @@ import { limitCaps, limitKeys, type LimitKey } from "./assistant-model";
 import type { ChangeSettings } from "./settings-field";
 import { PaMuted } from "./pa-muted";
 import { DividedList } from "../../components/ui/divided-list";
-import { FieldLabel } from "../../components/ui/form-field";
+import { FieldLabel, FormFieldGroup } from "../../components/ui/form-field";
 
 /** The counter each limit applies to; the stuck time has none. */
 const usageOf: Partial<Record<LimitKey, keyof PersonalAgentUsage>> = {
@@ -45,33 +45,37 @@ export function LimitsSection({
           const max = limitCaps[key];
           return (
             <li
-              className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,auto)] items-center gap-x-3.5 gap-y-1.5 max-[860px]:grid-cols-[minmax(0,1fr)]"
+              className="grid grid-cols-[minmax(0,24rem)_minmax(0,1fr)] items-start gap-x-5 gap-y-1.5 max-[860px]:grid-cols-[minmax(0,1fr)]"
               key={key}
             >
-              <FieldLabel htmlFor={id}>
-                {t(`settings.limits.labels.${key}`)}
-              </FieldLabel>
-              <TextInput
-                className="w-30"
-                id={id}
-                inputMode="numeric"
-                max={max}
-                min={key === "monthlyTokenBudget" ? 0 : 1}
-                onChange={(event) =>
-                  change({
-                    limits: {
-                      ...draft.limits,
-                      [key]:
-                        event.target.value === ""
-                          ? Number.NaN
-                          : Number(event.target.value),
-                    },
-                  })
-                }
-                tone="boxed"
-                type="number"
-                value={Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]}
-              />
+              <FormFieldGroup>
+                <FieldLabel htmlFor={id}>
+                  {t(`settings.limits.labels.${key}`)}
+                </FieldLabel>
+                <TextInput
+                  className="w-full"
+                  id={id}
+                  inputMode="numeric"
+                  max={max}
+                  min={key === "monthlyTokenBudget" ? 0 : 1}
+                  onChange={(event) =>
+                    change({
+                      limits: {
+                        ...draft.limits,
+                        [key]:
+                          event.target.value === ""
+                            ? Number.NaN
+                            : Number(event.target.value),
+                      },
+                    })
+                  }
+                  tone="boxed"
+                  type="number"
+                  value={
+                    Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]
+                  }
+                />
+              </FormFieldGroup>
               <PaMuted as="span" className="flex flex-wrap gap-x-2.5 gap-y-0.5">
                 {usage && counter
                   ? t("settings.limits.now", {

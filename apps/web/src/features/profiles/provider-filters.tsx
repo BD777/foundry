@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
-import type { DeviceProjection } from "@bd777/foundry-protocol";
+import type {
+  DeviceProfileBinding,
+  DeviceProjection,
+  ProfileDefinition,
+} from "@bd777/foundry-protocol";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SelectMenu } from "../../components/ui/select-menu";
 import type { NativeRuntime } from "./device-accounts";
@@ -47,4 +51,34 @@ export function ProviderFilters({
       />
     </div>
   );
+}
+
+/** The connections shown for the chosen runtimes and, when one is picked, device. */
+export function filterConnections(
+  connections: ProfileDefinition[],
+  {
+    runtimes,
+    deviceId,
+    deviceProfiles,
+  }: {
+    runtimes: NativeRuntime[];
+    deviceId: string;
+    deviceProfiles: DeviceProfileBinding[];
+  },
+): ProfileDefinition[] {
+  return connections.filter(
+    (profile) =>
+      runtimes.includes(profile.runtime as NativeRuntime) &&
+      (!deviceId ||
+        deviceProfiles.some(
+          (row) =>
+            row.deviceId === deviceId &&
+            row.profileId === profile.id &&
+            row.enabled,
+        )),
+  );
+}
+
+export function runtimesFor(filter: RuntimeFilter): NativeRuntime[] {
+  return filter === "all" ? ["claude", "codex"] : [filter];
 }

@@ -23,7 +23,7 @@
 - Server：设备上报扩展提供的连接器（`DeviceProjection.connectors`，注册时校验，非所有者看不到），按设备解析（`ConnectorOn`、`ConnectorsFor`），`GET /api/connectors`；内置目录去掉 bytedcli，AWS 改用描述符登录方式；技能包的终端登录提示改由包自己声明（`foundry.signIn`），不再写死 bytedcli。
 - Worker：`connectors/extensions/`（manifest、注册表与摘要、JSON-RPC 进程宿主、适配器、模型接入），`foundry-worker extension add|list|remove`；内置 AWS 与扩展走同一个设备持有型运行时；扩展提供的模型服务成为设备 profile（`connector` 字段），同 id 覆盖手工登记；扩展增删时及时上报。
 - Web：标签页来自目录；统一登录对话框（选方式 → 填字段 → 链接/码/二维码/粘贴码；终端方式显示命令并检查）；“添加连接器”说明；扩展连接器标明来源，未安装的设备显示安装命令；Devices 页的外部连接标明“来自某连接器”并可跳到其登录管理；删除 AWS 定制表单与写死的连接器列表。
-- 私有部分（不在本仓库）：Limen 扩展在 Limen 仓库 `tools/host/foundry-extension/`（6.6 KB 薄适配层：`limen status/join/remove` 与已安装的会话助手 `--describe`）；bytedcli 扩展在 `~/workspace/foundry-private-connectors/bytedcli/`（原适配器移植）。
+- 私有部分（不在本仓库）：Limen 扩展当时在 Limen 工作区 `tools/host/foundry-extension/` 起草（6.6 KB 薄适配层，从未提交进 Limen 仓库，2026-11-11 核对 Limen 本地与远端全部分支均无此路径）；DEV-115 起改为 Foundry 仓库 `extensions/limen/` 里的纯数据扩展，只调用 Limen 公开的 `limen status/join/remove --json`，Limen 仓库里没有任何 Foundry 的东西；bytedcli 扩展在 `~/workspace/foundry-private-connectors/bytedcli/`（原适配器移植）。
 - 部署中发现并修复：扩展提供的模型服务验证通过后结果被立即删除（`withExternalCheck` 只认登记文件）；`--workspace` 指向未初始化目录时设备上报在定时器里抛错导致 Worker 退出（改为跳过并记日志）。
 
 ## 自验

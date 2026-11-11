@@ -164,3 +164,40 @@ test("a paused bundle suggests resuming", () => {
   );
   assert.match(html, /fdy-button-primary[^>]*>Resume updates</);
 });
+
+test("a bundle reached from its connector shows the package link and target skill", () => {
+  const html = renderToStaticMarkup(
+    createElement(SkillBundleRow, {
+      repo,
+      canManage: true,
+      busy: false,
+      checkedLabel: "",
+      devices,
+      deviceTools,
+      isDefault: false,
+      packageConnector: {
+        connector: {
+          kind: "feishu",
+          label: "Feishu",
+          holding: "device_held",
+          adapter: "feishu",
+          tool: { command: "feishu-cli" },
+        },
+        enabled: true,
+        repositoryId: repo.id,
+        devices: [],
+      },
+      requested: true,
+      requestedSkillId: "a",
+      onToggleDefault: () => {},
+      refresh: async () => {},
+      run: () => {},
+    }),
+  );
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(text, /Belongs to the Feishu connector/);
+  assert.match(text, /feishu-cli-docs Opened from this connector/);
+  assert.match(text, /feishu-cli-mail/);
+  assert.match(html, /href="\/connectors\/feishu"/);
+  assert.match(html, /aria-current="location"/);
+});

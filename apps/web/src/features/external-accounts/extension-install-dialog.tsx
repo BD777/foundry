@@ -79,9 +79,11 @@ export function ExtensionInstallDialog({
     setError("");
     try {
       const reply = await installDeviceExtension(device.deviceId, {
-        git: git.trim(),
-        ...(path.trim() ? { path: path.trim() } : {}),
-        ...(ref.trim() ? { ref: ref.trim() } : {}),
+        source: {
+          git: git.trim(),
+          ...(path.trim() ? { path: path.trim() } : {}),
+          ...(ref.trim() ? { ref: ref.trim() } : {}),
+        },
       });
       onInstalled(device.deviceId, reply);
     } catch (cause) {

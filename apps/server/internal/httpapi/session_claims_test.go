@@ -228,8 +228,9 @@ func TestCompletedTurnAndHeartbeatsClaimTheAgentsNativeWork(t *testing.T) {
 			t.Fatalf("decode interleaved %s: %v", wsRunSessionType, err)
 		}
 		if run.Session.Source != store.SessionSourceNaming || run.Session.WorkspaceID != "ws_native" ||
-			!strings.Contains(run.Session.Input.Prompt, working.Input.Prompt) {
-			t.Fatalf("interleaved run_session = source %q workspace %q prompt %q, want automatic naming of the working session in ws_native",
+			(!strings.Contains(run.Session.Input.Prompt, working.Input.Prompt) &&
+				!strings.Contains(run.Session.Input.Prompt, done.Input.Prompt)) {
+			t.Fatalf("interleaved run_session = source %q workspace %q prompt %q, want automatic naming of a completed session in ws_native",
 				run.Session.Source, run.Session.WorkspaceID, run.Session.Input.Prompt)
 		}
 	}

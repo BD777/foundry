@@ -92,16 +92,25 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	if err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve server credential: %w", err)
 	}
+	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor)
 	// Resolve the workspace's skill selection to current latest revisions. An
 	// empty slice is authoritative: the runtime exposes no skills at all.
 	// A bundle that ships a CLI gives the skills of the version the device's
 	// CLI is (docs/skills.md, Bundle 版本), and the session runs that CLI.
 	var toolPins []store.SessionToolPin
-	if refs, err := sessionSkillRefs(ctx, c.hub.store, session.WorkspaceID, session.Provider); err != nil {
+	if sources, err := resolveWorkspaceSkills(ctx, c.hub.store, session.WorkspaceID); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve workspace skills: %w", err)
+	} else if packageRefs, packagePins, err := sessionPackageSkills(
+		ctx, c.hub.store, c.actor.AccountID(), session.DeviceID,
+		connectorKinds(connectorUses.ExternalAccounts, connectorUses.DeviceConnectors),
+	); err != nil {
+		return wsRunSessionPayload{}, fmt.Errorf("resolve connector package skills: %w", err)
+	} else if refs, err := mergePackageSkillRefs(ctx, c.hub.store, session.WorkspaceID, withBuiltinSkills(sources.Refs, session.Provider), packageRefs); err != nil {
+		return wsRunSessionPayload{}, fmt.Errorf("merge connector package skills: %w", err)
 	} else if refs, toolPins, err = deviceSkillRefs(ctx, c.hub.store, refs, session.DeviceID); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve the device's bundle versions: %w", err)
 	} else {
+		toolPins = mergeToolPins(toolPins, packagePins)
 		session.SkillRefs = refs
 	}
 	session.QuestionsTo, _ = questionsTo(ctx, c.hub.store, session, 0)
@@ -146,7 +155,6 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor)
 	// The person's assistant runs as one, with its folder's files and the
 	// turn's context, every run.
 	var assistantFiles []wsSetupWorkspaceFile

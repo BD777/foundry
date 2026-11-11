@@ -94,6 +94,8 @@ flowchart TB
 
 会话工作管理新增独立的 `session-work` 模块：身份、来源发现、持久清单、进程控制与调度协调只依赖 Transport / Platform。Session Runtime 读取其简报并报告原生任务事件；`session-work/runtime.ts` 属于 composition，通过回调注入 native stop / session cancel，避免领域模块反向依赖运行时。Server 的 `internal/sessionwork` 只依赖 store 模型，存储扩展使用独立 `WorkStore`；HTTP / MCP 共用同一控制入口。实现与验证边界见 `session-work-management-validation.md`。
 
+自适应并发由设备侧的 `concurrency` 模块负责：资源信号适配、进程树用量估计和纯准入策略只依赖 Platform / Device。Daemon fallback 与 execution host 在 composition 层各实例化一个控制器，把当前上限和硬等待注入同一 `ConcurrentTaskScheduler`，不反向进入 Session Runtime。
+
 ## 3.1 依赖图
 
 箭头表示"依赖于"。按拓扑序从没有依赖的模块开始往上叠：下一层只依赖已经做好的层。
@@ -101,6 +103,7 @@ flowchart TB
 ```mermaid
 flowchart BT
     P["第 0 层<br/>平台基础"]
+    AC["第 2 层<br/>Adaptive Concurrency"]
     ID["第 1 层<br/>Identity & Access"]
     SB["第 1 层<br/>Sandbox"]
     CS["第 1 层<br/>候选存储与 Git"]
@@ -116,6 +119,8 @@ flowchart BT
     IL["第 6 层<br/>Issue Loop"]
     EN["第 7 层<br/>入口"]
     ID --> P
+    AC --> P
+    AC --> TR
     SB --> P
     CS --> P
     TR --> ID

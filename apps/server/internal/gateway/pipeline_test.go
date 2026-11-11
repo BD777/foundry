@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -27,6 +29,7 @@ type fixture struct {
 	held      *Holdings
 	pipe      *Pipeline
 	assistant *store.PersonalAgent
+	pkg       *store.PermissionPackage
 }
 
 func newFixture() *fixture {
@@ -39,7 +42,7 @@ func newFixture() *fixture {
 	f.pipe = &Pipeline{
 		Scheme:   Scheme{Provider: "demo", Kind: func(h string) string { return map[bool]string{true: "user"}[strings.HasPrefix(h, "tk_")] }, Hash: func(h string) string { return h }, Bearer: []string{"user"}},
 		Provider: &demoProvider{f},
-		Sessions: f, Grants: f, Accounts: f, Access: f, Audit: f,
+		Sessions: f, Grants: f, Accounts: f, Access: f, Permission: f, Audit: f,
 		Levels: []store.ExternalAccessLevel{{Name: "read"}, {Name: "write", Scopes: []string{"write"}}},
 	}
 	return f
@@ -78,6 +81,16 @@ func (f *fixture) PersonalAgentForWorkspace(_ context.Context, workspaceID strin
 		return *f.assistant, nil
 	}
 	return store.PersonalAgent{}, store.ErrNotFound
+}
+func (f *fixture) GetPermissionPackage(_ context.Context, owner, id string) (store.PermissionPackage, error) {
+	if f.pkg != nil && f.pkg.Owner == owner && f.pkg.ID == id {
+		return *f.pkg, nil
+	}
+	return store.PermissionPackage{}, store.ErrNotFound
+}
+func (f *fixture) SavePermissionPackage(_ context.Context, pkg store.PermissionPackage) (store.PermissionPackage, error) {
+	f.pkg = &pkg
+	return pkg, nil
 }
 func (f *fixture) Record(_ context.Context, record Record) { f.records = append(f.records, record) }
 
@@ -121,6 +134,43 @@ func (f *fixture) serveAs(handle string, device Device) *httptest.ResponseRecord
 	f.steps, f.records = nil, nil
 	f.pipe.Serve(recorder, request, device)
 	return recorder
+}
+
+func (f *fixture) serveRequest(request *http.Request) *httptest.ResponseRecorder {
+	request.Header.Set("Authorization", "Bearer tk_good")
+	recorder := httptest.NewRecorder()
+	f.steps, f.records = nil, nil
+	f.pipe.Serve(recorder, request, Device{ID: "d1", OwnerUserID: "alice"})
+	return recorder
+}
+
+func (f *fixture) enableAssistant(level string) {
+	f.pipe.Scheme.Provider = "feishu"
+	f.account.Provider = "feishu"
+	f.account.WorkspaceIDs = nil
+	f.session.WorkspaceID = "w_pa"
+	f.session.Role = store.AgentSessionRolePersonalAgent
+	f.session.Source = store.SessionSourceChat
+	f.grant.WorkspaceID = "w_pa"
+	pkg := permission.DefaultPackage("alice", "pp_alice")
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{
+		{AccountID: f.account.ID, Level: level},
+	}
+	f.pkg = &pkg
+	f.assistant = &store.PersonalAgent{
+		UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1", PermissionPackageID: pkg.ID,
+	}
+}
+
+type fakeConfirmer struct {
+	decision ConfirmationDecision
+	denial   *Denial
+	requests []ConfirmationRequest
+}
+
+func (c *fakeConfirmer) Review(_ context.Context, request ConfirmationRequest) (ConfirmationDecision, *Denial) {
+	c.requests = append(c.requests, request)
+	return c.decision, c.denial
 }
 
 func (f *fixture) outcome(t *testing.T) string {
@@ -329,21 +379,89 @@ func TestLiveAnswersTheSameRecheckForAConnectionTheConnectorHolds(t *testing.T) 
 	}
 }
 
-func TestPersonalAgentLiveAllowsOwnedUnboundFeishuAccountUntilOptedOut(t *testing.T) {
+func TestPersonalAgentLiveAllowsOwnedUnboundFeishuAccountUntilSwitchedOff(t *testing.T) {
 	f := newFixture()
 	f.pipe.Scheme.Provider = "feishu"
 	f.account.Provider = "feishu"
 	f.account.WorkspaceIDs = nil
 	f.session.WorkspaceID = "w_pa"
 	f.grant.WorkspaceID = "w_pa"
-	f.assistant = &store.PersonalAgent{UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1"}
+	pkg := permission.DefaultPackage("alice", "pp_alice")
+	f.pkg = &pkg
+	f.assistant = &store.PersonalAgent{UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1", PermissionPackageID: pkg.ID}
 	subject := Subject{SessionID: "s1", WorkspaceID: "w_pa", DeviceID: "d1", UserID: "alice", AccountID: "a1", AppID: "app1"}
 	if _, err := f.pipe.Live(context.Background(), subject, "alice"); err != nil {
 		t.Fatalf("unbound Personal Agent account: %v", err)
 	}
-	f.assistant.ConnectorOptOut = []string{f.account.ID}
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{{AccountID: f.account.ID, Level: store.ConnectorAccessLevelOff}}
+	f.pkg = &pkg
 	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
 		t.Fatalf("opted-out Personal Agent account: %v", err)
+	}
+}
+
+func TestAssistantConnectorReadOnlyRefusesWrites(t *testing.T) {
+	f := newFixture()
+	f.enableAssistant(store.ConnectorAccessLevelRead)
+	f.need = Need{Level: "write", Write: true}
+	response := f.serve("tk_good")
+	if response.Body.String() != "refused "+ReasonConnectorRead || f.outcome(t) != OutcomeRefused {
+		t.Fatalf("read-only write = %q, %+v", response.Body.String(), f.records)
+	}
+	if strings.Contains(strings.Join(f.steps, ","), "upstream") {
+		t.Fatal("a read-only connector write reached upstream")
+	}
+}
+
+func TestAssistantConnectorOrdinaryWriteRunsWithoutConfirmation(t *testing.T) {
+	f := newFixture()
+	f.enableAssistant(store.ConnectorAccessLevelWrite)
+	confirmer := &fakeConfirmer{}
+	f.pipe.Confirm = confirmer
+	f.need = Need{Level: "write", Write: true}
+	if response := f.serve("tk_good"); response.Body.String() != "sent" {
+		t.Fatalf("ordinary write = %q", response.Body.String())
+	}
+	if len(confirmer.requests) != 0 {
+		t.Fatalf("ordinary write asked for confirmation: %+v", confirmer.requests)
+	}
+}
+
+func TestAssistantRiskWriteWaitsForConfirmationThenRuns(t *testing.T) {
+	f := newFixture()
+	f.enableAssistant(store.ConnectorAccessLevelWrite)
+	confirmer := &fakeConfirmer{decision: ConfirmationDecision{ProposalID: "proposal_1", Summary: "Change DNS"}}
+	f.pipe.Confirm = confirmer
+	f.need = Need{Level: "write", Write: true, Risk: "dns_change", RiskSummary: "Change DNS"}
+	request := httptest.NewRequest(http.MethodDelete, "/x?zone=1", strings.NewReader(`{"name":"old"}`))
+	response := f.serveRequest(request)
+	if response.Body.String() != "refused "+ReasonNeedsConfirmation || f.outcome(t) != OutcomeRefused {
+		t.Fatalf("pending confirmation = %q, %+v", response.Body.String(), f.records)
+	}
+	if strings.Contains(strings.Join(f.steps, ","), "upstream") || len(confirmer.requests) != 1 ||
+		confirmer.requests[0].Fingerprint == "" || confirmer.requests[0].BodyDigest == "" {
+		t.Fatalf("confirmation request = %+v, steps %v", confirmer.requests, f.steps)
+	}
+
+	f.steps = nil
+	confirmer.decision = ConfirmationDecision{Approved: true, ProposalID: "proposal_1", Summary: "Change DNS"}
+	request = httptest.NewRequest(http.MethodDelete, "/x?zone=1", strings.NewReader(`{"name":"old"}`))
+	response = f.serveRequest(request)
+	if response.Body.String() != "sent" || f.outcome(t) != OutcomeForwarded {
+		t.Fatalf("accepted risk write = %q, %+v", response.Body.String(), f.records)
+	}
+}
+
+func TestNonAssistantConnectorWriteIgnoresAssistantConfirmations(t *testing.T) {
+	f := newFixture()
+	confirmer := &fakeConfirmer{}
+	f.pipe.Confirm = confirmer
+	f.need = Need{Level: "write", Write: true, Risk: "delete", RiskSummary: "Delete"}
+	if response := f.serve("tk_good"); response.Body.String() != "sent" {
+		t.Fatalf("ordinary session write = %q", response.Body.String())
+	}
+	if len(confirmer.requests) != 0 {
+		t.Fatalf("ordinary session asked for assistant confirmation: %+v", confirmer.requests)
 	}
 }
 

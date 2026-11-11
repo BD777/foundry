@@ -36,6 +36,7 @@ const (
 	fieldWorkspaceBundleIDs     = "workspaceBundleIds"
 	fieldDefaultBundleIDs       = "defaultBundleIds"
 	fieldDeviceTools            = "deviceTools"
+	fieldConnectorPackages      = "connectorPackages"
 	fieldAgents                 = "agents"
 	fieldWorkspaceFiles         = "workspaceFiles"
 	fieldAgentSessions          = "agentSessions"
@@ -52,7 +53,7 @@ var foundryDataFields = []string{
 	fieldProfiles, fieldDeviceProfiles, fieldDeviceSkillRoots, fieldPromotedSkills,
 	fieldWorkspaceSkills, fieldBuiltinSkills, fieldWorkspaceSkillBindings,
 	fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldSkillBundles,
-	fieldWorkspaceBundleIDs, fieldDefaultBundleIDs, fieldDeviceTools, fieldAgents,
+	fieldWorkspaceBundleIDs, fieldDefaultBundleIDs, fieldDeviceTools, fieldConnectorPackages, fieldAgents,
 	fieldWorkspaceFiles, fieldAgentSessions, fieldIssues, fieldChats, fieldAssets,
 }
 

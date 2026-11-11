@@ -91,7 +91,11 @@ func (r Resolver) BundleTools(ctx context.Context, source skillrepo.Source, repo
 	} else {
 		tools = toolsFoundBefore(repo, version)
 	}
-	return r.WithDeclared(ctx, source, repo, tools, version)
+	atVersion := repo
+	if checkout != nil {
+		atVersion.Commit = checkout.Commit
+	}
+	return r.WithDeclared(ctx, source, atVersion, tools, version)
 }
 
 // toolsFoundBefore are the tools recorded when a bundle was last on version,
@@ -121,7 +125,9 @@ func (r Resolver) VersionTools(ctx context.Context, source skillrepo.Source, rep
 			defer fetched.Close()
 			checkout = fetched
 		}
-		return r.BundleTools(ctx, source, repo, checkout, version.Tag)
+		atVersion := repo
+		atVersion.Commit = version.Commit
+		return r.BundleTools(ctx, source, atVersion, checkout, version.Tag)
 	}
 	atVersion := repo
 	atVersion.Tools = version.Tools

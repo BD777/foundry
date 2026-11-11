@@ -388,7 +388,7 @@ function FlowChoice({
           >
             <SelectMenu
               ariaLabel={`${title} ${t("settings.models.whenUnavailable")}`}
-              className="max-w-full min-w-55"
+              className="w-full"
               disabled={!own || saved !== "chosen"}
               value={own?.whenUnavailable || "wait"}
               options={(["wait", "device_default"] as const).map((option) => ({
@@ -578,12 +578,10 @@ function ChoiceFields({
           }}
         />
       </SettingsField>
-      <SettingsField
-        label={t("settings.models.model")}
-        hint={loading ? t("settings.models.loading") : undefined}
-      >
+      <SettingsField label={t("settings.models.model")}>
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.model")}`}
+          busy={loading}
           className="w-full max-w-full"
           disabled={!catalog}
           options={modelOptions}

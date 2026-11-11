@@ -309,9 +309,6 @@ export const chat = {
     count_other: "Waiting on {{count}} sub-sessions",
     header_one: "Waiting on {{count}}",
     header_other: "Waiting on {{count}}",
-    open: "Show {{count}} waiting sub-sessions",
-    title: "Sub-sessions",
-    untitled: "Untitled sub-session",
   },
   groups: {
     new: "New group",
@@ -502,7 +499,12 @@ export const chat = {
       model_rate_limit: {
         title: "The model provider rate-limited this run",
         summary:
-          "The model provider rejected a request because a usage limit was reached.",
+          "The model provider temporarily throttled requests. Foundry retries rate limits with backoff, or switches to another eligible model.",
+      },
+      model_quota_exhausted: {
+        title: "The model account quota is exhausted",
+        summary:
+          "The provider reported that this account's quota or billing limit is exhausted. Foundry did not retry this run.",
       },
       skill_preparation_timeout: {
         title: "Skill preparation timed out on the device",
@@ -522,7 +524,9 @@ export const chat = {
       free_space:
         "Free disk space on the execution device and check what is consuming it. Then send “continue” to resume the task; this run will not retry automatically.",
       wait_for_quota:
-        "Wait for the provider’s quota to recover, or choose another available model or connection, then send “continue”.",
+        "Wait for the rate limit to clear, or choose another available model or connection, then send “continue”.",
+      restore_quota:
+        "Restore this account’s quota or credit, or switch to another account, then send “continue”. This run was not retried automatically.",
       check_skills:
         "Check the device’s disk space and workspace Skill package sizes. Resolve the preparation problem, then send “continue”.",
       continue_turn: "Send “continue” to continue the task.",

@@ -15,9 +15,9 @@ import { join } from "node:path";
 
 process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(join(tmpdir(), "tools-root-"));
 process.env.npm_config_cache = mkdtempSync(join(tmpdir(), "npm-cache-"));
-const { fetchSkillRepository, readRepositoryRefs } =
+const { fetchSkillRepository, githubCredentialConfig, readRepositoryRefs } =
   await import("../dist/skills/skill-repository-fetch.js");
-const { installTool, managedToolVersions, npmRegistryArgs } =
+const { installTool, managedToolVersions, managedToolsBin, npmRegistryArgs } =
   await import("../dist/skills/managed-tools.js");
 const { unpackZip } = await import("../dist/skills/skill-zip.js");
 
@@ -282,4 +282,18 @@ test("a named registry also wins over the device's scoped registry", () => {
     ],
   );
   assert.throws(() => npmRegistryArgs("x", "https://u:p@r.example"), /https/);
+});
+
+test("GitHub repository fetches use the Foundry-managed gh login as a credential helper", () => {
+  const gh = join(managedToolsBin(), "gh");
+  mkdirSync(managedToolsBin(), { recursive: true });
+  writeFileSync(gh, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const config = githubCredentialConfig("https://github.com/nwverse/open-lark");
+  assert.equal(config.length, 1);
+  assert.match(config[0], /credential\.https:\/\/github\.com\.helper=!/);
+  assert.match(config[0], /auth git-credential/);
+  assert.deepEqual(
+    githubCredentialConfig("https://git.example.test/acme/tools"),
+    [],
+  );
 });

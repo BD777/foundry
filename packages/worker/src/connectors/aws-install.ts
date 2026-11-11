@@ -25,10 +25,11 @@ import { within, tildePath } from "../platform/paths.js";
  * the zip's `install` with --install-dir/--bin-dir (and --update over an
  * earlier copy); macOS runs the pkg for the current user with a
  * customLocation choice and links the programs as AWS documents. A link in
- * Foundry's tools makes sessions find this copy first. Downloads go through
- * the device's HTTP(S)_PROXY settings; the zip's PGP signature is checked
- * against AWS's published key when gpg is on the device, the pkg's Apple
- * signature always. The result is verified with `aws --version`.
+ * Foundry's tools makes sessions find this copy first. Downloads use the
+ * Worker's saved outbound proxy (or its environment fallback); the zip's PGP
+ * signature is checked against AWS's published key when gpg is on the device,
+ * the pkg's Apple signature always. The result is verified with
+ * `aws --version`.
  */
 
 export interface AwsInstallResult {

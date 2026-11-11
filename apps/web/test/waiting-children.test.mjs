@@ -116,80 +116,120 @@ test("a chat row names its waiting children instead of only changing colour", as
   assert.equal(container.querySelector(".fdy-chat-row time"), null);
 });
 
-test("the open-chat capsule lists child sessions and opens one in-app", async (t) => {
+test("the open-chat capsule reveals the same child sessions in Agents", async (t) => {
   const { container, root, window } = await withDom(t);
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatThreadHeader } =
     await import("../src/features/chat/chat-thread-header.tsx");
-
-  await act(() =>
-    root.render(
+  const { ChatContextCard } =
+    await import("../src/features/chat/context/chat-context-card.tsx");
+  let reveals = 0;
+  const work = {
+    control() {},
+    error: undefined,
+    list: {
+      barrier: false,
+      coverage: {
+        hostSchedules: "not_observed",
+        processes: "not_observed",
+      },
+      items: [
+        {
+          allowedActions: ["stop"],
+          createdAt: "2026-11-11T00:00:00Z",
+          desiredState: "enabled",
+          deviceId: "dev",
+          generation: 1,
+          id: "work_child_docs",
+          kind: "agent",
+          management: "managed",
+          observation: {
+            at: "2026-11-11T00:01:00Z",
+            confirmedRevision: 1,
+            status: "running",
+          },
+          revision: 1,
+          sessionId: "parent",
+          source: "foundry",
+          sourceId: "child_docs",
+          spec: {},
+          threadId: "parent",
+          title: "更新发布说明",
+          updatedAt: "2026-11-11T00:01:00Z",
+          workspaceId: "ws",
+        },
+      ],
+      operations: [],
+    },
+    refresh() {},
+    retryControl() {},
+    retrying: false,
+    sessionId: "parent",
+  };
+  const render = (reveal) =>
+    createElement(
+      "div",
+      null,
       createElement(ChatThreadHeader, {
         contextOpen: false,
         foldedTurns: 0,
         onlyMine: false,
         onOnlyMineChange() {},
         onBack() {},
+        onRevealWaitingChildren() {
+          reveals++;
+        },
         onToggleContext() {},
         title: "发布协调",
-        waitingChildCount: 2,
-        waitingChildren: [
-          {
-            id: "child_docs",
-            selected: true,
-            status: "running",
-            title: "更新发布说明",
-            workspaceId: "ws",
-          },
-          {
-            id: "child_tests",
-            status: "completed",
-            title: "检查回归测试",
-            workspaceId: "ws",
-          },
-        ],
-        workspaceId: "ws",
+        waitingChildCount: 1,
       }),
-    ),
-  );
+      createElement(ChatContextCard, {
+        data: {
+          background: [],
+          changes: [],
+          files: [],
+          previews: [],
+          sources: [],
+          subagents: [],
+          timers: [],
+        },
+        reveal,
+        work,
+      }),
+    );
+
+  await act(() => root.render(render(undefined)));
 
   assert.equal(
     container.querySelector(".fdy-waiting-children-wide")?.textContent,
-    "Waiting on 2",
+    "Waiting on 1",
   );
   await act(async () => i18n.changeLanguage("zh-CN"));
   assert.equal(
     container.querySelector(".fdy-waiting-children-wide")?.textContent,
-    "等待 2 个子会话",
+    "等待 1 个子会话",
   );
   const trigger = container.querySelector(
-    'button[aria-label="等待 2 个子会话"]',
+    'button[aria-label="等待 1 个子会话"]',
   );
   assert.ok(trigger);
-  await act(async () => {
-    trigger.click();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  const child = [...document.querySelectorAll("a")].find((link) =>
-    link.textContent.includes("更新发布说明"),
+  assert.equal(trigger.tagName, "BUTTON");
+  assert.equal(trigger.getAttribute("type"), "button");
+  await act(() => trigger.click());
+  assert.equal(reveals, 1);
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(window.location.pathname, "/chats/parent");
+
+  await act(() => root.render(render({ ids: ["work_child_docs"] })));
+  const row = container.querySelector(
+    '[data-work-kind="agent"] [data-work-id="work_child_docs"]',
   );
+  assert.ok(row);
+  const selected = row.querySelector('[data-selected="true"]');
+  assert.ok(selected);
+  const child = selected.querySelector("a");
   assert.ok(child);
-  assert.match(child.textContent, /运行中/);
-  assert.equal(child.getAttribute("data-selected"), "true");
-  assert.equal(child.getAttribute("aria-current"), "page");
-  const chevron = child.querySelector(".fdy-waiting-child-chevron");
-  assert.ok(chevron);
-  assert.match(chevron.getAttribute("class"), /flex-none/);
-  assert.match(
-    child.getAttribute("class"),
-    /grid-cols-\[minmax\(0,1fr\)_auto_auto\]/,
-  );
-  const dialog = document.querySelector('[role="dialog"]');
-  assert.ok(dialog);
-  assert.match(dialog.className, /bg-panel/);
-  assert.doesNotMatch(dialog.className, /bg-floating/);
-  await act(() => child.click());
-  assert.equal(window.location.pathname, "/chats/child_docs");
-  assert.equal(window.location.search, "?workspace=ws");
+  assert.match(child.textContent, /更新发布说明/);
+  assert.equal(document.activeElement, child);
 });

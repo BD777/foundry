@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -101,7 +102,7 @@ func TestBundleDeclaresUvTool(t *testing.T) {
 	}
 	var listed []store.SkillRepository
 	_ = json.Unmarshal(call(http.MethodGet, "/api/skill-repositories", ``, http.StatusOK), &listed)
-	if len(listed) != 1 || len(listed[0].DeclaredTools) != 1 || listed[0].DeclaredTools[0] != (store.SkillToolDeclaration{Source: "uv", Package: "browser-use", Command: "browser-use"}) {
+	if len(listed) != 1 || len(listed[0].DeclaredTools) != 1 || !reflect.DeepEqual(listed[0].DeclaredTools[0], store.SkillToolDeclaration{Source: "uv", Package: "browser-use", Command: "browser-use"}) {
 		t.Fatalf("declared tools after reload %+v", listed)
 	}
 	check := func() store.SkillRepository {

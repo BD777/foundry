@@ -2,6 +2,38 @@ import type { externalAccounts as en } from "../en/externalAccounts";
 import type { Translation } from "../../translation";
 
 export const externalAccounts: Translation<typeof en> = {
+  connectorPackage: {
+    title: "在哪些设备上启用",
+    description:
+      "选择要安装此包工具并带上同名 Skill 的设备。新设备不会自动勾选。",
+    enabled: "已启用",
+    notEnabled: "未启用",
+    selected: "已在这台设备上启用。",
+    available: "这台设备已上线，可以勾选并在这里启用此包。",
+    unavailable: "无法启用：{{reason}}",
+    selectDevice: "在 {{device}} 上启用此包",
+    reasons: {
+      offline: "设备离线。",
+      platformUnknown: "设备尚未上报受支持的平台。",
+      platformUnsupported: "Foundry 工具仅支持 Linux 和 macOS。",
+      nodeMissing: "设备没有运行仓库工具所需的 Node.js。",
+      unavailable: "设备尚未准备好启用此包。",
+      connectorUnavailable: "这台设备上没有 {{connector}} 连接器。",
+      installConnector: "请先在这台设备上安装 {{connector}} 连接器。",
+      signInConnector: "请先在这台设备上登录 {{connector}} 连接器。",
+    },
+    tools: "此包带的工具",
+    versionPending: "启用设备后显示版本",
+    skills: "此套件带的 Skill",
+    skillsPending: "跟随该套件后会在这里显示 Skill。",
+    save: "保存设备",
+    saving: "正在保存设备…",
+    saved: "已保存此包的设备。",
+    saveFailed: "保存设备失败：{{error}}",
+    loading: "正在读取此包…",
+    loadFailed: "读取此包失败：{{error}}",
+    notListed: "你的设备上都还没有这个包。请先在设备上安装它的扩展。",
+  },
   cloudflare: {
     authorizeSelected: "前往 Cloudflare 授权",
     usePreset: "使用 Foundry 的只读权限集",
@@ -203,12 +235,128 @@ export const externalAccounts: Translation<typeof en> = {
       needsSignIn: "需要登录",
       notSetUp: "未设置",
     },
+    restricted: {
+      title_one: "需要权限的连接器（{{count}}）",
+      title_other: "需要权限的连接器（{{count}}）",
+      notChecked: "尚未在这台设备上检查。",
+      requirementFailed:
+        "需要能连上 {{label}}（{{host}}:{{port}}）。这台设备连不上，请在这个网络内的设备上使用。",
+      requirementMet: "可以连上 {{label}}。",
+      accessMet: "{{via}} 登录的 {{account}} 可以读取 {{repository}}。",
+      accessMetAnonymous: "{{via}} 可以读取 {{repository}}。",
+      notSignedIn: "这台设备上的 {{via}} 尚未登录，无法读取 {{repository}}。",
+      noAccess:
+        "{{via}} 登录的 {{account}} 读不到 {{repository}}。如果你有权限，请换成有权限的账号。",
+      noAccessAnonymous:
+        "{{via}} 读不到 {{repository}}。如果你有权限，请换成有权限的账号登录。",
+      accessFailed:
+        "无法通过这台设备上的 {{via}} 检查 {{repository}}：{{detail}}",
+      openConnector: "连接器 › {{via}}",
+      recheck: "重新检查",
+      rechecking: "正在检查…",
+      allDevicesNeedAccess_one: "1 台设备不满足条件",
+      allDevicesNeedAccess_other: "{{count}} 台设备都不满足条件",
+      someDevicesNeedAccess_one: "1 台设备需要处理",
+      someDevicesNeedAccess_other: "{{count}} 台设备需要处理",
+      readyToRecheck: "检查现在已通过，请重新检查",
+      noDevices: "还没有设备上报检查结果",
+      back: "返回连接器",
+      details: "{{connector}} 的权限详情",
+    },
     catalogLoading: "正在加载连接器…",
     catalogFailed: "无法加载连接器：{{error}}",
     loading: "正在加载飞书账号…",
     loadFailed: "无法加载飞书账号：{{error}}",
     secretsMissing:
       "此服务器没有配置密钥存储，无法保存登录。需要管理员先配置，才能连接账号。",
+  },
+  serverHeld: {
+    add: "添加实例",
+    noSecretStore: "服务器需要先配置密钥存储，才能封存 {{connector}} 凭据。",
+    loading: "正在加载 {{connector}} 实例…",
+    empty: "还没有添加 {{connector}} 实例。",
+    check: "重新校验",
+    checking: "正在校验…",
+    checked: "已校验 {{name}}。",
+    checkedAt: "校验于{{when}}",
+    accessRead: "只读",
+    accessWrite: "读写",
+    version: "版本 {{version}}",
+    routeCount_one: "{{count}} 条允许路由",
+    routeCount_other: "{{count}} 条允许路由",
+    resultDetail: "结果：{{detail}}",
+    replaceToken: "替换令牌",
+    revoke: "吊销",
+    addTitle: "添加 {{connector}} 实例",
+    addDescription:
+      "填写连接器扩展声明的连接字段。Foundry 会先校验，再封存机密值。",
+    replaceTitle: "替换 {{connector}} 凭据",
+    replaceDescription:
+      "Foundry 会在替换任何内容前重新校验连接。已封存的机密值留空即可保留。",
+    validate: "校验",
+    continue: "继续",
+    update: "校验并保存",
+    save: "校验并添加",
+    validating: "正在校验…",
+    saving: "正在保存…",
+    back: "返回",
+    step: "第 {{current}} 步，共 {{total}} 步",
+    probePassed: "探测通过 · {{routes}}",
+    savedNotice: "{{name}} 已校验并保存。",
+    updatedNotice: "{{name}} 已重新校验并更新。",
+    labelLabel: "实例名称",
+    labelPlaceholder: "例如：生产环境",
+    labelHelp: "可选。此名称会显示在实例列表和工作区绑定中。",
+    whereTitle: "从哪里连接？",
+    networkServer: "Foundry 服务器直连（公网）",
+    networkDevice: "经设备连接（内网）",
+    networkServerHelp:
+      "由 Foundry 服务器直接连接。请填写公网可访问的 HTTPS 地址。",
+    networkDeviceHelp:
+      "由你的一台设备校验地址并转发请求。允许 HTTP、内网地址和路径前缀。",
+    probeDevice: "用于校验的设备",
+    chooseDevice: "选择一台在线设备",
+    deviceOffline: "{{device}} 当前离线；请将它上线后再校验。",
+    availableOn: "可用设备：{{devices}}",
+    noAvailableDevice:
+      "还没有记录到可连通的设备。请用一台能访问该地址的设备重新校验。",
+    deviceNetworkScope: "其他设备上的会话不会获得这个实例。",
+    validateForOptions: "校验上一步后加载选项",
+    chooseOption: "选择一个选项",
+    secretKeep: "留空以保留已封存的值",
+    secretSealed:
+      "此值已封存在服务器上。留空即可保留，或输入新值进行校验和替换。",
+    fieldRequired: "请填写{{field}}。",
+    fieldUrl: "{{field}}必须是完整 URL。",
+    revokeTitle: "吊销 {{name}}？",
+    revokeDescription:
+      "这会立即停止所有使用此实例的会话，并移除它的工作区绑定。",
+    revokeBody:
+      "Foundry 会删除封存的凭据并拒绝新请求。凭据本身仍存在于服务中；如果怀疑泄露，请在那里轮换。已吊销的实例无法恢复。",
+    revokeConfirm: "吊销并停止访问",
+    revokedNotice: "已吊销 {{name}}；相关会话已失去访问。",
+    errors: {
+      credential: {
+        title: "凭据被拒绝",
+        body: "服务拒绝了这份凭据。请替换令牌或机密值，然后重新校验。",
+      },
+      input: {
+        title: "请检查连接字段",
+        body: "必填值缺失，或格式不符合连接器声明的规则。",
+      },
+      network: {
+        title: "无法连接服务",
+        body: "Foundry 或所选设备无法访问该服务。请检查地址、设备所在网络、DNS、证书、重定向和超时。",
+      },
+      response: {
+        title: "服务返回了意外内容",
+        body: "服务有响应，但不是此连接器要求的 JSON 和路由目录。",
+      },
+      service: {
+        title: "无法完成校验",
+        body: "Foundry 或连接器服务暂时无法完成校验，请稍后重试。",
+      },
+    },
   },
   list: {
     emptyTitle: "还没有飞书账号",
@@ -467,16 +615,31 @@ export const externalAccounts: Translation<typeof en> = {
     },
   },
   deviceHeld: {
-    publishedIn: "发布在 {{repository}}。",
     notInstalledTitle: "没有 {{extension}} 的设备",
     notInstalledInstall:
       "{{devices}} 上没有 {{extension}}。可从它发布的仓库安装：",
     offlineInstall: "离线；设备上线后再安装",
     installExtension: "安装 {{extension}}",
+    installBundled: "安装到这台设备",
+    installBundledTitle: "在设备上安装 {{extension}}",
+    unavailableInstall: "这台设备不满足连接器的条件",
+    bundled: "随 Worker 发布",
+    bundledNotInstalled: "安装 {{extension}} 到：",
+    extensionSourceGit:
+      "{{extension}} 扩展 {{version}}，发布在 {{repository}}。",
+    extensionSourceBundled: "{{extension}} 扩展 {{version}}，随 Worker 发布。",
+    extensionSourceLocal: "{{extension}} 扩展 {{version}}，从本地文件夹安装。",
+    autoUpdate: "自动更新",
+    autoUpdateOn: "仓库有新提交时自动更新。",
+    autoUpdateOff: "手动更新；这里会显示仓库的新提交。",
+    updatesWithWorker: "随 Worker 更新。",
+    localNewerThanBundled:
+      "本机安装的版本较新，未切换到随 Worker 发布的版本（本机 {{local}}，Worker {{bundled}}）。",
     extensionInstalled: "已在 {{device}} 上安装 {{extension}}。",
     extensionUpdated: "{{device}} 上的 {{extension}} 已更新。",
     extensionUnchanged: "{{device}} 上的 {{extension}} 已是最新。",
     extensionRemoved: "已从 {{device}} 移除 {{extension}}。",
+    extensionDescriptorInvalid: "{{device}} 上的 {{extension}} 扩展描述不合法",
     updateExtension: "更新 {{extension}}",
     extensionUpdateAvailable: "{{extension}} 的仓库有更新的提交（{{commit}}）",
     removeExtension: "从这台设备移除 {{extension}}",
@@ -485,9 +648,9 @@ export const externalAccounts: Translation<typeof en> = {
       "它的连接器会从这台设备移除，连同扩展自己的数据和它提供的模型服务。工具自己的登录仍留在设备上。",
     removeExtensionAction: "移除",
     offlineUnknown: "设备离线",
-    fromExtension: "来自 {{extension}} 扩展，版本 {{version}}。",
-    emptyExtensionBody:
-      "在设备上安装它的扩展后，才能在那台设备上使用 {{name}}。“添加连接器”里有说明。",
+    emptyExtensionBody: "还没有设备安装 {{name}}。",
+    emptyExtensionAddBody:
+      "这个扩展不随 Worker 发布。请用“添加连接器”从它的来源安装。",
     notInstalledOn:
       "{{devices}} 上没有：在那里安装 {{extension}} 扩展后即可使用。",
     givesModels:
@@ -538,6 +701,17 @@ export const externalAccounts: Translation<typeof en> = {
     checkedNotice: "已重新读取 {{device}} 上的 {{name}}。",
     signedOut: "{{device}} 上的 {{name}} 已退出登录。",
     signedInNotice: "{{device}} 上的 {{name}} 已登录。",
+    configuration: {
+      region: "默认区域：{{region}}",
+      change: "修改",
+      regionLabel: "默认 AWS 区域",
+      regionHint: "仅在 AWS 命令未指定区域时使用，不限制该身份的权限。",
+      regionInvalid: "默认 AWS 区域的格式不对。",
+      regionPlaceholder: "us-east-1",
+      save: "保存区域",
+      cancel: "取消",
+      regionSaved: "已更新 {{device}} 上的默认 AWS 区域。",
+    },
   },
   authorization: {
     dialogTitle: "授权：{{name}}",
@@ -620,6 +794,8 @@ export const externalAccounts: Translation<typeof en> = {
     title: "登录 {{name}}",
     description:
       "由 {{device}} 发起 {{name}} 自己的登录；登录只保存在那台设备上。",
+    awsPermissions:
+      "权限由你登录的 AWS 身份决定；要限制范围，请在 AWS 中为它使用权限更小的角色。Foundry 控制的是哪些工作区和会话可以使用这个登录。",
     starting: "正在请 {{device}} 发起登录…",
     approveTitle: "在登录页面上确认",
     approveBody:
@@ -719,10 +895,12 @@ export const externalAccounts: Translation<typeof en> = {
     nativeBoundary:
       "你自己的会话会自动使用该设备上的有效登录。共享仅适用于此工作区和设备；关闭共享后你自己仍可使用。设备登录请在“管理连接器”中查看。",
 
-    rule: "飞书账号遵循工作区授权；设备登录仅适用于对应的执行设备。",
+    rule: "服务器保管的账号遵循工作区授权；设备登录仅适用于对应的执行设备。",
     binding: {
       feishu:
         "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
+      serverHeld:
+        "选择此工作区可以使用的 {{provider}} 实例。已吊销的实例不可用，需要添加新实例。",
     },
     useDevice: "{{device}} 上的会话使用它的 {{name}} 登录",
     members: "共享给其他成员在 {{device}} 上发起的会话",

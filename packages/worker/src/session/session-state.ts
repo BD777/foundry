@@ -228,6 +228,8 @@ export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
 // --- Codex active thread ---
 
 export interface CodexSDKThread {
+  /** The app-server process-group leader while one is open. */
+  pid?: () => number | undefined;
   steer?: (input: unknown, inputId?: string) => Promise<void>;
   /** Takes the person's answer to a prompt that waits (codex-questions.ts). */
   answerQuestion?: (message: string) => boolean;
@@ -252,6 +254,7 @@ export interface ActiveCodexThread {
   lastUsed: number;
   /** The Foundry session that last ran on it. */
   sessionId?: string;
+  workspaceId?: string;
   nativeSessionId: string;
   thread: CodexSDKThread;
 }

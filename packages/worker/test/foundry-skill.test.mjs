@@ -33,24 +33,26 @@ function markdownFiles(directory) {
   });
 }
 
-// The server delivers the skill to every dispatched session from its own
-// copy (builtinskills); `foundry skill install` writes the worker's. One
-// skill: the two folders hold the same files with the same bytes.
-test("the server's built-in foundry skill is the worker's bundled one", () => {
+// The server delivers a skill to every dispatched session from its own
+// copy (builtinskills); `foundry skill install` writes the worker's. Each
+// built-in skill's two folders hold the same files with the same bytes.
+test("the server's built-in skills are the worker's bundled ones", () => {
   const relativeFiles = (root) =>
     readdirSync(root, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => relative(root, join(entry.parentPath, entry.name)))
       .sort();
-  const bundled = join(skillsRoot, "foundry");
-  const builtin = join(serverDir, "builtinskills/foundry");
-  assert.deepEqual(relativeFiles(builtin), relativeFiles(bundled));
-  for (const file of relativeFiles(bundled))
-    assert.equal(
-      readFileSync(join(builtin, file), "utf8"),
-      readFileSync(join(bundled, file), "utf8"),
-      `${file} differs between the server's and the worker's copy`,
-    );
+  for (const skill of ["foundry", "foundry-orchestration"]) {
+    const bundled = join(skillsRoot, skill);
+    const builtin = join(serverDir, "builtinskills", skill);
+    assert.deepEqual(relativeFiles(builtin), relativeFiles(bundled));
+    for (const file of relativeFiles(bundled))
+      assert.equal(
+        readFileSync(join(builtin, file), "utf8"),
+        readFileSync(join(bundled, file), "utf8"),
+        `${skill}/${file} differs between the server's and the worker's copy`,
+      );
+  }
 });
 
 /** Every inline code span of every bundled skill file. */

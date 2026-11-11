@@ -19,7 +19,7 @@ export const connectorExtensionProtocol = 1;
 
 /** `foundry-extension.json`. */
 export interface ConnectorExtensionManifest {
-  manifestVersion: 1;
+  manifestVersion: 1 | 2;
   /** 1–32 lowercase letters, digits or dashes, starting with a letter. */
   id: string;
   name: string;
@@ -34,14 +34,15 @@ export interface ConnectorExtensionManifest {
    */
   entry?: { command: string; args?: string[] };
   /**
-   * The connectors it provides: device-held, adapter "extension:<id>"
-   * (both filled in by the worker when left out).
+   * The connectors it provides: device- or server-held, adapter
+   * "extension:<id>" (filled in by the worker when left out).
    */
   connectors: ConnectorDescriptor[];
   /**
-   * A declarative extension (no `entry`): how the worker drives each
-   * connector's own command line, by connector kind. In the manifest file
-   * it is written as each connector's `cli`; it never leaves the device.
+   * A declarative device-held extension (no `entry`): how the worker drives
+   * each connector's own command line, by connector kind. In the manifest
+   * file it is written as each connector's `cli`; it never leaves the device.
+   * Pure-data server-held connectors need neither `entry` nor `cli`.
    */
   cli?: Record<string, ExtensionCli>;
   /** How to install it on the owner's other devices. */
@@ -51,6 +52,11 @@ export interface ConnectorExtensionManifest {
    * and update it from there with one click.
    */
   source?: ConnectorExtensionRepository;
+  /**
+   * The old git folder an installed copy may have come from before this
+   * extension moved into the Worker. Used only by the Worker migration.
+   */
+  migrationSource?: ConnectorExtensionRepository;
 }
 
 /** An installed extension, as `foundry-worker extension list` shows it. */
@@ -64,12 +70,16 @@ export interface InstalledConnectorExtension {
   sha256: string;
   installedAt: string;
   connectors: string[];
+  /** The extension ships with the Worker. */
+  bundled?: boolean;
   /** Installed from this git folder (not a local folder). */
   source?: ConnectorExtensionRepository;
   commit?: string;
   /** The commit source.ref pointed at when last looked, and when. */
   latestCommit?: string;
   latestCheckedAt?: string;
+  /** A git-installed extension updates when its source moves; default true. */
+  autoUpdate?: boolean;
 }
 
 /**
@@ -77,10 +87,14 @@ export interface InstalledConnectorExtension {
  * update an extension from a git folder, or remove one.
  */
 export interface ExtensionRequestPayload {
-  action: "install" | "remove";
+  action: "install" | "remove" | "set-auto-update";
+  /** install: a bundled extension's id. */
+  bundledExtensionId?: string;
   source?: ConnectorExtensionRepository;
   /** remove: the extension. */
   extensionId?: string;
+  /** set-auto-update: the extension and its new setting. */
+  autoUpdate?: boolean;
 }
 
 /** extension_reply: what changed, or why nothing did. */
@@ -258,13 +272,38 @@ export interface ConnectorExtensionNotifications {
  * expanded. Nothing goes through a shell.
  */
 export interface ExtensionCli {
+  /**
+   * The tool's standard JSON envelope. When present, every call's success
+   * and failure words come from it unless the call names its own pointers,
+   * and `data` is the object status/sign-in/authorization pointers read.
+   */
+  envelope?: ExtensionCliEnvelope;
+  /** Variables Foundry's own runs set (the base environment stays allowlisted). */
+  env?: Record<string, string>;
   status: ExtensionCliStatus;
   /** How to read the version: a regular expression with one group. */
   version?: { args: string[]; pattern: string };
-  /** Guided sign-in methods, by method id. */
-  signIn?: Record<string, ExtensionCliCall>;
+  /** Guided sign-in methods, by method id: one call, or begin + poll. */
+  signIn?: Record<string, ExtensionCliCall | ExtensionCliGuidedSignIn>;
+  /** Additional authorizations, bound to the descriptor's groups. */
+  authorizations?: ExtensionCliAuthorization[];
   signOut?: ExtensionCliCall;
   modelAccess?: ExtensionCliModelAccess;
+}
+
+/** The JSON envelope a tool prints around its data. */
+export interface ExtensionCliEnvelope {
+  /** Pointer to the value that says the call succeeded. */
+  ok: string;
+  /** The value at `ok` that means success; default true. */
+  okValue?: string | number | boolean;
+  /** Pointer to the tool's error code, for `errors[]` and the page. */
+  code?: string;
+  /** Pointers to the tool's own words when it failed. */
+  error?: string;
+  hint?: string;
+  /** The business object status/sign-in/authorization pointers read. */
+  data?: string;
 }
 
 /** One run of the tool. Success: exit code 0, and `ok` true when named. */
@@ -287,6 +326,7 @@ export interface ExtensionCliStatus extends ExtensionCliCall {
   /** Signed in when every condition holds. */
   signedIn: ExtensionCliCondition[];
   identity?: ExtensionCliValue;
+  sites?: ExtensionCliValue;
   expiresAt?: ExtensionCliValue;
   /** Signed in but unusable: shown as an error with this message. */
   problems?: { when: ExtensionCliCondition[]; message: string }[];
@@ -295,16 +335,124 @@ export interface ExtensionCliStatus extends ExtensionCliCall {
 export interface ExtensionCliCondition {
   pointer: string;
   equals?: string | number | boolean;
-  /** A non-empty array, object or string. */
+  /** true: a non-empty array, object or string; false: missing or empty. */
   nonEmpty?: boolean;
   /** An array that holds this value. */
   includes?: string;
+  /** Any element (array) or value (object) matches this condition. */
+  anyItem?: ExtensionCliCondition;
+  /** A missing value also matches the named operator. */
+  allowMissing?: boolean;
 }
 
 /** A value: at `pointer`, or at `pointer` in each item of `items`, joined. */
 export interface ExtensionCliValue {
-  pointer: string;
+  pointer?: string;
+  /** The first of these pointers that has a value. */
+  firstOf?: string[];
   items?: string;
+  /** Cut the value at the first occurrence (bytedcli's user name at "@"). */
+  stripAfter?: string;
+  /** Parse the value and return its ISO timestamp. */
+  asTimestamp?: boolean;
+}
+
+/** Text in the person's language: a plain string or `{ "en": … }`. */
+export type ExtensionCliText = string | Record<string, string>;
+
+/** A sign-in step or authorization state the data maps to. */
+export interface ExtensionCliStep {
+  status: "pending" | "complete" | "expired" | "denied" | "failed";
+  error?: ExtensionCliText;
+}
+
+/**
+ * Maps the business object's status to a sign-in step. `rules` may override
+ * the map in order; only `verificationUrl`, a QR challenge and a continuation
+ * leave the device.
+ */
+export interface ExtensionCliStepMapping {
+  pointer: string;
+  map: Record<string, ExtensionCliStep>;
+  rules?: { when: ExtensionCliCondition[]; step: ExtensionCliStep }[];
+  otherwise?: ExtensionCliStep;
+  verificationUrl?: string;
+  qrImage?: string;
+  continuation?: string;
+  continuationPattern?: string;
+  requireChallenge?: boolean;
+  missingChallenge?: ExtensionCliText;
+  missingContinuation?: ExtensionCliText;
+}
+
+/** A provider error code and the step it means. First match wins. */
+export interface ExtensionCliErrorRule {
+  code?: string;
+  contains?: string | string[];
+  regex?: string;
+  step: ExtensionCliStep;
+}
+
+/** A guided sign-in whose begin and poll are separate tool runs. */
+export interface ExtensionCliGuidedSignIn {
+  begin: ExtensionCliCall;
+  poll: ExtensionCliCall;
+  state: ExtensionCliStepMapping;
+  errors?: ExtensionCliErrorRule[];
+}
+
+/** An additional authorization's reading or beginning, by descriptor group. */
+export interface ExtensionCliAuthorization {
+  group: string;
+  revision: number;
+  /** Older tool copies cannot do this; reading reports it and beginning refuses. */
+  minVersion?: string;
+  minVersionState?: ExtensionCliAuthorizationState;
+  upgradeMessage?: ExtensionCliText;
+  /** Reads the group's state for connector.status. */
+  read: ExtensionCliAuthorizationRead;
+  /** Starts/polls the group here; omitted for a terminal-only authorization. */
+  authorize?: ExtensionCliAuthorizationAuthorize;
+}
+
+export interface ExtensionCliAuthorizationState {
+  status: "ready" | "needs_auth" | "expired" | "unknown" | "unavailable";
+  reason?: "bootstrap_available" | "cli_upgrade" | "check_failed";
+  verification?: "local_state" | "not_checked";
+}
+
+/** One status-reading run for an authorization group. */
+export interface ExtensionCliAuthorizationRead extends ExtensionCliCall {
+  /** false: this command prints its own JSON, not `cli.envelope`. */
+  envelope?: false;
+  /** Where the JSON is; default stdout. */
+  source?: "stdout" | "stderr" | "stdoutThenStderr";
+  /** Slice from the first "{" (older tools print a line before the JSON). */
+  firstObject?: boolean;
+  /** Raw output containing this means the tool is too old. */
+  upgradeWhen?: string;
+  rules?: {
+    when: ExtensionCliCondition[];
+    state: ExtensionCliAuthorizationState;
+  }[];
+  otherwise?: ExtensionCliAuthorizationState;
+  onError?: ExtensionCliAuthorizationState;
+}
+
+/** How the page starts and polls an authorization group. */
+export interface ExtensionCliAuthorizationAuthorize {
+  begin?: ExtensionCliCall & {
+    /** A provider code that means "retry once with fallback". */
+    fallbackWhen?: string[];
+    fallback?: ExtensionCliCall;
+  };
+  poll?: ExtensionCliCall;
+  state?: ExtensionCliStepMapping;
+  errors?: ExtensionCliErrorRule[];
+  /** Shown instead of beginning when the group has no begin/poll. */
+  terminalMessage?: ExtensionCliText;
+  noJsonMessage?: ExtensionCliText;
+  defaultErrorMessage?: ExtensionCliText;
 }
 
 /** Model providers, one per item of an array in the status answer. */

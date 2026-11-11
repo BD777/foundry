@@ -33,9 +33,10 @@ import (
 //     (connectors.go in internal/connectors, decided at dispatch).
 
 const (
-	connectorStatusTimeout  = 150 * time.Second
-	connectorSignInTimeout  = 150 * time.Second
-	connectorInstallTimeout = 10 * time.Minute
+	connectorStatusTimeout    = 150 * time.Second
+	connectorSignInTimeout    = 150 * time.Second
+	connectorConfigureTimeout = 30 * time.Second
+	connectorInstallTimeout   = 10 * time.Minute
 	// connectorStaleAfter: the page re-reads an online device whose reading
 	// is older than this.
 	connectorStaleAfter = 2 * time.Minute
@@ -72,7 +73,9 @@ func (s *Server) askDeviceConnector(ctx context.Context, deviceID string, descri
 		payload.AuthorizationRevision = authorization[0].AuthorizationRevision
 		payload.OperationID = authorization[0].OperationID
 		payload.SignInOptions = authorization[0].SignInOptions
+		payload.Configuration = authorization[0].Configuration
 		payload.Input = authorization[0].Input
+		payload.Repository = authorization[0].Repository
 	}
 	request, err := json.Marshal(payload)
 	if err != nil {
@@ -104,7 +107,11 @@ func (s *Server) readDeviceConnector(ctx context.Context, deviceID string, descr
 	}
 	reading := *reply.State
 	reading.Kind = descriptor.Kind
-	return s.connectors.Devices.Record(ctx, deviceID, reading)
+	state, err := s.connectors.Devices.Record(ctx, deviceID, reading)
+	if err == nil && descriptor.RepositoryAccess != nil {
+		s.visibilityChanged(ctx, deviceID)
+	}
+	return state, err
 }
 
 // ownDevices is the person's devices as listed, in the store's order.
@@ -157,9 +164,10 @@ func (s *Server) deviceConnectorDevices(ctx context.Context, devices []store.Dev
 		online := s.hub.connectionFor(device.ID) != nil
 		entry := store.DeviceConnectorDevice{
 			DeviceID: device.ID, Name: device.Label, Online: online,
-			States:   byDevice[device.ID],
-			Checking: s.connectorRefreshes.checking(device.ID),
-			Progress: s.hub.connectorProgress.of(device.ID),
+			States:          byDevice[device.ID],
+			ExtensionErrors: device.ExtensionErrors,
+			Checking:        s.connectorRefreshes.checking(device.ID),
+			Progress:        s.hub.connectorProgress.of(device.ID),
 		}
 		if entry.States == nil {
 			entry.States = []store.DeviceConnectorState{}
@@ -315,7 +323,7 @@ func (s *Server) handleDeviceConnectorsView(w http.ResponseWriter, r *http.Reque
 
 // deviceConnectorsListed lists the device-held connectors on the devices
 // and marks on each device the kinds its extensions provide.
-func (s *Server) deviceConnectorsListed(ctx context.Context, devices []store.DeviceConnectorDevice) ([]store.ConnectorDescriptor, error) {
+func (s *Server) deviceConnectorsListed(ctx context.Context, devices []store.DeviceConnectorDevice, visibilityIDs ...string) ([]store.ConnectorDescriptor, error) {
 	ids := make([]string, 0, len(devices))
 	for _, device := range devices {
 		ids = append(ids, device.DeviceID)
@@ -324,6 +332,22 @@ func (s *Server) deviceConnectorsListed(ctx context.Context, devices []store.Dev
 	if err != nil {
 		return nil, err
 	}
+	idsForVisibility := ids
+	if len(visibilityIDs) > 0 {
+		idsForVisibility = visibilityIDs
+	}
+	visible, err := s.connectors.VisibleKinds(ctx, idsForVisibility)
+	if err != nil {
+		return nil, err
+	}
+	filtered := listed[:0]
+	for _, descriptor := range listed {
+		if descriptor.Extension != nil && !visible[descriptor.Kind] {
+			continue
+		}
+		filtered = append(filtered, descriptor)
+	}
+	listed = filtered
 	extensions, err := s.connectors.Devices.ExtensionsOn(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -347,16 +371,13 @@ func (s *Server) handleConnectorCatalog(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	ids := make([]string, 0, len(devices))
-	for _, device := range devices {
-		ids = append(ids, device.ID)
-	}
-	listed, err := s.connectors.CatalogFor(r.Context(), ids)
+	waitConnectorVisibility(s.refreshConnectorVisibility(r.Context(), devices, false), connectorVisibilityWait)
+	view, err := s.connectorCatalogView(r.Context(), devices)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, store.ConnectorCatalogView{Connectors: listed})
+	writeJSON(w, http.StatusOK, view)
 }
 
 // ownDeviceConnector checks the caller owns the path's device and the path
@@ -427,6 +448,54 @@ func (s *Server) handleInstallDeviceConnector(w http.ResponseWriter, r *http.Req
 	reply, err := s.askDeviceConnector(r.Context(), deviceID, descriptor, "install", true, connectorInstallTimeout)
 	if err != nil {
 		writeDeviceConnectorError(w, "Installing "+descriptor.Label, err)
+		return
+	}
+	state, err := s.recordReply(r.Context(), deviceID, descriptor, reply)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if descriptor.RepositoryAccess != nil {
+		s.visibilityChanged(r.Context(), deviceID)
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+// handleConfigureDeviceConnector changes only the connector's own non-secret
+// profile settings. It runs after sign-in and never changes the login scope.
+func (s *Server) handleConfigureDeviceConnector(w http.ResponseWriter, r *http.Request) {
+	deviceID, descriptor, ok := s.ownDeviceConnector(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Configuration *store.ConnectorConfiguration `json:"configuration"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if input.Configuration == nil {
+		writeError(w, http.StatusBadRequest, "configuration is required")
+		return
+	}
+	region := strings.TrimSpace(input.Configuration.Region)
+	if region == "" || len(region) > 64 {
+		writeError(w, http.StatusBadRequest, "enter the default Region")
+		return
+	}
+	reply, err := s.askDeviceConnector(
+		r.Context(),
+		deviceID,
+		descriptor,
+		"configure",
+		true,
+		connectorConfigureTimeout,
+		store.ConnectorRequestPayload{
+			Configuration: &store.ConnectorConfiguration{Region: region},
+		},
+	)
+	if err != nil {
+		writeDeviceConnectorError(w, "Changing "+descriptor.Label+" settings", err)
 		return
 	}
 	state, err := s.recordReply(r.Context(), deviceID, descriptor, reply)
@@ -687,6 +756,10 @@ func (s *Server) workspaceDeviceConnectors(ctx context.Context, workspaceID, vie
 		if own, err = s.ownDevices(ctx, viewerID); err != nil {
 			return view, err
 		}
+		allOwnDeviceIDs := make([]string, len(own))
+		for i := range own {
+			allOwnDeviceIDs[i] = own[i].ID
+		}
 		scoped := own[:0]
 		for _, device := range own {
 			if allowed[device.ID] {
@@ -696,7 +769,7 @@ func (s *Server) workspaceDeviceConnectors(ctx context.Context, workspaceID, vie
 		if view.Devices, err = s.deviceConnectorDevices(ctx, scoped, true); err != nil {
 			return view, err
 		}
-		if view.Connectors, err = s.deviceConnectorsListed(ctx, view.Devices); err != nil {
+		if view.Connectors, err = s.deviceConnectorsListed(ctx, view.Devices, allOwnDeviceIDs...); err != nil {
 			return view, err
 		}
 	}

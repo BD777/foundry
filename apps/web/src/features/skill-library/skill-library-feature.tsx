@@ -2,12 +2,14 @@ import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ConnectorPackageView,
   DeviceProjection,
   DeviceTool,
   PromotedSkill,
   SkillRepository,
 } from "@bd777/foundry-protocol";
 import {
+  getConnectorPackages,
   listMyDefaultSkills,
   listSkillRepositories,
   setMyDefaultSkills,
@@ -24,6 +26,7 @@ import { rolloutMoving } from "../../lib/bundle-versions";
 import { AddRepositoryDialog } from "./add-repository-dialog";
 import { SkillRepositoriesSection } from "./skill-repositories-section";
 import { PageHeader } from "../../components/ui/page-header";
+import { readPageQuery } from "../../lib/page-query";
 
 export interface SkillLibraryFeatureProps {
   catalog: PromotedSkill[];
@@ -68,7 +71,12 @@ export function SkillLibraryFeature({
   const [repositoriesError, setRepositoriesError] = useState("");
   // Undefined until the first answer, so the page never claims "none" early.
   const [repositories, setRepositories] = useState<SkillRepository[]>();
+  const [connectorPackages, setConnectorPackages] = useState<
+    ConnectorPackageView[]
+  >([]);
   const [adding, setAdding] = useState<{ repository?: SkillRepository }>();
+  const requestedRepositoryId = readPageQuery("repository");
+  const requestedSkillId = readPageQuery("skill");
 
   const loadRepositories = async () => {
     try {
@@ -80,11 +88,26 @@ export function SkillLibraryFeature({
       );
     }
   };
+  const loadConnectorPackages = async () => {
+    try {
+      const packages = await getConnectorPackages();
+      setConnectorPackages(Array.isArray(packages) ? packages : []);
+    } catch {
+      // Package association is additive. The ordinary repository rows still
+      // work when this optional projection is unavailable.
+      setConnectorPackages([]);
+    }
+  };
   const refresh = async () => {
-    await Promise.all([loadRepositories(), onChanged()]);
+    await Promise.all([
+      loadRepositories(),
+      loadConnectorPackages(),
+      onChanged(),
+    ]);
   };
   useEffect(() => {
     void loadRepositories();
+    void loadConnectorPackages();
   }, []);
   // The server publishes no event for a rollout's progress: while one is at
   // work, read the repositories again until it stops (one that only waits
@@ -138,6 +161,15 @@ export function SkillLibraryFeature({
     const labels = new Map(devices.map((device) => [device.id, device.label]));
     return catalog.map((skill) => toNormalizedPromotedSkill(skill, labels));
   }, [catalog, devices]);
+  const packagesByRepository = useMemo(
+    () =>
+      new Map(
+        connectorPackages.flatMap((entry) =>
+          entry.repositoryId ? [[entry.repositoryId, entry] as const] : [],
+        ),
+      ),
+    [connectorPackages],
+  );
 
   const toggle = (skill: NormalizedSkill) =>
     setDraft((current) => {
@@ -188,6 +220,9 @@ export function SkillLibraryFeature({
         defaultBundleIds={defaultBundles}
         deviceTools={deviceTools ?? []}
         devices={devices}
+        packagesByRepository={packagesByRepository}
+        requestedRepositoryId={requestedRepositoryId}
+        requestedSkillId={requestedSkillId}
         onToggleDefaultBundle={(id) => void toggleDefaultBundle(id)}
         onAdd={(repository) => setAdding({ repository })}
         onChanged={refresh}

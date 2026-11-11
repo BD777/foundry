@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { foundryStatePath } from "../platform/state-root.js";
 import { prepareAppStoreConnectSession } from "./appstoreconnect.js";
 import { prepareCloudflareSession } from "./cloudflare.js";
+import { prepareServerHeldExtensionSession } from "./server-held-extension.js";
+import { requestExtensionUpstream } from "./extension-network.js";
 import {
   applySessionSetup,
   mergeEnvironment,
@@ -38,9 +40,14 @@ import {
   refreshExtensionModelProviders,
 } from "./extensions/model-access.js";
 import {
+  bundledVersionNewerThanLocal,
+  bundledExtensions,
   extensionsRevision,
+  installBundledExtension,
   loadedExtensions,
   removeExtension,
+  setExtensionAutoUpdate,
+  syncBundledExtensions,
 } from "./extensions/registry.js";
 import {
   installExtensionFromRepository,
@@ -50,9 +57,13 @@ import {
 export type { ExternalAccountsOptions } from "./feishu.js";
 export {
   addExtension,
+  bundledExtensions,
   ExtensionError,
+  installBundledExtension,
   listExtensions,
   removeExtension,
+  setExtensionAutoUpdate,
+  syncBundledExtensions,
 } from "./extensions/registry.js";
 export { builtinConnectorKinds } from "./extensions/builtin-kinds.js";
 export {
@@ -124,13 +135,29 @@ export const deviceHeldConnectors = new DeviceHeldConnectors({
  * registration reports them (the server checks them again).
  */
 export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
-  return loadedExtensions().flatMap(({ installed, manifest }) =>
-    manifest.connectors.map((connector) => ({
+  const installed = loadedExtensions();
+  const installedIDs = new Set(installed.map(({ manifest }) => manifest.id));
+  const fromInstalled = installed.flatMap(({ installed, manifest }) => {
+    // A local folder install that stayed in place because it is newer than
+    // this Worker's copy tells the page why it did not switch.
+    const bundledVersion =
+      !installed.bundled && !installed.source
+        ? bundledVersionNewerThanLocal(manifest.id, manifest.version)
+        : undefined;
+    return manifest.connectors.map((connector) => ({
       ...connector,
       extension: {
         id: manifest.id,
         name: manifest.name,
         version: manifest.version,
+        state: "installed" as const,
+        ...(installed.bundled ? { bundled: true } : {}),
+        ...(bundledVersion ? { bundledVersion } : {}),
+        ...(installed.autoUpdate !== undefined
+          ? { autoUpdate: installed.autoUpdate }
+          : installed.source
+            ? { autoUpdate: true }
+            : {}),
         // Where this copy came from wins over what the manifest names.
         ...((installed.source ?? manifest.source)
           ? { source: installed.source ?? manifest.source }
@@ -140,8 +167,23 @@ export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
           ? { latestCommit: installed.latestCommit }
           : {}),
       },
-    })),
-  );
+    }));
+  });
+  const available = bundledExtensions()
+    .filter(({ manifest }) => !installedIDs.has(manifest.id))
+    .flatMap(({ manifest }) =>
+      manifest.connectors.map((connector) => ({
+        ...connector,
+        extension: {
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          bundled: true,
+          state: "available" as const,
+        },
+      })),
+    );
+  return [...fromInstalled, ...available];
 }
 
 let modelAccessRefresh: Promise<boolean> | undefined;
@@ -173,6 +215,7 @@ let maintenance: NodeJS.Timeout | undefined;
 export function startConnectorExtensions(workerVersion: string): () => void {
   if (maintenance) return () => undefined;
   extensionHost.workerVersion = workerVersion;
+  syncBundledExtensions();
   let seen = "";
   let listedAt = 0;
   const tick = () => {
@@ -255,9 +298,14 @@ export async function prepareSessionConnectors(
     input.externalAccounts,
     { serverURL: options.serverURL },
   );
+  const serverHeldExtensions = await prepareServerHeldExtensionSession(
+    session,
+    input.externalAccounts,
+    { serverURL: options.serverURL },
+  );
   const serverHeldEnvironment = mergeEnvironment(
-    cloudflare.environment,
-    appStoreConnect.environment,
+    mergeEnvironment(cloudflare.environment, appStoreConnect.environment),
+    serverHeldExtensions.environment,
   );
   const run = {};
   if (session.id) {
@@ -300,6 +348,7 @@ export async function prepareSessionConnectors(
       accounts.release();
       cloudflare.release();
       appStoreConnect.release();
+      serverHeldExtensions.release();
       if (session.id && preparedBySession.get(session.id) === run) {
         preparedBySession.delete(session.id);
         environmentBySession.delete(session.id);
@@ -381,6 +430,16 @@ export async function handleConnectorRequest(
   request: ConnectorRequestPayload,
   hooks?: ConnectorRequestHooks,
 ): Promise<ConnectorReplyPayload> {
+  if (request.action === "extension_request") {
+    if (!request.extension) return { error: "no extension request" };
+    try {
+      return { extension: await requestExtensionUpstream(request.extension) };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
   const reply = await deviceHeldConnectors.handle(request, hooks);
   // A model-access login that was read, signed in or out may give the
   // device different model providers.
@@ -398,13 +457,26 @@ export async function handleExtensionRequest(
 ): Promise<ExtensionReplyPayload> {
   try {
     if (request?.action === "install") {
-      const change = await installExtensionFromRepository(request.source);
+      const change = request.bundledExtensionId
+        ? installBundledExtension(request.bundledExtensionId)
+        : await installExtensionFromRepository(request.source);
       return { action: change.action, extension: change.extension };
     }
     if (request?.action === "remove" && request.extensionId) {
       const change = removeExtension(request.extensionId);
       extensionHost.prune();
       return { action: change.action };
+    }
+    if (
+      request?.action === "set-auto-update" &&
+      request.extensionId &&
+      typeof request.autoUpdate === "boolean"
+    ) {
+      const extension = setExtensionAutoUpdate(
+        request.extensionId,
+        request.autoUpdate,
+      );
+      return { action: "updated", extension };
     }
     return { error: `unknown extension action ${String(request?.action)}` };
   } catch (error) {

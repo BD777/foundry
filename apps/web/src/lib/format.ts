@@ -97,12 +97,29 @@ export function outputTokensPerSecond(
   return outputTokens / (elapsedMs / 1000);
 }
 
+/** Estimated request times are too noisy to show when they imply a local spike. */
+export function estimatedOutputTimingReliable(
+  outputTokens: number,
+  elapsedMs: number,
+): boolean {
+  if (
+    !Number.isFinite(outputTokens) ||
+    outputTokens < 0 ||
+    !Number.isFinite(elapsedMs) ||
+    elapsedMs < 1000
+  )
+    return false;
+  return outputTokens / (elapsedMs / 1000) <= 1000;
+}
+
 /** "85 tok/s", or one decimal below 10 tok/s; `≈` marks an estimate. */
 export function formatOutputSpeed(
   outputTokens: number,
   elapsedMs: number,
   estimated = false,
 ): string | undefined {
+  if (estimated && !estimatedOutputTimingReliable(outputTokens, elapsedMs))
+    return undefined;
   const speed = outputTokensPerSecond(outputTokens, elapsedMs);
   if (speed === undefined) return undefined;
   const roundedToTenth = Math.round(speed * 10) / 10;

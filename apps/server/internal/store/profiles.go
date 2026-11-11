@@ -81,21 +81,23 @@ type DeviceProfileBinding struct {
 // SaveProfileInput creates or updates a server profile. APIKey is write-only:
 // sealed on arrival, never read back. Omitting it keeps the stored credential.
 type SaveProfileInput struct {
-	ID                   string   `json:"id,omitempty"`
-	Runtime              string   `json:"runtime"`
-	Label                string   `json:"label"`
-	AuthMode             string   `json:"authMode"`
-	ConnectionType       string   `json:"connectionType"`
-	BaseURL              string   `json:"baseUrl,omitempty"`
-	Model                string   `json:"model,omitempty"`
-	Models               []string `json:"models,omitempty"`
-	PromptPrefix         string   `json:"promptPrefix,omitempty"`
-	ClaudeEffort         string   `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string   `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string   `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string   `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string   `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string   `json:"codexSpeed,omitempty"`
+	ID             string   `json:"id,omitempty"`
+	Runtime        string   `json:"runtime"`
+	Label          string   `json:"label"`
+	AuthMode       string   `json:"authMode"`
+	ConnectionType string   `json:"connectionType"`
+	BaseURL        string   `json:"baseUrl,omitempty"`
+	Model          string   `json:"model,omitempty"`
+	Models         []string `json:"models,omitempty"`
+	// ModelPrices replaces the stored custom prices by model; nil keeps them.
+	ModelPrices          map[string]ProfileModelPrice `json:"modelPrices,omitempty"`
+	PromptPrefix         string                       `json:"promptPrefix,omitempty"`
+	ClaudeEffort         string                       `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string                       `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string                       `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string                       `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string                       `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string                       `json:"codexSpeed,omitempty"`
 	// CodexTransport: auto (also when empty), websocket or https; compatible
 	// Codex endpoints only.
 	CodexTransport string `json:"codexTransport,omitempty"`

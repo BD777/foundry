@@ -110,7 +110,7 @@ export function EntrySection({
         >
           <SelectMenu
             ariaLabel={t("settings.entry.feishuApp")}
-            className="max-w-full min-w-55"
+            className="w-full"
             disabled={!draft.feishuDirectChat}
             onChange={(feishuAppId) => change({ feishuAppId })}
             options={appOptions}

@@ -10,6 +10,7 @@ import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
 
 export function workspaceIdFromLocation(): string {
+  if (typeof window === "undefined") return "";
   return (
     new URLSearchParams(window.location.search).get("workspace")?.trim() ?? ""
   );
@@ -19,7 +20,9 @@ export function searchWithWorkspace(
   workspaceId: string,
   query: Record<string, string> = {},
 ): string {
-  const params = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams(
+    typeof window === "undefined" ? "" : window.location.search,
+  );
   if (workspaceId) {
     params.set("workspace", workspaceId);
   } else {
@@ -116,6 +119,24 @@ export function navigateToDeviceResources(deviceId: string): void {
     selectedDeviceId: deviceId,
     view: "devices",
   });
+}
+
+/** Opens a device's execution settings through the shell's normal route. */
+export function navigateToDeviceSettings(deviceId: string): void {
+  navigateAppRoute({
+    deviceSection: "settings",
+    selectedDeviceId: deviceId,
+    view: "devices",
+  });
+}
+
+/** A real, copyable link to a device's execution settings. */
+export function deviceSettingsHref(deviceId: string): string {
+  return `${pathForAppRoute({
+    deviceSection: "settings",
+    selectedDeviceId: deviceId,
+    view: "devices",
+  })}${searchWithWorkspace(workspaceIdFromLocation())}`;
 }
 
 /** Opens the Resources page, filtered to one device's resources when given. */
@@ -227,7 +248,21 @@ export function navigateToWorkspaceChannels(workspaceId: string): void {
 
 /** Opens the Connectors page on one connector type's tab. */
 export function navigateToConnectors(type: ConnectorType): void {
-  navigateAppRoute({ view: "connectors", connectorTab: type });
+  navigateAppRoute({ view: "connectors", connectorTab: type }, undefined, {
+    repository: "",
+    skill: "",
+  });
+}
+
+/** A real link to one connector's tab, without a previous package target. */
+export function connectorsHref(type: ConnectorType): string {
+  return `${pathForAppRoute({
+    view: "connectors",
+    connectorTab: type,
+  })}${searchWithWorkspace(workspaceIdFromLocation(), {
+    repository: "",
+    skill: "",
+  })}`;
 }
 
 /**
@@ -284,6 +319,20 @@ export function navigateToSkillLibrary(): void {
 /** The Skill Library page, where bundles and their versions are managed. */
 export function skillLibraryHref(): string {
   return `${pathForAppRoute({ view: "library" })}${searchWithWorkspace(workspaceIdFromLocation())}`;
+}
+
+/**
+ * One followed repository in the Skill Library, optionally with one of its
+ * skills selected. The library reads these page parameters once.
+ */
+export function skillLibraryRepositoryHref(
+  repositoryId: string,
+  skillId?: string,
+): string {
+  return `${pathForAppRoute({ view: "library" })}${searchWithWorkspace(
+    workspaceIdFromLocation(),
+    { repository: repositoryId, skill: skillId ?? "" },
+  )}`;
 }
 
 /** Opens the page on what the built-in Foundry skill gives agents. */

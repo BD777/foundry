@@ -30,6 +30,8 @@ func (s *Server) integrationStarters() []integrationStarter {
 		// A minute after start, then daily: followed repositories on
 		// GitHub/npm (or through their device).
 		{name: "skill-repository-checks", start: s.CheckSkillRepositories},
+		// At start and daily: LiteLLM's public model price catalog.
+		{name: "usage-price-refresh", start: s.startUsagePriceRefresh},
 	}
 }
 

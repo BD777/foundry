@@ -514,7 +514,7 @@
       }
     },
     "ConnectorField": {
-      "description": "ConnectorField is one field a sign-in method asks for, rendered by the Web; its value reaches the device's adapter as SignInOptions[ID].",
+      "description": "ConnectorField is one field a sign-in method or a server-held instance form asks for, rendered by the Web.",
       "type": "object",
       "required": ["id", "label", "type"],
       "additionalProperties": false,
@@ -549,6 +549,10 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorOption" }
         },
+        "optionsFrom": {
+          "description": "select: fill the choices from a server-held probe (`probe:<probe-id>`) instead of static options.",
+          "type": "string"
+        },
         "showWhen": {
           "description": "Shown only while another field of the method holds one of these values.",
           "$ref": "#/$defs/ConnectorShowWhen"
@@ -568,6 +572,11 @@
           "additionalProperties": { "type": "string" }
         }
       }
+    },
+    "ConnectorOptionList": {
+      "description": "A list of choices for one select field.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/ConnectorOption" }
     },
     "ConnectorShowWhen": {
       "description": "ConnectorShowWhen shows a field only while another holds one of Equals.",
@@ -683,6 +692,23 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "version": { "type": "string" },
+        "bundled": {
+          "description": "The extension ships with the Worker.",
+          "type": "boolean"
+        },
+        "bundledVersion": {
+          "description": "The bundled copy's version, when this installed local folder is newer than the copy shipped with the Worker and was kept in place.",
+          "type": "string"
+        },
+        "state": {
+          "description": "\"installed\" is on this device; \"available\" ships with the Worker but is not installed there. An absent state means installed, for descriptors reported by older Workers.",
+          "type": "string",
+          "enum": ["installed", "available"]
+        },
+        "autoUpdate": {
+          "description": "A git-installed extension updates when its source moves; default true.",
+          "type": "boolean"
+        },
         "source": {
           "description": "Where its files come from, so other devices can install it too.",
           "$ref": "#/$defs/ConnectorExtensionRepository"
@@ -695,6 +721,187 @@
           "description": "The commit source.ref is at now, when the device last looked.",
           "type": "string"
         }
+      }
+    },
+    "ConnectorRepositoryAccess": {
+      "description": "A device-held connector can check whether its own login can read a source repository. The Worker runs this argv with the connector's ordinary Foundry environment.",
+      "type": "object",
+      "required": ["args"],
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "description": "Exactly one {repository} placeholder may appear.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string" }
+        },
+        "repositoryFormat": {
+          "description": "`github` accepts an owner/repo or GitHub URL and passes owner/repo; raw passes the declared value.",
+          "type": "string",
+          "enum": ["raw", "github"]
+        }
+      }
+    },
+    "ConnectorSourceAccess": {
+      "description": "A connector is visible only when one of the owner's devices can read the repository through the named Foundry connector.",
+      "type": "object",
+      "required": ["via", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "via": {
+          "description": "A connector kind that declares repositoryAccess.",
+          "type": "string"
+        },
+        "repository": {
+          "description": "owner/repo or an https repository address.",
+          "type": "string"
+        },
+        "hint": { "type": "string" },
+        "hints": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "ConnectorSourceAccessCheck": {
+      "description": "A device's last check of one source repository through a Foundry connector.",
+      "type": "object",
+      "required": ["status", "checkedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "no_access", "not_signed_in", "unreachable", "error"]
+        },
+        "checkedAt": { "type": "string" },
+        "identity": {
+          "description": "The non-secret account name of the connector login used.",
+          "type": "string"
+        },
+        "detail": {
+          "description": "A short non-secret message from the connector.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorRequirementsCheck": {
+      "description": "A device's last check of a connector's declared visibility requirements, such as tcp_reachable.",
+      "type": "object",
+      "required": ["ok", "checkedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": { "type": "boolean" },
+        "checkedAt": { "type": "string" },
+        "requirement": {
+          "description": "The first requirement the device did not meet.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorPackage": {
+      "description": "ConnectorPackage names the upstream Skill bundle and CLI a connector ships with. The bundle follows the upstream; its recorded commit is also the repository tool's version.",
+      "type": "object",
+      "required": ["upstream", "skills", "tools"],
+      "additionalProperties": false,
+      "properties": {
+        "upstream": { "$ref": "#/$defs/ConnectorPackageUpstream" },
+        "skills": { "$ref": "#/$defs/ConnectorPackageSkills" },
+        "tools": {
+          "description": "Programs from folders of the bundle's own upstream repository.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/ConnectorPackageTool" }
+        }
+      }
+    },
+    "ConnectorPackageUpstream": {
+      "description": "A GitHub repository whose Skills and tools move as one bundle version.",
+      "type": "object",
+      "required": ["via", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "via": {
+          "description": "The connector whose Foundry-managed login reads the repository.",
+          "type": "string"
+        },
+        "repository": {
+          "description": "A normalized https GitHub repository address.",
+          "type": "string"
+        },
+        "ref": {
+          "description": "A branch or tag; empty follows the default release or branch.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorPackageSkills": {
+      "description": "The folder in Upstream holding the bundle's Skill folders.",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": { "path": { "type": "string" } }
+    },
+    "ConnectorPackageTool": {
+      "description": "A CLI from a folder of the package's upstream repository.",
+      "type": "object",
+      "required": ["command", "source", "path", "bins"],
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string" },
+        "source": { "type": "string", "enum": ["repository"] },
+        "path": {
+          "description": "The folder in Upstream holding the tool's files.",
+          "type": "string"
+        },
+        "bins": {
+          "description": "Command names mapped to relative files under Path.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "ConnectorPackageDevice": {
+      "description": "One of the owner's devices in a package view, and whether it may be selected.",
+      "type": "object",
+      "required": ["deviceId", "name", "online", "selected", "eligible"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "type": "string" },
+        "name": { "type": "string" },
+        "online": { "type": "boolean" },
+        "selected": { "type": "boolean" },
+        "eligible": { "type": "boolean" },
+        "reason": {
+          "description": "Why the device cannot be selected, when Eligible is false.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorPackageView": {
+      "description": "A package at the person level, its bundle, and where it is enabled.",
+      "type": "object",
+      "required": ["connector", "enabled", "devices"],
+      "additionalProperties": false,
+      "properties": {
+        "connector": { "$ref": "#/$defs/ConnectorDescriptor" },
+        "enabled": { "type": "boolean" },
+        "repositoryId": { "type": "string" },
+        "devices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorPackageDevice" }
+        }
+      }
+    },
+    "SetConnectorPackageDevicesInput": {
+      "description": "Replace the devices on which a package is enabled.",
+      "type": "object",
+      "required": ["deviceIds"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceIds": { "type": "array", "items": { "type": "string" } }
       }
     },
     "ConnectorExtensionRepository": {
@@ -730,6 +937,403 @@
       "description": "Who holds a connector's credential.",
       "type": "string",
       "enum": ["server_held", "device_held"]
+    },
+    "ConnectorServerHeldSpec": {
+      "description": "ConnectorServerHeld declares a pure-data server-held connector supplied by an extension. Foundry probes and proxies it generically; extension code never runs on the server.",
+      "type": "object",
+      "required": [
+        "instances",
+        "fields",
+        "steps",
+        "probe",
+        "upstream",
+        "access",
+        "session",
+        "network"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instances": { "type": "string", "enum": ["one", "many"] },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorField" }
+        },
+        "steps": {
+          "description": "Field ids grouped into the form's steps; presentation data for Web.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldStep" }
+        },
+        "probe": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldProbe" }
+        },
+        "upstream": { "$ref": "#/$defs/ConnectorServerHeldUpstream" },
+        "access": { "$ref": "#/$defs/ConnectorServerHeldAccess" },
+        "session": { "$ref": "#/$defs/ConnectorServerHeldSession" },
+        "network": { "$ref": "#/$defs/ConnectorServerHeldNetwork" }
+      }
+    },
+    "ConnectorServerHeldStep": {
+      "description": "One group of field ids in a server-held instance form.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "ConnectorServerHeldProbeExtract": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "values": {
+          "description": "Probe id to display name to JSON pointer.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "options": { "$ref": "#/$defs/ConnectorServerHeldOptionsExtract" },
+        "routes": { "$ref": "#/$defs/ConnectorServerHeldRoutesExtract" }
+      }
+    },
+    "ConnectorServerHeldOptionsExtract": {
+      "type": "object",
+      "required": ["items", "value", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "description": "JSON pointer to the array of option objects.",
+          "type": "string"
+        },
+        "value": {
+          "description": "JSON pointer inside each item to its value.",
+          "type": "string"
+        },
+        "label": {
+          "description": "JSON pointer inside each item to its label.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorServerHeldRoutesExtract": {
+      "type": "object",
+      "required": ["items", "method", "path", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "description": "JSON pointer to the array of route objects.",
+          "type": "string"
+        },
+        "method": {
+          "description": "JSON pointer inside each route to its HTTP method.",
+          "type": "string"
+        },
+        "path": {
+          "description": "JSON pointer inside each route to its path template.",
+          "type": "string"
+        },
+        "access": {
+          "description": "JSON pointer inside each route to read/write classification.",
+          "type": "string"
+        },
+        "domain": {
+          "description": "Optional JSON pointer inside each route to its resource domain.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorServerHeldProbe": {
+      "type": "object",
+      "required": ["id", "method", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "method": { "type": "string" },
+        "path": {
+          "description": "Path appended to the upstream base; must name a declared base field.",
+          "type": "string"
+        },
+        "optional": {
+          "description": "A 404 from this probe is skipped and later probes continue.",
+          "type": "boolean"
+        },
+        "extract": { "$ref": "#/$defs/ConnectorServerHeldProbeExtract" }
+      }
+    },
+    "ConnectorServerHeldUpstream": {
+      "type": "object",
+      "required": ["baseField", "pathPrefix"],
+      "additionalProperties": false,
+      "properties": {
+        "baseField": {
+          "description": "Id of a declared URL field that holds the upstream base.",
+          "type": "string"
+        },
+        "pathPrefix": {
+          "description": "Only paths at or below this prefix may reach the upstream.",
+          "type": "string"
+        },
+        "headers": {
+          "description": "Templates for upstream request headers. Only this object may use `{secret:<field-id>}`.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "requestBodyLimitBytes": { "type": "integer" },
+        "responseBodyLimitBytes": { "type": "integer" },
+        "timeoutSeconds": { "type": "integer" }
+      }
+    },
+    "ConnectorServerHeldAccess": {
+      "type": "object",
+      "required": ["from", "default"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "`probe:<probe-id>` whose route extraction supplies the directory.",
+          "type": "string"
+        },
+        "default": { "type": "string", "enum": ["deny"] },
+        "allow": {
+          "description": "Fixed route access levels. Use with descriptors saved before probe-based access, or as a fallback when every route has the same permission.",
+          "$ref": "#/$defs/ConnectorServerHeldAccessLevels"
+        },
+        "allowBy": { "$ref": "#/$defs/ConnectorServerHeldAccessBy" }
+      }
+    },
+    "ConnectorServerHeldAccessBy": {
+      "description": "Route access levels selected by a value extracted during probing.",
+      "type": "object",
+      "required": ["value", "map"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "description": "`probe:<probe-id>/<extracted-name>` whose probed value chooses the allowed route access levels.",
+          "type": "string"
+        },
+        "map": {
+          "description": "Probe values to the route access levels they allow.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ConnectorServerHeldAccessLevels"
+          }
+        },
+        "otherwise": {
+          "description": "Route access levels for a probe value absent from `map`; omitted means no route access.",
+          "$ref": "#/$defs/ConnectorServerHeldAccessLevels"
+        }
+      }
+    },
+    "ConnectorServerHeldAccessLevel": {
+      "type": "string",
+      "enum": ["read", "write"]
+    },
+    "ConnectorServerHeldAccessLevels": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ConnectorServerHeldAccessLevel" }
+    },
+    "ConnectorServerHeldSession": {
+      "type": "object",
+      "required": ["env"],
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "description": "Session environment templates. Secret references are not allowed.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "ConnectorServerHeldNetwork": {
+      "type": "object",
+      "required": ["holdings", "publicOnly"],
+      "additionalProperties": false,
+      "properties": {
+        "holdings": {
+          "description": "The network paths instances of this connector may choose.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ConnectorServerHeldNetworkPath" }
+        },
+        "publicOnly": {
+          "description": "Applies only to instances on the server path.",
+          "type": "boolean"
+        }
+      }
+    },
+    "ConnectorServerHeldNetworkPath": {
+      "description": "Where an instance's upstream requests leave Foundry.",
+      "type": "string",
+      "enum": ["server", "device"]
+    },
+    "ConnectorServerHeldDevice": {
+      "description": "One of the owner's devices and whether it can reach an instance's upstream.",
+      "type": "object",
+      "required": ["deviceId", "name", "online"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "type": "string" },
+        "name": { "type": "string" },
+        "online": { "type": "boolean" }
+      }
+    },
+    "ConnectorServerHeldDeviceCheck": {
+      "description": "The recorded reachability of one device for an instance.",
+      "type": "object",
+      "required": ["deviceId", "name", "status", "checkedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "checkedAt": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "ConnectorServerHeldRoute": {
+      "description": "One route from a server-held extension's validated probe.",
+      "type": "object",
+      "required": ["method", "path", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string" },
+        "path": { "type": "string" },
+        "access": { "type": "string" },
+        "domain": { "type": "string" }
+      }
+    },
+    "ConnectorServerHeldProbeValues": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "ConnectorServerHeldFieldOptions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/ConnectorOption" }
+      }
+    },
+    "ConnectorServerHeldInstance": {
+      "description": "One server-held extension instance as its owner sees it. Secrets are never returned.",
+      "type": "object",
+      "required": [
+        "id",
+        "accountId",
+        "kind",
+        "label",
+        "network",
+        "status",
+        "values",
+        "secretFields",
+        "fieldOptions",
+        "probeValues",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "accountId": { "type": "string" },
+        "kind": { "type": "string" },
+        "label": { "type": "string" },
+        "network": { "$ref": "#/$defs/ConnectorServerHeldNetworkPath" },
+        "probeDeviceId": {
+          "description": "The device that validated the instance and is re-checked by default.",
+          "type": "string"
+        },
+        "availableDevices": {
+          "description": "Devices whose sessions can use this instance on the device network path.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldDeviceCheck" }
+        },
+        "status": { "type": "string" },
+        "statusDetail": { "type": "string" },
+        "access": {
+          "description": "The permission Foundry derived from the token at the last validation.",
+          "type": "string",
+          "enum": ["read", "write"]
+        },
+        "version": { "type": "string" },
+        "routeCount": { "type": "integer" },
+        "values": {
+          "description": "Non-secret field values.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "secretFields": {
+          "description": "Ids of secret fields whose value is sealed.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fieldOptions": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ConnectorOptionList" }
+        },
+        "probeValues": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ConnectorServerHeldInstanceInput": {
+      "type": "object",
+      "required": ["label", "fields", "network"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "network": { "$ref": "#/$defs/ConnectorServerHeldNetworkPath" },
+        "deviceId": {
+          "description": "The owner's online device that validates a device-network instance.",
+          "type": "string"
+        }
+      }
+    },
+    "ConnectorServerHeldProbeResult": {
+      "type": "object",
+      "required": ["values", "secretFields", "probeValues", "fieldOptions"],
+      "additionalProperties": false,
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "secretFields": { "type": "array", "items": { "type": "string" } },
+        "probeValues": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "fieldOptions": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ConnectorOptionList" }
+        },
+        "version": { "type": "string" },
+        "routeCount": { "type": "integer" },
+        "network": { "$ref": "#/$defs/ConnectorServerHeldNetworkPath" },
+        "probeDeviceId": { "type": "string" },
+        "availableDevices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldDeviceCheck" }
+        }
+      }
+    },
+    "ConnectorServerHeldInstancesView": {
+      "type": "object",
+      "required": ["kind", "descriptor", "instances", "devices"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string" },
+        "descriptor": { "$ref": "#/$defs/ConnectorDescriptor" },
+        "instances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldInstance" }
+        },
+        "devices": {
+          "description": "The owner's devices, for choosing the device that validates an instance.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldDevice" }
+        }
+      }
     },
     "ConnectorDescriptor": {
       "description": "ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.",
@@ -771,6 +1375,26 @@
           "description": "Set for a connector an extension on the device provides.",
           "$ref": "#/$defs/ConnectorExtensionSource"
         },
+        "repositoryAccess": {
+          "description": "This connector can check source-repository access with its own device-held login.",
+          "$ref": "#/$defs/ConnectorRepositoryAccess"
+        },
+        "package": {
+          "description": "The upstream Skill bundle and CLI this connector ships with; it follows the same upstream revision and only joins sessions that receive this connector.",
+          "$ref": "#/$defs/ConnectorPackage"
+        },
+        "access": {
+          "description": "The connector is visible only when this repository is readable through the named connector on at least one of the owner's devices.",
+          "$ref": "#/$defs/ConnectorSourceAccess"
+        },
+        "accessCheck": {
+          "description": "The Worker's cached result for access.via; never authored in a manifest.",
+          "$ref": "#/$defs/ConnectorSourceAccessCheck"
+        },
+        "requirementsCheck": {
+          "description": "The Worker's cached result for requires; used as a visibility gate until a connector can check the repository.",
+          "$ref": "#/$defs/ConnectorRequirementsCheck"
+        },
         "setup": { "$ref": "#/$defs/ConnectorSetup" },
         "requires": {
           "type": "array",
@@ -784,6 +1408,10 @@
           "description": "How a session that may not use the device's login is kept from it, with the tool's documented configuration: these variables are set for it.",
           "type": "object",
           "additionalProperties": { "type": "string" }
+        },
+        "serverHeld": {
+          "description": "Pure-data server-held behavior. Only an extension connector may set it.",
+          "$ref": "#/$defs/ConnectorServerHeldSpec"
         }
       }
     },
@@ -799,6 +1427,17 @@
         "unavailable",
         "error"
       ]
+    },
+    "ConnectorConfiguration": {
+      "description": "Non-secret settings read from a device-held connector's active profile. It never holds a credential.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "description": "The default Region the tool's active profile uses when a command names none.",
+          "type": "string"
+        }
+      }
     },
     "DeviceConnectorState": {
       "description": "DeviceConnectorState is a device-held connector on one device as last read there. It never holds a credential.",
@@ -823,6 +1462,10 @@
         "statusDetail": {
           "description": "Why it is unavailable or failed (a requirement's label, an error).",
           "type": "string"
+        },
+        "configuration": {
+          "description": "Non-secret settings read from the connector's active profile.",
+          "$ref": "#/$defs/ConnectorConfiguration"
         },
         "installed": { "type": "boolean" },
         "version": { "type": "string" },
@@ -982,6 +1625,11 @@
         "providerAccountId": {
           "description": "`providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret.",
           "type": "string"
+        },
+        "sessionEnvironment": {
+          "description": "Environment templates for a server-held extension's session. Worker renders `{gatewayBase}` and `{standIn}`; field references are already rendered by Server.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       }
     },
@@ -1008,6 +1656,18 @@
           "description": "Stands in for the user refresh token; the gateway answers its refresh.",
           "type": "string"
         }
+      }
+    },
+    "ConnectorExtensionError": {
+      "description": "ConnectorExtensionError is one descriptor a device reported but the server refused.",
+      "type": "object",
+      "required": ["extensionId", "extensionName", "kind", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "extensionId": { "type": "string" },
+        "extensionName": { "type": "string" },
+        "kind": { "type": "string" },
+        "reason": { "type": "string" }
       }
     },
     "DeviceAccountShare": {
@@ -1055,6 +1715,10 @@
         "status": { "type": "string", "enum": ["connected", "disconnected"] },
         "lastSeenLabel": { "type": "string" },
         "runtimeSettings": { "$ref": "#/$defs/AgentRuntimeSettings" },
+        "runtimeState": {
+          "description": "`runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it.",
+          "$ref": "#/$defs/DeviceRuntimeState"
+        },
         "owned": {
           "description": "`owned` reports whether the caller owns (and may manage) the device.",
           "type": "boolean"
@@ -1077,6 +1741,11 @@
           "description": "`connectors` are what extensions installed on the device provide, as its worker reports them (docs/connector-extensions.md); shown to its owner only.",
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorDescriptor" }
+        },
+        "extensionErrors": {
+          "description": "`extensionErrors` are extension descriptors the server refused, kept so the owner can see which device and extension need fixing.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorExtensionError" }
         },
         "worker": {
           "description": "`worker` is the build the device's worker runs and the command that updates it there, reported at registration (0.5.7 and later).",
@@ -1346,21 +2015,35 @@
     },
     "AgentRuntimeSettings": {
       "type": "object",
-      "required": ["activeRuntimeTtlMs", "maxConcurrentTasks"],
+      "required": ["activeRuntimeTtlMs"],
       "additionalProperties": false,
       "properties": {
         "activeRuntimeTtlMs": { "type": "integer" },
+        "mode": {
+          "description": "`adaptive` lets the worker choose from its parallel floor through 16 using its signals and turn estimates; `forced` uses `forcedLimit` (the owner's overclock setting).",
+          "type": "string",
+          "enum": ["adaptive", "forced"]
+        },
+        "forcedLimit": {
+          "description": "The owner's fixed limit while `mode` is `forced` (1–16).",
+          "type": "integer"
+        },
         "maxConcurrentTasks": {
-          "description": "`maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws their choice: the worker uses its hardware default.",
+          "description": "Deprecated compatibility field from workers before adaptive concurrency. A positive value is migrated to adaptive mode with a one-time notice; 0 means adaptive.",
           "type": "integer"
         },
         "maxConcurrentTasksSource": {
-          "description": "`maxConcurrentTasksSource` is \"owner\" or \"hardware\"; workers before DEV-084 leave it out.",
+          "description": "Deprecated compatibility projection for older clients. New settings use `mode`.",
           "type": "string",
           "enum": ["owner", "hardware"]
         },
+        "migrationNotice": {
+          "description": "`adaptive_migrated` is present once when an older positive `maxConcurrentTasks` setting was moved to adaptive mode. It is for the device settings UI to acknowledge.",
+          "type": "string",
+          "enum": ["adaptive_migrated"]
+        },
         "hardwareMaxConcurrentTasks": {
-          "description": "What this device's hardware allows by default.",
+          "description": "Compatibility mirror of this device's adaptive parallel floor.",
           "type": "integer"
         },
         "hardware": {
@@ -1377,6 +2060,100 @@
       "properties": {
         "memoryGiB": { "type": "number" },
         "cpus": { "type": "integer" }
+      }
+    },
+    "DeviceRuntimeState": {
+      "description": "DeviceRuntimeState is the worker's latest admission sample, stored by the server as reported.",
+      "type": "object",
+      "required": [
+        "capturedAt",
+        "mode",
+        "limit",
+        "running",
+        "queued",
+        "hardHold",
+        "reasons",
+        "signals",
+        "estimates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "capturedAt": { "type": "string" },
+        "mode": { "type": "string", "enum": ["adaptive", "forced"] },
+        "limit": { "type": "integer" },
+        "running": {
+          "type": "integer",
+          "description": "Total turns running, limited and limit-exempt."
+        },
+        "queued": {
+          "type": "integer",
+          "description": "Total turns waiting, limited and limit-exempt."
+        },
+        "runningLimited": {
+          "type": "integer",
+          "description": "Turns running against the adaptive or forced limit."
+        },
+        "runningExempt": {
+          "type": "integer",
+          "description": "Human and orchestration-parent turns running outside the limit."
+        },
+        "queuedLimited": {
+          "type": "integer",
+          "description": "Turns waiting for an adaptive or forced-limit slot."
+        },
+        "queuedExempt": {
+          "type": "integer",
+          "description": "Limit-exempt turns waiting only behind the same conversation."
+        },
+        "hardHold": {
+          "description": "While true, no new turn starts regardless of the limit.",
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Stable reason codes such as memory_hard_hold, memory_limit, estimate_prior, parallel_floor, cpu_pressure_high, cpu_limit_decreased, cpu_limit_increased and forced_mode.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "signals": { "$ref": "#/$defs/DeviceResourceSignals" },
+        "estimates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DeviceTurnEstimate" }
+        }
+      }
+    },
+    "DeviceResourceSignals": {
+      "description": "The host resource signals behind one admission decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpuCount": { "type": "integer" },
+        "cpuPressurePercent": { "type": "number" },
+        "loadAverage1": { "type": "number" },
+        "memoryAvailableBytes": { "type": "integer" },
+        "memoryPressurePercent": { "type": "number" },
+        "memoryTotalBytes": { "type": "integer" },
+        "swapFreeBytes": { "type": "integer" }
+      }
+    },
+    "DeviceTurnEstimate": {
+      "description": "DeviceTurnEstimate is the rolling estimate for turns of one workspace and runtime.",
+      "type": "object",
+      "required": ["typicalRssBytes", "peakRssBytes", "averageCpuCores"],
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "runtime": { "type": "string" },
+        "source": {
+          "description": "`prior` is the conservative default used before a completed turn has been measured; `observed` comes from the worker's rolling samples.",
+          "type": "string",
+          "enum": ["prior", "observed"]
+        },
+        "typicalRssBytes": { "type": "integer" },
+        "peakRssBytes": {
+          "description": "The 90th percentile of observed per-turn peak RSS.",
+          "type": "integer"
+        },
+        "averageCpuCores": { "type": "number" }
       }
     },
     "DaemonRegistration": {
@@ -3486,6 +4263,118 @@
         "code": { "type": "string" }
       }
     },
+    "ConnectorAccessLevel": {
+      "description": "What one assistant may do through one connector account.",
+      "type": "string",
+      "enum": ["off", "read", "write"]
+    },
+    "PermissionListRule": {
+      "description": "An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.",
+      "type": "object",
+      "required": ["include", "exclude"],
+      "additionalProperties": false,
+      "properties": {
+        "include": { "type": "array", "items": { "type": "string" } },
+        "exclude": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ConnectorAccountPermission": {
+      "description": "One connector account's override in a permission package. An account with no entry uses the package default, write.",
+      "type": "object",
+      "required": ["accountId", "level"],
+      "additionalProperties": false,
+      "properties": {
+        "accountId": { "type": "string" },
+        "level": { "$ref": "#/$defs/ConnectorAccessLevel" }
+      }
+    },
+    "PermissionDeviceResources": {
+      "description": "What an assistant may lease directly; resources stay visible either way.",
+      "type": "object",
+      "required": ["directLeaseAllowed"],
+      "additionalProperties": false,
+      "properties": {
+        "directLeaseAllowed": {
+          "description": "Device ids whose resources the assistant may lease itself.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "PermissionPackage": {
+      "description": "One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none.",
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "workspaces",
+        "connectorAccounts",
+        "devicesResources",
+        "skills"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "owner": {
+          "description": "The Foundry user id the package belongs to.",
+          "type": "string"
+        },
+        "workspaces": { "$ref": "#/$defs/PermissionListRule" },
+        "connectorAccounts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorAccountPermission" }
+        },
+        "devicesResources": { "$ref": "#/$defs/PermissionDeviceResources" },
+        "skills": { "$ref": "#/$defs/PermissionListRule" }
+      }
+    },
+    "PersonalAgentConnector": {
+      "description": "One connector account as the Assistant settings list it.",
+      "type": "object",
+      "required": ["id", "kind", "label", "holding", "level", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "label": { "type": "string" },
+        "holding": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "status": { "type": "string" },
+        "level": { "$ref": "#/$defs/ConnectorAccessLevel" },
+        "enabled": {
+          "description": "Kept for older clients; equivalent to level not being \"off\".",
+          "type": "boolean"
+        }
+      }
+    },
+    "PersonalAgentConnectorsView": {
+      "type": "object",
+      "required": ["connectors"],
+      "additionalProperties": false,
+      "properties": {
+        "connectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PersonalAgentConnector" }
+        }
+      }
+    },
+    "SetPersonalAgentConnectorLevelsInput": {
+      "description": "Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package default, write.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "levels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorAccountPermission" }
+        },
+        "disabled": {
+          "description": "Legacy form of levels; these accounts become \"off\".",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
     "ContextPatchReply": {
       "type": "object",
       "required": ["operationId", "path", "hash", "state"],
@@ -3947,6 +4836,23 @@
       "type": "string",
       "enum": ["auto", "websocket", "https"]
     },
+    "ProfileModelPrice": {
+      "description": "Custom prices for one model, in US dollars per one million tokens. A complete entry replaces LiteLLM's estimate for turns through this provider.",
+      "type": "object",
+      "required": [
+        "inputPerMillion",
+        "cacheReadPerMillion",
+        "cacheWritePerMillion",
+        "outputPerMillion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "inputPerMillion": { "type": "number", "minimum": 0 },
+        "cacheReadPerMillion": { "type": "number", "minimum": 0 },
+        "cacheWritePerMillion": { "type": "number", "minimum": 0 },
+        "outputPerMillion": { "type": "number", "minimum": 0 }
+      }
+    },
     "ProfileDefinition": {
       "description": "ProfileDefinition is a control-plane owned profile. It carries no DeviceID and no status: reachability belongs to the device that runs it.",
       "type": "object",
@@ -3972,6 +4878,11 @@
           "description": "The models this profile offers. `model` is the default; everything here is selectable in chat and issue runs. Native discovery fills it where a CLI can enumerate, and anything the user adds stays.",
           "type": "array",
           "items": { "type": "string" }
+        },
+        "modelPrices": {
+          "description": "`modelPrices` overrides LiteLLM list prices by model id for this provider. Tiers are US dollars per one million input, cache-read, cache-write and output tokens.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ProfileModelPrice" }
         },
         "contextWindows": {
           "description": "`contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker).",
@@ -4051,6 +4962,176 @@
           "description": "`deviceBound`: the base URL is the device's own loopback address, which no other device can reach, so the profile may run only on that device.",
           "type": "boolean"
         }
+      }
+    },
+    "ModelPoolMember": {
+      "description": "One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight.",
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string" },
+        "tokensPerMinute": { "type": "integer", "minimum": 0 },
+        "weight": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ModelPool": {
+      "description": "A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model.",
+      "type": "object",
+      "required": [
+        "id",
+        "providerKind",
+        "providerId",
+        "runtime",
+        "label",
+        "members",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "label": { "type": "string" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelPoolMember" }
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ModelPoolInput": {
+      "description": "Create or replace one equivalent-model group.",
+      "type": "object",
+      "required": ["providerKind", "providerId", "runtime", "label", "members"],
+      "additionalProperties": false,
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "label": { "type": "string" },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ModelPoolMember" }
+        }
+      }
+    },
+    "ModelNote": {
+      "description": "ModelNote is one observation an orchestrator recorded about a specific model.",
+      "type": "object",
+      "required": [
+        "id",
+        "providerKind",
+        "providerId",
+        "runtime",
+        "model",
+        "body",
+        "authorUserId",
+        "authorName",
+        "createdAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "model": { "type": "string" },
+        "body": {
+          "description": "What the orchestrator learned about handing work to this model.",
+          "type": "string"
+        },
+        "authorUserId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorSessionId": {
+          "description": "The agent session that appended the note; absent for a person.",
+          "type": "string"
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ModelNotePage": {
+      "description": "One page of model notes, newest first.",
+      "type": "object",
+      "required": ["total", "offset", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer" },
+        "offset": { "type": "integer" },
+        "nextOffset": { "type": "integer" },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/ModelNote" } }
+      }
+    },
+    "ModelNoteInput": {
+      "description": "ModelNoteInput appends one note to a provider's model.",
+      "type": "object",
+      "required": ["providerKind", "providerId", "runtime", "model", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "model": { "type": "string" },
+        "body": { "type": "string", "maxLength": 12000 }
+      }
+    },
+    "ExecutionDefaultScope": {
+      "type": "string",
+      "enum": ["global", "workspace", "none"]
+    },
+    "ExecutionModelDefault": {
+      "description": "The model a person's orchestrator uses for delegated execution when a child names no model.",
+      "type": "object",
+      "required": ["providerId", "runtime", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "model": { "type": "string" },
+        "modelPoolId": {
+          "description": "When set, a new session allocates one member from this group.",
+          "type": "string"
+        },
+        "pool": {
+          "description": "The saved group, resolved when the default is read.",
+          "$ref": "#/$defs/ModelPool"
+        },
+        "effort": { "type": "string" },
+        "scope": { "$ref": "#/$defs/ExecutionDefaultScope" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ExecutionDefaultsView": {
+      "description": "The saved execution default at this level, the effective one after workspace fallback, and where it came from.",
+      "type": "object",
+      "required": ["effective"],
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "saved": { "$ref": "#/$defs/ExecutionModelDefault" },
+        "effective": { "$ref": "#/$defs/ExecutionModelDefault" }
       }
     },
     "AgentProjection": {
@@ -4848,6 +5929,7 @@
         "execution_host_stopped",
         "disk_full",
         "model_rate_limit",
+        "model_quota_exhausted",
         "skill_preparation_timeout",
         "turn_limit"
       ]
@@ -5031,6 +6113,14 @@
             "profileId": { "type": "string" },
             "profileFingerprint": { "type": "string" },
             "profileLabel": { "type": "string" },
+            "modelPoolId": {
+              "description": "The equivalent-model group this session was allocated from. Foundry uses it to choose another id after a model rate limit.",
+              "type": "string"
+            },
+            "dispatchId": {
+              "description": "Identifies this dispatch of the current input. It equals the input id until an automatic retry gives the same logical input a fresh native execution identity.",
+              "type": "string"
+            },
             "source": {
               "description": "\"digest\": a Personal Agent digest summary session (read-only).",
               "$ref": "#/$defs/SessionSource"
@@ -5142,14 +6232,27 @@
           "type": "string"
         },
         "source": {
-          "description": "`source` is where it installs from: \"\" (a GitHub release download), \"npm\" (the npm package Package at Version) or \"uv\" (the Python package Package at Version, through uv).",
+          "description": "`source` is where it installs from: \"\" (a GitHub release download), \"npm\" (the npm package Package at Version), \"uv\" (the Python package Package at Version, through uv) or \"repository\" (files at Path in the bundle repository at commit Version).",
           "type": "string",
-          "enum": ["npm", "uv"]
+          "enum": ["npm", "uv", "repository"]
         },
         "package": { "type": "string" },
         "registry": {
           "description": "`registry` is where an npm tool installs from: \"\" the public registry, an https URL that registry, or \"device\" each device's own npm settings (its npmrc and scoped registries).",
           "type": "string"
+        },
+        "repository": {
+          "description": "For a repository tool, the upstream git repository. Version is the commit the bundle recorded, so the tool and Skills are always from one upstream revision.",
+          "type": "string"
+        },
+        "path": {
+          "description": "The folder in the repository holding the tool's files.",
+          "type": "string"
+        },
+        "bins": {
+          "description": "Commands to expose, mapped to files relative to Path. The bundle tool Name must be one of them.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         },
         "setup": {
           "description": "`setup` is a step the tool needs after installing (e.g. downloading its browser), run only when the person asks.",
