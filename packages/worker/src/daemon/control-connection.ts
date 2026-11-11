@@ -12,6 +12,7 @@ import type { RawData } from "ws";
 import {
   daemonMessageTypes,
   parseProtocolEnvelopeJSON,
+  type DeviceRuntimeState,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 import { BackgroundOutputFollowers } from "../session/tasks/background-output-follow.js";
@@ -22,6 +23,8 @@ import {
   withConnectionReports,
 } from "../platform/server-link/connection-reports.js";
 import { readAgentRuntimeSettings } from "../device/device.js";
+import { adaptiveConcurrencyFloor } from "../device/device.js";
+import { executionHostClient } from "../execution-host/client.js";
 import { isDeviceRemovedSignal } from "../device/device-removal.js";
 import { recordActivity } from "./diagnostics.js";
 import { meterSocket } from "../platform/server-link/send-meter.js";
@@ -140,11 +143,13 @@ export function daemonHeartbeat(
   options: Pick<
     ControlConnectionOptions,
     "sessionExecutions" | "sessionTransport"
-  >,
+  > &
+    Partial<Pick<ControlConnectionOptions, "taskScheduler">>,
 ): {
   outbox: SessionOutboxStats;
   activeSessionIds: string[];
   nativeWorkSessionIds?: string[];
+  runtimeState?: DeviceRuntimeState;
 } {
   // Sessions whose agents work on their own past their turn, in the
   // execution host or (without one) this process: the server keeps their
@@ -155,10 +160,14 @@ export function daemonHeartbeat(
       ...sessionsWithNativeWork(),
     ]),
   ].sort();
+  const runtimeState =
+    executionHostClient()?.runtimeState() ??
+    options.taskScheduler?.currentRuntimeState();
   return {
     outbox: options.sessionTransport.outboxStats(),
     activeSessionIds: options.sessionExecutions.activeSessionIds(),
     ...(nativeWork.length ? { nativeWorkSessionIds: nativeWork } : {}),
+    ...(runtimeState ? { runtimeState } : {}),
   };
 }
 
@@ -548,7 +557,11 @@ class ControlConnection {
   }
 
   private announceAdditionalIssueCapacity(): void {
-    const maxConcurrentTasks = readAgentRuntimeSettings().maxConcurrentTasks;
+    const settings = readAgentRuntimeSettings();
+    const maxConcurrentTasks =
+      settings.mode === "forced"
+        ? (settings.forcedLimit ?? 1)
+        : adaptiveConcurrencyFloor(settings.hardware?.cpus);
     while (this.announcedIssueSlots < maxConcurrentTasks) {
       this.announcedIssueSlots += 1;
       sendWebSocket(this.socket, daemonMessageTypes.readyForIssue);

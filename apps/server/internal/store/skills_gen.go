@@ -89,12 +89,21 @@ type SkillBundleTool struct {
 	// ChecksumsURL `checksumsUrl` is the release's checksum list, when it publishes one.
 	ChecksumsURL string `json:"checksumsUrl,omitempty"`
 
-	// Source `source` is where it installs from: "" (a GitHub release download), "npm" (the npm package Package at Version) or "uv" (the Python package Package at Version, through uv).
+	// Source `source` is where it installs from: "" (a GitHub release download), "npm" (the npm package Package at Version), "uv" (the Python package Package at Version, through uv) or "repository" (files at Path in the bundle repository at commit Version).
 	Source  string `json:"source,omitempty"`
 	Package string `json:"package,omitempty"`
 
 	// Registry `registry` is where an npm tool installs from: "" the public registry, an https URL that registry, or "device" each device's own npm settings (its npmrc and scoped registries).
 	Registry string `json:"registry,omitempty"`
+
+	// Repository For a repository tool, the upstream git repository. Version is the commit the bundle recorded, so the tool and Skills are always from one upstream revision.
+	Repository string `json:"repository,omitempty"`
+
+	// Path The folder in the repository holding the tool's files.
+	Path string `json:"path,omitempty"`
+
+	// Bins Commands to expose, mapped to files relative to Path. The bundle tool Name must be one of them.
+	Bins map[string]string `json:"bins,omitempty"`
 
 	// Setup `setup` is a step the tool needs after installing (e.g. downloading its browser), run only when the person asks.
 	Setup *SkillToolSetup `json:"setup,omitempty"`

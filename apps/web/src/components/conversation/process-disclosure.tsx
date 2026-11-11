@@ -235,7 +235,7 @@ function ProcessDisclosureItem({
         </div>
       ) : null}
       {open ? (
-        <div className="min-w-0 pt-[3px] pr-1 pb-2.5 pl-[25px] text-ink-muted [&>:last-child]:mb-0">
+        <div className="min-w-0 select-text pt-[3px] pr-1 pb-2.5 pl-[25px] text-ink-muted [&>:last-child]:mb-0">
           {compactToolDetail ? (
             <CompactToolDetailCard
               content={compactToolDetail.content}

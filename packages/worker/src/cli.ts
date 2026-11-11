@@ -95,8 +95,10 @@ async function main(): Promise<void> {
     case "extension-update": {
       const {
         addExtension,
+        bundledExtensions,
         ExtensionError,
         builtinConnectorKinds,
+        installBundledExtension,
         installExtensionFromRepository,
         updateExtension,
       } = await import("./connectors/index.js");
@@ -105,13 +107,17 @@ async function main(): Promise<void> {
         const change =
           invocation.command.id === "extension-update"
             ? await updateExtension(target)
-            : existsSync(target) || !looksLikeGitRemote(target)
-              ? addExtension(target, builtinConnectorKinds)
-              : await installExtensionFromRepository({
-                  git: target,
-                  path: optionValue(commandArgs, "--path"),
-                  ref: optionValue(commandArgs, "--ref"),
-                });
+            : bundledExtensions().some(
+                  (extension) => extension.manifest.id === target,
+                )
+              ? installBundledExtension(target, builtinConnectorKinds)
+              : existsSync(target) || !looksLikeGitRemote(target)
+                ? addExtension(target, builtinConnectorKinds)
+                : await installExtensionFromRepository({
+                    git: target,
+                    path: optionValue(commandArgs, "--path"),
+                    ref: optionValue(commandArgs, "--ref"),
+                  });
         console.log(JSON.stringify(change));
       } catch (error) {
         // git's own words when the source could not be fetched.

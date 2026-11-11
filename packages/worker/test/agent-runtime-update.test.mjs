@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { updateAgentRuntime } from "../dist/harness/agent-runtime/update-controller.js";
 import {
   acquireRuntime,
+  setRuntimeOwnerProvider,
   tryMaintainRuntime,
 } from "../dist/harness/agent-runtime/maintenance.js";
 import {
   stablePackageVersion,
   isStableVersion,
 } from "../dist/harness/agent-runtime/release-source.js";
+
+const testOwner = {
+  pid: process.pid,
+  startTime: `test:${process.pid}:${randomUUID()}`,
+};
+setRuntimeOwnerProvider({
+  current: () => testOwner,
+  startTime: (pid) => (pid === process.pid ? testOwner.startTime : undefined),
+});
 
 function fixture() {
   let state;

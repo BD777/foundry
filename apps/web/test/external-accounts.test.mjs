@@ -1472,7 +1472,7 @@ test("the workspace tab binds the person's own accounts and shows others' withou
     onNotice: (line) => notices.push(line),
   });
   const text = tab.container.textContent;
-  assert.match(text, /Feishu accounts follow their workspace grants/);
+  assert.match(text, /Server-held accounts follow their workspace grants/);
   const section = tab.container.querySelector(
     '[role=region][aria-label="Feishu"]',
   );

@@ -4,6 +4,22 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-11 收尾：[DEV-181 部署快照的剩余测试与工具配置](DEV-181-deployed-tail.md)。收纳模型心得与模型池存储测试、设备并发投影回归、统计图表依赖与审计例外、价格目录格式化排除和共享导航约定。所有代码与配置逐文件取自部署快照，最终 main 与 D 的差异只保留 devlog。已纳入部署状态快照，等待提交窗口合入。
+
+2026-11-11 对话：[DEV-180 原图已删除时的紧凑提示](DEV-180-conversation-deleted-images.md)。失效原图不再显示为可重试的红色错误，而是紧凑显示文件名、删除原因和可展开的完整路径；设备离线等临时错误仍可重试，Markdown caption 与间距同步收敛。已纳入部署状态快照，等待提交窗口合入。
+
+2026-11-11 连接器：[DEV-175 官方扩展随 Worker 发布并按来源权限可见（E1）](DEV-175-bundled-connector-access.md)。官方扩展改为 Worker 包内安装与随包更新，git 扩展默认每 6 小时自动更新且可关闭；网络可达和 Foundry 连接器仓库读取共同决定可见性，不可见项进入默认收起的分组。Server 保留被拒描述符原因，Worker 本地执行对齐的 `serverHeld` 校验。已完成定向测试和真实 Chromium 九张截图；等待与 E2 合并、统一部署和人工验收。
+
+2026-11-11 连接器：[DEV-174 连接器扩展支持服务器保管（OpenLark 改为私有扩展）](DEV-174-connector-extension-server-held.md)。私有服务不再内置：扩展描述符新增纯数据的 `serverHeld`（表单与逐项指引、探测、上游头模板、按路由目录判定读写、会话环境模板），Server/Worker 通用实现；OpenLark 改为私有连接器仓库里的扩展，删除内置实现。
+
+2026-11-11 Worker：[DEV-176 自适应并发、执行宿主清理与下载代理](DEV-176-adaptive-concurrency-execution-host.md)。并发改为有下限的自适应准入并放行人回合与等待子会话的父回合；执行宿主合并并清理 claim、在退出时落盘；连接器与工具下载复用 Worker 保存的代理。已纳入部署状态快照，等待提交窗口合入。
+
+2026-11-11 用量与告警：[DEV-177 用量统计、子会话告警与 MCP 体积预算](DEV-177-usage-alerts-mcp-budget.md)。统计页支持成本、趋势和模型拆分；子会话失败、取消、卡住、等槽与离线会通知发起者；MCP 列表默认简洁、可分页并受文本预算保护。已纳入部署状态快照，等待提交窗口合入。
+
+2026-11-11 编排：[DEV-178 模型池、429 换 ID 重试与事件展开](DEV-178-model-pools-retry-events.md)。模型池按近一分钟余量分配并在 429 时换 ID 重试；额度耗尽立即停止重试；失败事件行可展开完整文本。已纳入部署状态快照，等待提交窗口合入。
+
+2026-11-11 助理：[DEV-179 Assistant 权限包与设置页统一](DEV-179-assistant-access-settings.md)。Assistant 通过权限包集中控制工作区、连接器三态、设备与 Skill 范围，风险写需一次性确认；十个设置分区统一到共享页面表面与字段尺度。已纳入部署状态快照，等待提交窗口合入。
+
 2026-11-11 开发工具：[DEV-173 开发工具与测试稳定性](DEV-173-dev-tooling-stability.md)。`check-changed.sh` 兼容 macOS Bash 3.2，远程检查支持 `REMOTE_CHECK_TIMEOUT`；Radix cleanup 与 usage 历史保留已分别随阻塞 PR #249、#252 提前合入。已部署 dev，等待提交窗口逐步合入。
 
 2026-11-10 连接器：[DEV-172 App Store Connect 会话侧与连接器页（ASC-2）](DEV-172-appstoreconnect-client.md)。Connectors 页面支持 App Store Connect key 绑定、替换、撤销和状态展示；Worker 会话经 Foundry 网关调用并同步 Skill。已部署 dev，等待提交窗口逐步合入。

@@ -3,7 +3,9 @@ import type {
   AppStoreConnectConnection,
   CloudflareActivityEntry,
   ConnectorCatalogView,
+  ConnectorConfiguration,
   ConnectorExtensionRepository,
+  ConnectorPackageView,
   ExtensionReplyPayload,
   ConnectExternalAccountInput,
   DeviceConnectorBindingInput,
@@ -17,6 +19,10 @@ import type {
   ExternalAccountUpdate,
   ExternalAccountsView,
   ExternalProviderApp,
+  ConnectorServerHeldInstance,
+  ConnectorServerHeldInstanceInput,
+  ConnectorServerHeldInstancesView,
+  ConnectorServerHeldProbeResult,
   SaveExternalProviderAppInput,
   SaveAppStoreConnectKeyInput,
   SetupExternalAccountInput,
@@ -173,6 +179,62 @@ export function getAppStoreConnectApps(
   );
 }
 
+const serverHeldInstancePath = (kind: string, instanceId?: string) =>
+  `/api/connectors/extensions/${encodeURIComponent(kind)}/instances${
+    instanceId ? `/${encodeURIComponent(instanceId)}` : ""
+  }`;
+
+/** Every server-held instance an extension on the caller's devices provides. */
+export function getServerHeldInstances(
+  kind: string,
+): Promise<ConnectorServerHeldInstancesView> {
+  return request("GET", serverHeldInstancePath(kind));
+}
+
+/** Validates fields and returns non-secret values, options and probe results. */
+export function probeServerHeldInstance(
+  kind: string,
+  input: ConnectorServerHeldInstanceInput,
+): Promise<ConnectorServerHeldProbeResult> {
+  return request("POST", `${serverHeldInstancePath(kind)}/probe`, {
+    body: input,
+  });
+}
+
+/** Secrets in the input are validated, sealed by the server and never returned. */
+export function createServerHeldInstance(
+  kind: string,
+  input: ConnectorServerHeldInstanceInput,
+): Promise<ConnectorServerHeldInstance> {
+  return request("POST", serverHeldInstancePath(kind), { body: input });
+}
+
+/** A blank secret keeps the sealed one; Foundry probes before replacing anything. */
+export function replaceServerHeldInstance(
+  kind: string,
+  instanceId: string,
+  input: ConnectorServerHeldInstanceInput,
+): Promise<ConnectorServerHeldInstance> {
+  return request("PUT", serverHeldInstancePath(kind, instanceId), {
+    body: input,
+  });
+}
+
+export function checkServerHeldInstance(
+  kind: string,
+  instanceId: string,
+): Promise<ConnectorServerHeldInstance> {
+  return request("POST", `${serverHeldInstancePath(kind, instanceId)}/check`);
+}
+
+/** Deletes sealed credentials and cuts this instance off from every session. */
+export function revokeServerHeldInstance(
+  kind: string,
+  instanceId: string,
+): Promise<ConnectorServerHeldInstance> {
+  return request("DELETE", serverHeldInstancePath(kind, instanceId));
+}
+
 // Device-held connectors: the login stays on the device; these ask the
 // device's worker through the server and return what it read.
 
@@ -186,12 +248,26 @@ export function getAppStoreConnectApps(
  */
 export function installDeviceExtension(
   deviceId: string,
-  source: ConnectorExtensionRepository,
+  input:
+    { source: ConnectorExtensionRepository } | { bundledExtensionId: string },
 ): Promise<ExtensionReplyPayload> {
   return request(
     "POST",
     `/api/devices/${encodeURIComponent(deviceId)}/extensions`,
-    { body: { source } },
+    { body: input },
+  );
+}
+
+/** Turns automatic git source updates on or off for an installed extension. */
+export function setDeviceExtensionAutoUpdate(
+  deviceId: string,
+  extensionId: string,
+  autoUpdate: boolean,
+): Promise<ExtensionReplyPayload> {
+  return request(
+    "PATCH",
+    `/api/devices/${encodeURIComponent(deviceId)}/extensions/${encodeURIComponent(extensionId)}`,
+    { body: { autoUpdate } },
   );
 }
 
@@ -208,6 +284,41 @@ export function removeDeviceExtension(
 
 export function getConnectorCatalog(): Promise<ConnectorCatalogView> {
   return request("GET", "/api/connectors");
+}
+
+/** Refreshes every owner device's gated connector checks now. */
+export function recheckConnectorAccess(): Promise<ConnectorCatalogView> {
+  return request("POST", "/api/connectors/recheck-access");
+}
+
+/** The person's connector packages and where each is enabled. */
+export function getConnectorPackages(): Promise<ConnectorPackageView[]> {
+  return request("GET", "/api/connector-packages");
+}
+
+export function getConnectorPackage(
+  kind: string,
+): Promise<ConnectorPackageView> {
+  return request("GET", `/api/connector-packages/${encodeURIComponent(kind)}`);
+}
+
+/** Replaces the package's devices after the server preflights every choice. */
+export function setConnectorPackageDevices(
+  kind: string,
+  deviceIds: string[],
+): Promise<ConnectorPackageView> {
+  return request(
+    "PUT",
+    `/api/connector-packages/${encodeURIComponent(kind)}/devices`,
+    { body: { deviceIds } },
+  );
+}
+
+export function deleteConnectorPackage(kind: string): Promise<unknown> {
+  return request(
+    "DELETE",
+    `/api/connector-packages/${encodeURIComponent(kind)}`,
+  );
 }
 
 const deviceConnectorPath = (deviceId: string, kind: string) =>
@@ -238,13 +349,26 @@ export function installDeviceConnector(
   return request("POST", `${deviceConnectorPath(deviceId, kind)}/install`);
 }
 
+/** Changes non-secret defaults in the connector's active device profile. */
+export function updateDeviceConnectorConfiguration(
+  deviceId: string,
+  kind: string,
+  configuration: ConnectorConfiguration,
+): Promise<DeviceConnectorState> {
+  return request(
+    "PUT",
+    `${deviceConnectorPath(deviceId, kind)}/configuration`,
+    { body: { configuration } },
+  );
+}
+
 /** Starts the tool's own sign-in on the device: the page to approve on. */
 export function beginDeviceConnectorSignIn(
   deviceId: string,
   kind: string,
   requestId: string,
   authorization?: { id: string; revision: number },
-  /** What the person chose before a browser sign-in (AWS method, Region…). */
+  /** What the person chose before a browser sign-in (for example, its method). */
   signInOptions?: Record<string, string>,
 ): Promise<DeviceConnectorSignIn> {
   return request("POST", `${deviceConnectorPath(deviceId, kind)}/sign-in`, {

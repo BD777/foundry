@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -171,11 +172,18 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}
+	permissionAccess, err := permission.Resolve(ctx, s.store, session)
+	if err != nil {
+		return accessScope{}, err
+	}
 	roles, err := s.store.WorkspaceRolesForUser(ctx, creator)
 	if err != nil {
 		return accessScope{}, err
 	}
 	for workspaceID, role := range roles {
+		if permissionAccess.Applicable && !permissionAccess.WorkspaceAllowed(workspaceID) {
+			continue
+		}
 		if roleAtLeast(role, store.WorkspaceRoleMaintainer) {
 			role = store.WorkspaceRoleMember
 		}

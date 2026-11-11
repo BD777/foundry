@@ -289,8 +289,8 @@ components:
           x-go-type: string
     ConnectorField:
       description:
-        ConnectorField is one field a sign-in method asks for, rendered by the Web; its value
-        reaches the device's adapter as SignInOptions[ID].
+        ConnectorField is one field a sign-in method or a server-held instance form asks
+        for, rendered by the Web.
       type: object
       required:
         - id
@@ -335,6 +335,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConnectorOption"
+        optionsFrom:
+          description:
+            "select: fill the choices from a server-held probe (`probe:<probe-id>`)
+            instead of static options."
+          type: string
         showWhen:
           description: Shown only while another field of the method holds one of these values.
           $ref: "#/components/schemas/ConnectorShowWhen"
@@ -355,6 +360,11 @@ components:
           type: object
           additionalProperties:
             type: string
+    ConnectorOptionList:
+      description: A list of choices for one select field.
+      type: array
+      items:
+        $ref: "#/components/schemas/ConnectorOption"
     ConnectorShowWhen:
       description: ConnectorShowWhen shows a field only while another holds one of Equals.
       type: object
@@ -496,6 +506,23 @@ components:
           type: string
         version:
           type: string
+        bundled:
+          description: The extension ships with the Worker.
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        state:
+          description:
+            '"installed" is on this device; "available" ships with the Worker but is not installed
+            there. An absent state means installed, for descriptors reported by older Workers.'
+          type: string
+          enum:
+            - installed
+            - available
+          x-go-type: string
+        autoUpdate:
+          description: A git-installed extension updates when its source moves; default true.
+          type: boolean
+          x-go-type-skip-optional-pointer: false
         source:
           description: Where its files come from, so other devices can install it too.
           $ref: "#/components/schemas/ConnectorExtensionRepository"
@@ -506,6 +533,226 @@ components:
         latestCommit:
           description: The commit source.ref is at now, when the device last looked.
           type: string
+    ConnectorRepositoryAccess:
+      description:
+        A device-held connector can check whether its own login can read a source repository.
+        The Worker runs this argv with the connector's ordinary Foundry environment.
+      type: object
+      required:
+        - args
+      additionalProperties: false
+      properties:
+        args:
+          description: Exactly one {repository} placeholder may appear.
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+        repositoryFormat:
+          description:
+            "`github` accepts an owner/repo or GitHub URL and passes owner/repo; raw passes the
+            declared value."
+          type: string
+          enum:
+            - raw
+            - github
+          x-go-type: string
+    ConnectorSourceAccess:
+      description:
+        A connector is visible only when one of the owner's devices can read the repository
+        through the named Foundry connector.
+      type: object
+      required:
+        - via
+        - repository
+      additionalProperties: false
+      properties:
+        via:
+          description: A connector kind that declares repositoryAccess.
+          type: string
+        repository:
+          description: owner/repo or an https repository address.
+          type: string
+        hint:
+          type: string
+        hints:
+          type: object
+          additionalProperties:
+            type: string
+    ConnectorSourceAccessCheck:
+      description: A device's last check of one source repository through a Foundry connector.
+      type: object
+      required:
+        - status
+        - checkedAt
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - no_access
+            - not_signed_in
+            - unreachable
+            - error
+          x-go-type: string
+        checkedAt:
+          type: string
+        identity:
+          description: The non-secret account name of the connector login used.
+          type: string
+        detail:
+          description: A short non-secret message from the connector.
+          type: string
+    ConnectorRequirementsCheck:
+      description:
+        A device's last check of a connector's declared visibility requirements, such as
+        tcp_reachable.
+      type: object
+      required:
+        - ok
+        - checkedAt
+      additionalProperties: false
+      properties:
+        ok:
+          type: boolean
+        checkedAt:
+          type: string
+        requirement:
+          description: The first requirement the device did not meet.
+          type: string
+    ConnectorPackage:
+      description:
+        ConnectorPackage names the upstream Skill bundle and CLI a connector ships with. The
+        bundle follows the upstream; its recorded commit is also the repository tool's version.
+      type: object
+      required:
+        - upstream
+        - skills
+        - tools
+      additionalProperties: false
+      properties:
+        upstream:
+          $ref: "#/components/schemas/ConnectorPackageUpstream"
+          x-go-type-skip-optional-pointer: false
+        skills:
+          $ref: "#/components/schemas/ConnectorPackageSkills"
+          x-go-type-skip-optional-pointer: false
+        tools:
+          description: Programs from folders of the bundle's own upstream repository.
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/ConnectorPackageTool"
+    ConnectorPackageUpstream:
+      description: A GitHub repository whose Skills and tools move as one bundle version.
+      type: object
+      required:
+        - via
+        - repository
+      additionalProperties: false
+      properties:
+        via:
+          description: The connector whose Foundry-managed login reads the repository.
+          type: string
+        repository:
+          description: A normalized https GitHub repository address.
+          type: string
+        ref:
+          description: A branch or tag; empty follows the default release or branch.
+          type: string
+    ConnectorPackageSkills:
+      description: The folder in Upstream holding the bundle's Skill folders.
+      type: object
+      required:
+        - path
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+    ConnectorPackageTool:
+      description: A CLI from a folder of the package's upstream repository.
+      type: object
+      required:
+        - command
+        - source
+        - path
+        - bins
+      additionalProperties: false
+      properties:
+        command:
+          type: string
+        source:
+          type: string
+          enum:
+            - repository
+          x-go-type: string
+        path:
+          description: The folder in Upstream holding the tool's files.
+          type: string
+        bins:
+          description: Command names mapped to relative files under Path.
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
+    ConnectorPackageDevice:
+      description: One of the owner's devices in a package view, and whether it may be selected.
+      type: object
+      required:
+        - deviceId
+        - name
+        - online
+        - selected
+        - eligible
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        name:
+          type: string
+        online:
+          type: boolean
+        selected:
+          type: boolean
+        eligible:
+          type: boolean
+        reason:
+          description: Why the device cannot be selected, when Eligible is false.
+          type: string
+    ConnectorPackageView:
+      description: A package at the person level, its bundle, and where it is enabled.
+      type: object
+      required:
+        - connector
+        - enabled
+        - devices
+      additionalProperties: false
+      properties:
+        connector:
+          $ref: "#/components/schemas/ConnectorDescriptor"
+          x-go-type-skip-optional-pointer: false
+        enabled:
+          type: boolean
+        repositoryId:
+          type: string
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorPackageDevice"
+    SetConnectorPackageDevicesInput:
+      description: Replace the devices on which a package is enabled.
+      type: object
+      required:
+        - deviceIds
+      additionalProperties: false
+      properties:
+        deviceIds:
+          type: array
+          items:
+            type: string
     ConnectorExtensionRepository:
       description:
         A folder of a git repository holding an extension (docs/connector-extensions.md). The
@@ -541,6 +788,411 @@ components:
         - server_held
         - device_held
       x-go-type: string
+    ConnectorServerHeldSpec:
+      description:
+        ConnectorServerHeld declares a pure-data server-held connector supplied by an
+        extension. Foundry probes and proxies it generically; extension code never runs
+        on the server.
+      type: object
+      required:
+        - instances
+        - fields
+        - steps
+        - probe
+        - upstream
+        - access
+        - session
+        - network
+      additionalProperties: false
+      properties:
+        instances:
+          type: string
+          enum: [one, many]
+          x-go-type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorField"
+        steps:
+          description: Field ids grouped into the form's steps; presentation data for Web.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldStep"
+        probe:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldProbe"
+        upstream:
+          $ref: "#/components/schemas/ConnectorServerHeldUpstream"
+        access:
+          $ref: "#/components/schemas/ConnectorServerHeldAccess"
+        session:
+          $ref: "#/components/schemas/ConnectorServerHeldSession"
+        network:
+          $ref: "#/components/schemas/ConnectorServerHeldNetwork"
+    ConnectorServerHeldStep:
+      description: One group of field ids in a server-held instance form.
+      type: array
+      items:
+        type: string
+    ConnectorServerHeldProbeExtract:
+      type: object
+      additionalProperties: false
+      properties:
+        values:
+          description: Probe id to display name to JSON pointer.
+          type: object
+          additionalProperties:
+            type: string
+        options:
+          $ref: "#/components/schemas/ConnectorServerHeldOptionsExtract"
+        routes:
+          $ref: "#/components/schemas/ConnectorServerHeldRoutesExtract"
+    ConnectorServerHeldOptionsExtract:
+      type: object
+      required: [items, value, label]
+      additionalProperties: false
+      properties:
+        items:
+          description: JSON pointer to the array of option objects.
+          type: string
+        value:
+          description: JSON pointer inside each item to its value.
+          type: string
+        label:
+          description: JSON pointer inside each item to its label.
+          type: string
+    ConnectorServerHeldRoutesExtract:
+      type: object
+      required: [items, method, path, access]
+      additionalProperties: false
+      properties:
+        items:
+          description: JSON pointer to the array of route objects.
+          type: string
+        method:
+          description: JSON pointer inside each route to its HTTP method.
+          type: string
+        path:
+          description: JSON pointer inside each route to its path template.
+          type: string
+        access:
+          description: JSON pointer inside each route to read/write classification.
+          type: string
+        domain:
+          description: Optional JSON pointer inside each route to its resource domain.
+          type: string
+    ConnectorServerHeldProbe:
+      type: object
+      required: [id, method, path]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        method:
+          type: string
+        path:
+          description: Path appended to the upstream base; must name a declared base field.
+          type: string
+        optional:
+          description: A 404 from this probe is skipped and later probes continue.
+          type: boolean
+        extract:
+          $ref: "#/components/schemas/ConnectorServerHeldProbeExtract"
+    ConnectorServerHeldUpstream:
+      type: object
+      required: [baseField, pathPrefix]
+      additionalProperties: false
+      properties:
+        baseField:
+          description: Id of a declared URL field that holds the upstream base.
+          type: string
+        pathPrefix:
+          description: Only paths at or below this prefix may reach the upstream.
+          type: string
+        headers:
+          description:
+            Templates for upstream request headers. Only this object may use
+            `{secret:<field-id>}`.
+          type: object
+          additionalProperties:
+            type: string
+        requestBodyLimitBytes:
+          type: integer
+        responseBodyLimitBytes:
+          type: integer
+        timeoutSeconds:
+          type: integer
+    ConnectorServerHeldAccess:
+      type: object
+      required: [from, default]
+      additionalProperties: false
+      properties:
+        from:
+          description: "`probe:<probe-id>` whose route extraction supplies the directory."
+          type: string
+        default:
+          type: string
+          enum: [deny]
+          x-go-type: string
+        allow:
+          description:
+            Fixed route access levels. Use with descriptors saved before probe-based
+            access, or as a fallback when every route has the same permission.
+          $ref: "#/components/schemas/ConnectorServerHeldAccessLevels"
+        allowBy:
+          $ref: "#/components/schemas/ConnectorServerHeldAccessBy"
+    ConnectorServerHeldAccessBy:
+      description: Route access levels selected by a value extracted during probing.
+      type: object
+      required: [value, map]
+      additionalProperties: false
+      properties:
+        value:
+          description:
+            "`probe:<probe-id>/<extracted-name>` whose probed value chooses the
+            allowed route access levels."
+          type: string
+        map:
+          description: Probe values to the route access levels they allow.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorServerHeldAccessLevels"
+        otherwise:
+          description:
+            Route access levels for a probe value absent from `map`; omitted means
+            no route access.
+          $ref: "#/components/schemas/ConnectorServerHeldAccessLevels"
+    ConnectorServerHeldAccessLevel:
+      type: string
+      enum: [read, write]
+    ConnectorServerHeldAccessLevels:
+      type: array
+      items:
+        $ref: "#/components/schemas/ConnectorServerHeldAccessLevel"
+    ConnectorServerHeldSession:
+      type: object
+      required: [env]
+      additionalProperties: false
+      properties:
+        env:
+          description: Session environment templates. Secret references are not allowed.
+          type: object
+          additionalProperties:
+            type: string
+    ConnectorServerHeldNetwork:
+      type: object
+      required: [holdings, publicOnly]
+      additionalProperties: false
+      properties:
+        holdings:
+          description: The network paths instances of this connector may choose.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldNetworkPath"
+        publicOnly:
+          description: Applies only to instances on the server path.
+          type: boolean
+    ConnectorServerHeldNetworkPath:
+      description: Where an instance's upstream requests leave Foundry.
+      type: string
+      enum: [server, device]
+      x-go-type: string
+    ConnectorServerHeldDevice:
+      description: One of the owner's devices and whether it can reach an instance's upstream.
+      type: object
+      required: [deviceId, name, online]
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        name:
+          type: string
+        online:
+          type: boolean
+    ConnectorServerHeldDeviceCheck:
+      description: The recorded reachability of one device for an instance.
+      type: object
+      required: [deviceId, name, status, checkedAt]
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        checkedAt:
+          type: string
+        detail:
+          type: string
+    ConnectorServerHeldRoute:
+      description: One route from a server-held extension's validated probe.
+      type: object
+      required: [method, path, access]
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        access:
+          type: string
+        domain:
+          type: string
+    ConnectorServerHeldProbeValues:
+      type: object
+      additionalProperties:
+        type: string
+    ConnectorServerHeldFieldOptions:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          $ref: "#/components/schemas/ConnectorOption"
+    ConnectorServerHeldInstance:
+      description: One server-held extension instance as its owner sees it. Secrets are never returned.
+      type: object
+      required:
+        - id
+        - accountId
+        - kind
+        - label
+        - network
+        - status
+        - values
+        - secretFields
+        - fieldOptions
+        - probeValues
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        network:
+          $ref: "#/components/schemas/ConnectorServerHeldNetworkPath"
+        probeDeviceId:
+          description: The device that validated the instance and is re-checked by default.
+          type: string
+        availableDevices:
+          description: Devices whose sessions can use this instance on the device network path.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldDeviceCheck"
+        status:
+          type: string
+        statusDetail:
+          type: string
+        access:
+          description: The permission Foundry derived from the token at the last validation.
+          type: string
+          enum: [read, write]
+        version:
+          type: string
+        routeCount:
+          type: integer
+        values:
+          description: Non-secret field values.
+          type: object
+          additionalProperties:
+            type: string
+        secretFields:
+          description: Ids of secret fields whose value is sealed.
+          type: array
+          items:
+            type: string
+        fieldOptions:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorOptionList"
+        probeValues:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    ConnectorServerHeldInstanceInput:
+      type: object
+      required: [label, fields, network]
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+        network:
+          $ref: "#/components/schemas/ConnectorServerHeldNetworkPath"
+        deviceId:
+          description: The owner's online device that validates a device-network instance.
+          type: string
+    ConnectorServerHeldProbeResult:
+      type: object
+      required:
+        - values
+        - secretFields
+        - probeValues
+        - fieldOptions
+      additionalProperties: false
+      properties:
+        values:
+          type: object
+          additionalProperties:
+            type: string
+        secretFields:
+          type: array
+          items:
+            type: string
+        probeValues:
+          type: object
+          additionalProperties:
+            type: string
+        fieldOptions:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorOptionList"
+        version:
+          type: string
+        routeCount:
+          type: integer
+        network:
+          $ref: "#/components/schemas/ConnectorServerHeldNetworkPath"
+        probeDeviceId:
+          type: string
+        availableDevices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldDeviceCheck"
+    ConnectorServerHeldInstancesView:
+      type: object
+      required: [kind, descriptor, instances, devices]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        descriptor:
+          $ref: "#/components/schemas/ConnectorDescriptor"
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldInstance"
+        devices:
+          description: The owner's devices, for choosing the device that validates an instance.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldDevice"
     ConnectorDescriptor:
       description:
         "ConnectorDescriptor is one connector, as data: a built-in one in
@@ -596,6 +1248,32 @@ components:
           description: Set for a connector an extension on the device provides.
           $ref: "#/components/schemas/ConnectorExtensionSource"
           x-go-type-skip-optional-pointer: false
+        repositoryAccess:
+          description: This connector can check source-repository access with its own device-held login.
+          $ref: "#/components/schemas/ConnectorRepositoryAccess"
+          x-go-type-skip-optional-pointer: false
+        package:
+          description:
+            The upstream Skill bundle and CLI this connector ships with; it follows the same
+            upstream revision and only joins sessions that receive this connector.
+          $ref: "#/components/schemas/ConnectorPackage"
+          x-go-type-skip-optional-pointer: false
+        access:
+          description:
+            The connector is visible only when this repository is readable through the named
+            connector on at least one of the owner's devices.
+          $ref: "#/components/schemas/ConnectorSourceAccess"
+          x-go-type-skip-optional-pointer: false
+        accessCheck:
+          description: The Worker's cached result for access.via; never authored in a manifest.
+          $ref: "#/components/schemas/ConnectorSourceAccessCheck"
+          x-go-type-skip-optional-pointer: false
+        requirementsCheck:
+          description:
+            The Worker's cached result for requires; used as a visibility gate until a connector
+            can check the repository.
+          $ref: "#/components/schemas/ConnectorRequirementsCheck"
+          x-go-type-skip-optional-pointer: false
         setup:
           $ref: "#/components/schemas/ConnectorSetup"
           x-go-type-skip-optional-pointer: false
@@ -613,6 +1291,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        serverHeld:
+          description: Pure-data server-held behavior. Only an extension connector may set it.
+          $ref: "#/components/schemas/ConnectorServerHeldSpec"
+          x-go-type-skip-optional-pointer: false
     DeviceConnectorStatus:
       description: Where a device-held connector stands on one device.
       type: string
@@ -625,6 +1307,16 @@ components:
         - unavailable
         - error
       x-go-type: string
+    ConnectorConfiguration:
+      description:
+        Non-secret settings read from a device-held connector's active profile.
+        It never holds a credential.
+      type: object
+      additionalProperties: false
+      properties:
+        region:
+          description: The default Region the tool's active profile uses when a command names none.
+          type: string
     DeviceConnectorState:
       description:
         DeviceConnectorState is a device-held connector on one device as last read there. It
@@ -652,6 +1344,10 @@ components:
         statusDetail:
           description: Why it is unavailable or failed (a requirement's label, an error).
           type: string
+        configuration:
+          description: Non-secret settings read from the connector's active profile.
+          $ref: "#/components/schemas/ConnectorConfiguration"
+          x-go-type-skip-optional-pointer: false
         installed:
           type: boolean
         version:
@@ -881,6 +1577,13 @@ components:
             accounts). Set only when everything the account is bound to belongs to that one account;
             it is not a secret."
           type: string
+        sessionEnvironment:
+          description:
+            Environment templates for a server-held extension's session. Worker renders
+            `{gatewayBase}` and `{standIn}`; field references are already rendered by Server.
+          type: object
+          additionalProperties:
+            type: string
     ExternalAccountGateway:
       description:
         "ExternalAccountGateway is a session's way through the server's gateway for one

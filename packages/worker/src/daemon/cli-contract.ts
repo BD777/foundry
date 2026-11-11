@@ -698,7 +698,7 @@ export const cliCommands: CliCommandContract[] = [
     id: "extension-add",
     path: ["extension", "add"],
     brief:
-      "Install or update a connector extension from a folder or a git repository.",
+      "Install or update a connector extension from a Worker bundle, folder or git repository.",
     description:
       "Copies the extension (foundry-extension.json and its program) into this worker's state root and records a digest of its files, which is checked before every start. From a git remote, git fetches it with this device's own credentials (SSH keys, credential helpers such as GitHub CLI's), and the source is kept so the Connectors page can update it. Its connectors appear on the Connectors page at once; nothing runs until Foundry needs it. The same files again change nothing. Refuses a connector kind Foundry has built in or another extension provides. Prints one JSON line; exit 0 ok, 2 invalid extension or source, 3 kind conflict, 5 the repository could not be fetched. Install only extensions you trust: they run as you on this device.",
     arguments: [
@@ -706,7 +706,7 @@ export const cliCommands: CliCommandContract[] = [
         name: "source",
         required: true,
         description:
-          "The extension's folder, or a git remote (https://…, ssh://… or host:path) whose --path holds foundry-extension.json.",
+          "A bundled extension id, a folder, or a git remote (https://…, ssh://… or host:path) whose --path holds foundry-extension.json.",
       },
     ],
     options: [
@@ -725,6 +725,10 @@ export const cliCommands: CliCommandContract[] = [
       },
     ],
     examples: [
+      {
+        command: "foundry-worker extension add open-lark",
+        description: "Install an extension bundled with this Worker.",
+      },
       {
         command: "foundry-worker extension add ./my-company-connector",
         description: "What an extension's installer runs.",

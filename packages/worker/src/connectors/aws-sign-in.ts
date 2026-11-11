@@ -24,7 +24,6 @@ export type AwsSignInMethod = "console" | "sso";
 
 export interface AwsSignInOptions {
   method: AwsSignInMethod;
-  region: string;
   startUrl?: string;
   ssoRegion?: string;
   accountId?: string;
@@ -48,25 +47,55 @@ export function parseAwsSignInOptions(
         ? "console"
         : undefined;
   if (!method) throw new Error("Choose how to sign in to AWS.");
-  const region = (raw?.region ?? "").trim();
-  if (!regionPattern.test(region))
-    throw new Error("Enter an AWS Region such as us-east-1.");
-  if (method === "console") return { method, region };
+  if (method === "console") return { method };
   const startUrl = (raw?.startUrl ?? "").trim();
-  const ssoRegion = (raw?.ssoRegion ?? "").trim() || region;
+  const ssoRegion = (raw?.ssoRegion ?? "").trim();
   const accountId = (raw?.accountId ?? "").replace(/[\s-]/g, "");
   const roleName = (raw?.roleName ?? "").trim();
   if (!startUrlPattern.test(startUrl))
     throw new Error(
       "Enter your IAM Identity Center start URL, such as https://my-company.awsapps.com/start.",
     );
-  if (!regionPattern.test(ssoRegion))
+  if (ssoRegion && !regionPattern.test(ssoRegion))
     throw new Error("Enter the Region of your IAM Identity Center.");
   if (!accountPattern.test(accountId))
     throw new Error("Enter the 12-digit AWS account ID.");
   if (!rolePattern.test(roleName))
     throw new Error("Enter the permission set (role) name to use.");
-  return { method, region, startUrl, ssoRegion, accountId, roleName };
+  return {
+    method,
+    startUrl,
+    ...(ssoRegion ? { ssoRegion } : {}),
+    accountId,
+    roleName,
+  };
+}
+
+/**
+ * The default Region for commands that name none: the active profile's
+ * region first, then the AWS CLI environment, then us-east-1. A Region is
+ * not an authorization scope; it never limits the login's IAM permissions.
+ */
+export async function resolveAwsRegion(
+  run: ToolRun,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<{ region: string; source: "profile" | "environment" | "default" }> {
+  const configured = await run([
+    "configure",
+    "get",
+    "region",
+    "--profile",
+    "default",
+  ]);
+  const profile = configured.stdout.trim();
+  if (configured.code === 0 && regionPattern.test(profile))
+    return { region: profile, source: "profile" };
+  for (const name of ["AWS_REGION", "AWS_DEFAULT_REGION"] as const) {
+    const value = environment[name]?.trim() ?? "";
+    if (regionPattern.test(value))
+      return { region: value, source: "environment" };
+  }
+  return { region: "us-east-1", source: "default" };
 }
 
 /** The sign-in URL `aws login --remote` prints. */
@@ -175,33 +204,27 @@ export class AwsSignIn {
           ? `Browser sign-in needs AWS CLI ${awsSignInMinimum.console} or newer (this device has ${version ?? "an unknown version"}). Update AWS CLI first.`
           : `IAM Identity Center sign-in needs AWS CLI ${awsSignInMinimum.sso} or newer (this device has ${version ?? "an unknown version"}). Update AWS CLI first.`,
       );
+    const resolved = await resolveAwsRegion(run);
     let args: string[];
     if (options.method === "console") {
       // Sessions read the default profile; give it a Region if it has none.
-      const current = await run([
-        "configure",
-        "get",
-        "region",
-        "--profile",
-        "default",
-      ]);
-      if (!current.stdout.trim())
+      if (resolved.source !== "profile")
         await run([
           "configure",
           "set",
           "region",
-          options.region,
+          resolved.region,
           "--profile",
           "default",
         ]);
-      args = ["login", "--remote", "--region", options.region];
+      args = ["login", "--remote", "--region", resolved.region];
     } else {
       const settings: [string, string][] = [
         ["sso_start_url", options.startUrl!],
-        ["sso_region", options.ssoRegion!],
+        ["sso_region", options.ssoRegion ?? resolved.region],
         ["sso_account_id", options.accountId!],
         ["sso_role_name", options.roleName!],
-        ["region", options.region],
+        ["region", resolved.region],
       ];
       // Signed in under a staging profile first: the default profile (what
       // sessions use) changes only once the sign-in succeeded (poll).
@@ -215,6 +238,8 @@ export class AwsSignIn {
         "--no-browser",
         "--profile",
         stagingProfile,
+        "--region",
+        resolved.region,
       ];
     }
     const child = run.spawn(args);

@@ -102,7 +102,7 @@ const sessionHandleLifetime = 30 * 24 * time.Hour
 // the app secret and the access token. Accounts whose handles cannot be
 // issued are left out and logged; the session still starts.
 func (s *Service) SessionMaterials(ctx context.Context, workspaceID, sessionID, deviceID, sessionOwner, deviceOwner string) ([]store.ExternalAccountMaterial, error) {
-	accounts, err := s.SessionAccounts(ctx, workspaceID, sessionOwner, deviceOwner)
+	accounts, err := s.SessionAccounts(ctx, workspaceID, sessionID, sessionOwner, deviceID, deviceOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +120,27 @@ func (s *Service) SessionMaterials(ctx context.Context, workspaceID, sessionID, 
 
 // SessionAccounts lists the accounts bound to workspaceID that a session
 // sessionOwner started on a device deviceOwner owns may act as now.
-func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionOwner, deviceOwner string) ([]store.ExternalAccount, error) {
-	if !s.SecretsConfigured() || sessionOwner == "" || deviceOwner == "" {
+func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionID, sessionOwner, deviceID, deviceOwner string) ([]store.ExternalAccount, error) {
+	if !s.SecretsConfigured() || sessionOwner == "" || deviceID == "" {
 		return nil, nil
 	}
-	policy, err := ResolvePolicy(ctx, s.store, workspaceID, sessionOwner)
-	if err != nil {
+	if deviceOwner != sessionOwner {
+		return nil, nil
+	}
+	workspace, err := s.store.GetWorkspace(ctx, workspaceID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
+	}
+	var policy Policy
+	if err == nil && workspace.Kind == store.WorkspaceKindPersonalAgent {
+		session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		policy, err = ResolvePolicy(ctx, s.store, session)
+		if err != nil {
+			return nil, err
+		}
 	}
 	var candidates []store.ExternalAccount
 	if policy.PersonalAgent() {
@@ -148,10 +162,57 @@ func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionOwner
 	for _, account := range candidates {
 		account = s.withComputedStatus(account)
 		if EligibleFor(account, account.WorkspaceIDs, workspaceID, sessionOwner, deviceOwner, policy) {
+			if s.AllowSessionAccount != nil {
+				allowed, err := s.AllowSessionAccount(ctx, account, deviceID)
+				if err != nil {
+					return nil, err
+				}
+				if !allowed {
+					continue
+				}
+			}
 			accounts = append(accounts, account)
 		}
 	}
-	return accounts, nil
+	return s.preferDeviceNetworkAccounts(ctx, accounts), nil
+}
+
+// preferDeviceNetworkAccounts picks one instance per connector kind: when a
+// workspace binds both a server-network and a device-network instance, a
+// session that can reach the latter gets it instead of the server one.
+func (s *Service) preferDeviceNetworkAccounts(ctx context.Context, accounts []store.ExternalAccount) []store.ExternalAccount {
+	type choice struct {
+		account store.ExternalAccount
+		device  bool
+		ext     bool
+	}
+	choices := make([]choice, 0, len(accounts))
+	byProvider := map[string]int{}
+	for _, account := range accounts {
+		app, err := s.store.GetExternalProviderApp(ctx, account.AppID)
+		device, ext := false, false
+		if err == nil && app.CreatedVia == "extension" {
+			ext = true
+			if data, dataErr := decodeExtensionData(app); dataErr == nil {
+				device = data.Network == ExtensionNetworkDevice
+			}
+		}
+		if ext {
+			if index, ok := byProvider[account.Provider]; ok {
+				if device && !choices[index].device {
+					choices[index] = choice{account: account, device: true, ext: true}
+				}
+				continue
+			}
+			byProvider[account.Provider] = len(choices)
+		}
+		choices = append(choices, choice{account: account, device: device, ext: ext})
+	}
+	result := make([]store.ExternalAccount, 0, len(choices))
+	for _, selected := range choices {
+		result = append(result, selected.account)
+	}
+	return result
 }
 
 func (s *Service) material(ctx context.Context, account store.ExternalAccount, request HandleRequest) (store.ExternalAccountMaterial, error) {
@@ -172,6 +233,18 @@ func (s *Service) material(ctx context.Context, account store.ExternalAccount, r
 	if provider != nil && len(provider.Describe().Tools) > 0 {
 		tool = provider.Describe().Tools[0]
 	}
+	var sessionEnvironment map[string]string
+	if app.CreatedVia == "extension" {
+		data, dataErr := s.ExtensionData(ctx, app)
+		if dataErr != nil {
+			return store.ExternalAccountMaterial{}, dataErr
+		}
+		tool = data.Descriptor.Tool.Command
+		sessionEnvironment, err = s.ExtensionSessionEnvironment(ctx, app, data)
+		if err != nil {
+			return store.ExternalAccountMaterial{}, err
+		}
+	}
 	expires := gateway.ExpiresAt
 	if expires == "" {
 		expires = s.formatTime(s.Now().Add(sessionHandleLifetime))
@@ -180,5 +253,6 @@ func (s *Service) material(ctx context.Context, account store.ExternalAccount, r
 		AccountID: account.ID, Provider: account.Provider, Label: account.Label, Tool: tool, ProfileName: ProfileName(account.ID, request.SessionID),
 		ClientID: app.ClientID, Gateway: &gateway, ExpiresAt: expires,
 		Scope: strings.Join(account.GrantedScopes, " "), Subject: account.Subject, DisplayName: account.DisplayName,
+		SessionEnvironment: sessionEnvironment,
 	}, nil
 }

@@ -10,7 +10,7 @@ import { errorMessage } from "../platform/utils.js";
 
 export function reportWorkerFailure(
   transport: Pick<ReliableSessionTransport, "send">,
-  session: { id: string; input?: { id: string } },
+  session: { id: string; dispatchId?: string; input?: { id: string } },
   error: unknown,
   /** What the session's role adds to the report (an Issue's result). */
   report?: Record<string, unknown>,
@@ -36,6 +36,7 @@ export function reportWorkerFailure(
   transport.send(daemonMessageTypes.sessionCompleted, {
     sessionId: session.id,
     inputId: session.input?.id,
+    ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
     error: message,
     ...report,
   });

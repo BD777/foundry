@@ -6,6 +6,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "../platform/config.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
+import { serverFetch } from "../platform/server-link/server-proxy.js";
 import { deviceCredentialHeader } from "../transport/server-http.js";
 import { startGatewayForwarder } from "./gateway-forwarder.js";
 
@@ -65,7 +66,7 @@ export async function prepareAppStoreConnectSession(
     else {
       const device = credential();
       if (!device) throw new Error("device not paired");
-      const response = await fetch(
+      const response = await serverFetch(
         `${options.serverURL!.replace(/\/$/, "")}/api/connectors/appstoreconnect/session-handle`,
         {
           method: "POST",

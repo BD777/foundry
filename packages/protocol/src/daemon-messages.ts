@@ -812,7 +812,7 @@ export interface RunSessionPayload {
  */
 export interface InstallToolPayload {
   tool: SkillBundleTool;
-  step?: "install" | "setup" | "activate" | "remove";
+  step?: "install" | "setup" | "activate" | "remove" | "uninstall";
   /** With `install`: false stages the version without making it current. */
   activate?: boolean;
 }

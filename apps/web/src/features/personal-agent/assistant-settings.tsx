@@ -1,22 +1,30 @@
-import { ToastFeedback } from "../../components/ui/toast";
 import { DeviceReferences } from "./settings-device-references";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
 import type {
   AgentProfileProjection,
+  ConnectorAccessLevel,
   DeviceProjection,
   PersonalAgent,
+  PersonalAgentConnector,
   PersonalAgentOverview,
   PersonalAgentSettings,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { listAgentProfiles, updatePersonalAgentSettings } from "../../api";
+import {
+  getPersonalAgentConnectors,
+  listAgentProfiles,
+  setPersonalAgentConnectors,
+  updatePersonalAgentSettings,
+} from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { AppLink } from "../../components/ui/app-link";
 import { Button } from "../../components/ui/button";
-import { PageHeader } from "../../components/ui/page-header";
+import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 import { PageSurface } from "../../components/ui/page-surface";
+import { SectionPanel } from "../../components/ui/section-panel";
+import { ToastFeedback } from "../../components/ui/toast";
 import { type AssistantSettingsSection } from "../../lib/assistant-settings-sections";
 import { pathForAppRoute } from "../../lib/routes";
 import { cn } from "../../lib/cn";
@@ -30,7 +38,7 @@ import {
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantGate } from "./assistant-gate";
 import { ActivitySection } from "./settings-activity";
-import { ConnectorsSection } from "./settings-connectors";
+import { ConnectorsSection, connectorLevels } from "./settings-connectors";
 import { EntrySection } from "./settings-entry";
 import { LimitsSection } from "./settings-limits";
 import { KnowledgeSection } from "./settings-knowledge";
@@ -62,7 +70,7 @@ export interface AssistantSettingsProps {
 export function AssistantSettings(props: AssistantSettingsProps) {
   const assistant = useAssistant();
   return (
-    <PageSurface variant="settings" className="gap-4">
+    <PageSurface variant="settings">
       <AssistantGate
         assistant={assistant}
         devices={props.devices}
@@ -117,6 +125,11 @@ function SettingsPanel({
   const { t } = useTranslation("personalAgent");
   const activeSection = section ?? "status";
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
+  const [connectors, setConnectors] = useState<PersonalAgentConnector[]>();
+  const [savedConnectors, setSavedConnectors] =
+    useState<PersonalAgentConnector[]>();
+  const [connectorLoadError, setConnectorLoadError] = useState("");
+  const [connectorReadVersion, setConnectorReadVersion] = useState(0);
   const [hasWorkspaceMemory, setHasWorkspaceMemory] = useState(false);
   const [catalog, setCatalog] = useState<AgentProfileProjection[]>();
   const [catalogError, setCatalogError] = useState("");
@@ -163,7 +176,16 @@ function SettingsPanel({
   const [saveError, setSaveError] = useState("");
   const [confirmLoosen, setConfirmLoosen] = useState(false);
   const saved = JSON.stringify(agent.settings);
-  const dirty = JSON.stringify(draft) !== saved;
+  const settingsDirty = JSON.stringify(draft) !== saved;
+  const connectorDraft = JSON.stringify(
+    connectors ? connectorLevels(connectors) : [],
+  );
+  const connectorSaved = JSON.stringify(
+    savedConnectors ? connectorLevels(savedConnectors) : [],
+  );
+  const connectorsDirty =
+    connectors !== undefined && connectorDraft !== connectorSaved;
+  const dirty = settingsDirty || connectorsDirty;
   const owned = devices.filter((device) => device.owned);
   const home = devices.find((device) => device.id === agent.homeDeviceId);
   const notice = (message: string) =>
@@ -171,8 +193,28 @@ function SettingsPanel({
 
   // What the server holds now replaces a draft with no changes.
   useEffect(() => {
-    if (!dirty) setDraft(agent.settings);
+    if (!settingsDirty) setDraft(agent.settings);
   }, [saved]);
+
+  useEffect(() => {
+    if (activeSection !== "connectors" || connectors !== undefined) return;
+    let active = true;
+    setConnectorLoadError("");
+    getPersonalAgentConnectors().then(
+      (view) => {
+        if (!active) return;
+        setConnectors(view.connectors);
+        setSavedConnectors(view.connectors);
+      },
+      (reason: unknown) => {
+        if (!active) return;
+        setConnectorLoadError(serverErrorText(reason));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [activeSection, connectorReadVersion]);
 
   const change = (patch: Partial<PersonalAgentSettings>) => {
     setConfirmLoosen(false);
@@ -182,57 +224,84 @@ function SettingsPanel({
   const loosened = loosenedActions(agent.settings.policy, draft.policy);
 
   async function save(): Promise<void> {
-    if (loosened.length && !confirmLoosen) {
+    if (settingsDirty && loosened.length && !confirmLoosen) {
       setConfirmLoosen(true);
       return;
     }
     setSaving(true);
     setSaveError("");
-    try {
-      const next = await updatePersonalAgentSettings(draft);
-      assistant.replaceAgent(next);
-      setDraft(next.settings);
-      setConfirmLoosen(false);
+    let failure = "";
+    if (settingsDirty) {
+      try {
+        const next = await updatePersonalAgentSettings(draft);
+        assistant.replaceAgent(next);
+        setDraft(next.settings);
+      } catch (reason) {
+        failure = serverErrorText(reason);
+      }
+    }
+    if (connectorsDirty && connectors) {
+      try {
+        const next = await setPersonalAgentConnectors(
+          connectorLevels(connectors),
+        );
+        setConnectors(next.connectors);
+        setSavedConnectors(next.connectors);
+      } catch (reason) {
+        failure = [failure, serverErrorText(reason)].filter(Boolean).join("\n");
+      }
+    }
+    if (failure) {
+      setSaveError(failure);
+      setSaving(false);
+      return;
+    }
+    setConfirmLoosen(false);
+    if (settingsDirty) {
       onEvent({
         type: "interface.changed",
-        mode: next.settings.simpleInterface ? "simple" : "full",
+        mode: draft.simpleInterface ? "simple" : "full",
       });
-      notice(t("settings.saved"));
-    } catch (reason) {
-      setSaveError(serverErrorText(reason));
-    } finally {
-      setSaving(false);
     }
+    notice(t("settings.saved"));
+    setSaving(false);
   }
 
   return (
-    <div className="grid min-w-0 gap-6 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
-      <div className="grid min-w-0 gap-4.5 xl:col-start-2 xl:row-start-1">
-        {section ? (
-          <Button
-            asChild
-            className="justify-self-start xl:hidden"
-            size="sm"
-            variant="ghost"
-          >
-            <AppLink href={pathForAppRoute({ view: "assistantSettings" })}>
-              <ArrowLeft aria-hidden="true" size={14} />
-              {t("settings.allSections")}
-            </AppLink>
-          </Button>
-        ) : null}
-        <PageHeader title={t("settings.title")} />
-        <div
-          className={cn(
-            "grid min-w-0 gap-4.5",
-            section === undefined && "max-xl:hidden",
-          )}
-        >
+    <div className="grid min-w-0 gap-6">
+      <PageHeader
+        title={t("settings.title")}
+        description={t("settings.description")}
+      />
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+        <div className="grid min-w-0 gap-4.5 xl:col-start-2 xl:row-start-1">
+          {section ? (
+            <Button
+              asChild
+              className="justify-self-start xl:hidden"
+              size="sm"
+              variant="ghost"
+            >
+              <AppLink href={pathForAppRoute({ view: "assistantSettings" })}>
+                <ArrowLeft aria-hidden="true" size={14} />
+                {t("settings.allSections")}
+              </AppLink>
+            </Button>
+          ) : null}
           <DeviceReferences agent={agent} draft={draft} devices={devices} />
-          <section
-            aria-label={t(`settings.sections.${activeSection}`)}
-            className="grid min-w-0 gap-4.5"
+          <SectionPanel
+            aria-labelledby="fdy-assistant-settings-section"
+            className={cn(section === undefined && "max-xl:hidden")}
+            data-assistant-settings-panel={activeSection}
+            role="region"
+            spacing="flush"
+            variant="plain"
           >
+            <SectionHeader
+              title={t(`settings.sections.${activeSection}`)}
+              description={t(`settings.hints.${activeSection}`)}
+              titleId="fdy-assistant-settings-section"
+            />
             {catalogError &&
             (activeSection === "models" || activeSection === "memory") ? (
               <Alert tone="error" title={t("settings.models.catalogFailed")}>
@@ -286,7 +355,26 @@ function SettingsPanel({
                 home={home}
               />
             ) : activeSection === "connectors" ? (
-              <ConnectorsSection />
+              <ConnectorsSection
+                connectors={connectors}
+                disabled={saving}
+                loadError={connectorLoadError}
+                onChange={(accountId, level: ConnectorAccessLevel) => {
+                  setConnectors((current) =>
+                    current?.map((connector) =>
+                      connector.id === accountId
+                        ? { ...connector, level }
+                        : connector,
+                    ),
+                  );
+                  setSaveError("");
+                }}
+                onRetry={() => {
+                  setConnectors(undefined);
+                  setSavedConnectors(undefined);
+                  setConnectorReadVersion((value) => value + 1);
+                }}
+              />
             ) : activeSection === "entry" ? (
               <EntrySection change={change} draft={draft} />
             ) : activeSection === "limits" ? (
@@ -303,82 +391,85 @@ function SettingsPanel({
                   projectName={(id) =>
                     workspaces.find((workspace) => workspace.id === id)?.name
                   }
-                />{" "}
+                />
               </>
             )}
-          </section>
-          {dirty ? (
-            <div
-              className="sticky bottom-0 z-[2] grid w-full gap-2.5 rounded-lg bg-panel px-3.5 py-3 shadow-floating"
-              role="region"
-              aria-label={t("settings.unsaved")}
-            >
-              {problems.length ? (
-                <Alert tone="warning" title={t("settings.unsaved")}>
-                  <ul className="grid gap-0.5">
-                    {problems.map((problem) => (
-                      <li key={problemText(problem, t)}>
-                        {problemText(problem, t)}
-                      </li>
-                    ))}
-                  </ul>
-                </Alert>
-              ) : confirmLoosen ? (
-                <Alert tone="warning" title={t("settings.loosen.title")}>
-                  {t("settings.loosen.body", {
-                    actions: loosened
-                      .map((action) => t(`settings.rules.actions.${action}`))
-                      .join("; "),
-                  })}
-                </Alert>
-              ) : (
-                <PaMuted>{t("settings.unsaved")}</PaMuted>
-              )}
-              {saveError ? (
-                <ToastFeedback tone="error" title={t("settings.saveFailed")}>
-                  {saveError}
-                </ToastFeedback>
-              ) : null}
-              <ButtonRow gap="wide">
-                <Button
-                  aria-busy={saving}
-                  disabled={saving || problems.length > 0}
-                  onClick={() => void save()}
-                  variant="primary"
-                >
-                  {saving
-                    ? t("settings.saving")
-                    : confirmLoosen
-                      ? t("settings.loosen.confirm")
-                      : t("settings.save")}
-                </Button>
-                <Button
-                  disabled={saving}
-                  onClick={() => {
-                    setDraft(agent.settings);
-                    setConfirmLoosen(false);
-                    setSaveError("");
-                  }}
-                  variant="ghost"
-                >
-                  {t("settings.discard")}
-                </Button>
-              </ButtonRow>
-            </div>
-          ) : null}
+            {dirty ? (
+              <div
+                className="mt-1 grid w-full gap-2.5 border-t border-line pt-4"
+                role="region"
+                aria-label={t("settings.unsaved")}
+              >
+                {problems.length ? (
+                  <Alert tone="warning" title={t("settings.unsaved")}>
+                    <ul className="grid gap-0.5">
+                      {problems.map((problem) => (
+                        <li key={problemText(problem, t)}>
+                          {problemText(problem, t)}
+                        </li>
+                      ))}
+                    </ul>
+                  </Alert>
+                ) : confirmLoosen ? (
+                  <Alert tone="warning" title={t("settings.loosen.title")}>
+                    {t("settings.loosen.body", {
+                      actions: loosened
+                        .map((action) => t(`settings.rules.actions.${action}`))
+                        .join("; "),
+                    })}
+                  </Alert>
+                ) : (
+                  <PaMuted>{t("settings.unsaved")}</PaMuted>
+                )}
+                {saveError ? (
+                  <ToastFeedback tone="error" title={t("settings.saveFailed")}>
+                    {saveError}
+                  </ToastFeedback>
+                ) : null}
+                <ButtonRow gap="wide">
+                  <Button
+                    aria-busy={saving}
+                    disabled={saving || problems.length > 0}
+                    onClick={() => void save()}
+                    size="sm"
+                    variant="primary"
+                  >
+                    {saving
+                      ? t("settings.saving")
+                      : confirmLoosen
+                        ? t("settings.loosen.confirm")
+                        : t("settings.save")}
+                  </Button>
+                  <Button
+                    disabled={saving}
+                    onClick={() => {
+                      setDraft(agent.settings);
+                      setConnectors(savedConnectors);
+                      setConfirmLoosen(false);
+                      setSaveError("");
+                    }}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    {t("settings.discard")}
+                  </Button>
+                </ButtonRow>
+              </div>
+            ) : null}
+          </SectionPanel>
         </div>
-      </div>
-      <div
-        className={cn(
-          "min-w-0 xl:sticky xl:top-0 xl:col-start-1 xl:row-start-1",
-          section !== undefined && "max-xl:hidden",
-        )}
-      >
-        <AssistantSettingsNav
-          onSelect={onSectionChange}
-          selected={activeSection}
-          showIndex={section === undefined}
-        />
+        <div
+          className={cn(
+            "min-w-0 xl:sticky xl:top-0 xl:col-start-1 xl:row-start-1",
+            section !== undefined && "max-xl:hidden",
+          )}
+        >
+          <AssistantSettingsNav
+            onSelect={onSectionChange}
+            selected={activeSection}
+            showIndex={section === undefined}
+          />
+        </div>
       </div>
     </div>
   );

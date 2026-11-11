@@ -1,7 +1,10 @@
 import { createWriteStream } from "node:fs";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { EnvHttpProxyAgent, fetch as undiciFetch, type Response } from "undici";
+import {
+  outboundRoute,
+  workerFetch,
+} from "../platform/server-link/server-proxy.js";
 
 /** Called with the bytes received so far, and the total when known. */
 export type DownloadProgress = (received: number, total?: number) => void;
@@ -9,9 +12,10 @@ export type DownloadProgress = (received: number, total?: number) => void;
 const connectAttempts = 3;
 
 /**
- * fetch through the device's HTTP(S)_PROXY settings, trying the connection
- * again when it fails before any answer (a connect timeout on a flaky route);
- * an HTTP answer, whatever its status, is returned as it is.
+ * fetch through the Worker's saved outbound proxy, with its environment
+ * fallback and NO_PROXY rules, trying the connection again when it fails
+ * before any answer (a connect timeout on a flaky route); an HTTP answer,
+ * whatever its status, is returned as it is.
  */
 export async function fetchRetrying(
   url: string,
@@ -21,13 +25,10 @@ export async function fetchRetrying(
     redirect?: "follow" | "manual";
   } = {},
   attempts = connectAttempts,
-): Promise<Response> {
+) {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await undiciFetch(url, {
-        ...init,
-        dispatcher: new EnvHttpProxyAgent(),
-      });
+      return await workerFetch(url, init);
     } catch (error) {
       if (attempt >= attempts || init.signal?.aborted) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
@@ -43,7 +44,7 @@ export function failureText(error: unknown): string {
 
 /**
  * Downloads url (which must be under one of origins) to file through the
- * device's HTTP(S)_PROXY settings, refusing more than maxBytes.
+ * Worker's outbound proxy rules, refusing more than maxBytes.
  */
 export async function downloadFile(
   url: string,
@@ -52,16 +53,21 @@ export async function downloadFile(
 ): Promise<void> {
   if (!options.origins.some((origin) => url.startsWith(`${origin}/`)))
     throw new Error(`refusing to download from ${new URL(url).origin}`);
+  const route = outboundRoute(url);
   let response;
   try {
     response = await fetchRetrying(url, {
       signal: AbortSignal.timeout(8 * 60_000),
     });
   } catch (error) {
-    throw new Error(`could not download ${url}: ${failureText(error)}`);
+    throw new Error(
+      `could not download ${url} (${route}): ${failureText(error)}`,
+    );
   }
   if (!response.ok || !response.body)
-    throw new Error(`could not download ${url}: HTTP ${response.status}`);
+    throw new Error(
+      `could not download ${url} (${route}): HTTP ${response.status}`,
+    );
   const declared = Number(response.headers.get("content-length"));
   const total =
     Number.isFinite(declared) && declared > 0 ? declared : undefined;
@@ -77,9 +83,15 @@ export async function downloadFile(
       );
     },
   });
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    limit,
-    createWriteStream(file, { mode: 0o600 }),
-  );
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      limit,
+      createWriteStream(file, { mode: 0o600 }),
+    );
+  } catch (error) {
+    throw new Error(
+      `could not download ${url} (${route}): ${failureText(error)}`,
+    );
+  }
 }

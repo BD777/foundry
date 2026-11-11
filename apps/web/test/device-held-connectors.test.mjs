@@ -1273,6 +1273,7 @@ const awsSignedOut = (deviceId, overrides = {}) =>
     signedIn: false,
     identity: undefined,
     expiresAt: undefined,
+    configuration: { region: "us-east-1" },
     ...overrides,
   });
 
@@ -1283,6 +1284,7 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     signedIn: true,
     identity: "arn:aws:iam::123456789012:user/me",
     expiresAt: undefined,
+    configuration: { region: "us-east-1" },
     checkedAt: new Date().toISOString(),
   });
   const url = "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s";
@@ -1332,7 +1334,8 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
   );
   await page.click(page.button("Sign in"));
   const dialog = () => document.body.querySelector("[role=dialog]");
-  // Three ways, the first chosen; its one field prefilled with the default.
+  // Three ways, the first chosen. Region is a device profile setting, not a
+  // sign-in choice.
   const radios = [...dialog().querySelectorAll("input[type=radio]")];
   assert.equal(radios.length, 3);
   assert.ok(radios[0].checked);
@@ -1340,21 +1343,15 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     dialog().textContent,
     /AWS console sign-in.*IAM Identity Center.*In a terminal on the device/,
   );
-  assert.equal(fieldInput(dialog(), "Default AWS Region").value, "us-east-1");
-  // A malformed value is caught before the device is asked.
-  await type(fieldInput(dialog(), "Default AWS Region"), "mars");
-  await page.click(page.button("Start sign-in", dialog()));
-  assert.match(dialog().textContent, /Default AWS Region doesn’t look right/);
-  assert.equal(
-    requests.filter((r) => r.path.endsWith("/aws/sign-in")).length,
-    0,
+  assert.doesNotMatch(dialog().textContent, /Default AWS Region/);
+  assert.match(
+    dialog().textContent,
+    /Permissions come from the AWS identity you sign in with/,
   );
-  await type(fieldInput(dialog(), "Default AWS Region"), "eu-west-1");
   await page.click(page.button("Start sign-in", dialog()));
   const begin = requests.find((r) => r.path.endsWith("/aws/sign-in"));
   assert.deepEqual(begin.body.signInOptions, {
     method: "console",
-    region: "eu-west-1",
   });
   assert.match(dialog().textContent, /Signing in with: AWS console sign-in/);
   assert.ok(dialog().querySelector(`a[href="${url}"]`));
@@ -1370,6 +1367,55 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
     page.container.querySelector(".fdy-xacc-device-row").textContent,
     /Signed in as arn:aws:iam::123456789012:user\/me/,
   );
+  assert.match(
+    page.container.querySelector(".fdy-xacc-device-row").textContent,
+    /Default Region: us-east-1/,
+  );
+  await page.unmount();
+});
+
+test("AWS's default Region can be changed from the device details after sign-in", async () => {
+  let changed;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [awsCatalog],
+        devices: [
+          device("dev_mac", "mac", [
+            awsSignedOut("dev_mac", {
+              configuration: { region: "us-east-1" },
+            }),
+          ]),
+        ],
+      },
+    ],
+    "PUT /api/devices/dev_mac/connectors/aws/configuration": (body) => {
+      changed = body;
+      return [
+        200,
+        awsSignedOut("dev_mac", {
+          configuration: { region: body.configuration.region },
+        }),
+      ];
+    },
+  };
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "aws",
+    onNotice: (message) => notices.push(message),
+  });
+  const row = page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(row.textContent, /Default Region: us-east-1/);
+  await page.click(page.button("Change", row));
+  await type(fieldInput(row, "Default AWS Region"), "eu-west-1");
+  await page.click(page.button("Save Region", row));
+  assert.deepEqual(changed, {
+    configuration: { region: "eu-west-1" },
+  });
+  assert.match(row.textContent, /Default Region: eu-west-1/);
+  assert.match(notices.at(-1), /Default AWS Region updated on mac/);
   await page.unmount();
 });
 
@@ -1521,7 +1567,6 @@ test("a method's required fields are asked for; another method shows a device co
     startUrl: "https://my-company.awsapps.com/start",
     accountId: "123456789012",
     roleName: "Developer",
-    region: "us-east-1",
   });
   assert.match(dialog().textContent, /WXYZ-1234/);
   assert.equal(
@@ -1662,7 +1707,10 @@ test("an extension's connector lists the devices that have it, and says how to s
   const page = await render(ConnectorsFeature, { ...props, tab: "gateway" });
   const text = page.container.textContent;
   assert.match(text, /Gives this device Claude through your gateway\./);
-  assert.match(text, /From the Gateway tools extension, version 0\.1\.0\./);
+  assert.match(
+    text,
+    /Gateway tools extension 0\.1\.0, installed from a local folder\./,
+  );
   assert.equal(
     page.container.querySelectorAll(".fdy-xacc-device-row").length,
     1,
@@ -1798,6 +1846,20 @@ test("an extension installs on another device from its repository, updates and i
         },
       },
     ],
+    "PATCH /api/devices/dev_gw/extensions/gw": () => [
+      200,
+      {
+        action: "updated",
+        extension: {
+          id: "gw",
+          name: "Gateway tools",
+          version: "0.1.0",
+          connectors: ["gateway"],
+          source,
+          autoUpdate: false,
+        },
+      },
+    ],
     "DELETE /api/devices/dev_gw/extensions/gw": () => [
       200,
       { action: "removed" },
@@ -1838,7 +1900,27 @@ test("an extension installs on another device from its repository, updates and i
     row.textContent,
     /Gateway tools has a newer commit in its repository \(bbbbbbb\)/,
   );
-  await page.click(page.button("Update Gateway tools", row));
+  assert.match(
+    row.textContent,
+    /Updates automatically when the repository moves/,
+  );
+  const autoUpdate = row.querySelector('[aria-label="Auto-update"]');
+  assert.ok(autoUpdate);
+  assert.equal(autoUpdate.getAttribute("aria-checked"), "true");
+  await page.click(autoUpdate);
+  assert.deepEqual(
+    requests.find(
+      (r) =>
+        r.method === "PATCH" && r.path === "/api/devices/dev_gw/extensions/gw",
+    ).body,
+    { autoUpdate: false },
+  );
+  await page.click(
+    page.button(
+      "Update Gateway tools",
+      page.container.querySelector(".fdy-xacc-device-row"),
+    ),
+  );
   assert.deepEqual(
     requests.find((r) => r.path === "/api/devices/dev_gw/extensions").body,
     { source },
@@ -1880,6 +1962,259 @@ test("an extension installs on another device from its repository, updates and i
     ),
   );
   assert.ok(notices.includes("Gateway tools is removed from gw-box."));
+  await page.unmount();
+});
+
+test("a bundled extension installs on a device without a repository", async () => {
+  requests.length = 0;
+  const bundled = {
+    kind: "pack",
+    label: "Pack",
+    holding: "device_held",
+    adapter: "extension:pack",
+    extension: {
+      id: "pack",
+      name: "Pack tools",
+      version: "1.0.0",
+      bundled: true,
+      state: "available",
+    },
+    tool: { command: "pack", source: "device" },
+  };
+  routes = {
+    "GET /api/connectors": () => [200, { connectors: [bundled] }],
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [bundled],
+        devices: [
+          device("dev_mac", "mac-laptop", [], {
+            extensions: [bundled.extension],
+            extensionErrors: [
+              {
+                extensionId: "broken",
+                extensionName: "Broken tools",
+                kind: "broken",
+                reason: "serverHeld.upstream header is not canonical",
+              },
+            ],
+          }),
+          device("dev_off", "offline-box", [], {
+            online: false,
+            extensions: [bundled.extension],
+          }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_mac/extensions": () => [
+      200,
+      {
+        action: "created",
+        extension: {
+          id: "pack",
+          name: "Pack tools",
+          version: "1.0.0",
+          connectors: ["pack"],
+          bundled: true,
+          state: "installed",
+        },
+      },
+    ],
+  };
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "pack",
+    onNotice: (line) => notices.push(line),
+  });
+  assert.match(page.container.textContent, /bundled with the Worker/);
+  assert.match(page.container.textContent, /Install Pack tools on a device/);
+  assert.match(
+    page.container.textContent,
+    /offline-box.*Offline; install it once the device is back/,
+  );
+  const installButtons = [...page.container.querySelectorAll("button")].filter(
+    (button) => button.textContent.trim() === "Install on this device",
+  );
+  assert.deepEqual(
+    installButtons.map((button) => button.disabled),
+    [false, true],
+  );
+  assert.match(
+    page.container.textContent,
+    /Invalid Broken tools descriptor on mac-laptop/,
+  );
+  assert.match(
+    page.container.textContent,
+    /serverHeld\.upstream header is not canonical/,
+  );
+  await page.click(page.button("Install on this device"));
+  assert.deepEqual(
+    requests.find(
+      (request) => request.path === "/api/devices/dev_mac/extensions",
+    ).body,
+    { bundledExtensionId: "pack" },
+  );
+  assert.ok(notices.includes("Pack tools is installed on mac-laptop."));
+  await page.unmount();
+});
+
+test("restricted connectors are collapsed, explain both gates, and recheck", async () => {
+  requests.length = 0;
+  const restrictedConnector = {
+    ...corpcli,
+    kind: "gated",
+    label: "Gated",
+    adapter: "extension:gated",
+    holder: undefined,
+    requires: [
+      {
+        kind: "tcp_reachable",
+        host: "intranet.example",
+        port: 443,
+        label: "Internal network",
+      },
+    ],
+    access: {
+      via: "github",
+      repository: "owner/private-repository",
+      hint: "Read the private repository to use this connector.",
+    },
+    extension: {
+      id: "gated",
+      name: "Gated tools",
+      version: "1.0.0",
+      bundled: true,
+      state: "available",
+    },
+  };
+  delete restrictedConnector.holder;
+  routes = {
+    "GET /api/connectors": () => [
+      200,
+      {
+        connectors: [
+          {
+            kind: "feishu",
+            label: "Feishu",
+            holding: "server_held",
+            adapter: "feishu",
+            tool: { command: "feishu-cli" },
+          },
+        ],
+        restrictedConnectors: [
+          {
+            connector: restrictedConnector,
+            devices: [
+              {
+                deviceId: "dev_mac",
+                name: "mac-laptop",
+                online: true,
+                viaLabel: "GitHub CLI",
+                requirementsCheck: {
+                  ok: false,
+                  requirement: "Internal network",
+                  checkedAt: iso(-60_000),
+                },
+                accessCheck: {
+                  via: "github",
+                  status: "no_access",
+                  identity: "reader",
+                  checkedAt: iso(-60_000),
+                },
+              },
+              {
+                deviceId: "dev_linux",
+                name: "linux-runner",
+                online: true,
+                viaLabel: "GitHub CLI",
+                requirementsCheck: {
+                  ok: true,
+                  checkedAt: iso(-60_000),
+                },
+                accessCheck: {
+                  via: "github",
+                  status: "not_signed_in",
+                  checkedAt: iso(-60_000),
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    "GET /api/connectors/devices": () => [200, { connectors: [], devices: [] }],
+    "GET /api/external-accounts": () => [
+      200,
+      { providers: [], apps: [], accounts: [], secretsConfigured: true },
+    ],
+    "POST /api/connectors/recheck-access": () => [
+      200,
+      {
+        connectors: [
+          {
+            kind: "feishu",
+            label: "Feishu",
+            holding: "server_held",
+            adapter: "feishu",
+            tool: { command: "feishu-cli" },
+          },
+        ],
+        restrictedConnectors: [],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "feishu",
+    onNotice: () => {},
+  });
+  const trigger = page.container.querySelector('[role="combobox"]');
+  await act(async () => trigger.click());
+  await settle();
+  const collapsed = page.button("Needs access (1)");
+  assert.equal(collapsed.getAttribute("aria-expanded"), "false");
+  await page.click(collapsed);
+  assert.match(
+    window.document.querySelector("[role=listbox]").textContent,
+    /2 devices do not meet the conditions/,
+  );
+  assert.doesNotMatch(
+    window.document.querySelector("[role=listbox]").textContent,
+    /owner\/private-repository/,
+  );
+  const restricted = [
+    ...window.document.querySelectorAll("[cmdk-list] button"),
+  ].find((node) =>
+    node.textContent.includes("2 devices do not meet the conditions"),
+  );
+  assert.ok(restricted);
+  await page.click(restricted);
+  assert.match(
+    page.container.textContent,
+    /Needs to reach Internal network \(intranet\.example:443\)/,
+  );
+  assert.match(
+    page.container.textContent,
+    /GitHub CLI account reader cannot read owner\/private-repository/,
+  );
+  assert.match(
+    page.container.textContent,
+    /GitHub CLI is not signed in on this device/,
+  );
+  const details = page.container.querySelector(
+    '[aria-label="Gated access details"]',
+  );
+  assert.ok(details);
+  await page.click(page.button("Check again", details));
+  await settle(20);
+  assert.ok(
+    requests.some(
+      (request) =>
+        request.method === "POST" &&
+        request.path === "/api/connectors/recheck-access",
+    ),
+  );
   await page.unmount();
 });
 
@@ -1942,6 +2277,7 @@ test("Add a connector installs an extension from a repository the person names",
       path: "foundry-extension",
     },
   });
+  await settle(20);
   assert.ok(notices.includes("Acme tools is installed on mac-laptop."));
   await page.unmount();
 });

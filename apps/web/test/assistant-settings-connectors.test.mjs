@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window({
@@ -58,6 +58,16 @@ const initialConnectors = [
     label: "Work Feishu",
     holding: "server_held",
     status: "ready",
+    level: "write",
+    enabled: true,
+  },
+  {
+    id: "acct_analytics",
+    kind: "cloudflare",
+    label: "Analytics",
+    holding: "server_held",
+    status: "ready",
+    level: "read",
     enabled: true,
   },
   {
@@ -68,12 +78,11 @@ const initialConnectors = [
     deviceId: "dev_mac",
     deviceName: "MacBook",
     status: "ready",
-    enabled: true,
+    level: "off",
+    enabled: false,
   },
 ];
 
-let connectors = initialConnectors;
-let failSave = false;
 let calls = [];
 
 globalThis.fetch = async (input, init = {}) => {
@@ -87,14 +96,9 @@ globalThis.fetch = async (input, init = {}) => {
       headers: { "Content-Type": "application/json" },
     });
   if (method === "GET" && url.pathname === "/api/personal-agent/connectors")
-    return json({ connectors });
+    return json({ connectors: initialConnectors });
   if (method === "PUT" && url.pathname === "/api/personal-agent/connectors") {
-    if (failSave) return json({ error: "Synthetic save failure" }, 500);
-    connectors = connectors.map((connector) => ({
-      ...connector,
-      enabled: !body.disabled.includes(connector.id),
-    }));
-    return json({ connectors });
+    return json({ connectors: initialConnectors });
   }
   throw new Error(`unexpected ${method} ${url.pathname}`);
 };
@@ -102,24 +106,21 @@ globalThis.fetch = async (input, init = {}) => {
 const { createRoot } = await import("react-dom/client");
 const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
-const { ToastProvider } = await import("../src/components/ui/toast.tsx");
-const { ConnectorsSection } =
+const { connectorLevels, ConnectorsSection } =
   await import("../src/features/personal-agent/settings-connectors.tsx");
+const { setPersonalAgentConnectors } =
+  await import("../src/api/personal-agent.ts");
 
 async function settle() {
   for (let index = 0; index < 4; index += 1)
     await act(async () => new Promise((done) => setTimeout(done, 0)));
 }
 
-async function render() {
+async function render(component = ConnectorsSection, props = {}) {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      createElement(ToastProvider, null, createElement(ConnectorsSection)),
-    ),
-  );
+  await act(async () => root.render(createElement(component, props)));
   await settle();
   return {
     container,
@@ -130,29 +131,32 @@ async function render() {
   };
 }
 
-async function until(predicate) {
-  for (let attempt = 0; attempt < 100 && !predicate(); attempt += 1)
-    await act(async () => new Promise((done) => setTimeout(done, 25)));
-}
-
-function connectorSwitch(container, label) {
+function accessControl(container, label) {
   const found = container.querySelector(
-    `[role="switch"][aria-label="Let the Assistant use ${label}"]`,
+    `[aria-label="Access level for ${label}"]`,
   );
-  assert.ok(found, `no switch for ${label}`);
+  assert.ok(found, `no access levels for ${label}`);
   return found;
 }
 
-test("connector accounts render in server then device groups with their saved switch state", async () => {
-  connectors = initialConnectors.map((connector, index) => ({
-    ...connector,
-    enabled: index === 0,
-  }));
-  calls = [];
-  const page = await render();
+function levelRadio(container, label, level) {
+  const found = [
+    ...accessControl(container, label).querySelectorAll("[role=radio]"),
+  ].find((node) => node.textContent.trim() === level);
+  assert.ok(found, `no ${level} level for ${label}`);
+  return found;
+}
+
+test("connector accounts render in server then device groups with all three saved levels", async () => {
+  const page = await render(ConnectorsSection, {
+    connectors: initialConnectors,
+    loadError: "",
+    onChange: () => {},
+    onRetry: () => {},
+  });
   assert.match(
     page.container.textContent,
-    /The Assistant can use these accounts\. New accounts are on by default\./,
+    /Deleting, sending messages outward, DNS changes, and App Store Connect changes ask you first/,
   );
   assert.deepEqual(
     [...page.container.querySelectorAll("h3")].map((heading) =>
@@ -160,71 +164,82 @@ test("connector accounts render in server then device groups with their saved sw
     ),
     ["Server accounts", "MacBook"],
   );
-  assert.match(page.container.textContent, /feishu · Ready/);
-  assert.match(page.container.textContent, /aws · on MacBook/);
   assert.equal(
-    connectorSwitch(page.container, "Work Feishu").getAttribute("aria-checked"),
+    levelRadio(page.container, "Work Feishu", "Read/write").getAttribute(
+      "aria-checked",
+    ),
     "true",
   );
   assert.equal(
-    connectorSwitch(page.container, "AWS CLI").getAttribute("aria-checked"),
-    "false",
+    levelRadio(page.container, "Analytics", "Read only").getAttribute(
+      "aria-checked",
+    ),
+    "true",
+  );
+  assert.equal(
+    levelRadio(page.container, "AWS CLI", "Off").getAttribute("aria-checked"),
+    "true",
   );
   await page.unmount();
 });
 
-test("toggling connector accounts sends the full disabled account list", async () => {
-  connectors = initialConnectors.map((connector) => ({
-    ...connector,
-    enabled: true,
-  }));
+test("choosing read for a device-held account explains that writes are not isolated yet", async () => {
+  const changes = [];
+  function Harness() {
+    const [connectors, setConnectors] = useState(
+      initialConnectors.map((connector) => ({
+        ...connector,
+        level: connector.id === "dev_mac:aws" ? "write" : connector.level,
+      })),
+    );
+    return createElement(ConnectorsSection, {
+      connectors,
+      loadError: "",
+      onChange: (accountId, level) => {
+        changes.push({ accountId, level });
+        setConnectors((current) =>
+          current.map((connector) =>
+            connector.id === accountId ? { ...connector, level } : connector,
+          ),
+        );
+      },
+      onRetry: () => {},
+    });
+  }
+  const page = await render(Harness);
+  assert.doesNotMatch(
+    page.container.textContent,
+    /Read-only cannot block writes for this account yet/,
+  );
+  await act(async () =>
+    levelRadio(page.container, "AWS CLI", "Read only").click(),
+  );
+  await settle();
+  assert.deepEqual(changes, [{ accountId: "dev_mac:aws", level: "read" }]);
+  assert.match(
+    page.container.textContent,
+    /Foundry cannot stop writes through an account that lives on a device yet/,
+  );
+  assert.doesNotMatch(
+    page.container.textContent,
+    /Read-only cannot block writes for this account yet.*Analytics/s,
+  );
+  await page.unmount();
+});
+
+test("saving sends every account's three-state level as the full replacement payload", async () => {
   calls = [];
-  const page = await render();
-  await act(async () => connectorSwitch(page.container, "Work Feishu").click());
-  await settle();
-  await act(async () => connectorSwitch(page.container, "AWS CLI").click());
-  await settle();
+  await setPersonalAgentConnectors(connectorLevels(initialConnectors));
   assert.deepEqual(
     calls.filter((call) => call.method === "PUT").map((call) => call.body),
     [
-      { disabled: ["acct_feishu"] },
-      { disabled: ["acct_feishu", "dev_mac:aws"] },
+      {
+        levels: [
+          { accountId: "acct_feishu", level: "write" },
+          { accountId: "acct_analytics", level: "read" },
+          { accountId: "dev_mac:aws", level: "off" },
+        ],
+      },
     ],
   );
-  assert.equal(
-    connectorSwitch(page.container, "Work Feishu").getAttribute("aria-checked"),
-    "false",
-  );
-  assert.equal(
-    connectorSwitch(page.container, "AWS CLI").getAttribute("aria-checked"),
-    "false",
-  );
-  await page.unmount();
-});
-
-test("a failed connector save reverts the switch and shows the error inline", async () => {
-  connectors = initialConnectors.map((connector) => ({
-    ...connector,
-    enabled: true,
-  }));
-  failSave = true;
-  calls = [];
-  const page = await render();
-  await act(async () => connectorSwitch(page.container, "AWS CLI").click());
-  await settle();
-  await until(() =>
-    /Could not change this connector/.test(page.container.textContent),
-  );
-  assert.equal(
-    connectorSwitch(page.container, "AWS CLI").getAttribute("aria-checked"),
-    "true",
-  );
-  assert.match(page.container.textContent, /Could not change this connector/);
-  assert.match(page.container.textContent, /Synthetic save failure/);
-  assert.deepEqual(
-    calls.filter((call) => call.method === "PUT").map((call) => call.body),
-    [{ disabled: ["dev_mac:aws"] }],
-  );
-  failSave = false;
-  await page.unmount();
 });

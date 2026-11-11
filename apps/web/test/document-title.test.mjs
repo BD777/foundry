@@ -70,6 +70,10 @@ test("tab titles name the most specific thing first", () => {
     title({ view: "resources", workspaceName: "foundry" }),
     "Resources — Foundry",
   );
+  assert.equal(
+    title({ view: "usage", workspaceName: "foundry" }),
+    "Usage — Foundry",
+  );
   assert.equal(title({ view: "chats", workspaceName: "" }), "Chats — Foundry");
   assert.equal(buildDocumentTitle({}), "Foundry");
 });

@@ -953,6 +953,7 @@ components:
         - execution_host_stopped
         - disk_full
         - model_rate_limit
+        - model_quota_exhausted
         - skill_preparation_timeout
         - turn_limit
       x-go-type: string
@@ -1195,6 +1196,17 @@ components:
             profileFingerprint:
               type: string
             profileLabel:
+              type: string
+            modelPoolId:
+              description:
+                The equivalent-model group this session was allocated from.
+                Foundry uses it to choose another id after a model rate limit.
+              type: string
+            dispatchId:
+              description:
+                Identifies this dispatch of the current input. It equals the
+                input id until an automatic retry gives the same logical input
+                a fresh native execution identity.
               type: string
             source:
               description: '"digest": a Personal Agent digest summary session (read-only).'

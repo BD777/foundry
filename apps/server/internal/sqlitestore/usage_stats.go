@@ -282,9 +282,21 @@ func mergeUsageBackfill(existing, incoming store.UsageTurn) store.UsageTurn {
 }
 
 func (s *Store) readUsageTurn(ctx context.Context, sessionID, inputID string) (store.UsageTurn, bool, error) {
+	row := s.conn().QueryRowContext(ctx, `SELECT `+usageTurnColumns+` FROM usage_turns
+		WHERE session_id = ? AND input_id = ?`, sessionID, inputID)
+	turn, err := scanUsageTurn(row)
+	if err != nil {
+		return store.UsageTurn{}, false, err
+	}
+	if turn.SessionID == "" {
+		return store.UsageTurn{}, false, nil
+	}
+	return turn, true, nil
+}
+
+func scanUsageTurn(row interface{ Scan(dest ...any) error }) (store.UsageTurn, error) {
 	var turn store.UsageTurn
-	err := s.conn().QueryRowContext(ctx, `SELECT `+usageTurnColumns+` FROM usage_turns
-		WHERE session_id = ? AND input_id = ?`, sessionID, inputID).Scan(
+	err := row.Scan(
 		&turn.SessionID, &turn.InputID, &turn.UserID, &turn.WorkspaceID, &turn.DeviceID, &turn.ParentSessionID,
 		&turn.Entry, &turn.Runtime, &turn.ProfileID, &turn.ProviderLabel, &turn.RequestedModel, &turn.Model,
 		&turn.StartedAt, &turn.EndedAt, &turn.DurationMs, &turn.ModelMs, &turn.TtftMs, &turn.TimingEstimated,
@@ -292,12 +304,12 @@ func (s *Store) readUsageTurn(ctx context.Context, sessionID, inputID string) (s
 		&turn.ReasoningTokens, &turn.ModelRequests, &turn.CostUSD, &turn.CostSource, &turn.Outcome,
 		&turn.ErrorClass)
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.UsageTurn{}, false, nil
+		return store.UsageTurn{}, nil
 	}
 	if err != nil {
-		return store.UsageTurn{}, false, fmt.Errorf("read usage turn: %w", err)
+		return store.UsageTurn{}, fmt.Errorf("read usage turn: %w", err)
 	}
-	return turn, true, nil
+	return turn, nil
 }
 
 func (s *Store) adjustUsageDaily(ctx context.Context, turn store.UsageTurn, sign int64) error {
@@ -459,6 +471,85 @@ func (s *Store) SaveUsageBackfillState(ctx context.Context, cursor string, compl
 		return fmt.Errorf("save usage backfill state: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) UsageTurnsForReprice(ctx context.Context, after store.UsageRepriceCursor, limit int) ([]store.UsageTurn, store.UsageRepriceCursor, error) {
+	if limit <= 0 {
+		return nil, after, fmt.Errorf("usage reprice limit must be positive, got %d", limit)
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+usageTurnColumns+` FROM usage_turns
+		WHERE started_at > ?
+			OR (started_at = ? AND session_id > ?)
+			OR (started_at = ? AND session_id = ? AND input_id > ?)
+		ORDER BY started_at, session_id, input_id
+		LIMIT ?`,
+		after.StartedAt, after.StartedAt, after.SessionID,
+		after.StartedAt, after.SessionID, after.InputID, limit)
+	if err != nil {
+		return nil, after, fmt.Errorf("list usage turns for reprice: %w", err)
+	}
+	defer rows.Close()
+	turns := []store.UsageTurn{}
+	for rows.Next() {
+		turn, err := scanUsageTurn(rows)
+		if err != nil {
+			return nil, after, err
+		}
+		turns = append(turns, turn)
+		after = store.UsageRepriceCursor{
+			StartedAt: turn.StartedAt,
+			SessionID: turn.SessionID,
+			InputID:   turn.InputID,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, after, err
+	}
+	return turns, after, nil
+}
+
+func (s *Store) UpdateUsageCost(ctx context.Context, sessionID, inputID string, costUSD float64, source string) (bool, error) {
+	switch source {
+	case store.UsageCostEstimated, store.UsageCostCustom, store.UsageCostUnknown:
+	default:
+		return false, fmt.Errorf("reprice usage turn: invalid non-reported cost source %q", source)
+	}
+	updated := false
+	err := s.withTx(ctx, func(tx *Store) error {
+		existing, found, err := tx.readUsageTurn(ctx, sessionID, inputID)
+		if err != nil || !found || existing.CostSource == store.UsageCostReported {
+			return err
+		}
+		if existing.CostUSD == costUSD && existing.CostSource == source {
+			return nil
+		}
+		next := existing
+		next.CostUSD = costUSD
+		next.CostSource = source
+		if err := tx.adjustUsageDaily(ctx, existing, -1); err != nil {
+			return err
+		}
+		if err := tx.adjustUsageDaily(ctx, next, 1); err != nil {
+			return err
+		}
+		result, err := tx.conn().ExecContext(ctx, `UPDATE usage_turns
+			SET cost_usd = ?, cost_source = ?
+			WHERE session_id = ? AND input_id = ? AND cost_source <> 'reported'`,
+			costUSD, source, sessionID, inputID)
+		if err != nil {
+			return fmt.Errorf("reprice usage turn: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("reprice usage turn: %w", err)
+		}
+		updated = affected != 0
+		if err := tx.deleteEmptyUsageDaily(ctx); err != nil {
+			return err
+		}
+		return nil
+	})
+	return updated, err
 }
 
 var usageDimensionColumns = map[string]string{

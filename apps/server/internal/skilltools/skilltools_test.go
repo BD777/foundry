@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -122,7 +123,7 @@ func TestCheckDeclarations(t *testing.T) {
 		{Source: " npm ", Package: "@acme/cli"},
 		{Source: "uv", Package: "browser-use", Command: "bu"},
 	})
-	if err != nil || len(clean) != 2 || clean[0] != (store.SkillToolDeclaration{Source: "npm", Package: "@acme/cli", Command: "cli"}) {
+	if err != nil || len(clean) != 2 || !reflect.DeepEqual(clean[0], store.SkillToolDeclaration{Source: "npm", Package: "@acme/cli", Command: "cli"}) {
 		t.Fatalf("clean %+v, %v", clean, err)
 	}
 	for _, bad := range [][]store.SkillToolDeclaration{

@@ -163,6 +163,10 @@ type ExternalProviderApp struct {
 	AccountNames []string `json:"accountNames,omitempty"`
 	CreatedAt    string   `json:"createdAt"`
 	UpdatedAt    string   `json:"updatedAt"`
+	// ExtensionData is validated, non-secret metadata for a server-held
+	// connector supplied by an extension. It is internal and never exposed
+	// through the generic External accounts API.
+	ExtensionData string `json:"-"`
 }
 
 // ExternalAppNames is what the provider says an app and its organisation

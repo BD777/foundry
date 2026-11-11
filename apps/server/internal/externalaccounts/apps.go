@@ -75,6 +75,8 @@ func (s *Service) DeleteApp(ctx context.Context, app store.ExternalProviderApp) 
 		secretID := AppSecretID(app.ID)
 		if app.Provider == "appstoreconnect" {
 			secretID = AppStoreConnectKeySecretID(app.ID)
+		} else if app.CreatedVia == "extension" {
+			secretID = ExtensionSecretID(app.ID)
 		}
 		if err := s.secrets.DeleteSecret(ctx, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("delete the app secret: %w", err)
@@ -95,6 +97,13 @@ func (s *Service) ListApps(ctx context.Context, userID string) ([]store.External
 	if err != nil {
 		return nil, err
 	}
+	filteredApps := apps[:0]
+	for _, app := range apps {
+		if app.CreatedVia != "extension" {
+			filteredApps = append(filteredApps, app)
+		}
+	}
+	apps = filteredApps
 	rotate, err := s.store.FeishuAppsToRotate(ctx)
 	if err != nil {
 		return nil, err

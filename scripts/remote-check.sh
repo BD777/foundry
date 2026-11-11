@@ -23,6 +23,11 @@
 # REMOTE_CHECK_REMOTE (default: origin's URL as https).
 set -euo pipefail
 
+# Git must not inherit the person's insteadOf or proxy configuration. The
+# remote compute's git_sync applies the same isolation in its own process.
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_NOSYSTEM=1
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target="${1:-}"
 [ -n "$target" ] && [[ "$target" != -* ]] || { sed -n '2,23p' "$0"; exit 2; }
@@ -108,6 +113,48 @@ run_shell() {
     json 'v.stderr' <<<"$result" >&2
     return 1
   fi
+}
+
+# sync_checkout <url> <ref> <dir>: the git_sync layout through a run action,
+# whose env can suppress the device's global Git configuration immediately
+# (including on workers older than the git_sync isolation).
+sync_checkout() {
+  local result code file head
+  file="$(
+    RC_GIT_URL="$1" RC_GIT_REF="$2" RC_GIT_DIR="$3" args \
+      '{command: `set -eu
+if git -C "$RC_GIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$RC_GIT_DIR" remote set-url origin "$RC_GIT_URL"
+else
+  rm -rf -- "$RC_GIT_DIR"
+  git clone --no-checkout -- "$RC_GIT_URL" "$RC_GIT_DIR"
+fi
+if git -C "$RC_GIT_DIR" fetch --prune --tags origin "$RC_GIT_REF"; then
+  target=FETCH_HEAD
+else
+  git -C "$RC_GIT_DIR" fetch --prune --tags origin
+  target=$(git -C "$RC_GIT_DIR" rev-parse --verify "$RC_GIT_REF^{commit}" 2>/dev/null ||
+    git -C "$RC_GIT_DIR" rev-parse --verify "origin/$RC_GIT_REF^{commit}")
+fi
+git -C "$RC_GIT_DIR" checkout --force --detach "$target"
+git -C "$RC_GIT_DIR" clean -fdq
+git -C "$RC_GIT_DIR" rev-parse HEAD`, timeoutSec: 900, env: {
+        RC_GIT_URL: process.env.RC_GIT_URL,
+        RC_GIT_REF: process.env.RC_GIT_REF,
+        RC_GIT_DIR: process.env.RC_GIT_DIR,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_TERMINAL_PROMPT: "0",
+      }}'
+  )"
+  result="$(operate "$file" run)" || return 1
+  code="$(json 'v.exitCode' <<<"$result")"
+  if [ "$code" != 0 ]; then
+    json 'v.stderr' <<<"$result" >&2
+    return 1
+  fi
+  head="$(json 'v.stdout.trim().split("\n").filter(Boolean).at(-1)' <<<"$result")"
+  log "checkout at $head"
 }
 
 # upload <local file> <format> <dest>: sends a file in pieces.
@@ -210,7 +257,7 @@ else
 fi
 
 # ---- checkout at base, with the changes ---------------------------------------
-operate "$(args "{url: '$remote', ref: '$base', dir: 'repo'}")" git_sync >/dev/null
+sync_checkout "$remote" "$base" repo
 run_shell 60 "mkdir -p remote-check" >/dev/null
 upload "$work/changes.diff" file remote-check/changes.diff
 upload "$work/untracked.tar.gz" tar.gz repo

@@ -3,9 +3,44 @@ package sessions
 import (
 	"context"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// TurnInitiator is the session whose message started a session's current
+// turn. The input records the common case. A merge of held inbox messages
+// names its first sender as sentBySessionId; if an older record lacks that
+// field, delivered_input_id finds the message that formed the turn. Empty
+// means the person started the turn.
+func (s *Service) TurnInitiator(ctx context.Context, session store.AgentSession) (string, error) {
+	if sender := strings.TrimSpace(session.Input.SentBySessionID); sender != "" {
+		return sender, nil
+	}
+	if session.Input.ID == "" {
+		return "", nil
+	}
+	since := time.Now().Add(-24 * time.Hour)
+	if started, err := time.Parse(time.RFC3339Nano, session.Input.At); err == nil {
+		since = started.Add(-time.Hour)
+	}
+	items, err := s.store.SessionInboxItems(ctx, session.ID, since, 200)
+	if err != nil {
+		return "", err
+	}
+	var sender string
+	var earliest time.Time
+	for _, item := range items {
+		if item.DeliveredAs != "turn" || item.DeliveredInputID != session.Input.ID || item.SenderSessionID == "" {
+			continue
+		}
+		if sender == "" || item.CreatedAt.Before(earliest) {
+			sender, earliest = item.SenderSessionID, item.CreatedAt
+		}
+	}
+	return sender, nil
+}
 
 // maxWaitingChildLevels is the deepest sub-session edge counted for a
 // parent. Foundry caps session nesting at four levels.

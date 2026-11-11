@@ -37,12 +37,13 @@ components:
         source:
           description:
             '`source` is where it installs from: "" (a GitHub release download), "npm" (the npm
-            package Package at Version) or "uv" (the Python package Package at Version, through
-            uv).'
+            package Package at Version), "uv" (the Python package Package at Version, through
+            uv) or "repository" (files at Path in the bundle repository at commit Version).'
           type: string
           enum:
             - npm
             - uv
+            - repository
           x-go-type: string
         package:
           type: string
@@ -52,6 +53,21 @@ components:
             that registry, or "device" each device''s own npm settings (its npmrc and scoped
             registries).'
           type: string
+        repository:
+          description:
+            For a repository tool, the upstream git repository. Version is the commit the bundle
+            recorded, so the tool and Skills are always from one upstream revision.
+          type: string
+        path:
+          description: The folder in the repository holding the tool's files.
+          type: string
+        bins:
+          description:
+            Commands to expose, mapped to files relative to Path. The bundle tool Name must be one
+            of them.
+          type: object
+          additionalProperties:
+            type: string
         setup:
           description:
             "`setup` is a step the tool needs after installing (e.g. downloading its browser), run

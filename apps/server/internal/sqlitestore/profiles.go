@@ -14,7 +14,7 @@ import (
 )
 
 // profileColumns lists the projected columns in scanProfile's order.
-const profileColumns = `id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
+const profileColumns = `id, runtime, label, auth_mode, connection_type, base_url, model, models, model_prices, context_windows, prompt_prefix,
 	claude_effort, claude_permission_mode,
 	codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed, codex_transport,
 	owner_user_id, updated_at`
@@ -35,6 +35,7 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 			base_url TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
 			models TEXT NOT NULL DEFAULT '[]',
+			model_prices TEXT NOT NULL DEFAULT '{}',
 			prompt_prefix TEXT NOT NULL DEFAULT '',
 			claude_effort TEXT NOT NULL DEFAULT '',
 			claude_permission_mode TEXT NOT NULL DEFAULT '',
@@ -59,6 +60,18 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate sqlite profiles: %w", err)
+		}
+	}
+	var pricesPresent int
+	if err := s.conn().QueryRowContext(ctx,
+		`SELECT count(*) FROM pragma_table_info('profiles') WHERE name = 'model_prices'`).
+		Scan(&pricesPresent); err != nil {
+		return fmt.Errorf("migrate sqlite profiles: %w", err)
+	}
+	if pricesPresent == 0 {
+		if _, err := s.conn().ExecContext(ctx,
+			`ALTER TABLE profiles ADD COLUMN model_prices TEXT NOT NULL DEFAULT '{}'`); err != nil {
 			return fmt.Errorf("migrate sqlite profiles: %w", err)
 		}
 	}
@@ -131,11 +144,11 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 		}
 		_, err := tx.conn().ExecContext(ctx, `
 			INSERT INTO profiles (
-				id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
+				id, runtime, label, auth_mode, connection_type, base_url, model, models, model_prices, context_windows, prompt_prefix,
 				claude_effort, claude_permission_mode,
 				codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed, codex_transport,
 				owner_user_id, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				runtime = excluded.runtime,
 				label = excluded.label,
@@ -144,6 +157,7 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 				base_url = excluded.base_url,
 				model = excluded.model,
 				models = excluded.models,
+				model_prices = excluded.model_prices,
 				context_windows = excluded.context_windows,
 				prompt_prefix = excluded.prompt_prefix,
 				claude_effort = excluded.claude_effort,
@@ -154,7 +168,8 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 				codex_speed = excluded.codex_speed,
 				codex_transport = excluded.codex_transport,
 				updated_at = excluded.updated_at`,
-			id, input.Runtime, input.Label, input.AuthMode, input.ConnectionType, input.BaseURL, input.Model, encodeModelList(input.Models), encodeContextWindows(input.ContextWindows), input.PromptPrefix,
+			id, input.Runtime, input.Label, input.AuthMode, input.ConnectionType, input.BaseURL, input.Model,
+			encodeModelList(input.Models), encodeModelPrices(input.ModelPrices), encodeContextWindows(input.ContextWindows), input.PromptPrefix,
 			input.ClaudeEffort, input.ClaudePermissionMode,
 			input.CodexReasoningEffort, input.CodexSandboxMode, input.CodexApprovalPolicy, input.CodexSpeed, input.CodexTransport,
 			input.OwnerUserID, now, now)
@@ -312,6 +327,28 @@ func encodeContextWindows(windows map[string]int64) string {
 	return string(encoded)
 }
 
+func encodeModelPrices(prices map[string]store.ProfileModelPrice) string {
+	cleaned := map[string]store.ProfileModelPrice{}
+	for model, price := range prices {
+		if strings.TrimSpace(model) != "" {
+			cleaned[strings.TrimSpace(model)] = price
+		}
+	}
+	encoded, err := json.Marshal(cleaned)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+func decodeModelPrices(raw string) map[string]store.ProfileModelPrice {
+	var prices map[string]store.ProfileModelPrice
+	if err := json.Unmarshal([]byte(raw), &prices); err != nil || len(prices) == 0 {
+		return nil
+	}
+	return prices
+}
+
 func decodeContextWindows(raw string) map[string]int64 {
 	var windows map[string]int64
 	if err := json.Unmarshal([]byte(raw), &windows); err != nil || len(windows) == 0 {
@@ -333,7 +370,7 @@ func decodeModelList(raw string) []string {
 
 func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinition, error) {
 	var profile store.ProfileDefinition
-	var models, contextWindows, codexTransport string
+	var models, modelPrices, contextWindows, codexTransport string
 	err := row.Scan(
 		&profile.ID,
 		&profile.Runtime,
@@ -343,6 +380,7 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 		&profile.BaseURL,
 		&profile.Model,
 		&models,
+		&modelPrices,
 		&contextWindows,
 		&profile.PromptPrefix,
 		&profile.ClaudeEffort,
@@ -359,6 +397,7 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 		return store.ProfileDefinition{}, err
 	}
 	profile.Models = decodeModelList(models)
+	profile.ModelPrices = decodeModelPrices(modelPrices)
 	profile.ContextWindows = decodeContextWindows(contextWindows)
 	profile.CodexTransport = codexTransportMode(profile, codexTransport)
 	return profile, nil

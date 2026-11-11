@@ -1,9 +1,10 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, PackageOpen } from "lucide-react";
 import { ToastFeedback } from "../../components/ui/toast";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import type {
+  ConnectorPackageView,
   DeviceProjection,
   DeviceTool,
   SkillRepository,
@@ -16,6 +17,7 @@ import {
   rollbackSkillBundle,
 } from "../../api";
 import { Badge } from "../../components/ui/badge";
+import { AppLink } from "../../components/ui/app-link";
 import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
 import { BundleToolStatus } from "./bundle-tool-status";
@@ -59,6 +61,7 @@ import {
   RepositoryName,
   RepositoryRow,
 } from "./repository-row";
+import { connectorsHref } from "../../lib/in-app-navigation";
 
 /** Earlier versions offered to roll back to, newest first. */
 const rollbackChoices = 5;
@@ -179,6 +182,9 @@ export function SkillBundleRow({
   onToggleDefault,
   refresh,
   run,
+  packageConnector,
+  requested = false,
+  requestedSkillId,
 }: {
   repo: SkillRepository;
   canManage: boolean;
@@ -195,12 +201,17 @@ export function SkillBundleRow({
   /** Reloads the library after an install, without busying the card. */
   refresh: () => Promise<void>;
   run: (action: () => Promise<unknown>) => void;
+  /** The person-level package whose followed bundle this is. */
+  packageConnector?: ConnectorPackageView;
+  /** A link from that connector asked the library to show this bundle. */
+  requested?: boolean;
+  requestedSkillId?: string;
 }) {
   const { t } = useTranslation(["skills", "common"]);
   const current = repo.skills.filter((skill) => !skill.retired);
   const latest = latestVersionSummary(repo);
   const [changingSource, setChangingSource] = useState(false);
-  const [showingSkills, setShowingSkills] = useState(false);
+  const [showingSkills, setShowingSkills] = useState(requested);
   const skillsId = useId();
   const defaultId = useId();
   const waiting = waitingLabel(repo);
@@ -208,8 +219,25 @@ export function SkillBundleRow({
   const status = bundleStatus(repo, checkError);
   const namer = namerFor(devices);
   const tools = repo.tools ?? [];
+  useEffect(() => {
+    if (!requested) return;
+    setShowingSkills(true);
+    const id = `skill-bundle-${repo.id}`;
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView?.({ block: "center" });
+    });
+  }, [repo.id, requested, requestedSkillId]);
+  const connectorName = packageConnector
+    ? i18n.language.startsWith("zh")
+      ? (packageConnector.connector.labels?.["zh-CN"] ??
+        packageConnector.connector.label)
+      : packageConnector.connector.label
+    : "";
   return (
-    <RepositoryRow>
+    <RepositoryRow
+      className={requested ? "ring-2 ring-brand/35" : undefined}
+      id={`skill-bundle-${repo.id}`}
+    >
       <RepositoryCopy className="gap-1.5">
         <BundleTitle>
           <RepositoryName href={repositoryHref(repo.url, repo)}>
@@ -239,6 +267,21 @@ export function SkillBundleRow({
             .filter(Boolean)
             .join(" · ")}
         </SkillNote>
+        {packageConnector ? (
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+            <PackageOpen
+              aria-hidden="true"
+              className="flex-none text-ink-faint"
+              size={14}
+            />
+            <AppLink
+              className="font-medium text-ink underline underline-offset-2 hover:text-brand"
+              href={connectorsHref(packageConnector.connector.kind)}
+            >
+              {t("library.bundle.connector", { name: connectorName })}
+            </AppLink>
+          </div>
+        ) : null}
         {repo.description ? (
           <RepositoryDescription title={repo.description}>
             {repo.description}
@@ -329,12 +372,35 @@ export function SkillBundleRow({
         </div>
         {tools.length ? <BundlePolicyHint repo={repo} /> : null}
         {showingSkills ? (
-          <p
-            className="m-0 text-xs text-ink-muted [overflow-wrap:anywhere]"
-            id={skillsId}
-          >
-            {current.map((skill) => skill.name ?? skill.dir).join(", ")}
-          </p>
+          <div className="grid min-w-0 gap-1" id={skillsId}>
+            <ul className="m-0 grid min-w-0 list-none gap-1 p-0">
+              {current.map((skill) => {
+                const linked = skill.skillId === requestedSkillId;
+                return (
+                  <li
+                    className="flex min-w-0 flex-wrap items-center gap-2 text-xs"
+                    key={skill.skillId}
+                  >
+                    <span
+                      aria-current={linked ? "location" : undefined}
+                      className={
+                        linked
+                          ? "font-semibold text-ink"
+                          : "text-ink-muted [overflow-wrap:anywhere]"
+                      }
+                    >
+                      {skill.name ?? skill.dir}
+                    </span>
+                    {linked ? (
+                      <Badge dot={false} size="xs" tone="slate">
+                        {t("library.bundle.linkedSkill")}
+                      </Badge>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ) : null}
         {tools.length ? (
           <BundleUpdateNotice

@@ -109,6 +109,9 @@ func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gat
 
 	detail := &CloudflareWriteDetail{WorkspaceID: lease.Session.WorkspaceID, Method: method, Path: cloudflareWriteAuditPath(path), Result: "refused"}
 	need.Detail = detail
+	need.Write = true
+	need.Risk = "dns_change"
+	need.RiskSummary = "The assistant wants to change DNS in Cloudflare (" + method + " " + cloudflareWriteAuditPath(path) + ")."
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, maxCloudflareBody))
 	call.body = raw
 	// A refused attempt names the record it was for, too.
@@ -168,6 +171,12 @@ func (g *CloudflareGateway) Refuse(w http.ResponseWriter, r *http.Request, d *ga
 	case gateway.ReasonAccessLevel:
 		refusal.Reason = RefusalAccessLevel
 		refusal.Message = fmt.Sprintf("%s %s needs the %s access level; this workspace's Cloudflare binding has %s access, and %s", method, cloudflareWriteAuditPath(path), d.Needed, d.Current, cloudflareAccessWhere)
+	case gateway.ReasonConnectorOff:
+		refusal.Message = "the person did not give the assistant access to this Cloudflare account; they change that in Assistant settings → Connectors"
+	case gateway.ReasonConnectorRead:
+		refusal.Message = "the assistant has read-only access to this Cloudflare account; this change needs write access in Assistant settings → Connectors"
+	case gateway.ReasonNeedsConfirmation:
+		refusal.Message = d.Summary + " Accept proposal " + d.ProposalID + " before repeating this exact request."
 	case gateway.ReasonScopeMissing:
 		refusal.Reason, refusal.Needed = RefusalScopeMissing, d.Current
 		refusal.Message = fmt.Sprintf("this workspace has %s access, but the Cloudflare authorization no longer includes %s; the account owner re-authorizes in Connectors → Cloudflare", d.Current, strings.Join(d.Missing, ", "))

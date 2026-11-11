@@ -31,6 +31,7 @@ import { ProfilesFeature } from "../features/profiles";
 import { ResourcesFeature } from "../features/resources";
 import { SkillLibraryFeature } from "../features/skill-library";
 import { FoundrySkillPage } from "../features/skills";
+import { UsageFeature } from "../features/usage";
 import {
   WorkspacesFeature,
   type WorkspacesFeatureEvent,
@@ -233,6 +234,15 @@ export function ActiveView({
           ownedDeviceIds={ownedDeviceCandidates(data.devices).map(
             (device) => device.id,
           )}
+        />
+      );
+    case "usage":
+      return (
+        <UsageFeature
+          currentUser={account.user}
+          devices={data.devices}
+          isAdmin={account.user?.role === "admin"}
+          workspaces={data.workspaces}
         />
       );
     case "library":

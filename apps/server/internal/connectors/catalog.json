@@ -121,26 +121,7 @@
             "en": "Sign in on the AWS page in this browser, then paste the code it shows.",
             "zh-CN": "在这个浏览器里的 AWS 页面上登录，再把页面显示的授权码粘贴回来。"
           },
-          "fields": [
-            {
-              "id": "region",
-              "label": "Default AWS Region",
-              "labels": {
-                "en": "Default AWS Region",
-                "zh-CN": "默认 AWS 区域"
-              },
-              "help": "Signing in covers every Region your account allows; commands that name none use this one.",
-              "helps": {
-                "en": "Signing in covers every Region your account allows; commands that name none use this one.",
-                "zh-CN": "登录后可用账号允许的所有区域；命令没指定区域时用这个。"
-              },
-              "type": "text",
-              "required": true,
-              "default": "us-east-1",
-              "placeholder": "us-east-1",
-              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
-            }
-          ]
+          "fields": []
         },
         {
           "id": "sso",
@@ -188,19 +169,6 @@
               "type": "text",
               "required": true,
               "placeholder": "ReadOnlyAccess"
-            },
-            {
-              "id": "region",
-              "label": "Default AWS Region",
-              "labels": {
-                "en": "Default AWS Region",
-                "zh-CN": "默认 AWS 区域"
-              },
-              "type": "text",
-              "required": true,
-              "default": "us-east-1",
-              "placeholder": "us-east-1",
-              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
             },
             {
               "id": "ssoRegion",
@@ -260,6 +228,10 @@
     },
     "holding": "device_held",
     "adapter": "github",
+    "repositoryAccess": {
+      "args": ["api", "repos/{repository}", "--silent"],
+      "repositoryFormat": "github"
+    },
     "authorizationGroups": [
       {
         "id": "permissions",

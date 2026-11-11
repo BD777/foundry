@@ -113,6 +113,12 @@ export const foundryCommands: Record<
       flags: {
         "--session": flag("sessionId"),
         "--workspace": flag("workspaceId"),
+        "--item-session": flag("itemSessionId"),
+        "--status": flag("status", "list"),
+        "--detail": flag("detail", "boolean"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+        "--cursor": flag("cursor"),
       },
     },
     show: {
@@ -537,11 +543,43 @@ export const foundryCommands: Record<
         "--code": flag("code"),
       },
     },
+    notes: {
+      tool: "get_model_notes",
+      flags: {
+        "--kind": flag("providerKind"),
+        "--provider": flag("providerId"),
+        "--runtime": flag("runtime"),
+        "--model": flag("model"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
+    },
+    note: {
+      tool: "append_model_note",
+      flags: {
+        "--kind": flag("providerKind"),
+        "--provider": flag("providerId"),
+        "--runtime": flag("runtime"),
+        "--model": flag("model"),
+        "--body": flag("body"),
+        "--body-file": flag("body", "file"),
+      },
+    },
+    "execution-default": {
+      tool: "get_execution_default",
+      flags: { "--workspace": flag("workspaceId") },
+    },
   },
   model: {
     list: {
       tool: "list_models",
-      flags: { "--profile": flag("profileId"), "--device": flag("deviceId") },
+      flags: {
+        "--profile": flag("profileId"),
+        "--device": flag("deviceId"),
+        "--query": flag("query"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
     },
   },
   library: {

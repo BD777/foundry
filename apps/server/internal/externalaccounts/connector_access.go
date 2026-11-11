@@ -5,68 +5,49 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// ConnectorAccessStore resolves the workspace and Personal Agent a session
-// belongs to.
+// ConnectorAccessStore resolves the permission package a session belongs to.
 type ConnectorAccessStore interface {
-	GetWorkspace(context.Context, string) (store.WorkspaceProjection, error)
-	PersonalAgentForWorkspace(context.Context, string) (store.PersonalAgent, error)
+	permission.Store
 }
 
-// Policy is the Personal Agent's connector access. A zero Policy applies
-// the ordinary workspace-binding rule.
+// Policy is the assistant permission package applied to connector access. A
+// zero Policy applies the ordinary workspace-binding rule.
 type Policy struct {
-	personalAgent bool
-	disabled      map[string]bool
+	access permission.Access
 }
 
-// ResolvePolicy reads the policy for a session's workspace. Another
-// person's session in the assistant's workspace never receives it.
-func ResolvePolicy(ctx context.Context, st ConnectorAccessStore, workspaceID, sessionOwner string) (Policy, error) {
-	workspace, err := st.GetWorkspace(ctx, workspaceID)
+// ResolvePolicy reads the assistant's package for this session. Every other
+// session keeps the ordinary workspace-binding rule.
+func ResolvePolicy(ctx context.Context, st ConnectorAccessStore, session store.AgentSession) (Policy, error) {
+	access, err := permission.Resolve(ctx, st, session)
 	if errors.Is(err, store.ErrNotFound) {
 		return Policy{}, nil
 	}
-	if err != nil {
-		return Policy{}, err
-	}
-	if workspace.Kind != store.WorkspaceKindPersonalAgent {
-		return Policy{}, nil
-	}
-	agent, err := st.PersonalAgentForWorkspace(ctx, workspaceID)
-	if errors.Is(err, store.ErrNotFound) {
-		return Policy{}, nil
-	}
-	if err != nil {
-		return Policy{}, err
-	}
-	if agent.UserID == "" || agent.UserID != sessionOwner {
-		return Policy{}, nil
-	}
-	disabled := make(map[string]bool, len(agent.ConnectorOptOut))
-	for _, accountID := range agent.ConnectorOptOut {
-		if accountID = strings.TrimSpace(accountID); accountID != "" {
-			disabled[accountID] = true
-		}
-	}
-	return Policy{personalAgent: true, disabled: disabled}, nil
+	return Policy{access: access}, err
 }
 
 // PersonalAgent reports whether this is the session owner's Personal Agent.
-func (p Policy) PersonalAgent() bool { return p.personalAgent }
+func (p Policy) PersonalAgent() bool { return p.access.Applicable }
 
 // Allows reports whether the assistant may use accountID.
 func (p Policy) Allows(accountID string) bool {
-	return p.personalAgent && accountID != "" && !p.disabled[accountID]
+	return !p.access.Applicable || (accountID != "" && p.access.AllowsConnector(accountID))
+}
+
+// Write reports whether the assistant may change things through accountID.
+func (p Policy) Write(accountID string) bool {
+	return !p.access.Applicable || p.access.AllowsConnectorWrite(accountID)
 }
 
 // Bound is the one rule for whether a connector account counts as bound:
 // an ordinary workspace binding, or an allowed account in the person's
 // Assistant workspace.
 func (p Policy) Bound(accountID string, boundWorkspaces []string, workspaceID string) bool {
-	if p.personalAgent {
+	if p.access.Applicable {
 		return p.Allows(accountID)
 	}
 	for _, bound := range boundWorkspaces {

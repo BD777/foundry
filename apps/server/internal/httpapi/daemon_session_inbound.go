@@ -15,7 +15,7 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 		return err
 	}
 	existing, existingErr := c.hub.store.GetAgentSessionSummary(ctx, payload.SessionID)
-	if existingErr == nil && staleSessionInput(existing, payload.InputID) {
+	if existingErr == nil && staleSessionInput(existing, payload.InputID, payload.DispatchID) {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
@@ -30,6 +30,9 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 		c.setActiveSession(payload.SessionID, true)
 		c.clearDispatchedSession(payload.SessionID)
 		c.hub.sessions.Changed(ctx, sessions.Started, session)
+		if c.hub.sessionRetryStarted != nil {
+			c.hub.sessionRetryStarted(ctx, session)
+		}
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	}
 	return err
@@ -143,7 +146,7 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		return err
 	}
 	existing, existingErr := c.hub.store.GetAgentSessionRecord(ctx, payload.SessionID)
-	if existingErr == nil && staleSessionInput(existing, payload.InputID) {
+	if existingErr == nil && staleSessionInput(existing, payload.InputID, payload.DispatchID) {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
@@ -176,6 +179,18 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.hub.sessions.EndReported(ctx, existing)
 		return nil
 	}
+	if payload.Error != "" && existingErr == nil && c.hub.retrySessionFailure != nil {
+		scheduled, err := c.hub.retrySessionFailure(ctx, existing, payload.Error)
+		if err != nil {
+			return err
+		}
+		if scheduled {
+			c.setActiveSession(payload.SessionID, false)
+			c.clearDispatchedSession(payload.SessionID)
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			return nil
+		}
+	}
 	// A new input can be queued after the read above. Fence the actual write,
 	// not just this handler's initial snapshot, before accepting a replay.
 	session, applied, err := c.hub.store.SettleAgentSessionInput(ctx, payload.SessionID, payload.InputID, payload.Response, payload.NativeSessionID, payload.Error)
@@ -197,6 +212,9 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 			c.hub.sessions.Recorded(ctx, session.WorkspaceID, event)
 		}
 		c.hub.sessions.Changed(ctx, sessions.Completed, session)
+		if c.hub.sessionRetryDone != nil {
+			c.hub.sessionRetryDone(ctx, session, session.Status == "failed")
+		}
 		c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		c.hub.sessions.EndReported(ctx, session)
@@ -221,8 +239,9 @@ func (c *daemonConnection) onSessionTurn(ctx context.Context, envelope wsEnvelop
 
 // staleSessionInput reports a lifecycle message about an input the session
 // has already moved past.
-func staleSessionInput(session store.AgentSession, inputID string) bool {
-	return inputID != "" && session.Input.ID != "" && inputID != session.Input.ID
+func staleSessionInput(session store.AgentSession, inputID, dispatchID string) bool {
+	return (inputID != "" && session.Input.ID != "" && inputID != session.Input.ID) ||
+		(dispatchID != "" && session.DispatchID != "" && dispatchID != session.DispatchID)
 }
 
 // sessionWorkspace resolves (and remembers) the workspace of a session whose

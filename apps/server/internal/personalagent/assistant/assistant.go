@@ -330,6 +330,10 @@ func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string,
 		s.tell(ctx, proposal.SessionID, say("declined", proposal.Summary))
 		return proposal, nil
 	}
+	if proposal.Kind == store.PersonalAgentProposalConnectorWrite {
+		s.tell(ctx, proposal.SessionID, say("connectorApproved", proposal.Summary))
+		return proposal, nil
+	}
 	result, applyErr := s.applyProposal(ctx, proposal)
 	final, outcome := store.PersonalAgentProposalApplied, store.PersonalAgentOutcomeApplied
 	errText := ""
@@ -355,6 +359,17 @@ func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string,
 	return proposal, nil
 }
 
+// ProposalCreated and ProposalChanged expose the same card notifications the
+// assistant's own write tools use to other server modules, such as connector
+// risk confirmations.
+func (s *Service) ProposalCreated(proposal store.PersonalAgentProposal) {
+	s.channel.PersonalAgentProposalCreated(proposal)
+}
+
+func (s *Service) ProposalChanged(proposal store.PersonalAgentProposal) {
+	s.channel.PersonalAgentProposalChanged(proposal)
+}
+
 // proposalNoticeTexts tell the assistant the person's answer, [Chinese,
 // English]: its conversation shows them too.
 var proposalNoticeTexts = map[string][2]string{
@@ -363,6 +378,8 @@ var proposalNoticeTexts = map[string][2]string{
 	"failed": {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
 	"applied": {"本人同意了，已经做好：%s\n%s\n接着做你刚才在做的事。",
 		"The person accepted and it is done: %s\n%s\nCarry on with what you were doing."},
+	"connectorApproved": {"本人同意了：%s 现在重复刚才那个完全相同的请求一次；只批准了这一次。",
+		"The person accepted: %s Repeat that exact connector request once now; this approval covers one call."},
 }
 
 // proposalNoticeSayer renders proposalNoticeTexts in the person's language.

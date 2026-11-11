@@ -9,9 +9,12 @@ import (
 )
 
 type recorderStore struct {
-	sessions map[string]store.AgentSession
-	model    string
-	records  []store.UsageRecord
+	sessions       map[string]store.AgentSession
+	profiles       map[string]store.ProfileDefinition
+	model          string
+	records        []store.UsageRecord
+	repriceTurns   []store.UsageTurn
+	repriceUpdates []store.UsageTurn
 }
 
 func (s *recorderStore) GetAgentSessionSummary(_ context.Context, id string) (store.AgentSession, error) {
@@ -20,6 +23,14 @@ func (s *recorderStore) GetAgentSessionSummary(_ context.Context, id string) (st
 		return store.AgentSession{}, store.ErrNotFound
 	}
 	return session, nil
+}
+
+func (s *recorderStore) GetProfile(_ context.Context, id string) (store.ProfileDefinition, error) {
+	profile, ok := s.profiles[id]
+	if !ok {
+		return store.ProfileDefinition{}, store.ErrProfileNotFound
+	}
+	return profile, nil
 }
 
 func (s *recorderStore) AgentSessionEventWindow(context.Context, string, string, int) ([]store.AgentSessionEvent, string, error) {
@@ -69,6 +80,24 @@ func (s *recorderStore) UsageSessionEvents(context.Context, string) ([]store.Age
 
 func (s *recorderStore) SaveUsageBackfillState(context.Context, string, bool) error {
 	return nil
+}
+
+func (s *recorderStore) UsageTurnsForReprice(context.Context, store.UsageRepriceCursor, int) ([]store.UsageTurn, store.UsageRepriceCursor, error) {
+	turns := s.repriceTurns
+	s.repriceTurns = nil
+	cursor := store.UsageRepriceCursor{}
+	if len(turns) > 0 {
+		last := turns[len(turns)-1]
+		cursor = store.UsageRepriceCursor{StartedAt: last.StartedAt, SessionID: last.SessionID, InputID: last.InputID}
+	}
+	return turns, cursor, nil
+}
+
+func (s *recorderStore) UpdateUsageCost(_ context.Context, sessionID, inputID string, cost float64, source string) (bool, error) {
+	s.repriceUpdates = append(s.repriceUpdates, store.UsageTurn{
+		SessionID: sessionID, InputID: inputID, CostUSD: cost, CostSource: source,
+	})
+	return true, nil
 }
 
 func (s *recorderStore) UsageTurnAggregates(context.Context, store.UsageTurnAggregateQuery) ([]store.UsageTurnAggregate, error) {

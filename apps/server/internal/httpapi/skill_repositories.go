@@ -125,6 +125,9 @@ func (s *Server) handleAddSkillRepository(w http.ResponseWriter, r *http.Request
 	if err == nil && len(input.Tools) > 0 && input.Mode != "bundle" {
 		err = errors.New("only a bundle installs tools; follow the repository as a bundle")
 	}
+	if err == nil && slices.ContainsFunc(input.Tools, func(tool store.SkillToolDeclaration) bool { return tool.Source == "repository" }) && !strings.HasPrefix(remote, "https://github.com/") {
+		err = errors.New("repository tools require a GitHub HTTPS bundle repository")
+	}
 	if err == nil && input.Registry != "" && !skillrepo.IsNPM(remote) && !slices.ContainsFunc(input.Tools, func(tool store.SkillToolDeclaration) bool { return tool.Source == "npm" }) {
 		err = errors.New("only an npm package or a bundle with npm tools uses an npm registry")
 	}

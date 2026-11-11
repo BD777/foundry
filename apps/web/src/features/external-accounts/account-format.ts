@@ -44,7 +44,9 @@ export function accountPlace(
 
 /** A provider's name in the interface ("feishu" → "Feishu"). */
 export function providerLabel(kind: string): string {
-  return kind === "feishu" ? i18n.t("externalAccounts:providers.feishu") : kind;
+  return kind === "feishu"
+    ? i18n.t(`externalAccounts:providers.${kind}`)
+    : kind;
 }
 
 /** Sessions get a token only from a ready or expiring account. */

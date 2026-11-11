@@ -191,6 +191,7 @@ func (r *Recorder) backfillSession(ctx context.Context, session store.AgentSessi
 		if turn == nil && len(requests) == 0 {
 			continue
 		}
+		r.applyCost(ctx, turn)
 		if err := r.store.RecordUsage(ctx, store.UsageRecord{Turn: turn, Requests: requests}); err != nil {
 			return err
 		}

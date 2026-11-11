@@ -6,6 +6,17 @@
 
 import type { WorkspaceAccessRole, WorkspaceKind } from "./workspace.js";
 
+export type {
+  ConnectorAccessLevel,
+  ConnectorAccountPermission,
+  PermissionDeviceResources,
+  PermissionListRule,
+  PermissionPackage,
+  PersonalAgentConnector,
+  PersonalAgentConnectorsView,
+  SetPersonalAgentConnectorLevelsInput,
+} from "./contract.gen.js";
+
 /** "stopped": the stop switch was pressed; nothing runs until resumed. */
 export type PersonalAgentState = "active" | "stopped";
 
@@ -63,6 +74,8 @@ export interface PersonalAgent {
   homeDeviceId: string;
   state: PersonalAgentState;
   settings: PersonalAgentSettings;
+  /** The permission package every access decision for this assistant reads. */
+  permissionPackageId: string;
   /** The version of the embedded system prompt its sessions start with. */
   promptVersion: string;
   createdAt: string;
@@ -75,11 +88,6 @@ export interface PersonalAgent {
    * conversations are there.
    */
   formerWorkspaceIds?: string[];
-  /**
-   * Connector accounts the assistant may not use. Absent means every
-   * connector account the person owns is allowed.
-   */
-  connectorOptOut?: string[];
 }
 
 /**
@@ -243,8 +251,12 @@ export interface PersonalAgentMemoryInput {
   inferred?: boolean;
 }
 
-/** A proposal's kind: a managed action, or loosening the rules. */
-export type PersonalAgentProposalKind = PersonalAgentAction | "relax_rules";
+/**
+ * A proposal's kind: a managed action, loosening the rules, or one risk
+ * write through a connector.
+ */
+export type PersonalAgentProposalKind =
+  PersonalAgentAction | "relax_rules" | "connector_write";
 
 export type PersonalAgentProposalStatus =
   "pending" | "accepted" | "declined" | "expired" | "applied" | "failed";

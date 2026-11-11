@@ -9,7 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
@@ -24,14 +24,14 @@ import {
   unpackArchive,
 } from "../dist/resources/index.js";
 
-function harness({ allowed = true, workspaces = [] } = {}) {
+function harness({ allowed = true, workspaces = [], env = process.env } = {}) {
   const root = mkdtempSync(join(tmpdir(), "compute-"));
   const settings = { allowRemoteCommands: allowed };
   const provider = createComputeProvider({
     root: join(root, "compute"),
     settings: () => settings,
     workspacePaths: () => workspaces,
-    env: () => process.env,
+    env: () => env,
   });
   const operations = new ResourceOperations({
     providers: new ProviderRegistry([provider]),
@@ -377,6 +377,31 @@ test("git_sync takes https remotes without credentials only", async () => {
     ).errorCode,
     "invalid_args",
   );
+});
+
+test("git_sync ignores the device's global Git configuration", async () => {
+  const root = mkdtempSync(join(tmpdir(), "compute-git-env-"));
+  const bin = join(root, "bin");
+  const receipt = join(root, "calls");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh
+printf '%s|%s|%s\\n' "$GIT_CONFIG_GLOBAL" "$GIT_CONFIG_NOSYSTEM" "$GIT_TERMINAL_PROMPT" >> "$RECEIPT"
+case "$*" in *"rev-parse HEAD") echo synthetic-head ;; esac
+`,
+    { mode: 0o755 },
+  );
+  const { operate } = harness({
+    env: { PATH: bin, RECEIPT: receipt },
+  });
+  const result = await operate("git_sync", {
+    url: "https://example.com/r.git",
+  });
+  assert.equal(result.ok, true, result.error);
+  const calls = readFileSync(receipt, "utf8").trim().split("\n");
+  assert.ok(calls.length >= 4);
+  assert.deepEqual(new Set(calls), new Set([`${devNull}|1|0`]));
 });
 
 /** A tar entry: a 512-byte ustar header and its padded body. */

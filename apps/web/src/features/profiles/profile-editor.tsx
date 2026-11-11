@@ -16,9 +16,11 @@ import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { RuntimeDefaultFields } from "../../components/agent-runtime/runtime-default-fields";
 import { ContextWindowFields } from "./context-window-fields";
+import { ModelPriceFields } from "./model-price-fields";
 import { codexTransportOptions, codexTransportStatus } from "./codex-transport";
 import {
   invalidContextWindows,
+  invalidModelPrices,
   runtimeOptions,
   type ProfileDraft,
   type ProfileRuntime,
@@ -91,6 +93,7 @@ export function ProfileEditor({
       ? onReadCatalogWindows
       : undefined;
   const windowsInvalid = invalidContextWindows(draft).length > 0;
+  const pricesInvalid = invalidModelPrices(draft).length > 0;
   // What the server will save, by the same rules: a URL in the other
   // runtime's form or with a request path is corrected, an unusable one is
   // refused before Save.
@@ -278,6 +281,15 @@ export function ProfileEditor({
         </ProfileField>
       </div>
 
+      <details className={defaultsClass}>
+        <summary className={summaryClass}>{t("modelPrices.title")}</summary>
+        <ModelPriceFields
+          busy={busy}
+          draft={draft}
+          onChange={(modelPrices) => onChange({ modelPrices })}
+        />
+      </details>
+
       <details
         className={defaultsClass}
         onToggle={(event) => {
@@ -329,6 +341,7 @@ export function ProfileEditor({
           disabled={
             busy ||
             windowsInvalid ||
+            pricesInvalid ||
             !!endpointError ||
             !draft.label.trim() ||
             !draft.baseUrl.trim()

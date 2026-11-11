@@ -23,6 +23,7 @@ type Store interface {
 	store.UsageStatsStore
 	store.SessionEventWindowStore
 	GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error)
+	GetProfile(ctx context.Context, id string) (store.ProfileDefinition, error)
 }
 
 // Recorder extracts usage facts from persisted session events and writes them
@@ -31,6 +32,7 @@ type Store interface {
 type Recorder struct {
 	store  Store
 	roleOf RoleResolver
+	prices *PriceCatalog
 	Now    func() time.Time
 }
 
@@ -39,7 +41,8 @@ type Recorder struct {
 type RoleResolver func(context.Context, store.AgentSession) string
 
 func New(st Store, roleOf RoleResolver) *Recorder {
-	return &Recorder{store: st, roleOf: roleOf, Now: time.Now}
+	prices, _ := newEmbeddedPriceCatalog()
+	return &Recorder{store: st, roleOf: roleOf, prices: prices, Now: time.Now}
 }
 
 // Record extracts turn and request usage from event. A failed or canceled
@@ -85,7 +88,61 @@ func (r *Recorder) Record(ctx context.Context, session store.AgentSession, event
 	if record.Turn == nil && len(record.Requests) == 0 {
 		return nil
 	}
+	r.applyCost(ctx, record.Turn)
 	return r.store.RecordUsage(ctx, record)
+}
+
+// RefreshPrices tries to replace the LiteLLM snapshot. A failed fetch or an
+// invalid document leaves the current catalog untouched.
+func (r *Recorder) RefreshPrices(ctx context.Context, source string) error {
+	if r == nil || r.prices == nil {
+		return errors.New("price catalog is unavailable")
+	}
+	return r.prices.Refresh(ctx, source)
+}
+
+// applyCost implements the recorded cost priority: reported, custom,
+// LiteLLM estimated, then unknown. Custom prices belong to the provider
+// profile that served the turn, never to a model name shared by every
+// provider.
+func (r *Recorder) applyCost(ctx context.Context, turn *store.UsageTurn) {
+	if r == nil || turn == nil || !turn.UsageReported || turn.CostSource == store.UsageCostReported {
+		return
+	}
+	tokens := usageTokens{
+		input:      turn.InputTokens,
+		cacheRead:  turn.CacheReadTokens,
+		cacheWrite: turn.CacheWriteTokens,
+		output:     turn.OutputTokens,
+	}
+	if tokens.empty() || strings.TrimSpace(turn.Model) == "" {
+		turn.CostUSD = 0
+		turn.CostSource = store.UsageCostUnknown
+		return
+	}
+	if turn.ProfileID != "" {
+		profile, err := r.store.GetProfile(ctx, turn.ProfileID)
+		if err == nil {
+			if price, ok := customModelPrice(profile.ModelPrices, turn.Model); ok {
+				if cost, ok := costForTokens(price, tokens); ok {
+					turn.CostUSD = cost
+					turn.CostSource = store.UsageCostCustom
+					return
+				}
+			}
+		}
+	}
+	if r.prices != nil {
+		if price, ok := r.prices.lookup(turn.Model); ok {
+			if cost, ok := costForTokens(price, tokens); ok {
+				turn.CostUSD = cost
+				turn.CostSource = store.UsageCostEstimated
+				return
+			}
+		}
+	}
+	turn.CostUSD = 0
+	turn.CostSource = store.UsageCostUnknown
 }
 
 // DeleteExpiredRequests applies the 90-day request detail retention.

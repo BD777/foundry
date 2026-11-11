@@ -6,6 +6,42 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for ConnectorServerHeldAccessLevel.
+const (
+	ConnectorServerHeldAccessLevelRead  ConnectorServerHeldAccessLevel = "read"
+	ConnectorServerHeldAccessLevelWrite ConnectorServerHeldAccessLevel = "write"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorServerHeldAccessLevel enum.
+func (e ConnectorServerHeldAccessLevel) Valid() bool {
+	switch e {
+	case ConnectorServerHeldAccessLevelRead:
+		return true
+	case ConnectorServerHeldAccessLevelWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectorServerHeldInstanceAccess.
+const (
+	ConnectorServerHeldInstanceAccessRead  ConnectorServerHeldInstanceAccess = "read"
+	ConnectorServerHeldInstanceAccessWrite ConnectorServerHeldInstanceAccess = "write"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorServerHeldInstanceAccess enum.
+func (e ConnectorServerHeldInstanceAccess) Valid() bool {
+	switch e {
+	case ConnectorServerHeldInstanceAccessRead:
+		return true
+	case ConnectorServerHeldInstanceAccessWrite:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorVersionCheckCommandResult.
 const (
 	ConnectorVersionCheckCommandResultRead    ConnectorVersionCheckCommandResult = "read"
@@ -95,6 +131,12 @@ type ConnectorAuthorizationState struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// ConnectorConfiguration Non-secret settings read from a device-held connector's active profile. It never holds a credential.
+type ConnectorConfiguration struct {
+	// Region The default Region the tool's active profile uses when a command names none.
+	Region string `json:"region,omitempty"`
+}
+
 // ConnectorDescriptor ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.
 type ConnectorDescriptor struct {
 	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
@@ -127,6 +169,21 @@ type ConnectorDescriptor struct {
 	// Extension Set for a connector an extension on the device provides.
 	Extension *ConnectorExtensionSource `json:"extension,omitempty"`
 
+	// RepositoryAccess This connector can check source-repository access with its own device-held login.
+	RepositoryAccess *ConnectorRepositoryAccess `json:"repositoryAccess,omitempty"`
+
+	// Package The upstream Skill bundle and CLI this connector ships with; it follows the same upstream revision and only joins sessions that receive this connector.
+	Package *ConnectorPackage `json:"package,omitempty"`
+
+	// Access The connector is visible only when this repository is readable through the named connector on at least one of the owner's devices.
+	Access *ConnectorSourceAccess `json:"access,omitempty"`
+
+	// AccessCheck The Worker's cached result for access.via; never authored in a manifest.
+	AccessCheck *ConnectorSourceAccessCheck `json:"accessCheck,omitempty"`
+
+	// RequirementsCheck The Worker's cached result for requires; used as a visibility gate until a connector can check the repository.
+	RequirementsCheck *ConnectorRequirementsCheck `json:"requirementsCheck,omitempty"`
+
 	// Setup ConnectorSetup is how to set an extension connector up on another device.
 	Setup    *ConnectorSetup        `json:"setup,omitempty"`
 	Requires []ConnectorRequirement `json:"requires,omitempty"`
@@ -136,6 +193,9 @@ type ConnectorDescriptor struct {
 
 	// IsolationEnv How a session that may not use the device's login is kept from it, with the tool's documented configuration: these variables are set for it.
 	IsolationEnv map[string]string `json:"isolationEnv,omitempty"`
+
+	// ServerHeld Pure-data server-held behavior. Only an extension connector may set it.
+	ServerHeld *ConnectorServerHeldSpec `json:"serverHeld,omitempty"`
 }
 
 // ConnectorExtensionRepository A folder of a git repository holding an extension (docs/connector-extensions.md). The device fetches it with its own git credentials (SSH keys, credential helpers such as GitHub CLI's).
@@ -156,6 +216,15 @@ type ConnectorExtensionSource struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 
+	// Bundled The extension ships with the Worker.
+	Bundled *bool `json:"bundled,omitempty"`
+
+	// State "installed" is on this device; "available" ships with the Worker but is not installed there. An absent state means installed, for descriptors reported by older Workers.
+	State string `json:"state,omitempty"`
+
+	// AutoUpdate A git-installed extension updates when its source moves; default true.
+	AutoUpdate *bool `json:"autoUpdate,omitempty"`
+
 	// Source Where its files come from, so other devices can install it too.
 	Source *ConnectorExtensionRepository `json:"source,omitempty"`
 
@@ -166,7 +235,7 @@ type ConnectorExtensionSource struct {
 	LatestCommit string `json:"latestCommit,omitempty"`
 }
 
-// ConnectorField ConnectorField is one field a sign-in method asks for, rendered by the Web; its value reaches the device's adapter as SignInOptions[ID].
+// ConnectorField ConnectorField is one field a sign-in method or a server-held instance form asks for, rendered by the Web.
 type ConnectorField struct {
 	// ID 1–32 letters, digits or underscores, starting with a letter.
 	ID          string            `json:"id"`
@@ -184,6 +253,9 @@ type ConnectorField struct {
 
 	// Options select: the choices.
 	Options []ConnectorOption `json:"options,omitempty"`
+
+	// OptionsFrom select: fill the choices from a server-held probe (`probe:<probe-id>`) instead of static options.
+	OptionsFrom string `json:"optionsFrom,omitempty"`
 
 	// ShowWhen Shown only while another field of the method holds one of these values.
 	ShowWhen *ConnectorShowWhen `json:"showWhen,omitempty"`
@@ -207,6 +279,71 @@ type ConnectorOption struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
+// ConnectorOptionList A list of choices for one select field.
+type ConnectorOptionList = []ConnectorOption
+
+// ConnectorPackage ConnectorPackage names the upstream Skill bundle and CLI a connector ships with. The bundle follows the upstream; its recorded commit is also the repository tool's version.
+type ConnectorPackage struct {
+	// Upstream A GitHub repository whose Skills and tools move as one bundle version.
+	Upstream ConnectorPackageUpstream `json:"upstream"`
+
+	// Skills The folder in Upstream holding the bundle's Skill folders.
+	Skills ConnectorPackageSkills `json:"skills"`
+
+	// Tools Programs from folders of the bundle's own upstream repository.
+	Tools jsonempty.List[ConnectorPackageTool] `json:"tools"`
+}
+
+// ConnectorPackageDevice One of the owner's devices in a package view, and whether it may be selected.
+type ConnectorPackageDevice struct {
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+	Online   bool   `json:"online"`
+	Selected bool   `json:"selected"`
+	Eligible bool   `json:"eligible"`
+
+	// Reason Why the device cannot be selected, when Eligible is false.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ConnectorPackageSkills The folder in Upstream holding the bundle's Skill folders.
+type ConnectorPackageSkills struct {
+	Path string `json:"path"`
+}
+
+// ConnectorPackageTool A CLI from a folder of the package's upstream repository.
+type ConnectorPackageTool struct {
+	Command string `json:"command"`
+	Source  string `json:"source"`
+
+	// Path The folder in Upstream holding the tool's files.
+	Path string `json:"path"`
+
+	// Bins Command names mapped to relative files under Path.
+	Bins jsonempty.Map[string] `json:"bins"`
+}
+
+// ConnectorPackageUpstream A GitHub repository whose Skills and tools move as one bundle version.
+type ConnectorPackageUpstream struct {
+	// Via The connector whose Foundry-managed login reads the repository.
+	Via string `json:"via"`
+
+	// Repository A normalized https GitHub repository address.
+	Repository string `json:"repository"`
+
+	// Ref A branch or tag; empty follows the default release or branch.
+	Ref string `json:"ref,omitempty"`
+}
+
+// ConnectorPackageView A package at the person level, its bundle, and where it is enabled.
+type ConnectorPackageView struct {
+	// Connector ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.
+	Connector    ConnectorDescriptor                    `json:"connector"`
+	Enabled      bool                                   `json:"enabled"`
+	RepositoryID string                                 `json:"repositoryId,omitempty"`
+	Devices      jsonempty.List[ConnectorPackageDevice] `json:"devices"`
+}
+
 // ConnectorPermissions A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead.
 type ConnectorPermissions struct {
 	ManagedBy    string            `json:"managedBy"`
@@ -225,6 +362,15 @@ type ConnectorProvides struct {
 	ModelAccess *ConnectorModelAccess `json:"modelAccess,omitempty"`
 }
 
+// ConnectorRepositoryAccess A device-held connector can check whether its own login can read a source repository. The Worker runs this argv with the connector's ordinary Foundry environment.
+type ConnectorRepositoryAccess struct {
+	// Args Exactly one {repository} placeholder may appear.
+	Args jsonempty.List[string] `json:"args"`
+
+	// RepositoryFormat `github` accepts an owner/repo or GitHub URL and passes owner/repo; raw passes the declared value.
+	RepositoryFormat string `json:"repositoryFormat,omitempty"`
+}
+
 // ConnectorRequirement ConnectorRequirement is a condition a device must meet for the connector to work there ("tcp_reachable": host:port opens within a few seconds).
 type ConnectorRequirement struct {
 	Kind string `json:"kind"`
@@ -233,6 +379,15 @@ type ConnectorRequirement struct {
 
 	// Label What the requirement means to a person ("Company network").
 	Label string `json:"label"`
+}
+
+// ConnectorRequirementsCheck A device's last check of a connector's declared visibility requirements, such as tcp_reachable.
+type ConnectorRequirementsCheck struct {
+	OK        bool   `json:"ok"`
+	CheckedAt string `json:"checkedAt"`
+
+	// Requirement The first requirement the device did not meet.
+	Requirement string `json:"requirement,omitempty"`
 }
 
 // ConnectorScopeChange defines model for ConnectorScopeChange.
@@ -256,6 +411,244 @@ type ConnectorScopeSource struct {
 
 	// Complete The source is the vendor's authoritative list of every scope (official docs, SDK or CLI constant, or a listing API).
 	Complete bool `json:"complete"`
+}
+
+// ConnectorServerHeldAccess defines model for ConnectorServerHeldAccess.
+type ConnectorServerHeldAccess struct {
+	// From `probe:<probe-id>` whose route extraction supplies the directory.
+	From    string `json:"from"`
+	Default string `json:"default"`
+
+	// Allow Fixed route access levels. Use with descriptors saved before probe-based access, or as a fallback when every route has the same permission.
+	Allow ConnectorServerHeldAccessLevels `json:"allow,omitempty"`
+
+	// AllowBy Route access levels selected by a value extracted during probing.
+	AllowBy ConnectorServerHeldAccessBy `json:"allowBy,omitempty"`
+}
+
+// ConnectorServerHeldAccessBy Route access levels selected by a value extracted during probing.
+type ConnectorServerHeldAccessBy struct {
+	// Value `probe:<probe-id>/<extracted-name>` whose probed value chooses the allowed route access levels.
+	Value string `json:"value"`
+
+	// Map Probe values to the route access levels they allow.
+	Map jsonempty.Map[ConnectorServerHeldAccessLevels] `json:"map"`
+
+	// Otherwise Route access levels for a probe value absent from `map`; omitted means no route access.
+	Otherwise ConnectorServerHeldAccessLevels `json:"otherwise,omitempty"`
+}
+
+// ConnectorServerHeldAccessLevel defines model for ConnectorServerHeldAccessLevel.
+type ConnectorServerHeldAccessLevel string
+
+// ConnectorServerHeldAccessLevels defines model for ConnectorServerHeldAccessLevels.
+type ConnectorServerHeldAccessLevels = []ConnectorServerHeldAccessLevel
+
+// ConnectorServerHeldDevice One of the owner's devices and whether it can reach an instance's upstream.
+type ConnectorServerHeldDevice struct {
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+	Online   bool   `json:"online"`
+}
+
+// ConnectorServerHeldDeviceCheck The recorded reachability of one device for an instance.
+type ConnectorServerHeldDeviceCheck struct {
+	DeviceID  string `json:"deviceId"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	CheckedAt string `json:"checkedAt"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// ConnectorServerHeldFieldOptions defines model for ConnectorServerHeldFieldOptions.
+type ConnectorServerHeldFieldOptions map[string][]ConnectorOption
+
+// ConnectorServerHeldInstance One server-held extension instance as its owner sees it. Secrets are never returned.
+type ConnectorServerHeldInstance struct {
+	ID        string `json:"id"`
+	AccountID string `json:"accountId"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label"`
+
+	// Network Where an instance's upstream requests leave Foundry.
+	Network ConnectorServerHeldNetworkPath `json:"network"`
+
+	// ProbeDeviceID The device that validated the instance and is re-checked by default.
+	ProbeDeviceID string `json:"probeDeviceId,omitempty"`
+
+	// AvailableDevices Devices whose sessions can use this instance on the device network path.
+	AvailableDevices []ConnectorServerHeldDeviceCheck `json:"availableDevices,omitempty"`
+	Status           string                           `json:"status"`
+	StatusDetail     string                           `json:"statusDetail,omitempty"`
+
+	// Access The permission Foundry derived from the token at the last validation.
+	Access     ConnectorServerHeldInstanceAccess `json:"access,omitempty"`
+	Version    string                            `json:"version,omitempty"`
+	RouteCount int                               `json:"routeCount,omitempty"`
+
+	// Values Non-secret field values.
+	Values jsonempty.Map[string] `json:"values"`
+
+	// SecretFields Ids of secret fields whose value is sealed.
+	SecretFields jsonempty.List[string]             `json:"secretFields"`
+	FieldOptions jsonempty.Map[ConnectorOptionList] `json:"fieldOptions"`
+	ProbeValues  jsonempty.Map[string]              `json:"probeValues"`
+	CreatedAt    string                             `json:"createdAt"`
+	UpdatedAt    string                             `json:"updatedAt"`
+}
+
+// ConnectorServerHeldInstanceAccess The permission Foundry derived from the token at the last validation.
+type ConnectorServerHeldInstanceAccess string
+
+// ConnectorServerHeldInstanceInput defines model for ConnectorServerHeldInstanceInput.
+type ConnectorServerHeldInstanceInput struct {
+	Label  string                `json:"label"`
+	Fields jsonempty.Map[string] `json:"fields"`
+
+	// Network Where an instance's upstream requests leave Foundry.
+	Network ConnectorServerHeldNetworkPath `json:"network"`
+
+	// DeviceID The owner's online device that validates a device-network instance.
+	DeviceID string `json:"deviceId,omitempty"`
+}
+
+// ConnectorServerHeldInstancesView defines model for ConnectorServerHeldInstancesView.
+type ConnectorServerHeldInstancesView struct {
+	Kind string `json:"kind"`
+
+	// Descriptor ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.
+	Descriptor ConnectorDescriptor                         `json:"descriptor"`
+	Instances  jsonempty.List[ConnectorServerHeldInstance] `json:"instances"`
+
+	// Devices The owner's devices, for choosing the device that validates an instance.
+	Devices jsonempty.List[ConnectorServerHeldDevice] `json:"devices"`
+}
+
+// ConnectorServerHeldNetwork defines model for ConnectorServerHeldNetwork.
+type ConnectorServerHeldNetwork struct {
+	// Holdings The network paths instances of this connector may choose.
+	Holdings jsonempty.List[ConnectorServerHeldNetworkPath] `json:"holdings"`
+
+	// PublicOnly Applies only to instances on the server path.
+	PublicOnly bool `json:"publicOnly"`
+}
+
+// ConnectorServerHeldNetworkPath Where an instance's upstream requests leave Foundry.
+type ConnectorServerHeldNetworkPath = string
+
+// ConnectorServerHeldOptionsExtract defines model for ConnectorServerHeldOptionsExtract.
+type ConnectorServerHeldOptionsExtract struct {
+	// Items JSON pointer to the array of option objects.
+	Items string `json:"items"`
+
+	// Value JSON pointer inside each item to its value.
+	Value string `json:"value"`
+
+	// Label JSON pointer inside each item to its label.
+	Label string `json:"label"`
+}
+
+// ConnectorServerHeldProbe defines model for ConnectorServerHeldProbe.
+type ConnectorServerHeldProbe struct {
+	ID     string `json:"id"`
+	Method string `json:"method"`
+
+	// Path Path appended to the upstream base; must name a declared base field.
+	Path string `json:"path"`
+
+	// Optional A 404 from this probe is skipped and later probes continue.
+	Optional bool                            `json:"optional,omitempty"`
+	Extract  ConnectorServerHeldProbeExtract `json:"extract,omitempty"`
+}
+
+// ConnectorServerHeldProbeExtract defines model for ConnectorServerHeldProbeExtract.
+type ConnectorServerHeldProbeExtract struct {
+	// Values Probe id to display name to JSON pointer.
+	Values  map[string]string                 `json:"values,omitempty"`
+	Options ConnectorServerHeldOptionsExtract `json:"options,omitempty"`
+	Routes  ConnectorServerHeldRoutesExtract  `json:"routes,omitempty"`
+}
+
+// ConnectorServerHeldProbeResult defines model for ConnectorServerHeldProbeResult.
+type ConnectorServerHeldProbeResult struct {
+	Values       jsonempty.Map[string]              `json:"values"`
+	SecretFields jsonempty.List[string]             `json:"secretFields"`
+	ProbeValues  jsonempty.Map[string]              `json:"probeValues"`
+	FieldOptions jsonempty.Map[ConnectorOptionList] `json:"fieldOptions"`
+	Version      string                             `json:"version,omitempty"`
+	RouteCount   int                                `json:"routeCount,omitempty"`
+
+	// Network Where an instance's upstream requests leave Foundry.
+	Network          ConnectorServerHeldNetworkPath   `json:"network,omitempty"`
+	ProbeDeviceID    string                           `json:"probeDeviceId,omitempty"`
+	AvailableDevices []ConnectorServerHeldDeviceCheck `json:"availableDevices,omitempty"`
+}
+
+// ConnectorServerHeldProbeValues defines model for ConnectorServerHeldProbeValues.
+type ConnectorServerHeldProbeValues map[string]string
+
+// ConnectorServerHeldRoute One route from a server-held extension's validated probe.
+type ConnectorServerHeldRoute struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Access string `json:"access"`
+	Domain string `json:"domain,omitempty"`
+}
+
+// ConnectorServerHeldRoutesExtract defines model for ConnectorServerHeldRoutesExtract.
+type ConnectorServerHeldRoutesExtract struct {
+	// Items JSON pointer to the array of route objects.
+	Items string `json:"items"`
+
+	// Method JSON pointer inside each route to its HTTP method.
+	Method string `json:"method"`
+
+	// Path JSON pointer inside each route to its path template.
+	Path string `json:"path"`
+
+	// Access JSON pointer inside each route to read/write classification.
+	Access string `json:"access"`
+
+	// Domain Optional JSON pointer inside each route to its resource domain.
+	Domain string `json:"domain,omitempty"`
+}
+
+// ConnectorServerHeldSession defines model for ConnectorServerHeldSession.
+type ConnectorServerHeldSession struct {
+	// Env Session environment templates. Secret references are not allowed.
+	Env jsonempty.Map[string] `json:"env"`
+}
+
+// ConnectorServerHeldSpec ConnectorServerHeld declares a pure-data server-held connector supplied by an extension. Foundry probes and proxies it generically; extension code never runs on the server.
+type ConnectorServerHeldSpec struct {
+	Instances string                         `json:"instances"`
+	Fields    jsonempty.List[ConnectorField] `json:"fields"`
+
+	// Steps Field ids grouped into the form's steps; presentation data for Web.
+	Steps    jsonempty.List[ConnectorServerHeldStep]  `json:"steps"`
+	Probe    jsonempty.List[ConnectorServerHeldProbe] `json:"probe"`
+	Upstream ConnectorServerHeldUpstream              `json:"upstream"`
+	Access   ConnectorServerHeldAccess                `json:"access"`
+	Session  ConnectorServerHeldSession               `json:"session"`
+	Network  ConnectorServerHeldNetwork               `json:"network"`
+}
+
+// ConnectorServerHeldStep One group of field ids in a server-held instance form.
+type ConnectorServerHeldStep = []string
+
+// ConnectorServerHeldUpstream defines model for ConnectorServerHeldUpstream.
+type ConnectorServerHeldUpstream struct {
+	// BaseField Id of a declared URL field that holds the upstream base.
+	BaseField string `json:"baseField"`
+
+	// PathPrefix Only paths at or below this prefix may reach the upstream.
+	PathPrefix string `json:"pathPrefix"`
+
+	// Headers Templates for upstream request headers. Only this object may use `{secret:<field-id>}`.
+	Headers                map[string]string `json:"headers,omitempty"`
+	RequestBodyLimitBytes  int               `json:"requestBodyLimitBytes,omitempty"`
+	ResponseBodyLimitBytes int               `json:"responseBodyLimitBytes,omitempty"`
+	TimeoutSeconds         int               `json:"timeoutSeconds,omitempty"`
 }
 
 // ConnectorSetup ConnectorSetup is how to set an extension connector up on another device.
@@ -303,6 +696,29 @@ type ConnectorSignInMethod struct {
 type ConnectorSignInRepeat struct {
 	Label  string            `json:"label"`
 	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// ConnectorSourceAccess A connector is visible only when one of the owner's devices can read the repository through the named Foundry connector.
+type ConnectorSourceAccess struct {
+	// Via A connector kind that declares repositoryAccess.
+	Via string `json:"via"`
+
+	// Repository owner/repo or an https repository address.
+	Repository string            `json:"repository"`
+	Hint       string            `json:"hint,omitempty"`
+	Hints      map[string]string `json:"hints,omitempty"`
+}
+
+// ConnectorSourceAccessCheck A device's last check of one source repository through a Foundry connector.
+type ConnectorSourceAccessCheck struct {
+	Status    string `json:"status"`
+	CheckedAt string `json:"checkedAt"`
+
+	// Identity The non-secret account name of the connector login used.
+	Identity string `json:"identity,omitempty"`
+
+	// Detail A short non-secret message from the connector.
+	Detail string `json:"detail,omitempty"`
 }
 
 // ConnectorTool ConnectorTool is the program a connector's sessions use and where Foundry installs it from ("npm" through the managed-tools path, "installer" through the vendor's official per-user installer, which the worker's adapter runs). MinimumVersion marks older copies as outdated.
@@ -373,8 +789,11 @@ type DeviceConnectorState struct {
 
 	// StatusDetail Why it is unavailable or failed (a requirement's label, an error).
 	StatusDetail string `json:"statusDetail,omitempty"`
-	Installed    bool   `json:"installed"`
-	Version      string `json:"version,omitempty"`
+
+	// Configuration Non-secret settings read from the connector's active profile.
+	Configuration *ConnectorConfiguration `json:"configuration,omitempty"`
+	Installed     bool                    `json:"installed"`
+	Version       string                  `json:"version,omitempty"`
 
 	// InstallSource "foundry": installed by Foundry's managed tools; "device": the device's own.
 	InstallSource string `json:"installSource,omitempty"`
@@ -448,6 +867,9 @@ type ExternalAccountMaterial struct {
 
 	// ProviderAccountID `providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret.
 	ProviderAccountID string `json:"providerAccountId,omitempty"`
+
+	// SessionEnvironment Environment templates for a server-held extension's session. Worker renders `{gatewayBase}` and `{standIn}`; field references are already rendered by Server.
+	SessionEnvironment map[string]string `json:"sessionEnvironment,omitempty"`
 }
 
 // SaveAppStoreConnectKeyInput SaveAppStoreConnectKeyInput stores an App Store Connect API key. The issuer and key ids are public metadata; privateKey is write-only and is sealed by the server.
@@ -456,4 +878,9 @@ type SaveAppStoreConnectKeyInput struct {
 	KeyID      string `json:"keyId"`
 	PrivateKey string `json:"privateKey,omitempty"`
 	Label      string `json:"label,omitempty"`
+}
+
+// SetConnectorPackageDevicesInput Replace the devices on which a package is enabled.
+type SetConnectorPackageDevicesInput struct {
+	DeviceIDs jsonempty.List[string] `json:"deviceIds"`
 }

@@ -48,6 +48,10 @@ const baselinePath = resolve(
 export const workerModules = {
   platform: { dependsOn: [], folders: ["platform"] },
   device: { dependsOn: ["platform"], folders: ["device"] },
+  concurrency: {
+    dependsOn: ["platform", "device"],
+    folders: ["concurrency"],
+  },
   sandbox: { dependsOn: ["platform"], folders: ["sandbox"] },
   "candidate-store": { dependsOn: ["platform"], folders: ["candidate-store"] },
   transport: { dependsOn: ["device"], folders: ["transport"] },
@@ -133,22 +137,54 @@ export const serverPackages = {
     "chattitle",
     "redact",
     "personalagent",
+    "permission",
   ],
-  externalaccounts: ["store", "integrations", "keylock"],
+  // Permission is the one policy resolver for connector access. The gateway
+  // modules and the store that persists its packages may depend on it.
+  permission: ["jsonempty", "store"],
+  // jsonempty names the required map/list types in generated server-held
+  // extension API results; it is a leaf collection package, not a policy
+  // dependency or a reverse edge into the Connectors module.
+  externalaccounts: [
+    "store",
+    "jsonempty",
+    "integrations",
+    "keylock",
+    "permission",
+  ],
   // The Server-held connectors' request pipeline: authentication, the
   // recheck, the comparison, limits and audit; each connector supplies what
   // a request is and how it travels.
-  gateway: ["store", "externalaccounts"],
-  connectors: ["store", "integrations", "externalaccounts", "gateway"],
+  gateway: ["store", "externalaccounts", "permission"],
+  connectors: [
+    "store",
+    "integrations",
+    "externalaccounts",
+    "gateway",
+    "permission",
+  ],
+  // Pure equivalent-model choice and retry timing; callers own storage,
+  // transport and inference.
+  modelpool: [],
   resources: ["store", "textcut"],
-  // The assistant's rules (personalagent) import only store; its flows in
-  // personalagent/run, knowledge and assistant reach the session lifecycle
-  // and workspace digests directly and everything else through ports
-  // httpapi implements, never the reverse. A package's subpackages count
-  // as the package here, so workspacedigest importing the rules is no cycle.
-  personalagent: ["store", "sessions", "workspacedigest", "redact", "textcut"],
+  // The assistant's rules (personalagent) use the centralized permission
+  // decision, store, the session lifecycle and workspace digests. Its flows
+  // reach everything else through ports httpapi implements, never the
+  // reverse. A package's subpackages count as the package here, so
+  // workspacedigest importing the rules is no cycle.
+  personalagent: [
+    "store",
+    "sessions",
+    "workspacedigest",
+    "redact",
+    "textcut",
+    "permission",
+  ],
   sessionwork: ["store"],
   usagestats: ["store", "jsonempty"],
+  // Session system alerts: failed, canceled or stuck children, told to the
+  // session that started the turn.
+  sessionalerts: ["store", "sessions", "textcut"],
   // The session lifecycle; httpapi implements its ports and never the
   // reverse.
   sessions: ["store", "eventstream", "browserevent"],
@@ -156,7 +192,13 @@ export const serverPackages = {
   // port and never the reverse.
   issues: ["store", "eventstream", "browserevent", "sessions", "keylock"],
   workspacedigest: ["store", "personalagent", "redact", "textcut"],
-  feishugateway: ["store", "integrations", "externalaccounts", "gateway"],
+  feishugateway: [
+    "store",
+    "integrations",
+    "externalaccounts",
+    "gateway",
+    "permission",
+  ],
   feishuevents: [
     "store",
     "integrations",
@@ -185,9 +227,9 @@ export const serverPackages = {
  */
 export const sealedServerPackages = {
   externalaccounts:
-    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connector_extension_instances|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   gateway:
-    /^(appstoreconnect_connectors|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connector_extension_instances|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
 };

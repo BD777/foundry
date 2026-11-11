@@ -504,6 +504,8 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		ParentSessionID:      start.parent.ID,
 		IssueID:              start.issueID,
 		Model:                strings.TrimSpace(input.Model),
+		ModelPoolID:          strings.TrimSpace(input.ModelPoolID),
+		DispatchID:           inputID,
 		ClaudeEffort:         strings.TrimSpace(input.ClaudeEffort),
 		ClaudePermissionMode: strings.TrimSpace(input.ClaudePermissionMode),
 		CodexReasoningEffort: strings.TrimSpace(input.CodexReasoningEffort),
@@ -795,8 +797,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			}
 			session = next
 		}
-		if model := strings.TrimSpace(input.Model); model != "" {
+		if model, poolID := strings.TrimSpace(input.Model), strings.TrimSpace(input.ModelPoolID); model != "" || poolID != "" {
 			session.Model = model
+			session.ModelPoolID = poolID
 		}
 		for target, value := range map[*string]string{
 			&session.ClaudeEffort: input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,
@@ -823,6 +826,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			TimerFire:             input.TimerFire,
 			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),
 		}
+		session.DispatchID = inputID
 		// What the native session missed is the server's to tell, never the
 		// client's: it alone knows which turns each native session ran.
 		missed, err := tx.resumeNativeSession(ctx, &session, previousInputID, session.Input.ID)

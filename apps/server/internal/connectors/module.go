@@ -2,10 +2,12 @@ package connectors
 
 import (
 	"context"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -16,8 +18,10 @@ import (
 type Store interface {
 	CloudflareStore
 	store.AppStoreConnectStore
+	store.ExtensionServerHeldStore
 	store.DeviceConnectorStore
 	externalaccounts.ConnectorAccessStore
+	DevicesOwnedBy(context.Context, string) ([]string, error)
 }
 
 // Module is the Connectors module: the catalog, the server-held kind
@@ -31,25 +35,66 @@ type Module struct {
 	ServerHeld *externalaccounts.Service
 	// AppStoreConnect is the server-held App Store Connect gateway.
 	AppStoreConnect *AppStoreConnectGateway
+	// Extensions is the generic server-held extension gateway.
+	Extensions *ExtensionGateway
 	// Devices keeps what devices read of their device-held connectors and
 	// which workspaces may use them.
 	Devices *DeviceHeld
 	// ToolChecks are the tool version checks in progress, whose gateway
 	// grants act for no session (ToolCheck).
 	ToolChecks *gateway.Checks
+	// Confirmations are the proposal cards risk connector writes wait on.
+	Confirmations *Confirmations
 }
 
 // New builds the module over the store and the sealed secret store (nil
 // when the server has none: server-held connectors then connect nothing).
-func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switch) *Module {
+func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switch, proposalTTL time.Duration) *Module {
 	serverHeld := externalaccounts.NewService(st, secrets, nil)
 	serverHeld.Integrations = sw
 	catalog := DefaultCatalog()
-	return &Module{
+	module := &Module{
 		catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog),
 		Cloudflare: NewCloudflareGateway(st, serverHeld), AppStoreConnect: NewAppStoreConnectGateway(st, serverHeld),
 		ToolChecks: gateway.NewChecks(),
 	}
+	module.Extensions = NewExtensionGateway(st, serverHeld, module.Devices.ServerHeldDescriptorOn)
+	serverHeld.AllowSessionAccount = func(ctx context.Context, account store.ExternalAccount, deviceID string) (bool, error) {
+		if descriptor, ok := catalog.Lookup(account.Provider); ok && descriptor.Holding == store.ConnectorServerHeld {
+			return true, nil
+		}
+		app, err := st.GetExternalProviderApp(ctx, account.AppID)
+		if err != nil {
+			return false, nil
+		}
+		data, err := serverHeld.ExtensionData(ctx, app)
+		if err != nil {
+			return false, nil
+		}
+		if data.Network == externalaccounts.ExtensionNetworkDevice {
+			available := false
+			for _, check := range data.AvailableDevices {
+				available = available || check.DeviceID == deviceID && check.Status == "ok"
+			}
+			if !available {
+				return false, nil
+			}
+		}
+		_, err = module.Devices.ServerHeldDescriptorOn(ctx, deviceID, account.Provider)
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}
+	if assistantStore, ok := any(st).(store.PersonalAgentStore); ok {
+		module.Confirmations = &Confirmations{Store: assistantStore, ProposalTTL: proposalTTL, Now: time.Now}
+	}
+	if permissionStore, ok := any(st).(permission.Store); ok {
+		module.Cloudflare.UsePermission(permissionStore, module.Confirmations)
+		module.AppStoreConnect.UsePermission(permissionStore, module.Confirmations)
+		module.Extensions.UsePermission(permissionStore, module.Confirmations)
+	}
+	return module
 }
 
 // Catalog lists every connector.

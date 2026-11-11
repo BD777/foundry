@@ -19,6 +19,10 @@ func (s *Store) migrate(ctx context.Context) error {
 	steps := []func(context.Context) error{
 		s.createCoreSchema,
 		s.setupProfiles,
+		s.setupModelNotes,
+		s.setupExecutionDefaults,
+		s.setupModelPools,
+		s.setupSessionRetries,
 		s.setupSkillCatalog,
 		s.setupWorkspaceDraftSkills,
 		s.setupSessionEventCompaction,
@@ -30,10 +34,13 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupOwnership,
 		s.setupExternalAccounts,
 		s.setupAppStoreConnect,
+		s.dropRetiredOpenLarkInstances,
 		s.setupFeishuGateway,
 		// Before the prune, which walks their workspace-owned rows.
 		s.setupDeviceConnectors,
+		s.setupConnectorPackages,
 		s.setupPersonalAgents,
+		s.setupPermissionPackages,
 		s.setupPersonalAgentMaintenance,
 		s.setupPersonalAgentContextPatch,
 		s.setupNativeAccountHolds,
@@ -46,6 +53,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// Before the prune, which walks its rows.
 		s.setupSessionInputSenders,
 		s.setupSessionInbox,
+		s.setupSessionAlerts,
 		s.setupPendingItems,
 		// Before the orphan prune (RunMaintenance), so an issue number only
 		// orphaned rows still mention is not handed out again.
@@ -78,6 +86,36 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 		if elapsed := time.Since(started); elapsed >= slowMigrationThreshold {
 			logSlowMigration(runtime.FuncForPC(reflect.ValueOf(step).Pointer()).Name(), elapsed)
+		}
+	}
+	return nil
+}
+
+// dropRetiredOpenLarkInstances removes the connector-specific metadata table
+// from the first OpenLark slice. The generic extension-instance storage
+// replaces it. A non-empty table is a migration blocker, never data to drop
+// silently.
+func (s *Store) dropRetiredOpenLarkInstances(ctx context.Context) error {
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'openlark_instances'`).Scan(&present); err != nil {
+		return fmt.Errorf("find retired openlark_instances: %w", err)
+	}
+	if present == 0 {
+		return nil
+	}
+	var rows int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM openlark_instances`).Scan(&rows); err != nil {
+		return fmt.Errorf("count retired openlark_instances: %w", err)
+	}
+	if rows != 0 {
+		return fmt.Errorf("openlark_instances still has %d row(s); migrate them before starting this version", rows)
+	}
+	for _, statement := range []string{
+		`DROP INDEX IF EXISTS idx_openlark_instances_account`,
+		`DROP TABLE openlark_instances`,
+	} {
+		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("drop retired openlark_instances: %w", err)
 		}
 	}
 	return nil

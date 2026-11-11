@@ -103,6 +103,25 @@ test("Codex input already includes its cached tokens", () => {
   assert.equal(codexTurnUsage({ type: "turn.completed" }), undefined);
 });
 
+test("unreliable estimated Codex timings do not reach the turn speed", () => {
+  const turn = (modelMs, outputTokens) =>
+    codexTurnUsage({
+      usage: { input_tokens: 100, output_tokens: outputTokens },
+      timing: { modelMs, timingEstimated: true },
+    });
+
+  assert.equal(turn(500, 1_000)?.modelMs, undefined);
+  assert.equal(turn(1_000, 2_000)?.modelMs, undefined);
+  assert.equal(turn(4_000, 100)?.modelMs, 4_000);
+  assert.equal(
+    codexTurnUsage({
+      usage: { input_tokens: 100, output_tokens: 1_000 },
+      timing: { modelMs: 500 },
+    })?.modelMs,
+    500,
+  );
+});
+
 test("usage adds up across results without inventing absent fields", () => {
   const codex = codexTurnUsage({
     usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 },

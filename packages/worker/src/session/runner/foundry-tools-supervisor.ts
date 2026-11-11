@@ -93,24 +93,6 @@ export class FoundryToolsSupervisor implements FoundryToolsConnection {
     this.scheduleRetry();
   }
 
-  /**
-   * A startup notification may arrive after the same server has already
-   * reconnected. Confirm a failure against current status before reporting it
-   * so stale notifications cannot turn a healthy connection back to failed.
-   */
-  async reportedFailure(detail: string): Promise<void> {
-    if (this.closed) return;
-    if (this.current !== "connected") {
-      await this.failed(detail);
-      return;
-    }
-    try {
-      await this.observe((await this.connection?.status()) ?? "failed");
-    } catch (error) {
-      await this.failed(errorMessage(error));
-    }
-  }
-
   /** Checks first; a failed connection reconnects now instead of waiting. */
   async checkAndReconnect(): Promise<void> {
     if (this.closed) return;

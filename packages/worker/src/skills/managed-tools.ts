@@ -30,6 +30,11 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 import { foundryToolsRoot } from "../platform/state-root.js";
+import {
+  outboundRoute,
+  workerFetch,
+  workerProxyEnvironment,
+} from "../platform/server-link/server-proxy.js";
 import { unpackZip } from "./skill-zip.js";
 import { isInside } from "../platform/paths.js";
 
@@ -168,10 +173,18 @@ async function download(
   for (let hop = 0; hop < 6; hop += 1) {
     if (!allowed(url, options))
       throw new Error(`refusing to download from ${url.origin}`);
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(5 * 60 * 1000),
-    });
+    const route = outboundRoute(url);
+    let response;
+    try {
+      response = await workerFetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(5 * 60 * 1000),
+      });
+    } catch (error) {
+      throw new Error(
+        `download failed (${route}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("redirect without a location");
@@ -179,7 +192,9 @@ async function download(
       continue;
     }
     if (!response.ok || !response.body)
-      throw new Error(`download failed: ${response.status} ${url.pathname}`);
+      throw new Error(
+        `download failed (${route}): HTTP ${response.status} ${url.pathname}`,
+      );
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (declared > limit) throw new Error("download is too large");
     const chunks: Buffer[] = [];
@@ -326,12 +341,19 @@ function currentLinkTarget(name: string, version: string): string {
 
 /** Points bin/<name> at the version's entry, `<name>/<version>/<name>`. */
 function makeCurrent(name: string, version: string): void {
+  linkManagedTool(name, currentLinkTarget(name, version));
+}
+
+/** Atomically points bin/<name> at a relative target. */
+export function linkManagedTool(name: string, target: string): void {
+  if (!toolName.test(name) || !target || target.includes("\0"))
+    throw new Error("invalid managed tool link");
   const bin = managedToolsBin();
   mkdirSync(bin, { recursive: true });
   const link = join(bin, name);
   const linkStaging = `${link}.${process.pid}.tmp`;
   rmSync(linkStaging, { force: true });
-  symlinkSync(currentLinkTarget(name, version), linkStaging);
+  symlinkSync(target, linkStaging);
   renameSync(linkStaging, link);
 }
 
@@ -407,6 +429,11 @@ function sessionsUsing(folder: string): boolean {
   return false;
 }
 
+/** Whether a running session has a link into this version folder. */
+export function managedToolInUse(folder: string): boolean {
+  return sessionsUsing(folder);
+}
+
 /** Replaces `<folder>/<name>` with a symlink to target. */
 function linkEntry(folder: string, name: string, target: string): void {
   const entry = join(folder, name);
@@ -439,9 +466,9 @@ export function findCommand(
 
 /** PATH for package managers and setup steps: this worker's node first,
  * then Foundry's tools. */
-export function toolEnvironment(): NodeJS.ProcessEnv {
+export function toolEnvironment(target?: string): NodeJS.ProcessEnv {
   return {
-    ...process.env,
+    ...workerProxyEnvironment(target),
     PATH: `${dirname(process.execPath)}:${withManagedTools(process.env.PATH)}`,
   };
 }
@@ -504,7 +531,11 @@ async function installNpmTool(
         `${pkg}@${spec.version}`,
       ],
       {
-        env: toolEnvironment(),
+        env: toolEnvironment(
+          spec.registry && spec.registry !== "device"
+            ? spec.registry
+            : (options.npmRegistry ?? "https://registry.npmjs.org/"),
+        ),
         timeout: 9 * 60 * 1000,
         maxBuffer: 16 * 1024 * 1024,
       },

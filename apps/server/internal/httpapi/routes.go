@@ -439,6 +439,19 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
 		// And who owns the device it checks on (in handler).
 		fn("POST /api/profiles/{id}/check", s.handleCheckProfile, connectionOwner("id")),
+		// Model learning and the default execution model (model_notes.go).
+		fn("GET /api/model-notes", s.handleListModelNotes, accountOnly()),
+		fn("POST /api/model-notes", s.handleAppendModelNote, accountOnly()),
+		fn("PUT /api/model-notes/{id}", s.handleUpdateModelNote, accountOnly()),
+		fn("DELETE /api/model-notes/{id}", s.handleDeleteModelNote, accountOnly()),
+		fn("GET /api/model-pools", s.handleListModelPools, accountOnly()),
+		fn("POST /api/model-pools", s.handleCreateModelPool, accountOnly()),
+		fn("PUT /api/model-pools/{id}", s.handleUpdateModelPool, accountOnly()),
+		fn("DELETE /api/model-pools/{id}", s.handleDeleteModelPool, accountOnly()),
+		fn("GET /api/execution-default", s.handleGetExecutionDefault, accountOnly()),
+		fn("PUT /api/execution-default", s.handleSetExecutionDefault, accountOnly()),
+		fn("GET /api/workspaces/{id}/execution-default", s.handleGetWorkspaceExecutionDefault, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/execution-default", s.handleSetWorkspaceExecutionDefault, workspaceRole(member, pathWorkspace("id"))),
 
 		// External accounts (external_accounts.go): a person's own logins at
 		// third-party platforms; a workspace's bindings.
@@ -498,11 +511,33 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
 		fn("POST /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
 		fn("PATCH /api/connectors/appstoreconnect/gateway/{path...}", s.handleAppStoreConnectGateway, daemonProtocol()),
+		// Server-held connector extensions are pure descriptor data. The
+		// person owns instances; sessions get generic stand-ins and route
+		// directory enforcement.
+		fn("GET /api/connectors/extensions/{kind}/instances", s.handleListServerHeldExtensionInstances, personOnly()),
+		fn("POST /api/connectors/extensions/{kind}/instances/probe", s.handleProbeServerHeldExtensionInstance, personOnly()),
+		fn("POST /api/connectors/extensions/{kind}/instances", s.handleCreateServerHeldExtensionInstance, personOnly()),
+		fn("PUT /api/connectors/extensions/{kind}/instances/{instanceId}", s.handleReplaceServerHeldExtensionInstance, personOnly()),
+		fn("POST /api/connectors/extensions/{kind}/instances/{instanceId}/check", s.handleCheckServerHeldExtensionInstance, personOnly()),
+		fn("DELETE /api/connectors/extensions/{kind}/instances/{instanceId}", s.handleRevokeServerHeldExtensionInstance, personOnly()),
+		fn("POST /api/connectors/extensions/{kind}/session-handle", s.handleServerHeldExtensionSessionHandle, daemonProtocol()),
+		fn("GET /api/connectors/extensions/{kind}/gateway/{path...}", s.handleServerHeldExtensionGateway, daemonProtocol()),
+		fn("POST /api/connectors/extensions/{kind}/gateway/{path...}", s.handleServerHeldExtensionGateway, daemonProtocol()),
+		fn("PATCH /api/connectors/extensions/{kind}/gateway/{path...}", s.handleServerHeldExtensionGateway, daemonProtocol()),
+		fn("PUT /api/connectors/extensions/{kind}/gateway/{path...}", s.handleServerHeldExtensionGateway, daemonProtocol()),
+		fn("DELETE /api/connectors/extensions/{kind}/gateway/{path...}", s.handleServerHeldExtensionGateway, daemonProtocol()),
+		fn("GET /api/connector-packages", s.handleListConnectorPackages, personOnly()),
+		fn("GET /api/connector-packages/{kind}", s.handleGetConnectorPackage, personOnly()),
+		fn("PUT /api/connector-packages/{kind}/devices", s.handleSetConnectorPackageDevices, personOnly()),
+		fn("DELETE /api/connector-packages/{kind}", s.handleDeleteConnectorPackage, personOnly()),
 		fn("GET /api/connectors", s.handleConnectorCatalog, signedIn()),
+		fn("POST /api/connectors/recheck-access", s.handleRecheckConnectorVisibility, signedIn()),
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
+		fn("PUT /api/devices/{deviceId}/connectors/{kind}/configuration", s.handleConfigureDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/extensions", s.handleInstallDeviceExtension, deviceOwner("deviceId")),
+		fn("PATCH /api/devices/{deviceId}/extensions/{extensionId}", s.handleSetDeviceExtensionAutoUpdate, deviceOwner("deviceId")),
 		fn("DELETE /api/devices/{deviceId}/extensions/{extensionId}", s.handleRemoveDeviceExtension, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/poll", s.handlePollDeviceConnectorSignIn, deviceOwner("deviceId")),
@@ -549,6 +584,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/skills/catalog/{id}/revisions/{revision}/package", s.handleSkillPackage, signedIn()),
 
 		fn("GET /api/personal-agent", s.handlePersonalAgentOverview, personOnly()),
+		fn("GET /api/personal-agent/permission-package", s.handlePersonalAgentPermissionPackage, personOnly()),
+		fn("PUT /api/personal-agent/permission-package", s.handleSavePersonalAgentPermissionPackage, personOnly()),
 		fn("GET /api/personal-agent/connectors", s.handlePersonalAgentConnectors, personOnly()),
 		fn("PUT /api/personal-agent/connectors", s.handleSetPersonalAgentConnectors, personOnly()),
 		fn("GET /api/personal-agent/inbox", s.handleListPersonalAgentInbox, personOnly()),

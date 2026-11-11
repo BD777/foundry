@@ -24,7 +24,12 @@ const extensionInstallTimeout = 6 * time.Minute
 var extensionIDPath = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 type extensionInstallInput struct {
-	Source store.ConnectorExtensionRepository `json:"source"`
+	Source             *store.ConnectorExtensionRepository `json:"source,omitempty"`
+	BundledExtensionID string                              `json:"bundledExtensionId,omitempty"`
+}
+
+type extensionAutoUpdateInput struct {
+	AutoUpdate bool `json:"autoUpdate"`
 }
 
 // ownOnlineDevice checks the caller owns the path's device and it can be
@@ -79,18 +84,32 @@ func (s *Server) handleInstallDeviceExtension(w http.ResponseWriter, r *http.Req
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	input.Source.Git = strings.TrimSpace(input.Source.Git)
-	input.Source.Path = strings.Trim(strings.TrimSpace(input.Source.Path), "/")
-	input.Source.Ref = strings.TrimSpace(input.Source.Ref)
-	if err := connectors.CheckExtensionRepository(input.Source); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	input.BundledExtensionID = strings.TrimSpace(input.BundledExtensionID)
+	if (input.Source == nil) == (input.BundledExtensionID == "") {
+		writeError(w, http.StatusBadRequest, "choose a bundled extension or a repository source")
 		return
 	}
-	reply, err := s.askDeviceExtension(r.Context(), deviceID, store.ExtensionRequestPayload{Action: "install", Source: &input.Source})
+	if input.BundledExtensionID != "" && !extensionIDPath.MatchString(input.BundledExtensionID) {
+		writeError(w, http.StatusBadRequest, "not an extension id")
+		return
+	}
+	if input.Source != nil {
+		input.Source.Git = strings.TrimSpace(input.Source.Git)
+		input.Source.Path = strings.Trim(strings.TrimSpace(input.Source.Path), "/")
+		input.Source.Ref = strings.TrimSpace(input.Source.Ref)
+		if err := connectors.CheckExtensionRepository(*input.Source); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	reply, err := s.askDeviceExtension(r.Context(), deviceID, store.ExtensionRequestPayload{
+		Action: "install", Source: input.Source, BundledExtensionID: input.BundledExtensionID,
+	})
 	if err != nil {
 		writeDeviceConnectorError(w, "Installing the extension", err)
 		return
 	}
+	s.visibilityChanged(r.Context(), deviceID)
 	writeJSON(w, http.StatusOK, reply)
 }
 
@@ -111,5 +130,51 @@ func (s *Server) handleRemoveDeviceExtension(w http.ResponseWriter, r *http.Requ
 		writeDeviceConnectorError(w, "Removing the extension", err)
 		return
 	}
+	s.visibilityChanged(r.Context(), deviceID)
 	writeJSON(w, http.StatusOK, reply)
+}
+
+// handleSetDeviceExtensionAutoUpdate turns git source updates on or off.
+func (s *Server) handleSetDeviceExtensionAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	deviceID, ok := s.ownOnlineDevice(w, r)
+	if !ok {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("extensionId"))
+	if !extensionIDPath.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "not an extension id")
+		return
+	}
+	var input extensionAutoUpdateInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	reply, err := s.askDeviceExtension(r.Context(), deviceID, store.ExtensionRequestPayload{
+		Action: "set-auto-update", ExtensionID: id, AutoUpdate: input.AutoUpdate,
+	})
+	if err != nil {
+		writeDeviceConnectorError(w, "Updating extension settings", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, reply)
+}
+
+func (s *Server) visibilityChanged(ctx context.Context, deviceID string) {
+	if err := s.store.DeleteConnectorVisibilityChecks(context.WithoutCancel(ctx), deviceID, ""); err != nil {
+		s.connectors.ServerHeld.Logf("clear connector visibility for %s: %v", deviceID, err)
+	}
+	devices, err := s.store.ListDevices(context.WithoutCancel(ctx))
+	if err != nil {
+		return
+	}
+	owned := []store.DeviceProjection{}
+	for _, device := range devices {
+		if device.ID == deviceID {
+			owned = append(owned, device)
+			break
+		}
+	}
+	if len(owned) > 0 {
+		_ = s.refreshConnectorVisibility(context.WithoutCancel(ctx), owned, true)
+	}
 }

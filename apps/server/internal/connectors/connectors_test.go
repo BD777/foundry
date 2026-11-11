@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -17,8 +19,11 @@ type memoryStore struct {
 	bindings   []store.DeviceConnectorBinding
 	workspaces map[string]store.WorkspaceProjection
 	assistants map[string]store.PersonalAgent
+	packages   map[string]store.PermissionPackage
+	sessions   map[string]store.AgentSession
 	// extensions: what each device's extensions provide; "*" for every device.
 	extensions map[string][]store.ConnectorDescriptor
+	visibility map[string]store.ConnectorVisibilityCheck
 }
 
 func newMemoryStore() *memoryStore {
@@ -26,7 +31,20 @@ func newMemoryStore() *memoryStore {
 		states:     map[string]store.DeviceConnectorState{},
 		workspaces: map[string]store.WorkspaceProjection{},
 		assistants: map[string]store.PersonalAgent{},
+		packages:   map[string]store.PermissionPackage{},
+		sessions:   map[string]store.AgentSession{},
 		extensions: map[string][]store.ConnectorDescriptor{"*": {corpcli()}},
+		visibility: map[string]store.ConnectorVisibilityCheck{},
+	}
+}
+
+func allowConnectorRequirements(t *testing.T, st *memoryStore, deviceID string, descriptor store.ConnectorDescriptor) {
+	t.Helper()
+	if err := st.SaveConnectorVisibilityCheck(context.Background(), store.ConnectorVisibilityCheck{
+		DeviceID: deviceID, Result: store.ConnectorVisibilityRequirements, Kind: descriptor.Kind,
+		Via: requirementVisibilitySignature(descriptor), Status: "ok",
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -53,6 +71,42 @@ func (m *memoryStore) DeviceExtensionConnectors(_ context.Context, deviceIDs []s
 		}
 	}
 	return result, nil
+}
+
+func (m *memoryStore) SaveConnectorVisibilityCheck(_ context.Context, check store.ConnectorVisibilityCheck) error {
+	m.visibility[visibilityKey(check.DeviceID, check.Result, check.Kind, check.Via, check.Repository)] = check
+	return nil
+}
+
+func (m *memoryStore) ListConnectorVisibilityChecks(_ context.Context, deviceIDs []string) ([]store.ConnectorVisibilityCheck, error) {
+	var checks []store.ConnectorVisibilityCheck
+	for _, deviceID := range deviceIDs {
+		for _, check := range m.visibility {
+			if check.DeviceID == deviceID {
+				checks = append(checks, check)
+			}
+		}
+	}
+	return checks, nil
+}
+
+func (m *memoryStore) DeleteConnectorVisibilityChecks(_ context.Context, deviceID, via string) error {
+	for key, check := range m.visibility {
+		if check.DeviceID == deviceID && (via == "" || check.Via == via) {
+			delete(m.visibility, key)
+		}
+	}
+	return nil
+}
+
+func (m *memoryStore) DevicesOwnedBy(_ context.Context, _ string) ([]string, error) {
+	var ids []string
+	for id := range m.extensions {
+		if id != "*" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (m *memoryStore) SaveDeviceConnectorState(_ context.Context, state store.DeviceConnectorState) error {
@@ -84,6 +138,26 @@ func (m *memoryStore) PersonalAgentForWorkspace(_ context.Context, workspaceID s
 		return agent, nil
 	}
 	return store.PersonalAgent{}, store.ErrNotFound
+}
+
+func (m *memoryStore) GetAgentSessionSummary(_ context.Context, id string) (store.AgentSession, error) {
+	if session, ok := m.sessions[id]; ok {
+		return session, nil
+	}
+	return store.AgentSession{}, store.ErrNotFound
+}
+
+func (m *memoryStore) GetPermissionPackage(_ context.Context, owner, id string) (store.PermissionPackage, error) {
+	if pkg, ok := m.packages[id]; ok && pkg.Owner == owner {
+		return pkg, nil
+	}
+	return store.PermissionPackage{}, store.ErrNotFound
+}
+
+func (m *memoryStore) SavePermissionPackage(_ context.Context, pkg store.PermissionPackage) (store.PermissionPackage, error) {
+	pkg = permission.Normalize(pkg)
+	m.packages[pkg.ID] = pkg
+	return pkg, nil
 }
 
 func (m *memoryStore) SetWorkspaceDeviceConnectors(_ context.Context, workspaceID, userID string, bindings []store.DeviceConnectorBindingInput) error {
@@ -170,9 +244,16 @@ func TestExtensionConnectorsAreCheckedAndStayOnTheirDevice(t *testing.T) {
 	codexAccess := corpcli()
 	codexAccess.Kind = "corpgw"
 	codexAccess.Provides = &store.ConnectorProvides{ModelAccess: &store.ConnectorModelAccess{Runtimes: []string{"codex"}}}
-	kept := catalog.ExtensionConnectors([]store.ConnectorDescriptor{good, good, builtin, unnamed, wrongAdapter, serverHeld, badField, codexAccess})
+	missingProvider := corpcli()
+	missingProvider.Kind = "missing-provider"
+	missingProvider.Access = &store.ConnectorSourceAccess{Via: "aws", Repository: "owner/repository"}
+	kept := catalog.ExtensionConnectors([]store.ConnectorDescriptor{good, good, builtin, unnamed, wrongAdapter, serverHeld, badField, codexAccess, missingProvider})
 	if len(kept) != 1 || kept[0].Kind != "corpcli" {
 		t.Fatalf("kept = %+v", kept)
+	}
+	_, refused := catalog.ExtensionConnectorsWithErrors([]store.ConnectorDescriptor{badField, missingProvider})
+	if len(refused) != 2 || refused[0].Reason == "" || refused[1].Reason == "" {
+		t.Fatalf("refused reasons = %+v", refused)
 	}
 
 	st := newMemoryStore()
@@ -198,6 +279,44 @@ func TestExtensionConnectorsAreCheckedAndStayOnTheirDevice(t *testing.T) {
 	st.extensions["other"] = []store.ConnectorDescriptor{newer}
 	if listed, _, _ = devices.ConnectorsFor(ctx, []string{"dev", "other"}); listed[builtinDeviceHeld].Extension.Version != "1.10.0" {
 		t.Fatalf("the newest version is not listed: %+v", listed[builtinDeviceHeld].Extension)
+	}
+}
+
+func TestConnectorVisibilityRequiresEveryGateOnTheSameDevice(t *testing.T) {
+	st := newMemoryStore()
+	descriptor := corpcli()
+	descriptor.Access = &store.ConnectorSourceAccess{
+		Via: "github", Repository: "owner/repository",
+	}
+	st.extensions = map[string][]store.ConnectorDescriptor{
+		"mac":   {descriptor},
+		"linux": {descriptor},
+	}
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, check := range []store.ConnectorVisibilityCheck{
+		{DeviceID: "mac", Result: store.ConnectorVisibilityRequirements, Kind: descriptor.Kind, Via: requirementVisibilitySignature(descriptor), Status: "ok", CheckedAt: now},
+		{DeviceID: "mac", Result: store.ConnectorVisibilityRepository, Kind: descriptor.Kind, Via: "github", Repository: descriptor.Access.Repository, Status: "no_access", CheckedAt: now},
+		{DeviceID: "linux", Result: store.ConnectorVisibilityRequirements, Kind: descriptor.Kind, Via: requirementVisibilitySignature(descriptor), Status: "ok", CheckedAt: now},
+		{DeviceID: "linux", Result: store.ConnectorVisibilityRepository, Kind: descriptor.Kind, Via: "github", Repository: descriptor.Access.Repository, Status: "ok", Identity: "reader", CheckedAt: now},
+	} {
+		if err := st.SaveConnectorVisibilityCheck(ctx, check); err != nil {
+			t.Fatal(err)
+		}
+	}
+	visible, err := devices.VisibleKinds(ctx, []string{"mac", "linux"})
+	if err != nil || !visible[descriptor.Kind] {
+		t.Fatalf("visible=%v err=%v", visible, err)
+	}
+
+	st.visibility[visibilityKey("linux", store.ConnectorVisibilityRepository, descriptor.Kind, "github", descriptor.Access.Repository)] = store.ConnectorVisibilityCheck{
+		DeviceID: "linux", Result: store.ConnectorVisibilityRepository, Kind: descriptor.Kind,
+		Via: "github", Repository: descriptor.Access.Repository, Status: "no_access", CheckedAt: now,
+	}
+	visible, err = devices.VisibleKinds(ctx, []string{"mac", "linux"})
+	if err != nil || visible[descriptor.Kind] {
+		t.Fatalf("hidden connector is visible: visible=%v err=%v", visible, err)
 	}
 }
 
@@ -394,16 +513,19 @@ func TestSessionsOfOtherPeopleAreIsolatedFromEveryDeviceLogin(t *testing.T) {
 	}
 }
 
-func TestPersonalAgentDeviceConnectorOptOutIsolatesTheLogin(t *testing.T) {
+func TestPersonalAgentDeviceConnectorLevelIsolatesTheLogin(t *testing.T) {
 	st := newMemoryStore()
 	st.workspaces["ws_pa"] = store.WorkspaceProjection{ID: "ws_pa", Kind: store.WorkspaceKindPersonalAgent}
-	st.assistants["ws_pa"] = store.PersonalAgent{UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev"}
+	pkg := permission.DefaultPackage("owner", "pp_owner")
+	st.packages[pkg.ID] = pkg
+	st.assistants["ws_pa"] = store.PersonalAgent{UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev", PermissionPackageID: pkg.ID}
 	devices := NewDeviceHeld(st, DefaultCatalog())
 	ctx := context.Background()
 	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "github", Status: store.DeviceConnectorReady, Installed: true, SignedIn: true, Identity: "BD777"}); err != nil {
 		t.Fatal(err)
 	}
 	session := store.AgentSession{ID: "pa", WorkspaceID: "ws_pa", DeviceID: "dev", CreatedByUserID: "owner"}
+	st.sessions[session.ID] = session
 	github := func() *store.DeviceConnectorUse {
 		uses, err := devices.SessionUses(ctx, session, "owner")
 		if err != nil {
@@ -420,9 +542,12 @@ func TestPersonalAgentDeviceConnectorOptOutIsolatesTheLogin(t *testing.T) {
 		t.Fatalf("enabled assistant login: %+v", use)
 	}
 	st.assistants["ws_pa"] = store.PersonalAgent{
-		UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev",
-		ConnectorOptOut: []string{externalaccounts.DeviceAccountID("dev", "github")},
+		UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev", PermissionPackageID: pkg.ID,
 	}
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{
+		{AccountID: externalaccounts.DeviceAccountID("dev", "github"), Level: store.ConnectorAccessLevelOff},
+	}
+	st.packages[pkg.ID] = pkg
 	if use := github(); use == nil || use.Access != "none" {
 		t.Fatalf("disabled assistant login: %+v", use)
 	}
@@ -456,6 +581,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 		}
 		return strings.Join(parts, ",")
 	}
+	allowConnectorRequirements(t, st, "dev", corpcli())
 	// Without a ready login, the owner gets nothing; a member is kept out.
 	if got := uses(session); got != "" {
 		t.Fatalf("owner, unbound = %q", got)
@@ -510,6 +636,7 @@ func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "aws", Status: store.DeviceConnectorReady, SignedIn: true}); err != nil {
 		t.Fatal(err)
 	}
+	allowConnectorRequirements(t, st, "dev", corpcli())
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "aws", DeviceID: "dev"}}, func(id string) bool { return id == "dev" }); err != nil {
 		t.Fatal(err)
 	}
@@ -551,12 +678,14 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 		{name: "missing device owner", status: "ready", signedIn: true, deviceOwner: "missing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			devices := NewDeviceHeld(newMemoryStore(), DefaultCatalog())
+			st := newMemoryStore()
+			devices := NewDeviceHeld(st, DefaultCatalog())
 			devices.Now = func() time.Time { return now }
 			_, err := devices.Record(ctx, "linux-dev", store.DeviceConnectorState{Kind: "corpcli", Status: tc.status, Installed: true, SignedIn: tc.signedIn, Identity: "someone", Sites: []string{"cn"}, Version: "0.178.0", ExpiresAt: tc.expiry, Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
+			allowConnectorRequirements(t, st, "linux-dev", corpcli())
 			owner := "owner"
 			if tc.deviceOwner == "missing" {
 				owner = ""

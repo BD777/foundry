@@ -187,7 +187,8 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 		if input.RequireIdle {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrAgentSessionActive}
 		}
-		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" {
+		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" ||
+			input.Model != "" || input.ModelPoolID != "" {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, errors.New("a running session keeps its runtime; switch it once it settles")}
 		}
 		// Files steer in with the message, as they arrive with any message.

@@ -14,6 +14,7 @@ type PageSurfaceVariant =
   | "resources"
   | "settings"
   | "skills"
+  | "usage"
   | "workspace";
 
 export interface PageSurfaceProps extends HTMLAttributes<HTMLElement> {

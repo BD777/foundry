@@ -26,9 +26,8 @@ export function sessionInputDirectory(
   session: AgentSession,
 ): string {
   const sessionDir = resolve(sessionsRoot, session.id);
-  return session.input
-    ? resolve(sessionDir, "inputs", session.input.id)
-    : sessionDir;
+  const dispatchId = session.dispatchId?.trim() || session.input?.id;
+  return dispatchId ? resolve(sessionDir, "inputs", dispatchId) : sessionDir;
 }
 
 /**

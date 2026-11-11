@@ -578,6 +578,10 @@ func (s *Service) FindWorkspace(ctx context.Context, scope Scope, query string, 
 	if err != nil {
 		return nil, err
 	}
+	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
+		_, visible := scope.owner[record.Digest.WorkspaceID]
+		return !visible
+	})
 	candidates := workspacedigest.RankRecords(query, records, s.routingNotes(ctx, scope.Agent), time.Now(), limit)
 	return map[string]any{"candidates": candidates, "close": workspacedigest.Close(candidates)}, nil
 }

@@ -146,11 +146,17 @@ export async function openCodexThread(
     clientOptions.config,
     threadOptions,
     requestedNativeSessionId,
+    {
+      runtime: "codex",
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+    },
   );
   const entry: ActiveCodexThread = {
     key: runtimeKey,
     lastUsed: Date.now(),
     sessionId: session.id,
+    workspaceId: session.workspaceId,
     nativeSessionId: requestedNativeSessionId || thread.id || "",
     thread,
   };

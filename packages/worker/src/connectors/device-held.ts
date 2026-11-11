@@ -18,9 +18,13 @@ import type {
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationState,
   ConnectorAuthorizationChallenge,
+  ConnectorConfiguration,
   ConnectorProgressPayload,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
+  ConnectorRepositoryAccess,
+  ConnectorRequirementsCheck,
+  ConnectorSourceAccessCheck,
   DeviceConnectorSessionCheck,
   DeviceConnectorSignIn,
   DeviceConnectorState,
@@ -109,6 +113,13 @@ export interface DeviceHeldAdapter {
   clearEnvironment: string[];
   readVersion(run: ToolRun): Promise<string | undefined>;
   readLogin(run: ToolRun): Promise<LoginReading>;
+  /** Reads non-secret settings from the tool's active profile. */
+  readConfiguration?(run: ToolRun): Promise<ConnectorConfiguration | undefined>;
+  /** Writes non-secret settings the page changed to the tool's active profile. */
+  writeConfiguration?(
+    run: ToolRun,
+    configuration: ConnectorConfiguration,
+  ): Promise<void>;
   /** Starts the tool's sign-in; scratch is a private folder removed after. */
   /** options: what the person chose on the page (adapter-specific). */
   beginSignIn(
@@ -432,6 +443,57 @@ export class DeviceHeldConnectors {
     return undefined;
   }
 
+  /** Checks a connector's declared visibility requirements without its login. */
+  async requirementsCheck(
+    connector: ConnectorDescriptor,
+  ): Promise<ConnectorRequirementsCheck> {
+    const unmet = await this.unmetRequirement(connector, true);
+    return {
+      ok: !unmet,
+      checkedAt: new Date(this.options.now()).toISOString(),
+      ...(unmet ? { requirement: unmet } : {}),
+    };
+  }
+
+  /**
+   * Uses a connector's own Foundry login to check a source repository. The
+   * descriptor declares the argv template; this method only substitutes the
+   * repository and classifies the answer.
+   */
+  async repositoryAccessCheck(
+    connector: ConnectorDescriptor,
+    repository: string,
+  ): Promise<ConnectorSourceAccessCheck> {
+    const capability = connector.repositoryAccess;
+    if (!capability)
+      throw new Error(`${connector.label} cannot check repositories`);
+    const checkedAt = new Date(this.options.now()).toISOString();
+    const login = await this.status(connector, false);
+    if (!login.installed || !login.signedIn)
+      return {
+        status: "not_signed_in",
+        checkedAt,
+        ...(login.identity ? { identity: login.identity } : {}),
+      };
+    const located = this.locate(connector.tool.command);
+    if (!located)
+      return {
+        status: "not_signed_in",
+        checkedAt,
+        ...(login.identity ? { identity: login.identity } : {}),
+      };
+    const adapter = this.adapter(connector);
+    const run = this.runner(located.path, adapter);
+    const result = await run(repositoryArguments(capability, repository), {
+      timeoutMs: 15_000,
+    });
+    return {
+      ...repositoryAccessResult(result, repository),
+      checkedAt,
+      ...(login.identity ? { identity: login.identity } : {}),
+    };
+  }
+
   private async latestFor(
     connector: ConnectorDescriptor,
   ): Promise<string | undefined> {
@@ -601,6 +663,14 @@ export class DeviceHeldConnectors {
               );
             }
           })(),
+          (async () => {
+            if (!adapter.readConfiguration) return;
+            try {
+              state.configuration = await adapter.readConfiguration(run);
+            } catch {
+              delete state.configuration;
+            }
+          })(),
         ]);
         if ("error" in login) throw login.error;
         reading = login.value;
@@ -724,6 +794,19 @@ export class DeviceHeldConnectors {
   async signOut(connector: ConnectorDescriptor): Promise<DeviceConnectorState> {
     const { adapter, run } = await this.usable(checkedDescriptor(connector));
     await adapter.signOut(run);
+    return this.status(connector, true);
+  }
+
+  async configure(
+    connector: ConnectorDescriptor,
+    configuration: ConnectorConfiguration,
+  ): Promise<DeviceConnectorState> {
+    const { adapter, run } = await this.usable(checkedDescriptor(connector));
+    if (!adapter.writeConfiguration)
+      throw new Error(
+        `${connector.label} has no editable defaults on this worker`,
+      );
+    await adapter.writeConfiguration(run, configuration);
     return this.status(connector, true);
   }
 
@@ -950,6 +1033,17 @@ export class DeviceHeldConnectors {
           switch (request.action) {
             case "status":
               return { state: await this.status(connector, request.fresh) };
+            case "requirements":
+              return {
+                requirementsCheck: await this.requirementsCheck(connector),
+              };
+            case "repository_access":
+              return {
+                sourceAccessCheck: await this.repositoryAccessCheck(
+                  connector,
+                  String(request.repository ?? ""),
+                ),
+              };
             case "install":
               return {
                 state: await this.install(
@@ -957,6 +1051,13 @@ export class DeviceHeldConnectors {
                   hooks.progress &&
                     ((progress) =>
                       hooks.progress!({ kind: connector.kind, ...progress })),
+                ),
+              };
+            case "configure":
+              return {
+                state: await this.configure(
+                  connector,
+                  request.configuration ?? {},
                 ),
               };
             case "sign_in_begin": {
@@ -1151,6 +1252,55 @@ export class DeviceHeldConnectors {
       rmSync(binDir, { recursive: true, force: true });
     }
   }
+}
+
+function repositoryArguments(
+  capability: ConnectorRepositoryAccess,
+  repository: string,
+): string[] {
+  let value = repository.trim();
+  if (capability.repositoryFormat === "github") {
+    const match =
+      /^(?:https:\/\/github\.com\/)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(
+        value,
+      );
+    if (!match) throw new Error("not a GitHub owner/repository");
+    value = match[1]!;
+  }
+  return capability.args.map((arg) => arg.replaceAll("{repository}", value));
+}
+
+function repositoryAccessResult(
+  result: ToolResult,
+  repository: string,
+): Pick<ConnectorSourceAccessCheck, "status" | "detail"> {
+  if (result.code === 0) return { status: "ok" };
+  const detail = shortToolDetail(`${result.stderr}\n${result.stdout}`);
+  const text = detail.toLowerCase();
+  if (
+    /not found|http 404|http 403|http 401|forbidden|resource not accessible|permission|denied|could not resolve to a repository/.test(
+      text,
+    )
+  )
+    return { status: "no_access", detail };
+  if (
+    /no such host|nodename nor servname|temporary failure in name resolution|could not resolve host|network is unreachable|connection refused|connection timed out|i\/o timeout|dial tcp|proxyconnect/.test(
+      text,
+    )
+  )
+    return { status: "unreachable", detail };
+  return {
+    status: "error",
+    detail: detail || `Could not check ${repository}`,
+  };
+}
+
+function shortToolDetail(output: string): string {
+  return output
+    .replace(/gh[opsu]_[A-Za-z0-9]{20,}/g, "…")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
 }
 
 function checkedStep(step: SignInStep): SignInStep {

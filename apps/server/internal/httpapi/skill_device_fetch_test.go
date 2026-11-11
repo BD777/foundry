@@ -62,6 +62,9 @@ type fakeFetchWorker struct {
 	// step ("install:1.1.0:staged", "check:1.1.0", …) in steps.
 	capabilities []string
 	steps        []string
+	connectors   []map[string]any
+	system       map[string]any
+	extensions   []string
 	// checkFails makes check_tool report a failed --version step;
 	// installFailures fails that many install steps first.
 	checkFails      bool
@@ -79,9 +82,16 @@ func (w *fakeFetchWorker) connect() {
 	}
 	w.conn = conn
 	w.done = make(chan struct{})
+	device := map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"}
+	if len(w.connectors) > 0 {
+		device["connectors"] = w.connectors
+	}
+	if w.system != nil {
+		device["system"] = w.system
+	}
 	writeWSForTest(w.t, conn, "hello", map[string]any{
 		"capabilities": append([]string{}, w.capabilities...),
-		"device":       map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
+		"device":       device,
 		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
@@ -157,6 +167,21 @@ func (w *fakeFetchWorker) serve() {
 					{Name: request.Tool.Name + " --version", State: state, Detail: detail + request.Tool.Name + " " + request.Tool.Version},
 					{Name: request.Tool.Name + " whoami", State: store.CheckPassed, Detail: `{"name":"Alice Example","open_id":"ou_secret"}`},
 				}})
+		case wsExtensionRequestType:
+			var request map[string]any
+			_ = json.Unmarshal(envelope.Payload, &request)
+			if id, ok := request["bundledExtensionId"].(string); ok {
+				w.mu.Lock()
+				w.extensions = append(w.extensions, id)
+				w.mu.Unlock()
+			}
+			w.reply(envelope.ID, wsExtensionReplyType, map[string]any{
+				"action": "created",
+				"extension": map[string]any{
+					"id": "open-lark", "name": "OpenLark", "version": "1.0.0",
+					"connectors": []string{"openlark"},
+				},
+			})
 		}
 	}
 }

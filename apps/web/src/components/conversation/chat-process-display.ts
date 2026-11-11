@@ -425,6 +425,10 @@ export function processDisplayRows(
     const snippet = plainProcessLine(shown);
     const detail = stripEmptyDetailSections(shown);
     const key = processLabelKey(item.title);
+    const failed =
+      item.status === "failed" ||
+      key === "sessionFailed" ||
+      key === "toolFailed";
     // An untyped step (a status heartbeat, a legacy label) has no completion
     // event of its own; a later step supersedes it. Typed steps keep their
     // own status, so parallel tool calls stay running.
@@ -433,7 +437,7 @@ export function processDisplayRows(
     return {
       ...item,
       ...(streaming && finished ? { status: "completed" as const } : {}),
-      detail: hasMeaningfulDetail(detail, snippet) ? detail : "",
+      detail: failed || hasMeaningfulDetail(detail, snippet) ? detail : "",
       snippet,
       ...(key
         ? { labelKey: finished ? completedProcessLabelKey(key) : key }
