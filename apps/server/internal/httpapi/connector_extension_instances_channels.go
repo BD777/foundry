@@ -100,4 +100,3 @@ func (u messageChannelUpstream) Get(ctx context.Context, path string, query url.
 	}
 	return response.StatusCode, body, response.Header, nil
 }
-

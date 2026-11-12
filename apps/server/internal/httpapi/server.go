@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
@@ -15,7 +16,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
-	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"

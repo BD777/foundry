@@ -383,8 +383,8 @@ func (s *Service) ProposalChanged(proposal store.PersonalAgentProposal) {
 // English]: its conversation shows them too.
 var proposalNoticeTexts = map[string][2]string{
 	"declined": {"本人没有同意：%s", "The person declined: %s"},
-	"failed": {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
-	"applied": {"本人同意了，已经做好：%s\n%s", "The person accepted and it is done: %s\n%s"},
+	"failed":   {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
+	"applied":  {"本人同意了，已经做好：%s\n%s", "The person accepted and it is done: %s\n%s"},
 	"connectorApproved": {"本人同意了：%s 这次批准只覆盖再发一次完全相同的请求。",
 		"The person accepted: %s The approval covers one repeat of that exact connector request."},
 }
