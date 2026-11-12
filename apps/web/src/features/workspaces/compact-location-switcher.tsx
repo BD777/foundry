@@ -40,7 +40,9 @@ export function CompactLocationSwitcher({
       ariaLabel={`${t("location.open")} · ${context}`}
       className="fdy-location"
       collapsed={collapsed}
-      detail={[deviceLabel, status].filter(Boolean).join(" · ")}
+      detail={
+        deviceLabel ? [deviceLabel, status].filter(Boolean).join(" · ") : ""
+      }
       icon={Folders}
       label={workspaceLabel}
       onBrowse={onBrowse}

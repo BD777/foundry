@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
@@ -31,6 +32,7 @@ func TestIntegrationStartersHonourTheSwitch(t *testing.T) {
 		"connectors-keep-alive":    probeConnectorsKeepAlive,
 		"skill-repository-checks":  probeSkillRepositoryChecks,
 		"usage-price-refresh":      probeUsagePriceRefresh,
+		"message-channels":         probeMessageChannels,
 	}
 	listed := map[string]bool{}
 	for _, starter := range (&Server{}).integrationStarters() {
@@ -189,6 +191,31 @@ func probeUsagePriceRefresh(t *testing.T, sw *integrations.Switch) (*Server, fun
 	})
 	server.usagePriceSource = trap.URL
 	return server, reached, nil
+}
+
+// probeMessageChannels seeds an enabled channel and counts every time the
+// runner opens its source, the step before it polls the connector.
+func probeMessageChannels(t *testing.T, sw *integrations.Switch) (*Server, func() int, func(*testing.T)) {
+	db := newTestStore(t)
+	channel := store.MessageChannelRecord{UserID: "usr_probe", MessageChannel: store.MessageChannel{
+		ID: "mch_probe", AssistantID: "pa_probe", Name: "probe", Enabled: true, SessionKey: "conversation",
+		Source:    store.MessageChannelSource{Kind: "openlark", AccountID: "xacc_probe"},
+		Limits:    store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3},
+		CreatedAt: "2026-11-13T00:00:00Z", UpdatedAt: "2026-11-13T00:00:00Z",
+	}}
+	if err := db.SaveMessageChannel(context.Background(), channel); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(db, ServerOptions{AllowedOrigin: accountsTestOrigin, Integrations: sw})
+	var opened atomic.Int64
+	server.messageChannels = channels.NewRunner(channels.Ports{
+		Store: db,
+		Open: func(context.Context, store.MessageChannelRecord) (channels.Source, error) {
+			opened.Add(1)
+			return nil, channels.ErrUnsupported
+		},
+	})
+	return server, func() int { return int(opened.Load()) }, nil
 }
 
 // With integrations off, what a person or a session asks of an integration

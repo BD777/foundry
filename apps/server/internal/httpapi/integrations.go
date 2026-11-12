@@ -42,7 +42,8 @@ func (s *Server) startFeishuBots(ctx context.Context) {
 }
 
 func (s *Server) runMessageChannels(ctx context.Context) {
-	if s.messageChannels != nil {
-		s.messageChannels.Run(ctx)
+	if !s.options.Integrations.On() || s.messageChannels == nil {
+		return
 	}
+	s.messageChannels.Run(ctx)
 }
