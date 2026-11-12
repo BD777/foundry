@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #265）。
+已合入 main（PR #265，squash bb3f7fdd）。
 
 已实现、测试并部署 dev Server（2026-11-13 02:09 UTC+8，与 DEV-197 B2 / DEV-201 合并构建一同上线）。Web、Worker 未改动行为（Worker 只改了一处注释，未发布）。等待人工验收。
 

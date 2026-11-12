@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #265）。
+已合入 main（PR #265，squash bb3f7fdd）。
 
 已实现、验证并部署 dev Server 与 Web（2026-11-13）。等待人工验收。
 

@@ -141,14 +141,16 @@ export function PendingItemCard({
     t("page.defaultAssistant"),
   );
   const hint = known ? failureHint(failure, t) : "";
-  // What the assistant said when the item came to the person (§h); an item
-  // it made from its own words already shows them as its title.
+  // What the assistant said when the item came to the person (§h). An item
+  // it made from its own words shows their first line as its title, so the
+  // note shows only when it says more (a draft on later lines, a cut title).
+  const note = (item.note ?? "").trim();
   const handed =
     item.handler !== "assistant" && item.handedReason
       ? item.handedReason === "assistant"
-        ? item.rule === "handed_over"
+        ? item.rule === "handed_over" && note === item.title.trim()
           ? ""
-          : (item.note ?? "")
+          : note
         : t(`item.handed.${item.handedReason}`)
       : "";
   // A classified failure says what to do; its raw error waits in the menu.
