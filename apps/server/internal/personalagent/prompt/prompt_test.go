@@ -1,8 +1,6 @@
 package prompt_test
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
@@ -20,9 +19,14 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outputs")
 
-// Every version system.md shipped as, with its hash. Changing the prompt
-// fails here until it gets a new Version and a new line.
+// Every prompt version's hash. Before 2026-11-12.5 the digest covered
+// system.md alone; from that version it covers system.md and every skill.
+// Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-12.6": "333a8cd9404227cc6df7ad6572514daeb3533be32fe54c2cb80f48a894ecbbf4", // DEV-197 B1: report blockers plainly; asking remains the executor's choice
+	"2026-11-13.2": "d7f4798c007177e262b7e1944ffaedf267b0f2d216b906a5aeaac3e6b95b7ff3", // DEV-200 follow-up: check needs-you items before their deadline (DEV-199 B3)
+	"2026-11-13.1": "42fb0be72eaf05d1604d26d19a91ce47312b897e8c1b5adfed8e5e469bb38754", // DEV-200: no per-turn guidance; rules and confirmed facts in AGENTS.md, notices are facts
+	"2026-11-12.5": "bdcca1d4c2751dec05b826cec46c91cc46875a623f32fa57bf8ab78f810e1e75", // progressive disclosure: short core plus three assistant skills
 	"2026-11-12.4": "8ea02a38cff4ed22e6c314a221957065c5e8672e172d12d000c0fe033c054141", // slim the assistant prompt: tool mechanics live in tool descriptions; 31KB → 15.5KB
 	"2026-11-12.3": "724e990d1ec63d55ec24e653f73ba00d1d968e6cf764f403a71509dded298aa5", // DEV-191 v1b: fit the per-assistant settings link within the AGENTS.md limit
 	"2026-11-12.2": "97d1dab13c7a1a13c37073aba25036d9d3e964ebee3b49c0f8e91e6a0872f392", // DEV-191 P2: two memory layers, unconfirmed facts are not kept
@@ -45,12 +49,59 @@ var promptVersions = map[string]string{
 }
 
 func TestEveryPromptChangeHasItsOwnVersion(t *testing.T) {
-	sum := sha256.Sum256([]byte(prompt.System()))
-	got := hex.EncodeToString(sum[:])
+	got := prompt.ContentDigest()
 	want, ok := promptVersions[prompt.Version]
 	if !ok || want != got {
-		t.Fatalf("system.md (sha256 %s) is not the prompt recorded as %s: bump prompt.Version and add it to promptVersions", got, prompt.Version)
+		t.Fatalf("the instructions (sha256 %s) are not recorded as %s: bump prompt.Version and add it to promptVersions", got, prompt.Version)
 	}
+}
+
+// The embedded files are valid Agent Skills: their frontmatter names the
+// directory, and each description is short enough for native discovery.
+func TestAssistantSkillsHaveValidFrontmatter(t *testing.T) {
+	skills := prompt.AssistantSkills()
+	if len(skills) != 3 {
+		t.Fatalf("embedded %d assistant skills, want 3", len(skills))
+	}
+	for _, skill := range skills {
+		name, description, ok := frontmatter(skill.Content)
+		if !ok {
+			t.Errorf("%s has no valid frontmatter", skill.Name)
+			continue
+		}
+		if name != skill.Name {
+			t.Errorf("%s frontmatter names %q", skill.Name, name)
+		}
+		if pathName := strings.Split(strings.TrimPrefix(prompt.AssistantSkillPath(skill.Name), prompt.AssistantSkillsPath+"/"), "/")[0]; pathName != skill.Name {
+			t.Errorf("%s is stored under %q", skill.Name, pathName)
+		}
+		if description == "" {
+			t.Errorf("%s has no description", skill.Name)
+		}
+		if size := utf8.RuneCountInString(description); size >= 1024 {
+			t.Errorf("%s description has %d characters, want fewer than 1024", skill.Name, size)
+		}
+	}
+}
+
+func frontmatter(content string) (name, description string, ok bool) {
+	if !strings.HasPrefix(content, "---\n") {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(content, "---\n")
+	front, _, found := strings.Cut(rest, "\n---\n")
+	if !found {
+		return "", "", false
+	}
+	for _, line := range strings.Split(front, "\n") {
+		switch {
+		case strings.HasPrefix(line, "name: "):
+			name = strings.TrimSpace(strings.TrimPrefix(line, "name: "))
+		case strings.HasPrefix(line, "description: "):
+			description = strings.TrimSpace(strings.TrimPrefix(line, "description: "))
+		}
+	}
+	return name, description, name != "" && description != ""
 }
 
 // The words a non-technical person should never meet (§1, §13), as the
@@ -74,13 +125,14 @@ func bannedIn(text string) []string {
 	return append(found, foundryIDs.FindAllString(text, -1)...)
 }
 
-// userFacingLines are the prompt's lines the assistant would say in plain
-// words. The one example after "they used technical words" may mirror them.
-func userFacingLines() []string {
+// userFacingLines are the instructions' lines the assistant would say in
+// plain words. The one example after "they used technical words" may mirror
+// them.
+func userFacingLines(text string) []string {
 	lines := []string{}
 	inSayInstead := false
 	mirroringTechnicalWords := false
-	for _, line := range strings.Split(prompt.System(), "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		switch {
 		case strings.HasPrefix(line, "You:"):
 			mirroringTechnicalWords = strings.Contains(line, "technical words")
@@ -101,8 +153,19 @@ func userFacingLines() []string {
 	return lines
 }
 
+func promptTexts() []string {
+	texts := []string{prompt.System()}
+	for _, skill := range prompt.AssistantSkills() {
+		texts = append(texts, skill.Content)
+	}
+	return texts
+}
+
 func TestUserFacingLinesUseNoImplementationWords(t *testing.T) {
-	lines := userFacingLines()
+	lines := []string{}
+	for _, text := range promptTexts() {
+		lines = append(lines, userFacingLines(text)...)
+	}
 	english, chinese := 0, 0
 	for _, line := range lines {
 		if regexp.MustCompile(`\p{Han}`).MatchString(line) {
@@ -115,7 +178,7 @@ func TestUserFacingLinesUseNoImplementationWords(t *testing.T) {
 		}
 	}
 	if english < 3 || chinese < 2 {
-		t.Fatalf("found %d English and %d Chinese user-facing lines; the scan is not reading the examples", english, chinese)
+		t.Fatalf("found %d English and %d Chinese user-facing lines; the scan is not reading all examples", english, chinese)
 	}
 	// The scan itself catches what it should.
 	for _, bad := range []string{"I started a session on your device.", "我在仓库里新建了分支", "Opened ws_123.", "See the Issue."} {
@@ -165,23 +228,49 @@ func TestAgentsFileGolden(t *testing.T) {
 	}
 }
 
+func TestRunFilesIncludeTheAssistantSkills(t *testing.T) {
+	files := prompt.RunFiles(fullInput())
+	got := map[string]string{}
+	for _, file := range files {
+		got[file.Path] = file.Content
+	}
+	for _, path := range []string{"AGENTS.md", prompt.ExamplesPath, prompt.ProjectIndexPath} {
+		if _, ok := got[path]; !ok {
+			t.Errorf("run files lack %s", path)
+		}
+	}
+	for _, skill := range prompt.AssistantSkills() {
+		path := prompt.AssistantSkillPath(skill.Name)
+		if got[path] != skill.Content {
+			t.Errorf("run files lack the embedded content at %s", path)
+		}
+	}
+	if len(files) != 3+len(prompt.AssistantSkills()) {
+		t.Fatalf("run files contain %d entries", len(files))
+	}
+}
+
 func TestTurnContextGolden(t *testing.T) {
 	golden(t, "turn_context_full", prompt.TurnContext(fullInput()))
 }
 
-func TestTurnContextIncludesTheProjectIndex(t *testing.T) {
-	out := prompt.TurnContext(fullInput())
-	for _, line := range []string{
-		"Projects and computers, current index:\n",
-		"- 『家庭记账』 (ws_budget)",
-		"- 『Personal blog』 (ws_blog)",
-	} {
-		if !strings.Contains(out, line) {
-			t.Errorf("the turn's context lacks %q:\n%s", line, out)
+// The project index is a file AGENTS.md points to, not part of any turn.
+func TestProjectIndexIsAFileAGENTSPointsTo(t *testing.T) {
+	in := fullInput()
+	index := prompt.ProjectIndexFile(in)
+	for _, line := range []string{"As of 2026-10-15 09:30;", "- 『家庭记账』 (ws_budget)", "- 『Personal blog』 (ws_blog)"} {
+		if !strings.Contains(index, line) {
+			t.Errorf("the project index lacks %q:\n%s", line, index)
 		}
 	}
-	if strings.Count(out, "Projects and computers, current index:\n") != 1 {
-		t.Fatalf("the turn's context repeats its index:\n%s", out)
+	if !strings.Contains(prompt.AgentsFile(in), prompt.ProjectIndexPath) || strings.Contains(prompt.AgentsFile(in), "ws_blog") {
+		t.Fatal("AGENTS.md should point to the project index, not hold it")
+	}
+	if strings.Contains(prompt.TurnContext(in), "ws_budget") {
+		t.Fatal("the turn's context carries the index")
+	}
+	if got := prompt.ProjectIndexFile(newPersonInput()); !strings.Contains(got, "No projects yet.") {
+		t.Fatalf("empty index: %q", got)
 	}
 }
 
@@ -189,36 +278,65 @@ func TestComputersGolden(t *testing.T) {
 	golden(t, "computers_full", prompt.Computers(fullInput()))
 }
 
-// AGENTS.md is a file in the assistant's folder, on a computer others may
-// use: it holds the instructions and settings, never what Foundry knows
-// about the person, their projects or their computers. Those reach each
-// turn's context or come from tools. It changes only with the settings.
-func TestAgentsFileHoldsNothingAboutThePerson(t *testing.T) {
+// AGENTS.md carries what lasts: the person's rules and the facts they
+// confirmed, loaded natively once per conversation. It never carries live
+// state (the time, which computers are online, the project index), so it
+// does not change between turns that change only that state.
+func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 	in := fullInput()
 	file := prompt.AgentsFile(in)
-	for _, private := range []string{"有两个孩子", "Works at a bank", "叫我小林", "Quarterly reports", "ws_budget", "Home server", "intranet.corp.example", "回猎头"} {
-		if strings.Contains(file, private) {
-			t.Errorf("AGENTS.md holds %q", private)
+	for _, shown := range []string{
+		"# The person's rules", "叫我小林。周末不要发通知。",
+		"- the person confirms first: use a folder of theirs outside the managed folders; rename a project or restate its purpose;",
+		"# What the person confirmed (newest first)", "有两个孩子", "Works at a bank. (they wrote it in settings",
+		"Before you took over their Feishu direct chat it went to \"家庭记账\" (ws_budget)",
+		prompt.ProjectIndexPath, prompt.ExamplesPath,
+	} {
+		if !strings.Contains(file, shown) {
+			t.Errorf("AGENTS.md lacks %q", shown)
+		}
+	}
+	for _, absent := range []string{"Always put new things in Old blog", "Home server", "intranet.corp.example", "Quarterly reports", "2026-10-15 09:30", "Person: \""} {
+		if strings.Contains(file, absent) {
+			t.Errorf("AGENTS.md holds %q", absent)
 		}
 	}
 	next := fullInput()
 	next.Now = in.Now.Add(3 * time.Hour)
-	next.Memory, next.Workspaces, next.Devices, next.Tasks, next.List = nil, nil, nil, nil, nil
-	next.Settings.ExtraInstructions = ""
+	next.Devices, next.Places, next.L0Index = nil, nil, ""
 	if prompt.AgentsFile(next) != file {
-		t.Fatal("AGENTS.md changed with what Foundry knows about the person")
-	}
-	turn := prompt.TurnContext(in)
-	for _, shown := range []string{"有两个孩子", "叫我小林。周末不要发通知。", "rename a project or restate its purpose: the person confirms first"} {
-		if !strings.Contains(turn, shown) {
-			t.Errorf("the turn's context lacks %q", shown)
-		}
-	}
-	if !strings.Contains(file, prompt.ExamplesPath) || strings.Contains(file, "Person: \"") {
-		t.Fatal("the worked examples belong in their own file, named from AGENTS.md")
+		t.Fatal("AGENTS.md changed with live state")
 	}
 	if examples := prompt.ExamplesFile(in); !strings.HasPrefix(examples, "# Examples\n") || !strings.Contains(examples, "Person: \"") {
 		t.Fatalf("examples file: %.80q", examples)
+	}
+}
+
+// agentsFileBudget is the size of the typical AGENTS.md (fullInput) before
+// the rules and confirmed facts moved into it (DEV-196, 7840 bytes): moving
+// them must not make the file larger.
+const agentsFileBudget = 7840
+
+func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
+	size := len(prompt.AgentsFile(fullInput()))
+	t.Logf("AGENTS.md (typical) is %d bytes", size)
+	if size > agentsFileBudget {
+		t.Fatalf("AGENTS.md is %d bytes, more than its budget of %d", size, agentsFileBudget)
+	}
+}
+
+// The turn's context is facts only: the time in the person's zone (and a
+// receipt the caller adds). No guidance, no live state.
+func TestTurnContextCarriesNoGuidance(t *testing.T) {
+	out := prompt.TurnContext(fullInput())
+	want := prompt.TurnContextStart + "\nNow: Thursday, 2026-10-15 09:30 (Asia/Shanghai).\n" + prompt.TurnContextEnd
+	if out != want {
+		t.Fatalf("turn context:\n%s", out)
+	}
+	for _, phrase := range []string{"follow them", "act on them", "never", "Never", "you can plan", "should", "must", "Tell ", "tell ", "ask ", "Ask ", "remember", "Learn as you go", "read_list", "update_list", "needs_you"} {
+		if strings.Contains(out, phrase) {
+			t.Errorf("the turn's context says %q", phrase)
+		}
 	}
 }
 
@@ -228,7 +346,14 @@ func TestAgentsFileFitsCodexsLimit(t *testing.T) {
 	in := fullInput()
 	in.Settings.AssistantName = strings.Repeat("名", 60)
 	in.PersonName = strings.Repeat("名", 60)
-	if size := len(prompt.AgentsFile(in)); size > prompt.AgentsFileMaxBytes {
+	in.Settings.ExtraInstructions = strings.Repeat("规", personalagent.ExtraInstructionsMaxChars)
+	for i := 0; i < 40; i++ {
+		in.Memory = append(in.Memory, store.PersonalAgentMemoryItem{ID: fmt.Sprintf("mem_w%d", i), Content: strings.Repeat("记", 60),
+			Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive, Scope: store.MemoryScopePerson, UpdatedAt: at(-time.Duration(i) * time.Hour)})
+	}
+	size := len(prompt.AgentsFile(in))
+	t.Logf("AGENTS.md is %d bytes", size)
+	if size > prompt.AgentsFileMaxBytes {
 		t.Fatalf("AGENTS.md is %d bytes, more than %d", size, prompt.AgentsFileMaxBytes)
 	}
 }
@@ -246,7 +371,7 @@ func TestTheDesignLimitsHold(t *testing.T) {
 
 	in = newPersonInput()
 	in.Settings.ExtraInstructions = strings.Repeat("x", personalagent.ExtraInstructionsMaxChars+10)
-	if out := prompt.TurnContext(in); strings.Contains(out, strings.Repeat("x", personalagent.ExtraInstructionsMaxChars)) {
+	if out := prompt.AgentsFile(in); strings.Contains(out, strings.Repeat("x", personalagent.ExtraInstructionsMaxChars)) {
 		t.Fatal("the person's requests are cut to the settings limit")
 	}
 
@@ -257,8 +382,8 @@ func TestTheDesignLimitsHold(t *testing.T) {
 			Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive, UpdatedAt: at(-time.Duration(i) * time.Hour),
 		})
 	}
-	if out := prompt.TurnContext(in); !strings.Contains(out, "…and 1 older facts: read_memory") || strings.Contains(out, "[mem_2]") {
-		t.Fatal("what the turn's context says about the person stays within the limit, newest first")
+	if out := prompt.AgentsFile(in); !strings.Contains(out, "…and 1 older facts: read_memory") || strings.Contains(out, "[mem_2]") {
+		t.Fatal("what AGENTS.md says about the person stays within the limit, newest first")
 	}
 }
 
@@ -276,23 +401,6 @@ func golden(t *testing.T, name, got string) {
 	}
 	if got != string(want) {
 		t.Fatalf("the output differs from %s; if intended, rerun with -update and review the diff", path)
-	}
-}
-
-// Each turn's context shows the open items of the person's list, with
-// their times in the person's zone, at most personalagent.ListContextMax.
-func TestTurnContextShowsTheOpenList(t *testing.T) {
-	out := prompt.TurnContext(fullInput())
-	if !strings.Contains(out, `- "回猎头的微信消息" [pai_wechat]: "下班后"; reminder at 2026-10-15 18:30`) ||
-		!strings.Contains(out, "your task task_1") || strings.Contains(out, "pai_qa") {
-		t.Fatalf("the list in the turn's context:\n%s", out)
-	}
-	in := newPersonInput()
-	for i := 0; i <= personalagent.ListContextMax; i++ {
-		in.List = append(in.List, store.PersonalAgentListItem{ID: fmt.Sprintf("pai_%02d", i), Text: "x", Status: store.PersonalAgentItemOpen, CreatedAt: at(time.Duration(i) * time.Minute)})
-	}
-	if out := prompt.TurnContext(in); !strings.Contains(out, "…and 1 more; read_list") || strings.Contains(out, fmt.Sprintf("[pai_%02d]", personalagent.ListContextMax)) {
-		t.Fatalf("the turn's context keeps %d open items:\n%s", personalagent.ListContextMax, out)
 	}
 }
 
@@ -358,18 +466,6 @@ func fullInput() prompt.Input {
 				Labels: []store.DeviceLabel{{Key: "network", Value: "corp"}, {Key: "files", Value: "work"}},
 				Facts:  []store.DeviceFact{{Key: "os", Value: "macos", Source: "system"}, {Key: "reaches", Value: "intranet.corp.example", Detail: "Corp network", Source: "connector"}, {Key: "toolchain", Value: "go", Detail: "Go 1.23", Source: "toolchain"}}},
 			"dev_nas": {DeviceID: "dev_nas", Facts: []store.DeviceFact{{Key: "always-on", Source: "presence"}}},
-		},
-		Tasks: []store.PersonalAgentTask{
-			{ID: "task_1", SessionID: "sess_export", WorkspaceID: "ws_budget", Title: "Add an Excel export", Status: store.PersonalAgentTaskRunning, CreatedAt: at(-40 * time.Minute), LastEventAt: at(-5 * time.Minute)},
-			{ID: "task_2", SessionID: "sess_login", WorkspaceID: "ws_admin", Title: "Why login is slow", Status: store.PersonalAgentTaskAsking, ReadOnly: true, CreatedAt: at(-3 * time.Hour), StuckSince: at(-time.Hour)},
-			{ID: "task_3", WorkspaceID: "ws_budget", Title: "Monthly chart", Status: store.PersonalAgentTaskQueued, CreatedAt: at(-30 * time.Minute)},
-			{ID: "task_4", SessionID: "sess_done", WorkspaceID: "ws_blog", Title: "Fix the RSS feed", Status: store.PersonalAgentTaskDone, CreatedAt: at(-24 * time.Hour)},
-			{ID: "task_5", SessionID: "sess_theme", WorkspaceID: "ws_blog", Title: "New blog theme", Status: store.PersonalAgentTaskRunning, CreatedAt: at(-20 * time.Minute), WaitingFor: "Home server"},
-		},
-		List: []store.PersonalAgentListItem{
-			{ID: "pai_wechat", Text: "回猎头的微信消息", When: "下班后", At: at(9 * time.Hour), Remind: true, Status: store.PersonalAgentItemOpen, CreatedAt: at(-time.Hour)},
-			{ID: "pai_doc", Text: "把 Atlas 和 Tag 流程合并的文档改完", When: "下午开会前", TaskID: "task_1", Status: store.PersonalAgentItemOpen, CreatedAt: at(-50 * time.Minute)},
-			{ID: "pai_qa", Text: "和小林对了提测 Workflow", Status: store.PersonalAgentItemDone, CreatedAt: at(-40 * time.Minute), ClosedAt: at(-40 * time.Minute)},
 		},
 		DirectChatPreviousWorkspaceID: "ws_budget",
 		ConnectorsURL:                 "https://foundry.example/connectors",

@@ -77,8 +77,9 @@ async function mounted(props = {}, role = "member") {
         null,
         createElement(AppSidebar, {
           activeView: "assistant",
+          assistantName: "Assistant",
           interfaceMode: "full",
-          counts: { review: 2, running: 3, activeSkills: 5 },
+          counts: { review: 2, running: 3, activeSkills: 5, pending: 0 },
           onNavSelect: (id) => selected.push(id),
           onNotice() {},
           preferences,
@@ -140,6 +141,42 @@ test("selector belongs only to Workspace; global navigation works without a work
   assert.equal(v.container.querySelector('[data-nav-id="members"]'), null);
   await v.close();
 });
+
+test("the assistant section has one dynamic entry and no switcher row", async () => {
+  const v = await mounted({ assistantName: "ByteWork" });
+  const section = v.container.querySelector('[data-section-id="assistant"]');
+  assert.ok(section);
+  assert.equal(section.querySelector(".fdy-sidebar-section-header"), null);
+  assert.deepEqual(
+    [...section.querySelectorAll("[data-nav-id]")].map(
+      (item) => item.dataset.navId,
+    ),
+    ["assistant", "pending", "assistantSettings"],
+  );
+  const assistant = section.querySelector('[data-nav-id="assistant"]');
+  assert.match(assistant.textContent, /ByteWork/);
+  assert.match(
+    assistant.querySelector("svg").getAttribute("class"),
+    /sparkles/,
+  );
+  await v.close();
+});
+
+test("the dynamic assistant entry remains available when collapsed", async () => {
+  const v = await mounted({
+    assistantName: "ByteWork",
+    preferences: { ...preferences, sidebarCollapsed: true },
+  });
+  assert.equal(
+    v.container.querySelector(".fdy-sidebar").dataset.collapsed,
+    "true",
+  );
+  const assistant = v.container.querySelector('[data-nav-id="assistant"]');
+  assert.ok(assistant);
+  assert.equal(assistant.getAttribute("aria-label"), "Open ByteWork");
+  await v.close();
+});
+
 test("simple interface omits workspace controls and preserves account roles", async () => {
   const v = await mounted({ interfaceMode: "simple" }, "admin");
   for (const selector of [

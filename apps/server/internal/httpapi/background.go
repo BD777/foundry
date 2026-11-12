@@ -59,6 +59,10 @@ func (s *Server) backgroundJobs() []backgroundJob {
 				s.sessionRetries.Pump(ctx, time.Now().UTC())
 			})
 		}},
+		{"pending-turn-failures", func(ctx context.Context) {
+			everyFromNow(ctx, pendingFailureSweepInterval, nil, s.maintainPendingTurnFailures)
+		}},
+		{"pending-needs-you", s.runNeedsYouMaintenance},
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},
@@ -67,6 +71,13 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"device-removals", func(ctx context.Context) {
 			everyAfter(ctx, deviceRemovalPurgeInterval, s.deviceRemovals.kicks(), s.purgeRemovedDevices)
 		}},
+	}
+	if s.messageChannels != nil {
+		jobs = append(jobs, backgroundJob{"message-channel-dispatch", func(ctx context.Context) {
+			everyFromNow(ctx, 2*time.Second, nil, s.messageChannels.Dispatch)
+		}}, backgroundJob{"message-channel-prune", func(ctx context.Context) {
+			everyFromNow(ctx, time.Hour, nil, s.pruneMessageChannels)
+		}})
 	}
 	for _, job := range s.assistant.Jobs() {
 		every := everyAfter

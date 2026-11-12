@@ -131,26 +131,3 @@ export const simpleNavSections: Array<SidebarNavSection<SidebarView>> = [
   assistantNavSection,
   { id: "manage", label: "manage", items: [] },
 ];
-
-/**
- * One assistant keeps the direct chat/settings shape. Several make the first
- * entry a flat route to the list; selection itself never hides in a dropdown.
- */
-export function navSectionsForAssistantCount(
-  sections: Array<SidebarNavSection<SidebarView>>,
-  assistantCount: number,
-): Array<SidebarNavSection<SidebarView>> {
-  if (assistantCount <= 1) return sections;
-  return sections.map((section) =>
-    section.id === "assistant"
-      ? {
-          ...section,
-          items: section.items.map((item) =>
-            item.id === "assistant"
-              ? { ...item, id: "assistants" as const, label: "assistants" }
-              : item,
-          ),
-        }
-      : section,
-  );
-}

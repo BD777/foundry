@@ -11,6 +11,7 @@ export const assistantSettingsSections = [
   "models",
   "connectors",
   "entry",
+  "channels",
   "limits",
   "activity",
 ] as const;
@@ -29,7 +30,7 @@ export const assistantSettingsGroups = [
   },
   {
     id: "reachLimits",
-    sections: ["entry", "limits", "activity"],
+    sections: ["entry", "channels", "limits", "activity"],
   },
 ] as const satisfies ReadonlyArray<{
   id: string;

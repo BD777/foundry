@@ -86,9 +86,9 @@ type memoryItemArgs struct {
 
 // Why a fact the assistant gave was not written.
 const (
-	memoryNoteInferred   = "No source was written. This is an inference, not a confirmed fact. Ask the person to confirm it; their reply can then be saved with its exact quote."
-	memoryNoteUngrounded = "No source was written: the quote is not in anything the person wrote in this conversation (a document, web page, file, helper's output or Foundry's own notice is not their words). If the person did say it, quote their exact words; if you concluded it, ask them to confirm it."
-	memoryNoteExternal   = "No source was written: this did not come from the person's own words in this conversation. Ask the person to confirm it; their reply can then be saved with its exact quote."
+	memoryNoteInferred   = "No source was written: this is an inference, not a confirmed fact. The person's reply confirming it can be saved with its exact quote."
+	memoryNoteUngrounded = "No source was written: the quote is not in anything the person wrote in this conversation (a document, web page, file, helper's output or Foundry's own notice is not their words)."
+	memoryNoteExternal   = "No source was written: this did not come from the person's own words in this conversation. The person's reply confirming it can be saved with its exact quote."
 )
 
 // planRemember stores, corrects or forgets one fact about the person. A

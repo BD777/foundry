@@ -95,7 +95,7 @@ func TestChildQuestionIsRelayedAndAnsweredInPlainText(t *testing.T) {
 	if len(relayed) != 1 {
 		t.Fatalf("relayed questions = %d, want 1: %+v", len(relayed), items)
 	}
-	for _, want := range []string{f.child.ID, "Which greeting?", "- Bonjour: French", "send_message to " + f.child.ID, "ask your own person"} {
+	for _, want := range []string{f.child.ID, "Which greeting?", "- Bonjour: French", "send_message to " + f.child.ID, "otherwise decide whether it needs your own person, and if so ask with your question tool"} {
 		if !strings.Contains(relayed[0].Prompt, want) {
 			t.Errorf("relayed question lacks %q:\n%s", want, relayed[0].Prompt)
 		}

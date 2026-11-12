@@ -11,6 +11,7 @@ import {
   Hourglass,
   KeyRound,
   MessageCircleQuestion,
+  MessagesSquare,
   PackageX,
   RotateCcw,
   ScrollText,
@@ -30,6 +31,7 @@ import {
   pendingFailure,
   pendingHeadline,
   pendingOptionLabel,
+  pendingOrigin,
   pendingPersonal,
   pendingGitHubScopes,
   pendingPrimary,
@@ -49,6 +51,7 @@ const kindIcon = {
   connector: { icon: KeyRound, tone: "warn" },
   helper_stuck: { icon: Hourglass, tone: "warn" },
   bundle_update: { icon: PackageX, tone: "error" },
+  message_channel: { icon: MessagesSquare, tone: "warn" },
 } as const;
 
 /** Details longer than this many characters start collapsed. */
@@ -60,8 +63,9 @@ const collapseAfter = 240;
  * the one thing to do. A question's options are that action, its
  * recommended option filled; a failed turn goes to the chat; a step only the
  * person can take opens where it is done. Reply stays beside it; opening the
- * message, the context or the error, marking done and dismissing sit in one
- * "…" menu. `compact` is the density of the bar above a chat's composer;
+ * message, the context or the error, and marking done sit in one "…" menu.
+ * "Not for me" is a visible action. `compact` is the density of the bar
+ * above a chat's composer;
  * `where` says whether the item is shown inside its own chat.
  */
 export function PendingItemCard({
@@ -71,6 +75,7 @@ export function PendingItemCard({
   density = "comfortable",
   where = "page",
   readOnly = false,
+  showOrigin = false,
 }: {
   item: PendingItem;
   /** Opens the transcript at the item's message (or its Issue). */
@@ -80,6 +85,8 @@ export function PendingItemCard({
   where?: "page" | "chat";
   /** Shown, not acted on: an item the person's assistant handles. */
   readOnly?: boolean;
+  /** Name the assistant, chat or project the item came from. */
+  showOrigin?: boolean;
 }) {
   const { t } = useTranslation("pending");
   const titleId = useId();
@@ -99,7 +106,11 @@ export function PendingItemCard({
   const primary = pendingPrimary(item);
   const grantScopes = pendingGitHubScopes(item);
   const headline = own
-    ? { text: item.title, showExcerpt: item.source === "bundle_update" }
+    ? {
+        text: item.title,
+        showExcerpt:
+          item.source === "bundle_update" || item.source === "message_channel",
+      }
     : pendingHeadline(item);
   const title = pendingScopeUpdate(item)
     ? t("item.accountScopes", {
@@ -123,6 +134,12 @@ export function PendingItemCard({
             : headline.pathDenied
               ? t("item.permissionDenied", { path: headline.pathDenied })
               : headline.text;
+  const origin = pendingOrigin(
+    item,
+    t("page.untitled"),
+    t("page.personal"),
+    t("page.defaultAssistant"),
+  );
   const hint = known ? failureHint(failure, t) : "";
   // What the assistant said when the item came to the person (§h); an item
   // it made from its own words already shows them as its title.
@@ -194,13 +211,15 @@ export function PendingItemCard({
   const openLabel =
     item.source === "bundle_update"
       ? t("item.openSkillLibrary")
-      : own
-        ? t("item.openConnectors")
-        : item.issueId
-          ? t("page.openIssue")
-          : where === "chat"
-            ? t("item.jumpToMessage")
-            : t("item.openMessage");
+      : item.source === "message_channel"
+        ? t("item.openMessageChannels")
+        : own
+          ? t("item.openConnectors")
+          : item.issueId
+            ? t("page.openIssue")
+            : where === "chat"
+              ? t("item.jumpToMessage")
+              : t("item.openMessage");
   const primaryOpenLabel =
     item.source === "turn_failed" && !item.issueId
       ? where === "chat"
@@ -241,20 +260,12 @@ export function PendingItemCard({
       onSelect: () => void change("open"),
     });
   else if (!readOnly)
-    menu.push(
-      {
-        key: "done",
-        label: t("item.done"),
-        icon: <Check aria-hidden="true" size={15} />,
-        onSelect: () => void change("done"),
-      },
-      {
-        key: "dismiss",
-        label: t("item.dismiss"),
-        icon: <X aria-hidden="true" size={15} />,
-        onSelect: () => void change("dismissed"),
-      },
-    );
+    menu.push({
+      key: "done",
+      label: t("item.done"),
+      icon: <Check aria-hidden="true" size={15} />,
+      onSelect: () => void change("done"),
+    });
 
   let action: ReactNode = null;
   if (readOnly) {
@@ -336,6 +347,18 @@ export function PendingItemCard({
         {t("item.reply")}
       </Button>
     ) : null;
+  const notNeeded =
+    !resolved && !readOnly ? (
+      <Button
+        disabled={Boolean(busy)}
+        onClick={() => void change("dismissed")}
+        size="sm"
+        variant="ghost"
+      >
+        <X aria-hidden="true" size={14} />
+        {t("item.notNeeded")}
+      </Button>
+    ) : null;
 
   return (
     <article
@@ -366,6 +389,14 @@ export function PendingItemCard({
           {title}
         </strong>
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+          {showOrigin ? (
+            <>
+              <span className="text-ink">
+                {t(`item.origin.${origin.kind}`, { name: origin.name })}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
           <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
           <span aria-hidden="true">·</span>
           <time
@@ -387,7 +418,11 @@ export function PendingItemCard({
             {hint}
           </p>
         ) : null}
-        {handed ? (
+        {handed && item.handedReason === "assistant_timeout" ? (
+          <p className="fdy-pending-item-reason min-w-0 text-xs leading-[1.5] text-ink-muted wrap-anywhere">
+            {handed}
+          </p>
+        ) : handed ? (
           <p className="fdy-pending-item-handed min-w-0 text-xs leading-[1.5] text-ink wrap-anywhere">
             <span className="font-semibold">{t("item.fromAssistant")}</span>{" "}
             {handed}
@@ -476,7 +511,7 @@ export function PendingItemCard({
           </div>
         ) : null}
         {error ? <Alert size="compact" title={error} tone="error" /> : null}
-        {action || secondaryReply ? (
+        {action || secondaryReply || notNeeded ? (
           <div
             className={cn(
               "flex min-w-0 flex-wrap items-center gap-1.5",
@@ -485,6 +520,7 @@ export function PendingItemCard({
           >
             {action}
             {secondaryReply}
+            {notNeeded}
           </div>
         ) : null}
       </div>

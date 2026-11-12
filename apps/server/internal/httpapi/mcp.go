@@ -150,7 +150,7 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to an Issue's clarification: it reads sessions with list_sessions and read_context")}
 	}
 	if verifier && !readOnlyMCPTool(name) {
-		return &statusError{http.StatusForbidden, errors.New(name + " is not available to a verifier: it checks work with the Foundry tools that only read, and reports what it found to whoever started it")}
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available to a verifier")}
 	}
 	if repositorySourceMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant change where their skill repositories are read")}
@@ -162,13 +162,13 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant manage their model providers")}
 	}
 	if name == "ask_person" && role != store.AgentSessionRoleIssueExecution {
-		return &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person; say what you need in your reply to whoever started you")}
+		return &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person")}
 	}
 	if personalAgentMCPTools[name] && role != store.AgentSessionRolePersonalAgent {
 		return &statusError{http.StatusForbidden, errors.New(name + " is only available to the person's assistant")}
 	}
 	if assistantWithheldMCPTools[name] && role == store.AgentSessionRolePersonalAgent {
-		return &statusError{http.StatusForbidden, errors.New(name + " is not available to the person's assistant: hand work that needs a device's resources or Feishu events to a session in a project there")}
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available to the person's assistant")}
 	}
 	return nil
 }

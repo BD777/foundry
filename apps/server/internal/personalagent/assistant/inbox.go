@@ -67,6 +67,13 @@ func (s *Service) DrainInbox(ctx context.Context) {
 	}
 }
 
+// ChannelInboxPrefix starts the inbox channel of a message channel's
+// conversation (DEV-203): mc:<channel id>:<conversation key>.
+const ChannelInboxPrefix = "mc:"
+
+// IsChannelInbox reports whether an inbox channel is a message channel's.
+func IsChannelInbox(channel string) bool { return strings.HasPrefix(channel, ChannelInboxPrefix) }
+
 func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) {
 	entry.Status, entry.LeaseUntil = "dispatching", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
 	claimed, err := s.store.SavePersonalAgentInbox(ctx, entry)
@@ -126,10 +133,27 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 	if entry.Origin != nil {
 		previousID = entry.Origin.ThreadSessionID
 	}
+	// A message channel's conversation (DEV-203) waits only for its own
+	// session; the person's messages do not wait for channel sessions.
+	channelEntry := IsChannelInbox(entry.Channel)
+	channelSessions := map[string]bool{}
+	if !channelEntry && s.messageChannels != nil {
+		ids, err := s.messageChannels.MessageChannelSessions(ctx, agent.ID, "")
+		if err != nil {
+			save("waiting", "session_unavailable", "")
+			return
+		}
+		for _, id := range ids {
+			channelSessions[id] = true
+		}
+	}
 	var previous *store.AgentSession
 	for _, session := range workspaceSessions {
 		conversation, own := s.Conversation(ctx, session)
 		if !own || conversation.ID != agent.ID || session.CreatedByUserID != entry.UserID {
+			continue
+		}
+		if channelEntry && session.ID != previousID || channelSessions[session.ID] {
 			continue
 		}
 		if store.IsActiveSessionStatus(session.Status) {
@@ -198,6 +222,9 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 	} else {
 		input := run.SessionInput(snapshot, prompt, entry.InputID)
 		input.Attachments = attachments
+		if channelEntry && s.channelTitle != nil {
+			input.Title = s.channelTitle(ctx, entry)
+		}
 		if err = s.sessions.ResolveDevice(ctx, &input); err == nil {
 			session, err = s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{Reconcile: true, BeforeDispatch: beforeDispatch})
 		}

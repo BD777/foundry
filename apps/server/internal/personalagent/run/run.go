@@ -37,6 +37,7 @@ type Store interface {
 	store.PersonalAgentRuntimeStore
 	store.ExecutionDefaultStore
 	store.WorkerGroupStore
+	store.KnowledgeVaultStore
 }
 
 // Account is one account a workspace's device offers to run a session

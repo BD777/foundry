@@ -12,6 +12,20 @@ export interface PendingGroup {
 }
 
 export type PendingFilter = "open" | "resolved";
+export type PendingAssistantFilter = "all" | "none" | `assistant:${string}`;
+
+export function pendingAssistantFilter(
+  item: PendingItem,
+): Exclude<PendingAssistantFilter, "all"> {
+  return item.assistantId ? `assistant:${item.assistantId}` : "none";
+}
+
+export function pendingMatchesAssistant(
+  item: PendingItem,
+  filter: PendingAssistantFilter,
+): boolean {
+  return filter === "all" || pendingAssistantFilter(item) === filter;
+}
 
 export function pendingResolved(item: PendingItem): boolean {
   return item.state !== "open";
@@ -28,14 +42,46 @@ export function pendingByAssistant(item: PendingItem): boolean {
  */
 /**
  * The person's own items (DEV-125): an account or a device's sign-in, in no
- * workspace, chat or Issue.
+ * workspace, chat or Issue; a failed bundle update; a message channel that
+ * needs a look (DEV-203).
  */
 export function pendingPersonal(item: PendingItem): boolean {
   return (
     item.source === "account" ||
     item.source === "connector" ||
-    item.source === "bundle_update"
+    item.source === "bundle_update" ||
+    item.source === "message_channel"
   );
+}
+
+/** Where an item came from: the assistant, its chat, or its project. */
+export interface PendingOrigin {
+  kind: "assistant" | "chat" | "project" | "personal";
+  name: string;
+}
+
+export function pendingOrigin(
+  item: PendingItem,
+  untitled: string,
+  personal: string,
+  defaultAssistant: string,
+): PendingOrigin {
+  if (item.assistantId) {
+    return {
+      kind: "assistant",
+      name: item.assistantName || defaultAssistant,
+    };
+  }
+  if (item.sessionTitle) {
+    return { kind: "chat", name: item.sessionTitle };
+  }
+  if (item.workspaceName) {
+    return { kind: "project", name: item.workspaceName };
+  }
+  if (pendingPersonal(item)) {
+    return { kind: "personal", name: personal };
+  }
+  return { kind: "chat", name: untitled };
 }
 
 /**
@@ -261,29 +307,4 @@ export function pendingGitHubScopes(item: PendingItem): string[] {
   return [
     ...new Set(scopes.map((s) => s.trim()).filter((s) => /^[a-z_:]+$/.test(s))),
   ];
-}
-
-/** What the assistant's home shows of the "needs you" list. */
-export interface NeedsYouSummary {
-  open: number;
-  items: { id: string; title: string; where: string }[];
-}
-
-/** The person's open count and newest few items, for the assistant's home. */
-export function needsYouSummary(
-  items: readonly PendingItem[],
-  open: number,
-  shown = 3,
-): NeedsYouSummary {
-  return {
-    open,
-    items: items
-      .filter((item) => item.state === "open" && !pendingByAssistant(item))
-      .slice(0, shown)
-      .map((item) => ({
-        id: item.id,
-        title: item.title,
-        where: item.sessionTitle || item.workspaceName || "",
-      })),
-  };
 }

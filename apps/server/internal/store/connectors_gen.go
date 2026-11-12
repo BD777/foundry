@@ -237,6 +237,67 @@ type ConnectorDescriptor struct {
 	ServerHeld *ConnectorServerHeldSpec `json:"serverHeld,omitempty"`
 }
 
+// ConnectorEventsCondition True when the value at pointer, as text, equals equals.
+type ConnectorEventsCondition struct {
+	Pointer string `json:"pointer"`
+	Equals  string `json:"equals"`
+}
+
+// ConnectorEventsContext How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`.
+type ConnectorEventsContext struct {
+	Hint  string            `json:"hint,omitempty"`
+	Hints map[string]string `json:"hints,omitempty"`
+}
+
+// ConnectorEventsEnvelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+type ConnectorEventsEnvelope struct {
+	Fields   jsonempty.Map[ConnectorEventsValue] `json:"fields"`
+	SkipWhen []ConnectorEventsCondition          `json:"skipWhen,omitempty"`
+}
+
+// ConnectorEventsGap How the feed says the cursor is gone (events between it and reset are lost). status is the HTTP status; with code, the value at that pointer must equal codeEquals; reset is the pointer to the new cursor.
+type ConnectorEventsGap struct {
+	Status     int    `json:"status"`
+	Code       string `json:"code,omitempty"`
+	CodeEquals string `json:"codeEquals,omitempty"`
+	Reset      string `json:"reset"`
+}
+
+// ConnectorEventsPoll One GET request per poll. Query values are templates that may use `{cursor}`; a parameter named in omitWhenEmpty is left out while its value is empty (the first poll starts from now). cursor, items and more are JSON pointers into the answer.
+type ConnectorEventsPoll struct {
+	// Path A path at or below the upstream prefix that the instance's route directory lists as read.
+	Path          string            `json:"path"`
+	Query         map[string]string `json:"query,omitempty"`
+	OmitWhenEmpty []string          `json:"omitWhenEmpty,omitempty"`
+	Cursor        string            `json:"cursor"`
+	Items         string            `json:"items"`
+	More          string            `json:"more,omitempty"`
+
+	// Gap How the feed says the cursor is gone (events between it and reset are lost). status is the HTTP status; with code, the value at that pointer must equal codeEquals; reset is the pointer to the new cursor.
+	Gap *ConnectorEventsGap `json:"gap,omitempty"`
+}
+
+// ConnectorEventsSpec How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server.
+type ConnectorEventsSpec struct {
+	// Poll One GET request per poll. Query values are templates that may use `{cursor}`; a parameter named in omitWhenEmpty is left out while its value is empty (the first poll starts from now). cursor, items and more are JSON pointers into the answer.
+	Poll ConnectorEventsPoll `json:"poll"`
+
+	// Envelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+	Envelope ConnectorEventsEnvelope `json:"envelope"`
+
+	// Context How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`.
+	Context ConnectorEventsContext `json:"context,omitempty"`
+}
+
+// ConnectorEventsValue One envelope field, the value at pointer, or template with `{/pointer}` parts. map translates the value (otherwise for values map does not name); unit reads a time (ms or s since the epoch, or rfc3339).
+type ConnectorEventsValue struct {
+	Pointer   string            `json:"pointer,omitempty"`
+	Template  string            `json:"template,omitempty"`
+	Map       map[string]string `json:"map,omitempty"`
+	Otherwise string            `json:"otherwise,omitempty"`
+	Unit      string            `json:"unit,omitempty"`
+}
+
 // ConnectorExtensionRepository A folder of a git repository holding an extension (docs/connector-extensions.md). The device fetches it with its own git credentials (SSH keys, credential helpers such as GitHub CLI's).
 type ConnectorExtensionRepository struct {
 	// Git https://… or an ssh / scp-style remote.
@@ -712,6 +773,9 @@ type ConnectorServerHeldSpec struct {
 	Access   ConnectorServerHeldAccess                `json:"access"`
 	Session  ConnectorServerHeldSession               `json:"session"`
 	Network  ConnectorServerHeldNetwork               `json:"network"`
+
+	// Events How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server.
+	Events *ConnectorEventsSpec `json:"events,omitempty"`
 }
 
 // ConnectorServerHeldStep One group of field ids in a server-held instance form.

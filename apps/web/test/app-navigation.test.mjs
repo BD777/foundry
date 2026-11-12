@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseAppRoute, pathForAppRoute } from "../src/lib/routes.ts";
-import { defaultAssistantDestination } from "../src/app/use-assistant-route-resolution.ts";
 import {
-  navSections,
-  navSectionsForAssistantCount,
-} from "../src/app/navigation.ts";
+  assistantEntryRoute,
+  resolveAssistantSelection,
+} from "../src/app/use-assistant-route-resolution.ts";
+import { navSections } from "../src/app/navigation.ts";
 import {
   viewErrorLabel,
   viewErrorResetKey,
@@ -248,7 +248,7 @@ test("opening Foundry lands on the assistant; unknown paths open the workspace o
   }
 });
 
-test("assistant routes name their object while legacy routes resolve to the default", () => {
+test("assistant routes name their object while legacy addresses wait for the remembered choice", () => {
   assert.deepEqual(parseAppRoute("/assistants"), { view: "assistants" });
   assert.equal(pathForAppRoute({ view: "assistants" }), "/assistants");
   assert.deepEqual(parseAppRoute("/assistants/asst%2Fwork"), {
@@ -260,38 +260,88 @@ test("assistant routes name their object while legacy routes resolve to the defa
     assistantId: "asst_work",
     assistantSection: "places",
   });
-  assert.deepEqual(
-    defaultAssistantDestination("/assistant/settings/rules", [
-      { id: "asst_other", isDefault: false },
-      { id: "asst_default", isDefault: true },
-    ]),
-    {
-      view: "assistantSettings",
-      assistantId: "asst_default",
-      assistantSection: "rules",
-    },
-  );
-  assert.deepEqual(
-    defaultAssistantDestination("/", [{ id: "asst_default", isDefault: true }]),
-    { view: "assistant", assistantId: "asst_default" },
-  );
 });
 
-test("the assistant sidebar keeps its one-assistant shape and links the list for several", () => {
-  const one = navSectionsForAssistantCount(navSections, 1);
-  const many = navSectionsForAssistantCount(navSections, 2);
-  assert.deepEqual(
-    one
-      .find((section) => section.id === "assistant")
-      ?.items.map((item) => item.id),
-    ["assistant", "pending", "assistantSettings"],
+const assistantRows = [
+  { id: "asst_default", isDefault: true },
+  { id: "asst_work", isDefault: false },
+];
+
+test("the assistant entry opens the valid remembered conversation", () => {
+  assert.deepEqual(assistantEntryRoute(assistantRows, "asst_work"), {
+    view: "assistant",
+    assistantId: "asst_work",
+  });
+  for (const path of ["/", "/assistant", "/assistant/settings/rules"]) {
+    const selection = resolveAssistantSelection(
+      path,
+      assistantRows,
+      "asst_work",
+    );
+    assert.equal(selection.assistantId, "asst_work");
+    assert.equal(selection.stale, false);
+    assert.deepEqual(
+      selection.destination,
+      path === "/"
+        ? { view: "assistant", assistantId: "asst_work" }
+        : path === "/assistant"
+          ? { view: "assistant", assistantId: "asst_work" }
+          : {
+              view: "assistantSettings",
+              assistantId: "asst_work",
+              assistantSection: "rules",
+            },
+    );
+  }
+});
+
+test("without a remembered choice the assistant entry opens the list", () => {
+  assert.deepEqual(assistantEntryRoute(assistantRows, ""), {
+    view: "assistants",
+  });
+  const legacy = resolveAssistantSelection("/", assistantRows, "");
+  assert.deepEqual(legacy, {
+    destination: { view: "assistants" },
+    stale: false,
+    clearSelection: true,
+  });
+  const single = resolveAssistantSelection(
+    "/assistant",
+    [{ id: "asst_only", isDefault: true }],
+    "",
   );
-  assert.deepEqual(
-    many
-      .find((section) => section.id === "assistant")
-      ?.items.map((item) => item.id),
-    ["assistants", "pending", "assistantSettings"],
+  assert.deepEqual(single.destination, { view: "assistants" });
+});
+
+test("a deleted assistant clears the stale choice and opens the list", () => {
+  const selection = resolveAssistantSelection(
+    "/assistants/asst_deleted/settings/places",
+    assistantRows,
+    "asst_deleted",
   );
+  assert.deepEqual(selection, {
+    destination: { view: "assistants" },
+    stale: true,
+    clearSelection: true,
+  });
+
+  const fromList = resolveAssistantSelection(
+    "/assistants",
+    assistantRows,
+    "asst_deleted",
+    "asst_deleted",
+  );
+  assert.deepEqual(fromList, {
+    stale: true,
+    clearSelection: true,
+  });
+});
+
+test("the assistant sidebar keeps the same conversation, needs-you and settings items", () => {
+  const items = navSections
+    .find((section) => section.id === "assistant")
+    ?.items.map((item) => item.id);
+  assert.deepEqual(items, ["assistant", "pending", "assistantSettings"]);
 });
 
 test("the assistant's settings sections have their own URLs", () => {

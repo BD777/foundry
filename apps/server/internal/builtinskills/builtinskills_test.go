@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		36: "134f23c7f7fb2e6c9ee90937f8ca3ffa775e034818357a95fbba0da8d41ed12f", // DEV-197 B1 + DEV-201: blocker reporting and generic-surface guidance
 		31: "3e6b99a0b26d81f8f2ebdfa1e4295966f13107af788fae76b6098a5da67fede8", // session system alerts; MCP result budgets (paged session work, chat-capable models)
 		32: "5b5204cd81e06b5b6b8961771d057cf26d09edc39af065b59952d9f9ca40f4fa", // connector_instances: configure connector instances with secrets by file reference
 		33: "81808432bf9f736b7eddfd42907e387cce9b00b0b7a14e084042b93da1410edc", // connector_packages: enable an integration package on chosen devices

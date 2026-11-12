@@ -365,10 +365,10 @@ func (s *Service) latestConversation(ctx context.Context, agent store.PersonalAg
 // listNoticeTexts are the reminder's and the digest's notices, [Chinese,
 // English]: the conversation shows them too.
 var listNoticeTexts = map[string][2]string{
-	"reminder": {"到点提醒（本人清单上的事，%s）：“%s”（本人说的时间：%s）。用一两句大白话提醒本人这件事，只提醒，不要替本人联系任何人。本人说做完了，再用 update_list 标记（条目 %s）。",
-		"Reminder due (an item on the person's list, %s): %q (when they said: %s). Remind the person of it in a sentence or two, nothing more, and contact no one for them. When they say it is done, mark it with update_list (item %s)."},
-	"digest": {"每日小结时间到了（%s）。下面是 Foundry 记下的事实：\n%s\n用几句大白话给本人写今天的小结：先说做完了的，再说还要做的计划（有时间的带上时间），最后一句说你在跟进的事。只用上面的内容，不要编，不要提议联系别人。",
-		"Time for the daily digest (%s). What Foundry has on record:\n%s\nWrite the person a short digest in plain words: what got done, then the plans still open (with their times), then one line on the work you follow up. Use only what is above, invent nothing, and suggest contacting no one."},
+	"reminder": {"到点提醒（本人清单上的事，%s）：“%s”（本人说的时间：%s；条目 %s）。",
+		"Reminder due (an item on the person's list, %s): %q (when they said: %s; item %s)."},
+	"digest": {"每日小结时间到了（%s）。Foundry 记下的事实：\n%s",
+		"Time for the daily digest (%s). What Foundry has on record:\n%s"},
 	"open":       {"清单上还没做的：", "Open on the person's list:"},
 	"closed":     {"过去一天做完的：", "Done in the last day:"},
 	"dropped":    {"（不做了）", " (dropped)"},

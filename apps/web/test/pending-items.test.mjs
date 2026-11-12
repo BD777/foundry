@@ -49,6 +49,8 @@ const {
   pendingFailure,
   pendingHeadline,
   pendingOptionLabel,
+  pendingMatchesAssistant,
+  pendingOrigin,
   pendingPrimary,
   pendingReplyText,
 } = await import("../src/features/pending/pending-model.ts");
@@ -113,6 +115,48 @@ test("items group by chat or Issue, newest first, open apart from resolved", () 
     pendingForSession(items, "sess_1").map((x) => x.id),
     ["a", "c"],
   );
+});
+
+test("an item names its assistant, chat or project and filters by that scope", () => {
+  const work = item({
+    id: "work",
+    assistantId: "asst_work",
+    assistantName: "Work",
+  });
+  const chat = item({ id: "chat" });
+  const project = item({
+    id: "project",
+    sessionId: undefined,
+    sessionTitle: undefined,
+  });
+  const personal = item({
+    id: "personal",
+    source: "account",
+    workspaceId: "",
+    workspaceName: "",
+    sessionId: undefined,
+    sessionTitle: undefined,
+  });
+  assert.deepEqual(pendingOrigin(work, "Untitled", "Personal", "Default"), {
+    kind: "assistant",
+    name: "Work",
+  });
+  assert.deepEqual(pendingOrigin(chat, "Untitled", "Personal", "Default"), {
+    kind: "chat",
+    name: "Fix the export",
+  });
+  assert.deepEqual(pendingOrigin(project, "Untitled", "Personal", "Default"), {
+    kind: "project",
+    name: "Project",
+  });
+  assert.deepEqual(pendingOrigin(personal, "Untitled", "Personal", "Default"), {
+    kind: "personal",
+    name: "Personal",
+  });
+  assert.equal(pendingMatchesAssistant(work, "assistant:asst_work"), true);
+  assert.equal(pendingMatchesAssistant(chat, "assistant:asst_work"), false);
+  assert.equal(pendingMatchesAssistant(chat, "none"), true);
+  assert.equal(pendingMatchesAssistant(work, "all"), true);
 });
 
 test("a reply quotes the item's own words, line by line", () => {
@@ -249,7 +293,8 @@ async function render(list) {
       method: init.method ?? "GET",
       body: init.body ? JSON.parse(init.body) : undefined,
     });
-    if (path.endsWith("/api/pending-items")) return answer(list);
+    if (path.endsWith("/api/pending-items"))
+      return answer({ assistants: [], ...list });
     if (path.includes("/state"))
       return answer({ ...list.items[0], state: "done" });
     if (path.includes("/queue"))
@@ -290,6 +335,60 @@ async function openMenu(host, label) {
   );
 }
 
+test("the global page labels where every item came from and filters by assistant", async () => {
+  const list = {
+    open: 3,
+    assistantOpen: 0,
+    bySession: { sess_a: 1, sess_b: 1, sess_none: 1 },
+    assistants: [
+      { id: "asst_a", name: "Work", isDefault: false },
+      { id: "asst_b", name: "Home", isDefault: true },
+    ],
+    items: [
+      item({
+        id: "a",
+        assistantId: "asst_a",
+        assistantName: "Work",
+        sessionId: "sess_a",
+        sessionTitle: "Quarterly plan",
+        title: "Work question",
+      }),
+      item({
+        id: "b",
+        assistantId: "asst_b",
+        assistantName: "Home",
+        sessionId: "sess_b",
+        sessionTitle: "Trip",
+        title: "Home question",
+      }),
+      item({
+        id: "none",
+        sessionId: "sess_none",
+        sessionTitle: "Personal project",
+        title: "Unassigned question",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  assert.match(host.textContent, /Assistant · Work/);
+  assert.match(host.textContent, /Assistant · Home/);
+  assert.match(host.textContent, /Chat · Personal project/);
+  await act(async () => buttonNamed(host, "Work").click());
+  assert.match(host.textContent, /Work question/);
+  assert.doesNotMatch(host.textContent, /Home question|Unassigned question/);
+  await act(async () =>
+    buttonNamed(host, "Not assigned to an assistant").click(),
+  );
+  assert.match(host.textContent, /Unassigned question/);
+  assert.doesNotMatch(host.textContent, /Work question|Home question/);
+  await act(async () => buttonNamed(host, "All").click());
+  assert.match(host.textContent, /Work question/);
+  assert.match(host.textContent, /Home question/);
+  assert.match(host.textContent, /Unassigned question/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 const menuItem = (name) =>
   [...document.querySelectorAll('[role="menuitem"]')].find(
     (node) => node.textContent.trim() === name,
@@ -329,8 +428,8 @@ test("the page shows an item in its own words and replies into its chat", async 
   assert.ok(recommended, host.innerHTML);
   assert.match(recommended.className, /fdy-button-primary/);
   assert.match(recommended.textContent, /Alpha· Recommended/);
-  // Done, Dismiss, the message and the context wait in one menu.
-  assert.equal(buttonNamed(host, "Dismiss"), undefined);
+  // Done, the message and the context wait in one menu; "Not for me" is direct.
+  assert.ok(buttonNamed(host, "Not for me"));
   assert.equal(buttonNamed(host, "Open message"), undefined);
   assert.ok(buttonNamed(host, "Reply"));
   // An option is the answer: one click sends it into the chat.
@@ -351,18 +450,31 @@ test("the page shows an item in its own words and replies into its chat", async 
   );
   // Marking it done changes it by hand, from the item's menu.
   const menu = await openMenu(host, "More for “Keep the closed rows blocked?”");
-  assert.deepEqual(menu, [
-    "Open message",
-    "Show context",
-    "Mark done",
-    "Dismiss",
-  ]);
+  assert.deepEqual(menu, ["Open message", "Show context", "Mark done"]);
   await act(async () => menuItem("Mark done").click());
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   const state = calls.find((call) =>
     call.path.includes("/api/pending-items/pnd_1/state"),
   );
   assert.deepEqual(state.body, { state: "done" });
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a person can close an item as not needed without a confirmation", async () => {
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [item({ id: "not_for_me" })],
+  });
+  const action = buttonNamed(host, "Not for me");
+  assert.ok(action);
+  await act(async () => action.click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const state = calls.find((call) =>
+    call.path.includes("/api/pending-items/not_for_me/state"),
+  );
+  assert.deepEqual(state?.body, { state: "dismissed" });
   await act(async () => root.unmount());
   host.remove();
 });
@@ -461,7 +573,7 @@ test("a failed turn leads with what happened and its fix; the raw error waits in
   assert.ok(buttonNamed(host, "Fix in chat"));
   assert.ok(buttonNamed(host, "Reply"));
   const menu = await openMenu(host, "More for “Usage limit reached”");
-  assert.deepEqual(menu, ["Show the error", "Mark done", "Dismiss"]);
+  assert.deepEqual(menu, ["Show the error", "Mark done"]);
   await act(async () => menuItem("Show the error").click());
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.match(
@@ -664,9 +776,9 @@ test("a newer CLI's missing permissions and a rolled-back bundle update are the 
 
 test("one list: what the assistant handles waits apart, what came to the person says why (§h)", async () => {
   const list = {
-    open: 2,
+    open: 3,
     assistantOpen: 1,
-    bySession: { sess_1: 1, sess_2: 1 },
+    bySession: { sess_1: 1, sess_2: 1, sess_4: 1 },
     items: [
       item({
         id: "theirs",
@@ -696,6 +808,15 @@ test("one list: what the assistant handles waits apart, what came to the person 
         excerpt: "Cannot reach its model service",
         handler: "assistant",
       }),
+      item({
+        id: "timed-out",
+        sessionId: "sess_4",
+        sessionTitle: "Weekly report",
+        title: "Choose the report format",
+        handler: "person",
+        handedReason: "assistant_timeout",
+        outcome: "escalated_timeout",
+      }),
     ],
   };
   const { host, root } = await render(list);
@@ -708,6 +829,19 @@ test("one list: what the assistant handles waits apart, what came to the person 
     host.textContent,
     /its computer is offline, so this came to you/,
   );
+  assert.match(
+    host.textContent,
+    /The assistant didn't handle it within 10 minutes/,
+  );
+  const timedOut = [...host.querySelectorAll("article")].find((article) =>
+    article.textContent.includes("Choose the report format"),
+  );
+  assert.ok(timedOut);
+  assert.equal(
+    timedOut.querySelector(".fdy-pending-item-reason").textContent,
+    "The assistant didn't handle it within 10 minutes",
+  );
+  assert.doesNotMatch(timedOut.textContent, /Your assistant:/);
   // The assistant's own item is not in the person's groups.
   const disclosure = host.querySelector("details");
   assert.ok(disclosure, "assistant group");
@@ -734,13 +868,9 @@ test("one list: what the assistant handles waits apart, what came to the person 
     false,
   );
   // Counts are the person's.
-  const { pendingForSession, needsYouSummary } =
+  const { pendingForSession } =
     await import("../src/features/pending/pending-model.ts");
   assert.equal(pendingForSession(list.items, "sess_3").length, 0);
-  assert.deepEqual(
-    needsYouSummary(list.items, list.open).items.map((shown) => shown.id),
-    ["theirs", "offline"],
-  );
   await act(async () => root.unmount());
   host.remove();
 });

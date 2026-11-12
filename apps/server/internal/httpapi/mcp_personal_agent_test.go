@@ -940,3 +940,60 @@ func TestAssistantReadsMemoryAndComputersWithTools(t *testing.T) {
 		t.Fatalf("a helper read the person's memory: %s", text)
 	}
 }
+
+// The assistant's tool descriptions state the contract (what, arguments,
+// results, side effects, idempotency); when to use a tool and what to tell
+// the person live in the assistant's skills (DEV-200).
+func TestAssistantToolDescriptionsStateOnlyTheirContract(t *testing.T) {
+	var tools []map[string]any
+	if err := json.Unmarshal(remoteMCPToolsJSON, &tools); err != nil {
+		t.Fatal(err)
+	}
+	policy := []string{"Normally", "normally", "Usually", "usually", "Only when", "only when", "Use person only",
+		"ask the person", "Ask the person", "tell the person", "Tell the person", "tell them", "so you can mention",
+		"before acting", "execute only", "Ask the person to confirm", "in plain words", "prefer", "Prefer", "while you run"}
+	seen := 0
+	for _, tool := range tools {
+		name, _ := tool["name"].(string)
+		if !personalAgentMCPTools[name] {
+			continue
+		}
+		seen++
+		var texts []string
+		var collect func(any)
+		collect = func(value any) {
+			switch v := value.(type) {
+			case map[string]any:
+				for key, inner := range v {
+					if text, ok := inner.(string); ok && key == "description" {
+						texts = append(texts, text)
+					} else {
+						collect(inner)
+					}
+				}
+			case []any:
+				for _, inner := range v {
+					collect(inner)
+				}
+			}
+		}
+		collect(tool)
+		if name == "needs_you" {
+			for _, fact := range []string{"listing acknowledges them", "10 minutes", "assistant_timeout"} {
+				if !strings.Contains(tool["description"].(string), fact) {
+					t.Errorf("needs_you's description lacks %q", fact)
+				}
+			}
+		}
+		for _, text := range texts {
+			for _, phrase := range policy {
+				if strings.Contains(text, phrase) {
+					t.Errorf("%s's description says %q: %s", name, phrase, text)
+				}
+			}
+		}
+	}
+	if seen != len(personalAgentMCPTools) {
+		t.Fatalf("found %d of the assistant's %d tools", seen, len(personalAgentMCPTools))
+	}
+}

@@ -65,7 +65,7 @@ func (s *Resolver) resolve(ctx context.Context, agent store.PersonalAgent, role,
 	if !store.WorkspaceRoleAtLeast(roles[workspace.ID], required) {
 		return store.PersonalAgentRunSnapshot{}, &personalagent.Refusal{Status: http.StatusForbidden, Err: errors.New("workspace permission does not allow this role")}
 	}
-	if workspace.ID != agent.WorkspaceID {
+	if workspace.ID != agent.WorkspaceID && !(role == "memory" && s.personMemoryWorkspace(ctx, agent.UserID, workspace.ID)) {
 		pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
 		if err != nil {
 			return store.PersonalAgentRunSnapshot{}, err
@@ -602,4 +602,20 @@ func (s *Resolver) settle(ctx context.Context, workspace store.WorkspaceProjecti
 		return settled{}, invalid("effort is not supported by this runtime")
 	}
 	return settled{profile: profile, providerConfigHash: providerConfigHash, model: model, effort: effort}, nil
+}
+
+// personMemoryWorkspace is whether workspaceID holds the person's memory
+// layer, which every assistant of theirs recalls (knowledge.Recalls): its
+// upkeep may run as any of them, whatever their permission package lists.
+func (s *Resolver) personMemoryWorkspace(ctx context.Context, user, workspaceID string) bool {
+	vaults, err := s.store.ListKnowledgeVaults(ctx, user)
+	if err != nil {
+		return false
+	}
+	for _, v := range vaults {
+		if v.Kind == "memory" && v.Scope == store.MemoryScopePerson && v.WorkspaceID == workspaceID {
+			return true
+		}
+	}
+	return false
 }

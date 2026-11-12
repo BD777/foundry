@@ -196,6 +196,7 @@ func (s *Service) Drain(ctx context.Context) {
 	s.drainMigrations(ctx)
 	s.drainReplicaForgets(ctx)
 	s.drainLegacyMemory(ctx)
+	s.drainMemorySorts(ctx)
 }
 
 // LegacyTransfer is the person's confirmation of a legacy fact

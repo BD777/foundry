@@ -4,8 +4,6 @@ export interface ReadOnlyPolicy {
   tools: string[];
   /** Built-in tools refused outright. */
   deniedTools: string[];
-  /** Load the project's own agent instructions from the directory. */
-  projectInstructions: boolean;
   /** A shell for read-only checks inside the directory. */
   commands: boolean;
   maxTurns: number;
@@ -21,7 +19,6 @@ export function readOnlyPolicy(hasDirectory: boolean): ReadOnlyPolicy {
     return {
       tools: [],
       deniedTools: [],
-      projectInstructions: false,
       commands: false,
       maxTurns: 1,
       timeoutMs: 180000,
@@ -37,7 +34,6 @@ export function readOnlyPolicy(hasDirectory: boolean): ReadOnlyPolicy {
       "WebFetch",
       "WebSearch",
     ],
-    projectInstructions: false,
     commands: true,
     maxTurns: 30,
     timeoutMs: 900000,

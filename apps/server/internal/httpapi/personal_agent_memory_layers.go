@@ -104,3 +104,66 @@ func (s *Server) handleMoveMemoryEntry(w http.ResponseWriter, r *http.Request) {
 	move, err := s.knowledge.MoveEntry(r.Context(), agent, r.PathValue("entry"), knowledge.Move{ToScope: string(input.ToScope), ExpectedRevision: input.ExpectedRevision, ExpectedHash: input.ExpectedHash})
 	writeResultWithStatus(w, http.StatusAccepted, move, err)
 }
+
+// handleMemorySorting is memory upkeep's sorting between layers as the
+// person's settings show it: their recent automatic moves and the
+// suggestions to share that still stand, across their assistants (the
+// person's layer is every assistant's).
+func (s *Server) handleMemorySorting(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	moves, suggestions, err := s.knowledge.SortRecords(r.Context(), agent.UserID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	assistants, err := s.store.ListAssistants(r.Context(), agent.UserID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	byID := map[string]store.PersonalAgent{}
+	for _, a := range assistants {
+		byID[a.ID] = a
+	}
+	answer := store.MemorySortList{Moves: []store.MemorySortRecord{}, Suggestions: []store.MemorySortRecord{}}
+	for _, view := range moves {
+		answer.Moves = append(answer.Moves, memorySortRecord(view, byID[view.AssistantID]))
+	}
+	for _, view := range suggestions {
+		answer.Suggestions = append(answer.Suggestions, memorySortRecord(view, byID[view.AssistantID]))
+	}
+	writeResult(w, answer, nil)
+}
+
+func memorySortRecord(view knowledge.SortView, owner store.PersonalAgent) store.MemorySortRecord {
+	return store.MemorySortRecord{
+		ID: view.ID, Kind: store.MemorySortRecordKind(view.Kind), Status: view.Status,
+		AssistantID: view.AssistantID, AssistantName: owner.Name, AssistantIsDefault: owner.IsDefault,
+		FromScope: store.MemoryLayerScope(view.FromScope), ToScope: store.MemoryLayerScope(view.ToScope),
+		Title: view.Title, Reason: view.Reason, Confidence: view.Confidence, Mentions: view.Mentions,
+		Failure: view.Failure, Undoable: view.Undoable, CreatedAt: view.CreatedAt, UpdatedAt: view.UpdatedAt,
+	}
+}
+
+// handleMemorySortAction is the person undoing an automatic move, or
+// confirming or dismissing a suggestion to share.
+func (s *Server) handleMemorySortAction(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var input store.MemorySortActionInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	record, err := s.knowledge.SortAction(r.Context(), agent.UserID, r.PathValue("record"), string(input.Action))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	owner, _ := s.store.GetAssistant(r.Context(), record.AssistantID)
+	writeResult(w, memorySortRecord(knowledge.SortView{MemorySort: record}, owner), nil)
+}

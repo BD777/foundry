@@ -142,6 +142,8 @@ export const serverPackages = {
   // Permission is the one policy resolver for connector access. The gateway
   // modules and the store that persists its packages may depend on it.
   permission: ["jsonempty", "store"],
+  // Message channels (DEV-203): feeds, filters and delivery, over ports.
+  channels: ["store"],
   // jsonempty names the required map/list types in generated server-held
   // extension API results; it is a leaf collection package, not a policy
   // dependency or a reverse edge into the Connectors module.
@@ -162,6 +164,7 @@ export const serverPackages = {
     "externalaccounts",
     "gateway",
     "permission",
+    "channels",
   ],
   // Pure worker group member choice and retry timing; callers own storage,
   // transport and inference.

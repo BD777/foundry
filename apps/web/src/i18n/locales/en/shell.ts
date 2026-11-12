@@ -51,6 +51,7 @@ export const shell = {
     menu: "Menu",
     globalScope: "Global",
     workspaceScope: "Workspace: {{workspace}}",
+    assistantScope: "Assistant: {{assistant}}",
     open: "Open {{label}}",
     lightMode: "Switch to light mode",
     darkMode: "Switch to dark mode",

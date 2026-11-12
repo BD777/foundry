@@ -25,11 +25,26 @@ import (
 type digestDaemon struct {
 	ignoreCancel atomic.Bool
 	// closing: the test is ending and closes the socket.
-	closing atomic.Bool
-	t       *testing.T
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-	runs    chan wsRunSessionPayload
+	closing        atomic.Bool
+	t              *testing.T
+	conn           *websocket.Conn
+	writeMu        sync.Mutex
+	runs           chan wsRunSessionPayload
+	instructionsMu sync.RWMutex
+	instructions   map[string]string
+}
+
+func (d *digestDaemon) setInstruction(path, content string) {
+	d.instructionsMu.Lock()
+	defer d.instructionsMu.Unlock()
+	d.instructions[path] = content
+}
+
+func (d *digestDaemon) instruction(path string) (string, bool) {
+	d.instructionsMu.RLock()
+	defer d.instructionsMu.RUnlock()
+	content, ok := d.instructions[path]
+	return content, ok
 }
 
 func (d *digestDaemon) write(id, messageType string, payload any) {
@@ -60,7 +75,7 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 		}},
 	})
 	readWSTypeForTest(t, conn, "registered")
-	daemon := &digestDaemon{t: t, conn: conn, runs: make(chan wsRunSessionPayload, 8)}
+	daemon := &digestDaemon{t: t, conn: conn, runs: make(chan wsRunSessionPayload, 8), instructions: map[string]string{}}
 	// Runs before dialDaemonForTest's cleanup closes the socket.
 	t.Cleanup(func() { daemon.closing.Store(true) })
 	answer := func(id, messageType string, payload any) bool {
@@ -84,11 +99,15 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 			case wsReadFileType:
 				var read wsReadFilePayload
 				_ = json.Unmarshal(envelope.Payload, &read)
+				content := "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n"
+				if instruction, ok := daemon.instruction(read.Path); ok {
+					content = instruction
+				}
 				// A read the server asks for as the test ends may meet the
 				// socket closed: nothing is left to answer.
 				if !answer(envelope.ID, wsFileReadType, map[string]any{
 					"workspaceId": read.WorkspaceID, "path": read.Path,
-					"content": "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n",
+					"content": content,
 				}) {
 					return
 				}

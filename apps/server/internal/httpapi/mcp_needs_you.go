@@ -33,6 +33,7 @@ type needsYouLine struct {
 	SessionID string   `json:"sessionId,omitempty"`
 	Link      string   `json:"link,omitempty"`
 	Since     string   `json:"since"`
+	Deadline  string   `json:"deadline,omitempty"`
 }
 
 func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
@@ -64,10 +65,13 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := s.acknowledgeNeedsYou(ctx, scope.Agent.UserID, items); err != nil {
+		return "", err
+	}
 	var changed []needsYouLine
 	if op == "resolve" {
 		for _, item := range items {
-			resolved, err := s.store.SetPendingItemState(ctx, user, item.ID, store.PendingDone)
+			resolved, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomeAssistantAnswered)
 			if err != nil {
 				return "", err
 			}
@@ -85,6 +89,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 			Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
 			Context: pendingAnswerContext(helper.Response),
 			Handler: store.PendingHandlerPerson, Note: note, HandedReason: store.PendingHandedByAssistant, HandedAt: now,
+			Outcome: store.PendingOutcomeHandedOver,
 		})
 		if err != nil {
 			return "", err
@@ -92,7 +97,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		return encodeJSON(map[string]any{"handedOver": []needsYouLine{s.needsYouLineOf(ctx, item)}})
 	}
 	for _, item := range items {
-		handed, err := s.store.HandPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant)
+		handed, err := s.store.HandPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver)
 		if err != nil {
 			return "", err
 		}
@@ -126,7 +131,7 @@ func (s *Server) needsYouTargets(ctx context.Context, agent store.PersonalAgent,
 	if !ok {
 		return nil, store.AgentSession{}, notYours
 	}
-	open, err := s.store.ListPendingItems(ctx, user, []string{store.PendingOpen}, "", 500)
+	open, err := s.assistant.PendingFor(ctx, agent, 500)
 	if err != nil {
 		return nil, store.AgentSession{}, err
 	}
@@ -148,22 +153,27 @@ func (s *Server) needsYouHelper(ctx context.Context, assistant store.PersonalAge
 	if err != nil {
 		return store.AgentSession{}, false
 	}
+	// A message channel's session (DEV-203) is the assistant's own: what
+	// it hands over goes straight to the person.
+	if s.channelSessionOfAssistant(ctx, assistant, session.ID) {
+		return session, true
+	}
 	agent, ok := s.assistant.HelperOf(ctx, session)
 	return session, ok && agent.ID == assistant.ID
 }
 
-// needsYouList is op list: the open items, the assistant's first; another
-// assistant's items are not listed.
+// needsYouList is op list: the open items this assistant may see, its own
+// first.
 func (s *Server) needsYouList(ctx context.Context, agent store.PersonalAgent) (string, error) {
-	items, err := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", 200)
+	items, err := s.assistant.PendingFor(ctx, agent, 200)
 	if err != nil {
+		return "", err
+	}
+	if err := s.acknowledgeNeedsYou(ctx, agent.UserID, items); err != nil {
 		return "", err
 	}
 	yours, persons := []needsYouLine{}, []needsYouLine{}
 	for _, item := range items {
-		if item.AssistantID != "" && item.AssistantID != agent.ID {
-			continue
-		}
 		line := s.needsYouLineOf(ctx, item)
 		if line.Handler == store.PendingHandlerAssistant {
 			yours = append(yours, line)
@@ -174,10 +184,23 @@ func (s *Server) needsYouList(ctx context.Context, agent store.PersonalAgent) (s
 	return encodeJSON(map[string]any{"yours": yours, "theirs": persons})
 }
 
+// acknowledgeNeedsYou records that the assistant read its own items. The
+// person's list and unassigned visibility results are not acknowledgement.
+func (s *Server) acknowledgeNeedsYou(ctx context.Context, userID string, items []store.PendingItem) error {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if store.PendingHandledBy(item) == store.PendingHandlerAssistant {
+			ids = append(ids, item.ID)
+		}
+	}
+	_, err := s.store.AcknowledgePendingItems(ctx, userID, ids, formatPendingTime(time.Now()))
+	return err
+}
+
 func (s *Server) needsYouLineOf(ctx context.Context, item store.PendingItem) needsYouLine {
 	line := needsYouLine{
 		ID: item.ID, Handler: store.PendingHandledBy(item), Source: item.Source, Title: item.Title,
-		Options: item.Options, Note: item.Note, SessionID: item.SessionID, Since: item.CreatedAt,
+		Options: item.Options, Note: item.Note, SessionID: item.SessionID, Since: item.CreatedAt, Deadline: item.DeadlineAt,
 	}
 	if excerpt := strings.TrimSpace(item.Excerpt); excerpt != item.Title {
 		line.Excerpt = textcut.Excerpt(excerpt, 400)

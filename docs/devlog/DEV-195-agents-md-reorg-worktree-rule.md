@@ -2,7 +2,9 @@
 
 ## 状态
 
-只改文档，不需要部署。随 2026-11-12 晚提交窗口合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+已合入 main（PR #264，squash 7e2a354c）。
+
+只改文档，不需要部署。
 
 ## 问题
 

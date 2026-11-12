@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+已合入 main（PR #264，squash 7e2a354c）。
 
 已实现、验证并部署 dev Server 与 Web（2026-11-12）。等待人工验收。
 

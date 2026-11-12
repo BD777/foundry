@@ -894,6 +894,133 @@ components:
           $ref: "#/components/schemas/ConnectorServerHeldSession"
         network:
           $ref: "#/components/schemas/ConnectorServerHeldNetwork"
+        events:
+          $ref: "#/components/schemas/ConnectorEventsSpec"
+          x-go-type-skip-optional-pointer: false
+    ConnectorEventsSpec:
+      description:
+        How a message channel (DEV-203) reads this connector's event feed, as pure data. The
+        server long-polls one catalogued read route through the instance's gateway path and maps
+        every item of the answer to a message envelope; extension code never runs on the server.
+      type: object
+      required: [poll, envelope]
+      additionalProperties: false
+      properties:
+        poll:
+          $ref: "#/components/schemas/ConnectorEventsPoll"
+        envelope:
+          $ref: "#/components/schemas/ConnectorEventsEnvelope"
+        context:
+          $ref: "#/components/schemas/ConnectorEventsContext"
+    ConnectorEventsPoll:
+      description:
+        One GET request per poll. Query values are templates that may use `{cursor}`; a
+        parameter named in omitWhenEmpty is left out while its value is empty (the first poll
+        starts from now). cursor, items and more are JSON pointers into the answer.
+      type: object
+      required: [path, cursor, items]
+      additionalProperties: false
+      properties:
+        path:
+          description: A path at or below the upstream prefix that the instance's route directory lists as read.
+          type: string
+        query:
+          type: object
+          additionalProperties:
+            type: string
+        omitWhenEmpty:
+          type: array
+          items:
+            type: string
+        cursor:
+          type: string
+        items:
+          type: string
+        more:
+          type: string
+        gap:
+          $ref: "#/components/schemas/ConnectorEventsGap"
+          x-go-type-skip-optional-pointer: false
+    ConnectorEventsGap:
+      description:
+        How the feed says the cursor is gone (events between it and reset are lost). status is
+        the HTTP status; with code, the value at that pointer must equal codeEquals; reset is the
+        pointer to the new cursor.
+      type: object
+      required: [status, reset]
+      additionalProperties: false
+      properties:
+        status:
+          type: integer
+        code:
+          type: string
+        codeEquals:
+          type: string
+        reset:
+          type: string
+    ConnectorEventsEnvelope:
+      description:
+        Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op,
+        occurredAt, conversation.id, conversation.kind, conversation.name, thread.id,
+        thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot,
+        mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+      type: object
+      required: [fields]
+      additionalProperties: false
+      properties:
+        fields:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorEventsValue"
+        skipWhen:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorEventsCondition"
+    ConnectorEventsValue:
+      description:
+        One envelope field, the value at pointer, or template with `{/pointer}` parts. map
+        translates the value (otherwise for values map does not name); unit reads a time (ms or
+        s since the epoch, or rfc3339).
+      type: object
+      additionalProperties: false
+      properties:
+        pointer:
+          type: string
+        template:
+          type: string
+        map:
+          type: object
+          additionalProperties:
+            type: string
+        otherwise:
+          type: string
+        unit:
+          type: string
+          enum: [ms, s, rfc3339]
+          x-go-type: string
+    ConnectorEventsCondition:
+      description: True when the value at pointer, as text, equals equals.
+      type: object
+      required: [pointer, equals]
+      additionalProperties: false
+      properties:
+        pointer:
+          type: string
+        equals:
+          type: string
+    ConnectorEventsContext:
+      description:
+        How an agent reads what surrounds a message itself with the connector's own tool; a
+        template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`.
+      type: object
+      additionalProperties: false
+      properties:
+        hint:
+          type: string
+        hints:
+          type: object
+          additionalProperties:
+            type: string
     ConnectorServerHeldStep:
       description: One group of field ids in a server-held instance form.
       type: array

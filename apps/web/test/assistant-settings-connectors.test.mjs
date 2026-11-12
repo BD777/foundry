@@ -83,6 +83,33 @@ const initialConnectors = [
   },
 ];
 
+const tenantConnectors = [
+  {
+    id: "acct_feishu_cn",
+    kind: "feishu",
+    label: "Ada",
+    displayName: "Ada",
+    appName: "Foundry Agent",
+    tenantName: "Acme China",
+    holding: "server_held",
+    status: "ready",
+    level: "off",
+    enabled: false,
+  },
+  {
+    id: "acct_feishu_global",
+    kind: "feishu",
+    label: "Ada",
+    displayName: "Ada",
+    appName: "Foundry Agent",
+    tenantName: "Acme Global",
+    holding: "server_held",
+    status: "ready",
+    level: "off",
+    enabled: false,
+  },
+];
+
 let calls = [];
 
 globalThis.fetch = async (input, init = {}) => {
@@ -178,6 +205,41 @@ test("connector accounts render in server then device groups with all three save
   );
   assert.equal(
     levelRadio(page.container, "AWS CLI", "Off").getAttribute("aria-checked"),
+    "true",
+  );
+  await page.unmount();
+});
+
+test("same-named accounts show their organisations and a new assistant starts off", async () => {
+  const page = await render(ConnectorsSection, {
+    connectors: tenantConnectors,
+    loadError: "",
+    newAssistant: true,
+    onChange: () => {},
+    onRetry: () => {},
+  });
+  const names = [...page.container.querySelectorAll("p")]
+    .map((node) => node.textContent.trim())
+    .filter((text) => text === "Ada");
+  assert.equal(names.length, 2);
+  assert.match(
+    page.container.textContent,
+    /Acme China · Foundry Agent · feishu · Ready/,
+  );
+  assert.match(
+    page.container.textContent,
+    /Acme Global · Foundry Agent · feishu · Ready/,
+  );
+  assert.match(
+    page.container.textContent,
+    /New assistants cannot use any account by default/,
+  );
+  assert.equal(
+    levelRadio(
+      page.container,
+      "Ada · Acme China · Foundry Agent",
+      "Off",
+    ).getAttribute("aria-checked"),
     "true",
   );
   await page.unmount();

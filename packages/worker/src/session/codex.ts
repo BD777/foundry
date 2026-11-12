@@ -18,12 +18,12 @@ import { CodexAppServerThread } from "./runner/codex-app-server.js";
  * skill discovery is therefore off, as are MCP servers and the features no
  * read-only session may use.
  */
-export function codexStageConfig(
-  projectInstructions: boolean,
-  hasDirectory: boolean,
-): { toml: string; overrides: Record<string, unknown> } {
+export function codexStageConfig(hasDirectory: boolean): {
+  toml: string;
+  overrides: Record<string, unknown>;
+} {
   const features = codexDisabledFeatures(hasDirectory);
-  const projectDocBytes = projectInstructions ? 32768 : 0;
+  const projectDocBytes = 0;
   return {
     toml:
       `project_doc_max_bytes = ${projectDocBytes}\ncli_auth_credentials_store = "ephemeral"\n[features]\n` +
@@ -46,16 +46,7 @@ export function codexStageConfig(
  * sandboxed read-only shell so it can actually look at the files.
  */
 export const codexHarness: HarnessAdapter = {
-  async run({
-    spec,
-    policy,
-    profile,
-    home,
-    env,
-    sandboxedExecutable,
-    signal,
-    note,
-  }) {
+  async run({ spec, profile, home, env, sandboxedExecutable, signal, note }) {
     const workspace = spec.workspace;
     const config = resolve(home, "codex");
     mkdirSync(config, { mode: 0o700 });
@@ -72,7 +63,6 @@ export const codexHarness: HarnessAdapter = {
     // The read-only shell is how Codex looks at files: a directory, or the
     // PDFs it is given to read.
     const stage = codexStageConfig(
-      policy.projectInstructions,
       Boolean(workspace) || Boolean(spec.prompt.documents?.length),
     );
     writeFileSync(

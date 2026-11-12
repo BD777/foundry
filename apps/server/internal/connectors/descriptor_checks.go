@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -375,6 +376,11 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 			return err
 		}
 	}
+	if serverHeld.Events != nil {
+		if err := checkServerHeldEvents(*serverHeld.Events, serverHeld.Upstream.PathPrefix); err != nil {
+			return err
+		}
+	}
 	if len(serverHeld.Network.Holdings) == 0 || len(serverHeld.Network.Holdings) > 2 {
 		return fmt.Errorf("serverHeld.network.holdings lists server, device or both")
 	}
@@ -389,6 +395,74 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 		return fmt.Errorf("serverHeld.network.publicOnly must be true when instances may use the server path")
 	}
 	return nil
+}
+
+// checkServerHeldEvents checks a message channel feed (DEV-203): one GET
+// path below the upstream prefix, bounded query templates over {cursor},
+// JSON pointers, and envelope fields the channel knows.
+func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) error {
+	poll := events.Poll
+	if err := checkExtensionPath("serverHeld.events.poll.path", poll.Path); err != nil {
+		return err
+	}
+	if poll.Path != prefix && !strings.HasPrefix(poll.Path, strings.TrimRight(prefix, "/")+"/") {
+		return fmt.Errorf("serverHeld.events.poll.path must be at or below the upstream prefix %s", prefix)
+	}
+	if len(poll.Query) > 20 {
+		return fmt.Errorf("serverHeld.events.poll.query has at most 20 parameters")
+	}
+	for name, value := range poll.Query {
+		if name == "" || len(name) > 64 || len(value) > 200 || strings.ContainsAny(value, "\x00\r\n") {
+			return fmt.Errorf("serverHeld.events.poll.query %q is not a bounded parameter", name)
+		}
+		if strings.Contains(strings.ReplaceAll(value, "{cursor}", ""), "{") {
+			return fmt.Errorf("serverHeld.events.poll.query %q may only use {cursor}", name)
+		}
+	}
+	for _, name := range poll.OmitWhenEmpty {
+		if _, ok := poll.Query[name]; !ok {
+			return fmt.Errorf("serverHeld.events.poll.omitWhenEmpty names an unknown parameter %q", name)
+		}
+	}
+	for what, pointer := range map[string]string{"cursor": poll.Cursor, "items": poll.Items, "more": poll.More} {
+		if !jsonPointer(pointer) || (what != "more" && pointer == "") {
+			return fmt.Errorf("serverHeld.events.poll.%s is a JSON pointer", what)
+		}
+	}
+	if gap := poll.Gap; gap != nil {
+		if gap.Status < 400 || gap.Status > 599 || !jsonPointer(gap.Code) || gap.Reset == "" || !jsonPointer(gap.Reset) || len(gap.CodeEquals) > 100 {
+			return fmt.Errorf("serverHeld.events.poll.gap is an error status with JSON pointers to its code and reset cursor")
+		}
+	}
+	if len(events.Envelope.Fields) == 0 || len(events.Envelope.Fields) > 40 {
+		return fmt.Errorf("serverHeld.events.envelope.fields maps 1 to 40 envelope fields")
+	}
+	if _, ok := events.Envelope.Fields["id"]; !ok {
+		return fmt.Errorf("serverHeld.events.envelope.fields must map id")
+	}
+	for key, field := range events.Envelope.Fields {
+		if !channels.ValidEnvelopeField(key) {
+			return fmt.Errorf("serverHeld.events.envelope field %q is not an envelope field", key)
+		}
+		if (field.Pointer == "") == (field.Template == "") || !jsonPointer(field.Pointer) || len(field.Template) > 300 || len(field.Map) > 50 {
+			return fmt.Errorf("serverHeld.events.envelope field %q has exactly one of pointer or template", key)
+		}
+		if field.Unit != "" && field.Unit != "ms" && field.Unit != "s" && field.Unit != "rfc3339" {
+			return fmt.Errorf("serverHeld.events.envelope field %q has an unknown unit", key)
+		}
+	}
+	if len(events.Envelope.SkipWhen) > 20 {
+		return fmt.Errorf("serverHeld.events.envelope.skipWhen has at most 20 conditions")
+	}
+	for _, condition := range events.Envelope.SkipWhen {
+		if condition.Pointer == "" || !jsonPointer(condition.Pointer) || len(condition.Equals) > 200 {
+			return fmt.Errorf("serverHeld.events.envelope.skipWhen conditions are a JSON pointer and a value")
+		}
+	}
+	if err := checkText("serverHeld.events.context.hint", events.Context.Hint, 300, false); err != nil {
+		return err
+	}
+	return checkLocalized("serverHeld.events.context.hints", events.Context.Hints, 300)
 }
 
 func checkExtensionPath(what, path string) error {

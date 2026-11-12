@@ -1,7 +1,13 @@
 /** Project-local discovery with bounded, stable reads and immutable snapshots. */
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+} from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import {
@@ -129,6 +135,8 @@ export async function snapshotWorkspaceDrafts(
       continue;
     }
     for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(root, relativeRoot, child.name);
+      if (managedAssistantSkill(root, path)) continue;
       if (!child.isDirectory() && !child.isSymbolicLink()) continue;
       const relativePath = `${relativeRoot}/${child.name}`,
         dir = join(root, relativePath);
@@ -214,4 +222,16 @@ export async function snapshotWorkspaceDrafts(
     input.item.snapshotDigest = snapshot.snapshotDigest;
   }
   return inputs.map((i) => i.item);
+}
+
+/**
+ * Assistant prompts provide one canonical skill copy under .foundry and link
+ * it into both runtimes. Those links are Foundry-managed native discovery,
+ * not drafts the person authored in the workspace.
+ */
+function managedAssistantSkill(root: string, path: string): boolean {
+  if (!lstatSync(path).isSymbolicLink()) return false;
+  const canonicalRoot = join(root, ".foundry", "assistant-skills");
+  const target = resolve(dirname(path), readlinkSync(path));
+  return within(canonicalRoot, target);
 }

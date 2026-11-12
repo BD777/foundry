@@ -28,22 +28,25 @@ func newSessionRetryService(server *Server) *sessionRetryService {
 }
 
 func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSession, failure string) (bool, error) {
+	code := r.server.sessionAlertFailureCode(ctx, session)
 	if connection := r.server.hub.connectionFor(session.DeviceID); connection == nil ||
 		!connection.hasCapability(store.DaemonCapabilityDispatchRetry) {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, "the device's worker does not support dispatch retries", time.Now().UTC())
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
-	code := r.server.sessionAlertFailureCode(ctx, session)
 	if modelpool.QuotaExhausted(code, failure) {
 		// Waiting does not bring an exhausted account's quota back.
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, failure, time.Now().UTC())
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
 	if !modelpool.RateLimited(code, failure) {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, failure, time.Now().UTC())
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
 	current, found, err := r.server.store.GetSessionRetry(ctx, session.ID, session.Input.ID)
@@ -57,6 +60,7 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 	if attempt > maxSameModelRetries {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, failure, time.Now().UTC())
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
 	delay := modelpool.Backoff(attempt, retryJitter(attempt))
@@ -148,6 +152,7 @@ func (r *sessionRetryService) Pump(ctx context.Context, now time.Time) {
 		if _, err := r.server.sessionService.DispatchOrWait(ctx, claimed); err != nil {
 			_ = r.server.store.UpdateSessionRetry(ctx, retry.SessionID, retry.InputID,
 				store.SessionRetryExhausted, err.Error(), time.Now().UTC())
+			pendingReactions{r.server}.recordTurnFailure(ctx, claimed, err.Error(), "")
 			log.Printf("session retry: dispatch %s/%s: %v", retry.SessionID, retry.InputID, err)
 		}
 	}

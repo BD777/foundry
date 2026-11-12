@@ -233,6 +233,7 @@ export function MaintenanceSection({
                     preview.revision === job.revision
                       ? preview.source
                       : null;
+                  const baseHash = patch.baseHash || "missing";
                   return (
                     <div
                       key={patch.path}
@@ -274,6 +275,11 @@ export function MaintenanceSection({
                       </Button>
                       {shown ? (
                         <>
+                          <FieldHint>
+                            {baseHash === "missing"
+                              ? t("maintenance.newFile")
+                              : t("maintenance.modifiedFile")}
+                          </FieldHint>
                           <FieldHint>{t("maintenance.current")}</FieldHint>
                           <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
                             {shown.hash === "missing"
@@ -284,7 +290,7 @@ export function MaintenanceSection({
                           <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
                             {patch.content}
                           </pre>
-                          {shown.hash !== patch.baseHash ? (
+                          {shown.hash !== baseHash ? (
                             <Alert
                               tone="warning"
                               title={t("maintenance.stale")}

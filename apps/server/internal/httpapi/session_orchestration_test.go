@@ -549,9 +549,9 @@ func TestRemoteMCP(t *testing.T) {
 	if result == nil || result["protocolVersion"] == nil {
 		t.Fatalf("initialize result = %+v", init)
 	}
-	// How to use Foundry reaches the agent as MCP server instructions, not
-	// as text the worker appends to its prompt.
-	if instructions, _ := result["instructions"].(string); !strings.Contains(instructions, "list_resources") {
+	// MCP introduces Foundry and its boundaries; the foundry skill holds how
+	// to use the tools.
+	if instructions, _ := result["instructions"].(string); !strings.Contains(instructions, "foundry skill") {
 		t.Fatalf("initialize instructions = %q", result["instructions"])
 	}
 	tools := post(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, token)

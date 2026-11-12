@@ -488,17 +488,17 @@ function unmappedDecline(method: string): unknown {
 
 const notes = {
   nobody: (what: string) =>
-    `Foundry: ${what} needs an answer, and nobody can answer prompts in this session. It was NOT performed or answered. Do not claim it succeeded, and do not retry it in this session.`,
-  unanswered: (what: string) =>
-    `Foundry: nobody approved ${what} in time. It was NOT performed. Do not claim it succeeded, and do not retry it in this turn.`,
+    `Foundry: ${what} has no approver in this session; NOT performed or answered.`,
+  unanswered: (what: string, waitMs: number) =>
+    `Foundry: ${what} was not approved: timed out after ${Math.round(waitMs)}ms; NOT performed.`,
   denied: (what: string, reason: string) =>
     `Foundry: ${what} was not approved${reason ? `: ${reason}` : "."} It was NOT performed.`,
   relayedApproval: (what: string) =>
-    `Foundry: ${what} needs approval, which was requested from the session that created you (with none, from the person in your chat). It was NOT performed yet. End your turn now: say in one sentence that you are waiting for approval. If your next message approves it, do exactly the same again; it is then allowed. If it does not, follow what it says.`,
+    `Foundry: ${what} approval was relayed to the session that created you; NOT performed yet. An approval in your next message allows the same request once.`,
   relayedQuestion:
-    "Foundry: your question was sent to the session that created you, which answers it or asks its person; with none, it waits in your chat for the person. That can take long, so the question does not wait here. End your turn now: say in one sentence that you are waiting for the answer, and do not assume one. The answer arrives as your next message.",
+    "Foundry: question relayed to the session that created you; answer arrives as your next message. NOT answered.",
   ownTurn: (what: string) =>
-    `Foundry: ${what} came while no one follows this turn, so it was NOT performed or answered. Do not retry it now; ask in your reply instead.`,
+    `Foundry: ${what} has no approver in this turn; NOT performed or answered. Say in your reply what you need and continue with what you can do.`,
 };
 
 /**
@@ -524,8 +524,8 @@ function relayedApprovalsOf(sessionId: string) {
  * Codex's prompts for one thread, routed like Claude's (ClaudeQuestionGate):
  * `person` shows the question card and holds the request until the person
  * answers or the wait ends (then it is declined); `parent` shows the prompt
- * for the next turn (the server relays it), declines at once and tells the
- * model to end its turn, and an approval the next message grants lets the
+ * for the next turn (the server relays it), declines at once and reports that
+ * the answer arrives next turn; an approval the next message grants lets the
  * same request through once; nobody (undefined) declines at once.
  */
 export class CodexQuestionGate {
@@ -600,7 +600,9 @@ export class CodexQuestionGate {
     const itemId = prompt.itemId;
     const unanswered: CodexPromptAnswer = {
       result: prompt.decline,
-      ...(prompt.approvalKey ? { note: notes.unanswered(prompt.what) } : {}),
+      ...(prompt.approvalKey
+        ? { note: notes.unanswered(prompt.what, this.waitMs) }
+        : {}),
     };
     this.waiting.get(itemId)?.lapse(unanswered);
     return new Promise((resolve) => {

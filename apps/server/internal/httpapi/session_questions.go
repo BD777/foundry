@@ -156,7 +156,7 @@ func (s *Server) relayedQuestionText(child store.AgentSession, message store.Tra
 		}
 		builder.WriteString(".")
 	}
-	builder.WriteString(" Answer it yourself when you know; otherwise ask your own person (your question tool) and pass on their answer.\n")
+	builder.WriteString(" Answer it yourself when you know; otherwise decide whether it needs your own person, and if so ask with your question tool.\n")
 	return builder.String()
 }
 

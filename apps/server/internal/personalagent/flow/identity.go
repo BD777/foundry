@@ -35,7 +35,7 @@ func Capture(userID, channel, messageID, text string) error {
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("an inbox message requires an authenticated person")
 	}
-	if channel != "web" && channel != "feishu" {
+	if channel != "web" && channel != "feishu" && !strings.HasPrefix(channel, "mc:") {
 		return fmt.Errorf("unsupported inbox channel")
 	}
 	if strings.TrimSpace(messageID) == "" || len(messageID) > 200 {

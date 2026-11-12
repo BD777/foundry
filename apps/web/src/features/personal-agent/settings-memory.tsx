@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeftRight,
@@ -12,10 +19,14 @@ import type {
   MemoryLayer,
   MemoryLayerEntry,
   MemoryLayerScope,
+  MemorySortList,
+  MemorySortRecord,
 } from "@bd777/foundry-protocol";
 import {
+  actOnAssistantMemorySort,
   addAssistantMemoryLayerEntry,
   listAssistantMemoryLayers,
+  listAssistantMemorySorting,
   moveAssistantMemoryEntry,
   writeKnowledgeEntry,
 } from "../../api";
@@ -28,6 +39,7 @@ import { FieldHint, TextInput } from "../../components/ui/field";
 import { FieldLabel, FormFieldGroup } from "../../components/ui/form-field";
 import { Skeleton } from "../../components/ui/loading";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
+import { Subheading } from "../../components/ui/subheading";
 import { ToastFeedback } from "../../components/ui/toast";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
@@ -196,6 +208,15 @@ export function MemorySection({
       {scopes.map((scope) => (
         <MemoryLayerSection
           busy={busy}
+          extra={
+            scope === "person" ? (
+              <MemorySorting
+                assistantId={assistantId}
+                onChanged={() => void read()}
+                refreshToken={refreshToken}
+              />
+            ) : null
+          }
           key={scope}
           layer={layers.layers.find((layer) => layer.scope === scope)}
           entryActionBusy={entryActionBusy}
@@ -289,6 +310,7 @@ export function MemorySection({
 function MemoryLayerSection({
   busy,
   entryActionBusy,
+  extra,
   layer,
   onAdd,
   onCorrect,
@@ -300,6 +322,8 @@ function MemoryLayerSection({
 }: {
   busy?: string;
   entryActionBusy: boolean;
+  /** Shown under the layer's entries. */
+  extra?: ReactNode;
   layer?: MemoryLayer;
   onAdd: (content: string, expiresAt: string) => void;
   onCorrect?: (entry: MemoryLayerEntry) => void;
@@ -478,6 +502,195 @@ function MemoryLayerSection({
       ) : (
         <PaMuted>{t("settings.memory.empty")}</PaMuted>
       )}
+      {extra}
     </SettingsGroup>
+  );
+}
+
+type SortAction = "undo" | "confirm" | "dismiss";
+
+/**
+ * Memory upkeep's sorting between the shared layer and the assistants':
+ * its standing suggestions to share (confirm or dismiss) and its recent
+ * automatic moves (undo).
+ */
+function MemorySorting({
+  assistantId,
+  onChanged,
+  refreshToken,
+}: {
+  assistantId?: string;
+  onChanged: () => void;
+  refreshToken: number;
+}) {
+  const { t } = useTranslation("personalAgent");
+  const [sorting, setSorting] = useState<MemorySortList>();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string>();
+
+  const read = useCallback(async () => {
+    try {
+      setSorting(await listAssistantMemorySorting(assistantId));
+      setError("");
+    } catch (reason) {
+      setError(serverErrorText(reason));
+    }
+  }, [assistantId]);
+
+  useEffect(() => {
+    void read();
+  }, [read, refreshToken]);
+
+  async function act(record: MemorySortRecord, action: SortAction) {
+    setBusy(record.id);
+    setError("");
+    try {
+      await actOnAssistantMemorySort(assistantId, record.id, { action });
+      await read();
+      onChanged();
+    } catch (reason) {
+      setError(serverErrorText(reason));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  function owner(record: MemorySortRecord) {
+    return record.assistantName.trim() || t("defaultName");
+  }
+
+  function moveDescription(record: MemorySortRecord) {
+    const action = t(
+      record.toScope === "person"
+        ? "settings.memory.sorting.movedToShared"
+        : "settings.memory.sorting.movedToAssistant",
+      { assistant: owner(record) },
+    );
+    return record.reason
+      ? t("settings.memory.sorting.withReason", {
+          action,
+          reason: record.reason,
+        })
+      : action;
+  }
+
+  if (!sorting)
+    return error ? (
+      <FieldHint className="mt-0" tone="warning">
+        {t("settings.memory.sorting.loadFailed")}
+      </FieldHint>
+    ) : null;
+  const moves = sorting.moves.slice(0, 10);
+
+  return (
+    <div className="grid gap-5">
+      {error ? (
+        <ToastFeedback tone="error" title={t("settings.memory.failed")}>
+          {error}
+        </ToastFeedback>
+      ) : null}
+      {sorting.suggestions.length ? (
+        <section className="grid gap-2">
+          <Subheading as="h4" size="group">
+            {t("settings.memory.sorting.suggestionsTitle")}
+          </Subheading>
+          <FieldHint className="mt-0">
+            {t("settings.memory.sorting.suggestionsIntro")}
+          </FieldHint>
+          <DividedList density="cozy">
+            {sorting.suggestions.map((record) => (
+              <li
+                className="grid min-w-0 gap-1.5 wrap-anywhere"
+                key={record.id}
+              >
+                <p className="min-w-0 text-sm leading-[1.55] text-ink">
+                  {record.title}
+                </p>
+                <PaMuted>
+                  {t("settings.memory.sorting.suggestedFrom", {
+                    assistant: owner(record),
+                    reason: record.reason,
+                  })}
+                </PaMuted>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    aria-busy={busy === record.id}
+                    disabled={Boolean(busy)}
+                    onClick={() => void act(record, "confirm")}
+                    size="sm"
+                    variant="primary"
+                  >
+                    {t("settings.memory.sorting.confirm")}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    onClick={() => void act(record, "dismiss")}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    {t("settings.memory.sorting.dismiss")}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </DividedList>
+        </section>
+      ) : null}
+      <section className="grid gap-2">
+        <Subheading as="h4" size="group">
+          {t("settings.memory.sorting.recentTitle")}
+        </Subheading>
+        <FieldHint className="mt-0">
+          {t("settings.memory.sorting.recentIntro")}
+        </FieldHint>
+        {moves.length ? (
+          <DividedList density="cozy">
+            {moves.map((record) => (
+              <li
+                className="grid min-w-0 gap-1.5 wrap-anywhere"
+                key={record.id}
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm leading-[1.55] text-ink">
+                    {record.title}
+                  </p>
+                  {record.undoable ? (
+                    <Button
+                      aria-busy={busy === record.id}
+                      aria-label={t("settings.memory.sorting.undoFor", {
+                        title: record.title,
+                      })}
+                      disabled={Boolean(busy)}
+                      onClick={() => void act(record, "undo")}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      {busy === record.id
+                        ? t("settings.memory.sorting.undoing")
+                        : t("settings.memory.sorting.undo")}
+                    </Button>
+                  ) : null}
+                </div>
+                <PaMuted>{moveDescription(record)}</PaMuted>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <PaMuted as="span" title={fullWhen(record.createdAt)}>
+                    {relativeWhen(record.createdAt)}
+                  </PaMuted>
+                  {record.status !== "moved" ? (
+                    <PaMuted as="span">
+                      {t(`settings.memory.sorting.status.${record.status}`, {
+                        defaultValue: record.status,
+                      })}
+                    </PaMuted>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </DividedList>
+        ) : (
+          <PaMuted>{t("settings.memory.sorting.recentEmpty")}</PaMuted>
+        )}
+      </section>
+    </div>
   );
 }

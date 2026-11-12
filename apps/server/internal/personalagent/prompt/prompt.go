@@ -1,19 +1,24 @@
 // Package prompt is the Personal Agent's instructions (docs/personal-agent.md
-// §12): system.md, embedded and versioned. AgentsFile fills it with the
-// assistant's settings into the AGENTS.md Foundry writes into the
-// assistant's folder, which Claude Code and Codex read natively; the worked
-// examples go beside it (ExamplesFile). Nothing about the person is written
-// there: what the assistant knows about them (memory, their own requests,
-// their rules) is TurnContext, added to each turn's input with the time, which
-// computers are online, the budgeted project index and the work it follows
-// up; details come from tools (find_workspace, list_computers: Computers).
+// §12): system.md and the assistant's skills, embedded and versioned.
+// AgentsFile fills system.md with the assistant's settings, the person's
+// rules and the facts they confirmed into the AGENTS.md Foundry writes into
+// the assistant's folder, which Claude Code and Codex load natively at the
+// start of a conversation. RunFiles also supplies the project index
+// (ProjectIndexPath), the worked examples and the canonical skill files that
+// the Worker exposes to both runtimes. Foundry injects no guidance per turn:
+// TurnContext is one line with the time in the person's zone (the runtime
+// does not know it) and, for a captured message, its receipt. Live state
+// (computers, the list, followed work, what waits for the person) comes
+// from tools when the assistant needs it (list_computers: Computers).
 //
 // The few limits it applies mirror personalagent/defaults.go (prompt_test
 // checks they agree).
 package prompt
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,16 +33,41 @@ import (
 //go:embed system.md
 var system string
 
-// Version names system.md as embedded; it is stored as each assistant's
-// prompt_version. Bump it whenever system.md changes (prompt_test holds the
-// hash of every version).
-const Version = "2026-11-12.4"
+//go:embed skills/assistant-handoff/SKILL.md
+var assistantHandoffSkill string
+
+//go:embed skills/assistant-memory-and-list/SKILL.md
+var assistantMemoryAndListSkill string
+
+//go:embed skills/assistant-projects/SKILL.md
+var assistantProjectsSkill string
+
+// Version names these embedded instructions; it is stored as each assistant's
+// prompt_version. Bump it whenever the system prompt or a skill changes
+// (prompt_test holds the digest of every version).
+const Version = "2026-11-13.2"
+
+// AssistantSkillsPath is where Foundry keeps the canonical skill files in the
+// assistant's folder. It is outside the workspace-draft roots; the Worker
+// links these directories into each runtime's native discovery path.
+const AssistantSkillsPath = ".foundry/assistant-skills"
+
+// AssistantSkill is one embedded Agent Skill.
+type AssistantSkill struct {
+	Name    string
+	Content string
+}
+
+var assistantSkills = []AssistantSkill{
+	{Name: "assistant-handoff", Content: assistantHandoffSkill},
+	{Name: "assistant-memory-and-list", Content: assistantMemoryAndListSkill},
+	{Name: "assistant-projects", Content: assistantProjectsSkill},
+}
 
 // Limits mirrored from personalagent/defaults.go.
 const (
 	aboutMaxChars    = 2000
 	extraMaxChars    = 2000
-	listContextMax   = 20
 	defaultNameZH    = "助理"
 	defaultNameEN    = "Assistant"
 	timeLayout       = "2006-01-02 15:04"
@@ -50,16 +80,18 @@ const (
 // ExamplesFile; AGENTS.md points there.
 const ExamplesPath = ".foundry/assistant-examples.md"
 
+// ProjectIndexPath is where Foundry writes ProjectIndexFile, the project and
+// device index as of the run; AGENTS.md points there.
+const ProjectIndexPath = ".foundry/project-index.md"
+
 // AgentsFileMaxBytes bounds AgentsFile: Codex reads at most 32 KiB of
 // AGENTS.md files in all (project_doc_max_bytes), the person's own global
 // one included.
 const AgentsFileMaxBytes = 28 * 1024
 
 // Input is everything the assistant's instructions and turn context are
-// made from. WP-S1 fills the
-// person and settings, memory and tasks from its tables; WP-S2 the digests.
-// Pass records as stored: what is shown (active memory, unfinished tasks,
-// open list items) is picked, ordered and capped here.
+// made from. Pass records as stored: what is shown (active memory) is
+// picked, ordered and capped here.
 type Input struct {
 	// Now is when the turn starts.
 	Now time.Time
@@ -87,14 +119,9 @@ type Input struct {
 	L0Index string
 	// Places are those devices' labels and detected facts, by device id.
 	Places map[string]store.DevicePlacement
-	// Tasks are the assistant's pa_tasks; only unfinished ones are shown.
-	Tasks []store.PersonalAgentTask
-	// List is the person's list (pa_items); TurnContext shows the open
-	// items.
-	List []store.PersonalAgentListItem
-	// NeedsYou are the open items of the person's "needs you" list;
-	// TurnContext counts them and names the person's first few.
-	NeedsYou []store.PendingItem
+	// MemoryPublications are the ids of the confirmed-memory publications
+	// the assistant may read with read_knowledge.
+	MemoryPublications []string
 	// ConnectorsURL and SettingsURL are the Foundry pages where the person
 	// connects their accounts (Feishu and other sign-ins) and changes the
 	// assistant's settings. Empty: not shown.
@@ -109,16 +136,55 @@ type Input struct {
 // System is system.md as embedded, placeholders unfilled.
 func System() string { return system }
 
+// AssistantSkills are the embedded Agent Skills, in stable order.
+func AssistantSkills() []AssistantSkill {
+	return append([]AssistantSkill(nil), assistantSkills...)
+}
+
+// AssistantSkillPath is a skill's canonical SKILL.md path in the assistant's
+// folder.
+func AssistantSkillPath(name string) string {
+	return AssistantSkillsPath + "/" + name + "/SKILL.md"
+}
+
+// ContentDigest covers system.md and every embedded skill. It identifies the
+// complete instruction set, not only the main prompt file.
+func ContentDigest() string {
+	sum := sha256.New()
+	writeDigestPart := func(path, content string) {
+		fmt.Fprintf(sum, "%s\x00%d\x00", path, len(content))
+		sum.Write([]byte(content))
+	}
+	writeDigestPart("system.md", system)
+	for _, skill := range assistantSkills {
+		writeDigestPart(AssistantSkillPath(skill.Name), skill.Content)
+	}
+	return hex.EncodeToString(sum.Sum(nil))
+}
+
 // AgentsFile is the AGENTS.md Foundry writes into the assistant's folder
 // before each run: system.md filled with the assistant's settings, without
-// the worked examples (ExamplesFile) and with the pages the person can
-// open. It changes only with the settings, the prompt's version or those
-// pages, and holds no facts about the person.
+// the worked examples (ExamplesFile), then the person's rules, the facts they
+// confirmed and the pages they can open. It changes with those, not with
+// live state, so a conversation's runtime loads it once, natively.
 func AgentsFile(in Input) string {
 	body, _, _ := strings.Cut(filled(in), examplesHeading)
 	var out strings.Builder
 	out.WriteString(strings.TrimRight(body, "\n"))
 	out.WriteString("\n")
+	writeRules(&out, in)
+	out.WriteString("\n# What the person confirmed (newest first)\n\n")
+	writeMemory(&out, in.Memory, timeLocation(in))
+	for _, id := range in.MemoryPublications {
+		fmt.Fprintf(&out, "Their confirmed memory is also a publication: read_knowledge publicationId %s.\n", id)
+	}
+	names := map[string]string{}
+	for _, digest := range in.Workspaces {
+		names[digest.WorkspaceID] = digest.Name
+	}
+	if id := in.DirectChatPreviousWorkspaceID; id != "" && names[id] != "" {
+		fmt.Fprintf(&out, "\nBefore you took over their Feishu direct chat it went to %s (%s): work asked for there\nbelongs there when nothing else points elsewhere.\n", quote(names[id]), id)
+	}
 	if in.ConnectorsURL != "" || in.SettingsURL != "" {
 		out.WriteString("\n# Pages the person can open\n\n")
 		if in.ConnectorsURL != "" {
@@ -128,8 +194,41 @@ func AgentsFile(in Input) string {
 			fmt.Fprintf(&out, "- Your settings, limits and what you remember: %s\n", in.SettingsURL)
 		}
 	}
-	fmt.Fprintf(&out, "\n# Examples\n\nWorked examples of the steps above are in %s in your folder. Read them when you are\nunsure how to handle a message.\n", ExamplesPath)
 	return out.String()
+}
+
+// writeRules is the person's own requests from the settings and when
+// Foundry asks them first, grouped by decision.
+func writeRules(out *strings.Builder, in Input) {
+	out.WriteString("\n# The person's rules\n\n")
+	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
+		out.WriteString("Their own requests, from your settings (they apply unless they conflict with the rules\nabove or with privacy and safety):\n\n")
+		out.WriteString(textcut.Excerpt(extra, extraMaxChars))
+		out.WriteString("\n\n")
+	}
+	out.WriteString("When Foundry asks them first (Foundry enforces this):\n")
+	groups := map[string][]string{}
+	for _, action := range store.PersonalAgentActions {
+		label := decisionLabel(in.Settings.Policy[action])
+		groups[label] = append(groups[label], actionLabels[action])
+	}
+	for _, label := range []string{decisionLabel(store.PersonalAgentAuto), decisionLabel(store.PersonalAgentAsk), decisionLabel(store.PersonalAgentDeny), decisionLabel("")} {
+		if actions := groups[label]; len(actions) > 0 {
+			fmt.Fprintf(out, "- %s: %s\n", label, strings.Join(actions, "; "))
+		}
+	}
+	out.WriteString("- never, whatever the rules: delete anything, share with other people, change a computer's\n  settings, change a project the person does not own\n")
+}
+
+// ProjectIndexFile is the project and device index as of the run (L0Index),
+// which AGENTS.md points to; find_workspace reads the current state.
+func ProjectIndexFile(in Input) string {
+	index := strings.TrimSpace(in.L0Index)
+	if index == "" {
+		index = "No projects yet."
+	}
+	return fmt.Sprintf("# Projects and computers\n\nAs of %s; find_workspace and get_workspace read the current state.\n\n%s\n",
+		in.Now.In(timeLocation(in)).Format(timeLayout), index)
 }
 
 // ExamplesFile is system.md's worked examples, filled like AgentsFile.
@@ -139,6 +238,24 @@ func ExamplesFile(in Input) string {
 		return ""
 	}
 	return "# Examples\n" + examples
+}
+
+// RunFiles are the files Foundry supplies before an assistant run. The skill
+// contents have one canonical copy; the Worker links each directory into
+// .claude/skills and .agents/skills for native runtime discovery.
+func RunFiles(in Input) []personalagent.WorkspaceFile {
+	files := []personalagent.WorkspaceFile{
+		{Path: "AGENTS.md", Content: AgentsFile(in)},
+		{Path: ExamplesPath, Content: ExamplesFile(in)},
+		{Path: ProjectIndexPath, Content: ProjectIndexFile(in)},
+	}
+	for _, skill := range assistantSkills {
+		files = append(files, personalagent.WorkspaceFile{
+			Path:    AssistantSkillPath(skill.Name),
+			Content: skill.Content,
+		})
+	}
+	return files
 }
 
 // Computers is what list_computers answers: one line per computer the
@@ -184,63 +301,12 @@ const (
 )
 
 // TurnContext is what Foundry adds to each turn's input of an assistant
-// session: the time now, what the person confirmed about themselves, their
-// own requests and rules, which computers are online, the project index,
-// the open items of their list, the work the assistant follows up and where
-// their direct chat went before it. It is Foundry's, never the person's
-// words.
+// session: the time now in the person's zone, which the runtime does not
+// know. It is a fact, never guidance; the caller may add the input's
+// receipt before TurnContextEnd.
 func TurnContext(in Input) string {
 	location := timeLocation(in)
-	var out strings.Builder
-	out.WriteString(TurnContextStart + "\n")
-	fmt.Fprintf(&out, "Now: %s (%s).\n", in.Now.In(location).Format(headerDateLayout+" 15:04"), location.String())
-	out.WriteString("About the person, what they confirmed (newest first):\n")
-	writeMemory(&out, in.Memory, location)
-	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
-		out.WriteString("The person's own requests, from your settings (follow them, except where they conflict with\nFoundry's rules or with the privacy and safety rules):\n")
-		out.WriteString(textcut.Excerpt(extra, extraMaxChars))
-		out.WriteString("\n")
-	}
-	out.WriteString("When Foundry asks the person first (their current rules; Foundry enforces them, this is so\nyou can plan):\n")
-	for _, action := range store.PersonalAgentActions {
-		fmt.Fprintf(&out, "- %s: %s\n", actionLabels[action], decisionLabel(in.Settings.Policy[action]))
-	}
-	out.WriteString("- delete anything, share with other people, change a computer's settings, change a project\n  the person does not own: never\n")
-	online, offline := []string{}, []string{}
-	devices := append([]store.DeviceDigest(nil), in.Devices...)
-	sort.SliceStable(devices, func(i, j int) bool { return devices[i].Label < devices[j].Label })
-	for _, device := range devices {
-		if device.Online {
-			online = append(online, quote(device.Label))
-		} else {
-			offline = append(offline, quote(device.Label))
-		}
-	}
-	if len(online) > 0 {
-		fmt.Fprintf(&out, "Computers online now: %s.\n", strings.Join(online, ", "))
-	}
-	if len(offline) > 0 {
-		fmt.Fprintf(&out, "Computers offline now: %s.\n", strings.Join(offline, ", "))
-	}
-	if index := strings.TrimSpace(in.L0Index); index != "" {
-		out.WriteString("Projects and computers, current index:\n")
-		out.WriteString(index)
-		out.WriteString("\n")
-	}
-	names := map[string]string{}
-	for _, digest := range in.Workspaces {
-		names[digest.WorkspaceID] = digest.Name
-	}
-	out.WriteString("The person's list, open (their plans; change it with update_list):\n")
-	writeList(&out, in.List, location)
-	out.WriteString("Work you are following up:\n")
-	writeTasks(&out, in.Tasks, names, location)
-	writeNeedsYou(&out, in.NeedsYou, names)
-	if id := in.DirectChatPreviousWorkspaceID; id != "" && names[id] != "" {
-		fmt.Fprintf(&out, "Before you, the person's Feishu direct chat went to %s (%s): when nothing else points\nelsewhere, work asked for in that chat belongs there.\n", quote(names[id]), id)
-	}
-	out.WriteString(TurnContextEnd)
-	return out.String()
+	return fmt.Sprintf("%s\nNow: %s (%s).\n%s", TurnContextStart, in.Now.In(location).Format(headerDateLayout+" 15:04"), location.String(), TurnContextEnd)
 }
 
 func writeMemory(out *strings.Builder, items []store.PersonalAgentMemoryItem, location *time.Location) {
@@ -251,7 +317,7 @@ func writeMemory(out *strings.Builder, items []store.PersonalAgentMemoryItem, lo
 		}
 	}
 	if len(active) == 0 {
-		out.WriteString("Nothing yet. Learn as you go; remember what lasts.\n")
+		out.WriteString("Nothing yet.\n")
 		return
 	}
 	sort.SliceStable(active, func(i, j int) bool {
@@ -291,7 +357,10 @@ func writeDevices(out *strings.Builder, in Input) {
 	devices := append([]store.DeviceDigest(nil), in.Devices...)
 	sort.SliceStable(devices, func(i, j int) bool { return devices[i].Label < devices[j].Label })
 	for _, device := range devices {
-		parts := []string{}
+		parts := []string{"offline"}
+		if device.Online {
+			parts[0] = "online"
+		}
 		if device.System != "" {
 			parts = append(parts, device.System)
 		}
@@ -345,86 +414,6 @@ func labelText(key, value string) string {
 	return key + ":" + value
 }
 
-func writeTasks(out *strings.Builder, tasks []store.PersonalAgentTask, names map[string]string, location *time.Location) {
-	open := []store.PersonalAgentTask{}
-	for _, task := range tasks {
-		switch task.Status {
-		case store.PersonalAgentTaskQueued, store.PersonalAgentTaskRunning, store.PersonalAgentTaskAsking:
-			open = append(open, task)
-		}
-	}
-	if len(open) == 0 {
-		out.WriteString("Nothing.\n")
-		return
-	}
-	sort.SliceStable(open, func(i, j int) bool { return open[i].CreatedAt < open[j].CreatedAt })
-	for _, task := range open {
-		project := names[task.WorkspaceID]
-		if project == "" {
-			project = task.WorkspaceID
-		}
-		parts := []string{taskStatusLabels[task.Status]}
-		if task.WaitingFor != "" {
-			parts[0] = fmt.Sprintf("waiting for %s to come online; it starts by itself then", task.WaitingFor)
-		}
-		if task.ReadOnly {
-			parts = append(parts, "read-only")
-		}
-		if task.StuckSince != "" {
-			parts = append(parts, "possibly stuck since "+clock(task.StuckSince, location))
-		} else if task.LastEventAt != "" {
-			parts = append(parts, "last activity "+clock(task.LastEventAt, location))
-		}
-		if task.SessionID != "" {
-			parts = append(parts, "helper "+task.SessionID)
-		}
-		fmt.Fprintf(out, "- %s in %s [%s]: %s\n", quote(task.Title), quote(project), task.ID, strings.Join(parts, "; "))
-	}
-}
-
-// writeList shows the open items of the person's list, oldest first, at
-// most listContextMax of them.
-func writeList(out *strings.Builder, items []store.PersonalAgentListItem, location *time.Location) {
-	open := []store.PersonalAgentListItem{}
-	for _, item := range items {
-		if item.Status == store.PersonalAgentItemOpen {
-			open = append(open, item)
-		}
-	}
-	if len(open) == 0 {
-		out.WriteString("Nothing.\n")
-		return
-	}
-	sort.SliceStable(open, func(i, j int) bool { return open[i].CreatedAt < open[j].CreatedAt })
-	for i, item := range open {
-		if i == listContextMax {
-			fmt.Fprintf(out, "- …and %d more; read_list shows them.\n", len(open)-i)
-			return
-		}
-		parts := []string{}
-		if item.When != "" {
-			parts = append(parts, quote(item.When))
-		}
-		if item.At != "" {
-			when := clock(item.At, location)
-			if item.Remind && item.RemindedAt == "" {
-				when = "reminder at " + when
-			} else if item.Remind {
-				when = "reminded at " + when
-			}
-			parts = append(parts, when)
-		}
-		if item.TaskID != "" {
-			parts = append(parts, "your task "+item.TaskID)
-		}
-		line := fmt.Sprintf("- %s [%s]", quote(item.Text), item.ID)
-		if len(parts) > 0 {
-			line += ": " + strings.Join(parts, "; ")
-		}
-		out.WriteString(line + "\n")
-	}
-}
-
 var actionLabels = map[string]string{
 	store.PersonalAgentActionCreateWorkspace:    "create a project in a managed folder",
 	store.PersonalAgentActionRegisterFolder:     "use a folder of theirs outside the managed folders",
@@ -449,12 +438,6 @@ func decisionLabel(decision string) string {
 		return "never"
 	}
 	return "Foundry decides"
-}
-
-var taskStatusLabels = map[string]string{
-	store.PersonalAgentTaskQueued:  "waiting for the project's current work to finish",
-	store.PersonalAgentTaskRunning: "running",
-	store.PersonalAgentTaskAsking:  "its helper asked a question the person has not answered",
 }
 
 func layerLabel(scope string) string {
@@ -540,38 +523,3 @@ func clock(value string, location *time.Location) string {
 func quote(name string) string { return "\"" + oneLine(name) + "\"" }
 
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
-
-// needsYouShown is how many of the person's open items the context names.
-const needsYouShown = 5
-
-// writeNeedsYou counts the open items of the "needs you" list, yours and
-// the person's, and names the person's newest.
-func writeNeedsYou(out *strings.Builder, items []store.PendingItem, names map[string]string) {
-	var yours, theirs []store.PendingItem
-	for _, item := range items {
-		if item.State != store.PendingOpen {
-			continue
-		}
-		if store.PendingHandledBy(item) == store.PendingHandlerAssistant {
-			yours = append(yours, item)
-		} else {
-			theirs = append(theirs, item)
-		}
-	}
-	if len(yours) == 0 && len(theirs) == 0 {
-		out.WriteString("The person's \"needs you\" list: empty.\n")
-		return
-	}
-	fmt.Fprintf(out, "The person's \"needs you\" list: %d for them, %d for you to handle (needs_you).\n", len(theirs), len(yours))
-	for index, item := range theirs {
-		if index == needsYouShown {
-			fmt.Fprintf(out, "- and %d more (needs_you op list)\n", len(theirs)-needsYouShown)
-			break
-		}
-		project := names[item.WorkspaceID]
-		if project == "" {
-			project = item.WorkspaceID
-		}
-		fmt.Fprintf(out, "- %s, in %s\n", textcut.Excerpt(item.Title, 160), quote(project))
-	}
-}

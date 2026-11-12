@@ -53,6 +53,7 @@ export const shell: Translation<typeof en> = {
     menu: "菜单",
     globalScope: "全局",
     workspaceScope: "工作区：{{workspace}}",
+    assistantScope: "助理：{{assistant}}",
     open: "打开{{label}}",
     lightMode: "切换到浅色模式",
     darkMode: "切换到深色模式",

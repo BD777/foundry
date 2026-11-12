@@ -72,9 +72,13 @@ func TestAssistantsListCreateAndDelete(t *testing.T) {
 	if pkg.Workspaces.Scope != store.PermissionListScopeListed || len(pkg.Workspaces.Include) != 0 {
 		t.Fatalf("a new assistant's workspaces = %+v", pkg.Workspaces)
 	}
+	if pkg.ConnectorDefault != store.ConnectorAccessLevelOff {
+		t.Fatalf("a new assistant's connector default = %q", pkg.ConnectorDefault)
+	}
 	var defaultPkg store.PermissionPackage
 	call(f.alice, http.MethodGet, "/api/personal-agent/permission-package", "", http.StatusOK, &defaultPkg)
-	if defaultPkg.ID == pkg.ID || defaultPkg.Workspaces.Scope == store.PermissionListScopeListed {
+	if defaultPkg.ID == pkg.ID || defaultPkg.Workspaces.Scope == store.PermissionListScopeListed ||
+		defaultPkg.ConnectorDefault != store.ConnectorAccessLevelWrite {
 		t.Fatalf("the default assistant's package changed: %+v", defaultPkg)
 	}
 	if assistants = list(); len(assistants) != 2 || assistants[0].ID != defaultID || assistants[1].ID != created.ID {

@@ -35,6 +35,14 @@ type Access struct {
 	Home    bool
 	Agent   store.PersonalAgent
 	Package store.PermissionPackage
+	// Channel narrows the package for a message channel's session and the
+	// helpers it started (DEV-203): the channel's scope, within the package.
+	Channel *store.MessageChannel
+}
+
+// channelSessions is the store's message channel lookup, when it has one.
+type channelSessions interface {
+	MessageChannelOfSession(ctx context.Context, sessionID string) (store.MessageChannelRecord, error)
 }
 
 // maxLineage bounds the parent chain Resolve follows from a session a
@@ -46,6 +54,49 @@ const maxLineage = 8
 // assistant started (store.AssistantForSession), or a session one of those
 // started.
 func Resolve(ctx context.Context, st Store, session store.AgentSession) (Access, error) {
+	access, err := resolvePackage(ctx, st, session)
+	if err != nil || !access.Applicable {
+		return access, err
+	}
+	channel, err := channelOf(ctx, st, session)
+	if err != nil {
+		return Access{}, err
+	}
+	access.Channel = channel
+	return access, nil
+}
+
+// channelOf is the message channel whose session started session's
+// lineage, nil for any other.
+func channelOf(ctx context.Context, st Store, session store.AgentSession) (*store.MessageChannel, error) {
+	channels, ok := st.(channelSessions)
+	if !ok {
+		return nil, nil
+	}
+	current := session
+	for range maxLineage {
+		record, err := channels.MessageChannelOfSession(ctx, current.ID)
+		if err == nil {
+			return &record.MessageChannel, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		if current.ParentSessionID == "" {
+			return nil, nil
+		}
+		current, err = st.GetAgentSessionSummary(ctx, current.ParentSessionID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+func resolvePackage(ctx context.Context, st Store, session store.AgentSession) (Access, error) {
 	home, err := resolveHome(ctx, st, session)
 	if err != nil || home.Applicable {
 		return home, err
@@ -134,10 +185,10 @@ func IsAssistantSession(session store.AgentSession) bool {
 }
 
 // DefaultPackage is the built-in package for one assistant: every workspace
-// the person can already reach, every connector account at write, and
-// identity resources following the device like every other resource. A
-// later assistant's package narrows workspaces and identity resources to
-// listed ones (sqlitestore createPersonalAgent).
+// the person can already reach, connector accounts at write, and identity
+// resources following the device like every other resource. A later
+// assistant's package narrows workspaces, identity resources and connector
+// accounts to opt-in ones (sqlitestore createPersonalAgent).
 func DefaultPackage(owner, id string) store.PermissionPackage {
 	return Normalize(store.PermissionPackage{
 		ID:    strings.TrimSpace(id),
@@ -146,6 +197,7 @@ func DefaultPackage(owner, id string) store.PermissionPackage {
 			Include: jsonempty.List[string]{},
 			Exclude: jsonempty.List[string]{},
 		},
+		ConnectorDefault:  store.ConnectorAccessLevelWrite,
 		ConnectorAccounts: jsonempty.List[store.ConnectorAccountPermission]{},
 		IdentityResources: store.PermissionIdentityResources{
 			Scope:   store.PermissionListScopeAll,
@@ -161,6 +213,11 @@ func Normalize(pkg store.PermissionPackage) store.PermissionPackage {
 	pkg.ID = strings.TrimSpace(pkg.ID)
 	pkg.Owner = strings.TrimSpace(pkg.Owner)
 	pkg.Workspaces = normalizeRule(pkg.Workspaces)
+	pkg.ConnectorDefault = strings.TrimSpace(pkg.ConnectorDefault)
+	if pkg.ConnectorDefault == "" {
+		// Packages stored before connectorDefault existed had this behavior.
+		pkg.ConnectorDefault = store.ConnectorAccessLevelWrite
+	}
 	if pkg.IdentityResources.Scope != store.PermissionListScopeListed {
 		pkg.IdentityResources.Scope = store.PermissionListScopeAll
 	}
@@ -208,6 +265,11 @@ func Validate(pkg store.PermissionPackage) error {
 	if pkg.ID == "" || pkg.Owner == "" {
 		return errors.New("a permission package needs an id and owner")
 	}
+	switch pkg.ConnectorDefault {
+	case store.ConnectorAccessLevelOff, store.ConnectorAccessLevelRead, store.ConnectorAccessLevelWrite:
+	default:
+		return fmt.Errorf("unknown connector default %q", pkg.ConnectorDefault)
+	}
 	for _, account := range pkg.ConnectorAccounts {
 		if account.AccountID == "" {
 			return errors.New("a connector permission needs an account id")
@@ -221,19 +283,70 @@ func Validate(pkg store.PermissionPackage) error {
 	return nil
 }
 
-// ConnectorLevel returns the account's explicit level, or write when the
-// package has no override for it.
+// ConnectorLevel returns the account's explicit level, or the package default
+// when the package has no override for it.
 func (a Access) ConnectorLevel(accountID string) string {
 	if !a.Applicable {
 		return store.ConnectorAccessLevelWrite
 	}
 	accountID = strings.TrimSpace(accountID)
+	return a.channelConnectorLevel(accountID, a.packageConnectorLevel(accountID))
+}
+
+func (a Access) packageConnectorLevel(accountID string) string {
 	for _, account := range a.Package.ConnectorAccounts {
 		if account.AccountID == accountID {
 			return account.Level
 		}
 	}
+	if a.Package.ConnectorDefault != "" {
+		return a.Package.ConnectorDefault
+	}
 	return store.ConnectorAccessLevelWrite
+}
+
+// channelConnectorLevel caps level by the channel's scope for accountID.
+func (a Access) channelConnectorLevel(accountID, level string) string {
+	if a.Channel == nil {
+		return level
+	}
+	for _, connector := range a.Channel.Scope.Connectors {
+		if connector.AccountID == accountID {
+			return lowerLevel(level, connector.Level)
+		}
+	}
+	if a.Channel.Scope.ConnectorDefault == store.ConnectorAccessLevelOff {
+		return store.ConnectorAccessLevelOff
+	}
+	return level
+}
+
+func lowerLevel(a, b string) string {
+	rank := map[string]int{store.ConnectorAccessLevelOff: 0, store.ConnectorAccessLevelRead: 1, store.ConnectorAccessLevelWrite: 2}
+	ra, okA := rank[a]
+	rb, okB := rank[b]
+	if !okA || !okB {
+		return store.ConnectorAccessLevelOff
+	}
+	if ra <= rb {
+		return a
+	}
+	return b
+}
+
+// WritesWithoutConfirmation reports whether a message channel's session
+// may write through accountID without a confirmation card: the person set
+// the channel's writes for it to direct, and writing is allowed at all.
+func (a Access) WritesWithoutConfirmation(accountID string) bool {
+	if !a.Applicable || a.Channel == nil || !a.AllowsConnectorWrite(accountID) {
+		return false
+	}
+	for _, connector := range a.Channel.Scope.Connectors {
+		if connector.AccountID == accountID {
+			return connector.Level == store.ConnectorAccessLevelWrite && connector.Writes == "direct"
+		}
+	}
+	return false
 }
 
 // AllowsConnector reports whether reads may use accountID.
@@ -251,6 +364,9 @@ func (a Access) AllowsConnectorWrite(accountID string) bool {
 func (a Access) WorkspaceAllowed(workspaceID string) bool {
 	if !a.Applicable {
 		return true
+	}
+	if a.Channel != nil && !ruleAllows(a.Channel.Scope.Workspaces, workspaceID) {
+		return false
 	}
 	return ruleAllows(a.Package.Workspaces, workspaceID)
 }
@@ -283,7 +399,7 @@ func IdentityResourceType(resourceType string) bool {
 // resources one by one (scope listed) rather than letting them follow the
 // device (scope all).
 func (a Access) IdentityResourceListed() bool {
-	return a.Applicable && a.Package.IdentityResources.Scope == store.PermissionListScopeListed
+	return a.Applicable && (a.Channel != nil || a.Package.IdentityResources.Scope == store.PermissionListScopeListed)
 }
 
 // IdentityResourceAllowed reports whether the package lets the assistant
@@ -293,7 +409,14 @@ func (a Access) IdentityResourceAllowed(resourceID string) bool {
 	if !a.IdentityResourceListed() {
 		return true
 	}
-	return slices.Contains([]string(a.Package.IdentityResources.Allowed), strings.TrimSpace(resourceID))
+	resourceID = strings.TrimSpace(resourceID)
+	if a.Channel != nil && !slices.Contains([]string(a.Channel.Scope.IdentityResources), resourceID) {
+		return false
+	}
+	if a.Package.IdentityResources.Scope != store.PermissionListScopeListed {
+		return true
+	}
+	return slices.Contains([]string(a.Package.IdentityResources.Allowed), resourceID)
 }
 
 func ruleAllows(rule store.PermissionListRule, id string) bool {

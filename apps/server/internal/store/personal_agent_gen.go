@@ -24,6 +24,45 @@ func (e MemoryLayerScope) Valid() bool {
 	}
 }
 
+// Defines values for MemorySortActionInputAction.
+const (
+	MemorySortActionInputActionConfirm MemorySortActionInputAction = "confirm"
+	MemorySortActionInputActionDismiss MemorySortActionInputAction = "dismiss"
+	MemorySortActionInputActionUndo    MemorySortActionInputAction = "undo"
+)
+
+// Valid indicates whether the value is a known member of the MemorySortActionInputAction enum.
+func (e MemorySortActionInputAction) Valid() bool {
+	switch e {
+	case MemorySortActionInputActionConfirm:
+		return true
+	case MemorySortActionInputActionDismiss:
+		return true
+	case MemorySortActionInputActionUndo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MemorySortRecordKind.
+const (
+	MemorySortRecordKindMove       MemorySortRecordKind = "move"
+	MemorySortRecordKindSuggestion MemorySortRecordKind = "suggestion"
+)
+
+// Valid indicates whether the value is a known member of the MemorySortRecordKind enum.
+func (e MemorySortRecordKind) Valid() bool {
+	switch e {
+	case MemorySortRecordKindMove:
+		return true
+	case MemorySortRecordKindSuggestion:
+		return true
+	default:
+		return false
+	}
+}
+
 // AddMemoryEntryInput POST /api/assistants/{id}/memory/layers/{scope}/entries. The person writes a fact into a layer, which is created the first time; requestId makes a retry the same write.
 type AddMemoryEntryInput struct {
 	RequestID string `json:"requestId"`
@@ -68,7 +107,7 @@ type AssistantSummary struct {
 // ConnectorAccessLevel What one assistant may do through one connector account.
 type ConnectorAccessLevel = string
 
-// ConnectorAccountPermission One connector account's override in a permission package. An account with no entry uses the package default, write.
+// ConnectorAccountPermission One connector account's override in a permission package. An account with no entry uses connectorDefault.
 type ConnectorAccountPermission struct {
 	AccountID string `json:"accountId"`
 
@@ -137,6 +176,47 @@ type MemoryLayerEntry struct {
 // MemoryLayerScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
 type MemoryLayerScope string
 
+// MemorySortActionInput POST /api/assistants/{id}/memory/sorting/{record}/action. undo moves an automatic move back; confirm moves a suggested entry to the person's layer; dismiss drops the suggestion.
+type MemorySortActionInput struct {
+	Action MemorySortActionInputAction `json:"action"`
+}
+
+// MemorySortActionInputAction defines model for MemorySortActionInput.Action.
+type MemorySortActionInputAction string
+
+// MemorySortList GET /api/assistants/{id}/memory/sorting. The person's recent automatic moves between layers (any of their assistants), newest first, and the suggestions to share that still stand.
+type MemorySortList struct {
+	Moves       jsonempty.List[MemorySortRecord] `json:"moves"`
+	Suggestions jsonempty.List[MemorySortRecord] `json:"suggestions"`
+}
+
+// MemorySortRecord One decision of memory upkeep's sorting between the person's layer and one assistant's (DEV-191): an automatic move (kind move, status moving, moved, failed or undone) or a suggestion to share (kind suggestion, status suggested, confirmed or dismissed). assistantId is the assistant whose layer is the other side. title is the entry's title and reason the reviewer's one sentence; bodies are never recorded. undoable is whether the person can move it back now.
+type MemorySortRecord struct {
+	ID                 string               `json:"id"`
+	Kind               MemorySortRecordKind `json:"kind"`
+	Status             string               `json:"status"`
+	AssistantID        string               `json:"assistantId"`
+	AssistantName      string               `json:"assistantName"`
+	AssistantIsDefault bool                 `json:"assistantIsDefault"`
+
+	// FromScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	FromScope MemoryLayerScope `json:"fromScope"`
+
+	// ToScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	ToScope    MemoryLayerScope       `json:"toScope"`
+	Title      string                 `json:"title"`
+	Reason     string                 `json:"reason"`
+	Confidence string                 `json:"confidence"`
+	Mentions   jsonempty.List[string] `json:"mentions"`
+	Failure    string                 `json:"failure,omitempty"`
+	Undoable   bool                   `json:"undoable"`
+	CreatedAt  string                 `json:"createdAt"`
+	UpdatedAt  string                 `json:"updatedAt"`
+}
+
+// MemorySortRecordKind defines model for MemorySortRecord.Kind.
+type MemorySortRecordKind string
+
 // MoveMemoryEntryInput POST /api/assistants/{id}/memory/entries/{entry}/move. Moves the entry of the assistant's other layer to toScope, at the revision and hash the person saw.
 type MoveMemoryEntryInput struct {
 	// ToScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
@@ -165,7 +245,7 @@ type PermissionListRule struct {
 // PermissionListScope What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.
 type PermissionListScope = string
 
-// PermissionPackage One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, connector accounts default to write, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace.
+// PermissionPackage One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, accounts not named in connectorAccounts use connectorDefault, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace.
 type PermissionPackage struct {
 	ID string `json:"id"`
 
@@ -173,7 +253,10 @@ type PermissionPackage struct {
 	Owner string `json:"owner"`
 
 	// Workspaces An include/exclude rule. With scope all (or none given) an empty include list means every object the person can already reach; with scope listed only the included ones. Exclude always removes one.
-	Workspaces        PermissionListRule                         `json:"workspaces"`
+	Workspaces PermissionListRule `json:"workspaces"`
+
+	// ConnectorDefault What connector accounts without an entry in connectorAccounts may do. Existing assistants use write; later assistants start at off.
+	ConnectorDefault  ConnectorAccessLevel                       `json:"connectorDefault"`
 	ConnectorAccounts jsonempty.List[ConnectorAccountPermission] `json:"connectorAccounts"`
 
 	// IdentityResources The resources that carry an identity (a signed-in browser, screen control, a device CLI account, a phone) the assistant and its helpers may lease. With scope all they follow the device like every other resource (compute, GPU, containers, toolchains, disks, simulators): any device with a workspace the package allows. With scope listed only the allowed ones.
@@ -182,13 +265,31 @@ type PermissionPackage struct {
 
 // PersonalAgentConnector One connector account as the Assistant settings list it.
 type PersonalAgentConnector struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	Label      string `json:"label"`
-	Holding    string `json:"holding"`
-	DeviceID   string `json:"deviceId,omitempty"`
-	DeviceName string `json:"deviceName,omitempty"`
-	Status     string `json:"status,omitempty"`
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+
+	// DisplayName Who the account belongs to at the provider, when known; unlike label, this is not the person's custom name for the connector.
+	DisplayName string `json:"displayName,omitempty"`
+
+	// AppName The provider app's own name, when known.
+	AppName string `json:"appName,omitempty"`
+
+	// TenantName The organisation's name at the provider, when known.
+	TenantName string `json:"tenantName,omitempty"`
+
+	// OrgDomain The organisation's email domain, used when its name is unavailable.
+	OrgDomain string `json:"orgDomain,omitempty"`
+
+	// Identity Who is signed in to a device-held connector, when read.
+	Identity string `json:"identity,omitempty"`
+
+	// Sites Sites or hosts the device-held connector is signed in to.
+	Sites      []string `json:"sites,omitempty"`
+	Holding    string   `json:"holding"`
+	DeviceID   string   `json:"deviceId,omitempty"`
+	DeviceName string   `json:"deviceName,omitempty"`
+	Status     string   `json:"status,omitempty"`
 
 	// Level What one assistant may do through one connector account.
 	Level ConnectorAccessLevel `json:"level"`
@@ -202,7 +303,7 @@ type PersonalAgentConnectorsView struct {
 	Connectors jsonempty.List[PersonalAgentConnector] `json:"connectors"`
 }
 
-// SetPersonalAgentConnectorLevelsInput Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package default, write.
+// SetPersonalAgentConnectorLevelsInput Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package's connectorDefault.
 type SetPersonalAgentConnectorLevelsInput struct {
 	Levels []ConnectorAccountPermission `json:"levels,omitempty"`
 

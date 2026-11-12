@@ -124,6 +124,7 @@ function Fixture() {
     <FoundryShell theme={preferences.themeMode} scrollMode="page">
       <AppSidebar
         activeView={route.activeView}
+        assistantName="Assistant"
         interfaceMode={params.get("simple") ? "simple" : "full"}
         counts={{ review: 2, running: 1, activeSkills: 3, pending: 0 }}
         onNavSelect={route.selectSidebarView}

@@ -227,7 +227,7 @@ func TestFailedHelperNoticeCarriesItsReason(t *testing.T) {
 	f.server.sessionService.FailUndelivered(ctx, helper, "Not logged in · Please run /login")
 	notice := f.heard(t)
 	for _, want := range []string{"Failed:", "Not logged in", "is not signed in on that computer", "[reason=not_signed_in profileId=claude_local runtime=claude]",
-		"availability observations grant no permission to switch:", "profileId " + accountsGateway} {
+		"availability only, not permission to switch", "profileId " + accountsGateway} {
 		if !strings.Contains(notice, want) {
 			t.Fatalf("failure notice misses %q:\n%s", want, notice)
 		}
@@ -282,7 +282,7 @@ func TestUnreachableHelperIsReported(t *testing.T) {
 	}
 	notice := f.heard(t)
 	for _, want := range []string{"Stuck, can't reach its service", stuck.ID, "waiting for network", "[reason=unreachable profileId=codex_local runtime=codex]",
-		"Obtain a stop receipt before replacing the current execution", "profileId " + accountsGateway} {
+		"It is still running. Other accounts usable on that computer", "profileId " + accountsGateway} {
 		if !strings.Contains(notice, want) {
 			t.Fatalf("unreachable notice misses %q:\n%s", want, notice)
 		}

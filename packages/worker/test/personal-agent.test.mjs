@@ -308,6 +308,11 @@ const files = [
     content: "You are Mo, the personal assistant of Ada inside Foundry.\n",
   },
   { path: ".foundry/assistant-examples.md", content: "# Examples\n" },
+  {
+    path: ".foundry/assistant-skills/assistant-projects/SKILL.md",
+    content:
+      "---\nname: assistant-projects\ndescription: Test project procedure.\n---\n",
+  },
 ];
 const claudeProfile = {
   id: "claude_native",
@@ -331,6 +336,27 @@ test("the assistant's instructions are its folder's AGENTS.md, not an appended p
     readFileSync(join(dir, ".foundry", "assistant-examples.md"), "utf8"),
     files[1].content,
   );
+  assert.equal(
+    readFileSync(
+      join(
+        dir,
+        ".foundry",
+        "assistant-skills",
+        "assistant-projects",
+        "SKILL.md",
+      ),
+      "utf8",
+    ),
+    files[2].content,
+  );
+  for (const root of [".claude", ".agents"]) {
+    assert.equal(
+      realpathSync(join(dir, root, "skills", "assistant-projects")),
+      realpathSync(
+        join(dir, ".foundry", "assistant-skills", "assistant-projects"),
+      ),
+    );
+  }
   const plan = buildClaudeLaunchPlan({
     workspacePath: dir,
     session,
@@ -345,6 +371,61 @@ test("the assistant's instructions are its folder's AGENTS.md, not an appended p
       ]),
     /does not write/,
   );
+});
+
+test("assistant skills use one canonical copy and rewrite cleanly", (t) => {
+  const dir = scratch(t);
+  const session = {
+    id: "sess_pa_skills",
+    prompt: "hello",
+    workspaceId: "ws_pa_skills",
+    role: "personal_agent",
+  };
+  t.after(() => forgetPersonalAgentFiles("ws_pa_skills"));
+  writePersonalAgentFiles(session, dir, files);
+  const canonical = join(
+    dir,
+    ".foundry",
+    "assistant-skills",
+    "assistant-projects",
+  );
+  const stale = join(canonical, "old-reference.md");
+  writeFileSync(stale, "old");
+  const userSkill = join(dir, ".claude", "skills", "user-method");
+  mkdirSync(userSkill, { recursive: true });
+  writeFileSync(
+    join(userSkill, "SKILL.md"),
+    "---\nname: user-method\ndescription: The person's own method.\n---\n",
+  );
+
+  writePersonalAgentFiles(session, dir, files);
+  assert.equal(existsSync(stale), false);
+  assert.ok(existsSync(join(userSkill, "SKILL.md")));
+
+  writePersonalAgentFiles(session, dir, [
+    {
+      path: ".foundry/assistant-skills/assistant-handoff/SKILL.md",
+      content:
+        "---\nname: assistant-handoff\ndescription: Test handoff procedure.\n---\n",
+    },
+  ]);
+  assert.equal(
+    existsSync(join(dir, ".foundry", "assistant-skills", "assistant-projects")),
+    false,
+  );
+  for (const root of [".claude", ".agents"]) {
+    assert.equal(
+      existsSync(join(dir, root, "skills", "assistant-projects")),
+      false,
+    );
+    assert.equal(
+      realpathSync(join(dir, root, "skills", "assistant-handoff")),
+      realpathSync(
+        join(dir, ".foundry", "assistant-skills", "assistant-handoff"),
+      ),
+    );
+  }
+  assert.ok(existsSync(join(userSkill, "SKILL.md")));
 });
 
 // A timer's turn or a continuation may start a new runtime in a run that

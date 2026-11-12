@@ -209,10 +209,25 @@ type PersonalAgentUsage struct {
 
 // PersonalAgentOverview answers GET /api/personal-agent.
 type PersonalAgentOverview struct {
-	Agent                 *PersonalAgent      `json:"agent,omitempty"`
-	HomeDeviceOnline      bool                `json:"homeDeviceOnline"`
-	SuggestedHomeDeviceID string              `json:"suggestedHomeDeviceId,omitempty"`
-	Usage                 *PersonalAgentUsage `json:"usage,omitempty"`
+	Agent                 *PersonalAgent         `json:"agent,omitempty"`
+	HomeDeviceOnline      bool                   `json:"homeDeviceOnline"`
+	SuggestedHomeDeviceID string                 `json:"suggestedHomeDeviceId,omitempty"`
+	Usage                 *PersonalAgentUsage    `json:"usage,omitempty"`
+	NeedsYou              *PersonalAgentNeedsYou `json:"needsYou,omitempty"`
+}
+
+// PersonalAgentNeedsYou is the part of the person's "needs you" list this
+// assistant may see: the open count and the newest items for its home card.
+type PersonalAgentNeedsYou struct {
+	Open  int                         `json:"open"`
+	Items []PersonalAgentNeedsYouItem `json:"items"`
+}
+
+// PersonalAgentNeedsYouItem is one row of an assistant's home card.
+type PersonalAgentNeedsYouItem struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Where string `json:"where,omitempty"`
 }
 
 // PersonalAgentSetupInput is POST /api/personal-agent's body.

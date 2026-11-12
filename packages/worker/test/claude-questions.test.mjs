@@ -251,7 +251,11 @@ test("a child's question ends its turn and waits for its next message", async ()
   assert.equal(shown.message.delivery, "next_turn");
   assert.equal(calls.at(-1).canUseTool, true);
   assert.equal(calls.at(-1).result.behavior, "deny");
-  assert.match(calls.at(-1).result.message, /End your turn now/);
+  assert.match(
+    calls.at(-1).result.message,
+    /answer arrives as your next message/,
+  );
+  assert.match(calls.at(-1).result.message, /NOT answered/);
   assert.equal(calls.at(-1).denied.behavior, "deny");
 });
 
@@ -318,7 +322,7 @@ test("a person approves or denies a plan; unanswered, it is denied", async () =>
     signal: signal(),
   });
   assert.equal(timedOut.behavior, "deny");
-  assert.match(timedOut.message, /NOT performed.*do not retry/);
+  assert.match(timedOut.message, /timed out after 20ms.*NOT performed/);
   // Unanswered, it settles (Pending closes it); answered ones above did not.
   assert.deepEqual(lapsed, ["approval_toolu_late"]);
   const ended = late.canUseTool("ExitPlanMode", plan, {
@@ -357,7 +361,7 @@ test("a child's plan approval is relayed; once approved, its next call passes", 
     },
   );
   assert.equal(first.behavior, "deny");
-  assert.match(first.message, /call ExitPlanMode again/);
+  assert.match(first.message, /allows the same call once/);
   assert.equal(shown[0].delivery, "next_turn");
   assert.equal(gate.waits, false);
   // A denial (any other answer) allows nothing.

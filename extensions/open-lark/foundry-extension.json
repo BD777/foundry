@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "protocol": 1,
   "connectors": [
     {
@@ -178,6 +178,103 @@
         "network": {
           "holdings": ["server", "device"],
           "publicOnly": true
+        },
+        "events": {
+          "poll": {
+            "path": "/agent/v1/changes",
+            "query": {
+              "since": "{cursor}",
+              "wait": "25",
+              "kinds": "message",
+              "limit": "100"
+            },
+            "omitWhenEmpty": ["since"],
+            "cursor": "/cursor",
+            "items": "/changes",
+            "more": "/more",
+            "gap": {
+              "status": 410,
+              "code": "/error/code",
+              "codeEquals": "CHANGES_CURSOR_GONE",
+              "reset": "/error/reset"
+            }
+          },
+          "envelope": {
+            "fields": {
+              "id": {
+                "template": "{/op}:{/id}"
+              },
+              "kind": {
+                "pointer": "/kind"
+              },
+              "op": {
+                "pointer": "/op"
+              },
+              "occurredAt": {
+                "pointer": "/at",
+                "unit": "ms"
+              },
+              "conversation.id": {
+                "pointer": "/feedId"
+              },
+              "conversation.name": {
+                "pointer": "/item/where/name"
+              },
+              "conversation.kind": {
+                "pointer": "/item/where/kind",
+                "map": {
+                  "p2p": "direct",
+                  "group": "group"
+                },
+                "otherwise": "other"
+              },
+              "thread.id": {
+                "pointer": "/item/thread/id"
+              },
+              "thread.isReply": {
+                "pointer": "/item/thread/reply"
+              },
+              "message.id": {
+                "pointer": "/id"
+              },
+              "text": {
+                "pointer": "/item/text"
+              },
+              "sender.id": {
+                "pointer": "/item/author/id"
+              },
+              "sender.name": {
+                "pointer": "/item/author/name"
+              },
+              "sender.isSelf": {
+                "pointer": "/item/signals/mine"
+              },
+              "sender.isBot": {
+                "pointer": "/item/signals/bot"
+              },
+              "mentionsMe": {
+                "pointer": "/item/signals/atMe"
+              },
+              "attributes.replyToMe": {
+                "pointer": "/item/signals/replyToMe"
+              },
+              "attributes.hidden": {
+                "pointer": "/hidden"
+              }
+            },
+            "skipWhen": [
+              {
+                "pointer": "/gone",
+                "equals": "true"
+              }
+            ]
+          },
+          "context": {
+            "hint": "olk im context {message.id} --limit 50",
+            "hints": {
+              "zh-CN": "olk im context {message.id} --limit 50"
+            }
+          }
         }
       }
     }

@@ -10,6 +10,7 @@ import {
   listPersonalAgentSessions,
   listPersonalAgentInbox,
   actOnPersonalAgentInbox,
+  listMessageChannels,
 } from "../../api";
 import {
   mergeAgentSessionEvent,
@@ -25,6 +26,7 @@ import {
   type AssistantLine,
   type assistantRuntime,
 } from "./assistant-model";
+import { channelSessionIds, isChannelInboxEntry } from "./channel-model";
 
 /** What a new conversation runs on; absent: its computer offers nothing. */
 export type AssistantRuntime = NonNullable<ReturnType<typeof assistantRuntime>>;
@@ -78,6 +80,19 @@ export function useAssistantConversation(
   const [error, setError] = useState("");
   const [pending, setPending] = useState<PendingLine[]>([]);
   const [inbox, setInbox] = useState<PersonalAgentInboxEntry[]>([]);
+  // Message channels' sessions live in the assistant's home too; the
+  // conversation leaves them out. Unreadable channels leave nothing out.
+  const [channelSessions, setChannelSessions] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const readChannels = useCallback(
+    () =>
+      listMessageChannels(assistantId).then(
+        (list) => channelSessionIds(list),
+        () => new Set<string>(),
+      ),
+    [assistantId],
+  );
   const [inboxError, setInboxError] = useState("");
   const [retryingInboxId, setRetryingInboxId] = useState<string>();
   const retryKeys = useRef(new Map<string, string>());
@@ -102,9 +117,10 @@ export function useAssistantConversation(
   const read = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      const [current, received, ...earlier] = await Promise.all([
+      const [current, received, channels, ...earlier] = await Promise.all([
         listPersonalAgentSessions(workspaceId),
         listPersonalAgentInbox(assistantId),
+        readChannels(),
         // A project it left may be gone; its conversations go with it.
         ...former
           .split("\n")
@@ -112,8 +128,13 @@ export function useAssistantConversation(
           .map((id) => listPersonalAgentSessions(id).catch(() => [])),
       ]);
       setInbox(received);
+      setChannelSessions(channels);
       const listed = [...current!, ...earlier.flat()];
-      const recent = recentAssistantSessions(listed, shownSessions);
+      const recent = recentAssistantSessions(
+        listed,
+        shownSessions,
+        new Set([...channels, ...channelSessionIds(undefined, received)]),
+      );
       const loaded = await Promise.all(
         recent.map((session) => getAgentSession(session.id)),
       );
@@ -133,7 +154,7 @@ export function useAssistantConversation(
       setError(serverErrorText(reason));
       setState((current) => (current === "ready" ? current : "failed"));
     }
-  }, [assistantId, workspaceId, former]);
+  }, [assistantId, workspaceId, former, readChannels]);
 
   useEffect(() => {
     setState("loading");
@@ -142,25 +163,33 @@ export function useAssistantConversation(
     void read();
   }, [read]);
 
+  const ownInbox = useMemo(
+    () => inbox.filter((entry) => !isChannelInboxEntry(entry)),
+    [inbox],
+  );
+  const excluded = useMemo(
+    () => new Set([...channelSessions, ...channelSessionIds(undefined, inbox)]),
+    [channelSessions, inbox],
+  );
   const waitingInbox = useMemo(
     () =>
-      inbox
+      ownInbox
         .filter((entry) =>
           ["pending", "waiting", "dispatching"].includes(entry.status),
         )
         .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
-    [inbox],
+    [ownInbox],
   );
   const failedInbox = useMemo(
     () =>
-      inbox.filter(
+      ownInbox.filter(
         (entry) =>
           entry.status !== "cancelled" &&
           ["failed", "canceled"].includes(entry.resultStatus ?? ""),
       ),
-    [inbox],
+    [ownInbox],
   );
-  const needsInboxRefresh = inbox.some(
+  const needsInboxRefresh = ownInbox.some(
     (entry) =>
       ["pending", "waiting", "dispatching"].includes(entry.status) ||
       (entry.status === "delivered" && !entry.resultStatus),
@@ -185,7 +214,14 @@ export function useAssistantConversation(
       onStreamEvent(
         type,
         (session) => {
-          if (isAssistantSession(session)) upsert(session);
+          if (!isAssistantSession(session)) return;
+          // A session new to the page may be a channel's: learn the
+          // channels' sessions again.
+          if (!held.current.has(session.id))
+            void readChannels().then((ids) => {
+              if (ids.size) setChannelSessions(ids);
+            });
+          upsert(session);
         },
         { workspaceId, onResync: () => void read() },
       ),
@@ -206,7 +242,7 @@ export function useAssistantConversation(
       }),
     );
     return () => stops.forEach((stop) => stop());
-  }, [workspaceId, read, upsert]);
+  }, [workspaceId, read, readChannels, upsert]);
 
   useEffect(() => {
     for (const id of sessions.keys()) {
@@ -228,8 +264,9 @@ export function useAssistantConversation(
   }, [sessions]);
 
   const ordered = useMemo(
-    () => recentAssistantSessions([...sessions.values()], shownSessions),
-    [sessions],
+    () =>
+      recentAssistantSessions([...sessions.values()], shownSessions, excluded),
+    [sessions, excluded],
   );
   const shownInputs = useMemo(() => sentInputs(sessions.values()), [sessions]);
   // A message the conversation shows is no longer pending: kept, it would

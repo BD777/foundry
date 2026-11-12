@@ -45,6 +45,7 @@ type Store interface {
 	store.KnowledgeEntryStore
 	store.KnowledgeMigrationStore
 	store.KnowledgeLegacyTransferStore
+	store.MemorySortStore
 	store.KnowledgeReplicaCleanupStore
 	store.KnowledgePublicationStore
 }

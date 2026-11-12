@@ -46,7 +46,7 @@ func (s *Service) DispatchItem(ctx context.Context, scope Scope, args map[string
 	}
 	if !scope.reaches(spec.WorkspaceID) {
 		return store.PersonalAgentOperation{}, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden,
-			"not allowed: this assistant's permissions do not include project %s. Tell the person; they add it in the assistant's settings → Permissions.", spec.WorkspaceID)
+			"not allowed: this assistant's permissions do not include project %s; the person adds it in the assistant's settings → Permissions.", spec.WorkspaceID)
 	}
 	if err := s.runs.ValidateExecutorChoice(ctx, scope.Agent, spec.WorkspaceID, spec.ExecutionChoice); err != nil {
 		return store.PersonalAgentOperation{}, err

@@ -103,6 +103,32 @@ test("links at the root, package or supporting file boundary are refused", async
   assert.equal(result[0].status, "invalid");
   assert.match(result[0].error, /symbolic/);
 });
+test("assistant runtime skill links are not workspace drafts", async (t) => {
+  const root = fixture(t);
+  const canonical = join(
+    root,
+    ".foundry",
+    "assistant-skills",
+    "assistant-projects",
+  );
+  mkdirSync(canonical, { recursive: true });
+  writeFileSync(
+    join(canonical, "SKILL.md"),
+    "---\nname: assistant-projects\ndescription: Foundry managed.\n---\n",
+  );
+  for (const folder of [".claude/skills", ".agents/skills"]) {
+    const link = join(root, folder, "assistant-projects");
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(canonical, link, "dir");
+  }
+  draft(root, "user-method", "The person's method.", ".claude/skills");
+
+  const result = await snapshotWorkspaceDrafts("one", "one", root);
+  assert.deepEqual(
+    result.map((skill) => skill.name),
+    ["user-method"],
+  );
+});
 test("governance names require explicit draft invocation and do not replace built-ins", async (t) => {
   const root = fixture(t);
   draft(root, "foundry");

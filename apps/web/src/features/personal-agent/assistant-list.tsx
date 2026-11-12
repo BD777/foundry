@@ -5,7 +5,12 @@ import type {
   AssistantSummary,
   DeviceProjection,
 } from "@bd777/foundry-protocol";
-import { createAssistant, deleteAssistant, renameAssistant } from "../../api";
+import {
+  createAssistant,
+  deleteAssistant,
+  getAssistantPermissionPackage,
+  renameAssistant,
+} from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -29,6 +34,7 @@ export interface AssistantListProps {
   error?: string;
   onEvent: (event: AssistantFeatureEvent) => void;
   onReload: () => Promise<void>;
+  selectedAssistantId?: string;
 }
 
 export function AssistantList({
@@ -38,22 +44,15 @@ export function AssistantList({
   error,
   onEvent,
   onReload,
+  selectedAssistantId,
 }: AssistantListProps) {
   const { t } = useTranslation("personalAgent");
   const ownedDevices = devices.filter((device) => device.owned);
-  const firstDevice =
-    ownedDevices.find((device) => deviceConnection(device) === "online") ??
-    ownedDevices[0];
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<AssistantSummary>();
   const [name, setName] = useState("");
-  const [homeDeviceId, setHomeDeviceId] = useState(firstDevice?.id ?? "");
   const [busy, setBusy] = useState<string>();
   const [dialogError, setDialogError] = useState("");
-
-  useEffect(() => {
-    if (!homeDeviceId && firstDevice) setHomeDeviceId(firstDevice.id);
-  }, [firstDevice, homeDeviceId]);
 
   const assistantName = (assistant: AssistantSummary) =>
     assistant.name.trim() || t("defaultName");
@@ -61,9 +60,6 @@ export function AssistantList({
     devices.find((device) => device.id === assistant.homeDeviceId);
 
   function openCreate() {
-    setName("");
-    setHomeDeviceId(firstDevice?.id ?? "");
-    setDialogError("");
     setCreating(true);
   }
 
@@ -71,25 +67,6 @@ export function AssistantList({
     setName(assistantName(assistant));
     setDialogError("");
     setRenaming(assistant);
-  }
-
-  async function submitCreate(): Promise<void> {
-    const trimmed = name.trim();
-    if (!trimmed || !homeDeviceId) return;
-    setBusy("create");
-    setDialogError("");
-    try {
-      const created = await createAssistant({
-        name: trimmed,
-        homeDeviceId,
-      });
-      setCreating(false);
-      onEvent({ type: "assistant.created", assistantId: created.id });
-    } catch (reason) {
-      setDialogError(serverErrorText(reason));
-    } finally {
-      setBusy(undefined);
-    }
   }
 
   async function submitRename(): Promise<void> {
@@ -170,9 +147,12 @@ export function AssistantList({
             const device = deviceOf(assistant);
             const online = deviceConnection(device) === "online";
             const stopped = assistant.state === "stopped";
+            const current = assistant.id === selectedAssistantId;
             return (
               <ManagementRow
-                className="transition-colors hover:bg-control-ghost-hover max-[700px]:flex-nowrap"
+                aria-current={current ? "true" : undefined}
+                className="transition-colors hover:bg-control-ghost-hover data-[current=true]:bg-selection data-[current=true]:hover:bg-selection max-[700px]:flex-nowrap"
+                data-current={current ? "true" : "false"}
                 key={assistant.id}
               >
                 <Button
@@ -200,6 +180,11 @@ export function AssistantList({
                         <Badge tone="brass">{t("assistants.default")}</Badge>
                       ) : null}
                     </span>
+                    {assistant.isDefault ? (
+                      <small>{t("assistants.defaultAccess")}</small>
+                    ) : (
+                      <AssistantProjectAccessHint assistantId={assistant.id} />
+                    )}
                     <small>
                       {device?.label ?? assistant.homeDeviceId}
                       {device ? (
@@ -262,71 +247,14 @@ export function AssistantList({
         </div>
       )}
 
-      <Dialog
-        footer={
-          <>
-            <Button onClick={() => setCreating(false)} variant="secondary">
-              {t("assistants.cancel")}
-            </Button>
-            <Button
-              aria-busy={busy === "create"}
-              disabled={busy === "create" || !name.trim() || !homeDeviceId}
-              onClick={() => void submitCreate()}
-              variant="primary"
-            >
-              {busy === "create"
-                ? t("assistants.creating")
-                : t("assistants.create")}
-            </Button>
-          </>
-        }
-        layout="compact"
+      <AssistantCreateDialog
+        devices={devices}
         onClose={() => setCreating(false)}
+        onCreated={(assistantId) =>
+          onEvent({ type: "assistant.created", assistantId })
+        }
         open={creating}
-        title={t("assistants.createTitle")}
-      >
-        <form
-          className="grid gap-3.5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitCreate();
-          }}
-        >
-          <label className="grid gap-1.5 text-xs font-semibold text-ink">
-            {t("assistants.name")}
-            <TextInput
-              autoFocus
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t("assistants.namePlaceholder")}
-              tone="boxed"
-              value={name}
-            />
-          </label>
-          <div className="grid gap-1.5 text-xs font-semibold text-ink">
-            {t("assistants.device")}
-            <SelectMenu
-              ariaLabel={t("assistants.device")}
-              insideDialog
-              onChange={setHomeDeviceId}
-              options={ownedDevices.map((device) => ({
-                value: device.id,
-                label: device.label,
-                meta:
-                  deviceConnection(device) === "online"
-                    ? t("settings.status.online")
-                    : t("settings.status.offline"),
-              }))}
-              value={homeDeviceId}
-            />
-          </div>
-          <FieldHint>{t("assistants.createHint")}</FieldHint>
-          {dialogError ? (
-            <Alert tone="error" title={t("assistants.createFailed")}>
-              {dialogError}
-            </Alert>
-          ) : null}
-        </form>
-      </Dialog>
+      />
 
       <Dialog
         footer={
@@ -375,5 +303,154 @@ export function AssistantList({
         </form>
       </Dialog>
     </PageSurface>
+  );
+}
+
+function AssistantProjectAccessHint({ assistantId }: { assistantId: string }) {
+  const { t } = useTranslation("personalAgent");
+  const [listed, setListed] = useState<number>();
+
+  useEffect(() => {
+    let current = true;
+    setListed(undefined);
+    getAssistantPermissionPackage(assistantId).then(
+      (permissionPackage) => {
+        if (!current) return;
+        setListed(
+          permissionPackage.workspaces.scope === "listed"
+            ? permissionPackage.workspaces.include.length
+            : undefined,
+        );
+      },
+      () => {
+        if (current) setListed(undefined);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [assistantId]);
+
+  if (listed === undefined) return null;
+  return <small>{t("assistants.selectedProjects", { count: listed })}</small>;
+}
+
+export interface AssistantCreateDialogProps {
+  devices: DeviceProjection[];
+  open: boolean;
+  onClose: () => void;
+  onCreated: (assistantId: string) => void;
+}
+
+export function AssistantCreateDialog({
+  devices,
+  open,
+  onClose,
+  onCreated,
+}: AssistantCreateDialogProps) {
+  const { t } = useTranslation("personalAgent");
+  const ownedDevices = devices.filter((device) => device.owned);
+  const firstDevice =
+    ownedDevices.find((device) => deviceConnection(device) === "online") ??
+    ownedDevices[0];
+  const [name, setName] = useState("");
+  const [homeDeviceId, setHomeDeviceId] = useState(firstDevice?.id ?? "");
+  const [creating, setCreating] = useState(false);
+  const [dialogError, setDialogError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setName("");
+    setHomeDeviceId(firstDevice?.id ?? "");
+    setDialogError("");
+  }, [firstDevice?.id, open]);
+
+  useEffect(() => {
+    if (open && !homeDeviceId && firstDevice) setHomeDeviceId(firstDevice.id);
+  }, [firstDevice, homeDeviceId, open]);
+
+  async function submit(): Promise<void> {
+    const trimmed = name.trim();
+    if (creating || !trimmed || !homeDeviceId) return;
+    setCreating(true);
+    setDialogError("");
+    try {
+      const created = await createAssistant({
+        name: trimmed,
+        homeDeviceId,
+      });
+      onClose();
+      onCreated(created.id);
+    } catch (reason) {
+      setDialogError(serverErrorText(reason));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Dialog
+      footer={
+        <>
+          <Button onClick={onClose} variant="secondary">
+            {t("assistants.cancel")}
+          </Button>
+          <Button
+            aria-busy={creating}
+            disabled={creating || !name.trim() || !homeDeviceId}
+            onClick={() => void submit()}
+            variant="primary"
+          >
+            {creating ? t("assistants.creating") : t("assistants.create")}
+          </Button>
+        </>
+      }
+      layout="compact"
+      onClose={onClose}
+      open={open}
+      title={t("assistants.createTitle")}
+    >
+      <form
+        className="grid gap-3.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="grid gap-1.5 text-xs font-semibold text-ink">
+          {t("assistants.name")}
+          <TextInput
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("assistants.namePlaceholder")}
+            tone="boxed"
+            value={name}
+          />
+        </label>
+        <div className="grid gap-1.5 text-xs font-semibold text-ink">
+          {t("assistants.device")}
+          <SelectMenu
+            ariaLabel={t("assistants.device")}
+            insideDialog
+            onChange={setHomeDeviceId}
+            options={ownedDevices.map((device) => ({
+              value: device.id,
+              label: device.label,
+              meta:
+                deviceConnection(device) === "online"
+                  ? t("settings.status.online")
+                  : t("settings.status.offline"),
+            }))}
+            value={homeDeviceId}
+          />
+        </div>
+        <FieldHint>{t("assistants.createHint")}</FieldHint>
+        {dialogError ? (
+          <Alert tone="error" title={t("assistants.createFailed")}>
+            {dialogError}
+          </Alert>
+        ) : null}
+      </form>
+    </Dialog>
   );
 }

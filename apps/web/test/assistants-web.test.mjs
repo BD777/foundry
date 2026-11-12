@@ -14,6 +14,7 @@ for (const key of [
   "Node",
   "Element",
   "HTMLElement",
+  "HTMLDivElement",
   "HTMLButtonElement",
   "HTMLInputElement",
   "HTMLTextAreaElement",
@@ -50,8 +51,10 @@ globalThis.EventSource = class {
 const { createRoot } = await import("react-dom/client");
 const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
-const { AssistantList } =
+const { AssistantHome, AssistantList } =
   await import("../src/features/personal-agent/index.ts");
+const { clearStoredAssistantId, persistAssistantId, storedAssistantId } =
+  await import("../src/app/shell-preferences.ts");
 const { WorkspaceAccessEditor } =
   await import("../src/features/personal-agent/workspace-access-editor.tsx");
 const { MemorySection } =
@@ -84,6 +87,21 @@ const assistants = [
     updatedAt: iso,
   },
 ];
+const homeAgent = {
+  id: "asst_default",
+  userId: "usr_1",
+  workspaceId: "ws_personal_home",
+  homeDeviceId: "dev_studio",
+  state: "active",
+  permissionPackageId: "perm_default",
+  promptVersion: "test",
+  settings: {
+    assistantName: "Personal",
+    timezone: "Asia/Shanghai",
+  },
+  createdAt: iso,
+  updatedAt: iso,
+};
 const devices = [
   {
     id: "dev_studio",
@@ -266,6 +284,21 @@ let memoryLayers = {
     },
   ],
 };
+function sortRecord(fields) {
+  return {
+    assistantId: "asst_default",
+    assistantName: "",
+    assistantIsDefault: true,
+    confidence: "high",
+    mentions: [],
+    undoable: false,
+    createdAt: iso,
+    updatedAt: iso,
+    ...fields,
+  };
+}
+const emptySorting = { moves: [], suggestions: [] };
+let memorySorting = emptySorting;
 const realFetch = globalThis.fetch;
 const mounted = new Set();
 afterEach(async () => {
@@ -276,6 +309,7 @@ afterEach(async () => {
   globalThis.fetch = realFetch;
   calls = [];
   permissionAnswers = {};
+  memorySorting = emptySorting;
   memoryLayers = {
     ...memoryLayers,
     layers: memoryLayers.layers.map((layer) => ({
@@ -297,6 +331,21 @@ async function fixtureFetch(input, init = {}) {
     });
   if (method === "POST" && url.pathname === "/api/assistants")
     return json({ ...assistants[1], id: "asst_created", name: body.name }, 201);
+  if (method === "GET" && url.pathname === "/api/assistants/asst_default")
+    return json({ agent: homeAgent, homeDeviceOnline: true });
+  if (method === "GET" && url.pathname === "/api/agent-sessions")
+    return json([]);
+  if (
+    method === "GET" &&
+    [
+      "/api/assistants/asst_default/inbox",
+      "/api/assistants/asst_default/proposals",
+      "/api/assistants/asst_default/tasks",
+      "/api/assistants/asst_default/list",
+      "/api/assistants/asst_default/operations",
+    ].includes(url.pathname)
+  )
+    return json([]);
   if (method === "PATCH" && url.pathname === "/api/assistants/asst_work")
     return json({ ...assistants[1], name: body.name });
   if (method === "DELETE" && url.pathname === "/api/assistants/asst_work")
@@ -308,6 +357,23 @@ async function fixtureFetch(input, init = {}) {
     url.pathname === "/api/assistants/asst_work/memory/layers"
   )
     return json(memoryLayers);
+  if (
+    method === "GET" &&
+    url.pathname === "/api/assistants/asst_work/memory/sorting"
+  )
+    return json(memorySorting);
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/api/assistants/asst_work/memory/sorting/")
+  )
+    return json({
+      ...[...memorySorting.moves, ...memorySorting.suggestions].find((record) =>
+        url.pathname.endsWith(`/${record.id}/action`),
+      ),
+      status: { undo: "undone", confirm: "confirmed", dismiss: "dismissed" }[
+        body.action
+      ],
+    });
   if (
     method === "POST" &&
     url.pathname.startsWith("/api/assistants/asst_work/memory/layers/")
@@ -470,6 +536,12 @@ async function input(node, value) {
 }
 
 test("assistant rows create and confirm destructive deletion", async () => {
+  permissionAnswers = {
+    "/api/assistants/asst_work/permission-package": permissionPackage([
+      "ws_budget",
+      "ws_archive",
+    ]),
+  };
   const events = [];
   const page = await render(AssistantList, {
     assistants,
@@ -477,13 +549,24 @@ test("assistant rows create and confirm destructive deletion", async () => {
     state: "ready",
     onEvent: (event) => events.push(event),
     onReload: async () => {},
+    selectedAssistantId: "asst_work",
   });
   const text = page.container.textContent;
   assert.match(text, /Personal/);
   assert.match(text, /Default/);
+  assert.match(text, /Can use all your projects and resources/);
   assert.match(text, /Work assistant/);
+  assert.match(text, /2 projects selected/);
   assert.match(text, /Studio/);
   assert.match(text, /Paused/);
+  const current = page.container.querySelector('[aria-current="true"]');
+  assert.ok(current);
+  assert.match(current.textContent, /Work assistant/);
+  assert.equal(current.dataset.current, "true");
+  assert.equal(
+    [...page.container.querySelectorAll('[aria-current="true"]')].length,
+    1,
+  );
 
   const defaultActions = page.container.querySelector(
     '[aria-label="Actions for Personal"]',
@@ -568,6 +651,75 @@ test("assistant rows create and confirm destructive deletion", async () => {
     ),
   );
   await page.unmount();
+});
+
+test("assistant title menu switches, checks the current row, lists all, and creates", async () => {
+  const events = [];
+  const page = await render(AssistantHome, {
+    assistantId: "asst_default",
+    agentProfiles: [],
+    assistants,
+    devices,
+    workspaces: [],
+    onEvent: (event) => events.push(event),
+  });
+
+  assert.equal(
+    [...page.container.querySelectorAll("button")].some(
+      (node) => node.textContent.trim() === "New assistant",
+    ),
+    false,
+  );
+  assert.ok(button(page.container, "Stop assistant work"));
+  assert.ok(button(page.container, "Settings"));
+
+  let items = await openRowMenu(page.container, "Switch assistant: Personal");
+  const current = items.find((node) =>
+    node.textContent.trim().startsWith("Personal"),
+  );
+  assert.ok(current);
+  assert.equal(current.getAttribute("aria-current"), "true");
+  assert.ok(items.some((node) => node.textContent.includes("All assistants")));
+
+  const work = items.find((node) =>
+    node.textContent.trim().startsWith("Work assistant"),
+  );
+  await act(async () => work.click());
+  await settle();
+  assert.deepEqual(events.at(-1), {
+    type: "assistant.open",
+    assistantId: "asst_work",
+  });
+
+  items = await openRowMenu(page.container, "Switch assistant: Personal");
+  const all = items.find((node) => node.textContent.includes("All assistants"));
+  await act(async () => all.click());
+  await settle();
+  assert.deepEqual(events.at(-1), { type: "assistants.open" });
+
+  items = await openRowMenu(page.container, "Switch assistant: Personal");
+  const create = items.find((node) =>
+    node.textContent.includes("New assistant"),
+  );
+  await act(async () => create.click());
+  await settle();
+  const dialog = document.querySelector("[role=dialog]");
+  assert.match(dialog.textContent, /New assistant/);
+  assert.ok(button(dialog, "Create assistant"));
+  await page.unmount();
+});
+
+test("the active assistant is remembered per person", () => {
+  window.localStorage.clear();
+  persistAssistantId("usr_1", "asst_work");
+  assert.equal(storedAssistantId("usr_1"), "asst_work");
+  assert.equal(storedAssistantId("usr_2"), "");
+  assert.equal(
+    window.localStorage.getItem("foundry.activeAssistantId.usr_1"),
+    "asst_work",
+  );
+  clearStoredAssistantId("usr_1");
+  assert.equal(storedAssistantId("usr_1"), "");
 });
 
 test("workspace and identity access save together in one permission package", async () => {
@@ -745,6 +897,112 @@ test("memory page keeps one layered list and hides technical entry fields", asyn
     text,
     /Read \/ correct \/ share|entry_person|vault_person|user-input:|Revision 3/,
   );
+  await page.unmount();
+});
+
+test("memory shows automatic sorting with undo and suggestions to share", async () => {
+  memorySorting = {
+    moves: [
+      sortRecord({
+        id: "msort_qa",
+        kind: "move",
+        status: "moved",
+        fromScope: "person",
+        toScope: "assistant",
+        title: "Weichao is QA",
+        reason: "A colleague at work.",
+        mentions: ["Weichao"],
+        undoable: true,
+      }),
+      sortRecord({
+        id: "msort_old",
+        kind: "move",
+        status: "undone",
+        fromScope: "person",
+        toScope: "assistant",
+        assistantId: "asst_work",
+        assistantName: "ByteWork",
+        assistantIsDefault: false,
+        title: "Atlas launches next month",
+        reason: "A project date.",
+      }),
+    ],
+    suggestions: [
+      sortRecord({
+        id: "msort_vim",
+        kind: "suggestion",
+        status: "suggested",
+        fromScope: "assistant",
+        toScope: "person",
+        assistantId: "asst_work",
+        assistantName: "ByteWork",
+        assistantIsDefault: false,
+        confidence: "medium",
+        title: "Uses vim",
+        reason: "Maybe only at work.",
+      }),
+      sortRecord({
+        id: "msort_dark",
+        kind: "suggestion",
+        status: "suggested",
+        fromScope: "assistant",
+        toScope: "person",
+        assistantId: "asst_work",
+        assistantName: "ByteWork",
+        assistantIsDefault: false,
+        confidence: "low",
+        title: "Prefers dark mode",
+        reason: "Unclear.",
+      }),
+    ],
+  };
+  const page = await render(MemorySection, { assistantId: "asst_work" });
+  await settle();
+  const text = page.container.textContent;
+  assert.match(text, /Recent automatic sorting/);
+  assert.match(
+    text,
+    /Moved from the shared layer to “Assistant”\. A colleague at work\./,
+  );
+  assert.match(text, /Undone/);
+  assert.match(text, /Suggested to share/);
+  assert.match(text, /From “ByteWork”\. Maybe only at work\./);
+  assert.equal(
+    [...page.container.querySelectorAll("button")].filter(
+      (node) => node.textContent.trim() === "Undo",
+    ).length,
+    1,
+  );
+
+  await act(async () =>
+    page.container
+      .querySelector('button[aria-label="Undo moving “Weichao is QA”"]')
+      .click(),
+  );
+  await settle();
+  const vim = [...page.container.querySelectorAll("li")].find((node) =>
+    node.textContent.includes("Uses vim"),
+  );
+  await act(async () => button(vim, "Share").click());
+  await settle();
+  const dark = [...page.container.querySelectorAll("li")].find((node) =>
+    node.textContent.includes("Prefers dark mode"),
+  );
+  await act(async () => button(dark, "Ignore").click());
+  await settle();
+
+  const actions = calls
+    .filter(
+      (call) =>
+        call.method === "POST" &&
+        call.path.startsWith("/api/assistants/asst_work/memory/sorting/"),
+    )
+    .map((call) => [call.path.split("/").at(-2), call.body.action]);
+  assert.deepEqual(actions, [
+    ["msort_qa", "undo"],
+    ["msort_vim", "confirm"],
+    ["msort_dark", "dismiss"],
+  ]);
   await page.unmount();
 });
 

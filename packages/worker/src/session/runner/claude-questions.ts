@@ -186,15 +186,18 @@ function deniedWithoutApprover(
   const requested = options.title || options.decisionReason || tool;
   return {
     behavior: "deny",
-    message: `Permission for this tool use was denied: it requires interactive approval, and permission prompts are not available in this session. The action was NOT performed. Do not claim it succeeded, and do not retry it in this session. What was requested: ${requested}`,
+    message: `Permission for ${requested} was denied: no interactive approver is available in this session. The action was NOT performed.`,
   };
 }
 
 /** No one approved in time: the action did not happen. */
-function deniedUnanswered(tool: string): ClaudePermissionResult {
+function deniedUnanswered(
+  tool: string,
+  waitMs: number,
+): ClaudePermissionResult {
   return {
     behavior: "deny",
-    message: `Permission for this tool use was denied: nobody approved it in time. The action was NOT performed. Do not claim it succeeded, and do not retry it in this session. What was requested: ${tool}`,
+    message: `Permission for ${tool} was denied: timed out after ${Math.round(waitMs)}ms. The action was NOT performed.`,
   };
 }
 
@@ -232,7 +235,7 @@ function approvalResult(
     behavior: "deny",
     message:
       tool === claudePlanApprovalTool
-        ? `The plan was not approved${reason} Stay in plan mode: revise the plan and present it again, or ask what to change.`
+        ? `The plan was not approved${reason} NOT performed.`
         : `This was not approved${reason} The action was NOT performed.`,
   };
 }
@@ -298,14 +301,14 @@ export function denialReason(answer: string): string {
 const relayedQuestion: ClaudePermissionResult = {
   behavior: "deny",
   message:
-    "Your question was sent to the session that created you, which answers it or asks its person; with none, it waits in your chat for the person. That can take long, so the question does not wait here. End your turn now: say in one sentence that you are waiting for the answer, and do not assume one. The answer arrives as your next message.",
+    "The question was relayed to the session that created you; its answer arrives as your next message. NOT answered.",
 };
 
 /** A child's approval went to its parent: the turn ends to wait for it. */
 function relayedApproval(tool: string): ClaudePermissionResult {
   return {
     behavior: "deny",
-    message: `This needs approval, which was requested from the session that created you (with none, from the person in your chat). The action was NOT performed yet. End your turn now: say in one sentence that you are waiting for approval. If your next message approves it, call ${tool} again; it is then allowed. If it does not, follow what it says.`,
+    message: `Approval for ${tool} was relayed to the session that created you. NOT performed yet; an approval in your next message allows the same call once.`,
   };
 }
 
@@ -418,11 +421,14 @@ export class ClaudeQuestionGate {
     approves?: string,
   ): Promise<ClaudePermissionResult> {
     const timedOut = () =>
-      approves ? deniedUnanswered(approves) : unanswered(input);
+      approves ? deniedUnanswered(approves, this.waitMs) : unanswered(input);
     this.waiting.get(itemId)?.lapse(timedOut());
     return new Promise((resolve) => {
       const onAbort = () =>
-        lapse({ behavior: "deny", message: "The turn was interrupted." });
+        lapse({
+          behavior: "deny",
+          message: "The turn was interrupted; NOT performed.",
+        });
       const timer = setTimeout(() => lapse(timedOut()), this.waitMs);
       const settle = (result: ClaudePermissionResult) => {
         if (this.waiting.get(itemId)?.settle !== settle) return false;
@@ -507,7 +513,7 @@ export class ClaudeQuestionGate {
     for (const waiting of [...this.waiting.values()])
       waiting.lapse({
         behavior: "deny",
-        message: "The session's Claude process ended.",
+        message: "The session's Claude process ended; NOT performed.",
       });
   }
 }

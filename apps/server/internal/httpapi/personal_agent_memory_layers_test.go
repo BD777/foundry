@@ -107,9 +107,9 @@ func TestMemoryLayersRecallPersonAndOwnLayerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn := prompt.TurnContext(input)
+	turn := prompt.AgentsFile(input)
 	if !strings.Contains(turn, "Person fact tea") || !strings.Contains(turn, "Atlas fact") || strings.Contains(turn, "Family fact") || !strings.Contains(turn, ", every assistant") || !strings.Contains(turn, ", only you") {
-		t.Fatalf("A's turn context:\n%s", turn)
+		t.Fatalf("A's AGENTS.md:\n%s", turn)
 	}
 	text, failed := f.tool(t, f.token, "read_memory", map[string]any{})
 	if failed || !strings.Contains(text, "Person fact tea") || !strings.Contains(text, "Atlas fact") || strings.Contains(text, "Family fact") || !strings.Contains(text, `"scope": "person"`) {

@@ -14,7 +14,12 @@ export type PendingSource =
   | "connector"
   | "helper_stuck"
   /** A bundle update whose canary check failed was rolled back (DEV-154). */
-  | "bundle_update";
+  | "bundle_update"
+  /**
+   * A message channel hit its delivery limit or its feed had a gap
+   * (DEV-203); it names the assistant and opens its channels.
+   */
+  | "message_channel";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person
@@ -24,10 +29,20 @@ export type PendingHandler = "person" | "assistant";
 
 /**
  * Why an item the assistant handled came to the person: it handed it over
- * (with its note), it was stopped, or its computer was offline.
+ * (with its note), it was stopped, its computer was offline, or its
+ * 10-minute deadline passed without acknowledgement.
  */
 export type PendingHandedReason =
-  "assistant" | "assistant_stopped" | "assistant_offline";
+  "assistant" | "assistant_stopped" | "assistant_offline" | "assistant_timeout";
+
+/** How the item ended; escalation is replaced by the person's later action. */
+export type PendingOutcome =
+  | "assistant_answered"
+  | "handed_over"
+  | "escalated_timeout"
+  | "auto_resolved"
+  | "person_answered"
+  | "person_dismissed_not_needed";
 
 export type PendingState =
   "open" | "replied" | "superseded" | "done" | "dismissed";
@@ -39,6 +54,10 @@ export type PendingState =
  */
 export interface PendingItem {
   id: string;
+  /** The assistant this item belongs to, or absent when unassigned. */
+  assistantId?: string;
+  /** Its label as the person sees it in the needs-you filter. */
+  assistantName?: string;
   workspaceId: string;
   workspaceName?: string;
   sessionId?: string;
@@ -67,20 +86,31 @@ export interface PendingItem {
   note?: string;
   handedReason?: PendingHandedReason;
   handedAt?: string;
+  deadlineAt?: string;
+  acknowledgedAt?: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  outcome?: PendingOutcome;
 }
 
 export interface PendingItemList {
   /** Open items and those resolved in the last week, newest first. */
   items: PendingItem[];
+  /** Every assistant the person has, for filtering the global list. */
+  assistants: PendingAssistant[];
   /** Open items the person handles. */
   open: number;
   /** Open items their assistant handles. */
   assistantOpen?: number;
   /** The person's open items per chat (Issue questions are counted on the Issue). */
   bySession: Record<string, number>;
+}
+
+export interface PendingAssistant {
+  id: string;
+  name: string;
+  isDefault: boolean;
 }
 
 export function listPendingItems(

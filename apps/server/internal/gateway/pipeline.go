@@ -280,7 +280,9 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 			}
 		}
 	}
-	if d == nil && need.Risk != "" && permissionAccess.Applicable {
+	// A message channel's sessions write without a card where the person set
+	// the channel's writes for this account to direct (DEV-203).
+	if d == nil && need.Risk != "" && permissionAccess.Applicable && !permissionAccess.WritesWithoutConfirmation(lease.Account.ID) {
 		if p.Confirm == nil {
 			d = &Denial{Reason: ReasonInternal, Err: errors.New("risk write has no confirmation service")}
 		} else {

@@ -4,6 +4,7 @@ import type { InterfaceMode } from "../lib/assistant-settings-sections";
 import { workspaceIdFromLocation } from "../lib/in-app-navigation";
 
 const activeWorkspaceStorageKey = "foundry.activeWorkspaceId";
+const activeAssistantStoragePrefix = "foundry.activeAssistantId.";
 const themeStorageKey = "foundry.themeMode";
 const interfaceModeStorageKey = "foundry.interfaceMode";
 const sidebarCollapsedStorageKey = "foundry.sidebarCollapsed";
@@ -13,6 +14,41 @@ function storedWorkspaceId(): string {
     return window.localStorage.getItem(activeWorkspaceStorageKey)?.trim() ?? "";
   } catch {
     return "";
+  }
+}
+
+function assistantStorageKey(userId: string): string {
+  return userId ? `${activeAssistantStoragePrefix}${userId}` : "";
+}
+
+/** The assistant this person opened last in this browser. */
+export function storedAssistantId(userId: string): string {
+  const key = assistantStorageKey(userId);
+  if (!key) return "";
+  try {
+    return window.localStorage.getItem(key)?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function persistAssistantId(userId: string, assistantId: string): void {
+  const key = assistantStorageKey(userId);
+  if (!key || !assistantId) return;
+  try {
+    window.localStorage.setItem(key, assistantId);
+  } catch {
+    return;
+  }
+}
+
+export function clearStoredAssistantId(userId: string): void {
+  const key = assistantStorageKey(userId);
+  if (!key) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    return;
   }
 }
 

@@ -152,6 +152,11 @@ func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, tas
 	if agent.State != store.PersonalAgentActive || task.ConversationSessionID == "" {
 		return
 	}
+	if kind == store.PersonalAgentTaskEventAsked {
+		if item, ok := s.pendingItemForSession(ctx, agent, session.ID); ok && s.NotifyPendingItem(ctx, agent, item) {
+			return
+		}
+	}
 	line := s.taskLine(ctx, agent, task, session, kind, now)
 	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
 	s.notices.add(task.ConversationSessionID, language, line, now, func(text string) {
@@ -228,18 +233,12 @@ var taskNoticeTexts = map[string][2]string{
 	"work": {"“%s”（项目 %s，会话 %s）", "%q in %s, session %s"},
 	"link": {"（给本人看进度与结果的链接：%s）", " (the link that shows the person its progress and result: %s)"},
 	"none": {"（无）", "(none)"},
-	"finished": {"完成了：%s。它的回答开头是：%s\n告诉本人做完之前，先核对证据（read_context：changes、summary、链接）。",
-		"Finished: %s. Its answer begins: %s\nCheck its evidence (read_context: changes, summary, links) before you tell the person it is done."},
-	"failed": {"失败了：%s。错误：%s\n带着具体错误在同一个助手里重试一次（dispatch_item），或换个办法；再失败就告诉本人出了什么问题、你建议怎么做。",
-		"Failed: %s. Error: %s\nRetry once in the same helper with the specific error (dispatch_item), or try another way; if that fails too, tell the person what went wrong and what you suggest."},
-	"blocked": {"在等回答或许可：%s。先看它问什么（get_session），用大白话问本人，再用 dispatch_item 把回答传回去。",
-		"Waiting for an answer or an approval: %s. Read what it asks (get_session), ask the person in plain words, and pass their answer back through dispatch_item."},
-	"asked": {"以提问结束：%s。它问：%s\n用大白话问本人，再用 dispatch_item 把回答传回去。",
-		"Ended with a question: %s. It asks: %s\nAsk the person in plain words and pass their answer back through dispatch_item."},
-	"stuck": {"已经跑了超过 %d 分钟、没人看过：%s。用 get_session 查看；卡住了就停掉，并告诉本人它可能卡住了。",
-		"Still running after more than %d minutes and nobody looked at it: %s. Check it with get_session; stop it if it is stuck, and tell the person it may be stuck."},
-	"silent": {"%d 分钟没有动静：%s。用 get_session 查看；卡住了就停掉，并说一声。",
-		"No news for %d minutes: %s. Check it with get_session; stop it if it is stuck, and say so."},
+	"finished": {"完成了：%s。它的回答开头是：%s", "Finished: %s. Its answer begins: %s"},
+	"failed": {"失败了：%s。错误：%s", "Failed: %s. Error: %s"},
+	"blocked": {"在等回答或许可：%s。", "Waiting for an answer or an approval: %s."},
+	"asked": {"以提问结束：%s。它问：%s", "Ended with a question: %s. It asks: %s"},
+	"stuck": {"已经跑了超过 %d 分钟、没人看过：%s。", "Still running after more than %d minutes and nobody looked at it: %s."},
+	"silent": {"%d 分钟没有动静：%s。", "No news for %d minutes: %s."},
 	"stuckUnreachable": {"卡住了，连不上它的模型服务：%s 已经 %d 分钟没连上（最近一次：%s）。它还在自己重试，没有被停掉。",
 		"Stuck, can't reach its service: %s has not reached its model service for %d minutes (latest: %s). It keeps retrying and was not stopped."},
 	"failedAccount": {"失败了：%s。错误：%s\n原因：%s。",
@@ -248,17 +247,15 @@ var taskNoticeTexts = map[string][2]string{
 	helperNotReady:    {"它用的账号“%s”在那台电脑上还不能用", "its account %q is not ready on that computer"},
 	helperUnreachable: {"它用的账号“%s”连不上模型服务", "its account %q cannot reach its model service"},
 	helperRateLimited: {"它用的账号“%s”被限流或额度用完了", "its account %q is rate-limited or out of quota"},
-	"retryElsewhere": {"先核对原派发记录；只有角色设置明确允许的fallback账号才可使用。下列只是可用性观察，不是切换许可：%s",
-		"Reconcile the original dispatch first. Use only a fallback explicitly allowed by the role configuration. These availability observations grant no permission to switch: %s"},
-	"stopAndRetryElsewhere": {"如需停止，先取得当前执行的停止回执；核对原派发记录后，只能使用角色设置明确允许的fallback。下列只是可用性观察：%s",
-		"Obtain a stop receipt before replacing the current execution, reconcile its dispatch, and use only a configured fallback. These are availability observations: %s"},
-	"noOtherAccount": {"那台电脑上没有别的能用的账号：告诉本人需要在那台电脑上登录，或给它分配一个模型服务。",
-		"No other account works on that computer: tell the person it needs a sign-in there, or a model service assigned to it."},
-	"noOtherAccountStuck": {"那台电脑上没有别的能用的账号：它可能自己恢复；过一会儿用 get_session 再看，并告诉本人它连不上模型服务。",
-		"No other account works on that computer: it may recover by itself; check again later with get_session, and tell the person it cannot reach its model service."},
+	"retryElsewhere": {"那台电脑上能用的其他账号（可用性观察，不是切换许可；只有角色设置允许的 fallback 可以用）：%s",
+		"Other accounts usable on that computer (availability only, not permission to switch; only a fallback the role configuration allows may be used): %s"},
+	"stopAndRetryElsewhere": {"它还在运行。那台电脑上能用的其他账号（可用性观察，不是切换许可；只有角色设置允许的 fallback 可以用）：%s",
+		"It is still running. Other accounts usable on that computer (availability only, not permission to switch; only a fallback the role configuration allows may be used): %s"},
+	"noOtherAccount": {"那台电脑上没有别的能用的账号。", "No other account works on that computer."},
+	"noOtherAccountStuck": {"那台电脑上没有别的能用的账号；它仍在自己重试。", "No other account works on that computer; it keeps retrying by itself."},
 	"batch": {"交出去的事有 %d 条更新：\n- %s", "%d updates on work you handed off:\n- %s"},
-	"back": {"电脑“%s”重新上线了。之前在等它的事：\n- %s\n排队等它的事会自己开始，不要重发；其余的逐一看看现在怎样（get_session、list_tasks），还需要做的就接着做或重试，再用大白话告诉本人。",
-		"The computer %q is back online. What waited for it:\n- %s\nWork queued for it starts by itself, so do not send it again; check the rest now (get_session, list_tasks), carry on with or retry what still needs doing, and tell the person in plain words."},
+	"back": {"电脑“%s”重新上线了。之前在等它的事：\n- %s\n排队等它的事会自己开始，不要重发。",
+		"The computer %q is back online. What waited for it:\n- %s\nWork queued for it starts by itself; do not send it again."},
 	"waited":         {"%s，在等这台电脑（现在：%s）", "%s waited for it (now %s)"},
 	"startsNow":      {"%s，排队等这台电脑，现在自己开始了", "%s was queued for it and is starting by itself now"},
 	"refusedOffline": {"你当时因为它不在线没做成：%s", "You could not do this because it was offline: %s"},

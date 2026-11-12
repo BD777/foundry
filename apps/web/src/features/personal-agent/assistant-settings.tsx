@@ -40,6 +40,7 @@ import {
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantGate } from "./assistant-gate";
 import { ActivitySection } from "./settings-activity";
+import { ChannelsSection } from "./settings-channels";
 import { ConnectorsSection, connectorLevels } from "./settings-connectors";
 import { EntrySection } from "./settings-entry";
 import { LimitsSection } from "./settings-limits";
@@ -396,6 +397,7 @@ function SettingsPanel({
                 connectors={connectors}
                 disabled={saving}
                 loadError={connectorLoadError}
+                newAssistant={!agent.isDefault}
                 onChange={(accountId, level: ConnectorAccessLevel) => {
                   setConnectors((current) =>
                     current?.map((connector) =>
@@ -417,6 +419,12 @@ function SettingsPanel({
                 assistantId={assistantId}
                 change={change}
                 draft={draft}
+              />
+            ) : activeSection === "channels" ? (
+              <ChannelsSection
+                assistantId={assistantId}
+                homeWorkspaceId={agent.workspaceId}
+                onNotice={notice}
               />
             ) : activeSection === "limits" ? (
               <LimitsSection

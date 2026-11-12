@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,7 +88,15 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 			sender = event.Metadata.SentBySessionID
 		}
 		if kept && pendingAnswers(session, sender) {
-			r.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, Before: event.At, State: store.PendingReplied, Sources: pendingAnswerable})
+			outcome := store.PendingOutcomePersonAnswered
+			acknowledgedAt := ""
+			if session.ParentSessionID != "" && sender == session.ParentSessionID {
+				outcome, acknowledgedAt = store.PendingOutcomeAssistantAnswered, event.At
+			}
+			r.resolve(ctx, store.PendingResolution{
+				SessionID: event.SessionID, Before: event.At, State: store.PendingReplied,
+				Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
+			})
 		}
 		return
 	}
@@ -130,7 +137,15 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		if before == "" {
 			before = formatPendingTime(time.Now())
 		}
-		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: pendingAnswerable})
+		outcome := store.PendingOutcomePersonAnswered
+		acknowledgedAt := ""
+		if session.ParentSessionID != "" && input.SentBySessionID == session.ParentSessionID {
+			outcome, acknowledgedAt = store.PendingOutcomeAssistantAnswered, before
+		}
+		r.resolve(ctx, store.PendingResolution{
+			SessionID: session.ID, Before: before, State: store.PendingReplied,
+			Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
+		})
 	case sessions.Completed:
 		// A stuck helper's turn ended, however; a stopped session waits for
 		// nothing.
@@ -144,7 +159,7 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}, Rule: store.PendingRuleHeld})
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
-			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
+			r.closePreviousTurnFailures(ctx, session)
 		}
 	}
 }
@@ -186,7 +201,11 @@ func (r pendingReactions) IssueUpdated(issue store.Issue) {
 		r.resolve(ctx, store.PendingResolution{IssueID: issue.ID, ExceptKey: key, State: store.PendingSuperseded})
 		return
 	}
-	r.resolve(ctx, store.PendingResolution{IssueID: issue.ID, State: store.PendingSuperseded})
+	outcome := store.PendingOutcomePersonAnswered
+	if pendingIssueClosed(issue.Status) {
+		outcome = store.PendingOutcomeAutoResolved
+	}
+	r.resolve(ctx, store.PendingResolution{IssueID: issue.ID, State: store.PendingSuperseded, Outcome: outcome})
 }
 
 func (r pendingReactions) resolve(ctx context.Context, resolution store.PendingResolution) {
@@ -210,8 +229,6 @@ func pendingCandidateEvent(event store.AgentSessionEvent) bool {
 		return true
 	}
 	switch event.Label {
-	case store.ProcessLabelSessionFailed:
-		return event.Level == "error"
 	case store.ProcessLabelPermissionDenied:
 		return true
 	}
@@ -245,15 +262,6 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 		return items
 	}
 	switch event.Label {
-	case store.ProcessLabelSessionFailed:
-		detail := strings.TrimSpace(event.Detail)
-		if detail == "" || strings.Contains(strings.ToLower(detail), "session was canceled") {
-			return nil
-		}
-		return []store.PendingItem{{
-			EventID: event.ID, Source: store.PendingSourceTurnFailed, Key: "failed:" + event.SessionID,
-			Title: pendingTitle(firstLine(detail)), Excerpt: textcut.Excerpt(detail, pendingExcerptLimit),
-		}}
 	case store.ProcessLabelPermissionDenied:
 		detail := strings.TrimSpace(event.Detail)
 		if detail == "" {
@@ -418,13 +426,22 @@ type pendingItemView struct {
 	store.PendingItem
 	SessionTitle  string `json:"sessionTitle,omitempty"`
 	WorkspaceName string `json:"workspaceName,omitempty"`
+	AssistantName string `json:"assistantName,omitempty"`
 	// DeviceID is the session's device: a github_scope item links to that
 	// device's GitHub permissions (DEV-136).
 	DeviceID string `json:"deviceId,omitempty"`
 }
 
+type pendingAssistantView struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	IsDefault bool   `json:"isDefault"`
+}
+
 type pendingItemList struct {
 	Items []pendingItemView `json:"items"`
+	// Assistants are all of the person's assistants, for the page's filter.
+	Assistants []pendingAssistantView `json:"assistants"`
 	// Open counts the open items the person handles; BySession counts them
 	// per session. AssistantOpen counts those their assistant handles.
 	Open          int            `json:"open"`
@@ -442,10 +459,27 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ctx := r.Context()
+	assistants, err := s.store.ListAssistants(ctx, user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list assistants for pending items")
+		return
+	}
+	assistantNames := make(map[string]string, len(assistants))
+	result := pendingItemList{
+		Items:      []pendingItemView{},
+		Assistants: make([]pendingAssistantView, 0, len(assistants)),
+		BySession:  map[string]int{},
+	}
+	for _, assistant := range assistants {
+		assistantNames[assistant.ID] = assistant.Name
+		result.Assistants = append(result.Assistants, pendingAssistantView{
+			ID: assistant.ID, Name: assistant.Name, IsDefault: assistant.IsDefault,
+		})
+	}
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
 	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
 	items, err := s.store.ListPendingItems(ctx, user, states, since, 300)
-	if err == nil && (s.reconcilePersonalPending(ctx, user, items) || s.handOverWhileAway(ctx, user, items)) {
+	if err == nil && s.reconcilePersonalPending(ctx, user, items) {
 		items, err = s.store.ListPendingItems(ctx, user, states, since, 300)
 	}
 	if err != nil {
@@ -454,9 +488,8 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	}
 	sessions := map[string]*store.AgentSession{}
 	workspaces := map[string]string{}
-	result := pendingItemList{Items: []pendingItemView{}, BySession: map[string]int{}}
 	for _, item := range items {
-		view := pendingItemView{PendingItem: item}
+		view := pendingItemView{PendingItem: item, AssistantName: assistantNames[item.AssistantID]}
 		if item.SessionID != "" {
 			session, seen := sessions[item.SessionID]
 			if !seen {
@@ -493,40 +526,6 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		result.Items = append(result.Items, view)
 	}
 	writeJSON(w, http.StatusOK, result)
-}
-
-// handOverWhileAway hands the person the open items their assistant
-// handles while it cannot take them (stopped, or its home computer
-// offline): the person sees them at once, and they stay the person's until
-// either side resolves them (§h). It reports whether it handed any.
-func (s *Server) handOverWhileAway(ctx context.Context, user string, items []store.PendingItem) bool {
-	if !slices.ContainsFunc(items, func(item store.PendingItem) bool {
-		return item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerAssistant
-	}) {
-		return false
-	}
-	// Each assistant's items go back while that assistant is away.
-	handed := false
-	seen := map[string]bool{}
-	for _, item := range items {
-		if item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerAssistant || seen[item.AssistantID] {
-			continue
-		}
-		seen[item.AssistantID] = true
-		agent, err := s.store.GetAssistant(ctx, item.AssistantID)
-		if err == nil && agent.UserID == user && s.assistant.Takes(agent) {
-			continue
-		}
-		reason := store.PendingHandedOffline
-		if err != nil || agent.UserID != user || agent.State != store.PersonalAgentActive {
-			reason = store.PendingHandedStopped
-			agent = store.PersonalAgent{ID: item.AssistantID, UserID: user}
-		}
-		if s.assistant.HandOverAll(ctx, agent, reason) > 0 {
-			handed = true
-		}
-	}
-	return handed
 }
 
 // handleSetPendingItemState marks one of the person's items done or

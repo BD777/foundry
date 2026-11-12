@@ -23,6 +23,29 @@ func TestDefaultPackageAllowsAllExistingReachAndAllConnectorWrites(t *testing.T)
 		!access.AllowsConnector("acct_any") || !access.AllowsConnectorWrite("acct_any") {
 		t.Fatalf("default connector level = %q", access.ConnectorLevel("acct_any"))
 	}
+	if pkg.ConnectorDefault != store.ConnectorAccessLevelWrite {
+		t.Fatalf("default connector default = %q", pkg.ConnectorDefault)
+	}
+}
+
+func TestConnectorDefaultAppliesToUnlistedAccounts(t *testing.T) {
+	pkg := DefaultPackage("owner", "pkg")
+	pkg.ConnectorDefault = store.ConnectorAccessLevelOff
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{
+		{AccountID: "acct_read", Level: store.ConnectorAccessLevelRead},
+	}
+	access := Access{Applicable: true, Package: Normalize(pkg)}
+	if access.AllowsConnector("acct_unlisted") || access.AllowsConnectorWrite("acct_unlisted") {
+		t.Fatal("an unlisted account ignored the package's off default")
+	}
+	if !access.AllowsConnector("acct_read") || access.AllowsConnectorWrite("acct_read") {
+		t.Fatal("an explicit account level did not override the package default")
+	}
+
+	pkg.ConnectorDefault = ""
+	if got := Normalize(pkg).ConnectorDefault; got != store.ConnectorAccessLevelWrite {
+		t.Fatalf("an old package without connectorDefault normalized to %q", got)
+	}
 }
 
 func TestPackageRulesAndConnectorOverrides(t *testing.T) {

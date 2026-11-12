@@ -20,6 +20,9 @@ export type {
   MemoryLayer,
   MemoryLayerEntry,
   MemoryLayerScope,
+  MemorySortActionInput,
+  MemorySortList,
+  MemorySortRecord,
   MoveMemoryEntryInput,
   PermissionIdentityResources,
   PermissionListRule,
@@ -233,6 +236,21 @@ export interface PersonalAgentOverview {
   /** Without an agent: the device the setup card offers (most online). */
   suggestedHomeDeviceId?: string;
   usage?: PersonalAgentUsage;
+  /** Open items this assistant may see, for its home card. */
+  needsYou?: PersonalAgentNeedsYou;
+}
+
+/** The assistant-scoped part of the person's "needs you" list. */
+export interface PersonalAgentNeedsYou {
+  open: number;
+  /** The newest three items. */
+  items: PersonalAgentNeedsYouItem[];
+}
+
+export interface PersonalAgentNeedsYouItem {
+  id: string;
+  title: string;
+  where?: string;
 }
 
 /** POST /api/personal-agent: set the assistant up on this device. */

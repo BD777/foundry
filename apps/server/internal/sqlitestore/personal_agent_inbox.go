@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -62,7 +63,7 @@ func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEnt
 
 func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) (store.PersonalAgentInboxEntry, error) {
 	if entry.ID == "" || entry.UserID == "" || entry.AssistantID == "" || entry.MessageID == "" || entry.Text == "" ||
-		!slices.Contains([]string{"web", "feishu"}, entry.Channel) || !store.ValidSessionInputID(entry.InputID) {
+		!(slices.Contains([]string{"web", "feishu"}, entry.Channel) || strings.HasPrefix(entry.Channel, "mc:")) || !store.ValidSessionInputID(entry.InputID) {
 		return entry, errors.New("inbox requires a source, person, text and native input identity")
 	}
 	var saved store.PersonalAgentInboxEntry
@@ -143,7 +144,9 @@ func (s *Store) queryInbox(ctx context.Context, where string, args ...any) ([]st
 }
 
 func (s *Store) ListPersonalAgentInbox(ctx context.Context, assistantID string, limit int) ([]store.PersonalAgentInboxEntry, error) {
-	return s.queryInbox(ctx, `assistant_id=? ORDER BY created_at DESC,id LIMIT ?`, assistantID, min(max(limit, 1), 200))
+	// Message channel entries (DEV-203) are the channel's own record, not
+	// the person's conversation.
+	return s.queryInbox(ctx, `assistant_id=? AND channel NOT LIKE 'mc:%' ORDER BY created_at DESC,id LIMIT ?`, assistantID, min(max(limit, 1), 200))
 }
 
 func (s *Store) DuePersonalAgentInbox(ctx context.Context, now string, limit int) ([]store.PersonalAgentInboxEntry, error) {
@@ -151,6 +154,9 @@ func (s *Store) DuePersonalAgentInbox(ctx context.Context, now string, limit int
 		AND (lease_until='' OR julianday(lease_until)<=julianday(?))
 		AND NOT EXISTS (SELECT 1 FROM pa_inbox AS earlier
 			WHERE earlier.assistant_id=pa_inbox.assistant_id AND earlier.status IN ('pending','waiting','dispatching')
+			-- One at a time per message channel conversation (mc:…, DEV-203), and
+			-- one at a time among the person's own messages.
+			AND (earlier.channel=pa_inbox.channel OR (earlier.channel NOT LIKE 'mc:%' AND pa_inbox.channel NOT LIKE 'mc:%'))
 			AND (earlier.created_at<pa_inbox.created_at OR
 				(earlier.created_at=pa_inbox.created_at AND earlier.rowid<pa_inbox.rowid)))
 		ORDER BY lease_until,created_at,id LIMIT ?`, now, min(max(limit, 1), 200))
