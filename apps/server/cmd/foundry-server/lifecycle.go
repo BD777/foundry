@@ -85,6 +85,10 @@ func run(ctx context.Context, deps dependencies) error {
 		deps.logf("secret store ready with key fingerprint sha256:%s", fingerprint)
 	}
 
+	// A start cancelled during the chores above serves nothing.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// NewServerWithOptions gives devices recorded as connected their
 	// reconnect grace before anything marks them offline.
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)

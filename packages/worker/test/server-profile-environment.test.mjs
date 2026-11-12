@@ -2,6 +2,7 @@ import "./fixtures/native-test-homes.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sessionEnvironment } from "../dist/session/session-ambient.js";
+import { setLoginShellPathReaderForTests } from "../dist/session/login-path.js";
 
 const ambientKeys = [
   "ANTHROPIC_AUTH_TOKEN",
@@ -27,7 +28,11 @@ function withAmbientCredentials(run) {
   }
 }
 
-test("a keyless server codex profile never inherits the daemon's credentials", () => {
+test("a keyless server codex profile never inherits the daemon's credentials", (t) => {
+  // Without a login shell PATH (session-path.test.mjs covers it) the session
+  // PATH is the tools folder, then the inherited one.
+  setLoginShellPathReaderForTests(() => undefined);
+  t.after(() => setLoginShellPathReaderForTests(undefined));
   withAmbientCredentials(() => {
     const env = sessionEnvironment("/workspace", {
       id: "gw",

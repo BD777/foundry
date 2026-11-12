@@ -562,32 +562,34 @@ test("an unchanged native chat scan reuses its parse and fingerprint", async () 
   }
 });
 
-class FailingNativeChatWorker extends EventEmitter {
-  ref() {}
-  unref() {}
+// Like a real Worker, a referenced fake keeps the event loop alive until it
+// is unreferenced or terminated.
+class FakeNativeChatWorker extends EventEmitter {
+  #keepAlive;
+  ref() {
+    this.#keepAlive ??= setInterval(() => {}, 1_000);
+  }
+  unref() {
+    clearInterval(this.#keepAlive);
+    this.#keepAlive = undefined;
+  }
   terminate() {
+    this.unref();
     return Promise.resolve(0);
   }
+}
+
+class FailingNativeChatWorker extends FakeNativeChatWorker {
   postMessage() {
     queueMicrotask(() => this.emit("error", new Error("scan exploded")));
   }
 }
 
-class HangingNativeChatWorker extends EventEmitter {
-  ref() {}
-  unref() {}
-  terminate() {
-    return Promise.resolve(0);
-  }
+class HangingNativeChatWorker extends FakeNativeChatWorker {
   postMessage() {}
 }
 
-class RefusingNativeChatWorker extends EventEmitter {
-  ref() {}
-  unref() {}
-  terminate() {
-    return Promise.resolve(0);
-  }
+class RefusingNativeChatWorker extends FakeNativeChatWorker {
   postMessage() {
     throw new Error("request was not cloneable");
   }

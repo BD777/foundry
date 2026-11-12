@@ -274,6 +274,8 @@ globalThis.fetch = async (input, init = {}) => {
       return json([]);
     case "GET /api/personal-agent/inbox":
       return json([]);
+    case "GET /api/personal-agent/memory/layers":
+      return json({ assistantId: "", legacyUncopied: 0, layers: [] });
     case "POST /api/personal-agent/inbox":
       return json(
         {

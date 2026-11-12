@@ -174,10 +174,24 @@ test("a device without a login offers Sign in, and Check again only re-reads the
   }
 });
 
+// What /api/model-guides/resolve answers when no guide matches a target.
+function unguided(options) {
+  const { targets } = JSON.parse(options.body);
+  return new Response(
+    JSON.stringify({
+      resolutions: targets.map((target) => ({
+        suggestedId: target.model ?? "",
+        suggestedIdTaken: false,
+      })),
+    }),
+  );
+}
+
 test("official defaults save only the selected device preset, never a server profile or key", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith("/model-guides/resolve")) return unguided(options);
     calls.push({ url: String(url), body: JSON.parse(options.body) });
     if (String(url).endsWith("/models"))
       return new Response(JSON.stringify([{ id: "saved-model" }]));
@@ -246,23 +260,25 @@ test("official defaults save only the selected device preset, never a server pro
 
 test("official account defaults reject saved models absent from the native catalog", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) =>
-    new Response(
-      JSON.stringify(
-        String(url).endsWith("/models")
-          ? [{ id: "official-model" }]
-          : {
-              runtime: "codex",
-              source: "/native",
-              executionSource: "/native",
-              sources: ["/native"],
-              checkedAt: new Date().toISOString(),
-              status: "local_login",
-              message: "Local only",
-              usage: [],
-            },
-      ),
-    );
+  globalThis.fetch = async (url, options) =>
+    String(url).endsWith("/model-guides/resolve")
+      ? unguided(options)
+      : new Response(
+          JSON.stringify(
+            String(url).endsWith("/models")
+              ? [{ id: "official-model" }]
+              : {
+                  runtime: "codex",
+                  source: "/native",
+                  executionSource: "/native",
+                  sources: ["/native"],
+                  checkedAt: new Date().toISOString(),
+                  status: "local_login",
+                  message: "Local only",
+                  usage: [],
+                },
+          ),
+        );
   const view = await setup({
     devices: [devices[0]],
     runtimes: ["codex"],

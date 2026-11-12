@@ -137,7 +137,7 @@ func TestRunReturnsWhenContextIsAlreadyCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// The startup chores read the store with ctx, so run stops there.
+	// A cancelled start stops before it builds the API or serves.
 	if err := waitForRun(t, runAsync(t, ctx, deps)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("run() error = %v, want %v", err, context.Canceled)
 	}
