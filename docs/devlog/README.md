@@ -4,23 +4,25 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
-2026-11-13 助理：[DEV-204 连接器租户信息与默认权限](DEV-204-assistant-connector-defaults.md)。助理连接器列表复用 Connectors 的姓名、租户、域名和应用名，两个同名飞书账号可以区分；权限包新增 `connectorDefault`，旧包与已有助理保持 `write`，非默认新助理从 `off` 开始。Server、Web build `b1033914d2c6c21f` 已部署 dev，定向测试、类型检查、四项审计和浅色 1280 截图通过；等待人工验收。
+2026-11-13 助理：[DEV-204 连接器租户信息与默认权限](DEV-204-assistant-connector-defaults.md)。助理连接器列表复用 Connectors 的姓名、租户、域名和应用名，两个同名飞书账号可以区分；权限包新增 `connectorDefault`，旧包与已有助理保持 `write`，非默认新助理从 `off` 开始。Server、Web build `b1033914d2c6c21f` 已部署 dev，定向测试、类型检查、四项审计和浅色 1280 截图通过；等待人工验收。 已合入 main（PR #265）。
 
-2026-11-13 助理：[DEV-203 消息通道（Message Channel）设计](DEV-203-message-channels.md)。任意推送源 → 助理的通用抽象：Source（长轮询 / 游标 / 去重 / 断档）+ Envelope + Filter 阶段 + 按对话的会话投递；OpenLark 适配器是扩展描述符里的 `serverHeld.events` 数据，Server 经现有网关运行；本人的处理原则生成为原生 skill；回复由助理自己决定，Foundry 只管范围、护栏和审计。v1 已部署 dev（Server、Web、7 台 Worker）：助理设置「消息通道」，OpenLark 长轮询经 byte-dev 实测、合成消息投递到真实助理会话；真实飞书消息全链路待本人明早体验；未提交。
+2026-11-12 助理：[DEV-191 记忆自动整理](DEV-191-multi-assistant.md#记忆自动整理2026-11-12worktree-memory-sort)。memory review 只判断归属（`placements[]`），移动由 Server 执行并记入 `memory_sorts`；个人层里属于某个助理的条目移回该助理层，助理层里高置信度的个人信息移到个人层，其余生成「建议共享」；每次移动都可撤回，已移动过的条目不再参与整理；补上权限放宽后的测试。已部署 dev；已合入 main（PR #265）。
+
+2026-11-13 助理：[DEV-203 消息通道（Message Channel）](DEV-203-message-channels.md)。任意推送源 → 助理的通用抽象：Source（长轮询 / 游标 / 去重 / 断档）+ Envelope + Filter 阶段 + 按对话的会话投递；OpenLark 适配器是扩展描述符里的 `serverHeld.events` 数据，Server 经现有网关运行；本人的处理原则生成为原生 skill；回复由助理自己决定，Foundry 只管范围、护栏和审计。v1 已部署 dev（Server、Web、7 台 Worker）：助理设置「消息通道」，OpenLark 长轮询经 byte-dev 实测、合成消息投递到真实助理会话；真实飞书消息的端到端由本人首次实测；已合入 main（PR #265）。
 
 2026-11-12 文档：[DEV-195 AGENTS.md 重组与独立 worktree 规则](DEV-195-agents-md-reorg-worktree-rule.md)。根 `AGENTS.md` 从 12.8 KB 减到 5.6 KB，UI 规则移到 `apps/web/AGENTS.md`，代码与检查的位置移到 `docs/where-things-live.md`；删除 `CLAUDE.md` 软链接（Claude Code 2.1.277 起原生读取 AGENTS.md）；`docs/agent-orchestration.md` 规定会让代码树无法构建的切片用独立 worktree。只改文档，无需部署。 已合入 main（PR #264）。
 
-2026-11-13 助理：[DEV-200 助理不再注入每轮引导](DEV-200-assistant-no-injection.md)。每轮上下文只剩本人时区的当前时间（和收件箱回执）；本人的规则与确认过的记忆移入 `AGENTS.md`，项目索引写到 `.foundry/project-index.md`，在线电脑、清单、跟进的事、等你处理改由工具按需读；监督、卡片、提醒、拒绝等通知只写事实，处理方式移入三个助理 skill；助理工具描述去掉策略句。
+2026-11-13 助理：[DEV-200 助理不再注入每轮引导](DEV-200-assistant-no-injection.md)。每轮上下文只剩本人时区的当前时间（和收件箱回执）；本人的规则与确认过的记忆移入 `AGENTS.md`，项目索引写到 `.foundry/project-index.md`，在线电脑、清单、跟进的事、等你处理改由工具按需读；监督、卡片、提醒、拒绝等通知只写事实，处理方式移入三个助理 skill；助理工具描述去掉策略句。 已合入 main（PR #265）。
 
-2026-11-13 会话与 MCP：[DEV-201 通用会话与 MCP 去注入](DEV-201-session-mcp-no-injection.md)。MCP server instructions 压到 512 chars 内，9 个非助理工具描述只保留 API/副作用/限制，跨 session 与 question/alert 文案改为事实；删除未使用的 Claude workspace instruction 拼接路径。Server `d7c43f52…` 已部署 dev，Worker release 待更新设备，等待人工验收。
+2026-11-13 会话与 MCP：[DEV-201 通用会话与 MCP 去注入](DEV-201-session-mcp-no-injection.md)。MCP server instructions 压到 512 chars 内，9 个非助理工具描述只保留 API/副作用/限制，跨 session 与 question/alert 文案改为事实；删除未使用的 Claude workspace instruction 拼接路径。Server `d7c43f52…` 已部署 dev，Worker release 待更新设备，等待人工验收。 已合入 main（PR #265）。
 
 2026-11-12 执行模型：[DEV-188 默认 + 编排者可选列表](DEV-188-execution-model-alternatives.md)。Server 与 Web 已支持默认值、alternatives 和 Worker 组展开，保存失败与 Worker 组说明已修复；Server、Web build `728d8ae198733962` 已部署 dev，工作区成功保存路径与最终视觉仍待人工验收；已合入 main（PR #264）。
 
-2026-11-12 助理：[DEV-198 project upkeep 的指令文件预算](DEV-198-upkeep-instruction-budgets.md)。governance 输入新增根 `AGENTS.md` / `CLAUDE.md` 行数与字节事实；prompt 要求超预算或膨胀时只拆分/删除，并把长流程移到 skill、子目录指令或 `docs/`。新增 `instruction_budget` / `instruction_bloat` finding。已部署 dev Server，等待人工验收。
+2026-11-12 助理：[DEV-198 project upkeep 的指令文件预算](DEV-198-upkeep-instruction-budgets.md)。governance 输入新增根 `AGENTS.md` / `CLAUDE.md` 行数与字节事实；prompt 要求超预算或膨胀时只拆分/删除，并把长流程移到 skill、子目录指令或 `docs/`。新增 `instruction_budget` / `instruction_bloat` finding。已部署 dev Server，等待人工验收。 已合入 main（PR #265）。
 
-2026-11-12 助理：[DEV-196 助理渐进式披露](DEV-196-assistant-progressive-disclosure.md)。主提示词缩为短核心，项目、handoff、memory/list 三段流程改为三个标准 Agent Skills；Server 和 Worker 写入 canonical `.foundry/assistant-skills` 并为 Claude Code、Codex 建立原生发现软链接。Worker `0.5.7-dev.354.geb87723d.local.1794493387` 已更新 7 台设备，Server 随后部署，临时 home 端到端生成验证通过；未提交（等提交窗口）。
+2026-11-12 助理：[DEV-196 助理渐进式披露](DEV-196-assistant-progressive-disclosure.md)。主提示词缩为短核心，项目、handoff、memory/list 三段流程改为三个标准 Agent Skills；Server 和 Worker 写入 canonical `.foundry/assistant-skills` 并为 Claude Code、Codex 建立原生发现软链接。Worker `0.5.7-dev.354.geb87723d.local.1794493387` 已更新 7 台设备，Server 随后部署，临时 home 端到端生成验证通过；已合入 main（PR #265）。
 
-2026-11-12 助理：[DEV-197 助理切换器](DEV-197-assistant-switcher.md)。第一版把助理与 Conversation 拆成两个侧栏 tab，本人明确否决；终版恢复单个动态助理入口，把助理切换放入对话标题下拉，首次或无有效记忆时进入列表。Web build `06c2bacc215e580a` 已部署 dev，真实浏览器标题菜单、无记忆列表、登出和清理均通过；未提交（等提交窗口）。
+2026-11-12 助理：[DEV-197 助理切换器](DEV-197-assistant-switcher.md)。第一版把助理与 Conversation 拆成两个侧栏 tab，本人明确否决；终版恢复单个动态助理入口，把助理切换放入对话标题下拉，首次或无有效记忆时进入列表。Web build `06c2bacc215e580a` 已部署 dev，真实浏览器标题菜单、无记忆列表、登出和清理均通过；已合入 main（PR #265）。
 
 2026-11-12 助理：[DEV-202「等你处理」按助理划分可见范围](DEV-202-needs-you-scope.md)。全局页保持完整列表并显示来源、增加按助理筛选；助理页卡片、每轮上下文和 MCP 共用 Server 的权限包过滤。Server 与 Web 已部署 dev，测试、类型检查、四项审计和真实浏览器截图通过；未提交（等提交窗口）。
 

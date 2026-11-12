@@ -2,7 +2,9 @@
 
 ## 状态
 
-v1 已实现、验证并部署 dev（Server、Web、7 台 Worker，2026-11-13 04:55 UTC+8），等本人体验与验收；未提交。设计 2026-11-13 经编排会话 “go”（带四项答复，见“待决的答复”）。来源：[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述的本人需求（2026-11-13 01:50）与回复决定的更正（见“取舍 · 回复由助理决定”）。前置：[DEV-191 §5 Channel](DEV-191-multi-assistant.md#5-channel)、[连接器扩展](../connector-extensions.md)、[DEV-196](DEV-196-assistant-progressive-disclosure.md)、[DEV-200](DEV-200-assistant-no-injection.md)、[DEV-202](DEV-202-needs-you-scope.md)。
+已合入 main（PR #265），已部署 dev；真实飞书消息的端到端由本人首次实测。
+
+v1 已实现、验证并部署 dev（Server、Web、7 台 Worker，2026-11-13 04:55 UTC+8），等本人体验与验收。设计 2026-11-13 经编排会话 “go”（带四项答复，见“待决的答复”）。来源：[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述的本人需求（2026-11-13 01:50）与回复决定的更正（见“取舍 · 回复由助理决定”）。前置：[DEV-191 §5 Channel](DEV-191-multi-assistant.md#5-channel)、[连接器扩展](../connector-extensions.md)、[DEV-196](DEV-196-assistant-progressive-disclosure.md)、[DEV-200](DEV-200-assistant-no-injection.md)、[DEV-202](DEV-202-needs-you-scope.md)。
 
 ## 结论
 

@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #265）。
+
 方向已由本人确认（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）。B3 已合入 dev、通过定向验证并部署 Server 与 Web，等待人工验收。现状调研：[sess_1794497802095643663](https://dev.foundryapp.app/chats/sess_1794497802095643663)，只读，基于真实数据和代码，每条结论都附 path:line 和出处。
 
 ## 本人的目标
