@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+
 设计草案，等本人拍板（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）。现状地图见只读调查 [sess_1794474387399464358](https://dev.foundryapp.app/chats/sess_1794474387399464358)，本文中的 path:line 都来自那次调查。
 
 ## 目标与边界

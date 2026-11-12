@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+
 已实现、验证并部署 dev Server（2026-11-12）；初次上线验证未执行 `start`。后续首次实际使用已更新 7 台设备，并发现、清理了 `launchctl submit` 遗留更新任务。
 
 ## 问题

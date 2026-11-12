@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+
 方向已经本人确认（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）。Server 核心与 Web 三态显示、操作禁用已实施并部署 dev；租约申请与 steer/cancel 的重连等待属于后续切片。
 
 ## 问题与证据

@@ -4,31 +4,31 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
-2026-11-12 文档：[DEV-195 AGENTS.md 重组与独立 worktree 规则](DEV-195-agents-md-reorg-worktree-rule.md)。根 `AGENTS.md` 从 12.8 KB 减到 5.6 KB，UI 规则移到 `apps/web/AGENTS.md`，代码与检查的位置移到 `docs/where-things-live.md`；删除 `CLAUDE.md` 软链接（Claude Code 2.1.277 起原生读取 AGENTS.md）；`docs/agent-orchestration.md` 规定会让代码树无法构建的切片用独立 worktree。只改文档，无需部署。
+2026-11-12 文档：[DEV-195 AGENTS.md 重组与独立 worktree 规则](DEV-195-agents-md-reorg-worktree-rule.md)。根 `AGENTS.md` 从 12.8 KB 减到 5.6 KB，UI 规则移到 `apps/web/AGENTS.md`，代码与检查的位置移到 `docs/where-things-live.md`；删除 `CLAUDE.md` 软链接（Claude Code 2.1.277 起原生读取 AGENTS.md）；`docs/agent-orchestration.md` 规定会让代码树无法构建的切片用独立 worktree。只改文档，无需部署。 已合入 main（PR #264）。
 
-2026-11-12 执行模型：[DEV-188 默认 + 编排者可选列表](DEV-188-execution-model-alternatives.md)。Server 与 Web 已支持默认值、alternatives 和 Worker 组展开，保存失败与 Worker 组说明已修复；Server、Web build `728d8ae198733962` 已部署 dev，工作区成功保存路径与最终视觉仍待人工验收；未提交（等提交窗口）。
+2026-11-12 执行模型：[DEV-188 默认 + 编排者可选列表](DEV-188-execution-model-alternatives.md)。Server 与 Web 已支持默认值、alternatives 和 Worker 组展开，保存失败与 Worker 组说明已修复；Server、Web build `728d8ae198733962` 已部署 dev，工作区成功保存路径与最终视觉仍待人工验收；已合入 main（PR #264）。
 
-2026-11-12 编排：[DEV-192 foundry-orchestration Skill 第 4–6 版](DEV-192-orchestration-skill-r4-r6.md)。第 4 版改为默认委派、第 5 版改为仅显式触发、第 6 版接入默认 + 可选执行模型并限制模型说明书只写本模型，Server 与 Web 已部署 dev、Worker `0.5.7-dev.354.geb87723d.local.1794475758` 已更新 7 台设备，模型说明书回读为 DeepSeek revision 4 / Opus revision 3；未提交（等提交窗口）。
+2026-11-12 编排：[DEV-192 foundry-orchestration Skill 第 4–6 版](DEV-192-orchestration-skill-r4-r6.md)。第 4 版改为默认委派、第 5 版改为仅显式触发、第 6 版接入默认 + 可选执行模型并限制模型说明书只写本模型，Server 与 Web 已部署 dev、Worker `0.5.7-dev.354.geb87723d.local.1794475758` 已更新 7 台设备，模型说明书回读为 DeepSeek revision 4 / Opus revision 3；已合入 main（PR #264）。
 
-2026-11-12 提示：[DEV-193 概览页 FieldHint 与 `<Trans>` 提示审计](DEV-193-overview-field-hint-audit.md)。Git 状态说明与离线说明已改用共享 `FieldHint`，`audit-hints` 已识别静态 `<Trans i18nKey>`；Web build `eca52bfb4caeeb3e` 已部署 dev，检查脚本本身无需部署，审计仍只余两条既有失败；未提交（等提交窗口）。
+2026-11-12 提示：[DEV-193 概览页 FieldHint 与 `<Trans>` 提示审计](DEV-193-overview-field-hint-audit.md)。Git 状态说明与离线说明已改用共享 `FieldHint`，`audit-hints` 已识别静态 `<Trans i18nKey>`；Web build `eca52bfb4caeeb3e` 已部署 dev，检查脚本本身无需部署，审计仍只余两条既有失败；已合入 main（PR #264）。
 
 2026-11-12 运维：[macbook 旧本地 Foundry 栈清理](https://dev.foundryapp.app/chats/sess_1794473579735873154)。旧源码、旧 Server/Web/Worker plist 与旧状态目录已删除，27 个未推送提交逐项核实都在 `github.com/BD777/foundry-archive` 的 main，删除后 macbook 仍 online/ready 且磁盘可用空间从 146 GiB 增至 148 GiB；无产品部署，未提交（等提交窗口）。
 
 2026-11-12 运维：[sg-chaos 磁盘清理](https://dev.foundryapp.app/chats/sess_1794480577157431912)。两个数据库备份在 WAL checkpoint、`integrity_check` 与 gzip 解压字节数校验后保留压缩副本，并删除 14 个被取代的 Server 二进制，共腾出 2,766,376,960 bytes（约 2.58 GiB），运行中的 Server 与最近备份未动；无产品部署，未提交（等提交窗口）。
 
-2026-11-12 运维：[`launchctl submit` 遗留更新任务](DEV-190-mcp-update-worker.md#2026-11-12-launchctl-submit-残留更新任务事故)。Mac 的反复重连来自残留 update job 主动重启 Worker，CanWendeMac-mini 与 macbook 的残留 label 已核查并移除，常驻 Worker PID 保持稳定；以后统一使用 MCP `update_worker`，无产品部署，未提交（等提交窗口）。
+2026-11-12 运维：[`launchctl submit` 遗留更新任务](DEV-190-mcp-update-worker.md#2026-11-12-launchctl-submit-残留更新任务事故)。Mac 的反复重连来自残留 update job 主动重启 Worker，CanWendeMac-mini 与 macbook 的残留 label 已核查并移除，常驻 Worker PID 保持稳定；以后统一使用 MCP `update_worker`，无产品部署，已合入 main（PR #264）。
 
-2026-11-12 设备连接：[DEV-189 断开后先「重连中」，宽限 60 秒再算离线](DEV-189-device-reconnect-grace.md)。Server 核心已实现并部署 dev：设备断开与 Server 启动都给 60 秒重连窗口，`list_resources` 新增 `connection`，资源实例在窗口内显示 `reconnecting`；部署后两次采样均无离线。租约申请与 steer/cancel 的等待逻辑、完整 Web 显示由后续切片处理。
+2026-11-12 设备连接：[DEV-189 断开后先「重连中」，宽限 60 秒再算离线](DEV-189-device-reconnect-grace.md)。Server 核心已实现并部署 dev：设备断开与 Server 启动都给 60 秒重连窗口，`list_resources` 新增 `connection`，资源实例在窗口内显示 `reconnecting`；部署后两次采样均无离线。租约申请与 steer/cancel 的等待逻辑、完整 Web 显示由后续切片处理。 已合入 main（PR #264）。
 
-2026-11-12 MCP：[DEV-190 Worker 自更新工具](DEV-190-mcp-update-worker.md)。新增 `update_worker`，设备所有者可查询 Worker 与 Server 版本及更新进度，或复用现有更新链路让 Worker 下载、切换、重启并重连；workspace 成员和共享设备不能调用。已部署 dev Server，后续首次实际使用已更新 7 台设备；未提交（等提交窗口）。
+2026-11-12 MCP：[DEV-190 Worker 自更新工具](DEV-190-mcp-update-worker.md)。新增 `update_worker`，设备所有者可查询 Worker 与 Server 版本及更新进度，或复用现有更新链路让 Worker 下载、切换、重启并重连；workspace 成员和共享设备不能调用。已部署 dev Server，后续首次实际使用已更新 7 台设备；已合入 main（PR #264）。
 
-2026-11-12 助理：[DEV-191 多助理 v1（P0 权限判定、P2 memory 两层、P3 飞书一应用一助理、Web 多助理）](DEV-191-multi-assistant.md#v1-合并与部署2026-11-12p0--p2--p3--web)。四个切片逐文件三方合并进 dev 检出；飞书设置链接改为指向该助理自己的设置页；`system.md` 的 memory 说明按两层重写，prompt 升到 `2026-11-12.2`。Server 和 Web（`47a9d998efad669c`）已部署 dev，部署前备份为 `foundry-20261112-pre-dev191-v1.db.gz`；Worker 不需要发布。e2e-alice 的 API 和浏览器验收通过，等待人工验收。
+2026-11-12 助理：[DEV-191 多助理 v1（P0 权限判定、P2 memory 两层、P3 飞书一应用一助理、Web 多助理）](DEV-191-multi-assistant.md#v1-合并与部署2026-11-12p0--p2--p3--web)。四个切片逐文件三方合并进 dev 检出；飞书设置链接改为指向该助理自己的设置页；`system.md` 的 memory 说明按两层重写，prompt 升到 `2026-11-12.2`。Server 和 Web（`47a9d998efad669c`）已部署 dev，部署前备份为 `foundry-20261112-pre-dev191-v1.db.gz`；Worker 不需要发布。e2e-alice 的 API 和浏览器验收通过，等待人工验收。 已合入 main（PR #264）。
 
-2026-11-12 助理：[DEV-191 v1b 补充切片与最终验证](DEV-191-multi-assistant.md#v1b-补充合并与部署2026-11-12)。web2 与 srv2 共 25 个文件逐文件三方合并，无冲突；补上权限包引用校验、每助理设置链接、legacy memory 日志、两层 memory、身份资源勾选、默认助理菜单和执行模型继承摘要。prompt 按真实助理设置路径压到 `AGENTS.md` 上限内并升到 `2026-11-12.3`，golden 已重新生成。Server `5521876828437bbc…` 与 Web build `d0c667fcd552460a` 已部署 dev，PM2 online、`/healthz` 200；指定 Go/Web 检查和四项 UI 审计完成，hint 审计仅余两条已知失败。四张 e2e-alice 截图已保存；记忆层页面没有删除入口，本次合成条目已通过同源 knowledge `forget` 清理并复核为空，合成助理已删除，浏览器已登出并关闭。
+2026-11-12 助理：[DEV-191 v1b 补充切片与最终验证](DEV-191-multi-assistant.md#v1b-补充合并与部署2026-11-12)。web2 与 srv2 共 25 个文件逐文件三方合并，无冲突；补上权限包引用校验、每助理设置链接、legacy memory 日志、两层 memory、身份资源勾选、默认助理菜单和执行模型继承摘要。prompt 按真实助理设置路径压到 `AGENTS.md` 上限内并升到 `2026-11-12.3`，golden 已重新生成。Server `5521876828437bbc…` 与 Web build `d0c667fcd552460a` 已部署 dev，PM2 online、`/healthz` 200；指定 Go/Web 检查和四项 UI 审计完成，hint 审计仅余两条已知失败。四张 e2e-alice 截图已保存；记忆层页面没有删除入口，本次合成条目已通过同源 knowledge `forget` 清理并复核为空，合成助理已删除，浏览器已登出并关闭。 已合入 main（PR #264）。
 
-2026-11-12 助理：[DEV-194 executor 接入执行模型](DEV-194-executor-execution-models.md)。派出的 helper 改为按“助理覆盖 → 工作区 → 全局 → 旧角色规则”解析默认与 alternatives；worker group 复用现有成员选择。`dispatch_item` 可按序数或稳定 id 选择 alternative，列表外值拒绝；助理设置页复用共享执行模型组件，未覆盖时沿用工作区/全局。已部署 dev Server 与 Web，等待人工验收。
+2026-11-12 助理：[DEV-194 executor 接入执行模型](DEV-194-executor-execution-models.md)。派出的 helper 改为按“助理覆盖 → 工作区 → 全局 → 旧角色规则”解析默认与 alternatives；worker group 复用现有成员选择。`dispatch_item` 可按序数或稳定 id 选择 alternative，列表外值拒绝；助理设置页复用共享执行模型组件，未覆盖时沿用工作区/全局。已部署 dev Server 与 Web，等待人工验收。 已合入 main（PR #264）。
 
-2026-11-12 助理：[DEV-191 A1 多助理数据模型](DEV-191-multi-assistant.md#a1-交接p1-server多助理数据模型与助理身份2026-11-12)。新增 `assistants` 表，原 personal_agents 迁成默认助理；所有 pa_* 表、pending_items、knowledge_vaults 加上 `assistant_id`；新增 `/api/assistants` 及每条 `/api/assistants/{id}/…`，`/api/personal-agent` 保留为默认助理的别名；停止、上限、摘要、收件箱都按助理处理。已部署 dev Server，e2e-alice 验证通过；Web、P0、P2、P3 是后续切片。
+2026-11-12 助理：[DEV-191 A1 多助理数据模型](DEV-191-multi-assistant.md#a1-交接p1-server多助理数据模型与助理身份2026-11-12)。新增 `assistants` 表，原 personal_agents 迁成默认助理；所有 pa_* 表、pending_items、knowledge_vaults 加上 `assistant_id`；新增 `/api/assistants` 及每条 `/api/assistants/{id}/…`，`/api/personal-agent` 保留为默认助理的别名；停止、上限、摘要、收件箱都按助理处理。已部署 dev Server，e2e-alice 验证通过；Web、P0、P2、P3 是后续切片。 已合入 main（PR #264）。
 
 2026-11-12 Worker：[DEV-186 执行宿主轮换（多宿主并存）与编排效率规则](DEV-186-execution-host-rollover.md)。Worker 更新后新回合交给新宿主，旧宿主只留在跑的回合并在空闲后停掉；经两轮 review 与 limen-canada、CanWendeMac-mini 真机验证。同篇记录编排效率规则（DEV-187）。已部署 dev，等待提交窗口合入。
 

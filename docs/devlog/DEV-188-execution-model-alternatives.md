@@ -2,7 +2,9 @@
 
 ## 状态
 
-设计已与本人达成共识（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）；Server 和 Web 已实施并部署 dev，工作区保存修复与 Worker 组说明也已完成，待人工验收。未提交（等提交窗口）。
+已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+
+设计已与本人达成共识（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）；Server 和 Web 已实施并部署 dev，工作区保存修复与 Worker 组说明也已完成，待人工验收。
 
 ## 问题
 

@@ -2,7 +2,9 @@
 
 ## 状态
 
-概览页的 Git 状态说明和离线说明已改用共享 `FieldHint`，Web build `eca52bfb4caeeb3e` 已部署 dev；`audit-hints` 也补上了静态 `<Trans i18nKey>` 检测，只改检查脚本，因此没有再次部署 Web。未提交（等提交窗口）。
+已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+
+概览页的 Git 状态说明和离线说明已改用共享 `FieldHint`，Web build `eca52bfb4caeeb3e` 已部署 dev；`audit-hints` 也补上了静态 `<Trans i18nKey>` 检测，只改检查脚本，因此没有再次部署 Web。
 
 ## 问题
 
