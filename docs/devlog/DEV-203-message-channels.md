@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #265），已部署 dev；真实飞书消息的端到端由本人首次实测。
+已合入 main（PR #265，squash bb3f7fdd），已部署 dev；真实飞书消息的端到端由本人首次实测。
 
 v1 已实现、验证并部署 dev（Server、Web、7 台 Worker，2026-11-13 04:55 UTC+8），等本人体验与验收。设计 2026-11-13 经编排会话 “go”（带四项答复，见“待决的答复”）。来源：[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述的本人需求（2026-11-13 01:50）与回复决定的更正（见“取舍 · 回复由助理决定”）。前置：[DEV-191 §5 Channel](DEV-191-multi-assistant.md#5-channel)、[连接器扩展](../connector-extensions.md)、[DEV-196](DEV-196-assistant-progressive-disclosure.md)、[DEV-200](DEV-200-assistant-no-injection.md)、[DEV-202](DEV-202-needs-you-scope.md)。
 
@@ -272,6 +272,13 @@ message 7312… from 张三 (id 7201…) at 2026-11-13 10:02 +08:00 · mentions 
 - Web（子会话执行）：`tsc --noEmit`、13 项 UI 审计、`message-channel-model`/`assistant-conversation-order`/`app-navigation`/`pending-items`/`assistant-settings-connectors`/`assistants-web` 测试通过。
 - 真实 OpenLark（byte-dev，只读）：给本人的 ByteWork 助理建了一个验证通道（规则只认“我自己发的私聊 + `/dev203`”，OpenLark 只读、其他连接器关闭）。部署后 30 s 内开始经 byte-dev 长轮询，状态 running；约 15 分钟收到并过滤 163 条（全是群消息，均为“未匹配规则”，未存正文），映射出的 kind/mentionsMe/isSelf 与 OpenLark 一致。往自聊发测试消息的子会话按 olk skill 要求等本人亲自确认，没有发送，所以没有真实消息走完整条链。
 - 投递链路（真实助理，合成消息）：向同一通道插入一条明确标注“合成”的待投递记录，dispatcher 5 s 后经收件箱在 ByteWork 的 home 新建会话 `sess_1794516461657851283`（标题“DEV-203 验证（可删除） · DEV-203 合成会话”，首条输入是事实通知），记录状态随之变为 delivered。该会话随后因 ByteWork 所用的模型账号（profile hell-tw）额度用尽失败（429，额度在 04:02 UTC 恢复），记录如实变为 failed。验证通道与其记录随后已删除；该失败会话保留。
+- 助理在通道指引下的实际行为（2026-11-13 05:00，e2e-alice 默认助理，Codex gpt-6-astra，合成来源）：给 e2e-alice 的助理放一个夹具通道（来源是测试夹具，直接写入两条待投递记录，不碰 OpenLark；连接器全关；指引为编排给的英文原文），两条消息各进一个会话：
+  - 访问申请 → `sess_1794517142738224301`：先 `cat .agents/skills/channel-dev203fixture000001/SKILL.md`，再 `printenv FOUNDRY_SESSION_ID`，调用 `needs_you hand_over`（sessionId=本会话），生成 `pnd_51e7d6c8…`：source question、rule handed_over、handler person、handedReason assistant、open，note 含回复草稿；没有其他工具调用、没有外部写入。
+  - 简单问题 → `sess_1794517142111608485`：同样先读通道 skill，然后在会话里一句话作答，没有任何工具调用。
+  - Foundry 的“Loaded skills”事件只列 Foundry 选的 skill；通道 skill 由 Codex 原生发现并读取（上面的 cat）。
+  - 发现：“等你处理”卡片对 handed_over 条目原来只显示标题（note 第一行），多行 note 的草稿会被藏起来。改为 note 比标题多时显示 note（`pending-item-card.tsx`），Web `77349401c8f25d14` 已部署；截图 `.foundry/attachments/dev203/needs-you-live.png`（真实条目，未注入）显示完整草稿。
+  - 清理：两段会话已归档，条目已标为不需要，夹具通道经 API 删除。
+- 在合并 B3 后的 dev 树上重跑 `go test ./internal/httpapi -run 'TestMessageChannel|TestChannelInbox|TestNeedsYou'`：全部通过（之前失败的 `TestNeedsYouVisibilityFollowsAssistantScope` 也已由其切片修好）。
 - 截图（e2e-alice，正常比例 1440×1000，通道数据与一条“等你处理”只在浏览器内替换 GET 响应，未写入）：`.foundry/attachments/dev203/channels-settings.png`、`channels-deliveries.png`、`channels-editor.png`、`needs-you-draft.png`。
 
 ## 部署
@@ -284,7 +291,6 @@ message 7312… from 张三 (id 7201…) at 2026-11-13 10:02 +08:00 · mentions 
 ## 已知限制
 
 - 真实飞书消息还没走过完整链路（见上）；明早第一条消息就是验收。
-- 助理对通道 skill 的原生加载未在真实会话里观察到（会话因额度失败）；写入机制与 DEV-196 相同。
 - `program` / `triage` 过滤、流式 / CLI / webhook 来源、断档补拉、附件与图片、编辑 / 撤回事件推迟。
 - 删除通道会删除它的记录，之后它的旧会话不再按通道范围收窄（只按助理权限包）。
 
@@ -299,8 +305,9 @@ message 7312… from 张三 (id 7201…) at 2026-11-13 10:02 +08:00 · mentions 
 
 ## 时间线
 
-| 时间（UTC+8）    | 变化与证据                                                                            | 剩余动作           |
-| ---------------- | ------------------------------------------------------------------------------------- | ------------------ |
-| 2026-11-13 02:30 | Phase 1 设计；回复由助理决定（本人更正）写入取舍                                      | 等 go              |
-| 2026-11-13 04:20 | go 后实现 v1，worktree `foundry-dev203`；Go / Worker / Web 检查通过                   | 部署               |
-| 2026-11-13 04:31 | Server / Web / 7 台 Worker 部署；真实 OpenLark 轮询与过滤、合成消息投递到真实助理会话 | 本人明早体验与验收 |
+| 时间（UTC+8）    | 变化与证据                                                                                                                                                         | 剩余动作           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| 2026-11-13 02:30 | Phase 1 设计；回复由助理决定（本人更正）写入取舍                                                                                                                   | 等 go              |
+| 2026-11-13 04:20 | go 后实现 v1，worktree `foundry-dev203`；Go / Worker / Web 检查通过                                                                                                | 部署               |
+| 2026-11-13 04:31 | Server / Web / 7 台 Worker 部署；真实 OpenLark 轮询与过滤、合成消息投递到真实助理会话                                                                              | 本人明早体验与验收 |
+| 2026-11-13 05:15 | e2e-alice 实测：通道 skill 被读取、访问申请交给本人（handler person，带草稿）、简单问题会话内作答无外部写入；needs-you 卡片显示多行草稿，Web 部署；worktree 已删除 | 本人明早体验       |

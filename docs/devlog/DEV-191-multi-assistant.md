@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #264，squash 7e2a354c）；[记忆自动整理](#记忆自动整理2026-11-12worktree-memory-sort)一节已合入 main（PR #265）。
+已合入 main（PR #264，squash 7e2a354c）；[记忆自动整理](#记忆自动整理2026-11-12worktree-memory-sort)一节已合入 main（PR #265，squash bb3f7fdd）。
 
 设计草案，等本人拍板（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）。现状地图见只读调查 [sess_1794474387399464358](https://dev.foundryapp.app/chats/sess_1794474387399464358)，本文中的 path:line 都来自那次调查。
 
