@@ -204,9 +204,12 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 提示词放在 `apps/server/internal/personalagent/prompt/system.md`（嵌入二进制，带版本号 `prompt_version`）。助理会话不经系统提示词拿到任何东西（DEV-109，2026-11-02，本人决定：不往系统提示词里注入）。Server 在每次 `run_session` 时计算两部分：
 
-- **助理目录的 `AGENTS.md`**（`prompt.AgentsFile`，经 `run_session.personalAgentFiles` 由 Worker 写入，`session/personal-agent-files.ts`）：这份提示词按设置填好（名字、语言、风格），加上本人能打开的页面；示例另写到 `.foundry/assistant-examples.md`（`prompt.ExamplesFile`），`AGENTS.md` 只留一行指引。Claude Code（2.1.277 起，目录里没有 `CLAUDE.md` 时）与 Codex 都原生读取它。它不含关于这个人的任何事实，只随设置、提示词版本或页面地址变化；变了 Worker 换新的运行时去读。大小受 `prompt.AgentsFileMaxBytes`（28 KiB）约束，给 Codex 的 32 KiB 合计上限留出本人全局 `AGENTS.md` 的余量。
-- **本轮上下文**（`prompt.TurnContext`）：现在的日期时间、本人确认过的记忆（最新的在前，≤ 2,000 字符，其余用 `read_memory`）、本人在设置里写的额外要求、各项操作要不要先问本人的规则、哪些电脑在线、本人清单上未完成的事、进行中的事、单聊原来的去处，以“[Context from Foundry for this turn…]”标明是 Foundry 的话、不是本人的话，附在这一轮输入的后面（本人消息开头的 `/skill` 仍然有效）。存下的输入仍是本人的原话，`remember` 据此判定来源。这部分不落盘。
-- **用工具读**：项目用 `find_workspace` / `get_workspace`，电脑及其标签与发现的事实用 `list_computers`，更早的记忆用 `read_memory`。不再常驻项目与电脑索引。
+不注入系统提示词，也不注入每轮引导（DEV-200，本人原则：“避免注入系统提示词和每轮引导”）：长期指导在 `AGENTS.md` 与助理 skills 里，由运行时原生加载；动态事实由工具按需读，或以简短的事实通知到达。
+
+- **助理目录的 `AGENTS.md`**（`prompt.AgentsFile`，经 `run_session.personalAgentFiles` 由 Worker 写入，`session/personal-agent-files.ts`）：按设置填好的提示词（名字、语言、风格），加上本人的规则（设置里的额外要求、各项操作要不要先问本人）、本人确认过的记忆（两层，最新的在前，≤ 2,000 字符，其余用 `read_memory`）、可读的记忆发布、单聊原来的去处和本人能打开的页面。Claude Code（2.1.277 起，目录里没有 `CLAUDE.md` 时）与 Codex 都在会话开始时原生读取它。不含实时状态（时间、在线电脑、清单、进行中的事）。典型大小不超过 DEV-196 时的 7,840 字节（`prompt_test` 的 `agentsFileBudget`），上限 `prompt.AgentsFileMaxBytes`（28 KiB）。示例在 `.foundry/assistant-examples.md`，项目与电脑索引在 `.foundry/project-index.md`（`prompt.ProjectIndexFile`，写入时刻的快照），`AGENTS.md` 各留一行指引。
+- **本轮上下文**（`prompt.TurnContext`）：只有一行本人时区的当前时间（运行时不知道本人时区）；经收件箱捕获的消息再加一行回执（receipt id、原始来源、receivedAt、时区，重试时加上一次尝试的会话）。以“[Context from Foundry for this turn…]”标明，附在这一轮输入后面；存下的输入仍是本人的原话。
+- **用工具读**：电脑与在线状态 `list_computers`，清单 `read_list`，跟进的事 `list_tasks`，等本人处理的事 `needs_you` op list，项目 `find_workspace` / `get_workspace`，记忆 `read_memory`。
+- **Foundry 通知**（以 `[Foundry] ` 开头）：helper 完成、失败、提问、静默、连不上服务，电脑上线，本人对卡片的回答，到点提醒和每日小结。只写发生了什么、状态、简短细节、链接和下一次调用要用的 id；怎么处理写在助理 skills 里。
 
 `{{…}}` 由 Server 填写。
 

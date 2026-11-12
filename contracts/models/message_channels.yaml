@@ -1,0 +1,435 @@
+openapi: 3.1.0
+info:
+  title: Foundry message channels
+  version: 1.0.0
+  description:
+    Message channels (DEV-203) bring messages from a connector's event feed to one assistant.
+    Part of the Foundry contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts`
+    generates its TypeScript types and Go models (apps/server/internal/store/message_channels_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    MessageEnvelope:
+      description:
+        One message as a channel sees it, whatever the source. IM sources fill conversation,
+        thread, sender and mentionsMe; other sources use the same fields for their own notions
+        (a mail thread, an alert group). attributes holds a few source-specific values.
+      type: object
+      required: [id, kind, op, conversation, sender, mentionsMe, text]
+      additionalProperties: false
+      properties:
+        id:
+          description: Unique within the source; the channel's deduplication key.
+          type: string
+        kind:
+          type: string
+        op:
+          type: string
+        occurredAt:
+          type: string
+        conversation:
+          $ref: "#/components/schemas/MessageEnvelopeConversation"
+        thread:
+          $ref: "#/components/schemas/MessageEnvelopeThread"
+        messageId:
+          type: string
+        sender:
+          $ref: "#/components/schemas/MessageEnvelopeSender"
+        mentionsMe:
+          type: boolean
+        text:
+          type: string
+        textTruncated:
+          type: boolean
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+    MessageEnvelopeConversation:
+      type: object
+      required: [id, kind]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/MessageConversationKind"
+        name:
+          type: string
+    MessageConversationKind:
+      type: string
+      enum: [direct, group, channel, feed, other]
+      x-go-type: string
+    MessageEnvelopeThread:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        isReply:
+          type: boolean
+    MessageEnvelopeSender:
+      type: object
+      required: [id]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        isSelf:
+          type: boolean
+        isBot:
+          type: boolean
+    MessageChannelTriState:
+      description: A condition on a yes/no envelope field; any ignores it.
+      type: string
+      enum: [any, "yes", "no"]
+      x-go-type: string
+    MessageChannelRule:
+      description:
+        One filter rule; a message is kept when any enabled rule matches it. Every condition of a
+        rule must hold. textPrefixes are compared after leading mentions and spaces are removed;
+        an empty list accepts any text.
+      type: object
+      required:
+        [id, enabled, conversationKinds, mentionsMe, fromSelf, textPrefixes]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        enabled:
+          type: boolean
+        conversationKinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageConversationKind"
+        mentionsMe:
+          $ref: "#/components/schemas/MessageChannelTriState"
+        fromSelf:
+          $ref: "#/components/schemas/MessageChannelTriState"
+        textPrefixes:
+          type: array
+          items:
+            type: string
+        caseSensitive:
+          type: boolean
+        conversationIds:
+          type: array
+          items:
+            type: string
+        excludeConversationIds:
+          type: array
+          items:
+            type: string
+        senderIds:
+          type: array
+          items:
+            type: string
+        excludeSenderIds:
+          type: array
+          items:
+            type: string
+    MessageChannelFilters:
+      type: object
+      required: [rules]
+      additionalProperties: false
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelRule"
+    MessageChannelConnectorScope:
+      description:
+        One connector account for the channel's sessions, capped by the assistant's permission
+        package. writes direct lets them write through it without a confirmation card.
+      type: object
+      required: [accountId, level, writes]
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+        level:
+          type: string
+          enum: ["off", read, write]
+          x-go-type: string
+        writes:
+          type: string
+          enum: [confirm, direct]
+          x-go-type: string
+    MessageChannelScope:
+      description:
+        What the channel's sessions and their helpers may use, intersected with the assistant's
+        permission package. connectorDefault inherit keeps the package's level for accounts not
+        listed; off turns them off. workspaces listed keeps only the included ones.
+      type: object
+      required: [connectorDefault, connectors, workspaces, identityResources]
+      additionalProperties: false
+      properties:
+        connectorDefault:
+          type: string
+          enum: [inherit, "off"]
+          x-go-type: string
+        connectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelConnectorScope"
+        workspaces:
+          $ref: "./personal_agent.yaml#/components/schemas/PermissionListRule"
+        identityResources:
+          type: array
+          items:
+            type: string
+    MessageChannelLimits:
+      type: object
+      required: [perHour, perDay, concurrency]
+      additionalProperties: false
+      properties:
+        perHour:
+          type: integer
+        perDay:
+          type: integer
+        concurrency:
+          type: integer
+    MessageChannelSource:
+      description: The connector instance whose event feed the channel reads.
+      type: object
+      required: [kind, accountId]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        accountId:
+          type: string
+        instanceId:
+          type: string
+        label:
+          type: string
+    MessageChannelInput:
+      description: What the person sets on a channel.
+      type: object
+      required:
+        [name, enabled, source, filters, guide, sessionKey, scope, limits]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+        source:
+          $ref: "#/components/schemas/MessageChannelSource"
+        filters:
+          $ref: "#/components/schemas/MessageChannelFilters"
+        guide:
+          description: The person's handling principles; becomes the channel's skill in the assistant's home.
+          type: string
+        sessionKey:
+          description: conversation gives each source conversation one session; thread one per thread.
+          type: string
+          enum: [conversation, thread]
+          x-go-type: string
+        scope:
+          $ref: "#/components/schemas/MessageChannelScope"
+        limits:
+          $ref: "#/components/schemas/MessageChannelLimits"
+        resumeFromNow:
+          description: On enabling a paused channel, start from now instead of where it stopped.
+          type: boolean
+    MessageChannel:
+      type: object
+      required:
+        [
+          id,
+          assistantId,
+          name,
+          enabled,
+          source,
+          filters,
+          guide,
+          sessionKey,
+          scope,
+          limits,
+          createdAt,
+          updatedAt,
+        ]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        assistantId:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        source:
+          $ref: "#/components/schemas/MessageChannelSource"
+        filters:
+          $ref: "#/components/schemas/MessageChannelFilters"
+        guide:
+          type: string
+        sessionKey:
+          type: string
+          enum: [conversation, thread]
+          x-go-type: string
+        scope:
+          $ref: "#/components/schemas/MessageChannelScope"
+        limits:
+          $ref: "#/components/schemas/MessageChannelLimits"
+        skillName:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    MessageChannelState:
+      type: string
+      enum:
+        [
+          starting,
+          running,
+          paused,
+          waiting_device,
+          needs_permission,
+          unsupported,
+          backing_off,
+          held,
+        ]
+      x-go-type: string
+    MessageChannelCounts:
+      type: object
+      required: [received, matched, delivered, held, dropped]
+      additionalProperties: false
+      properties:
+        received:
+          type: integer
+        matched:
+          type: integer
+        delivered:
+          type: integer
+        held:
+          type: integer
+        dropped:
+          type: integer
+    MessageChannelStatus:
+      type: object
+      required: [state, counts]
+      additionalProperties: false
+      properties:
+        state:
+          $ref: "#/components/schemas/MessageChannelState"
+        detail:
+          type: string
+        lastPollAt:
+          type: string
+        lastEventAt:
+          type: string
+        lastErrorAt:
+          type: string
+        gapAt:
+          type: string
+        counts:
+          description: The last 24 hours.
+          $ref: "#/components/schemas/MessageChannelCounts"
+    MessageChannelPrerequisites:
+      description: Whether the assistant may read the source and its home workspace has it bound.
+      type: object
+      required: [allowed, bound, level]
+      additionalProperties: false
+      properties:
+        allowed:
+          type: boolean
+        bound:
+          type: boolean
+        level:
+          type: string
+    MessageChannelView:
+      type: object
+      required: [channel, status, prerequisites, sessionIds]
+      additionalProperties: false
+      properties:
+        channel:
+          $ref: "#/components/schemas/MessageChannel"
+        status:
+          $ref: "#/components/schemas/MessageChannelStatus"
+        prerequisites:
+          $ref: "#/components/schemas/MessageChannelPrerequisites"
+        sessionIds:
+          description: The channel's sessions in the assistant's home.
+          type: array
+          items:
+            type: string
+    MessageChannelList:
+      type: object
+      required: [channels, sources]
+      additionalProperties: false
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelView"
+        sources:
+          description: Connector instances whose descriptor declares an event feed.
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelSource"
+    MessageChannelDeliveryStatus:
+      type: string
+      enum: [dropped, held, queued, delivered, done, failed]
+      x-go-type: string
+    MessageChannelAction:
+      description: Something the channel's session did after the message arrived.
+      type: object
+      required: [at, kind, summary]
+      additionalProperties: false
+      properties:
+        at:
+          type: string
+        kind:
+          type: string
+          enum: [connector_write, connector_refused, needs_you]
+          x-go-type: string
+        summary:
+          type: string
+    MessageChannelDelivery:
+      type: object
+      required: [id, channelId, envelope, status, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        envelope:
+          $ref: "#/components/schemas/MessageEnvelope"
+        status:
+          $ref: "#/components/schemas/MessageChannelDeliveryStatus"
+        reason:
+          description: For dropped, why; for queued, what it waits for.
+          type: string
+        rule:
+          type: string
+        sessionId:
+          type: string
+        createdAt:
+          type: string
+        deliveredAt:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelAction"
+    MessageChannelDeliveryList:
+      type: object
+      required: [deliveries]
+      additionalProperties: false
+      properties:
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelDelivery"

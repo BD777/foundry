@@ -425,6 +425,23 @@ func TestPersonalAgentLiveAllowsOwnedUnboundFeishuAccountUntilSwitchedOff(t *tes
 	}
 }
 
+func TestAssistantConnectorDefaultOffRefusesUnlistedAccount(t *testing.T) {
+	f := newFixture()
+	f.pipe.Scheme.Provider = "feishu"
+	f.account.Provider = "feishu"
+	f.account.WorkspaceIDs = nil
+	f.session.WorkspaceID = "w_pa"
+	f.grant.WorkspaceID = "w_pa"
+	pkg := permission.DefaultPackage("alice", "pp_alice")
+	pkg.ConnectorDefault = store.ConnectorAccessLevelOff
+	f.pkg = &pkg
+	f.assistant = &store.PersonalAgent{UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1", PermissionPackageID: pkg.ID}
+	subject := Subject{SessionID: "s1", WorkspaceID: "w_pa", DeviceID: "d1", UserID: "alice", AccountID: "a1", AppID: "app1"}
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
+		t.Fatalf("unlisted account under the off default: %v", err)
+	}
+}
+
 func TestAssistantConnectorReadOnlyRefusesWrites(t *testing.T) {
 	f := newFixture()
 	f.enableAssistant(store.ConnectorAccessLevelRead)

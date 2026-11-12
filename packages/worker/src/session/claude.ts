@@ -1,5 +1,4 @@
 import { selectedExternalConnection } from "../harness/external-connection.js";
-import { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { redactSecrets } from "../platform/secret-redaction.js";
@@ -91,18 +90,10 @@ export const claudeHarness: HarnessAdapter = {
           ),
           connectionAdapter: selectedExternalConnection(profile),
           model,
-          // TODO(native-prompts): replaces Claude Code's own system prompt,
-          // and can paste the project's instruction files in as text instead
-          // of Claude Code loading them natively. Rework with the Issue role
-          // refactor (docs/architecture-modules.md › D4 修订).
-          systemPrompt: [
-            spec.systemPrompt,
-            policy.projectInstructions && workspace
-              ? claudeWorkspaceInstructions(workspace.path)
-              : "",
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
+          // TODO(native-prompts): replaces Claude Code's own system prompt.
+          // Rework with the Issue role refactor
+          // (docs/architecture-modules.md › D4 修订).
+          systemPrompt: spec.systemPrompt,
           // Read-only inspection tools inside the directory. The listed tools
           // are pre-approved; anything else falls through to canUseTool below
           // and is denied. Writes are refused by the sandbox regardless.

@@ -122,7 +122,11 @@ func TestSecondAssistantStartsWithNoWorkspacesAndCanBeDeleted(t *testing.T) {
 	if pkg.IdentityResources.Scope != store.PermissionListScopeListed || len(pkg.IdentityResources.Allowed) != 0 {
 		t.Fatalf("second package identity resources = %+v", pkg.IdentityResources)
 	}
-	if pkg, err := db.GetPermissionPackage(ctx, "person", first.PermissionPackageID); err != nil || pkg.IdentityResources.Scope != store.PermissionListScopeAll {
+	if pkg.ConnectorDefault != store.ConnectorAccessLevelOff {
+		t.Fatalf("second package connector default = %q", pkg.ConnectorDefault)
+	}
+	if pkg, err := db.GetPermissionPackage(ctx, "person", first.PermissionPackageID); err != nil ||
+		pkg.IdentityResources.Scope != store.PermissionListScopeAll || pkg.ConnectorDefault != store.ConnectorAccessLevelWrite {
 		t.Fatalf("default package identity resources = %+v (%v)", pkg.IdentityResources, err)
 	}
 	if agents, err := db.ListAssistants(ctx, "person"); err != nil || len(agents) != 2 || agents[0].ID != first.ID || agents[1].ID != second.ID {
@@ -168,6 +172,38 @@ func TestSecondAssistantStartsWithNoWorkspacesAndCanBeDeleted(t *testing.T) {
 	// Its workspace is free for a new assistant.
 	if _, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "person", WorkspaceID: "ws_second", HomeDeviceID: "dev_home"}); err != nil {
 		t.Fatalf("workspace not released: %v", err)
+	}
+}
+
+// Packages stored before connectorDefault existed migrate to write, while an
+// explicit off default on a later assistant survives every rerun.
+func TestConnectorDefaultMigrationIsIdempotent(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	first, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "person", WorkspaceID: "ws_first", HomeDeviceID: "dev_home"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "person", WorkspaceID: "ws_second", HomeDeviceID: "dev_home"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execAll(t, db, `UPDATE permission_packages SET payload_json = json_remove(payload_json, '$.connectorDefault') WHERE id = '`+first.PermissionPackageID+`'`)
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := db.setupPermissionPackages(ctx); err != nil {
+			t.Fatalf("migration attempt %d: %v", attempt+1, err)
+		}
+		for id, want := range map[string]store.ConnectorAccessLevel{
+			first.PermissionPackageID:  store.ConnectorAccessLevelWrite,
+			second.PermissionPackageID: store.ConnectorAccessLevelOff,
+		} {
+			var got string
+			if err := db.conn().QueryRowContext(ctx, `SELECT coalesce(json_extract(payload_json, '$.connectorDefault'), '') FROM permission_packages WHERE id = ?`, id).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("attempt %d package %s connectorDefault = %q, want %q", attempt+1, id, got, want)
+			}
+		}
 	}
 }
 

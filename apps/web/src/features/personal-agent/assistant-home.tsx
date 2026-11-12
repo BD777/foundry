@@ -3,16 +3,21 @@ import { FieldHint } from "../../components/ui/field";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeftRight,
+  ChevronDown,
   ChevronRight,
   OctagonX,
   Play,
+  Plus,
   SlidersHorizontal,
+  Sparkles,
+  UsersRound,
 } from "lucide-react";
 import type {
   AgentProfileProjection,
+  AssistantSummary,
   DeviceProjection,
   PersonalAgent,
+  PersonalAgentOverview,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Conversation } from "../../components/conversation/conversation";
@@ -21,7 +26,18 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { DividedList } from "../../components/ui/divided-list";
+import {
+  DropdownMenu,
+  DropdownMenuPortal,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
 import { EmptyState } from "../../components/ui/empty-state";
+import {
+  DropdownMenuEntry,
+  DropdownMenuLabel,
+  DropdownMenuSurface,
+} from "../../components/ui/row-menu-parts";
 import { Subheading } from "../../components/ui/subheading";
 import { PaMuted } from "./pa-muted";
 import { serverErrorText } from "../../lib/errors";
@@ -34,6 +50,7 @@ import {
 } from "./assistant-model";
 import { AssistantGate } from "./assistant-gate";
 import type { AssistantFeatureEvent } from "./assistant-events";
+import { AssistantCreateDialog } from "./assistant-list";
 import { PersonList } from "./person-list";
 import { ProposalCard } from "./proposal-card";
 import { TaskList } from "./task-list";
@@ -44,22 +61,14 @@ import { Skeleton } from "../../components/ui/loading";
 export interface AssistantHomeProps {
   /** The assistant this route belongs to; absent only while bootstrapping. */
   assistantId?: string;
+  /** For switching assistants from the conversation title. */
+  assistants?: AssistantSummary[];
   /** Every computer the person can see; their own ones carry `owned`. */
   devices: DeviceProjection[];
   /** What the computers run, for the assistant's conversations. */
   agentProfiles: AgentProfileProjection[];
   /** For the names of the projects work goes to. */
   workspaces: WorkspaceProjection[];
-  /**
-   * The person's "needs you" list (§h): its open count and newest items,
-   * the same data as its page.
-   */
-  needsYou?: {
-    open: number;
-    items: { id: string; title: string; where: string }[];
-  };
-  /** Multiple assistants: offer the list as the switch surface. */
-  showAssistantSwitcher?: boolean;
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
@@ -70,10 +79,9 @@ export interface AssistantHomeProps {
  */
 export function AssistantHome({
   assistantId,
+  assistants = [],
   devices,
   workspaces,
-  needsYou,
-  showAssistantSwitcher = false,
   onEvent,
 }: AssistantHomeProps) {
   const assistant = useAssistant(assistantId);
@@ -89,14 +97,14 @@ export function AssistantHome({
           <AssistantHomeReady
             agent={agent}
             assistant={assistant}
+            assistants={assistants}
             devices={devices}
             home={home}
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
-            needsYou={needsYou}
+            needsYou={overview.needsYou}
             onEvent={onEvent}
-            showAssistantSwitcher={showAssistantSwitcher}
             workspaces={workspaces}
           />
         );
@@ -108,22 +116,22 @@ export function AssistantHome({
 function AssistantHomeReady({
   agent,
   assistant,
+  assistants,
   devices,
   home,
   homeOnline,
   needsYou,
   onEvent,
-  showAssistantSwitcher,
   workspaces,
 }: {
   agent: PersonalAgent;
   assistant: AssistantController;
+  assistants: AssistantSummary[];
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
-  needsYou: AssistantHomeProps["needsYou"];
+  needsYou: PersonalAgentOverview["needsYou"];
   onEvent: (event: AssistantFeatureEvent) => void;
-  showAssistantSwitcher: boolean;
   workspaces: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("personalAgent");
@@ -134,8 +142,10 @@ function AssistantHomeReady({
   );
   const [switching, setSwitching] = useState<"stop" | "resume">();
   const [switchError, setSwitchError] = useState("");
+  const [creating, setCreating] = useState(false);
   const stopped = agent.state === "stopped";
   const name = agent.settings.assistantName.trim() || t("defaultName");
+  const canCreate = devices.some((device) => device.owned);
   const namedTasks = useMemo(
     () =>
       assistant.tasks.map((task) => ({
@@ -329,7 +339,17 @@ function AssistantHomeReady({
       <header className="col-span-full grid gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
           <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
-            {name}
+            <AssistantTitleMenu
+              assistants={assistants}
+              canCreate={canCreate}
+              currentAssistantId={agent.id}
+              name={name}
+              onAll={() => onEvent({ type: "assistants.open" })}
+              onCreate={() => setCreating(true)}
+              onSelect={(assistantId) =>
+                onEvent({ type: "assistant.open", assistantId })
+              }
+            />
           </h1>
           <Badge tone={stopped ? "warn" : "online"}>
             {stopped ? t("home.stopped.title") : t("settings.status.running")}
@@ -367,15 +387,6 @@ function AssistantHomeReady({
             <SlidersHorizontal aria-hidden="true" size={15} />
             {t("home.openSettings")}
           </Button>
-          {showAssistantSwitcher ? (
-            <Button
-              onClick={() => onEvent({ type: "assistants.open" })}
-              variant="ghost"
-            >
-              <ArrowLeftRight aria-hidden="true" size={15} />
-              {t("assistants.switch")}
-            </Button>
-          ) : null}
         </div>
         {switchError ? (
           <ToastFeedback tone="error" title={t("loadFailed")}>
@@ -556,6 +567,94 @@ function AssistantHomeReady({
           tasks={namedTasks}
         />
       </aside>
+      <AssistantCreateDialog
+        devices={devices}
+        onClose={() => setCreating(false)}
+        onCreated={(assistantId) =>
+          onEvent({ type: "assistant.created", assistantId })
+        }
+        open={creating}
+      />
     </div>
+  );
+}
+
+function AssistantTitleMenu({
+  assistants,
+  canCreate,
+  currentAssistantId,
+  name,
+  onAll,
+  onCreate,
+  onSelect,
+}: {
+  assistants: AssistantSummary[];
+  canCreate: boolean;
+  currentAssistantId: string;
+  name: string;
+  onAll: () => void;
+  onCreate: () => void;
+  onSelect: (assistantId: string) => void;
+}) {
+  const { t } = useTranslation("personalAgent");
+  const label = t("assistants.switcher.open");
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`${label}: ${name}`}
+          className="h-auto min-w-0 max-w-full justify-start gap-1.5 rounded-sm px-0 py-0 text-left text-2xl leading-tight font-semibold whitespace-normal wrap-anywhere text-ink active:scale-100"
+          title={name}
+          variant="ghost"
+        >
+          <span className="min-w-0">{name}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className="flex-none text-ink-muted"
+            size={18}
+          />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuPortal>
+        <DropdownMenuSurface
+          align="start"
+          aria-label={label}
+          className="min-w-[240px]"
+          side="bottom"
+        >
+          <DropdownMenuLabel>{label}</DropdownMenuLabel>
+          {assistants.map((assistant) => {
+            const assistantName = assistant.name.trim() || t("defaultName");
+            return (
+              <DropdownMenuEntry
+                icon={<Sparkles aria-hidden="true" size={15} />}
+                key={assistant.id}
+                onSelect={() => onSelect(assistant.id)}
+                reason={
+                  assistant.isDefault ? t("assistants.default") : undefined
+                }
+                selected={assistant.id === currentAssistantId}
+              >
+                {assistantName}
+              </DropdownMenuEntry>
+            );
+          })}
+          <DropdownMenuSeparator />
+          <DropdownMenuEntry
+            icon={<UsersRound aria-hidden="true" size={15} />}
+            onSelect={onAll}
+          >
+            {t("assistants.all")}
+          </DropdownMenuEntry>
+          <DropdownMenuEntry
+            disabled={!canCreate}
+            icon={<Plus aria-hidden="true" size={15} />}
+            onSelect={onCreate}
+          >
+            {t("assistants.new")}
+          </DropdownMenuEntry>
+        </DropdownMenuSurface>
+      </DropdownMenuPortal>
+    </DropdownMenu>
   );
 }

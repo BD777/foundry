@@ -16,7 +16,10 @@ import {
   useWorkspaceChoiceRedirect,
 } from "./app/use-app-location";
 import { useAppRouteSync } from "./app/use-app-route-sync";
-import { useAssistantRouteResolution } from "./app/use-assistant-route-resolution";
+import {
+  assistantEntryRoute,
+  useAssistantRouteResolution,
+} from "./app/use-assistant-route-resolution";
 import { useAssistantShell } from "./app/use-assistant-shell";
 import { useAssistants } from "./app/use-assistants";
 import { useChatView } from "./app/use-chat-view";
@@ -24,17 +27,21 @@ import { useCurrentWorkspace } from "./app/use-current-workspace";
 import { useDocumentTitle } from "./app/use-document-title";
 import { useIssueDraftRequest } from "./app/use-issue-draft-request";
 import { useShellPreferences } from "./app/use-shell-preferences";
+import { storedAssistantId } from "./app/shell-preferences";
 import { useViewScrollReset } from "./app/use-view-scroll-reset";
 import { useWorkspaceData } from "./app/use-workspace-data";
 import { viewErrorLabel, viewErrorResetKey } from "./app/view-error-policy";
 import { workspaceFeatureEventHandler } from "./app/workspace-feature-events";
 import { needsWorkspaceChoice } from "./app/workspace-selectors";
+import { useAccountSession } from "./app/accounts-gate";
+import type { SidebarView } from "./lib/routes";
 
 export function App() {
   const { t } = useTranslation("shell");
+  const account = useAccountSession();
   const location = useAppLocation();
   const { directory: assistants, reload: reloadAssistants } = useAssistants();
-  useAssistantRouteResolution(location, assistants);
+  useAssistantRouteResolution(location, assistants, account.user?.id ?? "");
   const { activeView, selectedChatId, selectedDeviceId, selectedIssueId } =
     location;
   const [, setNotice] = useTransientNotice();
@@ -89,6 +96,10 @@ export function App() {
   useViewScrollReset(activeView, selectedIssueId);
 
   const current = useCurrentWorkspace(data, selectedIssueId);
+  const currentAssistant =
+    assistants.assistants.find(
+      (assistant) => assistant.id === location.selectedAssistantId,
+    ) ?? assistants.assistants.find((assistant) => assistant.isDefault);
   useDocumentTitle({
     view: activeView,
     workspaceName: data.workspace.name,
@@ -115,6 +126,23 @@ export function App() {
     demoFallback: workspaceData.demoFallback,
     onRetry: () => void workspaceData.refreshData({ silent: true }),
   });
+  function selectSidebarView(view: SidebarView): void {
+    if (view !== "assistant") {
+      location.selectSidebarView(view);
+      return;
+    }
+    const entry = assistantEntryRoute(
+      assistants.assistants,
+      storedAssistantId(account.user?.id ?? ""),
+    );
+    if (entry.view === "assistant") {
+      location.setSelectedAssistantId(entry.assistantId);
+      location.setActiveView("assistant");
+    } else {
+      location.setSelectedAssistantId(undefined);
+      location.setActiveView("assistants");
+    }
+  }
 
   return (
     <FoundryShell
@@ -124,7 +152,7 @@ export function App() {
     >
       <AppSidebar
         activeView={activeView}
-        assistantCount={assistants.assistants.length}
+        assistantName={currentAssistant?.name.trim() ?? ""}
         interfaceMode={assistantShell.interfaceMode}
         counts={{
           review: current.reviewCount,
@@ -132,7 +160,7 @@ export function App() {
           activeSkills: current.activeSkillCount,
           pending: pending.list?.open ?? 0,
         }}
-        onNavSelect={location.selectSidebarView}
+        onNavSelect={selectSidebarView}
         onNotice={setNotice}
         preferences={preferences}
         status={status}

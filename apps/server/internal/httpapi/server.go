@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
@@ -99,6 +100,7 @@ type Backend interface {
 	store.KnowledgeEntryStore
 	store.KnowledgeMigrationStore
 	store.KnowledgeLegacyTransferStore
+	store.MemorySortStore
 	store.KnowledgeReplicaCleanupStore
 	store.KnowledgePublicationStore
 	store.FeishuIssueThreads
@@ -200,6 +202,8 @@ type Server struct {
 	// assistant is the person's assistant at work
 	// (personalagent/assistant), over the ports in personal_agent_ports.go.
 	assistant *assistant.Service
+	// messageChannels runs the assistants' message channels (DEV-203).
+	messageChannels *channels.Runner
 	// skillRepos reads git repositories for the skill library; repoMu runs
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
@@ -288,6 +292,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.runs = run.New(store, runAccounts{server})
 	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
 	server.assistant = newAssistant(server, sessionEvents)
+	server.messageChannels = newMessageChannelRunner(server)
 	devices := newDeviceEvents(stream, store, data, server)
 	devices.workspaceContentChanged = server.refreshWorkspaceDigests
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner

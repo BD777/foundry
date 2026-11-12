@@ -217,13 +217,19 @@ export function isAssistantSession(session: AgentSession): boolean {
   );
 }
 
-/** The conversation's latest sessions, oldest first. */
+/**
+ * The conversation's latest sessions, oldest first; `excluded` holds
+ * sessions that are not the person's (a message channel's).
+ */
 export function recentAssistantSessions(
   sessions: AgentSession[],
   limit: number,
+  excluded?: ReadonlySet<string>,
 ): AgentSession[] {
   return sessions
-    .filter(isAssistantSession)
+    .filter(
+      (session) => isAssistantSession(session) && !excluded?.has(session.id),
+    )
     .sort(
       (a, b) =>
         Date.parse(a.startedAt ?? a.lastActivityAt ?? "") -

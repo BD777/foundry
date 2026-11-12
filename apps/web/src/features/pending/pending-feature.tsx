@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/loading";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
+  navigateToAssistantSettings,
   navigateToChat,
   navigateToChatMessage,
   navigateToConnectors,
@@ -19,7 +20,9 @@ import { PendingItemCard } from "./pending-item-card";
 import {
   groupPendingItems,
   pendingByAssistant,
+  pendingMatchesAssistant,
   pendingPersonal,
+  type PendingAssistantFilter,
   type PendingFilter,
 } from "./pending-model";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
@@ -30,6 +33,8 @@ import { PageHeader } from "../../components/ui/page-header";
 /** Opens where an item was found: its message in the chat, or its Issue. */
 export function openPendingItem(item: PendingItem): void {
   if (item.source === "bundle_update") navigateToSkillLibrary();
+  else if (item.source === "message_channel")
+    navigateToAssistantSettings("channels", item.assistantId);
   else if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
   else if (item.issueId) navigateToIssue(item.issueId);
   else if (item.sessionId)
@@ -43,35 +48,73 @@ export function openPendingItem(item: PendingItem): void {
 export function PendingFeature({ pending }: { pending: PendingItems }) {
   const { t } = useTranslation("pending");
   const [filter, setFilter] = useState<PendingFilter>("open");
+  const [assistantFilter, setAssistantFilter] =
+    useState<PendingAssistantFilter>("all");
   const { list } = pending;
+  const filteredItems = useMemo(
+    () =>
+      list?.items.filter((item) =>
+        pendingMatchesAssistant(item, assistantFilter),
+      ) ?? [],
+    [assistantFilter, list],
+  );
   const groups = useMemo(
     () =>
       list
         ? groupPendingItems(
-            list.items,
+            filteredItems,
             filter,
             t("page.untitled"),
             t("page.personal"),
           )
         : [],
-    [list, filter, t],
+    [list, filteredItems, filter, t],
   );
   const assistantItems = useMemo(
-    () => list?.items.filter(pendingByAssistant) ?? [],
-    [list],
+    () => filteredItems.filter(pendingByAssistant),
+    [filteredItems],
+  );
+  const assistantOptions = useMemo(
+    () => [
+      { value: "all" as const, label: t("page.allAssistants") },
+      ...(list?.assistants ?? []).map((assistant) => ({
+        value: `assistant:${assistant.id}` as const,
+        label:
+          assistant.name ||
+          (assistant.isDefault
+            ? t("page.defaultAssistant")
+            : t("page.unnamedAssistant")),
+      })),
+      { value: "none" as const, label: t("page.noAssistant") },
+    ],
+    [list, t],
   );
   return (
     <PageSurface variant="pending">
       <PageHeader title={t("page.title")} description={t("page.intro")} />
-      <SegmentedControl<PendingFilter>
-        aria-label={t("page.filterLabel")}
-        onValueChange={setFilter}
-        options={[
-          { value: "open", label: t("page.open", { count: list?.open ?? 0 }) },
-          { value: "resolved", label: t("page.resolved") },
-        ]}
-        value={filter}
-      />
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <SegmentedControl<PendingFilter>
+          aria-label={t("page.filterLabel")}
+          onValueChange={setFilter}
+          options={[
+            {
+              value: "open",
+              label: t("page.open", { count: list?.open ?? 0 }),
+            },
+            { value: "resolved", label: t("page.resolved") },
+          ]}
+          value={filter}
+        />
+        {list ? (
+          <SegmentedControl<PendingAssistantFilter>
+            aria-label={t("page.assistantFilterLabel")}
+            onValueChange={setAssistantFilter}
+            options={assistantOptions}
+            tone="navigation"
+            value={assistantFilter}
+          />
+        ) : null}
+      </div>
       {pending.failed ? (
         <Alert
           actions={
@@ -147,6 +190,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
                     key={item.id}
                     onOpenMessage={openPendingItem}
                     pending={pending}
+                    showOrigin
                   />
                 ))}
               </div>
@@ -168,6 +212,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
                 onOpenMessage={openPendingItem}
                 pending={pending}
                 readOnly
+                showOrigin
               />
             ))}
           </div>

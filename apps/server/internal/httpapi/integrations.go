@@ -32,9 +32,18 @@ func (s *Server) integrationStarters() []integrationStarter {
 		{name: "skill-repository-checks", start: s.CheckSkillRepositories},
 		// At start and daily: LiteLLM's public model price catalog.
 		{name: "usage-price-refresh", start: s.startUsagePriceRefresh},
+		// One long poll per enabled message channel (DEV-203).
+		{name: "message-channels", start: s.runMessageChannels},
 	}
 }
 
 func (s *Server) startFeishuBots(ctx context.Context) {
 	s.feishu.StartAllConfiguredBots(ctx)
+}
+
+func (s *Server) runMessageChannels(ctx context.Context) {
+	if !s.options.Integrations.On() || s.messageChannels == nil {
+		return
+	}
+	s.messageChannels.Run(ctx)
 }

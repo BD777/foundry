@@ -9,6 +9,11 @@ export const pending = {
       "Questions and problems of the helpers your assistant started. It answers or retries them, and brings you what only you can decide.",
     personal: "Your accounts and devices",
     filterLabel: "Show",
+    assistantFilterLabel: "Filter by assistant",
+    allAssistants: "All",
+    defaultAssistant: "Default assistant",
+    unnamedAssistant: "Unnamed assistant",
+    noAssistant: "Not assigned to an assistant",
     open: "Open · {{count}}",
     resolved: "Resolved · 7 days",
     loading: "Reading pending items…",
@@ -34,6 +39,7 @@ export const pending = {
     connector: "Sign-in",
     helper_stuck: "Helper stuck",
     bundle_update: "Bundle update",
+    message_channel: "Message channel",
   },
   state: {
     open: "Open",
@@ -43,12 +49,19 @@ export const pending = {
     dismissed: "Dismissed",
   },
   item: {
+    origin: {
+      assistant: "Assistant · {{name}}",
+      chat: "Chat · {{name}}",
+      project: "Project · {{name}}",
+      personal: "Source · {{name}}",
+    },
     fromAssistant: "Your assistant:",
     handed: {
       assistant_stopped:
         "it is stopped, so this came to you. Answer here, or resume it.",
       assistant_offline:
         "its computer is offline, so this came to you. It stays here until you or your assistant settle it.",
+      assistant_timeout: "The assistant didn't handle it within 10 minutes",
     },
     grantGitHubScopes: "Add {{scopes}} in Connectors",
     openGitHubPermissions: "Open GitHub permissions",
@@ -82,9 +95,11 @@ export const pending = {
     bundleRolledBack: "Update rolled back: {{title}}",
     bundleFailed: "Update not installed: {{title}}",
     openSkillLibrary: "Open Skill Library",
+    openMessageChannels: "Open message channels",
     permissionDenied: "Permission denied: {{path}}",
     done: "Mark done",
     dismiss: "Dismiss",
+    notNeeded: "Not for me",
     useRecommended: "Reply with “{{option}}” (recommended)",
     fixInChat: "Fix in chat",
     jumpToMessage: "Jump to message",

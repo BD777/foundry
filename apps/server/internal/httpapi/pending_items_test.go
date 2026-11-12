@@ -148,32 +148,20 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 		t.Fatalf("question item = %+v", asked)
 	}
 
-	// A failed turn reported three times is one item seen three times.
-	for index, id := range []string{"evt_fail_1", "evt_fail_2", "evt_fail_3"} {
-		reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{ID: id, SessionID: sessionID, Label: "Session failed", Level: "error",
-			Detail: "API Error: 503 no eligible upstream account" + strings.Repeat(" ", index)})
-	}
-	failed := f.item(store.PendingSourceTurnFailed)
-	if failed.Occurrences != 3 || failed.State != store.PendingOpen {
-		t.Fatalf("failed item = %+v", failed)
-	}
 	reactions.SessionEventRecorded(ctx, toolEvent("evt_sudo", sessionID, "sudo apt install jq", "sudo: a password is required"))
 	hands := f.item(store.PendingSourceNeedsHands)
 	if hands.Rule != "sudo" || hands.Context != "sudo apt install jq" || hands.Title != "sudo: a password is required" {
 		t.Fatalf("needs-hands item = %+v", hands)
 	}
 	list := f.list()
-	if list.Open != 3 || list.BySession[sessionID] != 3 {
+	if list.Open != 2 || list.BySession[sessionID] != 2 {
 		t.Fatalf("counts = %d, %+v", list.Open, list.BySession)
 	}
 
-	// A turn that completes makes the failure moot, nothing else.
+	// A turn that completes leaves unrelated waiting items alone.
 	completed := f.session
 	completed.Status = "completed"
 	reactions.SessionChanged(ctx, sessions.Completed, completed)
-	if got := f.item(store.PendingSourceTurnFailed).State; got != store.PendingSuperseded {
-		t.Fatalf("failure after a completed turn = %s", got)
-	}
 	if got := f.item(store.PendingSourceQuestion).State; got != store.PendingOpen {
 		t.Fatalf("question after a completed turn = %s", got)
 	}
@@ -189,6 +177,9 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 	reactions.SessionChanged(ctx, sessions.Queued, queued)
 	if got := f.item(store.PendingSourceQuestion).State; got != store.PendingReplied {
 		t.Fatalf("question after the person's message = %s", got)
+	}
+	if got := f.item(store.PendingSourceQuestion).Outcome; got != store.PendingOutcomePersonAnswered {
+		t.Fatalf("person answer outcome = %s", got)
 	}
 	if got := f.item(store.PendingSourceNeedsHands).State; got != store.PendingReplied {
 		t.Fatalf("needs-hands after the person's message = %s", got)
@@ -208,6 +199,15 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 	}
 	if got := f.item(store.PendingSourceQuestion).State; got != store.PendingDone {
 		t.Fatalf("question after done = %s", got)
+	}
+	if got := f.item(store.PendingSourceQuestion).Outcome; got != store.PendingOutcomePersonAnswered {
+		t.Fatalf("person done outcome = %s", got)
+	}
+	dismissed := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/pending-items/" + id + "/state",
+		body: `{"state":"dismissed"}`, cookie: f.cookie, origin: accountsTestOrigin})
+	expectStatus(t, dismissed, http.StatusOK, "not needed")
+	if got := f.item(store.PendingSourceQuestion).Outcome; got != store.PendingOutcomePersonDismissedNotNeeded {
+		t.Fatalf("not-needed outcome = %s", got)
 	}
 	missing := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/pending-items/pnd_missing/state",
 		body: `{"state":"done"}`, cookie: f.cookie, origin: accountsTestOrigin})
@@ -280,6 +280,16 @@ func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
 		t.Fatalf("no item %q", title)
 		return ""
 	}
+	outcome := func(title string) string {
+		t.Helper()
+		for _, item := range f.list().Items {
+			if item.Title == title {
+				return item.Outcome
+			}
+		}
+		t.Fatalf("no item %q", title)
+		return ""
+	}
 	ask("evt_plan", "in_1/approval_toolu_1", "", "Approve this plan?")
 	ask("evt_cmd", "approval_cmd_1", "", "Allow this command?")
 	ask("evt_async", "call_async", "async", "Keep the rows?")
@@ -292,6 +302,9 @@ func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
 	}
 	if got := state("Approve this plan?"); got != store.PendingSuperseded {
 		t.Fatalf("settled approval = %s", got)
+	}
+	if got := outcome("Approve this plan?"); got != store.PendingOutcomeAutoResolved {
+		t.Fatalf("settled approval outcome = %s", got)
 	}
 	if got := state("Allow this command?"); got != store.PendingOpen {
 		t.Fatalf("other approval = %s", got)

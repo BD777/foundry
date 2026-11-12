@@ -42,7 +42,7 @@ func refusalKind(err error) string {
 
 func notAllowed(action, settingsURL string) error {
 	return refuse(store.PersonalAgentRefusalNotAllowed, http.StatusUnprocessableEntity,
-		"not allowed: the person does not let you do this (%s). Tell them what you could not do and that they can do it themselves or change when you ask first in your settings (%s).",
+		"not allowed: the person does not let you do this (%s); they can do it themselves, or change when you ask first in your settings (%s).",
 		action, settingsURL)
 }
 

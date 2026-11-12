@@ -306,7 +306,7 @@ func placeReason(chosen PlaceCandidate, needs []store.DeviceLabel, defaultID str
 		parts = append(parts, "it is offline right now")
 	}
 	if chosen.Shared != "" {
-		parts = append(parts, chosen.Shared+", which the person chose to allow: tell them")
+		parts = append(parts, chosen.Shared+", which the person chose to allow")
 	}
 	return strings.Join(parts, "; ")
 }

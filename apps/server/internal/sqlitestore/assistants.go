@@ -368,9 +368,10 @@ func (s *Store) createPersonalAgent(ctx context.Context, agent store.PersonalAge
 		return store.PersonalAgent{}, err
 	}
 	if !agent.IsDefault {
-		// A later assistant reaches no workspace and no identity resource
-		// until the person adds them (DEV-191 decisions 1 and 3).
+		// A later assistant reaches no workspace, identity resource or
+		// connector account until the person adds them.
 		pkg.Workspaces = store.PermissionListRule{Scope: store.PermissionListScopeListed, Include: []string{}, Exclude: []string{}}
+		pkg.ConnectorDefault = store.ConnectorAccessLevelOff
 		pkg.IdentityResources = store.PermissionIdentityResources{Scope: store.PermissionListScopeListed, Allowed: []string{}}
 		if pkg, err = s.SavePermissionPackage(ctx, pkg); err != nil {
 			return store.PersonalAgent{}, err

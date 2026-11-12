@@ -4,7 +4,6 @@ import {
   reapPrivateInputOwners,
 } from "../platform/process/private-input-owners.js";
 import type { PreparedExecution } from "./preparation/index.js";
-export { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 // Session launch policy — the single place that defines how Foundry launches
 // a native agent runtime. Everything a launch depends on is assembled here
 // once and consumed by the Claude Agent SDK launch:

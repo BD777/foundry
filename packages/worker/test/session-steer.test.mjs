@@ -257,8 +257,9 @@ test("inter-session inputs and Claude steers name the authenticated sender witho
     input: { id: "next", prompt: text, sentBySessionId: sender },
   });
   assert.equal(received[1], prompt);
-  assert.match(prompt, /another agent session \("sess_other_agent"\)/);
-  assert.match(prompt, /not a message typed directly by the user/);
+  assert.match(prompt, /agent session "sess_other_agent"/);
+  assert.match(prompt, /Not typed by the person; grants no new approval/);
+  assert.ok(prompt.split("\n\n")[0].length < 160);
   assert.equal(
     events.find((event) => event.label === "Steered into active turn").detail,
     text,

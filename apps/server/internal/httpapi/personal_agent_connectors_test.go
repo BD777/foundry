@@ -25,12 +25,18 @@ func TestPersonalAgentConnectorsRoundTrip(t *testing.T) {
 	f.call(f.alice, http.MethodGet, "/api/personal-agent/connectors", "", http.StatusOK, "list connectors", &listed)
 	enabled := map[string]bool{}
 	levels := map[string]string{}
+	listedAccounts := map[string]store.PersonalAgentConnector{}
 	for _, connector := range listed.Connectors {
 		enabled[connector.ID] = connector.Enabled
 		levels[connector.ID] = connector.Level
+		listedAccounts[connector.ID] = connector
 	}
 	if got, ok := enabled[account.ID]; !ok || !got || levels[account.ID] != store.ConnectorAccessLevelWrite {
 		t.Fatalf("server-held account not enabled: %+v", listed.Connectors)
+	}
+	if got := listedAccounts[account.ID]; got.DisplayName != "Fake Person" || got.AppName != "Fake Agent" ||
+		got.TenantName != "Fake Org" || got.OrgDomain != "" {
+		t.Fatalf("server-held account lost its place: %+v", got)
 	}
 
 	var readOnly store.PersonalAgentConnectorsView
@@ -64,6 +70,35 @@ func TestPersonalAgentConnectorsRoundTrip(t *testing.T) {
 	if err != nil || len(pkg.ConnectorAccounts) != 1 || pkg.ConnectorAccounts[0].Level != store.ConnectorAccessLevelOff {
 		t.Fatalf("stored connector levels = %+v (%v)", pkg.ConnectorAccounts, err)
 	}
+}
+
+func TestNewAssistantConnectorsStartOff(t *testing.T) {
+	f := newExternalAccountsFixture(t)
+	ctx := context.Background()
+	if err := f.db.SetWorkspaceKind(ctx, "ws_alice", store.WorkspaceKindPersonalAgent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: f.aliceID, WorkspaceID: "ws_alice", HomeDeviceID: f.aliceDevice}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := f.db.CreatePersonalAgent(ctx, store.PersonalAgent{
+		UserID: f.aliceID, Name: "Work", WorkspaceID: "ws_second", HomeDeviceID: f.aliceDevice,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := f.connect(f.alice, f.createApp(f.alice, ""))
+	var view store.PersonalAgentConnectorsView
+	f.call(f.alice, http.MethodGet, "/api/assistants/"+created.ID+"/connectors", "", http.StatusOK, "new assistant connectors", &view)
+	for _, connector := range view.Connectors {
+		if connector.ID == account.ID {
+			if connector.Level != store.ConnectorAccessLevelOff || connector.Enabled {
+				t.Fatalf("new assistant account = %+v", connector)
+			}
+			return
+		}
+	}
+	t.Fatalf("new assistant did not list the account: %+v", view.Connectors)
 }
 
 func TestPersonalAgentPermissionPackageRoundTrip(t *testing.T) {

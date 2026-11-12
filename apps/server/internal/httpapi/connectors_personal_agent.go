@@ -166,6 +166,9 @@ func (s *Server) personalAgentConnectors(ctx context.Context, agent store.Person
 		if level := levels[accountID]; level != "" {
 			return level
 		}
+		if pkg.ConnectorDefault != "" {
+			return pkg.ConnectorDefault
+		}
 		return store.ConnectorAccessLevelWrite
 	}
 	accounts, err := s.connectors.ServerHeld.AccountsIncludingExtensions(ctx, agent.UserID)
@@ -175,7 +178,8 @@ func (s *Server) personalAgentConnectors(ctx context.Context, agent store.Person
 	for _, account := range accounts {
 		level := levelOf(account.ID)
 		view.Connectors = append(view.Connectors, store.PersonalAgentConnector{
-			ID: account.ID, Kind: account.Provider, Label: account.Label,
+			ID: account.ID, Kind: account.Provider, Label: account.Label, DisplayName: account.DisplayName,
+			AppName: account.AppName, TenantName: account.TenantName, OrgDomain: account.OrgDomain,
 			Holding: store.ConnectorServerHeld, Status: string(account.Status),
 			Level: level, Enabled: level != store.ConnectorAccessLevelOff,
 		})
@@ -212,6 +216,7 @@ func (s *Server) personalAgentConnectors(ctx context.Context, agent store.Person
 		level := levelOf(accountID)
 		view.Connectors = append(view.Connectors, store.PersonalAgentConnector{
 			ID: accountID, Kind: state.Kind, Label: label, Holding: store.ConnectorDeviceHeld,
+			Identity: state.Identity, Sites: state.Sites,
 			DeviceID: state.DeviceID, DeviceName: names[state.DeviceID], Status: state.Status,
 			Level: level, Enabled: level != store.ConnectorAccessLevelOff,
 		})

@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+已合入 main（PR #264，squash 7e2a354c）。
 
 第 4–6 版均已实现并部署到 dev（2026-11-12）；第 6 版随后随 Worker 包更新到 7 台在线设备。导航守卫、执行模型卡片、`model_guides` 描述和两份模型说明书的数据修订均已生效。
 

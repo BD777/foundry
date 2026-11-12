@@ -9,6 +9,14 @@ import type {
   KnowledgeMutation,
   MemoryEntryMove,
   MemoryLayerScope,
+  MemorySortActionInput,
+  MemorySortList,
+  MemorySortRecord,
+  MessageChannelDeliveryList,
+  MessageChannelInput,
+  MessageChannelList,
+  MessageChannelPrerequisites,
+  MessageChannelView,
   MoveMemoryEntryInput,
   PermissionPackage,
   PersonalAgent,
@@ -326,6 +334,26 @@ export function moveAssistantMemoryEntry(
   );
 }
 
+/** Memory upkeep's sorting between layers: recent automatic moves and standing suggestions to share. */
+export function listAssistantMemorySorting(
+  assistantId?: string,
+): Promise<MemorySortList> {
+  return request("GET", `${personalAgentApiBase(assistantId)}/memory/sorting`);
+}
+
+/** Undoes an automatic move, or confirms or dismisses a suggestion to share. */
+export function actOnAssistantMemorySort(
+  assistantId: string | undefined,
+  recordId: string,
+  input: MemorySortActionInput,
+): Promise<MemorySortRecord> {
+  return request(
+    "POST",
+    `${personalAgentApiBase(assistantId)}/memory/sorting/${id(recordId)}/action`,
+    { body: input },
+  );
+}
+
 /** The audit trail (§5): newest first, the last 90 days. */
 export function listPersonalAgentActions(
   assistantId?: string,
@@ -370,4 +398,77 @@ export function cancelPendingPersonalAgentOperation(
     `${personalAgentApiBase(assistantId)}/operations/${id(idValue)}/cancel-pending`,
     { body: { revision } },
   );
+}
+
+export type {
+  MessageChannelDeliveryList,
+  MessageChannelInput,
+  MessageChannelList,
+  MessageChannelPrerequisites,
+  MessageChannelView,
+};
+
+const channelPath = (assistantId: string | undefined, channelId?: string) =>
+  `${personalAgentApiBase(assistantId)}/channels${channelId ? `/${id(channelId)}` : ""}`;
+
+/** The assistant's message channels and the sources one can read (DEV-203). */
+export function listMessageChannels(
+  assistantId?: string,
+): Promise<MessageChannelList> {
+  return request("GET", channelPath(assistantId));
+}
+
+export function createMessageChannel(
+  assistantId: string | undefined,
+  input: MessageChannelInput,
+): Promise<MessageChannelView> {
+  return request("POST", channelPath(assistantId), { body: input });
+}
+
+export function updateMessageChannel(
+  assistantId: string | undefined,
+  channelId: string,
+  input: MessageChannelInput,
+): Promise<MessageChannelView> {
+  return request("PUT", channelPath(assistantId, channelId), { body: input });
+}
+
+export function deleteMessageChannel(
+  assistantId: string | undefined,
+  channelId: string,
+): Promise<void> {
+  return request("DELETE", channelPath(assistantId, channelId));
+}
+
+/** The channel's latest 50 messages, newest first; `dropped` adds filtered-out ones. */
+export function listMessageChannelDeliveries(
+  assistantId: string | undefined,
+  channelId: string,
+  dropped = false,
+): Promise<MessageChannelDeliveryList> {
+  return request(
+    "GET",
+    `${channelPath(assistantId, channelId)}/deliveries${dropped ? "?dropped=1" : ""}`,
+  );
+}
+
+/** Delivers the messages a limit held back. */
+export function releaseMessageChannel(
+  assistantId: string | undefined,
+  channelId: string,
+): Promise<{ released: number }> {
+  return request("POST", `${channelPath(assistantId, channelId)}/release`);
+}
+
+/**
+ * The person's explicit grant: allows the source connector in the
+ * assistant's permission package and binds it to the assistant's home.
+ */
+export function grantMessageChannelSource(
+  assistantId: string | undefined,
+  accountId: string,
+): Promise<MessageChannelPrerequisites> {
+  return request("POST", `${channelPath(assistantId)}/grant-source`, {
+    body: { accountId },
+  });
 }

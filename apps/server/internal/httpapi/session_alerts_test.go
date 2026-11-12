@@ -86,7 +86,7 @@ func TestSessionAlertFailureIsImmediateAndSupersededReportsDoNotSettleIt(t *test
 		t.Fatalf("busy parent alert delivery = %q, want boundary", items[0].Delivery)
 	}
 	if !strings.Contains(items[0].Prompt, failed.ID) || !strings.Contains(items[0].Prompt, "Code: model_rate_limit") ||
-		!strings.Contains(items[0].Prompt, "Automatic retry: no") || !strings.Contains(items[0].Prompt, "send_message") {
+		!strings.Contains(items[0].Prompt, "Automatic retry: no") || !strings.Contains(items[0].Prompt, "Next: no retry scheduled") {
 		t.Fatalf("alert text is incomplete:\n%s", items[0].Prompt)
 	}
 
@@ -259,7 +259,8 @@ func TestBlockedSessionAlertsOnceAfterThreshold(t *testing.T) {
 	f.server.sessionAlerts.Pump(ctx, before.Add(sessionalerts.WaitAlertAfter+time.Second))
 	items := parentAlertItems(t, f)
 	if len(items) != 1 || !strings.Contains(items[0].Prompt, "Code: blocked") ||
-		!strings.Contains(items[0].Prompt, "Automatic retry: yes") {
+		!strings.Contains(items[0].Prompt, "Automatic retry: yes") ||
+		!strings.Contains(items[0].Prompt, "Next: retrying if the blocking condition clears") {
 		t.Fatalf("blocked alert = %+v", items)
 	}
 	alerts := childAlerts(t, f)

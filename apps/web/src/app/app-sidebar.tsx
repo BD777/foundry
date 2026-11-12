@@ -9,19 +9,14 @@ import {
 import { useAccountSession } from "./accounts-gate";
 import { withAccountNav } from "./account-views";
 import { type NavView, type SidebarView } from "../lib/routes";
-import {
-  navSections,
-  navSectionsForAssistantCount,
-  simpleNavSections,
-  type NavLabel,
-} from "./navigation";
+import { navSections, simpleNavSections, type NavLabel } from "./navigation";
 import type { InterfaceMode } from "../lib/assistant-settings-sections";
 import { SidebarLanguage } from "./sidebar-language";
 import type { ShellPreferences } from "./use-shell-preferences";
 
 export interface AppSidebarProps {
   activeView: NavView;
-  assistantCount?: number;
+  assistantName: string;
   /** Simple: only the assistant and its settings (its simpleInterface). */
   interfaceMode: InterfaceMode;
   /** Issues waiting for review, Issues running, and skills on. */
@@ -44,7 +39,7 @@ export interface AppSidebarProps {
 /** The app's navigation: sections with live counts, theme and language. */
 export function AppSidebar({
   activeView,
-  assistantCount = 1,
+  assistantName,
   interfaceMode,
   counts,
   onNavSelect,
@@ -61,12 +56,9 @@ export function AppSidebar({
     activeView === "workspace" ? t("nav.overview") : t(`views.${activeView}`);
   const sections = useMemo<Array<SidebarNavSection<SidebarView>>>(
     () =>
-      navSectionsForAssistantCount(
-        withAccountNav(
-          interfaceMode === "simple" ? simpleNavSections : navSections,
-          account.user?.role,
-        ),
-        assistantCount,
+      withAccountNav(
+        interfaceMode === "simple" ? simpleNavSections : navSections,
+        account.user?.role,
       ).map((section) => ({
         ...section,
         label: t(`nav.${section.label as NavLabel}`),
@@ -76,10 +68,17 @@ export function AppSidebar({
             ? t("sidebar.workspaceScope", {
                 workspace: workspaceName || t("nav.workspace"),
               })
-            : t("sidebar.globalScope"),
+            : section.id === "assistant"
+              ? t("sidebar.assistantScope", {
+                  assistant: assistantName || t("nav.assistantSection"),
+                })
+              : t("sidebar.globalScope"),
         items: section.items.map((item) => ({
           ...item,
-          label: t(`nav.${item.label as NavLabel}`),
+          label:
+            section.id === "assistant" && item.id === "assistant"
+              ? assistantName || t("nav.assistant")
+              : t(`nav.${item.label as NavLabel}`),
           badge:
             item.id === "issues" && review
               ? { children: review, tone: "brass" }
@@ -94,7 +93,7 @@ export function AppSidebar({
       })),
     [
       account.user?.role,
-      assistantCount,
+      assistantName,
       interfaceMode,
       review,
       running,
@@ -111,8 +110,8 @@ export function AppSidebar({
       activeItemId={
         activeView === "issue"
           ? "issues"
-          : activeView === "assistant" && assistantCount > 1
-            ? "assistants"
+          : activeView === "assistants"
+            ? "assistant"
             : activeView
       }
       collapsed={preferences.sidebarCollapsed}

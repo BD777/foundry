@@ -564,6 +564,63 @@ interface components {
       access: components["schemas"]["ConnectorServerHeldAccess"];
       session: components["schemas"]["ConnectorServerHeldSession"];
       network: components["schemas"]["ConnectorServerHeldNetwork"];
+      events?: components["schemas"]["ConnectorEventsSpec"];
+    };
+    /** @description How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server. */
+    ConnectorEventsSpec: {
+      poll: components["schemas"]["ConnectorEventsPoll"];
+      envelope: components["schemas"]["ConnectorEventsEnvelope"];
+      context?: components["schemas"]["ConnectorEventsContext"];
+    };
+    /** @description One GET request per poll. Query values are templates that may use `{cursor}`; a parameter named in omitWhenEmpty is left out while its value is empty (the first poll starts from now). cursor, items and more are JSON pointers into the answer. */
+    ConnectorEventsPoll: {
+      /** @description A path at or below the upstream prefix that the instance's route directory lists as read. */
+      path: string;
+      query?: {
+        [key: string]: string;
+      };
+      omitWhenEmpty?: string[];
+      cursor: string;
+      items: string;
+      more?: string;
+      gap?: components["schemas"]["ConnectorEventsGap"];
+    };
+    /** @description How the feed says the cursor is gone (events between it and reset are lost). status is the HTTP status; with code, the value at that pointer must equal codeEquals; reset is the pointer to the new cursor. */
+    ConnectorEventsGap: {
+      status: number;
+      code?: string;
+      codeEquals?: string;
+      reset: string;
+    };
+    /** @description Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored. */
+    ConnectorEventsEnvelope: {
+      fields: {
+        [key: string]: components["schemas"]["ConnectorEventsValue"];
+      };
+      skipWhen?: components["schemas"]["ConnectorEventsCondition"][];
+    };
+    /** @description One envelope field, the value at pointer, or template with `{/pointer}` parts. map translates the value (otherwise for values map does not name); unit reads a time (ms or s since the epoch, or rfc3339). */
+    ConnectorEventsValue: {
+      pointer?: string;
+      template?: string;
+      map?: {
+        [key: string]: string;
+      };
+      otherwise?: string;
+      /** @enum {string} */
+      unit?: "ms" | "s" | "rfc3339";
+    };
+    /** @description True when the value at pointer, as text, equals equals. */
+    ConnectorEventsCondition: {
+      pointer: string;
+      equals: string;
+    };
+    /** @description How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`. */
+    ConnectorEventsContext: {
+      hint?: string;
+      hints?: {
+        [key: string]: string;
+      };
     };
     /** @description One group of field ids in a server-held instance form. */
     ConnectorServerHeldStep: string[];
@@ -2331,6 +2388,197 @@ interface components {
       error?: string;
       code?: string;
     };
+    /** @description One message as a channel sees it, whatever the source. IM sources fill conversation, thread, sender and mentionsMe; other sources use the same fields for their own notions (a mail thread, an alert group). attributes holds a few source-specific values. */
+    MessageEnvelope: {
+      /** @description Unique within the source; the channel's deduplication key. */
+      id: string;
+      kind: string;
+      op: string;
+      occurredAt?: string;
+      conversation: components["schemas"]["MessageEnvelopeConversation"];
+      thread?: components["schemas"]["MessageEnvelopeThread"];
+      messageId?: string;
+      sender: components["schemas"]["MessageEnvelopeSender"];
+      mentionsMe: boolean;
+      text: string;
+      textTruncated?: boolean;
+      attributes?: {
+        [key: string]: string;
+      };
+    };
+    MessageEnvelopeConversation: {
+      id: string;
+      kind: components["schemas"]["MessageConversationKind"];
+      name?: string;
+    };
+    /** @enum {string} */
+    MessageConversationKind: "direct" | "group" | "channel" | "feed" | "other";
+    MessageEnvelopeThread: {
+      id?: string;
+      isReply?: boolean;
+    };
+    MessageEnvelopeSender: {
+      id: string;
+      name?: string;
+      isSelf?: boolean;
+      isBot?: boolean;
+    };
+    /**
+     * @description A condition on a yes/no envelope field; any ignores it.
+     * @enum {string}
+     */
+    MessageChannelTriState: "any" | "yes" | "no";
+    /** @description One filter rule; a message is kept when any enabled rule matches it. Every condition of a rule must hold. textPrefixes are compared after leading mentions and spaces are removed; an empty list accepts any text. */
+    MessageChannelRule: {
+      id: string;
+      label?: string;
+      enabled: boolean;
+      conversationKinds: components["schemas"]["MessageConversationKind"][];
+      mentionsMe: components["schemas"]["MessageChannelTriState"];
+      fromSelf: components["schemas"]["MessageChannelTriState"];
+      textPrefixes: string[];
+      caseSensitive?: boolean;
+      conversationIds?: string[];
+      excludeConversationIds?: string[];
+      senderIds?: string[];
+      excludeSenderIds?: string[];
+    };
+    MessageChannelFilters: {
+      rules: components["schemas"]["MessageChannelRule"][];
+    };
+    /** @description One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card. */
+    MessageChannelConnectorScope: {
+      accountId: string;
+      /** @enum {string} */
+      level: "off" | "read" | "write";
+      /** @enum {string} */
+      writes: "confirm" | "direct";
+    };
+    /** @description What the channel's sessions and their helpers may use, intersected with the assistant's permission package. connectorDefault inherit keeps the package's level for accounts not listed; off turns them off. workspaces listed keeps only the included ones. */
+    MessageChannelScope: {
+      /** @enum {string} */
+      connectorDefault: "inherit" | "off";
+      connectors: components["schemas"]["MessageChannelConnectorScope"][];
+      workspaces: components["schemas"]["PermissionListRule"];
+      identityResources: string[];
+    };
+    MessageChannelLimits: {
+      perHour: number;
+      perDay: number;
+      concurrency: number;
+    };
+    /** @description The connector instance whose event feed the channel reads. */
+    MessageChannelSource: {
+      kind: string;
+      accountId: string;
+      instanceId?: string;
+      label?: string;
+    };
+    /** @description What the person sets on a channel. */
+    MessageChannelInput: {
+      name: string;
+      enabled: boolean;
+      source: components["schemas"]["MessageChannelSource"];
+      filters: components["schemas"]["MessageChannelFilters"];
+      /** @description The person's handling principles; becomes the channel's skill in the assistant's home. */
+      guide: string;
+      /**
+       * @description conversation gives each source conversation one session; thread one per thread.
+       * @enum {string}
+       */
+      sessionKey: "conversation" | "thread";
+      scope: components["schemas"]["MessageChannelScope"];
+      limits: components["schemas"]["MessageChannelLimits"];
+      /** @description On enabling a paused channel, start from now instead of where it stopped. */
+      resumeFromNow?: boolean;
+    };
+    MessageChannel: {
+      id: string;
+      assistantId: string;
+      name: string;
+      enabled: boolean;
+      source: components["schemas"]["MessageChannelSource"];
+      filters: components["schemas"]["MessageChannelFilters"];
+      guide: string;
+      /** @enum {string} */
+      sessionKey: "conversation" | "thread";
+      scope: components["schemas"]["MessageChannelScope"];
+      limits: components["schemas"]["MessageChannelLimits"];
+      skillName?: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+    /** @enum {string} */
+    MessageChannelState:
+      | "starting"
+      | "running"
+      | "paused"
+      | "waiting_device"
+      | "needs_permission"
+      | "unsupported"
+      | "backing_off"
+      | "held";
+    MessageChannelCounts: {
+      received: number;
+      matched: number;
+      delivered: number;
+      held: number;
+      dropped: number;
+    };
+    MessageChannelStatus: {
+      state: components["schemas"]["MessageChannelState"];
+      detail?: string;
+      lastPollAt?: string;
+      lastEventAt?: string;
+      lastErrorAt?: string;
+      gapAt?: string;
+      /** @description The last 24 hours. */
+      counts: components["schemas"]["MessageChannelCounts"];
+    };
+    /** @description Whether the assistant may read the source and its home workspace has it bound. */
+    MessageChannelPrerequisites: {
+      allowed: boolean;
+      bound: boolean;
+      level: string;
+    };
+    MessageChannelView: {
+      channel: components["schemas"]["MessageChannel"];
+      status: components["schemas"]["MessageChannelStatus"];
+      prerequisites: components["schemas"]["MessageChannelPrerequisites"];
+      /** @description The channel's sessions in the assistant's home. */
+      sessionIds: string[];
+    };
+    MessageChannelList: {
+      channels: components["schemas"]["MessageChannelView"][];
+      /** @description Connector instances whose descriptor declares an event feed. */
+      sources: components["schemas"]["MessageChannelSource"][];
+    };
+    /** @enum {string} */
+    MessageChannelDeliveryStatus:
+      "dropped" | "held" | "queued" | "delivered" | "done" | "failed";
+    /** @description Something the channel's session did after the message arrived. */
+    MessageChannelAction: {
+      at: string;
+      /** @enum {string} */
+      kind: "connector_write" | "connector_refused" | "needs_you";
+      summary: string;
+    };
+    MessageChannelDelivery: {
+      id: string;
+      channelId: string;
+      envelope: components["schemas"]["MessageEnvelope"];
+      status: components["schemas"]["MessageChannelDeliveryStatus"];
+      /** @description For dropped, why; for queued, what it waits for. */
+      reason?: string;
+      rule?: string;
+      sessionId?: string;
+      createdAt: string;
+      deliveredAt?: string;
+      actions?: components["schemas"]["MessageChannelAction"][];
+    };
+    MessageChannelDeliveryList: {
+      deliveries: components["schemas"]["MessageChannelDelivery"][];
+    };
     /** @description Maps one provider's model id to a guide. An absent `providerId` or `runtime` matches any; the most specific alias wins on resolve. */
     ModelGuideAlias: {
       /** @enum {string} */
@@ -2499,7 +2747,7 @@ interface components {
       include: string[];
       exclude: string[];
     };
-    /** @description One connector account's override in a permission package. An account with no entry uses the package default, write. */
+    /** @description One connector account's override in a permission package. An account with no entry uses connectorDefault. */
     ConnectorAccountPermission: {
       accountId: string;
       level: components["schemas"]["ConnectorAccessLevel"];
@@ -2510,12 +2758,14 @@ interface components {
       /** @description Resource ids (res_…) the assistant may lease under scope listed. */
       allowed: string[];
     };
-    /** @description One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, connector accounts default to write, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace. */
+    /** @description One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, accounts not named in connectorAccounts use connectorDefault, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace. */
     PermissionPackage: {
       id: string;
       /** @description The Foundry user id the package belongs to. */
       owner: string;
       workspaces: components["schemas"]["PermissionListRule"];
+      /** @description What connector accounts without an entry in connectorAccounts may do. Existing assistants use write; later assistants start at off. */
+      connectorDefault: components["schemas"]["ConnectorAccessLevel"];
       connectorAccounts: components["schemas"]["ConnectorAccountPermission"][];
       identityResources: components["schemas"]["PermissionIdentityResources"];
     };
@@ -2524,6 +2774,18 @@ interface components {
       id: string;
       kind: string;
       label: string;
+      /** @description Who the account belongs to at the provider, when known; unlike label, this is not the person's custom name for the connector. */
+      displayName?: string;
+      /** @description The provider app's own name, when known. */
+      appName?: string;
+      /** @description The organisation's name at the provider, when known. */
+      tenantName?: string;
+      /** @description The organisation's email domain, used when its name is unavailable. */
+      orgDomain?: string;
+      /** @description Who is signed in to a device-held connector, when read. */
+      identity?: string;
+      /** @description Sites or hosts the device-held connector is signed in to. */
+      sites?: string[];
       holding: string;
       deviceId?: string;
       deviceName?: string;
@@ -2535,7 +2797,7 @@ interface components {
     PersonalAgentConnectorsView: {
       connectors: components["schemas"]["PersonalAgentConnector"][];
     };
-    /** @description Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package default, write. */
+    /** @description Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package's connectorDefault. */
     SetPersonalAgentConnectorLevelsInput: {
       levels?: components["schemas"]["ConnectorAccountPermission"][];
       /** @description Legacy form of levels; these accounts become "off". */
@@ -2628,6 +2890,36 @@ interface components {
       /** Format: int64 */
       expectedRevision: number;
       expectedHash: string;
+    };
+    /** @description One decision of memory upkeep's sorting between the person's layer and one assistant's (DEV-191): an automatic move (kind move, status moving, moved, failed or undone) or a suggestion to share (kind suggestion, status suggested, confirmed or dismissed). assistantId is the assistant whose layer is the other side. title is the entry's title and reason the reviewer's one sentence; bodies are never recorded. undoable is whether the person can move it back now. */
+    MemorySortRecord: {
+      id: string;
+      /** @enum {string} */
+      kind: "move" | "suggestion";
+      status: string;
+      assistantId: string;
+      assistantName: string;
+      assistantIsDefault: boolean;
+      fromScope: components["schemas"]["MemoryLayerScope"];
+      toScope: components["schemas"]["MemoryLayerScope"];
+      title: string;
+      reason: string;
+      confidence: string;
+      mentions: string[];
+      failure?: string;
+      undoable: boolean;
+      createdAt: string;
+      updatedAt: string;
+    };
+    /** @description GET /api/assistants/{id}/memory/sorting. The person's recent automatic moves between layers (any of their assistants), newest first, and the suggestions to share that still stand. */
+    MemorySortList: {
+      moves: components["schemas"]["MemorySortRecord"][];
+      suggestions: components["schemas"]["MemorySortRecord"][];
+    };
+    /** @description POST /api/assistants/{id}/memory/sorting/{record}/action. undo moves an automatic move back; confirm moves a suggested entry to the person's layer; dismiss drops the suggestion. */
+    MemorySortActionInput: {
+      /** @enum {string} */
+      action: "undo" | "confirm" | "dismiss";
     };
     /** @description A captured move: the body is written to targetEntryId in the target layer and the source entry forgotten, each applied by its device. */
     MemoryEntryMove: {
@@ -4280,6 +4572,17 @@ export type ConnectorSetup = components["schemas"]["ConnectorSetup"];
 export type ConnectorHolding = components["schemas"]["ConnectorHolding"];
 export type ConnectorServerHeldSpec =
   components["schemas"]["ConnectorServerHeldSpec"];
+export type ConnectorEventsSpec = components["schemas"]["ConnectorEventsSpec"];
+export type ConnectorEventsPoll = components["schemas"]["ConnectorEventsPoll"];
+export type ConnectorEventsGap = components["schemas"]["ConnectorEventsGap"];
+export type ConnectorEventsEnvelope =
+  components["schemas"]["ConnectorEventsEnvelope"];
+export type ConnectorEventsValue =
+  components["schemas"]["ConnectorEventsValue"];
+export type ConnectorEventsCondition =
+  components["schemas"]["ConnectorEventsCondition"];
+export type ConnectorEventsContext =
+  components["schemas"]["ConnectorEventsContext"];
 export type ConnectorServerHeldStep =
   components["schemas"]["ConnectorServerHeldStep"];
 export type ConnectorServerHeldProbeExtract =
@@ -4501,6 +4804,46 @@ export type KnowledgeDocument = components["schemas"]["KnowledgeDocument"];
 export type KnowledgeSourceReview =
   components["schemas"]["KnowledgeSourceReview"];
 export type KnowledgeReply = components["schemas"]["KnowledgeReply"];
+export type MessageEnvelope = components["schemas"]["MessageEnvelope"];
+export type MessageEnvelopeConversation =
+  components["schemas"]["MessageEnvelopeConversation"];
+export type MessageConversationKind =
+  components["schemas"]["MessageConversationKind"];
+export type MessageEnvelopeThread =
+  components["schemas"]["MessageEnvelopeThread"];
+export type MessageEnvelopeSender =
+  components["schemas"]["MessageEnvelopeSender"];
+export type MessageChannelTriState =
+  components["schemas"]["MessageChannelTriState"];
+export type MessageChannelRule = components["schemas"]["MessageChannelRule"];
+export type MessageChannelFilters =
+  components["schemas"]["MessageChannelFilters"];
+export type MessageChannelConnectorScope =
+  components["schemas"]["MessageChannelConnectorScope"];
+export type MessageChannelScope = components["schemas"]["MessageChannelScope"];
+export type MessageChannelLimits =
+  components["schemas"]["MessageChannelLimits"];
+export type MessageChannelSource =
+  components["schemas"]["MessageChannelSource"];
+export type MessageChannelInput = components["schemas"]["MessageChannelInput"];
+export type MessageChannel = components["schemas"]["MessageChannel"];
+export type MessageChannelState = components["schemas"]["MessageChannelState"];
+export type MessageChannelCounts =
+  components["schemas"]["MessageChannelCounts"];
+export type MessageChannelStatus =
+  components["schemas"]["MessageChannelStatus"];
+export type MessageChannelPrerequisites =
+  components["schemas"]["MessageChannelPrerequisites"];
+export type MessageChannelView = components["schemas"]["MessageChannelView"];
+export type MessageChannelList = components["schemas"]["MessageChannelList"];
+export type MessageChannelDeliveryStatus =
+  components["schemas"]["MessageChannelDeliveryStatus"];
+export type MessageChannelAction =
+  components["schemas"]["MessageChannelAction"];
+export type MessageChannelDelivery =
+  components["schemas"]["MessageChannelDelivery"];
+export type MessageChannelDeliveryList =
+  components["schemas"]["MessageChannelDeliveryList"];
 export type ModelGuideAlias = components["schemas"]["ModelGuideAlias"];
 export type ModelGuideSections = components["schemas"]["ModelGuideSections"];
 export type ModelGuideUpdater = components["schemas"]["ModelGuideUpdater"];
@@ -4557,6 +4900,10 @@ export type AssistantMemoryLayers =
 export type AddMemoryEntryInput = components["schemas"]["AddMemoryEntryInput"];
 export type MoveMemoryEntryInput =
   components["schemas"]["MoveMemoryEntryInput"];
+export type MemorySortRecord = components["schemas"]["MemorySortRecord"];
+export type MemorySortList = components["schemas"]["MemorySortList"];
+export type MemorySortActionInput =
+  components["schemas"]["MemorySortActionInput"];
 export type MemoryEntryMove = components["schemas"]["MemoryEntryMove"];
 export type NativeRuntimeId = components["schemas"]["NativeRuntimeId"];
 export type WorkerRuntimeId = components["schemas"]["WorkerRuntimeId"];

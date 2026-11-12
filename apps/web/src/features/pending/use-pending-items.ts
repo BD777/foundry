@@ -110,18 +110,25 @@ export function usePendingItems(enabled = true): PendingItems {
 function shownList(list: PendingItemList): PendingItemList {
   return issuesEnabled
     ? list
-    : recounted(list.items.filter((item) => !item.issueId));
+    : recounted(
+        list.items.filter((item) => !item.issueId),
+        list.assistants,
+      );
 }
 
 /** The list with one item replaced and its counts recounted. */
 function withItem(list: PendingItemList, item: PendingItem): PendingItemList {
   return recounted(
     list.items.map((shown) => (shown.id === item.id ? item : shown)),
+    list.assistants,
   );
 }
 
 /** `items` with their open counts. */
-function recounted(items: PendingItem[]): PendingItemList {
+function recounted(
+  items: PendingItem[],
+  assistants: PendingItemList["assistants"],
+): PendingItemList {
   const bySession: Record<string, number> = {};
   let open = 0;
   let assistantOpen = 0;
@@ -135,5 +142,5 @@ function recounted(items: PendingItem[]): PendingItemList {
     if (shown.sessionId && !shown.issueId)
       bySession[shown.sessionId] = (bySession[shown.sessionId] ?? 0) + 1;
   }
-  return { items, open, assistantOpen, bySession };
+  return { items, assistants, open, assistantOpen, bySession };
 }

@@ -56,13 +56,24 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if first.Session.ID != conversation.ID || first.Session.Role != store.AgentSessionRolePersonalAgent {
 		t.Fatalf("the conversation ran as %+v", first.Session)
 	}
-	// Its instructions are its folder's AGENTS.md, with the examples
-	// beside it; what Foundry knows about the person and their projects is
-	// not written there.
-	if len(first.PersonalAgentFiles) != 2 || first.PersonalAgentFiles[0].Path != "AGENTS.md" ||
-		!strings.HasPrefix(first.PersonalAgentFiles[0].Content, "You are ") || strings.Contains(first.PersonalAgentFiles[0].Content, "ws_budget") ||
-		first.PersonalAgentFiles[1].Path != prompt.ExamplesPath {
+	// Its instructions are its folder's AGENTS.md, with the examples, the
+	// project index and the embedded skills beside it; the index is a file
+	// AGENTS.md points to, not part of AGENTS.md or of any turn.
+	files := map[string]string{}
+	for _, file := range first.PersonalAgentFiles {
+		files[file.Path] = file.Content
+	}
+	if len(files) != 3+len(prompt.AssistantSkills()) || !strings.HasPrefix(files["AGENTS.md"], "You are ") ||
+		strings.Contains(files["AGENTS.md"], "ws_budget") || !strings.Contains(files[prompt.ProjectIndexPath], "(ws_budget)") {
 		t.Fatalf("the assistant's files: %+v", first.PersonalAgentFiles)
+	}
+	if _, ok := files[prompt.ExamplesPath]; !ok {
+		t.Fatalf("the assistant's files lack %s: %+v", prompt.ExamplesPath, first.PersonalAgentFiles)
+	}
+	for _, skill := range prompt.AssistantSkills() {
+		if files[prompt.AssistantSkillPath(skill.Name)] != skill.Content {
+			t.Fatalf("the assistant's files lack %s: %+v", skill.Name, first.PersonalAgentFiles)
+		}
 	}
 	prompt1 := first.Session.Input.Prompt
 	if !strings.HasPrefix(prompt1, "plan my week\n\n"+prompt.TurnContextStart) || !strings.HasSuffix(prompt1, prompt.TurnContextEnd) {
@@ -97,17 +108,19 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if second.PersonalAgentFiles[0].Content != first.PersonalAgentFiles[0].Content {
 		t.Fatalf("the instructions changed with only the turn's state: %s", firstDifference(first.PersonalAgentFiles[0].Content, second.PersonalAgentFiles[0].Content))
 	}
-	if !strings.HasPrefix(second.Session.Input.Prompt, "and the next one\n\n") || !strings.Contains(second.Session.Input.Prompt, "add an export") {
-		t.Fatalf("the second turn's context misses the new task: %q", second.Session.Input.Prompt)
+	// Each turn carries only the time: no followed work, no index.
+	for _, turn := range []string{prompt1, second.Session.Input.Prompt} {
+		_, block, _ := strings.Cut(turn, prompt.TurnContextStart)
+		if !strings.HasPrefix(block, "\nNow: ") || strings.Count(block, "\n") != 2 {
+			t.Fatalf("the turn's context carries more than the time: %q", turn)
+		}
 	}
-	// The project index opens the conversation; the resumed one already has it.
-	const index = "Projects and computers, current index:\n"
-	if !strings.Contains(prompt1, index) || strings.Contains(second.Session.Input.Prompt, index) {
-		t.Fatalf("the index should open the conversation only:\nfirst %q\nsecond %q", prompt1, second.Session.Input.Prompt)
+	if !strings.HasPrefix(second.Session.Input.Prompt, "and the next one\n\n") || strings.Contains(second.Session.Input.Prompt, "add an export") {
+		t.Fatalf("the second turn's input: %q", second.Session.Input.Prompt)
 	}
 }
 
-func TestAssistantTurnContextCarriesItsPersonsProjectIndex(t *testing.T) {
+func TestAssistantProjectIndexHoldsOnlyItsPersonsProjects(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	bob, err := f.db.CreateUser(ctx, store.NewUser{Username: "bob-index", PasswordHash: "h", Role: store.RoleMember})
@@ -132,18 +145,15 @@ func TestAssistantTurnContextCarriesItsPersonsProjectIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn := prompt.TurnContext(input)
-	if !strings.Contains(input.L0Index, "ws_budget") || !strings.Contains(turn, "- 『Budget』 (ws_budget)") {
-		t.Fatalf("Alice's project is absent from the turn's index:\n%s", turn)
+	index := prompt.ProjectIndexFile(input)
+	if !strings.Contains(input.L0Index, "ws_budget") || !strings.Contains(index, "- 『Budget』 (ws_budget)") {
+		t.Fatalf("Alice's project is absent from her project index:\n%s", index)
 	}
-	if strings.Contains(input.L0Index, "ws_bob_private") || strings.Contains(turn, "Bob private") {
-		t.Fatalf("Bob's private project entered Alice's turn:\n%s", turn)
+	if strings.Contains(input.L0Index, "ws_bob_private") || strings.Contains(index, "Bob private") {
+		t.Fatalf("Bob's private project entered Alice's index:\n%s", index)
 	}
 	if tokens := workspacedigest.EstimateTokens(input.L0Index); tokens > personalagent.L0IndexMaxTokens {
 		t.Fatalf("the turn's index takes %d tokens, more than %d", tokens, personalagent.L0IndexMaxTokens)
-	}
-	if strings.Count(turn, "Projects and computers, current index:\n") != 1 {
-		t.Fatalf("the turn's context repeats its index:\n%s", turn)
 	}
 }
 
@@ -247,7 +257,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 
 	finished := handOff("add an Excel export")
 	f.daemon.complete(finished, "Added the export.")
-	if text := notice(); !strings.Contains(text, "Finished:") || !strings.Contains(text, "Added the export.") || !strings.Contains(text, "read_context") ||
+	if text := notice(); !strings.Contains(text, "Finished:") || !strings.Contains(text, "Added the export.") || strings.Contains(text, "read_context") ||
 		!strings.Contains(text, f.server.assistant.SessionURL(finished)) || !strings.Contains(f.server.assistant.SessionURL(finished), "/chats/"+finished.ID+"?workspace=ws_budget") {
 		t.Fatalf("finished notice: %q", text)
 	}

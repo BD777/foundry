@@ -53,7 +53,7 @@ components:
     ConnectorAccountPermission:
       description: >-
         One connector account's override in a permission package. An account
-        with no entry uses the package default, write.
+        with no entry uses connectorDefault.
       type: object
       required:
         - accountId
@@ -88,9 +88,9 @@ components:
     PermissionPackage:
       description: >-
         One assistant's permissions, applied to its own conversation and to
-        every helper it starts. Workspaces default to all visible, connector
-        accounts default to write, and identity resources follow the device
-        (a new assistant's packages list none).
+        every helper it starts. Workspaces default to all visible, accounts
+        not named in connectorAccounts use connectorDefault, and identity
+        resources follow the device (a new assistant's packages list none).
         Skills are not part of it: they follow the workspace.
       type: object
       x-stored: true
@@ -98,6 +98,7 @@ components:
         - id
         - owner
         - workspaces
+        - connectorDefault
         - connectorAccounts
         - identityResources
       additionalProperties: false
@@ -109,6 +110,11 @@ components:
           type: string
         workspaces:
           $ref: "#/components/schemas/PermissionListRule"
+        connectorDefault:
+          description: >-
+            What connector accounts without an entry in connectorAccounts may
+            do. Existing assistants use write; later assistants start at off.
+          $ref: "#/components/schemas/ConnectorAccessLevel"
         connectorAccounts:
           type: array
           items:
@@ -133,6 +139,29 @@ components:
           type: string
         label:
           type: string
+        displayName:
+          description: >-
+            Who the account belongs to at the provider, when known; unlike
+            label, this is not the person's custom name for the connector.
+          type: string
+        appName:
+          description: The provider app's own name, when known.
+          type: string
+        tenantName:
+          description: The organisation's name at the provider, when known.
+          type: string
+        orgDomain:
+          description: >-
+            The organisation's email domain, used when its name is unavailable.
+          type: string
+        identity:
+          description: Who is signed in to a device-held connector, when read.
+          type: string
+        sites:
+          description: Sites or hosts the device-held connector is signed in to.
+          type: array
+          items:
+            type: string
         holding:
           type: string
         deviceId:
@@ -159,7 +188,7 @@ components:
     SetPersonalAgentConnectorLevelsInput:
       description: >-
         Replace the connector-account levels in the assistant's permission
-        package. Omitted accounts return to the package default, write.
+        package. Omitted accounts return to the package's connectorDefault.
       type: object
       additionalProperties: false
       properties:
@@ -405,6 +434,101 @@ components:
           format: int64
         expectedHash:
           type: string
+    MemorySortRecord:
+      description: >-
+        One decision of memory upkeep's sorting between the person's layer
+        and one assistant's (DEV-191): an automatic move (kind move, status
+        moving, moved, failed or undone) or a suggestion to share (kind
+        suggestion, status suggested, confirmed or dismissed). assistantId is
+        the assistant whose layer is the other side. title is the entry's
+        title and reason the reviewer's one sentence; bodies are never
+        recorded. undoable is whether the person can move it back now.
+      type: object
+      required:
+        - id
+        - kind
+        - status
+        - assistantId
+        - assistantName
+        - assistantIsDefault
+        - fromScope
+        - toScope
+        - title
+        - reason
+        - confidence
+        - mentions
+        - undoable
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [move, suggestion]
+        status:
+          type: string
+        assistantId:
+          type: string
+        assistantName:
+          type: string
+        assistantIsDefault:
+          type: boolean
+        fromScope:
+          $ref: "#/components/schemas/MemoryLayerScope"
+        toScope:
+          $ref: "#/components/schemas/MemoryLayerScope"
+        title:
+          type: string
+        reason:
+          type: string
+        confidence:
+          type: string
+        mentions:
+          type: array
+          items:
+            type: string
+        failure:
+          type: string
+        undoable:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    MemorySortList:
+      description: >-
+        GET /api/assistants/{id}/memory/sorting. The person's recent
+        automatic moves between layers (any of their assistants), newest
+        first, and the suggestions to share that still stand.
+      type: object
+      required:
+        - moves
+        - suggestions
+      additionalProperties: false
+      properties:
+        moves:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemorySortRecord"
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemorySortRecord"
+    MemorySortActionInput:
+      description: >-
+        POST /api/assistants/{id}/memory/sorting/{record}/action. undo moves an
+        automatic move back; confirm moves a suggested entry to the person's
+        layer; dismiss drops the suggestion.
+      type: object
+      required:
+        - action
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+          enum: [undo, confirm, dismiss]
     MemoryEntryMove:
       description: >-
         A captured move: the body is written to targetEntryId in the target

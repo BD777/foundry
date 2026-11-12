@@ -540,6 +540,18 @@ function validateServerHeldDescriptor(descriptor: ConnectorDescriptor): void {
         `${kind}: serverHeld.access.allowBy.otherwise`,
       );
   }
+  if (spec.events !== undefined) {
+    // A message channel feed (DEV-203); the server checks it in full.
+    const events = objectValue(spec.events, `${kind}: serverHeld.events`);
+    const poll = objectValue(events.poll, `${kind}: serverHeld.events.poll`);
+    if (typeof poll.path !== "string" || !poll.path.startsWith("/"))
+      fail(`${kind}: serverHeld.events.poll.path is a path`);
+    const envelope = objectValue(
+      events.envelope,
+      `${kind}: serverHeld.events.envelope`,
+    );
+    objectValue(envelope.fields, `${kind}: serverHeld.events.envelope.fields`);
+  }
   const session = objectValue(spec.session, `${kind}: serverHeld.session`);
   const env = session.env;
   if (!env || typeof env !== "object" || Array.isArray(env))

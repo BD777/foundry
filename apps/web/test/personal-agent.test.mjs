@@ -219,6 +219,8 @@ let overview;
 let calls = [];
 let tasks = [task];
 let assistantSummaries = [];
+let maintenanceJobs = [];
+let maintenancePreviewReplies = {};
 let externalAccounts = { providers: [], apps: [], accounts: [] };
 let connectorAccounts = [
   {
@@ -264,7 +266,6 @@ globalThis.fetch = async (input, init = {}) => {
     case "GET /api/personal-agent/knowledge/migrations":
     case "GET /api/personal-agent/knowledge/replica-cleanup":
     case "GET /api/personal-agent/operations":
-    case "GET /api/personal-agent/maintenance":
     case "GET /api/personal-agent/context-patches":
     case "GET /api/personal-agent/runs":
     case "GET /api/personal-agent/run-controls":
@@ -272,10 +273,23 @@ globalThis.fetch = async (input, init = {}) => {
     case "GET /api/personal-agent/memory":
     case "GET /api/personal-agent/knowledge/vaults/vault_test/entries":
       return json([]);
+    case "GET /api/personal-agent/maintenance":
+      return json(maintenanceJobs);
+    case "POST /api/personal-agent/maintenance/job_patch/patch":
+      return json(maintenancePreviewReplies[body.index]);
+    case "GET /api/personal-agent/memory/sorting":
+      return json({ moves: [], suggestions: [] });
+    case "GET /api/personal-agent/memory/layers":
+      return json({
+        assistantId: agent.id,
+        layers: [
+          { scope: "person", entries: [] },
+          { scope: "assistant", entries: [] },
+        ],
+        legacyUncopied: 0,
+      });
     case "GET /api/personal-agent/inbox":
       return json([]);
-    case "GET /api/personal-agent/memory/layers":
-      return json({ assistantId: "", legacyUncopied: 0, layers: [] });
     case "POST /api/personal-agent/inbox":
       return json(
         {
@@ -396,6 +410,8 @@ const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
 const { AssistantHome, AssistantSettings } =
   await import("../src/features/personal-agent/index.ts");
+const { MaintenanceSection } =
+  await import("../src/features/personal-agent/settings-maintenance.tsx");
 const model = await import("../src/features/personal-agent/assistant-model.ts");
 const { ProposalCard } =
   await import("../src/features/personal-agent/proposal-card.tsx");
@@ -1398,7 +1414,7 @@ test("memory location is independent from the assistant home and survives an off
     assert.match(page.container.textContent, /Memory desktop/);
     assert.match(
       page.container.textContent,
-      /being prepared or is temporarily unavailable/,
+      /prepared or is temporarily unavailable/,
     );
   } finally {
     await page.unmount();
@@ -1912,4 +1928,76 @@ test("completion evidence opens its owner workspace instead of the workspace cur
   );
   await page.unmount();
   window.history.replaceState(null, "", oldURL);
+});
+
+test("maintenance preview distinguishes new files from modified files", async () => {
+  const existingHash = "a".repeat(64);
+  maintenanceJobs = [
+    {
+      id: "job_patch",
+      role: "governance",
+      workspaceId: "ws_project",
+      eventKey: "review-patches",
+      status: "review",
+      revision: 3,
+      attempt: 1,
+      dueAt: iso(0),
+      createdAt: iso(-minute),
+      updatedAt: iso(0),
+      result: {
+        summary: "Split the root instructions",
+        findings: [],
+        patches: [
+          {
+            path: "docs/release.md",
+            baseHash: "",
+            content: "# Release\n",
+            reason: "Move the release workflow out of the root file",
+          },
+          {
+            path: "apps/web/AGENTS.md",
+            baseHash: existingHash,
+            content: "# Web\n",
+            reason: "Clarify the web instructions",
+          },
+        ],
+      },
+    },
+  ];
+  maintenancePreviewReplies = {
+    0: {
+      operationId: "preview-new",
+      path: "docs/release.md",
+      hash: "missing",
+      content: "",
+      state: "read",
+    },
+    1: {
+      operationId: "preview-modified",
+      path: "apps/web/AGENTS.md",
+      hash: existingHash,
+      content: "# Web\n",
+      state: "read",
+    },
+  };
+  const page = await render(MaintenanceSection, {
+    workspaces: [],
+    assistantId: undefined,
+  });
+  try {
+    const reviews = [...page.container.querySelectorAll("button")].filter(
+      (node) => node.textContent.trim() === "Review file change",
+    );
+    assert.equal(reviews.length, 2);
+    await act(async () => reviews[0].click());
+    await settle();
+    assert.match(page.container.textContent, /New file/);
+    await act(async () => reviews[1].click());
+    await settle();
+    assert.match(page.container.textContent, /Modified file/);
+  } finally {
+    maintenanceJobs = [];
+    maintenancePreviewReplies = {};
+    await page.unmount();
+  }
 });

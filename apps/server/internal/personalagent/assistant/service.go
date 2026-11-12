@@ -194,6 +194,13 @@ type Ports struct {
 	// on; FileTimeout bounds one device file read.
 	Origin      string
 	FileTimeout time.Duration
+	// MessageChannels, ChannelTitle and ChannelSkills are the assistant's
+	// message channels (DEV-203): their sessions, the title a channel
+	// conversation's new session gets, and the channel skills written into
+	// the assistant's home before each run. All optional.
+	MessageChannels store.MessageChannelStore
+	ChannelTitle    func(ctx context.Context, entry store.PersonalAgentInboxEntry) string
+	ChannelSkills   func(ctx context.Context, agent store.PersonalAgent) []personalagent.WorkspaceFile
 }
 
 // Service is the person's assistant at work. Its state is what it gathers
@@ -201,6 +208,9 @@ type Ports struct {
 // waited for an offline computer (lost on restart).
 type Service struct {
 	store           Store
+	messageChannels store.MessageChannelStore
+	channelTitle    func(ctx context.Context, entry store.PersonalAgentInboxEntry) string
+	channelSkills   func(ctx context.Context, agent store.PersonalAgent) []personalagent.WorkspaceFile
 	events          sessions.ChangeNotifier
 	sessions        Sessions
 	devices         Devices
@@ -230,6 +240,7 @@ func New(st Store, events sessions.ChangeNotifier, ports Ports) *Service {
 		workspaces: ports.Workspaces, accounts: ports.Accounts, digests: ports.Digests, server: ports.Server,
 		runs: ports.Runs, knowledge: ports.Knowledge, archiveSessions: ports.ArchiveSessions,
 		origin: ports.Origin, fileTimeout: ports.FileTimeout,
+		messageChannels: ports.MessageChannels, channelTitle: ports.ChannelTitle, channelSkills: ports.ChannelSkills,
 	}
 }
 

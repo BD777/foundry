@@ -107,12 +107,8 @@ test("digest handles numeric keys, HTML characters and Unicode separators", () =
 });
 
 test("a Codex stage session loads no native skills, so a candidate cannot plant one for its judge", () => {
-  for (const [instructions, directory] of [
-    [false, true],
-    [true, true],
-    [false, false],
-  ]) {
-    const { toml, overrides } = codexStageConfig(instructions, directory);
+  for (const directory of [true, false]) {
+    const { toml, overrides } = codexStageConfig(directory);
     assert.match(toml, /\[skills\]\ninclude_instructions = false\n/);
     assert.match(toml, /\[skills\.bundled\]\nenabled = false\n/);
     assert.deepEqual(overrides.skills, {
@@ -120,6 +116,6 @@ test("a Codex stage session loads no native skills, so a candidate cannot plant 
       bundled: { enabled: false },
     });
     assert.deepEqual(overrides.mcp_servers, {});
-    assert.equal(overrides.project_doc_max_bytes, instructions ? 32768 : 0);
+    assert.equal(overrides.project_doc_max_bytes, 0);
   }
 });

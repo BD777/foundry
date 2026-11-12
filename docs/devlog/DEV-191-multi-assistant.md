@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+已合入 main（PR #264，squash 7e2a354c）；[记忆自动整理](#记忆自动整理2026-11-12worktree-memory-sort)一节已合入 main（PR #265）。
 
 设计草案，等本人拍板（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）。现状地图见只读调查 [sess_1794474387399464358](https://dev.foundryapp.app/chats/sess_1794474387399464358)，本文中的 path:line 都来自那次调查。
 
@@ -283,3 +283,18 @@
 
 - 20:48 CST：web2 的 14 个文件与 srv2 的 11 个文件按暂存基线逐文件 `git merge-file` 三方合并，无冲突；Server 权限包引用校验、每助理设置链接、legacy memory 日志，和 Web 两层 memory、身份资源勾选、默认助理菜单、执行模型继承摘要都进入 dev。检查发现旧的 `TestAssistantLimits` 断言未跟上设置链接迁移，且 prompt 超过 `AGENTS.md` 上限；已将断言改为该助理自己的路径，把测试夹具改为真实 `/assistants/{id}/settings` 路径，将文案压到 28,672 字节内、prompt 升到 `2026-11-12.3` 并重新生成 golden。`go build ./...`、Server 指定正则测试、Web `tsc`、37 个改动测试通过；`audit-hints` 仅剩 `model-guide-dialog.tsx:114` 和 `unlinked-models.tsx:94` 两条已知失败，其余三项审计通过。Server 最终部署为 `5521876828437bbc…`（备份 `foundry-server.pre-dev191-v1b`），PM2 online 且 30 秒内保持 restarts=68，`/healthz` 200；Web 发布 build `d0c667fcd552460a`（前一版 `47a9d998efad669c`）。e2e-alice 截图：`dev191b-memory.png`、`dev191b-identity.png`、`dev191b-default-menu.png`、`dev191b-exec-inherit.png`（1280×900、浅色）。截图后合成助理已删除，浏览器已登出并关闭，临时目录已删除；记忆层页面没有删除入口，已通过同源 knowledge `forget` 请求清理本次产生的一条 `DEV191 synthetic memory` 条目并复核为空。
 - 21:25 CST：助理提示词瘦身，`system.md` 从 31,173 字节减到 15,513 字节，版本升到 `2026-11-12.4`；工具机制留在工具描述，golden 重新生成，`AGENTS.md` 从 28,312 字节减到 14,496 字节。Server 部署为 `04ef9a75573711518305e343e9c2693c96c80cdc7e2844f85a355796b4560eff`，PM2 restarts 70 且 30 秒内未变，本地与公网 `/healthz` 均为 200。
+
+## 记忆自动整理（2026-11-12，worktree memory-sort）
+
+起因：P2 把原来唯一的 memory vault 直接当成个人层，里面有默认助理记下的工作内容（例如某位同事是 QA、在维护提测 Workflow），新助理 ByteWork 也能看到。
+
+- **判断与执行分开**：memory review 的输出新增 `placements[]`（`entryId`、`belongs: person|assistant`、`confidence: high|medium|low`、`reason`、`mentions`），只有 memory 角色可以返回。执行在 `knowledge/sorting.go` 的 `SortLayer`：
+  - 个人层 → 来源助理的层：`belongs=assistant` 或 `mentions` 非空就自动移。来源从 `sourceRef` 推：`session:` 按 `AssistantForSession`，`legacy-memory:` 按 `pa_memory.assistant_id`，查不到的一律算默认助理。
+  - 助理层 → 个人层：`belongs=person`、`mentions` 为空、`confidence=high` 时自动移；`belongs=person`、`mentions` 为空但置信度不是 high 的，生成「建议共享」；`mentions` 非空的一律不动（代码兜底）。
+  - 已经被移动过的条目（`sourceRef` 以 `memory-move:` 开头，不管是整理、撤回还是本人手动移的）不再参与整理，避免来回移动，也不覆盖本人的决定。
+- **正文**：review 仍然是只读 verifier 会话，提示词只给脱敏后的索引；正文由 review 在本机读条目文件 `<root>/<id>.md`（verifier 本来就能读自己工作区的文件），只在这个会话里使用。日志表只存标题、一句理由、mentions，不存正文；服务器日志里不打印任何条目内容。
+- **移动**：复用 `MoveEntry`（先写目标层，再 forget 源条目；重放幂等）。记录表 `memory_sorts`（`setupMemorySorts`，幂等建表），一条记录对应一个源条目（`MemorySortID(vault, entry)`）：move 的状态为 `moving → moved | failed`，撤回后为 `undone`；suggestion 的状态为 `suggested → confirmed | dismissed`。先写 `moving` 再移动；临时失败的会由 knowledge drain 过 1 分钟重放。
+- **撤回 / 确认 / 忽略**：`GET memory/sorting` → `MemorySortList`；`POST memory/sorting/{record}/action` ← `MemorySortActionInput{action: undo|confirm|dismiss}`。撤回就是对目标条目反向调用 `MoveEntry`，前提是目标条目已经由设备写好。
+- **首次运行**：个人层的 maintenance key 里加了 `memorySortingVersion=1`，部署后每个人的个人层会被重新 review 一次；之后按 key 正常去重（ID 由 key 派生，重复采集不会再排队）。没有任何 active 条目的 vault 不再排队 review。
+- **默认助理停用时**：个人层的 review 改由第一个 active 助理来跑；`run.resolve` 对 memory 角色豁免「个人层所在工作区」的权限包检查，因为每个助理本来就能召回个人层。（windeng 的默认助理从 10-25 起一直是 stopped，不这样做的话，他的整理永远不会运行。）
+- **Web**：「关于你」分区里新增「建议共享」（共享 / 忽略）和「最近的自动整理」（撤回），中英文文案都有。

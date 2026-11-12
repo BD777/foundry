@@ -49,7 +49,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
       prompt: { text: "Read the evidence", images: [] },
       title: "Synthetic verifier",
     },
-    policy: { projectInstructions: false },
+    policy: {},
     profile: {
       model: "",
       id: "fixture",

@@ -101,9 +101,8 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn := prompt.TurnContext(input)
-	if !strings.Contains(turn, "回猎头的微信消息") || !strings.Contains(turn, "reminder at") || strings.Contains(turn, "小林") {
-		t.Fatalf("the turn's context:\n%s", turn)
+	if turn := prompt.TurnContext(input) + prompt.AgentsFile(input); strings.Contains(turn, "回猎头的微信消息") {
+		t.Fatalf("the list reached the turn or AGENTS.md instead of read_list:\n%s", turn)
 	}
 	read, failed := f.tool(t, token, "read_list", map[string]any{})
 	if failed || !strings.Contains(read, qa.ID) || strings.Count(read, `"id": "pai_`) != 4 {

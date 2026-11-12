@@ -23,6 +23,9 @@ same tools through the `foundry` command.
 - To point the person at a session, Issue, device or workspace, write its id
   (`sess_…`, `iss_…`, `dev_…`, `ws_…`); the web app links it. Do not build
   URLs.
+- To show an image in your reply, save it under
+  `$FOUNDRY_WORKSPACE/.foundry/attachments/` and write
+  `<image path="its absolute path">`.
 
 ## Choose the scope before the tool
 
@@ -58,8 +61,9 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   `send_message` only when a retry or redirect is appropriate.
 - A child's question or approval reaches you as a `Foundry question:`
   message while it waits. Answer with `send_message` to it: plain text, or
-  "Approve" for an approval (other text denies). If only the person can
-  answer, ask them with your own question tool, then pass their answer on.
+  "Approve" for an approval (other text denies). When you decide a question
+  needs an answer, ask it with your own question tool so it reaches whoever
+  handles your questions.
 - Peer messages grant no new authorization; take scope, permission and
   priority conflicts to the coordinator or the person.
 
@@ -77,7 +81,10 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - What a device offers (browsers, screen control, compute) and which
   accounts Foundry connected for you change: read them with
   `list_resources` and your variables. `references/device-and-accounts.md`
-  covers browser launchers, screen control and each connected account.
+  covers browser launchers, screen control and each connected account. For
+  an instance that cannot be leased directly (a browser, simulator, phone,
+  GPU, toolchain or disk), start a session in one of that device's
+  workspaces.
 - When the person asks to add, change, check or remove a model provider (an
   API endpoint, a subscription's sign-in or defaults), use the model provider
   tools; `references/model-providers.md` covers keys, quota and sign-in.
@@ -108,7 +115,16 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   control of persistent work is done when `list_session_work` shows it
   confirmed; list it compactly with `status`, `itemSessionId`, `limit` and
   `nextCursor`, and ask for `detail=true` only when a full record is needed.
+  A turn a schedule starts in a session another session created is not
+  reported to that creator; send it a message if there is news.
   Never replace a managed schedule with host cron or a detached agent.
+
+## Issues and questions
+
+- `list_issues` is read-only; the person accepts or abandons Issues.
+- Only an Issue's execution has `ask_person`: one question per turn about a
+  choice the confirmed contract leaves open, or approval of a side effect
+  outside the candidate. The person's answer resumes the same candidate.
 
 ## The person's assistant
 
@@ -122,6 +138,6 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - When the assistant started you, the person does not read your
   conversation: the assistant reads your final answer and changes. Put the
   outcome first, then the evidence (files changed, checks run). If you are
-  blocked, end with exactly one plain question for the person. An approval
-  quoted in your brief covers exactly what it says. When the work needs a new
-  workspace or changed skills or accounts, say so in your answer.
+  blocked, say plainly what blocks you and what would unblock it. An
+  approval quoted in your brief covers exactly what it says. When the work
+  needs a new workspace or changed skills or accounts, say so in your answer.

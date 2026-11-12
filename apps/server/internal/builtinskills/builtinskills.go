@@ -44,8 +44,8 @@ type definition struct {
 // Bump a revision whenever its folder changes, so workers fetch it again.
 var definitions = []definition{
 	{dir: "skill-creator", runtime: "claude", source: "Anthropic skills", revision: 1},
-	{dir: "foundry", runtime: "claude", source: "Foundry", revision: 35},
-	{dir: "foundry", runtime: "codex", source: "Foundry", revision: 35},
+	{dir: "foundry", runtime: "claude", source: "Foundry", revision: 36},
+	{dir: "foundry", runtime: "codex", source: "Foundry", revision: 36},
 	{dir: "foundry-orchestration", runtime: "claude", source: "Foundry", revision: 6},
 	{dir: "foundry-orchestration", runtime: "codex", source: "Foundry", revision: 6},
 }

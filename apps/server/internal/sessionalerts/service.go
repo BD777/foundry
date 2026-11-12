@@ -293,7 +293,7 @@ func AlertText(alert store.SessionAlert, child store.AgentSession) string {
 	}
 	return fmt.Sprintf("%s session %s (%q) %s.\nCode: %s\nDetail: %s\nAutomatic retry: %s\nNext: %s\nOccurrences: %d",
 		Prefix, child.ID, child.Title, status, alert.Code, detail,
-		retryText(alert.Code, alert.WillRetry), actionText(alert.Code), alert.Occurrences)
+		retryText(alert.Code, alert.WillRetry), nextText(alert.Code, alert.WillRetry), alert.Occurrences)
 }
 
 func alertState(code, status string) string {
@@ -337,20 +337,21 @@ func retryText(code string, willRetry bool) string {
 	return "no"
 }
 
-func actionText(code string) string {
+func nextText(code string, willRetry bool) string {
 	switch code {
-	case CodeCanceled:
-		return "do not resend automatically; inspect the canceller, then send_message only if the work should continue."
-	case CodeModelQuotaExhausted:
-		return "restore the provider account's quota or credit, or switch to another account; do not resend automatically."
+	case CodeCanceled, CodeModelQuotaExhausted:
+		return "no retry scheduled"
 	case CodeBlocked:
-		return "let any retry finish; inspect or cancel it if it stays blocked."
+		return "retrying if the blocking condition clears"
 	case CodeWaitingSlot:
-		return "let it continue; send_message only if it stays stuck or the work is no longer needed."
+		return "retrying when a slot frees"
 	case CodeDeviceOffline:
-		return "wait for the device to reconnect or redirect the work; do not resend it."
+		return "retrying when the device reconnects"
 	}
-	return "send_message to retry; if it fails again, try another model or account."
+	if willRetry {
+		return "retry pending"
+	}
+	return "no retry scheduled"
 }
 
 func oneLine(value string) string {

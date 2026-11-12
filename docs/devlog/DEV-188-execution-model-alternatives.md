@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（[PR #264](https://github.com/BD777/foundry/pull/264)）。
+已合入 main（PR #264，squash 7e2a354c）。
 
 设计已与本人达成共识（2026-11-12，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）；Server 和 Web 已实施并部署 dev，工作区保存修复与 Worker 组说明也已完成，待人工验收。
 
@@ -61,3 +61,4 @@
 | 2026-11-12 15:43 | Worker 组编辑器的按额度 / 按权重说明与字段标签统一，Web build `2a99efacde9b9601` 已部署；`pnpm typecheck` 通过，`profiles-feature` 31/31，线上主包确认中英文警告文案存在。截图 `worker-group-list-badges.png`（1280×900）显示两个 Badge。详见 [copy session](https://dev.foundryapp.app/chats/sess_1794467186081409353)。                                                                                   | 该版本已包含在后续 Web `728d8ae198733962` 中；人工视觉验收 |
 | 2026-11-12 17:03 | Server 侧完成并部署 dev。`go test ./internal/httpapi/` 8.713s、`go test ./internal/sqlitestore/` 0.219s 通过；Web typecheck 与 protocol build 通过。新二进制 SHA-256 前缀 `0a672c4d073b8529…`，PM2 online，重启计数 `58 → 59`，30 秒后稳定，`/healthz` 200；e2e-alice API 的 GET、旧格式 PUT、清空覆盖均符合预期。详见 [Server session](https://dev.foundryapp.app/chats/sess_1794472615276564772)。        | Web UI；dev API 未写入真实 provider 的 alternatives        |
 | 2026-11-12 17:31 | Web 完成并部署 dev build `728d8ae198733962`。默认与 alternatives 的保存/删除/继承态、页面命名与 Worker 组说明已实现；`pnpm typecheck` 通过，`profiles-feature` 34/34，component-system 与 state-layout 审计通过，hint 只剩两条既有失败。截图：`exec-models-light.png`、`exec-models-dark.png`、`exec-models-workspace.png`。详见 [Web session](https://dev.foundryapp.app/chats/sess_1794474486202174079)。 | 编排者最终目视确认；Server 按要求不强制列表                |
+| 2026-11-13 00:18 | PR #264 squash 合入 main（7e2a354c），CI 全绿                                                                                                                                                                                                                                                                                                                                                               | 无                                                         |

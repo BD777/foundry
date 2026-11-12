@@ -252,7 +252,7 @@ func (s *Service) createDevice(ctx context.Context, scope Scope, devices []store
 			}
 			reason := "the computer you named"
 			if candidate.Shared != "" {
-				reason += "; " + candidate.Shared + ", which the person chose to allow: tell them"
+				reason += "; " + candidate.Shared + ", which the person chose to allow"
 			}
 			return device, store.PersonalAgentPlacement{
 				Computer: device.Label, DeviceID: device.ID, Online: candidate.Online,
@@ -316,8 +316,7 @@ func noPlaceAnswer(none *personalagent.NoPlace) store.PersonalAgentNoPlace {
 	answer := store.PersonalAgentNoPlace{
 		Status: store.PersonalAgentNoPlaceStatus, Missing: none.Missing, Computers: []store.PersonalAgentPlaceGap{},
 		Next: "Nothing was created. None of the computers you may use is known to have " + strings.Join(none.Missing, ", ") +
-			". Ask the person ONE plain question in their words, naming what the work needs as they know it (\"the company network\", \"your work files\") and offering the computers that might have it by name, with the one you would pick. " +
-			"Never say device, label or these key:value words. If they name a computer, call create_workspace again with its deviceId; if a computer has it but is not allowed, they can allow it in your settings.",
+			". create_workspace accepts a deviceId from computers; a computer marked notAllowed can be allowed in your settings.",
 	}
 	for _, gap := range none.Computers {
 		answer.Computers = append(answer.Computers, store.PersonalAgentPlaceGap{
@@ -394,7 +393,7 @@ func (s *Service) scopedWorkspace(ctx context.Context, scope Scope, workspaceID 
 	}
 	if manage && !scope.manages(workspace) {
 		return workspace, refuse(store.PersonalAgentRefusalNotOwner, http.StatusUnprocessableEntity,
-			"not allowed: the person does not own %q or the computer it is on, so you may not change it. Tell them; its owner can change it in the project's settings.", workspace.Name)
+			"not allowed: the person does not own %q or the computer it is on, so you may not change it; its owner can change it in the project's settings.", workspace.Name)
 	}
 	return workspace, nil
 }

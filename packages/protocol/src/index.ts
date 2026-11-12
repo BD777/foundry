@@ -31,6 +31,7 @@ export {
 export * from "./browser-events.js";
 export * from "./connectors.js";
 export * from "./connector-extensions.js";
+export * from "./message-channels.js";
 export * from "./external-accounts.js";
 export * from "./external-connection-setup.js";
 export * from "./feishu.js";

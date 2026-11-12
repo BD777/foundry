@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,6 +31,43 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	jobs, _ = f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
 	if len(jobs) != 1 || jobs[0].Status != "complete" {
 		t.Fatal("unchanged content scheduled another model call")
+	}
+}
+
+func TestGovernancePromptIncludesLongInstructionBudget(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	release := "## Release\n" + strings.Repeat("Publish from the release branch after the full browser matrix.\n", 12)
+	agents := strings.Repeat("Use the repository convention.\n", 287) + release
+	f.daemon.setInstruction("AGENTS.md", agents)
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_budget", Name: "Budget", LocalPath: "/home/me/budget"},
+		WorkspaceFiles: []store.WorkspaceFileEntry{
+			{ID: "f1", WorkspaceID: "ws_budget", Path: "AGENTS.md", Name: "AGENTS.md", Kind: "file"},
+			{ID: "f2", WorkspaceID: "ws_budget", Path: "README.md", Name: "README.md", Kind: "file"},
+		},
+		Agents: []store.AgentProjection{{
+			ID: "agent_budget", WorkspaceID: "ws_budget", DeviceID: "dev_home", Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := f.server.assistant.MaintenancePrompt(ctx, store.PersonalAgentMaintenance{Role: "governance", WorkspaceID: "ws_budget", UserID: f.aliceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		fmt.Sprintf(`"path":"AGENTS.md","lines":300,"bytes":%d`, len(agents)),
+		`"overLineBudget":true`,
+		"at or below 200 lines",
+		"patches must only split or delete. Do not add content.",
+		"Never use @import",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("governance prompt lacks %q:\n%s", want, prompt)
+		}
 	}
 }
 
@@ -88,7 +126,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 		t.Fatal(e)
 	}
 	patches := f.server.store.(store.PersonalAgentContextPatchStore)
-	op := store.PersonalAgentContextPatch{ID: "context-once", AssistantID: agent.ID, UserID: f.aliceID, JobID: job.ID, WorkspaceID: "ws_budget", DeviceID: "dev_home", Index: 0, Path: "AGENTS.md", BaseHash: "missing", Hash: "expected"}
+	op := store.PersonalAgentContextPatch{ID: "context-once", AssistantID: agent.ID, UserID: f.aliceID, JobID: job.ID, WorkspaceID: "ws_budget", DeviceID: "dev_home", Index: 0, Path: "AGENTS.md", BaseHash: "", Hash: "expected"}
 	if _, e = patches.BeginPersonalAgentContextPatch(ctx, op, job.Revision); e == nil || !strings.Contains(e.Error(), "workspace_active") {
 		t.Fatalf("changed live context: %v", e)
 	}

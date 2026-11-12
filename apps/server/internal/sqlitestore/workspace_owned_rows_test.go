@@ -20,10 +20,11 @@ var ownerColumns = []string{"workspace_id", "issue_id", "session_id"}
 
 // unownedOwnerColumns name a workspace without belonging to it.
 var unownedOwnerColumns = map[string]string{
-	"pa_inbox.session_id":           "the person's durable intake survives deletion of a processing conversation",
-	"pa_run_snapshots.session_id":   "immutable personal run audit, not a child of its execution session",
-	"pa_run_controls.session_id":    "an unresolved exact-input stop receipt cannot be erased by deleting its session",
-	"knowledge_vaults.workspace_id": "the person's authority pointer and revocation recovery survive workspace loss; deletion of a current authority is refused",
+	"pa_inbox.session_id":                   "the person's durable intake survives deletion of a processing conversation",
+	"pa_run_snapshots.session_id":           "immutable personal run audit, not a child of its execution session",
+	"pa_run_controls.session_id":            "an unresolved exact-input stop receipt cannot be erased by deleting its session",
+	"message_channel_deliveries.session_id": "a channel's delivery audit, pruned by the channel's retention; it ties a session to its channel's scope",
+	"knowledge_vaults.workspace_id":         "the person's authority pointer and revocation recovery survive workspace loss; deletion of a current authority is refused",
 
 	"deleted_workspaces.workspace_id": "the deletion outlives the workspace",
 	"user_invites.workspace_id":       "an invite's grant; it lapses once its inviter no longer owns the workspace",

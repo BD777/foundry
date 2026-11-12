@@ -79,7 +79,7 @@ func (s *Service) settingsURL(agent store.PersonalAgent) string {
 
 // errStopped refuses what the assistant asks while the person has it
 // stopped.
-var errStopped = &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("the person pressed stop: you may not change anything or start work until they resume you. Tell them it is stopped and that they can say \"resume\"")}
+var errStopped = &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("stopped: the person pressed stop; nothing changes or starts until they resume you (they say \"resume\" or 继续)")}
 
 // AdmitSession is what a new session owes the person's assistant
 // (§8, §9): one it hands off is refused while it is stopped, past a limit
@@ -105,7 +105,7 @@ func (s *Service) AdmitSession(ctx context.Context, input store.CreateAgentSessi
 	}
 	if workspace, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && workspace.DeviceID != "" && workspace.ID != agent.WorkspaceID &&
 		!personalagent.DeviceSettings(agent.Settings.Devices, workspace.DeviceID, agent.HomeDeviceID).AllowWork {
-		return agent, true, &personalagent.Refusal{Status: http.StatusUnprocessableEntity, Err: errors.New("not allowed: the person keeps you from working on that project's computer; tell them, and that they can change it in your settings (" + s.settingsURL(agent) + ")")}
+		return agent, true, &personalagent.Refusal{Status: http.StatusUnprocessableEntity, Err: errors.New("not allowed: the person keeps you from working on that project's computer; they can change it in your settings (" + s.settingsURL(agent) + ")")}
 	}
 	usage, err := s.usage(ctx, agent)
 	if err != nil {
@@ -382,13 +382,11 @@ func (s *Service) ProposalChanged(proposal store.PersonalAgentProposal) {
 // proposalNoticeTexts tell the assistant the person's answer, [Chinese,
 // English]: its conversation shows them too.
 var proposalNoticeTexts = map[string][2]string{
-	"declined": {"本人没有同意：%s 不要做，除非本人再提起，也不要再问。",
-		"The person declined: %s Do not do it, and do not ask again unless they bring it up."},
-	"failed": {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
-	"applied": {"本人同意了，已经做好：%s\n%s\n接着做你刚才在做的事。",
-		"The person accepted and it is done: %s\n%s\nCarry on with what you were doing."},
-	"connectorApproved": {"本人同意了：%s 现在重复刚才那个完全相同的请求一次；只批准了这一次。",
-		"The person accepted: %s Repeat that exact connector request once now; this approval covers one call."},
+	"declined": {"本人没有同意：%s", "The person declined: %s"},
+	"failed":   {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
+	"applied":  {"本人同意了，已经做好：%s\n%s", "The person accepted and it is done: %s\n%s"},
+	"connectorApproved": {"本人同意了：%s 这次批准只覆盖再发一次完全相同的请求。",
+		"The person accepted: %s The approval covers one repeat of that exact connector request."},
 }
 
 // proposalNoticeSayer renders proposalNoticeTexts in the person's language.
@@ -425,15 +423,18 @@ func (s *Service) ExpireProposals(ctx context.Context, agent store.PersonalAgent
 	return nil
 }
 
-// tell sends the assistant session a server notice as its next
-// input: steered into a running turn, else a new turn.
-func (s *Service) tell(ctx context.Context, sessionID, text string) {
+// tell sends the assistant session a server notice as its next input:
+// steered into a running turn, else a new turn. It reports whether the
+// session accepted it; an offline queue refusal is not accepted.
+func (s *Service) tell(ctx context.Context, sessionID, text string) bool {
 	if sessionID == "" {
-		return
+		return false
 	}
 	if _, err := s.sessions.Send(ctx, sessionID, store.SendAgentSessionInput{Prompt: personalagent.Notice(text)}, nil); err != nil {
 		log.Printf("tell assistant session %s: %v", sessionID, err)
+		return false
 	}
+	return true
 }
 
 // recordAction appends to the assistant's audit trail; a failure to
@@ -639,7 +640,44 @@ func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (st
 	if err != nil {
 		return store.PersonalAgentOverview{}, err
 	}
-	return store.PersonalAgentOverview{Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage}, nil
+	pending, err := s.PendingFor(ctx, agent, 200)
+	if err != nil {
+		return store.PersonalAgentOverview{}, err
+	}
+	persons := make([]store.PendingItem, 0, len(pending))
+	for _, item := range pending {
+		if store.PendingHandledBy(item) == store.PendingHandlerPerson {
+			persons = append(persons, item)
+		}
+	}
+	shown := min(3, len(persons))
+	needsYou := &store.PersonalAgentNeedsYou{
+		Open:  len(persons),
+		Items: make([]store.PersonalAgentNeedsYouItem, 0, shown),
+	}
+	for _, item := range persons[:shown] {
+		where := item.WorkspaceID
+		if item.SessionID != "" {
+			if session, err := s.store.GetAgentSessionSummary(ctx, item.SessionID); err == nil && session.Title != "" {
+				where = session.Title
+			}
+		}
+		if item.WorkspaceID != "" {
+			if workspace, err := s.store.GetWorkspace(ctx, item.WorkspaceID); err == nil && workspace.Name != "" {
+				if where == item.WorkspaceID || where == "" {
+					where = workspace.Name
+				} else if workspace.Name != where {
+					where += " · " + workspace.Name
+				}
+			}
+		}
+		needsYou.Items = append(needsYou.Items, store.PersonalAgentNeedsYouItem{
+			ID: item.ID, Title: item.Title, Where: where,
+		})
+	}
+	return store.PersonalAgentOverview{
+		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage, NeedsYou: needsYou,
+	}, nil
 }
 
 // SaveSettings checks and stores what the panel saved.

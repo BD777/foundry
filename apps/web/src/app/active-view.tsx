@@ -23,11 +23,7 @@ import {
   type IssueDraftRequest,
   type IssuesFeatureEvent,
 } from "../features/issues";
-import {
-  needsYouSummary,
-  PendingFeature,
-  type PendingItems,
-} from "../features/pending";
+import { PendingFeature, type PendingItems } from "../features/pending";
 import { ProfilesFeature } from "../features/profiles";
 import { ResourcesFeature } from "../features/resources";
 import { SkillLibraryFeature } from "../features/skill-library";
@@ -105,7 +101,9 @@ export function ActiveView({
   const { activeView, selectedDeviceId } = location;
   const account = useAccountSession();
 
-  function handleAssistantEvent(event: AssistantFeatureEvent): void {
+  async function handleAssistantEvent(
+    event: AssistantFeatureEvent,
+  ): Promise<void> {
     switch (event.type) {
       case "notice.requested":
         setNotice(event.message, event.tone);
@@ -122,10 +120,10 @@ export function ActiveView({
         location.setActiveView("assistant");
         return;
       case "assistant.created":
+        await onAssistantsReload();
         location.setSelectedAssistantId(event.assistantId);
         onAssistantSectionChange("places");
         location.setActiveView("assistantSettings");
-        void onAssistantsReload();
         return;
       case "assistants.changed":
         void onAssistantsReload();
@@ -157,6 +155,7 @@ export function ActiveView({
           error={assistants.state === "failed" ? assistants.message : undefined}
           onEvent={handleAssistantEvent}
           onReload={onAssistantsReload}
+          selectedAssistantId={location.selectedAssistantId}
           state={assistants.state}
         />
       );
@@ -171,6 +170,7 @@ export function ActiveView({
             }
             onEvent={handleAssistantEvent}
             onReload={onAssistantsReload}
+            selectedAssistantId={location.selectedAssistantId}
             state={assistants.state}
           />
         );
@@ -179,15 +179,10 @@ export function ActiveView({
         <AssistantHome
           assistantId={location.selectedAssistantId}
           agentProfiles={data.agentProfiles}
+          assistants={assistants.assistants}
           devices={data.devices}
           key={location.selectedAssistantId}
-          needsYou={
-            pending.list
-              ? needsYouSummary(pending.list.items, pending.list.open)
-              : undefined
-          }
           onEvent={handleAssistantEvent}
-          showAssistantSwitcher={assistants.assistants.length > 1}
           workspaces={data.workspaces}
         />
       );
@@ -202,6 +197,7 @@ export function ActiveView({
             }
             onEvent={handleAssistantEvent}
             onReload={onAssistantsReload}
+            selectedAssistantId={location.selectedAssistantId}
             state={assistants.state}
           />
         );

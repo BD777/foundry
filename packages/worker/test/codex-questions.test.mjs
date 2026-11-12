@@ -186,7 +186,7 @@ test("an approval nobody answers in time is declined and settles", async (t) => 
   await until(() => steers().length === 1);
   assert.match(
     steers()[0],
-    /nobody approved the command `touch done.txt` in time/,
+    /the command `touch done\.txt` was not approved: timed out after 100ms/,
   );
   // An answer after the wait is a message for Codex, not the card's.
   assert.equal(thread.answerQuestion("Approve"), false);
@@ -243,8 +243,8 @@ test("a child's approval is relayed for the next turn; once approved, the same c
   assert.equal(cards[0].id, "approval_cmd-1");
   assert.deepEqual(responses()[0].result, { decision: "decline" });
   await until(() => steers().length === 1);
-  assert.match(steers()[0], /requested from the session that created you/);
-  assert.match(steers()[0], /End your turn now/);
+  assert.match(steers()[0], /relayed to the session that created you/);
+  assert.match(steers()[0], /NOT performed yet/);
 
   // The parent's "Approve" comes as the next turn's input.
   thread.observeInput(answer(cards[0], "Approve"));
@@ -258,7 +258,7 @@ test("a child's approval is relayed for the next turn; once approved, the same c
   assert.deepEqual(responses()[2].result, { decision: "decline" });
 });
 
-test("a child's question is relayed and its turn told to end", async (t) => {
+test("a child's question is relayed and its answer arrives next turn", async (t) => {
   const { thread, responses, steers } = fixture(t, userInput, {
     to: "parent",
   });
@@ -267,7 +267,7 @@ test("a child's question is relayed and its turn told to end", async (t) => {
   assert.equal(cards[0].delivery, "next_turn");
   assert.deepEqual(responses()[0].result, { answers: {} });
   await until(() => steers().length === 1);
-  assert.match(steers()[0], /The answer arrives as your next message/);
+  assert.match(steers()[0], /answer arrives as your next message/);
 });
 
 test("with nobody to answer, prompts are declined at once", async (t) => {
@@ -293,8 +293,8 @@ test("with nobody to answer, prompts are declined at once", async (t) => {
     await runTurn(thread, (message) => cards.push(message));
     assert.equal(cards.length, 0, request.method);
     await until(() => steers().length === 1);
-    assert.match(steers()[0], /nobody can answer prompts in this session/);
-    assert.match(steers()[0], /do not retry it/);
+    assert.match(steers()[0], /has no approver in this session/);
+    assert.match(steers()[0], /NOT performed or answered/);
     const declines = {
       "item/commandExecution/requestApproval": { decision: "decline" },
       "item/tool/requestUserInput": { answers: {} },

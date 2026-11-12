@@ -78,7 +78,22 @@ func (s *Store) setupPermissionPackages(ctx context.Context) error {
 			return fmt.Errorf("migrate permission packages: %w", err)
 		}
 	}
+	if err := s.migrateConnectorDefaults(ctx); err != nil {
+		return err
+	}
 	return s.migrateIdentityResources(ctx)
+}
+
+// migrateConnectorDefaults preserves the pre-field behavior for existing
+// packages. A package created by the current binary already has an explicit
+// off, read or write default and is left alone on every later start.
+func (s *Store) migrateConnectorDefaults(ctx context.Context) error {
+	if _, err := s.conn().ExecContext(ctx, `UPDATE permission_packages
+		SET payload_json = json_set(payload_json, '$.connectorDefault', 'write')
+		WHERE coalesce(json_extract(payload_json, '$.connectorDefault'), '') = ''`); err != nil {
+		return fmt.Errorf("migrate permission package connector defaults: %w", err)
+	}
+	return nil
 }
 
 // migrateIdentityResources rewrites packages saved before DEV-191 P0. The

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -41,6 +43,188 @@ func newNeedsYouFixture(t *testing.T) needsYouFixture {
 	}
 	f.token = token
 	return f
+}
+
+// An assistant sees its own items, unassigned items in workspaces its
+// package allows, and personal account items it may use. Personal items
+// with neither workspace nor account stay with the default assistant.
+func TestNeedsYouVisibilityFollowsAssistantScope(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	defaultAgent := defaultAssistantOf(t, f.server, f.aliceID)
+	work, err := f.db.CreatePersonalAgent(ctx, store.PersonalAgent{
+		UserID: f.aliceID, Name: "Work", WorkspaceID: "ws_budget", HomeDeviceID: "dev_home",
+	})
+	if err != nil || work.IsDefault {
+		t.Fatalf("work assistant = %+v (%v)", work, err)
+	}
+	pkg, err := f.db.GetPermissionPackage(ctx, f.aliceID, work.PermissionPackageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg.Workspaces = store.PermissionListRule{
+		Scope: store.PermissionListScopeListed, Include: []string{"ws_budget"},
+	}
+	pkg.ConnectorAccounts = []store.ConnectorAccountPermission{
+		{AccountID: "acct_allowed", Level: store.ConnectorAccessLevelRead},
+		{AccountID: "device:dev_home:github", Level: store.ConnectorAccessLevelOff},
+	}
+	if _, err := f.db.SavePermissionPackage(ctx, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	record := func(title, assistantID, workspaceID, source, key string) {
+		t.Helper()
+		if _, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
+			UserID: f.aliceID, AssistantID: assistantID, WorkspaceID: workspaceID,
+			Source: source, Key: key, Title: title, Excerpt: title, Handler: store.PendingHandlerPerson,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record("default's own", defaultAgent.ID, "ws_pa", store.PendingSourceQuestion, "own:default")
+	record("work's own", work.ID, "ws_budget", store.PendingSourceQuestion, "own:work")
+	record("budget question", "", "ws_budget", store.PendingSourceQuestion, "workspace:budget")
+	record("assistant home question", "", "ws_pa", store.PendingSourceQuestion, "workspace:pa")
+	record("allowed account", "", "", store.PendingSourceAccount, "account:acct_allowed")
+	record("blocked connector", "", "", store.PendingSourceConnector, "connector:dev_home:github")
+	record("bundle rollout", "", "", store.PendingSourceBundleUpdate, "bundle:repo")
+	if _, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
+		UserID: f.aliceID, AssistantID: work.ID, WorkspaceID: "ws_budget",
+		Source: store.PendingSourceQuestion, Key: "own:work-handling",
+		Title: "work is handling", Excerpt: "work is handling", Handler: store.PendingHandlerAssistant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	titles := func(items []store.PendingItem) []string {
+		got := make([]string, len(items))
+		for index, item := range items {
+			got[index] = item.Title
+		}
+		slices.Sort(got)
+		return got
+	}
+	defaultItems, err := f.server.assistant.PendingFor(ctx, defaultAgent, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := titles(defaultItems); !slices.Equal(got, []string{
+		"allowed account", "assistant home question", "blocked connector",
+		"budget question", "bundle rollout", "default's own",
+	}) {
+		t.Fatalf("default assistant sees %v", got)
+	}
+	workItems, err := f.server.assistant.PendingFor(ctx, work, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := titles(workItems); !slices.Equal(got, []string{
+		"allowed account", "budget question", "work is handling", "work's own",
+	}) {
+		t.Fatalf("work assistant sees %v", got)
+	}
+	list, _ := f.open(t)
+	if len(list.Assistants) != 2 || !slices.ContainsFunc(list.Assistants, func(agent pendingAssistantView) bool {
+		return agent.ID == work.ID && agent.Name == "Work"
+	}) {
+		t.Fatalf("assistant filter choices = %+v", list.Assistants)
+	}
+	if !slices.ContainsFunc(list.Items, func(item pendingItemView) bool {
+		return item.Title == "work's own" && item.AssistantName == "Work"
+	}) {
+		t.Fatalf("work item source = %+v", list.Items)
+	}
+	input, err := f.server.assistant.PromptInput(ctx, work, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The needs-you list reaches the assistant through the needs_you tool
+	// (PendingFor), never with the turn (DEV-200).
+	if turn := prompt.TurnContext(input) + prompt.AgentsFile(input); strings.Contains(turn, "work's own") {
+		t.Fatalf("the needs-you list reached the turn or AGENTS.md:\n%s", turn)
+	}
+	overview, err := f.server.assistant.OverviewOf(ctx, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.NeedsYou == nil || overview.NeedsYou.Open != len(workItems)-1 {
+		t.Fatalf("assistant card count = %+v, scope = %v", overview.NeedsYou, titles(workItems))
+	}
+	for _, item := range overview.NeedsYou.Items {
+		if item.Title == "work is handling" {
+			t.Fatalf("assistant card includes work already handled: %+v", overview.NeedsYou.Items)
+		}
+		if !slices.Contains(titles(workItems), item.Title) {
+			t.Fatalf("assistant card sees %+v, scope sees %v", overview.NeedsYou.Items, titles(workItems))
+		}
+	}
+}
+
+func TestNeedsYouAssistantFirstWhenAssistantIsStopped(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	if _, err := f.db.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped); err != nil {
+		t.Fatal(err)
+	}
+	f.ask(t, f.helper, "offline", "Which export format?")
+	_, open := f.open(t)
+	item := open[f.helper.ID]
+	if item.Handler != store.PendingHandlerAssistant || item.AssistantID != agent.ID || item.DeadlineAt == "" {
+		t.Fatalf("assistant stopped at creation: %+v", item)
+	}
+}
+
+func TestNeedsYouEscalatesAnUnacknowledgedItemAfterTenMinutes(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	now := time.Now().UTC()
+	item, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
+		UserID: f.aliceID, AssistantID: agent.ID, WorkspaceID: f.helper.WorkspaceID, SessionID: f.helper.ID,
+		Source: store.PendingSourceQuestion, Key: "escalate:test", Title: "Choose a format", Excerpt: "Choose a format",
+		Handler: store.PendingHandlerAssistant, DeadlineAt: formatPendingTime(now.Add(-time.Minute)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.maintainNeedsYou(ctx, now)
+	got, err := f.db.GetPendingItem(ctx, f.aliceID, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Handler != store.PendingHandlerPerson || got.HandedReason != store.PendingHandedTimeout ||
+		got.Outcome != store.PendingOutcomeEscalatedTimeout || got.HandedAt == "" {
+		t.Fatalf("escalated item = %+v", got)
+	}
+}
+
+func TestNeedsYouAcknowledgementPreventsEscalation(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	now := time.Now().UTC()
+	item, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
+		UserID: f.aliceID, AssistantID: agent.ID, WorkspaceID: f.helper.WorkspaceID, SessionID: f.helper.ID,
+		Source: store.PendingSourceQuestion, Key: "ack:test", Title: "Choose a format", Excerpt: "Choose a format",
+		Handler: store.PendingHandlerAssistant, DeadlineAt: formatPendingTime(now.Add(-time.Minute)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, failed := f.needsYou(t, map[string]any{"op": "list"})
+	if failed || !strings.Contains(text, "Choose a format") {
+		t.Fatalf("needs_you list: %s", text)
+	}
+	f.server.maintainNeedsYou(ctx, now)
+	got, err := f.db.GetPendingItem(ctx, f.aliceID, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Handler != store.PendingHandlerAssistant || got.AcknowledgedAt == "" || got.Outcome != "" {
+		t.Fatalf("acknowledged item = %+v", got)
+	}
 }
 
 // ask records a question the session asked, as its worker reports it.
@@ -128,8 +312,12 @@ func TestNeedsYouOneListWithTwoHandlers(t *testing.T) {
 	helper := f.helper
 	helper.Input = store.SessionInput{ID: "in_answer", SentBySessionID: f.conversation.ID, At: formatPendingTime(time.Now().Add(time.Second))}
 	pendingReactions{f.server}.SessionChanged(ctx, sessions.Queued, helper)
+	answeredID := open[f.helper.ID].ID
 	if _, open = f.open(t); open[f.helper.ID].ID != "" {
 		t.Fatalf("answered helper still waits: %+v", open[f.helper.ID])
+	}
+	if answered, err := f.db.GetPendingItem(ctx, f.aliceID, answeredID); err != nil || answered.Outcome != store.PendingOutcomeAssistantAnswered {
+		t.Fatalf("assistant answer outcome = %+v (%v)", answered, err)
 	}
 	// What only the person can decide, it hands over with a note.
 	f.ask(t, f.helper, "h2", "Delete the old exports?")
@@ -141,6 +329,9 @@ func TestNeedsYouOneListWithTwoHandlers(t *testing.T) {
 	handed := open[f.helper.ID]
 	if handed.Handler != store.PendingHandlerPerson || handed.HandedReason != store.PendingHandedByAssistant || !strings.Contains(handed.Note, "last year's exports") || list.Open != 2 || list.AssistantOpen != 0 {
 		t.Fatalf("handed over: %+v (open %d)", handed, list.Open)
+	}
+	if handed.Outcome != store.PendingOutcomeHandedOver {
+		t.Fatalf("hand-over outcome = %q", handed.Outcome)
 	}
 	// A helper that asked in its answer gets an item from the note alone.
 	helper.Input = store.SessionInput{ID: "in_more", SentBySessionID: f.conversation.ID, At: formatPendingTime(time.Now().Add(2 * time.Second))}
@@ -160,9 +351,9 @@ func TestNeedsYouOneListWithTwoHandlers(t *testing.T) {
 	}
 }
 
-// While the assistant's computer is offline its items go to the person and
-// stay there once it is back, until either side settles them (§h).
-func TestNeedsYouOfflineItemsStayWithThePerson(t *testing.T) {
+// While the assistant's computer is offline its items queue for it; the
+// person's list does not take them over (§h).
+func TestNeedsYouOfflineItemsStayWithTheAssistant(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	f.ask(t, f.helper, "h1", "Which export format?")
 	if _, open := f.open(t); open[f.helper.ID].Handler != store.PendingHandlerAssistant {
@@ -173,10 +364,10 @@ func TestNeedsYouOfflineItemsStayWithThePerson(t *testing.T) {
 	waitFor(t, "the home computer to drop", func() bool { return !f.server.hub.HasConnection("dev_home") })
 	list, open := f.open(t)
 	shown := open[f.helper.ID]
-	if shown.Handler != store.PendingHandlerPerson || shown.HandedReason != store.PendingHandedOffline || list.Open != 1 {
+	if shown.Handler != store.PendingHandlerAssistant || list.Open != 0 || list.AssistantOpen != 1 {
 		t.Fatalf("offline: %+v (open %d)", shown, list.Open)
 	}
-	// A question asked meanwhile is the person's at once.
+	// A question asked meanwhile queues for the assistant too.
 	f.ask(t, f.helper, "h2", "And the file name?")
 	// The device reconnects with its credential (the package tests' actor).
 	f.server.testActor = &Actor{Kind: ActorDaemon, DeviceID: "dev_home", Account: &store.User{ID: f.aliceID}}
@@ -184,9 +375,8 @@ func TestNeedsYouOfflineItemsStayWithThePerson(t *testing.T) {
 	f.server.testActor = nil
 	waitFor(t, "the home computer to return", func() bool { return f.server.hub.HasConnection("dev_home") })
 	list, open = f.open(t)
-	// Both questions, the one handed over while offline and the one asked
-	// meanwhile, stay the person's.
-	if open[f.helper.ID].Handler != store.PendingHandlerPerson || list.Open != 2 || list.AssistantOpen != 0 {
+	// Both questions stay the assistant's.
+	if open[f.helper.ID].Handler != store.PendingHandlerAssistant || list.Open != 0 || list.AssistantOpen != 2 {
 		t.Fatalf("back online, the item left the person's list: %+v (open %d)", open[f.helper.ID], list.Open)
 	}
 	// The assistant may still settle it; then it is gone.
@@ -198,8 +388,8 @@ func TestNeedsYouOfflineItemsStayWithThePerson(t *testing.T) {
 	}
 }
 
-// The stop switch hands the assistant's items to the person for good, and a
-// question asked while it is stopped is the person's from the start.
+// The stop switch hands the assistant's existing items to the person; a
+// question created while it is stopped still queues for the assistant.
 func TestNeedsYouStoppedAssistantHandsOver(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	ctx := context.Background()
@@ -217,7 +407,7 @@ func TestNeedsYouStoppedAssistantHandsOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.ask(t, helper2, "h2", "Proceed?")
-	if _, open := f.open(t); store.PendingHandledBy(open[helper2.ID].PendingItem) != store.PendingHandlerPerson {
+	if _, open := f.open(t); store.PendingHandledBy(open[helper2.ID].PendingItem) != store.PendingHandlerAssistant {
 		t.Fatalf("asked while stopped: %+v", open[helper2.ID])
 	}
 }

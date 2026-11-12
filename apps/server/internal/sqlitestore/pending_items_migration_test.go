@@ -29,11 +29,13 @@ func TestPendingTriageStorageIsDropped(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var tables, answers int
+		var tables, answers, outcomeColumns int
 		_ = db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'pending_triage_settings'`).Scan(&tables)
 		_ = db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM pending_items WHERE source = 'answer'`).Scan(&answers)
-		if tables != 0 || answers != 0 {
-			t.Fatalf("triage storage kept: %d tables, %d answer items", tables, answers)
+		_ = db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('pending_items')
+			WHERE name IN ('handler', 'deadline_at', 'acknowledged_at', 'notified_at', 'outcome')`).Scan(&outcomeColumns)
+		if tables != 0 || answers != 0 || outcomeColumns != 5 {
+			t.Fatalf("pending migration: %d tables, %d answer items, %d outcome columns", tables, answers, outcomeColumns)
 		}
 		_ = db.Close()
 	}

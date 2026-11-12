@@ -42,7 +42,7 @@ func (e *LimitError) Error() string {
 		"monthlyTokenBudget":  "the monthly budget of %d tokens",
 	}[e.Limit]
 	return fmt.Sprintf("limit reached: the person allows at most "+what+
-		". Tell them plainly you cannot do more now, and that they can raise the limit in the assistant's settings ("+cmp.Or(e.SettingsURL, SettingsPath)+").", e.Max)
+		"; the person can raise the limit in the assistant's settings ("+cmp.Or(e.SettingsURL, SettingsPath)+").", e.Max)
 }
 
 // Windows are the starts of the windows the limits count in: the last

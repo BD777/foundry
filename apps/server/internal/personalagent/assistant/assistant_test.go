@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -13,10 +14,29 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+func maintenancePatchReview(path, baseHash string) string {
+	raw, _ := json.Marshal(store.MaintenanceResult{
+		Summary: "Review split targets",
+		Patches: []store.MaintenancePatch{{
+			Path:     path,
+			BaseHash: baseHash,
+			Content:  "# Reviewed context\n",
+			Reason:   "Keep the source bounded",
+		}},
+	})
+	return string(raw)
+}
+
 func TestMaintenanceResultRejectsWritesOutsideReviewedContract(t *testing.T) {
 	valid := `{"summary":"Initialize purpose","findings":[],"patches":[{"path":"AGENTS.md","baseHash":"missing","content":"# Purpose\nAsk before changing goals.","reason":"No context file exists"}]}`
 	if _, e := parseMaintenanceResult("governance", valid); e != nil {
 		t.Fatal(e)
+	}
+	for _, kind := range []string{"instruction_budget", "instruction_bloat"} {
+		raw := strings.Replace(valid, `"findings":[]`, `"findings":[{"kind":"`+kind+`","summary":"Split this section","sourceRefs":["AGENTS.md"]}]`, 1)
+		if _, e := parseMaintenanceResult("governance", raw); e != nil {
+			t.Fatalf("%s finding rejected: %v", kind, e)
+		}
 	}
 	for _, raw := range []string{strings.Replace(valid, "AGENTS.md", "../AGENTS.md", 1), strings.Replace(valid, "missing", "not-a-hash", 1), strings.Replace(valid, `"findings":[]`, `"findings":[{"kind":"confirmed_fact","summary":"guess","sourceRefs":[]}]`, 1)} {
 		if _, e := parseMaintenanceResult("governance", raw); e == nil {
@@ -25,6 +45,65 @@ func TestMaintenanceResultRejectsWritesOutsideReviewedContract(t *testing.T) {
 	}
 	if _, e := parseMaintenanceResult("memory", valid); e == nil {
 		t.Fatal("memory review wrote a new source fact")
+	}
+}
+
+func TestMaintenanceResultAllowsReviewedSplitTargets(t *testing.T) {
+	allowed := []string{
+		"AGENTS.md",
+		"README.md",
+		"apps/web/AGENTS.md",
+		"packages/worker/src/AGENTS.md",
+		"docs/release.md",
+		"docs/operations/release.md",
+		".claude/skills/release/SKILL.md",
+		".claude/skills/release/references/checklist.md",
+		".agents/skills/release/SKILL.md",
+		".agents/skills/release/references/checklist.md",
+	}
+	for _, path := range allowed {
+		result, err := parseMaintenanceResult("governance", maintenancePatchReview(path, ""))
+		if err != nil {
+			t.Fatalf("%s rejected: %v", path, err)
+		}
+		if result.Patches[0].BaseHash != "" {
+			t.Fatalf("%s new-file base hash = %q", path, result.Patches[0].BaseHash)
+		}
+	}
+	if result, err := parseMaintenanceResult("governance", maintenancePatchReview("docs/release.md", strings.Repeat("a", 64))); err != nil || result.Patches[0].BaseHash == "" {
+		t.Fatalf("modified file rejected: %+v %v", result, err)
+	}
+	rejected := []string{
+		"/tmp/AGENTS.md",
+		"C:/AGENTS.md",
+		"../AGENTS.md",
+		"docs/../AGENTS.md",
+		"docs//release.md",
+		"docs/./release.md",
+		".git/AGENTS.md",
+		"project/.git/AGENTS.md",
+		".foundry/AGENTS.md",
+		"docs/release.txt",
+		".claude/skills/release/notes.md",
+		".claude/skills/release/references/nested/checklist.md",
+	}
+	for _, path := range rejected {
+		if _, err := parseMaintenanceResult("governance", maintenancePatchReview(path, "")); err == nil {
+			t.Fatalf("%s accepted", path)
+		}
+	}
+}
+
+func TestContextPatchNewFileReviewAcceptsMissingPreview(t *testing.T) {
+	if !contextPatchReviewedCurrent("", "missing") || !contextPatchReviewedCurrent("", "") {
+		t.Fatal("new-file preview was not accepted")
+	}
+	hash := strings.Repeat("a", 64)
+	if !contextPatchReviewedCurrent(hash, hash) {
+		t.Fatal("modified-file preview was not accepted")
+	}
+	if contextPatchReviewedCurrent(hash, "missing") || contextPatchReviewedCurrent("", strings.Repeat("b", 64)) {
+		t.Fatal("unreviewed source was accepted")
 	}
 }
 
@@ -115,4 +194,27 @@ func refusalStatus(err error) int {
 		return refusal.HTTPStatus()
 	}
 	return 0
+}
+
+// A memory review may judge each entry's layer; only a memory review, and
+// only with a known judgement and confidence.
+func TestMemoryReviewPlacements(t *testing.T) {
+	valid := `{"summary":"Sorted","findings":[],"patches":[],"placements":[{"entryId":"knowledge_1","belongs":"assistant","confidence":"high","reason":"A colleague at work.","mentions":["Weichao"]},{"entryId":"knowledge_2","belongs":"person","confidence":"medium","reason":"A general preference.","mentions":[]}]}`
+	review, err := parseMaintenanceReview("memory", valid)
+	if err != nil || len(review.Placements) != 2 || review.Placements[0].Mentions[0] != "Weichao" || review.Summary != "Sorted" {
+		t.Fatalf("review = %+v %v", review, err)
+	}
+	if _, err := parseMaintenanceResult("governance", valid); err == nil {
+		t.Fatal("a governance review placed memory entries")
+	}
+	for _, raw := range []string{
+		strings.Replace(valid, `"belongs":"assistant"`, `"belongs":"everyone"`, 1),
+		strings.Replace(valid, `"confidence":"high"`, `"confidence":"sure"`, 1),
+		strings.Replace(valid, `"reason":"A colleague at work."`, `"reason":""`, 1),
+		strings.Replace(valid, `"entryId":"knowledge_1"`, `"entryId":""`, 1),
+	} {
+		if _, err := parseMaintenanceReview("memory", raw); err == nil {
+			t.Fatal("invalid placement accepted", raw)
+		}
+	}
 }

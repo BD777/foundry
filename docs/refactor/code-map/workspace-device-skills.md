@@ -20,13 +20,13 @@ Paths are relative to the repo root. LOC = `wc -l`, non-test files only. Abbrevi
 
 #### 2. Workspace instructions & context
 
-| Layer             | Files                                                                                                                                                              | LOC  | Role in one line                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | -------------------------------------------------------------------------------------------------------- |
-| Worker            | `W/workspace-instructions.ts`, `W/workspace-context-revision.ts`; consumed by `W/session/claude.ts:103`, `W/session-policy.ts`, `W/daemon/workspace-roster.ts:277` | 161  | Which instruction files a Claude session admits; content-identity revision that triggers re-registration |
-| Server (boundary) | `S/workspacedigest/*` (1776), `S/httpapi/workspace_digests.go` (625), `S/sqlitestore/workspace_digests.go` (363)                                                   | 2764 | Personal-agent digest of workspaces/devices (owned by PA group; reads workspace+device rows)             |
+| Layer             | Files                                                                                                            | LOC  | Role in one line                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------- |
+| Worker            | `W/workspace-context-revision.ts`; consumed by `W/session-policy.ts`, `W/daemon/workspace-roster.ts:277`         | ~131 | Content-identity revision that triggers workspace re-registration                            |
+| Server (boundary) | `S/workspacedigest/*` (1776), `S/httpapi/workspace_digests.go` (625), `S/sqlitestore/workspace_digests.go` (363) | 2764 | Personal-agent digest of workspaces/devices (owned by PA group; reads workspace+device rows) |
 
-- Entry points: `claudeWorkspaceInstructions` workspace-instructions.ts:5; `workspaceInstructionRevision` workspace-context-revision.ts:105.
-- Depends on: Sessions (prompt assembly), Daemon connection (revision change re-registers).
+- Entry points: `workspaceInstructionRevision` workspace-context-revision.ts:105.
+- Depends on: Daemon connection (revision change re-registers).
 
 #### 3. Devices (identity, pairing & credentials, system-account sharing, removal, rename/labels/placement facts, outside files, runtime settings, diagnostics/repair)
 

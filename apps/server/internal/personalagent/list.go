@@ -16,9 +16,6 @@ import (
 const (
 	ListItemMaxChars = 200
 	ListWhenMaxChars = 60
-	// ListContextMax bounds the open items each turn's context shows; the
-	// rest are one read_list away.
-	ListContextMax = 20
 )
 
 // ListItemText checks an item's text: one short line.

@@ -226,12 +226,12 @@ func (s *Server) previewHelper(ctx context.Context, agent store.PersonalAgent, w
 	if err != nil {
 		return helperPreview{
 			Unavailable: err.Error(),
-			Note:        "The step waits until the helper's model can run on that computer, then starts by itself. Tell the person in plain words what is missing; they fix it in Model providers or in your settings (Model).",
+			Note:        "The step waits until the helper's model can run on that computer, then starts by itself; the person fixes what is missing in Model providers or in your settings (Model).",
 		}
 	}
 	preview := helperPreview{Account: snapshot.ProfileID, Runtime: snapshot.Runtime, Model: snapshot.Model, Effort: snapshot.Effort, Reason: snapshot.SelectionReason}
 	if snapshot.SelectionReason == run.ReasonUsedDeviceDefault {
-		preview.Note = "The helper model the person chose cannot run on that computer, so this runs on the computer's default, as the person allowed. Say so in one plain sentence when you report."
+		preview.Note = "The helper model the person chose cannot run on that computer, so this runs on the computer's default, as the person allowed."
 	}
 	return preview
 }
