@@ -41,6 +41,7 @@ export const resources: Translation<typeof en> = {
     available: "可用",
     busy: "使用中",
     unready: "未就绪",
+    reconnecting: "重连中…",
     offline: "设备离线",
     gone: "已消失",
   },
@@ -58,6 +59,7 @@ export const resources: Translation<typeof en> = {
   stale: "过期",
   staleNotice: "最近一次扫描时检测器失败，这里显示的是上一次的结果。",
   staleHelpLabel: "关于过时的资源",
+  reconnectingActionNote: "设备正在重连，通常几秒内恢复。",
   backendLine: "使用方式：{{backend}} — {{readiness}}",
   backend: {
     named: "{{id}} {{version}}",

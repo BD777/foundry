@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/google/uuid"
 )
 
 // workerUpdateWindow is how long an update may take; one still on its old
@@ -35,6 +36,7 @@ const (
 type workerUpdates struct {
 	mu      sync.Mutex
 	pending map[string]store.DeviceWorkerUpdate
+	last    map[string]store.DeviceWorkerUpdate
 	// probeInterval and returnGrace override the defaults in tests.
 	probeInterval time.Duration
 	returnGrace   time.Duration
@@ -53,9 +55,18 @@ func (u *workerUpdates) timing() (probe time.Duration, grace time.Duration) {
 	return probe, grace
 }
 
+func workerUpdateElapsedMs(update store.DeviceWorkerUpdate, ended time.Time) int64 {
+	started, err := time.Parse(time.RFC3339Nano, update.StartedAt)
+	if err != nil || ended.Before(started) {
+		return 0
+	}
+	return ended.Sub(started).Milliseconds()
+}
+
 // active is the update recorded for a device now running workerVersion. It
-// ends when the device runs another version than it did at the start; past
-// the window it is reported as stalled instead of dropped.
+// ends when the device runs another version than it did at the start, keeping
+// a successful result in memory until the next successful update or Server
+// restart; past the window it is reported as stalled instead of dropped.
 func (u *workerUpdates) active(deviceID string, workerVersion string, now time.Time) (store.DeviceWorkerUpdate, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -64,12 +75,30 @@ func (u *workerUpdates) active(deviceID string, workerVersion string, now time.T
 		return store.DeviceWorkerUpdate{}, false
 	}
 	if workerVersion != "" && (workerVersion == update.Version || (update.FromVersion != "" && workerVersion != update.FromVersion)) {
+		if workerVersion == update.Version {
+			update.CompletedAt = now.Format(time.RFC3339Nano)
+			update.ElapsedMs = workerUpdateElapsedMs(update, now)
+			update.Stalled = false
+			if u.last == nil {
+				u.last = map[string]store.DeviceWorkerUpdate{}
+			}
+			u.last[deviceID] = update
+		}
 		delete(u.pending, deviceID)
 		return store.DeviceWorkerUpdate{}, false
 	}
-	started, _ := time.Parse(time.RFC3339, update.StartedAt)
+	started, _ := time.Parse(time.RFC3339Nano, update.StartedAt)
 	update.Stalled = update.Failure == "" && now.Sub(started) >= workerUpdateWindow
+	update.ElapsedMs = workerUpdateElapsedMs(update, now)
 	return update, true
+}
+
+// lastCompleted is the most recent update this Server process saw succeed.
+func (u *workerUpdates) lastCompleted(deviceID string) (store.DeviceWorkerUpdate, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	update, ok := u.last[deviceID]
+	return update, ok
 }
 
 // wsWorkerUpdateStatus is a worker's answer to read_worker_update_status,
@@ -113,6 +142,7 @@ func (u *workerUpdates) apply(deviceID, startedAt string, status wsWorkerUpdateS
 		// update is restarting.
 		update.Step, update.StepDetail = "restarting", ""
 	case "failed":
+		now := time.Now().UTC()
 		update.StepDetail = ""
 		update.Failure = strings.TrimSpace(status.Error)
 		if update.Failure == "" {
@@ -121,11 +151,16 @@ func (u *workerUpdates) apply(deviceID, startedAt string, status wsWorkerUpdateS
 		update.FailureCode = workerUpdateFailedExited
 		update.ExitCode = status.ExitCode
 		update.LogTail = status.LogTail
+		update.CompletedAt = now.Format(time.RFC3339Nano)
+		update.ElapsedMs = workerUpdateElapsedMs(update, now)
 	case "none":
+		now := time.Now().UTC()
 		update.StepDetail = ""
 		update.Failure = "the update process ended without reporting"
 		update.FailureCode = workerUpdateFailedVanished
 		update.LogTail = status.LogTail
+		update.CompletedAt = now.Format(time.RFC3339Nano)
+		update.ElapsedMs = workerUpdateElapsedMs(update, now)
 	default:
 		return false, false
 	}
@@ -141,7 +176,10 @@ func (u *workerUpdates) fail(deviceID, startedAt, code, reason string) bool {
 	if !ok || update.Failure != "" || update.StartedAt != startedAt {
 		return false
 	}
+	now := time.Now().UTC()
 	update.Failure, update.FailureCode, update.StepDetail = reason, code, ""
+	update.CompletedAt = now.Format(time.RFC3339Nano)
+	update.ElapsedMs = workerUpdateElapsedMs(update, now)
 	u.pending[deviceID] = update
 	return true
 }
@@ -221,7 +259,9 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	// Recorded before asking, so a second request while this one is on its
 	// way is refused too.
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	s.workerUpdates.start(deviceID, store.DeviceWorkerUpdate{StartedAt: startedAt, Version: target, FromVersion: worker, Step: "starting"})
+	s.workerUpdates.start(deviceID, store.DeviceWorkerUpdate{
+		ID: "wupd_" + uuid.NewString(), StartedAt: startedAt, Version: target, FromVersion: worker, Step: "starting",
+	})
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	value, err := daemonRequest[wsWorkerUpdateStarted](ctx, connection, wsUpdateWorkerType, []byte("{}"))

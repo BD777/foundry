@@ -175,6 +175,8 @@ export function stateTone(
       return "brass";
     case "unready":
       return "warn";
+    case "reconnecting":
+      return "neutral";
     case "offline":
       return "slate";
     case "gone":

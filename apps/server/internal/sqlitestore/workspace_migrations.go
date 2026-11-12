@@ -330,6 +330,8 @@ const (
 	migrationScopeWorkspaceRow = `id = ?`
 	migrationScopeWorkspace    = `workspace_id = ?`
 	migrationScopeSessions     = `session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?)`
+	// migrationScopeAssistantHome: the assistant living in the workspace.
+	migrationScopeAssistantHome = `home_workspace_id = ?`
 )
 
 // How a column moves with the workspace.
@@ -376,7 +378,7 @@ var workspaceMigrationRewrites = []workspaceMigrationColumn{
 	{"knowledge_vaults", "payload_json", migrationScopeWorkspace, migrateJSON},
 	{"pa_maintenance", "payload_json", migrationScopeWorkspace, migrateJSON},
 	{"pending_items", "payload_json", migrationScopeWorkspace, migrateJSON},
-	{"personal_agents", "home_device_id", migrationScopeWorkspace, migrateDevice},
+	{"assistants", "home_device_id", migrationScopeAssistantHome, migrateDevice},
 	{"chats", "payload_json", migrationScopeWorkspace, migrateJSON},
 }
 

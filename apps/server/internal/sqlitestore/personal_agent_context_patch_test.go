@@ -9,9 +9,9 @@ import (
 
 func TestContextPatchFenceSurvivesDisconnectAndOnlyReceiptReleasesIt(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	v := store.PersonalAgentContextPatch{ID: "patch", UserID: "u", WorkspaceID: "w", Status: "applying", Revision: 1}
+	v := store.PersonalAgentContextPatch{ID: "patch", UserID: "u", AssistantID: "asst_u", WorkspaceID: "w", Status: "applying", Revision: 1}
 	raw, _ := json.Marshal(v)
-	_, err := db.conn().ExecContext(ctx, `INSERT INTO pa_context_patches VALUES(?,?,?,?,?,?)`, v.ID, v.UserID, v.WorkspaceID, v.Status, v.Revision, string(raw))
+	_, err := db.conn().ExecContext(ctx, `INSERT INTO pa_context_patches(id,user_id,assistant_id,workspace_id,status,revision,payload_json) VALUES(?,?,?,?,?,?,?)`, v.ID, v.UserID, v.AssistantID, v.WorkspaceID, v.Status, v.Revision, string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

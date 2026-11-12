@@ -16,11 +16,15 @@ import (
 
 var _ feishu.PersonalAgentInboxDesk = personalAgentDesk{}
 
-func (d personalAgentDesk) CaptureInbox(ctx context.Context, userID, text string, origin store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
+func (d personalAgentDesk) CaptureInbox(ctx context.Context, assistantID, userID, text string, origin store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
 	if origin.AppID == "" || origin.ChatID == "" || origin.MessageID == "" || len(origin.Resources) > 32 {
 		return store.PersonalAgentInboxEntry{}, invalid("incomplete or oversized channel origin")
 	}
-	return d.s.assistant.CaptureInboxOrigin(ctx, userID, "feishu", store.PersonalAgentInboxCapture{
+	agent, err := d.assistant(ctx, assistantID, userID)
+	if err != nil {
+		return store.PersonalAgentInboxEntry{}, err
+	}
+	return d.s.assistant.CaptureInboxOrigin(ctx, agent, "feishu", store.PersonalAgentInboxCapture{
 		MessageID: origin.AppID + ":" + origin.MessageID, Text: text,
 	}, &origin)
 }

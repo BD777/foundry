@@ -42,6 +42,9 @@ type accessScope struct {
 	// its session ("" for a session no person started). An agent controls
 	// only the sessions that person started, its own agents' included.
 	agentFor string
+	// assistant is the package of the assistant an agent works for (its
+	// own conversation or a helper); not Applicable for any other session.
+	assistant permission.Access
 }
 
 func (a accessScope) role(workspaceID string) string {
@@ -176,12 +179,15 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 	if err != nil {
 		return accessScope{}, err
 	}
+	scope.assistant = permissionAccess
 	roles, err := s.store.WorkspaceRolesForUser(ctx, creator)
 	if err != nil {
 		return accessScope{}, err
 	}
 	for workspaceID, role := range roles {
-		if permissionAccess.Applicable && !permissionAccess.WorkspaceAllowed(workspaceID) {
+		// A session working for an assistant reaches the workspaces its
+		// package allows, and always the one it runs in.
+		if permissionAccess.Applicable && workspaceID != session.WorkspaceID && !permissionAccess.WorkspaceAllowed(workspaceID) {
 			continue
 		}
 		if roleAtLeast(role, store.WorkspaceRoleMaintainer) {

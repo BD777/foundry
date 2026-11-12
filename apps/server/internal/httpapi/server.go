@@ -206,6 +206,11 @@ type Server struct {
 	repoMu     sync.Mutex
 	// rollouts serializes each bundle rollout (skill_rollouts.go).
 	rollouts rollouts
+	// packageApplies serializes the background apply of each connector
+	// package; packageRecordMu guards the read-modify-write of their records
+	// (connector_package_apply.go).
+	packageApplies  rollouts
+	packageRecordMu sync.Mutex
 	// skillRepositoryFirstCheck is how long after start the followed
 	// repositories are first checked; tests shorten it.
 	skillRepositoryFirstCheck time.Duration
@@ -295,7 +300,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.initAccounts()
 	server.connectors = connectors.New(store, store, options.Integrations, personalagent.ProposalTTL)
 	server.connectors.ServerHeld.ExtensionDeviceRequest = server.extensionDeviceRequest
-	server.connectors.ServerHeld.ExtensionCheckDevices = server.checkExtensionDevices
+	server.connectors.ServerHeld.ExtensionDevices = server.extensionDevices
 	if server.connectors.Confirmations != nil {
 		server.connectors.Confirmations.OnCreated = server.assistant.ProposalCreated
 		server.connectors.Confirmations.OnChanged = server.assistant.ProposalChanged
@@ -331,6 +336,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.hub.work.Go(func() { server.checkWaitingRepositories(ctx, deviceID) })
 		// A bundle rollout waiting for this device goes on.
 		server.hub.work.Go(func() { server.bundleRolloutsOnConnect(ctx, deviceID) })
+		// Device-network connector instances are probed from the new device.
+		server.hub.work.Go(func() { server.probeExtensionsOnDevice(ctx, deviceID) })
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.
@@ -380,6 +387,13 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.observeWorkspaceDigests()
 	server.trackDevicePresence()
 	return server
+}
+
+// ResumeDeviceReconnects starts the reconnect grace for devices the previous
+// process recorded as connected. The entry point calls it before opening the
+// readiness gate.
+func (s *Server) ResumeDeviceReconnects(ctx context.Context) {
+	s.hub.resumeDeviceReconnects(ctx)
 }
 
 // Shutdown terminates the protocol-specific resources that net/http's own

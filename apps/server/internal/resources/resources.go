@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"reflect"
 	"sort"
@@ -51,6 +52,19 @@ const (
 	reasonOffline = "Its device is offline; showing what it last reported."
 )
 
+// Connection is the live presence of a resource source.
+type Connection struct {
+	State          string
+	DisconnectedAt time.Time
+	ReconnectAt    time.Time
+}
+
+const (
+	ConnectionOnline       = "online"
+	ConnectionReconnecting = "reconnecting"
+	ConnectionOffline      = "offline"
+)
+
 // ErrNoSource: a report or change names no source.
 var ErrNoSource = errors.New("resource source id is required")
 
@@ -72,6 +86,9 @@ type Service struct {
 	// instances of a source that is not as offline, which also covers a
 	// server that restarted while devices were away. Nil: all online.
 	Online func(sourceID string) bool
+	// Connection distinguishes a short reconnect from an offline source.
+	// Nil falls back to Online.
+	Connection func(sourceID string) Connection
 	// Changed is told the source whose listing changed (an event for
 	// browsers); nil to tell no one.
 	Changed func(sourceID string)
@@ -187,18 +204,32 @@ func (s *Service) listWithSources(ctx context.Context, filter store.ResourceFilt
 	if err != nil {
 		return store.ResourceList{}, err
 	}
-	online := map[string]bool{}
+	connections := map[string]Connection{}
 	for index, source := range sources {
-		if s.Online != nil && source.Kind == "device" {
-			sources[index].Online = s.Online(source.ID)
+		connection := Connection{State: ConnectionOnline}
+		if source.Kind == "device" {
+			switch {
+			case s.Connection != nil:
+				connection = s.Connection(source.ID)
+				if connection.State == "" {
+					connection.State = ConnectionOnline
+				}
+			case s.Online != nil && !s.Online(source.ID):
+				connection.State = ConnectionOffline
+			}
+			sources[index].Online = connection.State == ConnectionOnline
 		}
 		if sources[index].DetectorErrors == nil {
 			sources[index].DetectorErrors = []store.ResourceDetectorError{}
 		}
-		online[source.ID] = sources[index].Online
+		connections[source.ID] = connection
 	}
 	for index, instance := range instances {
-		if !online[instance.Source.ID] {
+		connection := connections[instance.Source.ID]
+		switch connection.State {
+		case ConnectionReconnecting:
+			instances[index] = reconnecting(instance, connection, s.Now().UTC())
+		case ConnectionOffline:
 			instances[index] = offline(instance)
 		}
 	}
@@ -409,6 +440,23 @@ func offline(instance store.ResourceInstance) store.ResourceInstance {
 	if instance.State != store.ResourceGone {
 		instance.State, instance.StateReason = store.ResourceOffline, reasonOffline
 	}
+	return instance
+}
+
+func reconnecting(instance store.ResourceInstance, connection Connection, now time.Time) store.ResourceInstance {
+	if instance.State == store.ResourceGone {
+		return instance
+	}
+	remaining := 1
+	if wait := connection.ReconnectAt.Sub(now); wait > 0 {
+		remaining = int((wait + time.Second - 1) / time.Second)
+	}
+	unit := "seconds"
+	if remaining == 1 {
+		unit = "second"
+	}
+	instance.State = store.ResourceReconnecting
+	instance.StateReason = fmt.Sprintf("Its device is reconnecting; %d %s of grace remain.", remaining, unit)
 	return instance
 }
 

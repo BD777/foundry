@@ -30,6 +30,14 @@ const installResourceBackendTimeout = 10 * time.Minute
 func newResourceLeases(st Backend, inventory *resources.Service, hub *DaemonHub) *resources.Leases {
 	leases := resources.NewLeases(inventory, st)
 	leases.HostOnline = hub.HasConnection
+	leases.WaitHostReconnect = func(ctx context.Context, sourceID string) error {
+		_, err := hub.waitForConnection(ctx, sourceID)
+		if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
+			// Let the lease rules give their existing immediate offline refusal.
+			return nil
+		}
+		return err
+	}
 	leases.Router = deviceResourceRouter{hub: hub}
 	leases.Session = func(ctx context.Context, sessionID string) (resources.SessionInfo, error) {
 		session, err := st.GetAgentSessionSummary(ctx, sessionID)
@@ -86,7 +94,7 @@ func (r deviceResourceRouter) SendReset(sourceID string, request store.ResourceR
 }
 
 func (r deviceResourceRouter) Operate(ctx context.Context, sourceID string, request store.ResourceOperateRequest) (store.ResourceOperateResult, error) {
-	connection, err := r.operatingConnection(sourceID)
+	connection, err := r.hub.waitForConnection(ctx, sourceID)
 	if err != nil {
 		return store.ResourceOperateResult{}, err
 	}

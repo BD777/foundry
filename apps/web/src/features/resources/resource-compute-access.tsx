@@ -19,11 +19,13 @@ import { LoadingState } from "../../components/ui/loading";
 export function ResourceComputeAccess({
   instance,
   allowed,
+  disabled = false,
   onChanged,
 }: {
   instance: ResourceInstance;
   /** What the server says now (ResourceSourceStatus.allowRemoteCommands). */
   allowed: boolean;
+  disabled?: boolean;
   onChanged: () => void;
 }) {
   const { t } = useTranslation("resources");
@@ -65,7 +67,7 @@ export function ResourceComputeAccess({
           <Checkbox
             aria-describedby={hintId}
             checked={checked}
-            disabled={Boolean(action.running)}
+            disabled={disabled || Boolean(action.running)}
             onChange={(event) => {
               const allow = event.currentTarget.checked;
               if (!allow && instance.holder) setConfirming(true);
@@ -77,6 +79,9 @@ export function ResourceComputeAccess({
         <HelpHint label={t("compute.helpLabel")}>{t("compute.help")}</HelpHint>
       </div>
       <FieldHint id={hintId}>{t("compute.hint")}</FieldHint>
+      {disabled ? (
+        <FieldHint role="status">{t("reconnectingActionNote")}</FieldHint>
+      ) : null}
       {action.running ? (
         <LoadingState
           className="text-xs leading-[1.6] wrap-anywhere"

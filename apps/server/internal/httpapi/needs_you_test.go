@@ -203,8 +203,9 @@ func TestNeedsYouOfflineItemsStayWithThePerson(t *testing.T) {
 func TestNeedsYouStoppedAssistantHandsOver(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	f.ask(t, f.helper, "h1", "Which export format?")
-	if _, err := f.server.assistant.Stop(ctx, f.aliceID); err != nil {
+	if _, err := f.server.assistant.Stop(ctx, agent); err != nil {
 		t.Fatal(err)
 	}
 	items, err := f.db.ListPendingItems(ctx, f.aliceID, []string{store.PendingOpen}, "", 10)

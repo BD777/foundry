@@ -21,8 +21,10 @@ const (
 
 // PersonalAgentListItem is one thing on the person's list (table pa_items).
 type PersonalAgentListItem struct {
-	ID             string                 `json:"id"`
-	UserID         string                 `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID    string                 `json:"-"`
 	IntentRevision int64                  `json:"intentRevision,omitempty"`
 	Revision       int64                  `json:"revision,omitempty"`
 	SourceInputID  string                 `json:"sourceInputId,omitempty"`
@@ -92,28 +94,28 @@ type PersonalAgentCompletionEvidence struct {
 }
 
 // PersonalAgentListStore keeps the person's list and the daily digest's
-// mark. Every call is scoped to one person (userID) but the due scans.
+// mark. Every call is scoped to one assistant (assistantID) but the due scans.
 type PersonalAgentListStore interface {
 	// ListPersonalAgentItems lists the person's open items and those
 	// closed since closedSince ("" for none), oldest first.
-	ListPersonalAgentItems(ctx context.Context, userID, closedSince string) ([]PersonalAgentListItem, error)
-	GetPersonalAgentItem(ctx context.Context, userID, id string) (PersonalAgentListItem, error)
+	ListPersonalAgentItems(ctx context.Context, assistantID, closedSince string) ([]PersonalAgentListItem, error)
+	GetPersonalAgentItem(ctx context.Context, assistantID, id string) (PersonalAgentListItem, error)
 	AddPersonalAgentItem(ctx context.Context, item PersonalAgentListItem) (PersonalAgentListItem, error)
 	// SavePersonalAgentItem stores an item's fields as given; a new At
 	// clears RemindedAt.
 	SavePersonalAgentItem(ctx context.Context, item PersonalAgentListItem) (PersonalAgentListItem, error)
-	DeletePersonalAgentItem(ctx context.Context, userID, id string) error
+	DeletePersonalAgentItem(ctx context.Context, assistantID, id string) error
 	// DuePersonalAgentReminders lists open items of anyone whose reminder
 	// is due by now and has not gone out.
 	DuePersonalAgentReminders(ctx context.Context, now string) ([]PersonalAgentListItem, error)
 	// ClaimPersonalAgentReminder marks the reminder of the item's At gone
 	// out; false when it already had.
-	ClaimPersonalAgentReminder(ctx context.Context, userID, id, at string) (bool, error)
+	ClaimPersonalAgentReminder(ctx context.Context, assistantID, id, at string) (bool, error)
 	// ListPersonalAgents lists every person's assistant.
 	ListPersonalAgents(ctx context.Context) ([]PersonalAgent, error)
 	// ClaimPersonalAgentDigest marks the person's daily digest of day
 	// (YYYY-MM-DD) sent; false when it already was.
-	ClaimPersonalAgentDigest(ctx context.Context, userID, day string) (bool, error)
+	ClaimPersonalAgentDigest(ctx context.Context, assistantID, day string) (bool, error)
 }
 
 // Routing is an explainable decision for this intent, not an access grant.

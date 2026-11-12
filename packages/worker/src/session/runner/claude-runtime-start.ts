@@ -1,3 +1,4 @@
+import { assertEndpointReachable } from "./endpoint-reachability.js";
 import { nativeCli } from "../../harness/native/native-cli.js";
 import { appendLine } from "../../platform/line-log.js";
 import { errorMessage } from "../../platform/utils.js";
@@ -182,6 +183,11 @@ async function startClaudeRuntime(
   activeClaudeRuntimes.set(run.runtimeKey, runtime);
   logClaudeRuntime("starting", runtime);
   try {
+    await assertEndpointReachable({
+      ...(options.env as Record<string, string | undefined> | undefined),
+      ...(run.flagSettings.env as
+        Record<string, string | undefined> | undefined),
+    });
     await run.emitSetup();
     await run.emit(
       sessionEventLabels.claudeProcessStarted,

@@ -361,6 +361,8 @@ func (s *Server) CheckSkillRepositories(ctx context.Context) {
 	}
 	// Rollouts a restart interrupted go on.
 	s.resumeBundleRollouts(ctx)
+	// So do package selections that were being applied.
+	s.resumeConnectorPackageApplies(ctx)
 	timer := time.NewTimer(s.skillRepositoryFirstCheck)
 	defer timer.Stop()
 	for {

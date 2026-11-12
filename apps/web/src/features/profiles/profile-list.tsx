@@ -12,6 +12,7 @@ import {
   RuntimeMark,
   runtimeMeta,
 } from "../../components/agent-runtime/runtime-mark";
+import { ModelGuideTags } from "./model-guide-tag";
 import { connectionUsage } from "../../lib/model-connections";
 import { codexTransportStatus } from "./codex-transport";
 import { SectionHeader } from "../../components/ui/page-header";
@@ -79,49 +80,69 @@ export function ProfileList({
           {profiles.map((profile) => {
             const checks = checkCounts(profile, deviceProfiles, agentProfiles);
             return (
-              <Button
-                className="fdy-profile-card active:scale-100 h-auto min-h-15.5 w-full min-w-0 justify-start gap-3 rounded-xl bg-panel p-3.5 text-left whitespace-normal shadow-card hover:bg-control-hover hover:shadow-raised max-[700px]:flex-wrap"
-                key={profile.id}
-                onClick={() => onSelect(profile.id)}
-                variant="ghost"
-              >
-                <RuntimeMark runtime={profile.runtime} size="lg" />
-                <span className="grid min-w-0 flex-1 gap-0.75 max-[700px]:basis-[65%] [&>em]:truncate [&>em]:text-2xs [&>em]:text-ink-muted [&>em]:not-italic [&>small]:truncate [&>small]:text-2xs [&>small]:text-ink-faint [&>strong]:truncate [&>strong]:text-sm [&>strong]:font-semibold [&>strong]:text-ink">
-                  <strong>{profile.label}</strong>
-                  <em>
-                    {runtimeMeta(profile.runtime).label} · {profile.baseUrl}
-                  </em>
-                  <small>
-                    {profile.model || t("list.runtimeDefaultModel")}
-                  </small>
-                  {profile.codexTransport ? (
+              <div className="grid min-w-0 gap-1" key={profile.id}>
+                <Button
+                  className="fdy-profile-card active:scale-100 h-auto min-h-15.5 w-full min-w-0 justify-start gap-3 rounded-xl bg-panel p-3.5 text-left whitespace-normal shadow-card hover:bg-control-hover hover:shadow-raised max-[700px]:flex-wrap"
+                  onClick={() => onSelect(profile.id)}
+                  variant="ghost"
+                >
+                  <RuntimeMark runtime={profile.runtime} size="lg" />
+                  <span className="grid min-w-0 flex-1 gap-0.75 max-[700px]:basis-[65%] [&>em]:truncate [&>em]:text-2xs [&>em]:text-ink-muted [&>em]:not-italic [&>small]:truncate [&>small]:text-2xs [&>small]:text-ink-faint [&>strong]:truncate [&>strong]:text-sm [&>strong]:font-semibold [&>strong]:text-ink">
+                    <strong>{profile.label}</strong>
+                    <em>
+                      {runtimeMeta(profile.runtime).label} · {profile.baseUrl}
+                    </em>
                     <small>
-                      {codexTransportStatus(
-                        t,
-                        profile.codexTransport,
-                        profile.codexTransportLearned,
-                        true,
-                      )}
+                      {profile.model || t("list.runtimeDefaultModel")}
                     </small>
-                  ) : null}
-                  {checks.failed ? (
-                    <small>
-                      {t("list.checkFailedOn", { count: checks.failed })}
-                    </small>
-                  ) : checks.passed ? (
-                    <small>
-                      {t("list.verifiedOn", { count: checks.passed })}
-                    </small>
-                  ) : null}
-                </span>
-                <Badge tone={profile.hasCredential ? "neutral" : "slate"}>
-                  {connectionUsage(profile, deviceProfiles)}
-                </Badge>
-              </Button>
+                    {profile.codexTransport ? (
+                      <small>
+                        {codexTransportStatus(
+                          t,
+                          profile.codexTransport,
+                          profile.codexTransportLearned,
+                          true,
+                        )}
+                      </small>
+                    ) : null}
+                    {checks.failed ? (
+                      <small>
+                        {t("list.checkFailedOn", { count: checks.failed })}
+                      </small>
+                    ) : checks.passed ? (
+                      <small>
+                        {t("list.verifiedOn", { count: checks.passed })}
+                      </small>
+                    ) : null}
+                  </span>
+                  <Badge tone={profile.hasCredential ? "neutral" : "slate"}>
+                    {connectionUsage(profile, deviceProfiles)}
+                  </Badge>
+                </Button>
+                <div className="px-3.5">
+                  <ModelGuideTags targets={profileGuideTargets(profile)} />
+                </div>
+              </div>
             );
           })}
         </div>
       )}
     </section>
   );
+}
+
+/** The models a saved endpoint offers, as guide lookups. */
+function profileGuideTargets(profile: ProfileDefinition) {
+  return [
+    ...new Set(
+      [profile.model ?? "", ...(profile.models ?? [])].filter(Boolean),
+    ),
+  ]
+    .slice(0, 8)
+    .map((model) => ({
+      providerKind: "api",
+      providerId: profile.id,
+      runtime: profile.runtime,
+      model,
+    }));
 }

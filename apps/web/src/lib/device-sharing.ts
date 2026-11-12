@@ -2,6 +2,7 @@ import type {
   DeviceAccountShare,
   DeviceProjection,
 } from "@bd777/foundry-protocol";
+import { deviceConnection } from "./device-connection";
 
 /**
  * Other people's devices under the same system account of the same computer
@@ -76,6 +77,7 @@ export function preferUnsharedDevice<T extends DeviceProjection>(
 ): T | undefined {
   const unshared = devices.filter((device) => !sharesSystemAccount(device));
   return (
-    unshared.find((device) => device.status === "connected") ?? unshared[0]
+    unshared.find((device) => deviceConnection(device) === "online") ??
+    unshared[0]
   );
 }

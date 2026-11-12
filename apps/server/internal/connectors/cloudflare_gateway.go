@@ -183,6 +183,9 @@ func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentS
 		}
 		account, err := g.store.GetExternalAccount(ctx, b.AccountID)
 		if err == nil && account.Provider == "cloudflare" && externalaccounts.EligibleFor(account, account.WorkspaceIDs, session.WorkspaceID, owner, deviceOwner, policy) {
+			if !policy.Write(account.ID) {
+				b.Access = externalaccounts.CloudflareAccessRead
+			}
 			return cloudflareBinding{account, b}, nil
 		}
 	}

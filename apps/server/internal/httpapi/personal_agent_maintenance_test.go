@@ -13,9 +13,10 @@ import (
 func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
-	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
-	jobs, e := f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
+	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
+	jobs, e := f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
 	if e != nil || len(jobs) != 1 {
 		t.Fatalf("jobs %+v %v", jobs, e)
 	}
@@ -25,8 +26,8 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	if _, e = f.server.store.SavePersonalAgentMaintenance(ctx, job); e != nil {
 		t.Fatal(e)
 	}
-	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
-	jobs, _ = f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
+	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
+	jobs, _ = f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
 	if len(jobs) != 1 || jobs[0].Status != "complete" {
 		t.Fatal("unchanged content scheduled another model call")
 	}
@@ -35,12 +36,13 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
-	job, e := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "maint-lifecycle", UserID: f.aliceID, Role: "governance", WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(f.digest(t))})
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	job, e := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "maint-lifecycle", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance", WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(f.digest(t))})
 	if e != nil {
 		t.Fatal(e)
 	}
 	f.server.assistant.RunMaintenance(ctx, job)
-	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
 	if job.Status != "waiting" || job.Reason != "worker_update_required" {
 		t.Fatalf("ran without readonly sandbox: %+v", job)
 	}
@@ -49,7 +51,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	c.registration.Capabilities = append(c.registration.Capabilities, store.DaemonCapabilityVerificationSessions)
 	c.registrationMu.Unlock()
 	f.server.assistant.RunMaintenance(ctx, job)
-	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
 	if job.Status != "running" {
 		t.Fatalf("did not start: %+v", job)
 	}
@@ -65,9 +67,9 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	}
 	f.daemon.complete(run.Session, `{"summary":"Review the missing contract","findings":[{"kind":"missing","summary":"State the workspace purpose","sourceRefs":["AGENTS.md"]}],"patches":[{"path":"AGENTS.md","baseHash":"missing","content":"# Synthetic context\nPurpose: compare formats.","reason":"Make the purpose explicit"}]}`)
 	waitForStatus(t, f.db, run.Session.ID, "completed")
-	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
 	f.server.assistant.RunMaintenance(ctx, job)
-	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
 	if job.Status != "review" || job.Result == nil {
 		t.Fatalf("missing proposal %+v", job)
 	}
@@ -86,7 +88,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 		t.Fatal(e)
 	}
 	patches := f.server.store.(store.PersonalAgentContextPatchStore)
-	op := store.PersonalAgentContextPatch{ID: "context-once", UserID: f.aliceID, JobID: job.ID, WorkspaceID: "ws_budget", DeviceID: "dev_home", Index: 0, Path: "AGENTS.md", BaseHash: "missing", Hash: "expected"}
+	op := store.PersonalAgentContextPatch{ID: "context-once", AssistantID: agent.ID, UserID: f.aliceID, JobID: job.ID, WorkspaceID: "ws_budget", DeviceID: "dev_home", Index: 0, Path: "AGENTS.md", BaseHash: "missing", Hash: "expected"}
 	if _, e = patches.BeginPersonalAgentContextPatch(ctx, op, job.Revision); e == nil || !strings.Contains(e.Error(), "workspace_active") {
 		t.Fatalf("changed live context: %v", e)
 	}
@@ -108,10 +110,11 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 func TestGovernanceActivityDoesNotScheduleAnotherReview(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	record := f.digest(t)
 	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	count := func() int {
-		rows, err := f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
+		rows, err := f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

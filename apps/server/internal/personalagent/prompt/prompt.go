@@ -31,7 +31,7 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-11-10.2"
+const Version = "2026-11-12.4"
 
 // Limits mirrored from personalagent/defaults.go.
 const (
@@ -74,7 +74,8 @@ type Input struct {
 	AccountLanguage string
 	// HomeDeviceID is the device the assistant's folder is on.
 	HomeDeviceID string
-	// Memory is the person's pa_memory items; only active ones are shown.
+	// Memory is what the assistant recalls of its memory layers (the
+	// person's and its own, DEV-191 P2); only active ones are shown.
 	Memory []store.PersonalAgentMemoryItem
 	// Workspaces are the person's workspace digests (WP-S2); the assistant's
 	// own and archived ones are left out.
@@ -267,7 +268,7 @@ func writeMemory(out *strings.Builder, items []store.PersonalAgentMemoryItem, lo
 			continue
 		}
 		used += utf8.RuneCountInString(content)
-		fmt.Fprintf(out, "- %s (%s, %s) [%s]\n", content, originLabel(item.Origin), day(item.UpdatedAt, location), item.ID)
+		fmt.Fprintf(out, "- %s (%s%s, %s) [%s]\n", content, originLabel(item.Origin), layerLabel(item.Scope), day(item.UpdatedAt, location), item.ID)
 	}
 	if left > 0 {
 		fmt.Fprintf(out, "- …and %d older facts: read_memory.\n", left)
@@ -454,6 +455,16 @@ var taskStatusLabels = map[string]string{
 	store.PersonalAgentTaskQueued:  "waiting for the project's current work to finish",
 	store.PersonalAgentTaskRunning: "running",
 	store.PersonalAgentTaskAsking:  "its helper asked a question the person has not answered",
+}
+
+func layerLabel(scope string) string {
+	switch scope {
+	case store.MemoryScopePerson:
+		return ", every assistant"
+	case store.MemoryScopeAssistant:
+		return ", only you"
+	}
+	return ""
 }
 
 func originLabel(origin string) string {

@@ -1404,3 +1404,77 @@ test("a System Settings pane opens and the grants are rechecked live until confi
   );
   resetCuaDriverGrantRun();
 });
+
+function fakeProvider(id, { survivesDisconnect }) {
+  const sessions = [];
+  const provider = {
+    id,
+    type: "compute",
+    platforms: [process.platform],
+    idleCloseMs: 0,
+    survivesDisconnect,
+    async open() {
+      const session = {
+        alive: true,
+        closed: false,
+        async invoke(action) {
+          return { op: action.op, ok: true, text: "ok" };
+        },
+        async reset() {},
+        async close() {
+          this.closed = true;
+        },
+      };
+      sessions.push(session);
+      return session;
+    },
+  };
+  return { provider, sessions };
+}
+
+const fakeRequest = (backend, extra = {}) => ({
+  resourceId: "res_c",
+  key: `compute/${backend}`,
+  type: "compute",
+  backend,
+  leaseId: "lease_c",
+  generation: 1,
+  deadlineMs: 1000,
+  actions: [{ op: "run" }],
+  ...extra,
+});
+
+test("a dropped server link keeps a surviving provider's session through the grace and closes the rest", async () => {
+  const keep = fakeProvider("keeper", { survivesDisconnect: true });
+  const drop = fakeProvider("dropper", { survivesDisconnect: false });
+  const operations = new ResourceOperations({
+    providers: new ProviderRegistry([keep.provider, drop.provider]),
+    disconnectGraceMs: 150,
+  });
+  await operations.operate(fakeRequest("keeper"));
+  await operations.operate(fakeRequest("dropper"));
+
+  await operations.suspendAll();
+  assert.equal(keep.sessions[0].closed, false, "the job's session stays");
+  assert.equal(drop.sessions[0].closed, true, "other sessions close at once");
+
+  const again = await operations.operate(fakeRequest("keeper"));
+  assert.equal(again.opened, undefined, "the same session served it");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(keep.sessions[0].closed, false, "an operated lease stays open");
+
+  await operations.suspendAll();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(keep.sessions[0].closed, true, "closed when the grace ends");
+  await operations.closeAll();
+});
+
+test("closeAll still closes a surviving provider's session", async () => {
+  const keep = fakeProvider("keeper", { survivesDisconnect: true });
+  const operations = new ResourceOperations({
+    providers: new ProviderRegistry([keep.provider]),
+  });
+  await operations.operate(fakeRequest("keeper"));
+  await operations.closeAll();
+  assert.equal(keep.sessions[0].closed, true);
+});

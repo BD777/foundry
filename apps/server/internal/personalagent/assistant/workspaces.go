@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
@@ -134,7 +135,7 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 		return write, err
 	}
 	if err := personalagent.CheckNewWorkspace(scope.Agent.Settings.Limits, usage); err != nil {
-		return write, limitRefusal(err, s.settingsURL())
+		return write, limitRefusal(err, s.settingsURL(scope.Agent))
 	}
 	write.Decisions = []Decision{{action, personalagent.Decide(scope.Agent.Settings.Policy, action)}}
 	write.Apply = func(ctx context.Context) (any, error) {
@@ -154,6 +155,9 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 			return nil, err
 		}
 		result := workspaceResult{Status: "applied", Workspace: summarizeWorkspace(workspace), Purpose: spec.Purpose, Place: &place}
+		if err := s.permitCreatedWorkspace(ctx, scope.Agent, workspace.ID); err != nil {
+			return result, fmt.Errorf("the project %s was created, but adding it to this assistant's permissions failed: %w", workspace.ID, err)
+		}
 		if len(skills) > 0 {
 			if result.Skills, err = lifecycle.ChangeWorkspaceSkills(ctx, actor, workspace.ID, skills, nil); err != nil {
 				return result, fmt.Errorf("the project %s was created, but adding its skills failed: %w", workspace.ID, err)
@@ -162,6 +166,28 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 		return result, nil
 	}
 	return write, nil
+}
+
+// permitCreatedWorkspace adds a workspace the assistant itself created to
+// its permission package, so the project it just made is one it reaches:
+// a listed package includes it, an exclusion of it is dropped, and a
+// package that reaches every workspace stays as it is.
+func (s *Service) permitCreatedWorkspace(ctx context.Context, agent store.PersonalAgent, workspaceID string) error {
+	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		return err
+	}
+	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
+	if access.WorkspaceAllowed(workspaceID) {
+		return nil
+	}
+	rule := &pkg.Workspaces
+	rule.Exclude = slices.DeleteFunc(rule.Exclude, func(id string) bool { return id == workspaceID })
+	if rule.Scope == store.PermissionListScopeListed || len(rule.Include) > 0 {
+		rule.Include = append(rule.Include, workspaceID)
+	}
+	_, err = s.store.SavePermissionPackage(ctx, pkg)
+	return err
 }
 
 // noPlace is create_workspace's answer when no computer fits; the
@@ -222,7 +248,7 @@ func (s *Service) createDevice(ctx context.Context, scope Scope, devices []store
 			}
 			candidate := candidates[i]
 			if !candidate.Allowed {
-				return device, store.PersonalAgentPlacement{}, notAllowed("creating projects on that computer", s.settingsURL())
+				return device, store.PersonalAgentPlacement{}, notAllowed("creating projects on that computer", s.settingsURL(scope.Agent))
 			}
 			reason := "the computer you named"
 			if candidate.Shared != "" {
@@ -244,7 +270,7 @@ func (s *Service) createDevice(ctx context.Context, scope Scope, devices []store
 	var none *personalagent.NoPlace
 	switch {
 	case errors.Is(err, personalagent.ErrNoComputer):
-		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, notAllowed("creating projects: no computer of the person's allows it", s.settingsURL())
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, notAllowed("creating projects: no computer of the person's allows it", s.settingsURL(scope.Agent))
 	case errors.As(err, &none):
 		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, &placeRefusal{noPlaceAnswer(none)}
 	case err != nil:
@@ -360,7 +386,7 @@ func (s *Service) scopedWorkspace(ctx context.Context, scope Scope, workspaceID 
 		return store.WorkspaceProjection{}, invalid("workspaceId is required")
 	}
 	workspace, err := s.store.GetWorkspace(ctx, workspaceID)
-	if _, visible := scope.owner[workspaceID]; errors.Is(err, store.ErrNotFound) || (err == nil && !visible) {
+	if errors.Is(err, store.ErrNotFound) || (err == nil && !scope.reaches(workspaceID)) {
 		return store.WorkspaceProjection{}, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "project not found")
 	}
 	if err != nil {
@@ -436,7 +462,7 @@ func (s *Service) planUpdateWorkspace(ctx context.Context, scope Scope, args map
 		decide(store.PersonalAgentActionAddSkill)
 	}
 	if len(removeSkills) > 0 {
-		created, err := s.store.PersonalAgentCreatedWorkspace(ctx, scope.Agent.UserID, workspace.ID)
+		created, err := s.store.PersonalAgentCreatedWorkspace(ctx, scope.Agent.ID, workspace.ID)
 		if err != nil {
 			return write, err
 		}
@@ -457,7 +483,7 @@ func (s *Service) planUpdateWorkspace(ctx context.Context, scope Scope, args map
 		// binding a pair again is not new (§4).
 		decision := store.PersonalAgentAuto
 		for _, accountID := range spec.Connectors.Add {
-			bound, err := s.store.PersonalAgentConnectorBoundBefore(ctx, scope.Agent.UserID, workspace.ID, accountID)
+			bound, err := s.store.PersonalAgentConnectorBoundBefore(ctx, scope.Agent.ID, workspace.ID, accountID)
 			if err != nil {
 				return write, err
 			}
@@ -574,13 +600,12 @@ func (s *Service) FindWorkspace(ctx context.Context, scope Scope, query string, 
 		return nil, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("query is required: the request in the person's own words")}
 	}
 	limit = min(max(limit, 1), personalagent.FindWorkspaceLimit)
-	records, err := s.workspaceCandidates(ctx, scope.Agent.UserID)
+	records, err := s.workspaceCandidates(ctx, scope.Agent)
 	if err != nil {
 		return nil, err
 	}
 	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
-		_, visible := scope.owner[record.Digest.WorkspaceID]
-		return !visible
+		return !scope.reaches(record.Digest.WorkspaceID)
 	})
 	candidates := workspacedigest.RankRecords(query, records, s.routingNotes(ctx, scope.Agent), time.Now(), limit)
 	return map[string]any{"candidates": candidates, "close": workspacedigest.Close(candidates)}, nil

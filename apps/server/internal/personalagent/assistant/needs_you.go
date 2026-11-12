@@ -42,17 +42,23 @@ func (s *Service) Takes(agent store.PersonalAgent) bool {
 }
 
 // Handler is who handles a new item of session: the assistant for a helper
-// of a running, reachable assistant, else the person.
-func (s *Service) Handler(ctx context.Context, session store.AgentSession) string {
-	if agent, ok := s.HelperOf(ctx, session); ok && s.Takes(agent) {
-		return store.PendingHandlerAssistant
+// of a running, reachable assistant, else the person; and the assistant the
+// helper works for ("" for none), which the item records either way.
+func (s *Service) Handler(ctx context.Context, session store.AgentSession) (handler, assistantID string) {
+	agent, ok := s.HelperOf(ctx, session)
+	if !ok {
+		return store.PendingHandlerPerson, ""
 	}
-	return store.PendingHandlerPerson
+	if s.Takes(agent) {
+		return store.PendingHandlerAssistant, agent.ID
+	}
+	return store.PendingHandlerPerson, agent.ID
 }
 
 // HandOverAll hands every open item the assistant handles to the person,
 // saying why (store.PendingHanded*). It answers how many.
-func (s *Service) HandOverAll(ctx context.Context, userID, reason string) int {
+func (s *Service) HandOverAll(ctx context.Context, agent store.PersonalAgent, reason string) int {
+	userID := agent.UserID
 	items, err := s.store.ListPendingItems(ctx, userID, []string{store.PendingOpen}, "", 500)
 	if err != nil {
 		log.Printf("personal agent %s: list items to hand over: %v", userID, err)
@@ -60,7 +66,7 @@ func (s *Service) HandOverAll(ctx context.Context, userID, reason string) int {
 	}
 	handed := 0
 	for _, item := range items {
-		if store.PendingHandledBy(item) != store.PendingHandlerAssistant {
+		if store.PendingHandledBy(item) != store.PendingHandlerAssistant || item.AssistantID != agent.ID {
 			continue
 		}
 		if _, err := s.store.HandPendingItem(ctx, userID, item.ID, store.PendingHandlerPerson, "", reason); err != nil {
@@ -89,7 +95,7 @@ func (s *Service) recordHelperStuck(ctx context.Context, agent store.PersonalAge
 		title = task.Title
 	}
 	item := store.PendingItem{
-		UserID: agent.UserID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
+		UserID: agent.UserID, AssistantID: agent.ID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
 		Source: store.PendingSourceHelperStuck, Key: "stuck:" + session.ID + ":" + session.Input.ID,
 		Title: textcut.Excerpt(firstLineOf(title), 200), Excerpt: textcut.Excerpt(line, helperStuckExcerptChars),
 		Handler: handler,

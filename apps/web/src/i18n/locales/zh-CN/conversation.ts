@@ -16,6 +16,7 @@ export const conversation: Translation<typeof en> = {
     offline: "设备已离线，请重新连接设备后重试。",
     slow: "设备发送图片超时，请重试。",
     missing: "原始图片已删除",
+    outside: "这张图片不在工作区的附件目录内，无法显示。",
     removed: "这张画面已被清理：每个聊天只保留最新的 200 张画面（50 MB）。",
     unavailable: "无法读取图片，请检查设备连接后重试。",
     retry: "重试图片",

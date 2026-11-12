@@ -56,7 +56,8 @@ type Devices interface {
 	KnowledgeCommand(ctx context.Context, workspace store.WorkspaceProjection, command store.KnowledgeCommand) (store.KnowledgeReply, error)
 }
 
-// Service is the knowledge subsystem. It holds no state of its own.
+// Service is the knowledge subsystem. It holds no state of its own (only
+// the retry spacing of drainLegacyMemory, in memory).
 type Service struct {
 	store      Store
 	devices    Devices

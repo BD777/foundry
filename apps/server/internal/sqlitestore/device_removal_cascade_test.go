@@ -23,7 +23,7 @@ var referenceColumn = regexp.MustCompile(`(^|_)(device|workspace|session|issue)_
 var unownedDeviceColumns = map[string]string{
 	"removed_devices.device_id":                   "the tombstone",
 	"removed_device_credentials.device_id":        "the tombstone",
-	"personal_agents.home_device_id":              "the person's assistant; it is moved to another device (MoveHome tolerates a missing home)",
+	"assistants.home_device_id":                   "the person's assistant; it is moved to another device (MoveHome tolerates a missing home)",
 	"knowledge_vaults.device_id":                  "the person's authority pointer and revocation recovery survive the loss of its folder",
 	"knowledge_publications.target_workspace_id":  "the person's knowledge record, kept like knowledge_vaults.workspace_id",
 	"pa_routing_decisions.corrected_workspace_id": "the person's routing history, for evals",

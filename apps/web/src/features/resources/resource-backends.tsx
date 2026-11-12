@@ -11,6 +11,7 @@ import {
 import { installResourceBackend, refreshDeviceResources } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { FieldHint } from "../../components/ui/field";
 import { HelpHint } from "../../components/ui/help-hint";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
@@ -67,11 +68,14 @@ const accessCodes = new Set([
 export function ResourceBackends({
   instance,
   setup,
+  disabled = false,
   onChanged,
 }: {
   instance: ResourceInstance;
   /** The device's owner may install and grant its backends now. */
   setup: boolean;
+  /** The source is reconnecting, so actions stay visible but unavailable. */
+  disabled?: boolean;
   onChanged: () => void;
 }) {
   const { t } = useTranslation("resources");
@@ -98,6 +102,7 @@ export function ResourceBackends({
               backend={backend}
               details={instance.details ?? {}}
               device={instance.source}
+              disabled={disabled}
               onChanged={onChanged}
             />
           ) : null}
@@ -115,11 +120,13 @@ function CuaDriverSetup({
   backend,
   details,
   device,
+  disabled,
   onChanged,
 }: {
   backend: ResourceBackend;
   details: Record<string, string>;
   device: ResourceInstance["source"];
+  disabled: boolean;
   onChanged: () => void;
 }) {
   const { t } = useTranslation("resources");
@@ -183,7 +190,7 @@ function CuaDriverSetup({
           {canInstall ? (
             <Button
               aria-busy={action.running === "install"}
-              disabled={Boolean(action.running)}
+              disabled={disabled || Boolean(action.running)}
               size="sm"
               variant="secondary"
               onClick={() => setConfirming(true)}
@@ -201,7 +208,7 @@ function CuaDriverSetup({
           {canRequest ? (
             <Button
               aria-busy={action.running === "access"}
-              disabled={Boolean(action.running)}
+              disabled={disabled || Boolean(action.running)}
               size="sm"
               variant="secondary"
               onClick={requestAccess}
@@ -218,7 +225,7 @@ function CuaDriverSetup({
             <span className="inline-flex items-center gap-1" key={pane}>
               <Button
                 aria-busy={action.running === pane}
-                disabled={Boolean(action.running)}
+                disabled={disabled || Boolean(action.running)}
                 size="sm"
                 variant="ghost"
                 onClick={() => openSettings(pane)}
@@ -234,6 +241,11 @@ function CuaDriverSetup({
             </span>
           ))}
         </ButtonRow>
+      ) : null}
+      {disabled ? (
+        <FieldHint className={statusClass} role="status">
+          {t("reconnectingActionNote")}
+        </FieldHint>
       ) : null}
       {check ? (
         check.tone === "error" ? (

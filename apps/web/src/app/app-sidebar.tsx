@@ -9,13 +9,19 @@ import {
 import { useAccountSession } from "./accounts-gate";
 import { withAccountNav } from "./account-views";
 import { type NavView, type SidebarView } from "../lib/routes";
-import { navSections, simpleNavSections, type NavLabel } from "./navigation";
+import {
+  navSections,
+  navSectionsForAssistantCount,
+  simpleNavSections,
+  type NavLabel,
+} from "./navigation";
 import type { InterfaceMode } from "../lib/assistant-settings-sections";
 import { SidebarLanguage } from "./sidebar-language";
 import type { ShellPreferences } from "./use-shell-preferences";
 
 export interface AppSidebarProps {
   activeView: NavView;
+  assistantCount?: number;
   /** Simple: only the assistant and its settings (its simpleInterface). */
   interfaceMode: InterfaceMode;
   /** Issues waiting for review, Issues running, and skills on. */
@@ -38,6 +44,7 @@ export interface AppSidebarProps {
 /** The app's navigation: sections with live counts, theme and language. */
 export function AppSidebar({
   activeView,
+  assistantCount = 1,
   interfaceMode,
   counts,
   onNavSelect,
@@ -54,9 +61,12 @@ export function AppSidebar({
     activeView === "workspace" ? t("nav.overview") : t(`views.${activeView}`);
   const sections = useMemo<Array<SidebarNavSection<SidebarView>>>(
     () =>
-      withAccountNav(
-        interfaceMode === "simple" ? simpleNavSections : navSections,
-        account.user?.role,
+      navSectionsForAssistantCount(
+        withAccountNav(
+          interfaceMode === "simple" ? simpleNavSections : navSections,
+          account.user?.role,
+        ),
+        assistantCount,
       ).map((section) => ({
         ...section,
         label: t(`nav.${section.label as NavLabel}`),
@@ -84,6 +94,7 @@ export function AppSidebar({
       })),
     [
       account.user?.role,
+      assistantCount,
       interfaceMode,
       review,
       running,
@@ -97,7 +108,13 @@ export function AppSidebar({
 
   return (
     <FoundrySidebar
-      activeItemId={activeView === "issue" ? "issues" : activeView}
+      activeItemId={
+        activeView === "issue"
+          ? "issues"
+          : activeView === "assistant" && assistantCount > 1
+            ? "assistants"
+            : activeView
+      }
       collapsed={preferences.sidebarCollapsed}
       languageControl={<SidebarLanguage onError={onNotice} />}
       navSections={sections}

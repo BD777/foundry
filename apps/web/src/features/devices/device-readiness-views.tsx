@@ -1,11 +1,13 @@
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../../components/ui/alert";
 import {
   DeviceHealthNotices,
   DeviceOfflineNotice,
 } from "../../components/devices/device-recovery";
 import { DeviceReadinessPanel } from "../../components/devices/runtime-readiness";
 import type { DeviceReadiness } from "../../lib/device-readiness";
+import { deviceConnection } from "../../lib/device-connection";
 
 /** Offline: since when, why, how to bring it back. Online: hidden rules. */
 export function DeviceStatusNotices({
@@ -15,7 +17,16 @@ export function DeviceStatusNotices({
   device: DeviceProjection;
   readiness: DeviceReadiness;
 }) {
-  return device.status !== "connected" ? (
+  const { t } = useTranslation("devices");
+  const connection = deviceConnection(device);
+  if (connection === "reconnecting") {
+    return (
+      <Alert tone="info" title={t("status.reconnecting")}>
+        {t("detail.reconnecting")}
+      </Alert>
+    );
+  }
+  return connection === "offline" ? (
     <DeviceOfflineNotice device={device} readiness={readiness} />
   ) : (
     <DeviceHealthNotices device={device} readiness={readiness} />

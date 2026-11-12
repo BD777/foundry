@@ -45,7 +45,6 @@ type SendAgentSessionInput struct {
 	Provider                       string                  `json:"provider,omitempty"`
 	ProfileID                      string                  `json:"profileId,omitempty"`
 	Model                          string                  `json:"model,omitempty"`
-	ModelPoolID                    string                  `json:"modelPoolId,omitempty"`
 	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`
@@ -85,7 +84,7 @@ type CreateAgentSessionInput struct {
 	Provider                       string                  `json:"provider"`
 	ProfileID                      string                  `json:"profileId,omitempty"`
 	Model                          string                  `json:"model,omitempty"`
-	ModelPoolID                    string                  `json:"modelPoolId,omitempty"`
+	WorkerGroupID                  string                  `json:"workerGroupId,omitempty"`
 	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`

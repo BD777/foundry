@@ -3,7 +3,7 @@ import type {
   ConnectorPackageView,
   SkillRepository,
 } from "@bd777/foundry-protocol";
-import { Save } from "lucide-react";
+import { ArrowDown, Save } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { setConnectorPackageDevices } from "../../api";
@@ -16,6 +16,7 @@ import { SectionHead, SectionPanel } from "../../components/ui/section-panel";
 import { MutedText } from "../../components/ui/text";
 import { skillLibraryRepositoryHref } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
+import { connectorName } from "./connector-text";
 
 function selectedIds(view: ConnectorPackageView): Set<string> {
   return new Set(
@@ -33,6 +34,13 @@ function sameSelection(
   return (
     initial.size === selected.size &&
     [...initial].every((deviceId) => selected.has(deviceId))
+  );
+}
+
+/** A device the server is still installing on, or about to. */
+export function isPackageApplying(view: ConnectorPackageView): boolean {
+  return view.devices.some(
+    (device) => device.state === "pending" || device.state === "installing",
   );
 }
 
@@ -56,11 +64,14 @@ export function ConnectorPackage({
   repository,
   onSaved,
   onNotice,
+  onAddInstance,
 }: {
   view: ConnectorPackageView;
   repository?: SkillRepository;
   onSaved: (view: ConnectorPackageView) => void;
   onNotice: (message: string) => void;
+  /** Brings the connector's instance section into view, for a device that has no usable instance. */
+  onAddInstance?: () => void;
 }) {
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [selected, setSelected] = useState(() => selectedIds(view));
@@ -75,6 +86,8 @@ export function ConnectorPackage({
   const version = packageToolVersion(repository);
   const skills = (repository?.skills ?? []).filter((skill) => !skill.retired);
   const changed = !sameSelection(view, selected);
+  const hasFailed = view.devices.some((device) => device.state === "failed");
+  const applying = isPackageApplying(view);
 
   function reasonText(device: ConnectorPackageDevice): string {
     const reason = device.reason?.trim() ?? "";
@@ -123,6 +136,34 @@ export function ConnectorPackage({
     return reason || t("connectorPackage.reasons.unavailable");
   }
 
+  const hasInstances = view.connector.holding === "server_held";
+
+  function deviceName(deviceId: string): string {
+    return (
+      view.devices.find((device) => device.deviceId === deviceId)?.name ??
+      deviceId
+    );
+  }
+
+  function noInstanceText(): string {
+    const connector = connectorName(view.connector);
+    const scoped = (view.instances ?? []).filter(
+      (instance) => instance.deviceIds.length > 0,
+    );
+    if (scoped.length === 0) {
+      return t("connectorPackage.noInstanceNone", { connector });
+    }
+    return [
+      t("connectorPackage.noInstance", { connector }),
+      ...scoped.map((instance) =>
+        t("connectorPackage.instanceOnlyOn", {
+          instance: instance.label,
+          devices: instance.deviceIds.map(deviceName).join(", "),
+        }),
+      ),
+    ].join(" ");
+  }
+
   async function save() {
     setBusy(true);
     setError("");
@@ -147,18 +188,34 @@ export function ConnectorPackage({
           description={t("connectorPackage.description")}
           title={t("connectorPackage.title")}
         />
-        <Badge tone={view.enabled ? "online" : "neutral"}>
-          {view.enabled
-            ? t("connectorPackage.enabled")
-            : t("connectorPackage.notEnabled")}
+        <Badge tone={applying ? "warn" : view.enabled ? "online" : "neutral"}>
+          {applying
+            ? t("connectorPackage.applying")
+            : view.enabled
+              ? t("connectorPackage.enabled")
+              : t("connectorPackage.notEnabled")}
         </Badge>
       </div>
+
+      {hasInstances ? (
+        <MutedText>
+          {t("connectorPackage.requirements", {
+            connector: connectorName(view.connector),
+            command: view.connector.tool.command,
+          })}
+        </MutedText>
+      ) : null}
 
       <DividedList density="compact">
         {view.devices.map((device, index) => {
           const hintId = `${baseId}-${index}`;
+          const noInstance = device.reasonCode === "no_instance";
           const unavailable = !device.eligible;
+          const checked = selected.has(device.deviceId);
           const canSuggest = device.eligible && !selected.has(device.deviceId);
+          const inProgress =
+            device.state === "pending" || device.state === "installing";
+          const failed = device.state === "failed";
           return (
             <li className="min-w-0" key={device.deviceId}>
               <label
@@ -170,9 +227,9 @@ export function ConnectorPackage({
                   aria-label={t("connectorPackage.selectDevice", {
                     device: device.name,
                   })}
-                  checked={selected.has(device.deviceId)}
+                  checked={checked}
                   className="mt-0.5 flex-none"
-                  disabled={unavailable || busy}
+                  disabled={busy || (unavailable && !(noInstance && checked))}
                   id={`${hintId}-checkbox`}
                   onChange={(event) => {
                     setSelected((current) => {
@@ -192,19 +249,57 @@ export function ConnectorPackage({
                     className="m-0"
                     id={hintId}
                     tone={
-                      unavailable ? "warning" : canSuggest ? "info" : "muted"
+                      failed
+                        ? "error"
+                        : inProgress
+                          ? "info"
+                          : unavailable
+                            ? "warning"
+                            : canSuggest
+                              ? "info"
+                              : "muted"
                     }
                   >
-                    {unavailable
-                      ? t("connectorPackage.unavailable", {
-                          reason: reasonText(device),
+                    {failed
+                      ? t("connectorPackage.failed", {
+                          error: device.error ?? "",
                         })
-                      : canSuggest
-                        ? t("connectorPackage.available")
-                        : t("connectorPackage.selected")}
+                      : inProgress
+                        ? device.state === "installing"
+                          ? t("connectorPackage.installing")
+                          : t("connectorPackage.pending")
+                        : noInstance
+                          ? noInstanceText()
+                          : unavailable
+                            ? t("connectorPackage.unavailable", {
+                                reason: reasonText(device),
+                              })
+                            : canSuggest
+                              ? t("connectorPackage.available")
+                              : t("connectorPackage.selected")}
                   </FieldHint>
                 </span>
               </label>
+              {hasInstances && device.instances?.length ? (
+                <MutedText as="small" className="ml-[26px] mt-0.5 block">
+                  {t("connectorPackage.usableInstances", {
+                    instances: device.instances
+                      .map((instance) => instance.label)
+                      .join(", "),
+                  })}
+                </MutedText>
+              ) : null}
+              {noInstance && onAddInstance ? (
+                <Button
+                  className="ml-5 mt-0.5"
+                  onClick={onAddInstance}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("connectorPackage.addInstance")}
+                  <ArrowDown aria-hidden="true" size={13} />
+                </Button>
+              ) : null}
             </li>
           );
         })}
@@ -261,13 +356,17 @@ export function ConnectorPackage({
       <div className="flex justify-end">
         <Button
           busy={busy}
-          disabled={busy || selected.size === 0 || !changed}
+          disabled={busy || selected.size === 0 || !(changed || hasFailed)}
           onClick={() => void save()}
           size="sm"
           variant="primary"
         >
           <Save aria-hidden="true" size={14} />
-          {busy ? t("connectorPackage.saving") : t("connectorPackage.save")}
+          {busy
+            ? t("connectorPackage.saving")
+            : hasFailed && !changed
+              ? t("connectorPackage.retry")
+              : t("connectorPackage.save")}
         </Button>
       </div>
     </SectionPanel>

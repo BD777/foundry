@@ -3,6 +3,7 @@ package externalaccounts
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
@@ -30,8 +31,14 @@ func ResolvePolicy(ctx context.Context, st ConnectorAccessStore, session store.A
 	return Policy{access: access}, err
 }
 
-// PersonalAgent reports whether this is the session owner's Personal Agent.
-func (p Policy) PersonalAgent() bool { return p.access.Applicable }
+// PersonalAgent reports whether this is the assistant's own conversation,
+// which reaches every account the person holds rather than its workspace's
+// bindings.
+func (p Policy) PersonalAgent() bool { return p.access.Applicable && p.access.Home }
+
+// Assistant reports whether an assistant's package applies: its own
+// conversation or a helper it started.
+func (p Policy) Assistant() bool { return p.access.Applicable }
 
 // Allows reports whether the assistant may use accountID.
 func (p Policy) Allows(accountID string) bool {
@@ -44,18 +51,14 @@ func (p Policy) Write(accountID string) bool {
 }
 
 // Bound is the one rule for whether a connector account counts as bound:
-// an ordinary workspace binding, or an allowed account in the person's
-// Assistant workspace.
+// an ordinary workspace binding, an allowed account in the assistant's own
+// conversation, or for a helper a binding of its workspace the assistant's
+// package allows.
 func (p Policy) Bound(accountID string, boundWorkspaces []string, workspaceID string) bool {
-	if p.access.Applicable {
+	if p.PersonalAgent() {
 		return p.Allows(accountID)
 	}
-	for _, bound := range boundWorkspaces {
-		if bound == workspaceID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(boundWorkspaces, workspaceID) && p.Allows(accountID)
 }
 
 // DeviceAccountID names one device login in the opt-out list.

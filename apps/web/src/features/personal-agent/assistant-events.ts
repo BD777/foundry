@@ -9,6 +9,10 @@ export type AssistantFeatureEvent =
   | { type: "notice.requested"; message: string; tone?: ToastTone }
   /** Opens the settings, at a section when given. */
   | { type: "settings.open"; section?: AssistantSettingsSection }
+  | { type: "assistants.open" }
+  | { type: "assistant.open"; assistantId: string }
+  | { type: "assistant.created"; assistantId: string }
+  | { type: "assistants.changed" }
   | { type: "home.open" }
   /** Opens Devices: a computer's settings, or the list to connect one. */
   | { type: "devices.open"; deviceId?: string }

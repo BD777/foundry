@@ -46,9 +46,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { WorkerRelease } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "../platform/config.js";
+import { redactSecrets } from "../platform/secret-redaction.js";
 import { setup } from "../daemon/cli-commands.js";
 import { removeWorkerApp } from "./mac-worker-app.js";
 import {
@@ -214,6 +215,62 @@ export async function withDownloadedWorkerPackages<T>(
 const installDownloadedRuntime = (name: string, specs: string[]) =>
   withDownloadedWorkerPackages(specs, (local) => installRuntime(name, local));
 
+function npmInvocation(args: string[]): { command: string; args: string[] } {
+  const nodeDirectory = dirname(process.execPath);
+  const cli = [
+    join(nodeDirectory, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(
+      nodeDirectory,
+      "..",
+      "lib",
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js",
+    ),
+  ].find(existsSync);
+  if (cli) return { command: process.execPath, args: [cli, ...args] };
+
+  // Some distributions install script wrappers rather than exposing npm's
+  // CLI module. Run that sibling directly; its shebang finds node below.
+  const executable = join(
+    nodeDirectory,
+    process.platform === "win32" ? "npm.cmd" : "npm",
+  );
+  if (existsSync(executable)) return { command: executable, args };
+  throw new Error(
+    `npm is not installed beside ${process.execPath}; install a Node.js distribution that includes npm`,
+  );
+}
+
+function runNpm(args: string[], cwd?: string) {
+  const invocation = npmInvocation(args);
+  return spawnSync(invocation.command, invocation.args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: [dirname(process.execPath), process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter),
+    },
+  });
+}
+
+function npmOutput(result: ReturnType<typeof runNpm>): string {
+  return redactSecrets(
+    [result.stdout, result.stderr, result.error?.message]
+      .filter(Boolean)
+      .join("\n"),
+  ).trim();
+}
+
+function npmFailureDetail(result: ReturnType<typeof runNpm>): string {
+  const output = npmOutput(result);
+  if (!output) return "";
+  return "\n" + output.split(/\r?\n/).slice(-40).join("\n");
+}
+
 /**
  * Install package specs into the runtime directory and make them current.
  * Specs are what npm installs: `<name>@<version>` from the registry, or local
@@ -224,24 +281,33 @@ export function installRuntime(name: string, specs: string[]): string {
   const staging = join(runtimeRoot(), `.staging-${process.pid}-${Date.now()}`);
   mkdirSync(staging, { recursive: true });
   // A package.json keeps npm from walking up to an unrelated project.
-  spawnSync("npm", ["init", "-y"], { cwd: staging, stdio: "ignore" });
-  const install = (packages: string[]) =>
-    spawnSync("npm", [...runtimeInstallArgs(staging), ...packages], {
-      encoding: "utf8",
-      stdio: ["ignore", "inherit", "inherit"],
-    }).status === 0;
-  if (!install(specs)) {
+  runNpm(["init", "-y"], staging);
+  const install = (packages: string[]) => {
+    const result = runNpm([...runtimeInstallArgs(staging), ...packages]);
+    const output = npmOutput(result);
+    if (output) process.stderr.write(`${output}\n`);
+    return result;
+  };
+  let result = install(specs);
+  if (result.status !== 0) {
     rmSync(staging, { recursive: true, force: true });
-    throw new Error(`npm could not install ${specs.join(" ")}`);
+    throw new Error(
+      `npm could not install ${specs.join(" ")}${npmFailureDetail(result)}`,
+    );
   }
   recordSelfUpdateStep("installing");
   const manifest = JSON.parse(
     readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
   ) as RuntimeManifest;
   const { required } = runtimeCompanions(manifest);
-  if (required.length && !install(required)) {
-    rmSync(staging, { recursive: true, force: true });
-    throw new Error(`npm could not install ${required.join(" ")}`);
+  if (required.length) {
+    result = install(required);
+    if (result.status !== 0) {
+      rmSync(staging, { recursive: true, force: true });
+      throw new Error(
+        `npm could not install ${required.join(" ")}${npmFailureDetail(result)}`,
+      );
+    }
   }
   const version = manifest.version;
   const current = join(runtimeRoot(), "current");
@@ -343,13 +409,11 @@ export function pruneRuntimes(
 
 /** Latest published version of the package, from the npm registry. */
 export function latestPublishedVersion(name: string): string {
-  const result = spawnSync("npm", ["view", name, "version"], {
-    encoding: "utf8",
-  });
+  const result = runNpm(["view", name, "version"]);
   const version = result.stdout?.trim();
   if (result.status !== 0 || !version)
     throw new Error(
-      `could not read the latest version of ${name} from npm: ${(result.stderr || "").trim()}`,
+      `could not read the latest version of ${name} from npm:${npmFailureDetail(result)}`,
     );
   return version;
 }

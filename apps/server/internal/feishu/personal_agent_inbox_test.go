@@ -13,9 +13,9 @@ type inboxTestDesk struct {
 	db *sqlitestore.Store
 }
 
-func (d inboxTestDesk) CaptureInbox(ctx context.Context, userID, text string, origin store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
+func (d inboxTestDesk) CaptureInbox(ctx context.Context, assistantID, userID, text string, origin store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
 	return d.db.CapturePersonalAgentInbox(ctx, store.PersonalAgentInboxEntry{
-		ID: "inbox_" + origin.MessageID, UserID: userID, Channel: "feishu", MessageID: origin.AppID + ":" + origin.MessageID,
+		ID: "inbox_" + origin.MessageID, UserID: userID, AssistantID: assistantID, Channel: "feishu", MessageID: origin.AppID + ":" + origin.MessageID,
 		Text: text, InputID: store.WorkRunInputID(userID, origin.MessageID), Origin: &origin, Timezone: "Asia/Shanghai",
 	})
 }
@@ -33,7 +33,7 @@ func TestAssistantInboxKeepsOfflineInputOnceAndRejectsOtherSender(t *testing.T) 
 	f.desk.route.Stopped = true
 	message := personMessage("om_capture", "", "Remember the synthetic export task", "ou_person")
 	f.send(t, message)
-	entries, err := f.db.ListPersonalAgentInbox(context.Background(), f.person.ID, 10)
+	entries, err := f.db.ListPersonalAgentInbox(context.Background(), f.desk.route.AssistantID, 10)
 	if err != nil || len(entries) != 1 || entries[0].Origin.ChatID != "oc_dm" || entries[0].Origin.MessageID != "om_capture" {
 		t.Fatalf("source not retained: %+v %v", entries, err)
 	}
@@ -48,7 +48,7 @@ func TestAssistantInboxKeepsOfflineInputOnceAndRejectsOtherSender(t *testing.T) 
 		t.Fatalf("replay created another card: %+v", replies)
 	}
 	f.send(t, personMessage("om_stranger", "", "Run an unrelated task", "ou_other"))
-	entries, _ = f.db.ListPersonalAgentInbox(context.Background(), f.person.ID, 10)
+	entries, _ = f.db.ListPersonalAgentInbox(context.Background(), f.desk.route.AssistantID, 10)
 	if len(entries) != 1 || len(f.started()) != 0 {
 		t.Fatal("another sender acquired the person's authority")
 	}
@@ -63,7 +63,7 @@ func TestAssistantInboxDoesNotDropMissingAttachmentsOrMisrouteResult(t *testing.
 		{Key: "first", Type: "file", Name: "first.txt", Label: "file"},
 		{Key: "second", Type: "file", Name: "second.txt", Label: "file"},
 	}}
-	entry, err := f.manager.PersonalAgents.(PersonalAgentInboxDesk).CaptureInbox(ctx, f.person.ID, "Compare both files", origin)
+	entry, err := f.manager.PersonalAgents.(PersonalAgentInboxDesk).CaptureInbox(ctx, f.desk.route.AssistantID, f.person.ID, "Compare both files", origin)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -42,3 +42,21 @@ test("the / menu lists each skill name once, as the session resolves it", () => 
     ["code-review", "skill-creator", "notes"],
   );
 });
+
+test("a connector package's skills are listed with their package, a built-in still wins its name", () => {
+  const skills = {
+    workspace: [
+      item("open-lark", "OpenLark package"),
+      item("skill-creator", "OpenLark package"),
+    ],
+    byAgent: {
+      claude: { official: [], builtin: [item("skill-creator", "Foundry")] },
+    },
+  };
+  assert.deepEqual(
+    composerSlashItems(skills, "claude").map(
+      (entry) => `${entry.value}:${entry.tag}`,
+    ),
+    ["skill-creator:Foundry", "open-lark:OpenLark package"],
+  );
+});

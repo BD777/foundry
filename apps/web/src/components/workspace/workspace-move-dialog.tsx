@@ -32,6 +32,7 @@ import {
 } from "./workspace-migration";
 import { WorkspaceMoveProgress } from "./workspace-move-progress";
 import { WorkspacePathPicker } from "./workspace-path-picker";
+import { deviceConnection } from "../../lib/device-connection";
 import { folderPathForSubmit } from "./workspace-path-lookup";
 
 /** How often an open dialog reads a move under way. */
@@ -71,13 +72,15 @@ export function WorkspaceMoveDialog({
         .filter((device) => moveTargetDenial(device, sourceId) !== "notOwned")
         .sort(
           (a, b) =>
-            Number(b.status === "connected") -
-              Number(a.status === "connected") ||
+            Number(deviceConnection(b) === "online") -
+              Number(deviceConnection(a) === "online") ||
             a.label.localeCompare(b.label),
         ),
     [devices, sourceId],
   );
-  const firstOnline = targets.find((device) => device.status === "connected");
+  const firstOnline = targets.find(
+    (device) => deviceConnection(device) === "online",
+  );
   const [targetId, setTargetId] = useState(firstOnline?.id ?? "");
   const suggestion = (deviceId: string) =>
     suggestMigrationTargetPath(
@@ -102,7 +105,7 @@ export function WorkspaceMoveDialog({
   const pending = useRef(false);
   const field = useRef<HTMLInputElement>(null);
   const target = targets.find((device) => device.id === targetId);
-  const targetOnline = target?.status === "connected";
+  const targetOnline = deviceConnection(target) === "online";
   const followedId = migration?.id ?? migrationId;
   const following = view === "progress" && !!followedId;
   const ended = !!migration && !migrationActive(migration);
@@ -255,7 +258,7 @@ export function WorkspaceMoveDialog({
             {t("move.targetDevice")}
           </legend>
           {targets.map((device) => {
-            const offline = device.status !== "connected";
+            const offline = deviceConnection(device) !== "online";
             const reasonId = `fdy-move-target-reason-${device.id}`;
             return (
               <CheckLabel
@@ -283,7 +286,7 @@ export function WorkspaceMoveDialog({
               </CheckLabel>
             );
           })}
-          {!targets.some((device) => device.status === "connected") ? (
+          {!targets.some((device) => deviceConnection(device) === "online") ? (
             <p role="status" className="m-0 text-xs text-ink-muted">
               {t("move.noTargets")}
             </p>

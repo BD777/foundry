@@ -32,8 +32,6 @@ var (
 	localImageTimeout      = 3 * time.Minute
 )
 
-var errAttachmentOutsideWorkspace = errors.New("attachment is outside a registered workspace")
-
 func (s *Server) handleUploadAttachments(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentUploadBytes)
 	if err := r.ParseMultipartForm(maxAttachmentUploadBytes); err != nil {
@@ -237,10 +235,21 @@ func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// This authorization always precedes cache lookup and conditional 304.
-	workspace, err := s.attachmentWorkspace(r, requestedPath)
+	workspaces, err := s.viewableWorkspaces(r)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "image not found")
+		writeError(w, http.StatusInternalServerError, "could not list workspaces")
 		return
+	}
+	workspace, ok := attachmentWorkspaceOf(workspaces, requestedPath)
+	if !ok {
+		workspace, err = s.linkedAttachmentWorkspace(r.Context(), workspaces, requestedPath)
+		if err != nil {
+			if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
+				w.Header().Set("Retry-After", "1")
+			}
+			writeError(w, attachmentReadStatus(err), err.Error())
+			return
+		}
 	}
 	s.serveAttachmentImage(w, r, workspace, requestedPath)
 }
@@ -465,30 +474,77 @@ func attachmentReadStatus(err error) int {
 		return http.StatusRequestEntityTooLarge
 	case errors.As(err, &refusal) && refusal.code == "unsupported":
 		return http.StatusUnsupportedMediaType
-	default:
+	case errors.As(err, &refusal) && refusal.code == "invalid_path":
+		return http.StatusForbidden
+	case errors.As(err, &refusal) && refusal.code == "not_found":
 		return http.StatusNotFound
+	default:
+		return http.StatusBadGateway
 	}
 }
 
-// attachmentWorkspace finds the viewable workspace whose attachments hold
-// the path. The check is lexical; the device re-checks after resolving links.
-func (s *Server) attachmentWorkspace(r *http.Request, path string) (store.WorkspaceProjection, error) {
+// viewableWorkspaces are the workspaces the caller may read.
+func (s *Server) viewableWorkspaces(r *http.Request) ([]store.WorkspaceProjection, error) {
 	view, err := s.visibilityFor(r.Context(), actorFromContext(r.Context()))
 	if err != nil {
-		return store.WorkspaceProjection{}, err
+		return nil, err
 	}
-	workspaces := view.workspaces
 	if view.scope.all {
-		if workspaces, err = s.store.ListWorkspaces(r.Context()); err != nil {
-			return store.WorkspaceProjection{}, err
-		}
+		return s.store.ListWorkspaces(r.Context())
 	}
+	return view.workspaces, nil
+}
+
+// attachmentWorkspaceOf finds the workspace whose attachments hold the path.
+// The check is lexical; the device re-checks after resolving links.
+func attachmentWorkspaceOf(workspaces []store.WorkspaceProjection, path string) (store.WorkspaceProjection, bool) {
 	for _, workspace := range workspaces {
 		if workspace.LocalPath != "" && store.InsideDeviceRoot(attachmentsFolder(workspace.LocalPath), path) {
-			return workspace, nil
+			return workspace, true
 		}
 	}
-	return store.WorkspaceProjection{}, errAttachmentOutsideWorkspace
+	return store.WorkspaceProjection{}, false
+}
+
+// linkedAttachmentWorkspace finds the workspace for a path no workspace
+// names lexically: an agent writes the real path of a file, while the
+// workspace is registered through a link (a home that is a link). Only a
+// device can resolve links, so each candidate's device is asked; it answers
+// "invalid_path" for a path outside its attachments after resolving both
+// sides, which ends in 403 when no workspace owns the path.
+func (s *Server) linkedAttachmentWorkspace(ctx context.Context, workspaces []store.WorkspaceProjection, path string) (store.WorkspaceProjection, error) {
+	refused := attachmentRefusal{code: "invalid_path", message: "image is outside the workspaces' attachments"}
+	var offline error
+	asked := false
+	for _, workspace := range workspaces {
+		if workspace.LocalPath == "" || workspace.DeviceID == "" || workspace.UnavailableOnDevice != nil {
+			continue
+		}
+		asked = true
+		probeCtx, done := context.WithTimeout(ctx, localImageChunkTimeout)
+		_, err := s.hub.readAttachmentChunk(probeCtx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, MaxBytes: maxLocalImageBytes, ChunkBytes: 4096})
+		done()
+		var refusal attachmentRefusal
+		switch {
+		case err == nil:
+			return workspace, nil
+		case errors.Is(err, sessions.ErrLocalDaemonNotConnected):
+			offline = err
+		case errors.As(err, &refusal) && refusal.code == "invalid_path":
+		case errors.As(err, &refusal):
+			// The workspace owns the path; the read reports the refusal.
+			return workspace, nil
+		case ctx.Err() != nil:
+			return store.WorkspaceProjection{}, ctx.Err()
+		}
+	}
+	if offline != nil {
+		return store.WorkspaceProjection{}, offline
+	}
+	if !asked {
+		return store.WorkspaceProjection{}, attachmentRefusal{code: "not_found", message: "image not found"}
+	}
+	return store.WorkspaceProjection{}, refused
 }
 
 // attachmentsFolder is where the device keeps a workspace's attachments,

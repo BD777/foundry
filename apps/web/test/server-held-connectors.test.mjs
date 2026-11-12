@@ -591,6 +591,71 @@ test("a device-network instance chooses an online validation device", async () =
   await page.unmount();
 });
 
+test("a device-network validation lists where the instance is usable and why not elsewhere", async () => {
+  const checkedAt = iso(0);
+  const checks = [
+    { deviceId: "dev_mac", name: "Alice's Mac", status: "ok", checkedAt },
+    {
+      deviceId: "dev_nas",
+      name: "Office NAS",
+      status: "unreachable",
+      checkedAt,
+      detail: "dial tcp 10.37.93.185:80: i/o timeout",
+    },
+    {
+      deviceId: "dev_pad",
+      name: "Alice's Pad",
+      status: "not_applicable",
+      checkedAt,
+    },
+  ];
+  api = routes({
+    "POST /api/connectors/extensions/acme-api/instances/probe": {
+      body: {
+        ...probeResult(),
+        network: "device",
+        probeDeviceId: "dev_mac",
+        availableDevices: checks,
+      },
+    },
+  });
+  for (const [language, usable, unreachable, local] of [
+    [
+      "en",
+      "Available on Alice's Mac",
+      "Not available on Office NAS: Unreachable from this device: dial tcp 10.37.93.185:80: i/o timeout",
+      "Not available on Alice's Pad: This address only works on Alice's Mac.",
+    ],
+    [
+      "zh-CN",
+      "可在这些设备使用：Alice's Mac",
+      "Office NAS 不可用：该设备连不上这个地址：dial tcp 10.37.93.185:80: i/o timeout",
+      "Alice's Pad 不可用：本机地址只在 Alice's Mac 可用",
+    ],
+  ]) {
+    await i18n.changeLanguage(language);
+    const page = await render(ConnectorsFeature, connectorProps);
+    await page.click(
+      page.button(language === "en" ? "Add instance" : "添加实例"),
+    );
+    await page.click(
+      page.button(
+        language === "en" ? "Via a device (internal)" : "经设备连接（内网）",
+      ),
+    );
+    await page.click(page.button(language === "en" ? "Continue" : "继续"));
+    await page.fill("Acme HTTPS address", "http://10.37.93.185/openlark");
+    await page.fill("Read token", "intranet-secret");
+    await page.click(page.button(language === "en" ? "Validate" : "校验"));
+    const text = window.document.body.textContent;
+    assert.ok(text.includes(usable), `${language}: ${text}`);
+    assert.ok(text.includes(unreachable), `${language}: ${text}`);
+    assert.ok(text.includes(local), `${language}: ${text}`);
+    await page.unmount();
+  }
+  await i18n.changeLanguage("en");
+});
+
 test("probe failures are grouped into readable causes instead of raw upstream output", async () => {
   await i18n.changeLanguage("en");
   api = routes({

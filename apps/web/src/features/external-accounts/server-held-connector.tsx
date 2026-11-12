@@ -2,6 +2,7 @@ import type {
   ConnectorDescriptor,
   ConnectorField,
   ConnectorOption,
+  ConnectorPackageView,
   ConnectorServerHeldDevice,
   ConnectorServerHeldInstance,
   ConnectorServerHeldInstanceInput,
@@ -54,6 +55,10 @@ import {
   EdgeAccessRequiredNotice,
   edgeAccessRequiredOf,
 } from "./edge-access-required";
+import {
+  DeviceAvailability,
+  InstancePackageState,
+} from "./server-held-device-state";
 
 type FailureCategory =
   "credential" | "input" | "network" | "response" | "service";
@@ -67,6 +72,11 @@ export interface ServerHeldConnectorProps {
   connector: ConnectorDescriptor;
   currentUserId: string;
   onNotice: (message: string, tone?: ToastTone) => void;
+  /** The connector's package enablement, to show where each instance's package is enabled. */
+  packageView?: ConnectorPackageView;
+  onPackageChanged?: (view: ConnectorPackageView) => void;
+  /** Called after instances were added, changed or revoked, so the package view can follow. */
+  onInstancesChanged?: () => void;
 }
 
 /** A server-held instance uses the ordinary external-account status vocabulary. */
@@ -197,6 +207,9 @@ export function ServerHeldConnector({
   connector,
   currentUserId,
   onNotice,
+  packageView,
+  onPackageChanged,
+  onInstancesChanged,
 }: ServerHeldConnectorProps) {
   const { t } = useTranslation("externalAccounts");
   const { t: tCommon } = useTranslation("common");
@@ -252,6 +265,7 @@ export function ServerHeldConnector({
         current.map((entry) => (entry.id === saved.id ? saved : entry)),
       );
       onNotice(t("serverHeld.checked", { name: saved.label }));
+      onInstancesChanged?.();
     } catch (cause) {
       const required = edgeAccessRequiredOf(cause);
       setActionEdgeAccess(required);
@@ -274,6 +288,7 @@ export function ServerHeldConnector({
       );
       onNotice(t("serverHeld.revokedNotice", { name: saved.label }));
       setRevoking(undefined);
+      onInstancesChanged?.();
     } catch (cause) {
       setActionFailure(failureOf(cause));
     } finally {
@@ -290,6 +305,7 @@ export function ServerHeldConnector({
     );
     setAdding(false);
     setEditor(undefined);
+    onInstancesChanged?.();
     onNotice(
       t(replacing ? "serverHeld.updatedNotice" : "serverHeld.savedNotice", {
         name: instance.label,
@@ -406,17 +422,19 @@ export function ServerHeldConnector({
                   ) : null}
                   {instance.network === "device" ? (
                     <>
-                      <span className="wrap-anywhere">
-                        {instance.availableDevices?.length
-                          ? t("serverHeld.availableOn", {
-                              devices: instance.availableDevices
-                                .map((device) => device.name)
-                                .join(", "),
-                            })
-                          : t("serverHeld.noAvailableDevice")}
-                      </span>
-                      <span>{t("serverHeld.deviceNetworkScope")}</span>
+                      <DeviceAvailability
+                        devices={instance.availableDevices}
+                        probeDeviceId={instance.probeDeviceId}
+                      />
                     </>
+                  ) : null}
+                  {packageView ? (
+                    <InstancePackageState
+                      instance={instance}
+                      onChanged={onPackageChanged}
+                      onNotice={onNotice}
+                      view={packageView}
+                    />
                   ) : null}
                   {instance.statusDetail && instance.statusDetail !== "ok" ? (
                     <span className="wrap-anywhere">
@@ -770,6 +788,14 @@ function ServerHeldInstanceDialog({
             </span>
           ) : null}
         </div>
+        {probe && probe.network === "device" ? (
+          <div className="grid gap-1 text-xs text-ink-muted">
+            <DeviceAvailability
+              devices={probe.availableDevices}
+              probeDeviceId={probe.probeDeviceId}
+            />
+          </div>
+        ) : null}
         {step === 0 ? (
           <FormFieldGroup>
             <FieldLabel as="span">{t("serverHeld.whereTitle")}</FieldLabel>

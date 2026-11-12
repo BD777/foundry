@@ -47,6 +47,10 @@ func (runAccounts) Pick(accounts []run.Account, runtime, preferred string) (run.
 	return runAccount(picked), ok
 }
 
+func (a runAccounts) ChooseWorkerGroupMember(ctx context.Context, group store.StoredWorkerGroup, workspace store.WorkspaceProjection) (store.WorkerGroupMember, error) {
+	return a.s.chooseWorkerGroupMember(ctx, group, workspace)
+}
+
 func runAccount(account workspaceAccount) run.Account {
 	return run.Account{
 		ProfileID: account.ProfileID, Name: account.Name, Runtime: account.Runtime, Kind: account.Kind, Usable: account.Usable,

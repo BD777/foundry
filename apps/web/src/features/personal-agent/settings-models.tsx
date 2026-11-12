@@ -4,9 +4,11 @@ import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProjection,
+  PersonalAgentExecutionModels,
   PersonalAgentRunPreference,
   PersonalAgentSettings,
   PersonalAgentWhenUnavailable,
+  ProfileDefinition,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../i18n";
@@ -32,9 +34,20 @@ import {
   SettingsGroup,
   type ChangeSettings,
 } from "./settings-field";
+import {
+  emptyExecutionModelInput,
+  ExecutionDefaultFields,
+  type ExecutionDefaultValue,
+} from "../../components/workspace/execution-default-fields";
+
+function assistantExecutionModels(
+  value: ExecutionDefaultValue,
+): PersonalAgentExecutionModels {
+  return value as PersonalAgentExecutionModels;
+}
 
 /** The assistant's flows besides its conversation (§g), in the page's order. */
-const flows = ["executor", "digest", "memory", "governance"] as const;
+const flows = ["digest", "memory", "governance"] as const;
 type Flow = (typeof flows)[number];
 
 type DiagramLabel =
@@ -198,12 +211,14 @@ export function ModelsSection({
   agentProfiles,
   home,
   devices,
+  serverProfiles = [],
 }: {
   draft: PersonalAgentSettings;
   change: ChangeSettings;
   agentProfiles: AgentProfileProjection[];
   home: DeviceProjection | undefined;
   devices: DeviceProjection[];
+  serverProfiles?: ProfileDefinition[];
   workspaces?: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("personalAgent");
@@ -237,11 +252,7 @@ export function ModelsSection({
       <FlowTopology />
       <SettingsGroup title={t("settings.models.flows.coordinator.title")}>
         <FieldHint>{t("settings.models.flows.coordinator.trigger")}</FieldHint>
-        <FieldHint>
-          {t("settings.models.assistantIntro", {
-            device: home?.label ?? t("settings.models.homeComputer"),
-          })}
-        </FieldHint>
+        <FieldHint>{t("settings.models.assistantIntro")}</FieldHint>
         <ChoiceFields
           title={t("settings.models.flows.coordinator.title")}
           value={assistant}
@@ -249,6 +260,42 @@ export function ModelsSection({
           sources={homeSources(agentProfiles, home?.id)}
           defaultLabel={t("settings.models.homeDefault")}
         />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.models.flows.executor.title")}>
+        <FieldHint>{t("settings.models.executionModels.intro")}</FieldHint>
+        {draft.executionModels ? (
+          <ExecutionDefaultFields
+            onChange={(executionModels) =>
+              change({
+                executionModels: assistantExecutionModels(executionModels),
+              })
+            }
+            onClear={() => change({ executionModels: undefined })}
+            profiles={agentProfiles}
+            servers={serverProfiles}
+            value={draft.executionModels}
+          />
+        ) : (
+          <div className="grid min-w-0 gap-2">
+            <FieldHint className="mt-0">
+              {t("settings.models.executionModels.inherit")}
+            </FieldHint>
+            <Button
+              className="justify-self-start"
+              onClick={() =>
+                change({
+                  executionModels: assistantExecutionModels(
+                    emptyExecutionModelInput(),
+                  ),
+                })
+              }
+              size="sm"
+              variant="secondary"
+            >
+              {t("settings.models.executionModels.setOverride")}
+            </Button>
+          </div>
+        )}
       </SettingsGroup>
       {flows.map((flow) => (
         <FlowChoice
@@ -286,12 +333,7 @@ function flowModeOf(draft: PersonalAgentSettings, flow: Flow): FlowMode {
       !own.runtime
       ? "each"
       : "chosen";
-  // Without its own choice, the work handed off follows DEV-150's setting;
-  // every other flow follows the assistant.
-  if (flow === "executor")
-    return draft.runDefault || draft.delegateModel === "same_as_assistant"
-      ? "same"
-      : "each";
+  // These upkeep flows follow the assistant unless they have an override.
   return "same";
 }
 
@@ -329,26 +371,11 @@ function FlowChoice({
   const setMode = (next: FlowMode) => {
     setPicking(next === "chosen" && saved !== "chosen");
     if (next === saved) return;
-    if (next === "same")
-      change(
-        flow === "executor"
-          ? {
-              roleOverrides: withOwn(undefined),
-              delegateModel: "same_as_assistant",
-            }
-          : { roleOverrides: withOwn(undefined) },
-      );
+    if (next === "same") change({ roleOverrides: withOwn(undefined) });
     else if (next === "each")
-      change(
-        flow === "executor"
-          ? {
-              roleOverrides: withOwn({ ...keep, profileId: "device_default" }),
-              delegateModel: "device_default",
-            }
-          : {
-              roleOverrides: withOwn({ ...keep, profileId: "device_default" }),
-            },
-      );
+      change({
+        roleOverrides: withOwn({ ...keep, profileId: "device_default" }),
+      });
   };
   const value: PersonalAgentRunPreference =
     mode === "chosen" && own && saved === "chosen" ? own : { profileId: "" };

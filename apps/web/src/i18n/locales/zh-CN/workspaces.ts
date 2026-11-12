@@ -69,6 +69,7 @@ export const workspaces: Translation<typeof en> = {
   services: "服务",
   shared: {
     online: "在线",
+    reconnecting: "重连中…",
     offline: "离线",
     details: "详情",
     viewDetails: "查看 {{name}} 的详情",
@@ -120,6 +121,8 @@ export const workspaces: Translation<typeof en> = {
     noWorkspaceSelected: "未选择工作区",
     chooseWorkspace: "在下方选一个工作区，点“切换”进入。",
     offlineSummary: "离线 · {{workspaces}}",
+    reconnectingSummary: "重连中… · {{workspaces}}",
+    reconnectingNote: "设备正在重连，通常几秒内恢复。",
     noDevices: "还没有设备。可在“设备”中添加。",
     addWorkspace: "添加工作区",
     openDevice: "设备",
@@ -178,6 +181,7 @@ export const workspaces: Translation<typeof en> = {
     },
     statusTitle: "工作区状态",
     deviceOnline: "设备在线",
+    deviceReconnecting: "设备重连中…",
     deviceOffline: "设备离线",
     rootRepository: "根仓库",
     checking: "正在检查…",
@@ -199,6 +203,8 @@ export const workspaces: Translation<typeof en> = {
     checked: "HEAD <code>{{head}}</code> · 检查于 {{time}}",
     refreshStatus: "刷新状态",
     offlineNote: "连接设备后才能检查这个工作区。离线时不会推断 Git 状态。",
+    reconnectingNote:
+      "设备正在重连，通常几秒内恢复。恢复前无法检查或重新扫描这个工作区。",
     repositoriesTitle: "Git 仓库",
     scanSummary:
       "{{unique}} · {{locations}} · {{worktrees}} · 上次扫描于 {{time}}",
@@ -240,6 +246,8 @@ export const workspaces: Translation<typeof en> = {
     inspected: "检查时间",
     inspecting: "正在这台设备上检查文件夹…",
     offlineNote: "离线 · 仅显示保存的路径，无法获取实时仓库状态。",
+    reconnectingNote:
+      "重连中 · 设备正在重连，通常几秒内恢复；恢复前无法获取实时仓库状态。",
     failed: "检查失败。",
     retry: "重新检查",
     refresh: "刷新检查",

@@ -324,7 +324,7 @@ export const personalAgent = {
     domainWorkspace: "Owner workspace",
     addDomain: "Use this domain source",
 
-    title: "Knowledge and memory location",
+    title: "Memory storage and maintenance",
     intro:
       "Keep facts in their owner workspace. Share specific versions through references; documents and live task state stay in their original project.",
     device: "Memory storage device",
@@ -341,6 +341,9 @@ export const personalAgent = {
     failed: "Knowledge action could not finish",
     location: "{{workspace}} on {{device}} · {{path}}",
     state: "Location: {{state}} {{reason}}",
+    locationReady: "Your saved memories are stored here and ready to use.",
+    locationPending:
+      "This location is being prepared or is temporarily unavailable.",
     migrationHint:
       "Changing location requires an explicit migration that freezes the old source before switching ownership.",
     source: "Knowledge owner",
@@ -349,6 +352,13 @@ export const personalAgent = {
       "Revision {{revision}} · {{state}} · {{source}} · expiry: {{expiry}}",
     noExpiry: "Not set",
     inspect: "Read / correct / share",
+    correctAction: "Correct",
+    shareTo: "Share to…",
+    editTitle: "Correct this memory",
+    entryOrigin: "{{source}} · Version {{revision}}",
+    sourceConversation: "From something you said in a conversation",
+    sourceReview: "From a correction you reviewed",
+    sourceFile: "From a file in this memory location",
     forget: "Forget",
     forgetConfirm: "Revoke retrieval now and erase the owner text?",
     entryTitle: "Short title",
@@ -359,6 +369,8 @@ export const personalAgent = {
     correct: "Save correction to owner",
     add: "Add knowledge",
     newEntry: "New entry",
+    cancelEdit: "Cancel editing",
+    cancelShare: "Cancel",
     publishTitle: "Publish a versioned reference",
     publishHint:
       "Only the selected account in this workspace can recall this version. Consider who can see the target workspace and its conversations. Changed sources or audiences require renewed publication.",
@@ -366,7 +378,10 @@ export const personalAgent = {
     account: "Allowed execution account",
     purpose: "Purpose of reuse",
     publish: "Publish this version",
+    publishedTitle: "Shared references",
     published: "{{purpose}} → {{workspace}} · {{profile}} · {{state}}",
+    unknownWorkspace: "Unknown project",
+    unknownAccount: "Unknown account",
     revoke: "Revoke reference",
     pending: "{{title}}: {{state}} {{reason}}",
     forgetLimits:
@@ -377,6 +392,43 @@ export const personalAgent = {
   loading: "Loading…",
   loadFailed: "Couldn't load your assistant",
   retry: "Try again",
+  assistants: {
+    title: "Assistants",
+    description:
+      "Keep separate contexts, projects, and settings for different parts of your work.",
+    loading: "Loading assistants…",
+    loadFailed: "Couldn't load your assistants",
+    new: "New assistant",
+    emptyTitle: "No assistants yet",
+    emptyBody: "Create an assistant to give this work its own context.",
+    noDeviceTitle: "Connect a computer first",
+    noDeviceBody: "Choose one of your computers as the assistant's home.",
+    default: "Default",
+    stopped: "Paused",
+    openShort: "Open",
+    open: "Open {{name}}",
+    actionsFor: "Actions for {{name}}",
+    switch: "Switch assistant",
+    rename: "Rename",
+    delete: "Delete",
+    deleteTitle: "Delete {{name}}?",
+    deleteBody:
+      "{{name}} will be stopped. Its home workspace is archived as a project; Foundry removes the assistant's private records while keeping conversations and project files. This can't be undone.",
+    cancel: "Cancel",
+    createTitle: "New assistant",
+    create: "Create assistant",
+    creating: "Creating…",
+    save: "Save",
+    saving: "Saving…",
+    renameTitle: "Rename assistant",
+    name: "Name",
+    namePlaceholder: "e.g. Work",
+    device: "Home computer",
+    createHint:
+      "It starts with no project access. You will choose workspaces next.",
+    createFailed: "Couldn't create the assistant",
+    renameFailed: "Couldn't rename the assistant",
+  },
   inbox: {
     workerUpdateRequired:
       "The loaded worker needs an update; this request stays saved.",
@@ -530,6 +582,7 @@ export const personalAgent = {
         "These saved references belong to removed computers. Work and project creation are disabled. Choose a new location explicitly; files and previous locations have been kept.",
     },
     title: "Assistant settings",
+    titleFor: "{{name}} settings",
     description:
       "Choose how your assistant speaks, where it works, and when it should check with you.",
     sectionsLabel: "Settings sections",
@@ -576,6 +629,8 @@ export const personalAgent = {
     },
     problems: {
       extraInstructions: "Extra requests can be at most 2,000 characters.",
+      executionModels:
+        "Choose a worker group, or a provider, runtime and model, for the assistant override and every alternative.",
       dailyDigestTime: "Write the summary time as HH:MM, for example 09:00.",
       activeHours: "Write the hours as HH:MM, for example 09:00 and 22:00.",
       limit: "“{{label}}” must be between {{min}} and {{max}}.",
@@ -627,33 +682,54 @@ export const personalAgent = {
       extraCount: "{{count}} / 2,000",
     },
     memory: {
-      intro:
-        "What your assistant knows about you. Only you can see this, and forgetting erases it.",
+      layers: {
+        person: {
+          title: "About you (shared by all assistants)",
+          intro:
+            "General facts and preferences that every one of your assistants can recall.",
+          placeholder: "For example: I prefer short answers",
+        },
+        assistant: {
+          title: "This assistant",
+          intro:
+            "People, projects, and arrangements that belong to this assistant's own work.",
+          placeholder: "For example: Project Atlas launches next month",
+        },
+      },
       addLabel: "Something it should remember",
-      addPlaceholder: "For example: I prefer short answers",
+      addLabelFor: "Something for {{layer}} to remember",
       add: "Remember",
       adding: "Saving…",
-      empty: "Nothing yet. It learns as you talk, or add something here.",
-      pendingTitle: "Waiting for your OK",
-      pendingBody:
-        "These come from things it read, not from you. They don't count until you confirm them.",
-      origin: {
-        stated: "You told it",
-        edited: "You wrote it",
-        inferred: "Its guess",
-        external: "From something it read",
-      },
-      added: "Added {{when}}",
-      confirm: "Confirm",
-      edit: "Edit",
-      editLabel: "Edit what it remembers",
-      save: "Save",
-      cancel: "Cancel",
+      addedPending:
+        "Saved. It will appear after the layer's computer applies it.",
+      actionsFor: "Actions for “{{title}}”",
+      empty: "Nothing in this layer yet.",
+      updated: "Updated {{when}}",
+      layerPending: "Waiting for this layer's computer.",
+      legacyCopying_one:
+        "{{count}} older memory is still being copied to the shared layer.",
+      legacyCopying_other:
+        "{{count}} older memories are still being copied to the shared layer.",
+      moveToShared: "Move to shared layer",
+      moveToAssistant: "Move to this assistant",
+      moveToSharedTitle: "Move to the shared layer?",
+      moveToSharedBody:
+        "“{{title}}” will be available to every one of your assistants. They will all be able to recall it.",
+      moveToAssistantTitle: "Move to this assistant's layer?",
+      moveToAssistantBody:
+        "“{{title}}” will no longer be shared with your other assistants. Only this assistant will recall it.",
+      moveConfirm: "Move",
+      moving: "Moving…",
+      movedPending: "Move saved. The computer will finish moving it shortly.",
       forget: "Forget",
-      forgetConfirm: "Forget for good?",
-      forgetAll: "Forget everything",
-      forgetAllConfirm: "Really forget everything?",
-      export: "Export",
+      forgetting: "Forgetting…",
+      forgetPending:
+        "Forget saved. The computer will finish removing it shortly.",
+      forgetTitle: "Forget this memory?",
+      forgetBody:
+        "“{{title}}” will no longer be recalled. Forgetting blocks new retrieval immediately; device cleanup waits if the source computer is offline. Previously exported copies, conversation history and backups are not erased.",
+      forgetConfirm: "Forget",
+      cancel: "Cancel",
       failed: "Couldn't change what it remembers",
       loadFailed: "Couldn't load what it remembers",
     },
@@ -709,11 +785,70 @@ export const personalAgent = {
         "Shares its system account with {{names}}: they can reach what your assistant does here. New projects go here only if you allow it below or make it the default place.",
       none: "You haven't connected a computer of your own yet.",
     },
+    workspaceAccess: {
+      title: "Projects and identity resources it can use",
+      allDescription:
+        "This assistant may use every project you can reach, including projects added later.",
+      listedDescription:
+        "This assistant may use only the projects you select here.",
+      newAssistantHint:
+        "New assistants start with no projects. Add access deliberately.",
+      allBadge: "All projects",
+      selectedCount: "{{count}} selected",
+      allTitle: "All workspaces, including future ones",
+      allBody:
+        "This is the default assistant's broad access. You can narrow it to named projects.",
+      chooseSome: "Choose only some projects",
+      search: "Search projects",
+      searchPlaceholder: "Search by name or path",
+      noMatches: "No projects match.",
+      selectDevice: "Select all on this computer",
+      clearDevice: "Clear this computer",
+      workspaceLabel: "Toggle {{name}}",
+      empty: "No projects available",
+      emptyBody: "Add or reconnect a project on one of your computers first.",
+      loadFailed: "Couldn't load project access",
+      saveFailed: "Couldn't save project access",
+      saved: "Access saved.",
+      save: "Save access",
+      saving: "Saving…",
+      copy: "Copy from another assistant",
+      copying: "Reading…",
+      continue: "Continue",
+      copyTitle: "Copy project access",
+      copyBody:
+        "Choose another assistant to take its current project access as your starting point.",
+      copySource: "Assistant to copy from",
+      copyFailed: "Couldn't read that assistant's project access",
+      copyConfirmTitle: "Replace the current selection?",
+      copyConfirmBody:
+        "Replace this selection with {{count}} project(s) from {{assistant}}? Nothing is saved until you choose Save access.",
+      replace: "Replace selection",
+      cancel: "Cancel",
+      unknownDevice: "Unknown computer",
+      identityTitle: "Identity-bearing resources",
+      identityAll:
+        "You can use all your identity-bearing resources, including ones added later.",
+      identityListed:
+        "Only the identity-bearing resources you select can be leased by work this assistant dispatches.",
+      identityAllBadge: "All resources",
+      identitySelectedCount: "{{count}} selected",
+      identityChooseSome: "Choose only some resources",
+      identityResourceLabel: "Let this assistant use {{name}}",
+      identityExplanation:
+        "These choices only decide which identity-bearing resources work dispatched by this assistant may use. They do not change any third-party authorization.",
+      identityLimitation:
+        "The browser launcher still runs through its session, so these choices currently constrain resource leases only.",
+      identityEmpty: "No identity-bearing resources found",
+      identityEmptyBody:
+        "Reconnect a computer or refresh its resources, then try again.",
+      identityLoadFailed: "Couldn't load identity-bearing resources",
+    },
     models: {
       catalogFailed: "Could not refresh account choices",
       refreshCatalog: "Refresh account choices",
       flowsIntro:
-        "Your assistant runs a model in each of these flows. Choose for each: a judgement-heavy flow is worth a stronger model; the work it hands off can run on a less expensive one.",
+        "Your assistant runs a strong model itself and routes work to helpers in your projects. Choose what it uses for its own conversation and what its helpers may use.",
       diagram: {
         label: "How your assistant's flows start one another",
         you: "Your messages (web, Feishu)",
@@ -766,7 +901,13 @@ export const personalAgent = {
       homeDefault: "That computer's default",
       provider: "Model provider",
       assistantIntro:
-        "It runs on {{device}}: choose one of its subscriptions or a model provider assigned to it.",
+        "The model the assistant itself uses: a strong model is recommended because it only routes work and does not do the work.",
+      executionModels: {
+        intro:
+          "Helpers are the workers that do the work the assistant hands to a project.",
+        inherit: "Follows the workspace or global execution model.",
+        setOverride: "Set an execution model for this assistant",
+      },
       helperModes: {
         same: "Same as the assistant",
         each: "Each computer's default",
@@ -843,6 +984,8 @@ export const personalAgent = {
       feishuDirectChat: "Answer my direct messages in Feishu",
       feishuApp: "Feishu app",
       feishuAppDefault: "My app in Connectors",
+      feishuDefaultAssistant: "the default assistant",
+      feishuAppUsedBy: "Used by {{assistant}}",
       feishuHint: "Apps and pairing are set up in Connectors.",
       openConnectors: "Open Connectors",
       digestTitle: "Daily summary",

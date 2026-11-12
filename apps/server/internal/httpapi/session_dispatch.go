@@ -100,13 +100,12 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	var toolPins []store.SessionToolPin
 	if sources, err := resolveWorkspaceSkills(ctx, c.hub.store, session.WorkspaceID); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve workspace skills: %w", err)
-	} else if packageRefs, packagePins, err := sessionPackageSkills(
-		ctx, c.hub.store, c.actor.AccountID(), session.DeviceID,
+	} else if refs, packagePins, err := workspacePackageSkills(
+		ctx, c.hub.store, c.actor.AccountID(), session.WorkspaceID, session.DeviceID,
 		connectorKinds(connectorUses.ExternalAccounts, connectorUses.DeviceConnectors),
+		withBuiltinSkills(sources.Refs, session.Provider),
 	); err != nil {
-		return wsRunSessionPayload{}, fmt.Errorf("resolve connector package skills: %w", err)
-	} else if refs, err := mergePackageSkillRefs(ctx, c.hub.store, session.WorkspaceID, withBuiltinSkills(sources.Refs, session.Provider), packageRefs); err != nil {
-		return wsRunSessionPayload{}, fmt.Errorf("merge connector package skills: %w", err)
+		return wsRunSessionPayload{}, err
 	} else if refs, toolPins, err = deviceSkillRefs(ctx, c.hub.store, refs, session.DeviceID); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve the device's bundle versions: %w", err)
 	} else {

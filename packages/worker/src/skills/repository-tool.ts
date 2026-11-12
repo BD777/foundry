@@ -136,12 +136,22 @@ export async function packRepositoryTool(
       "tar",
       ["-xzf", full, "-C", unpacked, "--", `${root}/${clean.path}`],
       {
+        env: archiveEnvironment(),
         maxBuffer: 16 * 1024 * 1024,
       },
     );
-    assertTreeInside(join(unpacked, root, clean.path));
+    const tool = join(unpacked, root, clean.path);
+    removeAppleDoubleEntries(tool);
+    assertTreeInside(tool);
     const packed = join(work, "tool.tar.gz");
-    await run("tar", ["-czf", packed, "-C", unpacked, root], {
+    const { stdout: version } = await run("tar", ["--version"], {
+      maxBuffer: 16 * 1024,
+    });
+    const noMacMetadata = /\bbsdtar\b/i.test(version)
+      ? ["--no-mac-metadata"]
+      : [];
+    await run("tar", [...noMacMetadata, "-czf", packed, "-C", unpacked, root], {
+      env: archiveEnvironment(),
       maxBuffer: 16 * 1024 * 1024,
     });
     const archive = readFileSync(packed);
@@ -354,20 +364,31 @@ function githubFailure(repository: string, stderr: string): Error {
 
 async function archiveRoot(archive: string, path: string): Promise<string> {
   const { stdout } = await run("tar", ["-tzf", archive], {
+    env: archiveEnvironment(),
     maxBuffer: 16 * 1024 * 1024,
   });
   const members = stdout
-    .split("\n")
+    .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean);
-  const first = members[0];
+  const content = members.filter((member) => !archiveMetadata(member));
+  const first = content[0];
   if (!first) throw new Error("GitHub returned an empty repository archive");
   const root = first.split("/")[0]!;
-  if (!root || members.some((member) => member.split("/")[0] !== root))
-    throw new Error("the repository archive has more than one root folder");
+  const others = [
+    ...new Set(
+      content
+        .map((member) => member.split("/")[0]!)
+        .filter((top) => top !== root),
+    ),
+  ];
+  if (!root || others.length > 0)
+    throw new Error(
+      `the repository archive has more than one root folder: ${[root, ...others].slice(0, 5).join(", ")}`,
+    );
   const wanted = `${root}/${path}`;
   if (
-    !members.some(
+    !content.some(
       (member) => member === wanted || member.startsWith(`${wanted}/`),
     )
   )
@@ -395,9 +416,31 @@ async function extractPath(
       "--",
       wanted,
     ],
-    { maxBuffer: 16 * 1024 * 1024 },
+    { env: archiveEnvironment(), maxBuffer: 16 * 1024 * 1024 },
   );
+  removeAppleDoubleEntries(destination);
   assertTreeInside(destination);
+}
+
+function archiveEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, COPYFILE_DISABLE: "1" };
+}
+
+function archiveMetadata(member: string): boolean {
+  const clean = member.replace(/^(?:\.\/)+/, "");
+  const first = clean.split("/")[0] ?? "";
+  return first === "pax_global_header" || first.startsWith("._");
+}
+
+function removeAppleDoubleEntries(folder: string): void {
+  for (const entry of readdirSync(folder, { withFileTypes: true })) {
+    const path = join(folder, entry.name);
+    if (entry.name.startsWith("._")) {
+      rmSync(path, { recursive: true, force: true });
+      continue;
+    }
+    if (lstatSync(path).isDirectory()) removeAppleDoubleEntries(path);
+  }
 }
 
 function assertTreeInside(folder: string): void {
@@ -405,7 +448,7 @@ function assertTreeInside(folder: string): void {
     const path = join(folder, entry.name);
     const info = lstatSync(path);
     if (info.isSymbolicLink()) {
-      if (!isInside(folder, realpathSync(path)))
+      if (!isInside(realpathSync(folder), realpathSync(path)))
         throw new Error(`${entry.name} leaves the repository tool folder`);
       continue;
     }
@@ -417,7 +460,7 @@ function sourceEntry(folder: string, path: string): string {
   relativePath(path, "tool bin");
   const source = resolve(folder, path);
   const real = realpathSync(source);
-  if (!isInside(folder, real))
+  if (!isInside(realpathSync(folder), real))
     throw new Error(`${path} leaves the repository tool folder`);
   const info = lstatSync(real);
   if (!info.isFile()) throw new Error(`${path} is not a file`);

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -40,6 +41,28 @@ type resourceToolHolder struct {
 	personID  string
 	owned     map[string]bool
 	scope     accessScope
+	// assistantDevices are, for a session working for an assistant, the
+	// devices with a workspace its package allows: resources without an
+	// identity there are its to lease. nil for every other session.
+	assistantDevices map[string]bool
+}
+
+// leasable reports whether the holder may lease instance: one on the
+// person's devices and, for a session working for an assistant, an
+// identity resource its package lists (scope listed) or any resource on a
+// device with a workspace the package allows.
+func (h resourceToolHolder) leasable(instance store.ResourceInstance) bool {
+	if instance.Source.Kind != "device" || !h.owned[instance.Source.ID] {
+		return false
+	}
+	access := h.scope.assistant
+	if !access.Applicable {
+		return true
+	}
+	if permission.IdentityResourceType(instance.Type) && access.IdentityResourceListed() {
+		return access.IdentityResourceAllowed(instance.ID)
+	}
+	return h.assistantDevices[instance.Source.ID]
 }
 
 func (s *Server) resourceHolder(ctx context.Context, actor Actor) (resourceToolHolder, error) {
@@ -64,7 +87,26 @@ func (s *Server) resourceHolder(ctx context.Context, actor Actor) (resourceToolH
 	for _, device := range devices {
 		holder.owned[device] = true
 	}
+	if scope.assistant.Applicable {
+		workspaces, err := s.store.ListWorkspaces(ctx)
+		if err != nil {
+			return holder, err
+		}
+		holder.assistantDevices = map[string]bool{}
+		for _, workspace := range workspaces {
+			if scope.roles[workspace.ID] != "" && scope.assistant.WorkspaceAllowed(workspace.ID) {
+				holder.assistantDevices[workspace.DeviceID] = true
+			}
+		}
+	}
 	return holder, nil
+}
+
+func assistantResourceRefusal(access permission.Access, instance store.ResourceInstance) string {
+	if permission.IdentityResourceType(instance.Type) && access.IdentityResourceListed() {
+		return "resource " + instance.ID + " (" + instance.Type + ") acts as the person, and this assistant's permissions do not include it; the person allows it in the assistant's settings → Permissions → Identity resources"
+	}
+	return "resource " + instance.ID + " is on a device where this assistant's permissions include no workspace; the person adds a workspace on that device in the assistant's settings → Permissions"
 }
 
 // resourceFor reads an instance the holder's person owns; others read as
@@ -75,9 +117,13 @@ func (s *Server) resourceFor(ctx context.Context, holder resourceToolHolder, id 
 		return store.ResourceInstance{}, err
 	}
 	for _, instance := range list.Instances {
-		if instance.ID == id && instance.Source.Kind == "device" && holder.owned[instance.Source.ID] {
-			return instance, nil
+		if instance.ID != id || instance.Source.Kind != "device" || !holder.owned[instance.Source.ID] {
+			continue
 		}
+		if !holder.leasable(instance) {
+			return store.ResourceInstance{}, &statusError{http.StatusForbidden, errors.New(assistantResourceRefusal(holder.scope.assistant, instance))}
+		}
+		return instance, nil
 	}
 	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("resource " + id + " not found among your devices' resources (list_resources lists them)")}
 }
@@ -110,6 +156,10 @@ func (s *Server) checkCommandLease(ctx context.Context, actor Actor, args map[st
 
 // leaseToolError turns a lease refusal into what the agent reads.
 func leaseToolError(err error) error {
+	var reconnecting *resources.DeviceReconnectingError
+	if errors.As(err, &reconnecting) {
+		return &statusError{http.StatusConflict, reconnecting}
+	}
 	var refusal *resources.LeaseError
 	if !errors.As(err, &refusal) {
 		return err
@@ -328,7 +378,7 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 	var busy *store.ResourceInstance
 	var startable *store.ResourceInstance
 	for index, instance := range list.Instances {
-		if instance.Source.Kind != "device" || !holder.owned[instance.Source.ID] {
+		if !holder.leasable(instance) {
 			continue
 		}
 		if _, err := resources.OperableBackend(instance); err != nil {
@@ -352,7 +402,11 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 	if startable != nil {
 		return *startable, nil
 	}
-	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("no " + resourceType + " resource on your devices is ready to lease; list_resources shows each one's readiness and what is missing")}
+	message := "no " + resourceType + " resource on your devices is ready to lease; list_resources shows each one's readiness and what is missing"
+	if holder.scope.assistant.Applicable {
+		message += ". This session works for an assistant: it leases only identity resources its permissions list and other resources on devices with a workspace they include"
+	}
+	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New(message)}
 }
 
 func (s *Server) releaseResourceForMCP(r *http.Request, actor Actor, args map[string]json.RawMessage) (string, error) {
@@ -509,6 +563,10 @@ func (s *Server) operateResourceForMCP(r *http.Request, actor Actor, args map[st
 		return nil, err
 	}
 	if operateErr != nil {
+		var reconnecting *resources.DeviceReconnectingError
+		if errors.As(operateErr, &reconnecting) {
+			return nil, &statusError{http.StatusConflict, reconnecting}
+		}
 		return nil, &statusError{http.StatusConflict, errors.New("device_error: " + operateErr.Error())}
 	}
 	if result.Error != "" {

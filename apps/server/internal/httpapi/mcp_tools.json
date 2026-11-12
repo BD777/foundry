@@ -67,7 +67,7 @@
   },
   {
     "name": "list_resources",
-    "description": "List what the devices you reach offer sessions and whether they are online: per device, its instances (browsers, macOS screen control, simulators, phones, GPUs, toolchains, accounts, disk, and compute) with type, state, why one is not ready and who leases it (detailed adds the rest). A computer_use instance with cua-driver, or a compute instance, can be leased with acquire_resource and used with operate_resource; compute runs commands there unless its owner turned that off. For anything else on a device, start a session in one of its workspaces.",
+    "description": "List what the devices you reach offer sessions and whether they are online: per device, connection is online, reconnecting, or offline; online is true only for a live connection. Its instances (browsers, macOS screen control, simulators, phones, GPUs, toolchains, accounts, disk, and compute) show type, state, why one is not ready and who leases it (detailed adds the rest). During a 60-second reconnect grace, connection and the instance states read reconnecting. A computer_use instance with cua-driver, or a compute instance, can be leased with acquire_resource and used with operate_resource; compute runs commands there unless its owner turned that off. For anything else on a device, start a session in one of its workspaces.",
     "summary": "Shows what each reachable device offers sessions (browsers, screen control, simulators, GPUs, toolchains and more) with readiness, whether it is online and where a session may start on it.",
     "limits": [
       "Only devices hosting a workspace the agent reaches.",
@@ -197,13 +197,14 @@
   },
   {
     "name": "connector_packages",
-    "description": "Manage a person's connector packages on their devices: list, get, set_devices or disable. list returns each package's repository, tool version, enabled devices, and every device's eligibility and reason. set_devices replaces the selection when deviceIds is supplied; without it, addDevices and removeDevices change the current selection incrementally. Removals apply before additions. Use disable for an empty selection.",
+    "description": "Manage a person's connector packages on their devices: list, get, set_devices or disable. list returns each package's repository, tool version, enabled devices, and every device's eligibility and reason. set_devices replaces the selection when deviceIds is supplied; without it, addDevices and removeDevices change the current selection incrementally. Removals apply before additions. Use disable for an empty selection. set_devices returns at once: the selection is recorded and each changed device is pending, while fetching the upstream bundle and installing the tools and extension run in the background (minutes). Call get afterwards to watch each device's state (pending, installing, installed or failed with an error) and applying; set_devices again retries failed devices.",
     "summary": "Enables or disables connector packages on the devices owned by the person who started the session.",
     "limits": [
       "Only devices owned by the person who started the session; not from Issue, clarification, verifier or utility sessions.",
       "The person's assistant must allow writes to the package connector on every device being added or removed.",
       "set_devices with deviceIds is a full replacement; addDevices and removeDevices are incremental and preserve the rest of the selection.",
       "Every device must be online and pass the same eligibility checks as the Connectors page.",
+      "set_devices does not wait for installs; use get to see each device's progress.",
       "Each call writes an audit event to the calling session."
     ],
     "inputSchema": {
@@ -219,17 +220,23 @@
         },
         "deviceIds": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "The complete device selection for set_devices. Supplying it replaces the current selection before any addDevices or removeDevices changes."
         },
         "addDevices": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Devices to add without removing the current selection."
         },
         "removeDevices": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Devices to remove without replacing the rest of the current selection."
         }
       },
@@ -572,6 +579,38 @@
     }
   },
   {
+    "name": "update_worker",
+    "description": "Update an owned device's Worker to the version this Server serves. action start asks the Worker to download, switch, restart and reconnect itself; turns already running stay on the old execution host until they finish. Only the owner of the device can use this tool; workspace members and people the device is merely shared with cannot. action status is the default and reports the device and Server versions, the existing connection state, the current step, and the most recent completed result with its source and target versions, times and failure details. During a restart, connection can be reconnecting while the update remains in progress. After start, call status to confirm the Worker reconnects on the new version.",
+    "summary": "Starts or checks an owned device's Worker self-update to the version this Server serves.",
+    "limits": [
+      "Only devices owned by the person the calling session acts for; workspace visibility and admin role do not grant it.",
+      "start needs the device online and is refused while another update is running.",
+      "The Worker downloads, switches, restarts and reconnects itself; turns already running stay on the old execution host until they finish.",
+      "Use status (the default) after start to confirm the Worker reconnects on the target version; a successful result remains available until the Server restarts or a later update succeeds."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "The owned device whose Worker updates or reports status (dev_…)."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["start", "status"],
+          "default": "status",
+          "description": "start the update, or report its progress; default status."
+        }
+      },
+      "required": ["deviceId"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
     "name": "list_profiles",
     "description": "List the agent profiles (accounts and model endpoints) of a device you reach: id, runtime, model, status; your device by default. A compatible endpoint shows its baseUrl and models, never its key.",
     "summary": "Lists the agent profiles and assigned model services (runtime, endpoint, models, status) on one device.",
@@ -824,17 +863,36 @@
     }
   },
   {
-    "name": "get_model_notes",
-    "description": "Read what the person's orchestrator has learned about handing work to one provider's model, newest first. Notes are scoped by provider kind, provider id, runtime and model id. Pages of up to 50 (default 20); each note says who appended it and when, and every append is kept.",
-    "summary": "Reads recent orchestration notes for one provider model.",
+    "name": "model_guides",
+    "description": "Read and keep the person's model guides: what to know before handing work to a model (where it fits, how to brief it, how small to slice, known failure modes). A guide is kept under a canonical id (a lower-case slug such as deepseek-flash-1017) and maps to each provider's model id through aliases. Actions: list; resolve (providerKind?, providerId?, runtime?, model) finds the guide for a provider's model id, or answers suggestedId to create one under; get (id) returns the guide with computed facts (context window, worker group quota, 30-day worker sessions, request time and tok/s), the latest observations and every revision, or with revision N that saved snapshot, or with offset/limit the next observations; upsert writes sections, displayName, owner, family or aliases of one guide (new ids are created) and needs changeSummary; add_alias and remove_alias change one alias (model plus optional providerKind, providerId, runtime); observe (id, body, sessionIds) appends an evidence-backed observation. Every upsert and alias change keeps a revision with its author and needs no approval. Sections are short Markdown, at most 8 bullet points each. A guide describes its own model only: never name, compare with or route to another model; which models an orchestrator may use is the person's execution-model setting (get_execution_default).",
+    "summary": "Reads and updates model guides: briefing advice per model, aliases per provider, observations and revisions.",
     "limits": [
-      "Only the person's own providers.",
-      "Returns at most 50 notes per page.",
-      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+      "Only the person's own guides; Issue, clarification and verifier sessions do not have it.",
+      "Sections are summary, strengths, weaknesses, briefing, avoid, pitfalls and settings; each is at most 4000 bytes and 8 bullet points.",
+      "upsert replaces only the sections given (an empty string clears one) and replaces all aliases only when aliases is given; changeSummary must say which sessions showed what.",
+      "A provider model id (providerKind, providerId, runtime, model) belongs to one guide; adding it to a second answers a conflict.",
+      "Observations are append-only, at most 12000 bytes each; get pages them 20 at a time (up to 50)."
     ],
     "inputSchema": {
       "type": "object",
       "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "get",
+            "observations",
+            "resolve",
+            "upsert",
+            "add_alias",
+            "remove_alias",
+            "observe"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "The guide's canonical id."
+        },
         "providerKind": {
           "type": "string",
           "enum": ["subscription", "api", "environment", "discovered"]
@@ -847,7 +905,96 @@
           "enum": ["claude", "codex"]
         },
         "model": {
+          "type": "string",
+          "description": "The provider's model id, for resolve, add_alias and remove_alias."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Who makes the model weights, such as deepseek."
+        },
+        "displayName": {
           "type": "string"
+        },
+        "family": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "strengths": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "weaknesses": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "briefing": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "avoid": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "pitfalls": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "settings": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          },
+          "additionalProperties": false
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "providerKind": {
+                "type": "string",
+                "enum": ["subscription", "api", "environment", "discovered"]
+              },
+              "providerId": {
+                "type": "string"
+              },
+              "runtime": {
+                "type": "string",
+                "enum": ["claude", "codex"]
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": ["model"],
+            "additionalProperties": false
+          }
+        },
+        "changeSummary": {
+          "type": "string",
+          "description": "Why the guide changes: which sessions, what happened. Required by upsert."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 12000,
+          "description": "The observation, for observe."
+        },
+        "sessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Sessions that show the observation."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
         },
         "offset": {
           "type": "integer",
@@ -859,50 +1006,13 @@
           "maximum": 50
         }
       },
-      "required": ["providerKind", "providerId", "runtime", "model"]
-    },
-    "annotations": {
-      "readOnlyHint": true
-    }
-  },
-  {
-    "name": "append_model_note",
-    "description": "Append what you learned about handing execution work to one model: what to delegate, how small to make steps, briefing details, known failure modes and required evidence. This does not need the person's approval; it keeps a new historical note rather than replacing earlier ones.",
-    "summary": "Appends an orchestration lesson to one provider model.",
-    "limits": [
-      "Only the person's own providers.",
-      "The note body is limited to 12000 bytes.",
-      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
-    ],
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "providerKind": {
-          "type": "string",
-          "enum": ["subscription", "api", "environment", "discovered"]
-        },
-        "providerId": {
-          "type": "string"
-        },
-        "runtime": {
-          "type": "string",
-          "enum": ["claude", "codex"]
-        },
-        "model": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string",
-          "maxLength": 12000
-        }
-      },
-      "required": ["providerKind", "providerId", "runtime", "model", "body"]
+      "required": ["action"]
     }
   },
   {
     "name": "get_execution_default",
-    "description": "Read the default execution model the person chose for their orchestrator: providerId, runtime, model or modelPoolId, effort and the resolved pool. With workspaceId the workspace override is used when set, else the global choice; without it, read the global choice. scope is global, workspace or none.",
-    "summary": "Reads the effective provider, model or pool, and effort for delegated execution.",
+    "description": "Read the default execution model the person chose for their orchestrator: either providerId, runtime, model and effort, or a workerGroupId with the resolved group (its members carry their own provider, model and effort; start a worker from it with create_session's workerGroupId). A personal assistant's own helper override wins; otherwise the workspace override is used when set, else the global choice. Without workspaceId, read the global choice. scope is global, workspace, assistant or none. Each alternative has a stable id; pass default, an alternative's 1-based number, or its id as dispatch_item.executionChoice. Use only the default and the items in alternatives; never choose a model outside them.",
+    "summary": "Reads the effective provider, model and effort, or worker group, for delegated execution.",
     "limits": [
       "Only the person's own settings.",
       "A workspace must be one the caller may read.",
@@ -989,7 +1099,7 @@
   },
   {
     "name": "create_session",
-    "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). modelPoolId allocates the member with the most remaining quota, or weighted round-robin when members have no quota, and enables automatic switching on model rate limits. An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 20 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. While you are idle, its turn_end messages to you wait for its turn to end and come with that turn's report. reportBack: false turns this off. Answers with the new session's id and status.",
+    "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). workerGroupId (a worker group, whose members may come from different providers) picks one member available on the workspace's device for this session (the most remaining quota, or weighted round-robin when members have no quota; none available: refused with no_usable_worker_group_member and why each member cannot run); the member decides provider, runtime, model and effort, so it cannot be combined with provider, profileId, agentId or model. The session keeps that member for its whole life, and a model rate limit is retried on the same model with backoff (up to 5 times). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 20 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. While you are idle, its turn_end messages to you wait for its turn to end and come with that turn's report. reportBack: false turns this off. Answers with the new session's id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 8 sessions it started queued, running or blocked at once.",
@@ -1019,9 +1129,9 @@
         "model": {
           "type": "string"
         },
-        "modelPoolId": {
+        "workerGroupId": {
           "type": "string",
-          "description": "Allocate a model from this equivalent-model pool and retry another member automatically on a model rate limit."
+          "description": "Worker group id (wgroup_…, from get_execution_default or the person). One member of it available on the device is picked once, at creation; the session keeps it and a model rate limit is retried on the same model."
         },
         "claudeEffort": {
           "type": "string"
@@ -1320,7 +1430,7 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member (in an Issue, only its sessions; never an Issue's own execution or clarification). An idle session takes it as its next turn; profileId, provider, model or modelPoolId switch its runtime first. A model pool allocates its most available member. A running session is steered according to delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after its running tool calls; at most 2 per sender per 30 minutes); turn_end when its turn ends or after 10 minutes; sent to the idle session that created you, turn_end waits until your own turn ends (at most 10 minutes) and arrives with that turn's report. A queued, finishing or offline session holds the message (waitingForDevice) and several held messages start one turn; so does one whose last turn failed before its model answered, until a turn runs again (retried after growing waits). Messages from sessions are never dropped; the same inputId, or the same text to the same session within 10 minutes, is the earlier message. Only sessions you created report their turns to you: ask any other to send you its result. Answers with the session's status and the message's receipt (inputId, delivery, state, deliverAt).",
+    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member (in an Issue, only its sessions; never an Issue's own execution or clarification). An idle session takes it as its next turn; profileId, provider or model switch its runtime first. A running session is steered according to delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after its running tool calls; at most 2 per sender per 30 minutes); turn_end when its turn ends or after 10 minutes; sent to the idle session that created you, turn_end waits until your own turn ends (at most 10 minutes) and arrives with that turn's report. A queued, finishing or offline session holds the message (waitingForDevice) and several held messages start one turn; so does one whose last turn failed before its model answered, until a turn runs again (retried after growing waits). Messages from sessions are never dropped; the same inputId, or the same text to the same session within 10 minutes, is the earlier message. Only sessions you created report their turns to you: ask any other to send you its result. Answers with the session's status and the message's receipt (inputId, delivery, state, deliverAt).",
     "summary": "Messages a session: steers a running one or continues an idle one, and can switch its runtime first.",
     "limits": [
       "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
@@ -1364,10 +1474,6 @@
         },
         "model": {
           "type": "string"
-        },
-        "modelPoolId": {
-          "type": "string",
-          "description": "Allocate a model from this equivalent-model pool and enable automatic model switching on a rate limit."
         }
       },
       "required": ["sessionId", "prompt"]
@@ -1746,13 +1852,13 @@
   },
   {
     "name": "remember",
-    "description": "Keep, correct or forget one durable fact about the person. op add stores item.content; update replaces item.id's content (the old one is kept as superseded); forget erases item.id. add and update need item.quote, the person's own words from this conversation; a fact whose quote is not found waits for the person to confirm it in settings. item.inferred marks a fact you concluded (no quote). With a Memory Workspace selected, confirmed facts are queued to its owner files (give intentKey and title).",
+    "description": "Keep, correct or forget one durable fact in your memory. op add writes item.content as a new entry (give intentKey and title); update replaces item.id's content and forget erases item.id, both at the entry's current expectedRevision and expectedHash (read_memory). add and update need item.quote, the person's own words from this conversation; a fact whose quote is not found, or an inferred one, is not written: ask the person to confirm it. scope picks the layer of a new fact: assistant (default) is recalled only by you; person is recalled by every assistant of the person. Use person only for what holds whichever assistant they talk to and belongs to no particular domain: how to address them, their language, style, tools and general preferences. The people, projects and arrangements of their work or life go to assistant.",
     "summary": "Stores, corrects or forgets one fact about the person, recording where it came from.",
     "limits": [
       "One item per call, at most 300 characters.",
-      "A fact is the person's only when its quote is found in what they wrote in this conversation; otherwise it is a guess or waits for their confirmation.",
-      "The person sees, edits and forgets every item in settings.",
-      "Only the person's assistant (a personal_agent session) has it."
+      "A fact is the person's only when its quote is found in what they wrote in this conversation; otherwise nothing is written.",
+      "Only the person's assistant (a personal_agent session) has it.",
+      "The person sees, moves between layers and forgets every entry in settings."
     ],
     "inputSchema": {
       "type": "object",
@@ -1760,6 +1866,11 @@
         "op": {
           "type": "string",
           "enum": ["add", "update", "forget"]
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["assistant", "person"],
+          "description": "The layer a new fact goes to (default assistant). person only for facts true for every assistant and tied to no domain (name, language, style, tools, general preferences)."
         },
         "item": {
           "type": "object",
@@ -1783,15 +1894,15 @@
             },
             "vaultId": {
               "type": "string",
-              "description": "Optional knowledge vault; default: the selected Memory root."
+              "description": "Optional knowledge vault: a domain source the person named, or one of your two memory layers; default: the layer scope picks (add) or the layer holding item.id."
             },
             "intentKey": {
               "type": "string",
-              "description": "Required for workspace knowledge: a stable name for this fact in this input. Reuse on retry."
+              "description": "Required for add: a stable name for this fact in this input. Reuse on retry."
             },
             "title": {
               "type": "string",
-              "description": "Short source title for workspace knowledge."
+              "description": "Short title of the entry (add, update)."
             },
             "expiresAt": {
               "type": "string",
@@ -1953,7 +2064,7 @@
   },
   {
     "name": "dispatch_item",
-    "description": "Persist one authorized execution step of a saved item: needs an execute plan with matching workspace and intentRevision. Reuse the stepKey and exact request on retry; it answers a durable operation, not completion, and helper: the account, model and effort a new helper runs on (the person's helper model), or why it cannot run on that computer yet (unavailable; the step waits). sessionId reuses the item's existing session.",
+    "description": "Persist one authorized execution step of a saved item: needs an execute plan with matching workspace and intentRevision. Reuse the stepKey and exact request on retry; it answers a durable operation, not completion, and helper: the account, model and effort a new helper runs on, or why it cannot run on that computer yet (unavailable; the step waits). Normally use executionChoice=default. Only when the step hits a specific `avoid` or `weaknesses` bullet in the default model's guide, select an alternative from get_execution_default by its 1-based number or stable id; quote that bullet in prompt and in your report. Values outside the configured default and alternatives are refused. sessionId reuses the item's existing session and keeps its model.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1971,6 +2082,10 @@
         },
         "sessionId": {
           "type": "string"
+        },
+        "executionChoice": {
+          "type": "string",
+          "description": "Usually default. Otherwise an alternative's 1-based number or stable id from get_execution_default, only when the default model's guide names this step in an avoid or weaknesses bullet."
         },
         "prompt": {
           "type": "string"
@@ -2236,11 +2351,11 @@
   },
   {
     "name": "read_memory",
-    "description": "Read what the person confirmed or you remembered about them, newest first: each item's content, origin (stated, confirmed, inferred, external), dates and id. The turn's context shows only the newest; read the rest here, or the items whose content holds query.",
+    "description": "Read what you recall of the person, newest first: the entries of the person's layer (every assistant recalls it) and of your own layer, each with its scope, content, id, vaultId, revision and hash (pass those to remember to update or forget it). The turn's context shows only the newest; read the rest here, or the entries whose title holds query.",
     "summary": "Reads the assistant's memory of the person, newest first.",
     "limits": [
       "At most 50 items per call; nextOffset pages on.",
-      "Only active items of the assistant's own person.",
+      "Only the person's layer and your own; another assistant's layer is never read.",
       "Only the person's assistant (a personal_agent session) has it."
     ],
     "inputSchema": {
@@ -2248,7 +2363,7 @@
       "properties": {
         "query": {
           "type": "string",
-          "description": "Only items whose content holds this text (any case)."
+          "description": "Only entries whose title holds this text (any case)."
         },
         "offset": {
           "type": "integer",

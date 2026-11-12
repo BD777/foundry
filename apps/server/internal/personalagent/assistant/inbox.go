@@ -17,24 +17,25 @@ import (
 )
 
 // CaptureInbox keeps a message for the assistant from channel (the web),
-// once per message id; DrainInbox delivers it.
-func (s *Service) CaptureInbox(ctx context.Context, userID, channel string, input store.PersonalAgentInboxCapture) (store.PersonalAgentInboxEntry, error) {
-	return s.CaptureInboxOrigin(ctx, userID, channel, input, nil)
+// once per message id; DrainInbox delivers it to that assistant.
+func (s *Service) CaptureInbox(ctx context.Context, agent store.PersonalAgent, channel string, input store.PersonalAgentInboxCapture) (store.PersonalAgentInboxEntry, error) {
+	return s.CaptureInboxOrigin(ctx, agent, channel, input, nil)
 }
 
 // CaptureInboxOrigin is CaptureInbox for a message from a chat (origin),
 // whose answer goes back there.
-func (s *Service) CaptureInboxOrigin(ctx context.Context, userID, channel string, input store.PersonalAgentInboxCapture, origin *store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
+func (s *Service) CaptureInboxOrigin(ctx context.Context, agent store.PersonalAgent, channel string, input store.PersonalAgentInboxCapture, origin *store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
+	userID := agent.UserID
 	if err := flow.Capture(userID, channel, input.MessageID, input.Text); err != nil {
 		return store.PersonalAgentInboxEntry{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, userID)
-	if err != nil {
-		return store.PersonalAgentInboxEntry{}, err
-	}
+	// The default assistant keeps the ids it had before there were several.
 	id := flow.Key("inbox", userID, channel, input.MessageID)
+	if !agent.IsDefault {
+		id = flow.Key("inbox", userID, agent.ID, channel, input.MessageID)
+	}
 	entry, err := s.store.CapturePersonalAgentInbox(ctx, store.PersonalAgentInboxEntry{
-		ID: id, UserID: userID, Channel: channel, MessageID: input.MessageID,
+		ID: id, UserID: userID, AssistantID: agent.ID, Channel: channel, MessageID: input.MessageID,
 		Text: input.Text, InputID: flow.InputID(id),
 		Origin:   origin,
 		Timezone: s.PersonLocation(ctx, agent).String(),
@@ -84,7 +85,7 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		}
 		if status == "delivered" {
 			id := flow.Key("parun", entry.UserID, entry.ID)
-			if err := s.store.BindPersonalAgentRunSnapshot(ctx, entry.UserID, id, sessionID); err != nil {
+			if err := s.store.BindPersonalAgentRunSnapshot(ctx, entry.AssistantID, id, sessionID); err != nil {
 				log.Printf("personal agent inbox %s: bind run snapshot: %v", entry.ID, err)
 			}
 		}
@@ -103,8 +104,8 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		save("waiting", "receipt_unavailable", "")
 		return
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, entry.UserID)
-	if err != nil {
+	agent, err := s.store.GetAssistant(ctx, entry.AssistantID)
+	if err != nil || agent.UserID != entry.UserID {
 		save("waiting", "assistant_unavailable", "")
 		return
 	}
@@ -121,13 +122,14 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		save("waiting", "session_unavailable", "")
 		return
 	}
-	previousID, _ := s.store.PersonalAgentInboxSession(ctx, entry.UserID, entry.Channel)
+	previousID, _ := s.store.PersonalAgentInboxSession(ctx, entry.AssistantID, entry.Channel)
 	if entry.Origin != nil {
 		previousID = entry.Origin.ThreadSessionID
 	}
 	var previous *store.AgentSession
 	for _, session := range workspaceSessions {
-		if _, own := s.Conversation(ctx, session); !own || session.CreatedByUserID != entry.UserID {
+		conversation, own := s.Conversation(ctx, session)
+		if !own || conversation.ID != agent.ID || session.CreatedByUserID != entry.UserID {
 			continue
 		}
 		if store.IsActiveSessionStatus(session.Status) {
@@ -219,7 +221,11 @@ func (r inboxReactions) SessionChanged(ctx context.Context, change sessions.Chan
 // A result belongs to one input, not to whichever turn a session runs later.
 // "resolved" means this input got an answer; it never completes a TODO.
 func (s *Service) recordInboxResult(ctx context.Context, session store.AgentSession) {
-	entry, err := s.store.PersonalAgentInboxByInput(ctx, session.CreatedByUserID, session.Input.ID)
+	agent, err := s.store.AssistantForSession(ctx, session.ID)
+	if err != nil || agent.UserID != session.CreatedByUserID {
+		return
+	}
+	entry, err := s.store.PersonalAgentInboxByInput(ctx, agent.ID, session.Input.ID)
 	if err != nil || entry.Status == "cancelled" || entry.ResultStatus != "" {
 		return
 	}
@@ -282,12 +288,13 @@ func (s *Service) recoverInboxResults(ctx context.Context) {
 
 // RetryInbox asks for one more delivery of the person's inbox entry
 // entryID, as a new entry that keeps its source (input.RequestID once).
-func (s *Service) RetryInbox(ctx context.Context, userID, entryID string, input store.PersonalAgentInboxAction) (store.PersonalAgentInboxEntry, error) {
+func (s *Service) RetryInbox(ctx context.Context, agent store.PersonalAgent, entryID string, input store.PersonalAgentInboxAction) (store.PersonalAgentInboxEntry, error) {
+	userID := agent.UserID
 	if input.Action != "retry" || input.RequestID == "" || len(input.RequestID) > 100 || input.Revision < 1 {
 		return store.PersonalAgentInboxEntry{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("retry requires requestId and the current revision")}
 	}
 	id := flow.Key("inbox", userID, "retry", entryID, input.RequestID)
-	entry, err := s.store.RetryPersonalAgentInbox(ctx, userID, entryID, input.Revision, store.PersonalAgentInboxEntry{
+	entry, err := s.store.RetryPersonalAgentInbox(ctx, agent.ID, entryID, input.Revision, store.PersonalAgentInboxEntry{
 		ID: id, InputID: flow.InputID(id), MessageID: "retry:" + id,
 	})
 	if err != nil {

@@ -49,21 +49,23 @@ func (s *Service) TaskOf(ctx context.Context, session store.AgentSession) (store
 	if session.CreatedByUserID == "" {
 		return store.PersonalAgent{}, store.PersonalAgentTask{}, false
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, session.CreatedByUserID)
-	if err != nil {
+	agents, err := s.store.ListAssistants(ctx, session.CreatedByUserID)
+	if err != nil || len(agents) == 0 {
 		return store.PersonalAgent{}, store.PersonalAgentTask{}, false
 	}
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.UserID, nil)
-	if err != nil {
-		log.Printf("personal agent %s: list tasks: %v", agent.UserID, err)
-		return agent, store.PersonalAgentTask{}, false
-	}
-	for _, task := range tasks {
-		if task.SessionID == session.ID {
-			return agent, task, true
+	for _, agent := range agents {
+		tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.ID, nil)
+		if err != nil {
+			log.Printf("assistant %s: list tasks: %v", agent.ID, err)
+			continue
+		}
+		for _, task := range tasks {
+			if task.SessionID == session.ID {
+				return agent, task, true
+			}
 		}
 	}
-	return agent, store.PersonalAgentTask{}, false
+	return agents[0], store.PersonalAgentTask{}, false
 }
 
 // followTask brings the session's task up to date and tells its
@@ -154,7 +156,7 @@ func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, tas
 	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
 	s.notices.add(task.ConversationSessionID, language, line, now, func(text string) {
 		// The person may have pressed stop meanwhile.
-		current, err := s.store.GetPersonalAgent(context.Background(), agent.UserID)
+		current, err := s.store.GetAssistant(context.Background(), agent.ID)
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
 		}
@@ -414,8 +416,8 @@ func (s *Service) ListTasks(ctx context.Context, scope Scope, statuses []string)
 	if len(statuses) == 0 {
 		statuses = []string{store.PersonalAgentTaskQueued, store.PersonalAgentTaskRunning, store.PersonalAgentTaskAsking}
 	}
-	s.RefreshTasks(ctx, scope.Agent.UserID)
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, scope.Agent.UserID, statuses)
+	s.RefreshTasks(ctx, scope.Agent)
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, scope.Agent.ID, statuses)
 	if err != nil {
 		return nil, err
 	}

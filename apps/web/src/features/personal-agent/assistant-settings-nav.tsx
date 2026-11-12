@@ -9,14 +9,19 @@ import {
 } from "../../lib/assistant-settings-sections";
 import { pathForAppRoute } from "../../lib/routes";
 
-function settingsHref(section: AssistantSettingsSection): string {
+function settingsHref(
+  assistantId: string | undefined,
+  section: AssistantSettingsSection,
+): string {
   return pathForAppRoute({
     view: "assistantSettings",
+    assistantId,
     assistantSection: section,
   });
 }
 
 export interface AssistantSettingsNavProps {
+  assistantId?: string;
   selected: AssistantSettingsSection;
   onSelect: (section: AssistantSettingsSection) => void;
   /** Shows the full-width section index below the wide breakpoint. */
@@ -29,6 +34,7 @@ export interface AssistantSettingsNavProps {
  * match the rest of the app.
  */
 export function AssistantSettingsNav({
+  assistantId,
   selected,
   onSelect,
   showIndex,
@@ -52,7 +58,7 @@ export function AssistantSettingsNav({
                 tone="surface"
               >
                 <AppLink
-                  href={settingsHref(section)}
+                  href={settingsHref(assistantId, section)}
                   onClick={() => onSelect(section)}
                 >
                   <span className="min-w-0 flex-1 truncate text-left">
@@ -77,7 +83,7 @@ export function AssistantSettingsNav({
                 <ActionRow asChild density="compact" key={section}>
                   <AppLink
                     className="flex w-full items-center justify-start gap-3 text-md"
-                    href={settingsHref(section)}
+                    href={settingsHref(assistantId, section)}
                     onClick={() => onSelect(section)}
                   >
                     <span className="grid min-w-0 flex-1 gap-0.5">

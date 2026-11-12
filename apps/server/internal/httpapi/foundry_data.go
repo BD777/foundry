@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -101,6 +102,9 @@ type workspaceSkillSummary struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Draft       bool   `json:"draft,omitempty"`
+	// Package names the connector package the skill comes with, when it is
+	// not the workspace's own choice.
+	Package string `json:"package,omitempty"`
 }
 
 // fieldSet is a selection of foundry-data fields.
@@ -265,7 +269,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		data.Assets = []store.AssetProjection{}
 		return data, nil
 	}
-	if err := loadFoundryDataSections(want, timer, s.workspaceSections(ctx, workspace.ID, catalog, &data)); err != nil {
+	if err := loadFoundryDataSections(want, timer, s.workspaceSections(ctx, workspace, view.scope.userID, catalog, &data)); err != nil {
 		return foundryDataAnswer{}, err
 	}
 	return data, nil
@@ -376,7 +380,8 @@ func (s *Server) agentProjections(ctx context.Context, view visibility, workspac
 
 // workspaceSections are the workspace's own records and skill choices, in
 // order: its skill menu derives from the resolved skills before it.
-func (s *Server) workspaceSections(ctx context.Context, workspaceID string, catalog []store.PromotedSkill, data *foundryDataAnswer) []foundryDataSection {
+func (s *Server) workspaceSections(ctx context.Context, workspace store.WorkspaceProjection, userID string, catalog []store.PromotedSkill, data *foundryDataAnswer) []foundryDataSection {
+	workspaceID := workspace.ID
 	var resolved []store.SessionSkillRef
 	return []foundryDataSection{
 		{[]string{fieldWorkspaceFiles}, "ListWorkspaceFiles", func() (err error) {
@@ -422,7 +427,11 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 			return nil
 		}},
 		{[]string{fieldWorkspaceSkills}, "", func() error {
-			data.WorkspaceSkills = workspaceSkillSummaries(catalog, resolved)
+			withPackages, err := s.withPackageSkills(ctx, workspace, userID, resolved)
+			if err != nil {
+				return err
+			}
+			data.WorkspaceSkills = workspaceSkillSummaries(catalog, withPackages)
 			if drafts, err := s.store.WorkspaceDrafts(ctx, workspaceID, workspaceID); err == nil && drafts.Enabled {
 				taken := make(map[string]bool, len(data.WorkspaceSkills))
 				for _, item := range data.WorkspaceSkills {
@@ -468,14 +477,18 @@ func workspaceOfficialSkills(rows []store.ProviderHealth, deviceID string) []sto
 // workspaceSkillSummaries lists, in catalog order, the library skills a
 // workspace's sessions get: resolveWorkspaceSkills' refs.
 func workspaceSkillSummaries(catalog []store.PromotedSkill, refs []store.SessionSkillRef) []workspaceSkillSummary {
-	ids := make(map[string]bool, len(refs))
+	byID := make(map[string]store.SessionSkillRef, len(refs))
 	for _, ref := range refs {
-		ids[ref.SkillID] = true
+		byID[ref.SkillID] = ref
 	}
 	summaries := []workspaceSkillSummary{}
 	for _, skill := range catalog {
-		if ids[skill.ID] {
-			summaries = append(summaries, workspaceSkillSummary{ID: skill.ID, Name: skill.Name, Description: skill.Description})
+		if ref, ok := byID[skill.ID]; ok {
+			summary := workspaceSkillSummary{ID: skill.ID, Name: skill.Name, Description: skill.Description}
+			if ref.Bundle != nil {
+				summary.Package = ref.Bundle.Name
+			}
+			summaries = append(summaries, summary)
 		}
 	}
 	return summaries
@@ -490,4 +503,37 @@ func withoutRepeatedPrompts(sessions []store.AgentSession) []store.AgentSession 
 		}
 	}
 	return sessions
+}
+
+// withPackageSkills adds the Skills a new session in the workspace would get
+// from connector packages, resolved as session dispatch does
+// (workspacePackageSkills). Only package Skills carry a Bundle here: a
+// Workspace's own choices stay as selected, even from a bundle.
+func (s *Server) withPackageSkills(ctx context.Context, workspace store.WorkspaceProjection, userID string, refs []store.SessionSkillRef) ([]store.SessionSkillRef, error) {
+	deviceID := strings.TrimSpace(workspace.DeviceID)
+	if deviceID == "" || userID == "" {
+		return refs, nil
+	}
+	deviceOwner, err := s.store.DeviceOwner(ctx, deviceID)
+	if err != nil {
+		return refs, nil
+	}
+	request := connectors.SessionRequest{
+		Session:     store.AgentSession{WorkspaceID: workspace.ID, DeviceID: deviceID, CreatedByUserID: userID},
+		DeviceOwner: deviceOwner,
+	}
+	kinds, err := s.connectors.BoundKinds(ctx, request)
+	if err != nil {
+		return refs, nil
+	}
+	plain := make([]store.SessionSkillRef, len(refs))
+	for i, ref := range refs {
+		ref.Bundle = nil
+		plain[i] = ref
+	}
+	merged, _, err := workspacePackageSkills(ctx, s.store, deviceOwner, workspace.ID, deviceID, kinds, plain)
+	if err != nil {
+		return nil, err
+	}
+	return merged, nil
 }

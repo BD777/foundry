@@ -104,10 +104,10 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 	if workspace, err := r.s.store.GetWorkspace(ctx, session.WorkspaceID); err == nil {
 		workspacePath = workspace.LocalPath
 	}
-	handler := r.s.assistant.Handler(ctx, session)
+	handler, assistantID := r.s.assistant.Handler(ctx, session)
 	for _, item := range pendingItemsFromEvent(event, workspacePath) {
 		item.UserID, item.WorkspaceID, item.SessionID = session.CreatedByUserID, session.WorkspaceID, session.ID
-		item.Handler = handler
+		item.Handler, item.AssistantID = handler, assistantID
 		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
 			log.Printf("record pending item of %s: %v", event.ID, err)
 		}
@@ -505,15 +505,28 @@ func (s *Server) handOverWhileAway(ctx context.Context, user string, items []sto
 	}) {
 		return false
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, user)
-	if err == nil && s.assistant.Takes(agent) {
-		return false
+	// Each assistant's items go back while that assistant is away.
+	handed := false
+	seen := map[string]bool{}
+	for _, item := range items {
+		if item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerAssistant || seen[item.AssistantID] {
+			continue
+		}
+		seen[item.AssistantID] = true
+		agent, err := s.store.GetAssistant(ctx, item.AssistantID)
+		if err == nil && agent.UserID == user && s.assistant.Takes(agent) {
+			continue
+		}
+		reason := store.PendingHandedOffline
+		if err != nil || agent.UserID != user || agent.State != store.PersonalAgentActive {
+			reason = store.PendingHandedStopped
+			agent = store.PersonalAgent{ID: item.AssistantID, UserID: user}
+		}
+		if s.assistant.HandOverAll(ctx, agent, reason) > 0 {
+			handed = true
+		}
 	}
-	reason := store.PendingHandedOffline
-	if err != nil || agent.State != store.PersonalAgentActive {
-		reason = store.PendingHandedStopped
-	}
-	return s.assistant.HandOverAll(ctx, user, reason) > 0
+	return handed
 }
 
 // handleSetPendingItemState marks one of the person's items done or

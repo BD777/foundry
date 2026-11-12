@@ -2,6 +2,7 @@ import { i18n } from "../i18n";
 import type { NavView } from "../lib/routes";
 
 export interface ViewErrorResetInput {
+  selectedAssistantId?: string;
   selectedChatId?: string;
   selectedIssueId?: string;
   selectedDeviceId?: string;
@@ -11,6 +12,7 @@ export interface ViewErrorResetInput {
 
 /** Identifies the data scope a view render depends on. */
 export function viewErrorResetKey({
+  selectedAssistantId,
   selectedChatId,
   selectedIssueId,
   selectedDeviceId,
@@ -18,14 +20,17 @@ export function viewErrorResetKey({
   workspaceId,
 }: ViewErrorResetInput): string {
   const selection =
-    view === "chats"
-      ? (selectedChatId ?? "")
-      : view === "issue"
-        ? (selectedIssueId ?? "")
-        : view === "devices"
-          ? (selectedDeviceId ?? "")
-          : "";
+    view === "assistant" || view === "assistantSettings"
+      ? (selectedAssistantId ?? "")
+      : view === "chats"
+        ? (selectedChatId ?? "")
+        : view === "issue"
+          ? (selectedIssueId ?? "")
+          : view === "devices"
+            ? (selectedDeviceId ?? "")
+            : "";
   return [
+    view === "assistants" ||
     view === "assistant" ||
     view === "assistantSettings" ||
     view === "pending" ||

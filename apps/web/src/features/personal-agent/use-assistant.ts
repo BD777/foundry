@@ -50,7 +50,7 @@ const refreshDelayMs = 400;
  * work it follows up and the person's own list. Read when shown, and again when one of its sessions
  * (or a session doing its work) starts or ends, or the stream missed events.
  */
-export function useAssistant() {
+export function useAssistant(assistantId?: string) {
   const [load, setLoad] = useState<AssistantLoad>({ state: "loading" });
   const [proposals, setProposals] = useState<PersonalAgentProposal[]>([]);
   const [tasks, setTasks] = useState<PersonalAgentTask[]>([]);
@@ -80,44 +80,50 @@ export function useAssistant() {
       if (timezoneOffered.current) return overview;
       timezoneOffered.current = true;
       try {
-        return { ...overview, agent: await fillPersonalAgentTimezone(zone) };
+        return {
+          ...overview,
+          agent: await fillPersonalAgentTimezone(assistantId, zone),
+        };
       } catch (error) {
         console.warn("assistant time zone not saved", error);
         return overview;
       }
     },
-    [],
+    [assistantId],
   );
 
   const readOverview = useCallback(async () => {
     try {
-      const overview = await withTimezone(await getPersonalAgent());
+      const overview = await withTimezone(await getPersonalAgent(assistantId));
       setLoad({ state: "ready", overview });
       return overview;
     } catch (error) {
       setLoad({ state: "failed", message: serverErrorText(error) });
       return undefined;
     }
-  }, [withTimezone]);
+  }, [assistantId, withTimezone]);
 
   // The person's list: open items, and those closed since the start of
   // today. Read on its own so a failure leaves proposals and tasks shown.
   const readListItems = useCallback(async () => {
     try {
       setListItems(
-        await listPersonalAgentList(startOfLocalDay().toISOString()),
+        await listPersonalAgentList(
+          assistantId,
+          startOfLocalDay().toISOString(),
+        ),
       );
       setListItemsError("");
     } catch (error) {
       setListItemsError(serverErrorText(error));
     }
-  }, []);
+  }, [assistantId]);
 
   const readWork = useCallback(async () => {
     try {
       const [nextProposals, nextTasks] = await Promise.all([
-        listPersonalAgentProposals(),
-        listPersonalAgentTasks(),
+        listPersonalAgentProposals(assistantId),
+        listPersonalAgentTasks(assistantId),
       ]);
       setProposals(nextProposals);
       setTasks(nextTasks);
@@ -125,17 +131,17 @@ export function useAssistant() {
     } catch (error) {
       setListsError(serverErrorText(error));
     }
-  }, []);
+  }, [assistantId]);
 
   const readLists = useCallback(async () => {
     await Promise.all([
       readWork(),
       readListItems(),
-      listPersonalAgentOperations()
+      listPersonalAgentOperations(assistantId)
         .then(setOperations)
         .catch((e) => setListsError(serverErrorText(e))),
     ]);
-  }, [readWork, readListItems]);
+  }, [assistantId, readWork, readListItems]);
 
   const reload = useCallback(async () => {
     const overview = await readOverview();
@@ -192,13 +198,13 @@ export function useAssistant() {
     replaceAgent,
     /** Pauses new dispatch and requests execution stops; receipts remain separate. */
     async stopAll(): Promise<string> {
-      const answer = await stopPersonalAgent();
+      const answer = await stopPersonalAgent(assistantId);
       replaceAgent(answer.agent);
       await readLists();
       return answer.reply;
     },
     async resume(): Promise<string> {
-      const answer = await resumePersonalAgent();
+      const answer = await resumePersonalAgent(assistantId);
       replaceAgent(answer.agent);
       await readLists();
       return answer.reply;
@@ -208,19 +214,19 @@ export function useAssistant() {
       accept: boolean,
     ): Promise<void> {
       const decided = accept
-        ? await acceptPersonalAgentProposal(proposal.id)
-        : await declinePersonalAgentProposal(proposal.id);
+        ? await acceptPersonalAgentProposal(assistantId, proposal.id)
+        : await declinePersonalAgentProposal(assistantId, proposal.id);
       setProposals((current) =>
         current.map((item) => (item.id === decided.id ? decided : item)),
       );
     },
     async stopTask(task: PersonalAgentTask): Promise<void> {
-      await stopPersonalAgentTask(task.id);
+      await stopPersonalAgentTask(assistantId, task.id);
       await readLists();
     },
     /** Ticks an item done, or reopens it. */
     async tickItem(item: PersonalAgentListItem, done: boolean): Promise<void> {
-      await updatePersonalAgentListItem(item.id, {
+      await updatePersonalAgentListItem(assistantId, item.id, {
         revision: item.revision,
         status: done ? "done" : "open",
       });
@@ -230,7 +236,7 @@ export function useAssistant() {
       item: PersonalAgentListItem,
       plan: PersonalAgentItemPlan,
     ): Promise<void> {
-      await updatePersonalAgentListItem(item.id, {
+      await updatePersonalAgentListItem(assistantId, item.id, {
         revision: item.revision,
         plan,
       });
@@ -243,11 +249,11 @@ export function useAssistant() {
     ): Promise<void> {
       const input = listItemEdit(item, draft);
       if (Object.keys(input).length === 0) return;
-      await updatePersonalAgentListItem(item.id, input);
+      await updatePersonalAgentListItem(assistantId, item.id, input);
       await readListItems();
     },
     async deleteItem(item: PersonalAgentListItem): Promise<void> {
-      await deletePersonalAgentListItem(item.id);
+      await deletePersonalAgentListItem(assistantId, item.id);
       await readListItems();
     },
   };

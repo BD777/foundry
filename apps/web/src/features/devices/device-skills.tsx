@@ -14,6 +14,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { scanDeviceSkills, setDeviceSkillRoots } from "../../api";
+import { deviceConnection } from "../../lib/device-connection";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { TextInput } from "../../components/ui/field";
@@ -87,7 +88,7 @@ export function DeviceSkills({
     setLoaded(true);
   }, [roots]);
 
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
 
   const normalizedSkills = useMemo(() => {
     return skills.map((skill) =>

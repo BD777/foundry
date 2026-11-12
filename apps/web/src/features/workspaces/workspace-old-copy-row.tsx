@@ -7,6 +7,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { FieldHint } from "../../components/ui/field";
+import { deviceConnection } from "../../lib/device-connection";
 
 /**
  * What a complete move left on its source device: the old folder and local
@@ -28,7 +29,7 @@ export function WorkspaceOldCopyRow({
   onDelete: (trigger: HTMLElement) => void;
 }) {
   const { t } = useTranslation("workspaces");
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
   const noteId = `fdy-old-copy-${migration.id}`;
   return (
     <article

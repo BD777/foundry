@@ -6,8 +6,10 @@ import "context"
 // facts or execution-state authorities. EventKey coalesces the observed source
 // version; the accepted native input remains stable across reconnects.
 type PersonalAgentMaintenance struct {
-	ID          string             `json:"id"`
-	UserID      string             `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID string             `json:"-"`
 	Role        string             `json:"role"`
 	WorkspaceID string             `json:"workspaceId"`
 	VaultID     string             `json:"vaultId,omitempty"`
@@ -59,8 +61,10 @@ type ContextPatchCommand struct {
 }
 
 type PersonalAgentContextPatch struct {
-	ID          string `json:"id"`
-	UserID      string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID string `json:"-"`
 	JobID       string `json:"jobId"`
 	WorkspaceID string `json:"workspaceId"`
 	DeviceID    string `json:"deviceId"`

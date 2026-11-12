@@ -30,7 +30,6 @@ type dependencies struct {
 // presence chores done before it serves.
 type serverStore interface {
 	httpapi.Backend
-	MarkAllDevicesOffline(ctx context.Context) error
 	// RunMaintenance is the recurring cleanup that runs beside requests.
 	RunMaintenance(ctx context.Context) error
 }
@@ -86,12 +85,14 @@ func run(ctx context.Context, deps dependencies) error {
 		deps.logf("secret store ready with key fingerprint sha256:%s", fingerprint)
 	}
 
-	// A starting server holds no connections: presence recorded before a
-	// crash or restart is stale until each worker reconnects.
-	if err := backing.MarkAllDevicesOffline(ctx); err != nil {
+	// A start cancelled during the chores above serves nothing.
+	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// NewServerWithOptions gives devices recorded as connected their
+	// reconnect grace before anything marks them offline.
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)
+	api.ResumeDeviceReconnects(ctx)
 	gate.open(api.Routes())
 	if handoff != nil {
 		running = startServing(httpServer, listener)

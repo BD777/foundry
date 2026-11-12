@@ -217,3 +217,200 @@ test("package devices explain eligibility and save only the chosen set", async (
     container.remove();
   }
 });
+
+test("package devices show install progress and let a failed device be retried", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const progress = {
+    ...view,
+    devices: [
+      { ...view.devices[0], state: "installing" },
+      {
+        ...view.devices[1],
+        selected: true,
+        state: "failed",
+        error: "download failed",
+      },
+      { ...view.devices[2] },
+    ],
+  };
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ConnectorPackage, {
+          view: progress,
+          repository,
+          onSaved: () => {},
+          onNotice: () => {},
+        }),
+      ),
+    );
+    await settle();
+    const text = document.body.textContent.replace(/\s+/g, " ");
+    assert.match(text, /Applying/);
+    assert.match(text, /Installing on this device/);
+    assert.match(text, /Install failed: download failed/);
+    const retry = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Retry failed devices",
+    );
+    assert.equal(retry.disabled, false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+const serverHeldConnector = {
+  ...connector,
+  label: "OpenLark",
+  holding: "server_held",
+};
+
+async function renderPackage(packageView) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let added = 0;
+  await act(async () =>
+    root.render(
+      createElement(ConnectorPackage, {
+        view: packageView,
+        repository,
+        onSaved: () => {},
+        onNotice: () => {},
+        onAddInstance: () => {
+          added += 1;
+        },
+      }),
+    ),
+  );
+  await settle();
+  return {
+    added: () => added,
+    byDevice: (name) =>
+      [...document.querySelectorAll('input[type="checkbox"]')].find((input) =>
+        input.getAttribute("aria-label")?.includes(name),
+      ),
+    text: () => document.body.textContent.replace(/\s+/g, " "),
+    async close() {
+      await act(async () => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+test("a device with no usable instance cannot be selected, says why and links to adding one", async () => {
+  const page = await renderPackage({
+    connector: serverHeldConnector,
+    enabled: true,
+    repositoryId: repository.id,
+    instances: [
+      {
+        id: "inst_lan",
+        label: "byte-dev OpenLark (internal)",
+        network: "device",
+        deviceIds: ["dev_mac"],
+      },
+    ],
+    devices: [
+      {
+        deviceId: "dev_mac",
+        name: "byte-dev",
+        online: true,
+        selected: true,
+        eligible: true,
+        instances: [{ id: "inst_lan", label: "byte-dev OpenLark (internal)" }],
+      },
+      {
+        deviceId: "dev_linux",
+        name: "Build Linux",
+        online: true,
+        selected: false,
+        eligible: false,
+        reason: "No instance of this connector can be used on this device.",
+        reasonCode: "no_instance",
+        instances: [],
+      },
+      {
+        deviceId: "dev_old",
+        name: "Old Linux",
+        online: true,
+        selected: true,
+        eligible: false,
+        reason: "No instance of this connector can be used on this device.",
+        reasonCode: "no_instance",
+        instances: [],
+      },
+    ],
+  });
+  try {
+    const text = page.text();
+    assert.match(text, /Usable instances: byte-dev OpenLark \(internal\)/);
+    assert.match(
+      text,
+      /No OpenLark instance can be used on this device\. byte-dev OpenLark \(internal\) is only available on byte-dev\./,
+    );
+    assert.match(text, /workspace is bound to an instance/);
+    assert.equal(page.byDevice("byte-dev").disabled, false);
+    assert.equal(page.byDevice("Build Linux").disabled, true);
+    assert.equal(
+      page.byDevice("Old Linux").disabled,
+      false,
+      "an already enabled device can still be unchecked",
+    );
+    const add = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add an instance"),
+    );
+    assert.ok(add);
+    await act(async () => add.click());
+    assert.equal(page.added(), 1);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a server-network instance makes every device selectable", async () => {
+  const everyone = [{ id: "inst_cloud", label: "Cloud OpenLark" }];
+  const page = await renderPackage({
+    connector: serverHeldConnector,
+    enabled: false,
+    instances: [
+      {
+        id: "inst_cloud",
+        label: "Cloud OpenLark",
+        network: "server",
+        deviceIds: ["dev_mac", "dev_linux"],
+      },
+    ],
+    devices: [
+      {
+        deviceId: "dev_mac",
+        name: "Ada's MacBook",
+        online: true,
+        selected: false,
+        eligible: true,
+        instances: everyone,
+      },
+      {
+        deviceId: "dev_linux",
+        name: "Build Linux",
+        online: true,
+        selected: false,
+        eligible: true,
+        instances: everyone,
+      },
+    ],
+  });
+  try {
+    assert.equal(page.byDevice("Ada's MacBook").disabled, false);
+    assert.equal(page.byDevice("Build Linux").disabled, false);
+    assert.equal(
+      page.text().match(/Usable instances: Cloud OpenLark/g)?.length,
+      2,
+    );
+    assert.doesNotMatch(page.text(), /Add an instance/);
+  } finally {
+    await page.close();
+  }
+});

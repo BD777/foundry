@@ -12,29 +12,29 @@ import (
 // The person's list: open items always listed, closed ones since a time;
 // closing stamps the time and reopening clears it; a reminder goes out
 // once per time, and a new time makes it due again; another person's
-// items are out of reach.
+// (another assistant's) items are out of reach.
 func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
-	wechat, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", Text: "Reply on WeChat", When: "after work", At: past, Remind: true})
+	wechat, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Reply on WeChat", When: "after work", At: past, Remind: true})
 	if err != nil || wechat.Status != store.PersonalAgentItemOpen || wechat.ClosedAt != "" {
 		t.Fatalf("added %+v (%v)", wechat, err)
 	}
-	qa, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", Text: "Talked to QA", Status: store.PersonalAgentItemDone})
+	qa, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Talked to QA", Status: store.PersonalAgentItemDone})
 	if err != nil || qa.ClosedAt == "" {
 		t.Fatalf("a done item = %+v (%v)", qa, err)
 	}
-	if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_b", Text: "Someone else's"}); err != nil {
+	if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_b", AssistantID: "asst_b", Text: "Someone else's"}); err != nil {
 		t.Fatal(err)
 	}
-	if open, _ := db.ListPersonalAgentItems(ctx, "user_a", ""); len(open) != 1 || open[0].ID != wechat.ID {
+	if open, _ := db.ListPersonalAgentItems(ctx, "asst_a", ""); len(open) != 1 || open[0].ID != wechat.ID {
 		t.Fatalf("open only = %+v", open)
 	}
 	since := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
-	if all, _ := db.ListPersonalAgentItems(ctx, "user_a", since); len(all) != 2 || all[0].ID != wechat.ID || all[1].ID != qa.ID {
+	if all, _ := db.ListPersonalAgentItems(ctx, "asst_a", since); len(all) != 2 || all[0].ID != wechat.ID || all[1].ID != qa.ID {
 		t.Fatalf("open and closed since = %+v", all)
 	}
-	if _, err := db.GetPersonalAgentItem(ctx, "user_b", wechat.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.GetPersonalAgentItem(ctx, "asst_b", wechat.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("another person reads it: %v", err)
 	}
 
@@ -43,16 +43,16 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	if len(due) != 1 || due[0].ID != wechat.ID {
 		t.Fatalf("due = %+v", due)
 	}
-	if claimed, _ := db.ClaimPersonalAgentReminder(ctx, "user_a", wechat.ID, past); !claimed {
+	if claimed, _ := db.ClaimPersonalAgentReminder(ctx, "asst_a", wechat.ID, past); !claimed {
 		t.Fatal("the first claim")
 	}
-	if claimed, _ := db.ClaimPersonalAgentReminder(ctx, "user_a", wechat.ID, past); claimed {
+	if claimed, _ := db.ClaimPersonalAgentReminder(ctx, "asst_a", wechat.ID, past); claimed {
 		t.Fatal("a reminder went out twice")
 	}
 	if due, _ := db.DuePersonalAgentReminders(ctx, now); len(due) != 0 {
 		t.Fatalf("still due = %+v", due)
 	}
-	reminded, _ := db.GetPersonalAgentItem(ctx, "user_a", wechat.ID)
+	reminded, _ := db.GetPersonalAgentItem(ctx, "asst_a", wechat.ID)
 	reminded.At = time.Now().Add(-time.Second).UTC().Format(time.RFC3339)
 	moved, err := db.SavePersonalAgentItem(ctx, reminded)
 	if err != nil || moved.RemindedAt != "" {
@@ -74,13 +74,13 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	if reopened, _ := db.SavePersonalAgentItem(ctx, done); reopened.ClosedAt != "" {
 		t.Fatalf("reopened = %+v", reopened)
 	}
-	if err := db.DeletePersonalAgentItem(ctx, "user_b", qa.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := db.DeletePersonalAgentItem(ctx, "asst_b", qa.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("another person deletes it: %v", err)
 	}
-	if err := db.DeletePersonalAgentItem(ctx, "user_a", qa.ID); err != nil {
+	if err := db.DeletePersonalAgentItem(ctx, "asst_a", qa.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.GetPersonalAgentItem(ctx, "user_a", qa.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.GetPersonalAgentItem(ctx, "asst_a", qa.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("deleted item: %v", err)
 	}
 }
@@ -88,15 +88,16 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 // The daily digest goes out once a day.
 func TestPersonalAgentDigestIsClaimedOncePerDay(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	if _, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "user_a", WorkspaceID: "ws_pa", HomeDeviceID: "dev_a"}); err != nil {
+	agent, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "user_a", WorkspaceID: "ws_pa", HomeDeviceID: "dev_a"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	for day, want := range []bool{true, false} {
-		if claimed, err := db.ClaimPersonalAgentDigest(ctx, "user_a", "2026-10-15"); err != nil || claimed != want {
+		if claimed, err := db.ClaimPersonalAgentDigest(ctx, agent.ID, "2026-10-15"); err != nil || claimed != want {
 			t.Fatalf("claim %d = %v (%v)", day, claimed, err)
 		}
 	}
-	if claimed, _ := db.ClaimPersonalAgentDigest(ctx, "user_a", "2026-10-16"); !claimed {
+	if claimed, _ := db.ClaimPersonalAgentDigest(ctx, agent.ID, "2026-10-16"); !claimed {
 		t.Fatal("the next day's digest")
 	}
 	if agents, err := db.ListPersonalAgents(ctx); err != nil || len(agents) != 1 || agents[0].UserID != "user_a" {

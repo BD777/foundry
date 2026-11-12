@@ -6,13 +6,15 @@ import type {
   ProfileDefinition,
 } from "@bd777/foundry-protocol";
 import { SectionHeader } from "../../components/ui/page-header";
-import { SegmentedControl } from "../../components/ui/segmented-control";
-import { providerTabs, type ProviderTab } from "../../lib/provider-tabs";
+import { AppLink } from "../../components/ui/app-link";
+import { NavGroup, NavItem } from "../../components/ui/nav-list";
+import { pathForAppRoute } from "../../lib/routes";
+import { providerTabGroups, type ProviderTab } from "../../lib/provider-tabs";
 import { DiscoveredProviders } from "./device-providers";
 import { ProfileList } from "./profile-list";
 
-/** One tab per kind of model provider (/model-providers/<tab>). */
-export function ProviderTabsControl({
+/** The sections of Model providers (/model-providers/<section>), as a grouped flat menu. */
+export function ProviderNav({
   tab,
   onTabChange,
 }: {
@@ -21,16 +23,24 @@ export function ProviderTabsControl({
 }) {
   const { t } = useTranslation("profiles");
   return (
-    <SegmentedControl
-      aria-label={t("page.tabs")}
-      onValueChange={onTabChange}
-      options={providerTabs.map((value) => ({
-        value,
-        label: t(`${value}.title`),
-      }))}
-      tone="navigation"
-      value={tab}
-    />
+    <nav aria-label={t("page.sectionsLabel")} data-provider-nav>
+      {providerTabGroups.map((group) => (
+        <NavGroup key={group.id} label={t(`page.groups.${group.id}`)}>
+          {group.tabs.map((value) => (
+            <NavItem asChild current={value === tab} key={value} tone="surface">
+              <AppLink
+                href={pathForAppRoute({ view: "profiles", providerTab: value })}
+                onClick={() => onTabChange(value)}
+              >
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {t(`page.sections.${value}`)}
+                </span>
+              </AppLink>
+            </NavItem>
+          ))}
+        </NavGroup>
+      ))}
+    </nav>
   );
 }
 

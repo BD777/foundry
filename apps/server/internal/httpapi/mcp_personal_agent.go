@@ -201,7 +201,7 @@ func (s *Server) dispatchItemForMCP(call mcpCall) (string, error) {
 	return encodeJSON(struct {
 		store.PersonalAgentOperation
 		Helper helperPreview `json:"helper"`
-	}{op, s.previewHelper(ctx, scope.Agent, op.WorkspaceID)})
+	}{op, s.previewHelper(ctx, scope.Agent, op.WorkspaceID, op.ExecutionChoice)})
 }
 
 // helperPreview is what a dispatched step's helper runs on, resolved as
@@ -214,15 +214,15 @@ type helperPreview struct {
 	Runtime string `json:"runtime,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Effort  string `json:"effort,omitempty"`
-	// Reason: configured, device_default, configured_fallback or
-	// unavailable_used_device_default.
+	// Reason: execution_default, execution_alternative, configured,
+	// device_default, configured_fallback or unavailable_used_device_default.
 	Reason      string `json:"reason,omitempty"`
 	Unavailable string `json:"unavailable,omitempty"`
 	Note        string `json:"note,omitempty"`
 }
 
-func (s *Server) previewHelper(ctx context.Context, agent store.PersonalAgent, workspaceID string) helperPreview {
-	snapshot, err := s.runs.Resolve(ctx, agent, "executor", workspaceID)
+func (s *Server) previewHelper(ctx context.Context, agent store.PersonalAgent, workspaceID, executionChoice string) helperPreview {
+	snapshot, err := s.runs.ResolveExecutor(ctx, agent, workspaceID, executionChoice)
 	if err != nil {
 		return helperPreview{
 			Unavailable: err.Error(),
@@ -248,7 +248,7 @@ func (s *Server) cancelPendingDispatchForMCP(call mcpCall) (string, error) {
 	if e = assistant.DecodeArgs(call.args, &input); e != nil {
 		return "", e
 	}
-	op, e := s.store.CancelPendingPersonalAgentOperation(call.r.Context(), scope.Agent.UserID, input.OperationID, input.Revision)
+	op, e := s.store.CancelPendingPersonalAgentOperation(call.r.Context(), scope.Agent.ID, input.OperationID, input.Revision)
 	if e != nil {
 		return "", e
 	}

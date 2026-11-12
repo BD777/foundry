@@ -16,6 +16,7 @@ func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 		32: "5b5204cd81e06b5b6b8961771d057cf26d09edc39af065b59952d9f9ca40f4fa", // connector_instances: configure connector instances with secrets by file reference
 		33: "81808432bf9f736b7eddfd42907e387cce9b00b0b7a14e084042b93da1410edc", // connector_packages: enable an integration package on chosen devices
 		34: "ea50663680d530308a05742a394f74ce323c2115316c167582f18ea425e87872", // edge_access: manage edge access credentials and provision Cloudflare Access
+		35: "6ae8cc23fa521794a6bd86aecc63c704c9ad457a403aef8eeb17f8fe4cd6a340", // connector_packages: set_devices returns at once; get shows per-device progress
 		30: "28f5a3b00864af197a8d05acfaaa746965b5b0a3c44066243f539063e8881374", // ASC-2: App Store Connect curl examples through the gateway
 		29: "444f19bacb28eb3627771a23b1d64908d5a9a8abccb51fa494a096f19d1f1407", // MCP: skill repository source; assistant device removal always asks
 		28: "973fe7f7d3c6aa9549dccaffb6132268c4f17bdf4dab7f1abb934a125a0ef81c", // DEV-155: connector stand-ins work for what a turn leaves running
@@ -57,6 +58,11 @@ func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 func TestFoundryOrchestrationSkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
 		1: "17e7abd2df2ea05d301f29931c50a3d4827b275e32e31273c2680597a8964f36",
+		2: "7d44e7eae02adf52271709f4fdef11eb12a8296f84a06aabc7515241da087c17", // a worker keeps one model id; 429 retries the same id
+		3: "da8f045c00d119abd4e5608e247d22948f340f021a9eeb3735254f5a25d2039a", // model_guides: read the worker model's guide before briefing; worker groups
+		4: "b626a2ab3574e548258b1564f342033dc752d2e6f9b86a7e915be15ad01d1ad8", // orchestrator stays out of the work: delegate by default; tighter trigger description
+		5: "ed6674cbf74a097c599d4ba07dc10b03017b9f4dc63f5e78fa26742addc93f80", // explicit invocation only
+		6: "845dd9654a2a0cd9cc86564797d82b4cfe341b59d8ba34bb98cecb4a165b537c", // execution models: default plus alternatives; guides describe their own model only
 	}
 	claude, _ := Lookup("builtin-claude-foundry-orchestration")
 	codex, _ := Lookup("builtin-codex-foundry-orchestration")
@@ -70,7 +76,7 @@ func TestFoundryOrchestrationSkillPackageHasARecordedRevision(t *testing.T) {
 		t.Fatalf("%s revision %d has unrecorded package %s; bump and record the new revision", claude.ID, claude.Revision, claude.Checksum)
 	}
 	description := strings.ToLower(claude.Description)
-	for _, trigger := range []string{"orchestrate", "brief", "review", "diff", "failed"} {
+	for _, trigger := range []string{"orchestrator", "brief", "review", "explicitly", "/foundry-orchestration", "own subagents"} {
 		if !strings.Contains(description, trigger) {
 			t.Fatalf("description does not say %q: %q", trigger, claude.Description)
 		}

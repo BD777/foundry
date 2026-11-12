@@ -18,6 +18,7 @@ import { ButtonRow } from "../../components/ui/button-row";
 import { FieldLabel } from "../../components/ui/form-field";
 
 export function ItemPlan({
+  assistantId,
   item,
   items,
   operations,
@@ -26,6 +27,7 @@ export function ItemPlan({
   onContinue,
   onRefresh,
 }: {
+  assistantId?: string;
   item: PersonalAgentListItem;
   items: PersonalAgentListItem[];
   operations: PersonalAgentOperation[];
@@ -260,6 +262,7 @@ export function ItemPlan({
                   setBusy(true);
                   setError("");
                   void cancelPendingPersonalAgentOperation(
+                    assistantId,
                     latest.id,
                     latest.revision,
                   )

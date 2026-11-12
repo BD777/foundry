@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -134,20 +135,24 @@ func (s *Service) Publish(ctx context.Context, user string, input PublishRequest
 	return s.store.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: flow.Key("kpub", user, input.RequestID), UserID: user, VaultID: v.ID, EntryID: entry.ID, SourceEpoch: entry.Epoch, SourceRevision: entry.Revision, SourceHash: entry.Hash, TargetWorkspaceID: workspace.ID, ProfileID: input.ProfileID, ProfileFingerprint: fingerprint, ProviderConfigHash: providerHash, AudienceHash: audience, Purpose: input.Purpose, ExpiresAt: input.ExpiresAt})
 }
 
-// Sources are the person's vault locations their assistant may name in
-// remember (read_knowledge listSources): no knowledge text, no grant.
-func (s *Service) Sources(ctx context.Context, userID string) (map[string]any, error) {
-	all, e := s.store.ListKnowledgeVaults(ctx, userID)
+// Sources are the vault locations agent may name in remember
+// (read_knowledge listSources): its person's domain sources and the two
+// memory layers it recalls, no knowledge text, no grant.
+func (s *Service) Sources(ctx context.Context, agent store.PersonalAgent) (map[string]any, error) {
+	all, e := s.store.ListKnowledgeVaults(ctx, agent.UserID)
 	if e != nil {
 		return nil, e
 	}
 	visible := []map[string]string{}
 	for _, v := range all {
+		if !Recalls(agent, v) {
+			continue
+		}
 		if _, e = s.Workspace(ctx, v.UserID, v); e == nil {
-			visible = append(visible, map[string]string{"id": v.ID, "kind": v.Kind, "workspaceId": v.WorkspaceID, "deviceId": v.DeviceID, "state": v.State})
+			visible = append(visible, map[string]string{"id": v.ID, "kind": v.Kind, "scope": v.Scope, "workspaceId": v.WorkspaceID, "deviceId": v.DeviceID, "state": v.State})
 		}
 	}
-	return map[string]any{"sources": visible, "note": "Owner locations only, no knowledge text or sharing grant. Use the original domain owner for its facts; specify its vaultId in remember only when the person's request authorizes that destination."}, nil
+	return map[string]any{"sources": visible, "note": "Owner locations only, no knowledge text or sharing grant. Memory facts go to a layer through remember's scope; use the original domain owner for its facts and specify its vaultId in remember only when the person's request authorizes that destination."}, nil
 }
 
 // RecallRequest is read_knowledge's: the session's grants, one grant's
@@ -289,11 +294,16 @@ func (s *Service) CheckPublication(ctx context.Context, session store.AgentSessi
 		if v.Kind != "memory" || v.Epoch != p.SourceEpoch || v.State != "active" {
 			return invalid("memory authority is unavailable or has moved")
 		}
-		agent, err := s.store.GetPersonalAgent(ctx, p.UserID)
+		// A memory root is recalled by the assistant whose conversation
+		// workspace it was granted to: the person's layer, or its own.
+		agent, err := s.store.AssistantForWorkspace(ctx, session.WorkspaceID)
+		if errors.Is(err, store.ErrNotFound) {
+			return store.ErrNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if agent.WorkspaceID != session.WorkspaceID {
+		if !Recalls(agent, v) {
 			return store.ErrNotFound
 		}
 		_, err = s.Workspace(ctx, p.UserID, v)
@@ -335,11 +345,12 @@ type MemoryRecall struct {
 	ConfigHash string `json:"configHash"`
 }
 
-// GrantMemoryRecall grants the assistant's conversations reads of all of
-// the memory vault vaultID. The person explicitly enables all confirmed
+// GrantMemoryRecall grants agent's conversations reads of all of the
+// memory vault vaultID, the person's layer or agent's own. The person explicitly enables all confirmed
 // main-memory entries for one observed assistant account. Provider changes
 // never inherit this grant.
-func (s *Service) GrantMemoryRecall(ctx context.Context, user, vaultID string, input MemoryRecall) (store.KnowledgePublication, error) {
+func (s *Service) GrantMemoryRecall(ctx context.Context, agent store.PersonalAgent, vaultID string, input MemoryRecall) (store.KnowledgePublication, error) {
+	user := agent.UserID
 	if input.RequestID == "" || len(input.RequestID) > 200 {
 		return store.KnowledgePublication{}, invalid("requestId is required")
 	}
@@ -350,11 +361,10 @@ func (s *Service) GrantMemoryRecall(ctx context.Context, user, vaultID string, i
 	if v.Kind != "memory" {
 		return store.KnowledgePublication{}, invalid("automatic recall is only for the private main root")
 	}
-	if _, err = s.Workspace(ctx, v.UserID, v); err != nil {
-		return store.KnowledgePublication{}, err
+	if !Recalls(agent, v) {
+		return store.KnowledgePublication{}, store.ErrNotFound
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, v.UserID)
-	if err != nil {
+	if _, err = s.Workspace(ctx, v.UserID, v); err != nil {
 		return store.KnowledgePublication{}, err
 	}
 	snapshot, err := s.runs.Resolve(ctx, agent, "coordinator", agent.WorkspaceID)

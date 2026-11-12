@@ -118,6 +118,9 @@ export function outOfBandEventSink(
  * skills, runs its agent, and reports its events and its answer, failure or
  * stop; its steer and cancel reach it through session-control.
  */
+/** How a session's input ended on this device. */
+export type AgentRunOutcome = "completed" | "failed" | "canceled";
+
 export async function executeAgentSession(
   transport: ReliableSessionTransport,
   dispatched: AgentSession,
@@ -125,7 +128,7 @@ export async function executeAgentSession(
   dispatchCredential?: string,
   dispatchProfile?: ProfileDefinition,
   ambient?: SessionAmbientEnv,
-): Promise<void> {
+): Promise<AgentRunOutcome> {
   let session = dispatched;
   const inputId = session.input?.id;
   // A role that reports its own stop starts first: the stop it reports
@@ -138,7 +141,7 @@ export async function executeAgentSession(
       ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
       error: "Session canceled before it started.",
     });
-    return;
+    return "canceled";
   }
   const unregisterAmbient = ambient
     ? registerSessionAmbientEnv(session.id, ambient)
@@ -399,6 +402,7 @@ export async function executeAgentSession(
       // next heartbeat's claim.
       ...(sessionHasNativeWork(session.id) ? { nativeWork: true } : {}),
     });
+    return "completed";
   } catch (error) {
     await reclaimResources();
     const canceled = isAgentSessionCanceledError(error);
@@ -414,6 +418,7 @@ export async function executeAgentSession(
         ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
         ...stopped,
       });
+    return canceled ? "canceled" : "failed";
   } finally {
     flushPendingResponse();
     unregisterAmbient();

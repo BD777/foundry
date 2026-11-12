@@ -103,11 +103,11 @@ func assistantText(language, key string, args ...any) string {
 // proposalLanguage is the language of the person's proposal cards: the
 // one they chose, else Chinese, as the proposals' own summaries are
 // written in.
-func (m *WSManager) proposalLanguage(ctx context.Context, userID string) string {
+func (m *WSManager) proposalLanguage(ctx context.Context, assistantID, userID string) string {
 	if m.PersonalAgents == nil {
 		return "zh"
 	}
-	return m.PersonalAgents.Language(ctx, userID, "")
+	return m.PersonalAgents.Language(ctx, assistantID, userID, "")
 }
 
 // assistantTopic is the Feishu topic of an assistant conversation.
@@ -140,7 +140,7 @@ func (m *WSManager) PersonalAgentProposalCreated(ctx context.Context, proposal s
 	if proposal.Status != "" && proposal.Status != store.PersonalAgentProposalPending {
 		return
 	}
-	card := BuildProposalCard(proposal, m.proposalLanguage(ctx, proposal.UserID))
+	card := BuildProposalCard(proposal, m.proposalLanguage(ctx, proposal.AssistantID, proposal.UserID))
 	m.mu.RLock()
 	topic, inTopic := m.assistantTopics[proposal.SessionID]
 	m.mu.RUnlock()
@@ -154,7 +154,7 @@ func (m *WSManager) PersonalAgentProposalCreated(ctx context.Context, proposal s
 			log.Printf("[feishu] post proposal %s in its topic: %v", proposal.ID, err)
 		}
 	}
-	app, chatID := m.assistantDirectChat(ctx, proposal.UserID)
+	app, chatID := m.assistantDirectChat(ctx, proposal.UserID, proposal.AssistantID)
 	if app == nil {
 		return
 	}
@@ -193,7 +193,7 @@ func (m *WSManager) PersonalAgentProposalChanged(proposal store.PersonalAgentPro
 	}
 	go func() {
 		ctx := context.Background()
-		if err := app.client.PatchCard(ctx, card.cardMessageID, BuildProposalCard(proposal, m.proposalLanguage(ctx, proposal.UserID))); err != nil {
+		if err := app.client.PatchCard(ctx, card.cardMessageID, BuildProposalCard(proposal, m.proposalLanguage(ctx, proposal.AssistantID, proposal.UserID))); err != nil {
 			log.Printf("[feishu] update the card of proposal %s: %v", proposal.ID, err)
 		}
 	}()
@@ -201,8 +201,8 @@ func (m *WSManager) PersonalAgentProposalChanged(proposal store.PersonalAgentPro
 
 // assistantDirectChat is a running app and direct chat of the person's
 // that their assistant takes; nil when there is none.
-func (m *WSManager) assistantDirectChat(ctx context.Context, userID string) (*botApp, string) {
-	if userID == "" {
+func (m *WSManager) assistantDirectChat(ctx context.Context, userID, assistantID string) (*botApp, string) {
+	if userID == "" || assistantID == "" {
 		return nil, ""
 	}
 	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
@@ -219,7 +219,8 @@ func (m *WSManager) assistantDirectChat(ctx context.Context, userID string) (*bo
 			continue
 		}
 		app := m.app(providerApp.ClientID)
-		if app == nil || m.assistantFor(ctx, route) == nil {
+		assistant := m.assistantFor(ctx, route)
+		if app == nil || assistant == nil || assistant.route.AssistantID != assistantID {
 			continue
 		}
 		return app, route.ChatID
@@ -276,17 +277,17 @@ func (m *WSManager) handleCardAction(ctx context.Context, event feishuevents.Eve
 		return
 	}
 	userID := chat.assistant.userID
-	language := m.PersonalAgents.Language(ctx, userID, "")
+	language := m.PersonalAgents.Language(ctx, chat.assistant.route.AssistantID, userID, "")
 	switch op {
 	case cardActionAccept, cardActionDecline:
 		if proposalID == "" {
 			return
 		}
-		m.decideProposal(ctx, app.client, userID, proposalID, op == cardActionAccept, store.PersonalAgentViaFeishu, "", cardMessageID, language)
+		m.decideProposal(ctx, app.client, chat.assistant.route.AssistantID, userID, proposalID, op == cardActionAccept, store.PersonalAgentViaFeishu, "", cardMessageID, language)
 	case cardActionResume:
 		card := BuildAssistantCard(assistantText(language, "runningTitle"), assistantText(language, "running"), "grey")
 		if chat.assistant.route.Stopped {
-			card = m.resumeAssistant(ctx, userID, language)
+			card = m.resumeAssistant(ctx, chat.assistant.route.AssistantID, userID, language)
 		}
 		if err := app.client.PatchCard(ctx, cardMessageID, card); err != nil {
 			log.Printf("[feishu] update the stop card: %v", err)

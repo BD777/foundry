@@ -46,6 +46,20 @@ function keyOf(call) {
   return first.text;
 }
 
+function transKey(attribute) {
+  const opening = attribute.parent.parent;
+  if (
+    attribute.name.getText() !== "i18nKey" ||
+    (!ts.isJsxOpeningElement(opening) &&
+      !ts.isJsxSelfClosingElement(opening)) ||
+    tagName(opening) !== "Trans" ||
+    !attribute.initializer ||
+    !ts.isStringLiteralLike(attribute.initializer)
+  )
+    return undefined;
+  return attribute.initializer.text;
+}
+
 function tagName(node) {
   const opening = ts.isJsxElement(node) ? node.openingElement : node;
   return opening.tagName.getText();
@@ -61,36 +75,38 @@ export function hintViolations(fileName, text) {
     ts.ScriptKind.TSX,
   );
   const found = [];
+  const recordIfViolation = (key, node, parent) => {
+    if (!hintKey.test(key)) return;
+    let verdict;
+    while (parent && !verdict) {
+      if (ts.isJsxAttribute(parent)) {
+        const name = parent.name.getText();
+        verdict = hostAttributes.has(name) ? "ok" : `attribute ${name}`;
+      } else if (ts.isJsxElement(parent)) {
+        const tag = tagName(parent);
+        if (tag !== "Trans") verdict = hostTags.has(tag) ? "ok" : `<${tag}>`;
+      } else if (
+        ts.isFunctionLike(parent) ||
+        ts.isSourceFile(parent) ||
+        ts.isVariableDeclaration(parent) ||
+        ts.isReturnStatement(parent)
+      ) {
+        verdict = "elsewhere";
+      }
+      parent = parent.parent;
+    }
+    if (verdict && verdict !== "ok" && verdict !== "elsewhere") {
+      const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+      found.push({ key, line: line + 1, host: verdict });
+    }
+  };
   const visit = (node) => {
     if (ts.isCallExpression(node)) {
       const key = keyOf(node);
-      if (key && hintKey.test(key)) {
-        let parent = node.parent;
-        let verdict;
-        while (parent && !verdict) {
-          if (ts.isJsxAttribute(parent)) {
-            const name = parent.name.getText();
-            verdict = hostAttributes.has(name) ? "ok" : `attribute ${name}`;
-          } else if (ts.isJsxElement(parent)) {
-            const tag = tagName(parent);
-            verdict = hostTags.has(tag) ? "ok" : `<${tag}>`;
-          } else if (
-            ts.isFunctionLike(parent) ||
-            ts.isSourceFile(parent) ||
-            ts.isVariableDeclaration(parent) ||
-            ts.isReturnStatement(parent)
-          ) {
-            verdict = "elsewhere";
-          }
-          parent = parent.parent;
-        }
-        if (verdict && verdict !== "ok" && verdict !== "elsewhere") {
-          const { line } = source.getLineAndCharacterOfPosition(
-            node.getStart(),
-          );
-          found.push({ key, line: line + 1, host: verdict });
-        }
-      }
+      if (key) recordIfViolation(key, node, node.parent);
+    } else if (ts.isJsxAttribute(node)) {
+      const key = transKey(node);
+      if (key) recordIfViolation(key, node, node.parent);
     }
     ts.forEachChild(node, visit);
   };

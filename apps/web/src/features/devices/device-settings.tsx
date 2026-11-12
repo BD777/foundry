@@ -18,6 +18,7 @@ import {
   deviceConcurrencyMode,
 } from "../../lib/device-concurrency";
 import { formatBytes } from "../../lib/format";
+import { deviceConnection } from "../../lib/device-connection";
 import { DeviceSection, deviceActionsClass } from "./device-section";
 
 function memoryPair(
@@ -361,7 +362,7 @@ export function DeviceSettings({
         <Button
           disabled={
             busy ||
-            device.status !== "connected" ||
+            deviceConnection(device) !== "online" ||
             keepAliveInvalid ||
             (forced && forcedLimitInvalid)
           }

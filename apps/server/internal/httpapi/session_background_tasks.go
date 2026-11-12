@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -70,8 +69,10 @@ func (s *Server) handleStopBackgroundTask(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !s.hub.HasConnection(session.DeviceID) {
-		writeError(w, http.StatusConflict, sessions.ErrLocalDaemonNotConnected.Error())
-		return
+		if _, err := s.hub.waitForConnection(r.Context(), session.DeviceID); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
@@ -152,9 +153,9 @@ func (h *DaemonHub) ReadBackgroundTaskOutput(ctx context.Context, session store.
 }
 
 func (h *DaemonHub) StopBackgroundTask(ctx context.Context, session store.AgentSession, taskID string) error {
-	connection := h.connectionFor(session.DeviceID)
-	if connection == nil {
-		return sessions.ErrLocalDaemonNotConnected
+	connection, err := h.waitForConnection(ctx, session.DeviceID)
+	if err != nil {
+		return err
 	}
 	payload, err := json.Marshal(wsBackgroundTaskRequestPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, TaskID: taskID})
 	if err != nil {

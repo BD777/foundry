@@ -33,10 +33,12 @@ type PersonalAgentRunTarget struct {
 // Snapshot records requested configuration. Actual native model/effort remain
 // session observations; an unreported value is never inferred from this row.
 type PersonalAgentRunSnapshot struct {
-	AccountLabel       string `json:"accountLabel,omitempty"`
-	InputID            string `json:"inputId"`
-	ID                 string `json:"id"`
-	UserID             string `json:"-"`
+	AccountLabel string `json:"accountLabel,omitempty"`
+	InputID      string `json:"inputId"`
+	ID           string `json:"id"`
+	UserID       string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID        string `json:"-"`
 	Role               string `json:"role"`
 	WorkspaceID        string `json:"workspaceId"`
 	DeviceID           string `json:"deviceId"`
@@ -63,6 +65,8 @@ type PersonalAgentRunPreview struct {
 
 type PersonalAgentRuntimeStore interface {
 	GetPersonalAgentRunSnapshot(context.Context, string, string) (PersonalAgentRunSnapshot, error)
+	// RunSnapshotForUser is the snapshot id of any of the person's assistants.
+	RunSnapshotForUser(ctx context.Context, userID, id string) (PersonalAgentRunSnapshot, error)
 	RecordPersonalAgentRunSnapshot(context.Context, PersonalAgentRunSnapshot) (PersonalAgentRunSnapshot, error)
 	BindPersonalAgentRunSnapshot(context.Context, string, string, string) error
 	ListPersonalAgentRunSnapshots(context.Context, string, int) ([]PersonalAgentRunSnapshot, error)

@@ -312,7 +312,7 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 		}
 		use := store.DeviceConnectorUse{Kind: descriptor.Kind, Adapter: descriptor.Adapter, Label: descriptor.Label, Command: descriptor.Tool.Command}
 		accountID := externalaccounts.DeviceAccountID(session.DeviceID, descriptor.Kind)
-		assistantDisabled := policy.PersonalAgent() && !policy.Allows(accountID)
+		assistantDisabled := policy.Assistant() && !policy.Allows(accountID)
 		var state *store.DeviceConnectorState
 		for _, reading := range states {
 			if reading.Kind == descriptor.Kind && reading.SignedIn && (reading.Status == store.DeviceConnectorReady || reading.Status == store.DeviceConnectorExpiring) {

@@ -162,8 +162,8 @@ type AgentSession struct {
 	ProfileFingerprint string          `json:"profileFingerprint,omitempty"`
 	ProfileLabel       string          `json:"profileLabel,omitempty"`
 
-	// ModelPoolID The equivalent-model group this session was allocated from. Foundry uses it to choose another id after a model rate limit.
-	ModelPoolID string `json:"modelPoolId,omitempty"`
+	// WorkerGroupID The worker group this session's provider and model were picked from, once at creation. The session keeps that member.
+	WorkerGroupID string `json:"workerGroupId,omitempty"`
 
 	// DispatchID Identifies this dispatch of the current input. It equals the input id until an automatic retry gives the same logical input a fresh native execution identity.
 	DispatchID string `json:"dispatchId,omitempty"`

@@ -93,7 +93,7 @@ function* rulesIn(node, sheet) {
 //    to the modules whose code names it. A selector may name another module's
 //    class only when it is a primitive's class on the sheet owner's own
 //    element (`.fdy-own.fdy-button`): props, variants and className are the
-//    way to restyle anything else (AGENTS.md, UI principles).
+//    way to restyle anything else (apps/web/AGENTS.md, UI principles).
 const moduleOf = (path) => {
   const rel = relative(sourceRoot, path);
   let match;

@@ -21,7 +21,9 @@ func (r runControlReactions) SessionChanged(ctx context.Context, _ sessions.Chan
 
 // RunControlStore is what EnsureRunControl reads and keeps.
 type RunControlStore interface {
-	GetPersonalAgentRunSnapshot(ctx context.Context, userID, id string) (store.PersonalAgentRunSnapshot, error)
+	RunSnapshotForUser(ctx context.Context, userID, id string) (store.PersonalAgentRunSnapshot, error)
+	AssistantForSession(ctx context.Context, sessionID string) (store.PersonalAgent, error)
+	DefaultAssistant(ctx context.Context, ownerUserID string) (store.PersonalAgent, error)
 	EnsurePersonalAgentRunControl(ctx context.Context, control store.PersonalAgentRunControl) (store.PersonalAgentRunControl, error)
 }
 
@@ -30,14 +32,27 @@ type RunControlStore interface {
 func EnsureRunControl(ctx context.Context, backend RunControlStore, session store.AgentSession) (store.PersonalAgentRunControl, error) {
 	c := store.PersonalAgentRunControl{ID: flow.Key("parctl", session.ID, session.Input.ID), UserID: session.CreatedByUserID, SessionID: session.ID, InputID: session.Input.ID, Role: "executor", DispatchAttempted: session.Input.ExecutionBudget == nil}
 	if budget := session.Input.ExecutionBudget; budget != nil {
-		snapshot, err := backend.GetPersonalAgentRunSnapshot(ctx, session.CreatedByUserID, budget.SnapshotID)
+		snapshot, err := backend.RunSnapshotForUser(ctx, session.CreatedByUserID, budget.SnapshotID)
 		if err != nil {
 			return c, err
 		}
+		c.AssistantID = snapshot.AssistantID
 		if snapshot.InputID != session.Input.ID || snapshot.WorkspaceID != session.WorkspaceID {
 			return c, store.ErrIdempotencyConflict
 		}
 		c.SnapshotID, c.Role, c.TokenBudget, c.TimeoutMinutes = snapshot.ID, snapshot.Role, snapshot.TokenBudget, snapshot.TimeoutMinutes
+	}
+	if c.AssistantID == "" {
+		// An input without a budget: the assistant the session works for,
+		// else the person's default one.
+		agent, err := backend.AssistantForSession(ctx, session.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			agent, err = backend.DefaultAssistant(ctx, session.CreatedByUserID)
+		}
+		if err != nil {
+			return c, err
+		}
+		c.AssistantID = agent.ID
 	}
 	return backend.EnsurePersonalAgentRunControl(ctx, c)
 }

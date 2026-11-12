@@ -471,7 +471,7 @@ func TestPersonalAgentSessionMaterialsUseOwnedAccountsWithoutABinding(t *testing
 		t.Fatalf("bound project: %+v (%v)", materials, err)
 	}
 
-	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, "user_owner", []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
+	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, agent.ID, []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
 		t.Fatal(err)
 	}
 	off := h.assistantSession(agent, "sess_pa_off")
@@ -595,7 +595,7 @@ func TestPersonalAgentLevelOverridesBindingInAssistantWorkspace(t *testing.T) {
 		ID: "acct_pa_bound", OwnerUserID: "user_owner", Mode: store.ExternalCredentialServerHeld,
 		Status: store.ExternalAccountReady, WorkspaceIDs: []string{agent.WorkspaceID},
 	}
-	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, agent.UserID, []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
+	if _, err := h.store.SetPersonalAgentConnectorLevels(h.ctx, agent.ID, []store.ConnectorAccountPermission{{AccountID: account.ID, Level: store.ConnectorAccessLevelOff}}); err != nil {
 		t.Fatal(err)
 	}
 	policy, err := externalaccounts.ResolvePolicy(h.ctx, h.store, session)

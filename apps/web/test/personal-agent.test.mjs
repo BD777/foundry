@@ -218,6 +218,8 @@ const formerSession = {
 let overview;
 let calls = [];
 let tasks = [task];
+let assistantSummaries = [];
+let externalAccounts = { providers: [], apps: [], accounts: [] };
 let connectorAccounts = [
   {
     id: "acct_feishu",
@@ -272,6 +274,8 @@ globalThis.fetch = async (input, init = {}) => {
       return json([]);
     case "GET /api/personal-agent/inbox":
       return json([]);
+    case "GET /api/personal-agent/memory/layers":
+      return json({ assistantId: "", legacyUncopied: 0, layers: [] });
     case "POST /api/personal-agent/inbox":
       return json(
         {
@@ -336,7 +340,7 @@ globalThis.fetch = async (input, init = {}) => {
       return json({ ...assistantSession, id: "sess_new" }, 201);
     case "GET /api/profiles":
       return json([]);
-    case "GET /api/model-pools":
+    case "GET /api/worker-groups":
       return json([]);
     case "GET /api/execution-default":
       return json({
@@ -362,7 +366,9 @@ globalThis.fetch = async (input, init = {}) => {
         ? json({ ...agent, homeDeviceId: "dev_pc" })
         : json({ error: "That computer is offline." }, 409);
     case "GET /api/external-accounts":
-      return json({ providers: [], apps: [], accounts: [] });
+      return json(externalAccounts);
+    case "GET /api/assistants":
+      return json({ assistants: assistantSummaries });
     case "GET /api/personal-agent/actions":
       return json(actions);
     case "GET /api/personal-agent/connectors":
@@ -508,6 +514,19 @@ test("settings problems name the field and the cap", () => {
     { kind: "time", field: "dailyDigestTime" },
     { kind: "limit", key: "concurrentSessions", min: 1, max: 8 },
   ]);
+  assert.deepEqual(
+    model.settingsProblems({
+      ...settings,
+      executionModels: {
+        providerId: "",
+        runtime: "",
+        model: "",
+        workerGroupId: "",
+        alternatives: [],
+      },
+    }),
+    [{ kind: "executionModels" }],
+  );
 });
 
 test("the conversation shows what was said, not the steps", () => {
@@ -1044,6 +1063,165 @@ test("settings: the simple interface is saved with the settings and reaches the 
   await page.unmount();
 });
 
+test("settings: another assistant's Feishu app is disabled and a free app is saved", async () => {
+  const currentSummary = {
+    id: "asst_current",
+    name: "Personal",
+    isDefault: true,
+    workspaceId: "ws_pa",
+    homeDeviceId: "dev_mac",
+    state: "active",
+    permissionPackageId: "pkg_current",
+    feishuAppId: "xapp_personal",
+    createdAt: iso(-60 * minute),
+    updatedAt: iso(-60 * minute),
+  };
+  assistantSummaries = [
+    currentSummary,
+    {
+      ...currentSummary,
+      id: "asst_research",
+      name: "Research",
+      isDefault: false,
+      permissionPackageId: "pkg_research",
+      feishuAppId: "xapp_research",
+    },
+  ];
+  const app = (id, label) => ({
+    id,
+    provider: "feishu",
+    ownerUserId: "usr_1",
+    visibility: "private",
+    label,
+    clientId: "cli_" + id,
+    hasSecret: true,
+    createdVia: "manual",
+    createdAt: iso(-60 * minute),
+    updatedAt: iso(-60 * minute),
+  });
+  externalAccounts = {
+    providers: [],
+    apps: [
+      app("xapp_personal", "Personal Feishu"),
+      app("xapp_research", "Research Feishu"),
+      app("xapp_free", "Free Feishu"),
+    ],
+    accounts: [],
+  };
+  overview = {
+    agent: {
+      id: currentSummary.id,
+      name: currentSummary.name,
+      isDefault: true,
+      ...agent,
+      settings: { ...settings, feishuAppId: "xapp_personal" },
+    },
+    homeDeviceOnline: true,
+  };
+  calls = [];
+  const page = await render(AssistantSettings, {
+    section: "entry",
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  try {
+    const trigger = [...page.container.querySelectorAll("button")].find(
+      (node) => node.getAttribute("aria-label")?.startsWith("Feishu app:"),
+    );
+    assert.ok(trigger);
+    await act(async () =>
+      trigger.dispatchEvent(
+        new window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    await settle();
+    const options = [
+      ...window.document.querySelectorAll('[role="menuitemradio"]'),
+    ];
+    const occupied = options.find((node) =>
+      node.textContent.includes("Research Feishu"),
+    );
+    const free = options.find((node) =>
+      node.textContent.includes("Free Feishu"),
+    );
+    const optionText = options.map((node) => node.textContent).join(" | ");
+    assert.ok(occupied, optionText);
+    assert.ok(free, optionText);
+    assert.equal(occupied.disabled, true);
+    assert.match(occupied.textContent, /Used by Research/);
+    assert.equal(free.disabled, false);
+
+    await act(async () => free.click());
+    await settle();
+    await act(async () => button(page.container, "Save changes").click());
+    await settle();
+    const put = calls.find(
+      (call) => call.method === "PUT" && call.path.endsWith("/settings"),
+    );
+    assert.equal(put.body.feishuAppId, "xapp_free");
+  } finally {
+    assistantSummaries = [];
+    externalAccounts = { providers: [], apps: [], accounts: [] };
+    await page.unmount();
+  }
+});
+
+test("settings: an assistant helper override is saved with its alternatives", async () => {
+  const executionModels = {
+    providerKind: "subscription",
+    providerId: "prof_claude",
+    runtime: "claude",
+    model: "smart-model",
+    workerGroupId: "",
+    effort: "",
+    alternatives: [],
+  };
+  overview = {
+    agent: {
+      ...agent,
+      settings: { ...settings, executionModels },
+    },
+    homeDeviceOnline: true,
+  };
+  calls = [];
+  const profile = agentProfiles[0];
+  const previousModel = profile.model;
+  const previousModels = profile.models;
+  profile.model = "smart-model";
+  profile.models = ["smart-model", "stronger-model"];
+  const page = await render(AssistantSettings, {
+    section: "models",
+    onSectionChange: () => {},
+    devices,
+    agentProfiles,
+    onEvent: () => {},
+  });
+  assert.match(
+    page.container.textContent,
+    /Helpers are the workers that do the work/,
+  );
+  await act(async () => button(page.container, "Add").click());
+  await act(async () => button(page.container, "Save changes").click());
+  await settle();
+  const put = calls.find(
+    (call) =>
+      call.method === "PUT" && call.path === "/api/personal-agent/settings",
+  );
+  assert.equal(put?.body.executionModels.providerId, "prof_claude");
+  assert.equal(put?.body.executionModels.model, "smart-model");
+  assert.equal(put?.body.executionModels.alternatives.length, 1);
+  assert.equal(put?.body.executionModels.alternatives[0].model, "smart-model");
+  await page.unmount();
+  profile.model = previousModel;
+  profile.models = previousModels;
+});
+
 test("settings: moving the assistant sends the chosen computer and reads it again", async () => {
   const twoComputers = [
     ...devices,
@@ -1218,7 +1396,10 @@ test("memory location is independent from the assistant home and survives an off
       ),
     );
     assert.match(page.container.textContent, /Memory desktop/);
-    assert.match(page.container.textContent, /source computer is offline/);
+    assert.match(
+      page.container.textContent,
+      /being prepared or is temporarily unavailable/,
+    );
   } finally {
     await page.unmount();
     knowledgeVaults = [];
@@ -1495,14 +1676,15 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     "Conversation and planning Reasoning effort",
   ])
     assert.equal(select(name)?.disabled, false, name);
-  // Judgement-heavy flows follow the assistant by default; helpers follow
-  // the shared default here.
-  for (const group of [
-    "Work it hands off",
-    "Project summaries",
-    "Memory upkeep",
-    "Project upkeep",
-  ])
+  assert.match(text, /Follows the workspace or global execution model/);
+  assert.ok(
+    [...page.container.querySelectorAll("button")].some(
+      (node) =>
+        node.textContent.trim() === "Set an execution model for this assistant",
+    ),
+  );
+  // Judgement-heavy upkeep flows follow the assistant by default.
+  for (const group of ["Project summaries", "Memory upkeep", "Project upkeep"])
     assert.equal(
       radio(group, "Same as the assistant").getAttribute("aria-checked"),
       "true",
@@ -1510,12 +1692,23 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     );
 
   await act(async () =>
-    radio("Work it hands off", "Each computer's default").click(),
+    [...page.container.querySelectorAll("button")]
+      .find(
+        (node) =>
+          node.textContent.trim() ===
+          "Set an execution model for this assistant",
+      )
+      .click(),
   );
-  assert.deepEqual(draft.roleOverrides.executor, {
-    profileId: "device_default",
+  assert.deepEqual(draft.executionModels, {
+    providerKind: "",
+    providerId: "",
+    runtime: "",
+    model: "",
+    workerGroupId: "",
+    effort: "",
+    alternatives: [],
   });
-  assert.equal(draft.delegateModel, "device_default");
   await rerender();
   await act(async () => radio("Memory upkeep", "Choose one").click());
   // Nothing saved until a provider is chosen; the choice stays shown.
@@ -1560,9 +1753,6 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
     radio("Project summaries", "Same as the assistant").click(),
   );
   assert.equal(draft.roleOverrides.digest, undefined);
-  assert.deepEqual(draft.roleOverrides.executor, {
-    profileId: "device_default",
-  });
   assert.equal(draft.runDefault.model, "smart-model");
 
   // A model catalog read stays inside its select: the busy trigger shows the

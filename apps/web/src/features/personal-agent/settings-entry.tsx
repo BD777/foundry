@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type {
+  AssistantSummary,
   ExternalProviderApp,
   PersonalAgentSettings,
 } from "@bd777/foundry-protocol";
-import { getExternalAccounts } from "../../api";
+import { getExternalAccounts, listAssistants } from "../../api";
 import { Button } from "../../components/ui/button";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { SelectMenu } from "../../components/ui/select-menu";
+import {
+  SelectMenu,
+  type SelectMenuOption,
+} from "../../components/ui/select-menu";
 import type { InterfaceMode } from "../../lib/assistant-settings-sections";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import {
@@ -41,25 +45,78 @@ function useFeishuApps(): ExternalProviderApp[] {
   return apps;
 }
 
+/** The assistant that reserves each explicitly bound Feishu app. */
+function useFeishuAppOwners(): Map<string, AssistantSummary> {
+  const [owners, setOwners] = useState<Map<string, AssistantSummary>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    let current = true;
+    listAssistants().then(
+      (view) => {
+        if (!current) return;
+        setOwners(
+          new Map(
+            view.assistants.flatMap((assistant) =>
+              assistant.feishuAppId
+                ? [[assistant.feishuAppId, assistant] as const]
+                : [],
+            ),
+          ),
+        );
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+  return owners;
+}
+
 /** Where the person meets the assistant and when it may speak up. */
 export function EntrySection({
+  assistantId,
   draft,
   change,
 }: {
+  assistantId?: string;
   draft: PersonalAgentSettings;
   change: ChangeSettings;
 }) {
   const { t } = useTranslation("personalAgent");
   const apps = useFeishuApps();
-  const appOptions = [
+  const owners = useFeishuAppOwners();
+  const appOptions: SelectMenuOption[] = [
     { value: "", label: t("settings.entry.feishuAppDefault") },
-    ...apps.map((app) => ({ value: app.id, label: app.appName || app.label })),
+    ...apps.map((app) => {
+      const owner = owners.get(app.id);
+      const ownedByOther =
+        owner !== undefined &&
+        (assistantId ? owner.id !== assistantId : !owner.isDefault);
+      const occupied = ownedByOther && draft.feishuAppId !== app.id;
+      const ownerName =
+        owner?.name || t("settings.entry.feishuDefaultAssistant");
+      return {
+        value: app.id,
+        label: app.appName || app.label,
+        disabled: occupied,
+        detail: occupied
+          ? t("settings.entry.feishuAppUsedBy", { assistant: ownerName })
+          : undefined,
+      };
+    }),
   ];
   if (
     draft.feishuAppId &&
     !appOptions.some((option) => option.value === draft.feishuAppId)
   )
-    appOptions.push({ value: draft.feishuAppId, label: draft.feishuAppId });
+    appOptions.push({
+      value: draft.feishuAppId,
+      label: draft.feishuAppId,
+      disabled: false,
+      detail: undefined,
+    });
   return (
     <>
       <SettingsGroup>

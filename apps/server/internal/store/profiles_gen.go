@@ -6,6 +6,30 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for ExecutionModelChoiceProviderKind.
+const (
+	ExecutionModelChoiceProviderKindAPI          ExecutionModelChoiceProviderKind = "api"
+	ExecutionModelChoiceProviderKindDiscovered   ExecutionModelChoiceProviderKind = "discovered"
+	ExecutionModelChoiceProviderKindEnvironment  ExecutionModelChoiceProviderKind = "environment"
+	ExecutionModelChoiceProviderKindSubscription ExecutionModelChoiceProviderKind = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the ExecutionModelChoiceProviderKind enum.
+func (e ExecutionModelChoiceProviderKind) Valid() bool {
+	switch e {
+	case ExecutionModelChoiceProviderKindAPI:
+		return true
+	case ExecutionModelChoiceProviderKindDiscovered:
+		return true
+	case ExecutionModelChoiceProviderKindEnvironment:
+		return true
+	case ExecutionModelChoiceProviderKindSubscription:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExecutionModelDefaultProviderKind.
 const (
 	ExecutionModelDefaultProviderKindAPI          ExecutionModelDefaultProviderKind = "api"
@@ -24,54 +48,6 @@ func (e ExecutionModelDefaultProviderKind) Valid() bool {
 	case ExecutionModelDefaultProviderKindEnvironment:
 		return true
 	case ExecutionModelDefaultProviderKindSubscription:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ModelPoolProviderKind.
-const (
-	ModelPoolProviderKindAPI          ModelPoolProviderKind = "api"
-	ModelPoolProviderKindDiscovered   ModelPoolProviderKind = "discovered"
-	ModelPoolProviderKindEnvironment  ModelPoolProviderKind = "environment"
-	ModelPoolProviderKindSubscription ModelPoolProviderKind = "subscription"
-)
-
-// Valid indicates whether the value is a known member of the ModelPoolProviderKind enum.
-func (e ModelPoolProviderKind) Valid() bool {
-	switch e {
-	case ModelPoolProviderKindAPI:
-		return true
-	case ModelPoolProviderKindDiscovered:
-		return true
-	case ModelPoolProviderKindEnvironment:
-		return true
-	case ModelPoolProviderKindSubscription:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ModelPoolInputProviderKind.
-const (
-	ModelPoolInputProviderKindAPI          ModelPoolInputProviderKind = "api"
-	ModelPoolInputProviderKindDiscovered   ModelPoolInputProviderKind = "discovered"
-	ModelPoolInputProviderKindEnvironment  ModelPoolInputProviderKind = "environment"
-	ModelPoolInputProviderKindSubscription ModelPoolInputProviderKind = "subscription"
-)
-
-// Valid indicates whether the value is a known member of the ModelPoolInputProviderKind enum.
-func (e ModelPoolInputProviderKind) Valid() bool {
-	switch e {
-	case ModelPoolInputProviderKindAPI:
-		return true
-	case ModelPoolInputProviderKindDiscovered:
-		return true
-	case ModelPoolInputProviderKindEnvironment:
-		return true
-	case ModelPoolInputProviderKindSubscription:
 		return true
 	default:
 		return false
@@ -126,6 +102,30 @@ func (e NativeSignInStatus) Valid() bool {
 	case NativeSignInStatusFailed:
 		return true
 	case NativeSignInStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkerGroupMemberProviderKind.
+const (
+	WorkerGroupMemberProviderKindAPI          WorkerGroupMemberProviderKind = "api"
+	WorkerGroupMemberProviderKindDiscovered   WorkerGroupMemberProviderKind = "discovered"
+	WorkerGroupMemberProviderKindEnvironment  WorkerGroupMemberProviderKind = "environment"
+	WorkerGroupMemberProviderKindSubscription WorkerGroupMemberProviderKind = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the WorkerGroupMemberProviderKind enum.
+func (e WorkerGroupMemberProviderKind) Valid() bool {
+	switch e {
+	case WorkerGroupMemberProviderKindAPI:
+		return true
+	case WorkerGroupMemberProviderKindDiscovered:
+		return true
+	case WorkerGroupMemberProviderKindEnvironment:
+		return true
+	case WorkerGroupMemberProviderKindSubscription:
 		return true
 	default:
 		return false
@@ -343,31 +343,56 @@ type ExecutionDefaultScope = string
 type ExecutionDefaultsView struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 
-	// Saved The model a person's orchestrator uses for delegated execution when a child names no model.
+	// Saved The model a person's orchestrator uses for delegated execution when a child names no model, either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`), never both. With a group, a worker takes one member available on its device and that member's own effort; scope `none` has neither. Alternatives are the other models and groups the orchestrator may choose from when the default's guide says this step is not a good fit.
 	Saved *ExecutionModelDefault `json:"saved,omitempty"`
 
-	// Effective The model a person's orchestrator uses for delegated execution when a child names no model.
+	// Effective The model a person's orchestrator uses for delegated execution when a child names no model, either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`), never both. With a group, a worker takes one member available on its device and that member's own effort; scope `none` has neither. Alternatives are the other models and groups the orchestrator may choose from when the default's guide says this step is not a good fit.
 	Effective ExecutionModelDefault `json:"effective"`
 }
 
-// ExecutionModelDefault The model a person's orchestrator uses for delegated execution when a child names no model.
-type ExecutionModelDefault struct {
-	ProviderKind ExecutionModelDefaultProviderKind `json:"providerKind,omitempty"`
-	ProviderID   string                            `json:"providerId"`
+// ExecutionModelChoice One model or worker group the person's orchestrator may use, never both. With a group, a worker takes one member available on its device and that member's own effort.
+type ExecutionModelChoice struct {
+	// ID Stable identifier for choosing this alternative when dispatching a worker.
+	ID           string                           `json:"id,omitempty"`
+	ProviderKind ExecutionModelChoiceProviderKind `json:"providerKind,omitempty"`
+	ProviderID   string                           `json:"providerId,omitempty"`
 
 	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
-	Runtime NativeRuntimeID `json:"runtime"`
+	Runtime NativeRuntimeID `json:"runtime,omitempty"`
 	Model   string          `json:"model,omitempty"`
 
-	// ModelPoolID When set, a new session allocates one member from this group.
-	ModelPoolID string `json:"modelPoolId,omitempty"`
+	// WorkerGroupID When set, a new session takes one member of this worker group.
+	WorkerGroupID string `json:"workerGroupId,omitempty"`
 
-	// Pool The saved group, resolved when the default is read.
-	Pool      *ModelPool            `json:"pool,omitempty"`
-	Effort    string                `json:"effort,omitempty"`
-	Scope     ExecutionDefaultScope `json:"scope"`
-	UpdatedBy string                `json:"updatedBy,omitempty"`
-	UpdatedAt string                `json:"updatedAt,omitempty"`
+	// Group The saved worker group, resolved when this choice is read.
+	Group  *WorkerGroup `json:"group,omitempty"`
+	Effort string       `json:"effort,omitempty"`
+}
+
+// ExecutionModelChoiceProviderKind defines model for ExecutionModelChoice.ProviderKind.
+type ExecutionModelChoiceProviderKind string
+
+// ExecutionModelDefault The model a person's orchestrator uses for delegated execution when a child names no model, either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`), never both. With a group, a worker takes one member available on its device and that member's own effort; scope `none` has neither. Alternatives are the other models and groups the orchestrator may choose from when the default's guide says this step is not a good fit.
+type ExecutionModelDefault struct {
+	ProviderKind ExecutionModelDefaultProviderKind `json:"providerKind,omitempty"`
+	ProviderID   string                            `json:"providerId,omitempty"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime NativeRuntimeID `json:"runtime,omitempty"`
+	Model   string          `json:"model,omitempty"`
+
+	// WorkerGroupID When set, a new session takes one member of this worker group.
+	WorkerGroupID string `json:"workerGroupId,omitempty"`
+
+	// Group The saved worker group, resolved when the default is read.
+	Group  *WorkerGroup `json:"group,omitempty"`
+	Effort string       `json:"effort,omitempty"`
+
+	// Alternatives Other models or worker groups the orchestrator may use.
+	Alternatives []ExecutionModelChoice `json:"alternatives"`
+	Scope        ExecutionDefaultScope  `json:"scope"`
+	UpdatedBy    string                 `json:"updatedBy,omitempty"`
+	UpdatedAt    string                 `json:"updatedAt,omitempty"`
 }
 
 // ExecutionModelDefaultProviderKind defines model for ExecutionModelDefault.ProviderKind.
@@ -390,84 +415,6 @@ type ExternalConnectionSetupInfo struct {
 
 // ExternalConnectionSignIn How the installer signs the person in to the gateway.
 type ExternalConnectionSignIn = string
-
-// ModelNote ModelNote is one observation an orchestrator recorded about a specific model.
-type ModelNote struct {
-	ID           string `json:"id"`
-	ProviderKind string `json:"providerKind"`
-	ProviderID   string `json:"providerId"`
-
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
-	Runtime NativeRuntimeID `json:"runtime"`
-	Model   string          `json:"model"`
-
-	// Body What the orchestrator learned about handing work to this model.
-	Body         string `json:"body"`
-	AuthorUserID string `json:"authorUserId"`
-	AuthorName   string `json:"authorName"`
-
-	// AuthorSessionID The agent session that appended the note; absent for a person.
-	AuthorSessionID string `json:"authorSessionId,omitempty"`
-	CreatedAt       string `json:"createdAt"`
-	UpdatedAt       string `json:"updatedAt,omitempty"`
-}
-
-// ModelNoteInput ModelNoteInput appends one note to a provider's model.
-type ModelNoteInput struct {
-	ProviderKind string `json:"providerKind"`
-	ProviderID   string `json:"providerId"`
-
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
-	Runtime NativeRuntimeID `json:"runtime"`
-	Model   string          `json:"model"`
-	Body    string          `json:"body"`
-}
-
-// ModelNotePage One page of model notes, newest first.
-type ModelNotePage struct {
-	Total      int                       `json:"total"`
-	Offset     int                       `json:"offset"`
-	NextOffset int                       `json:"nextOffset,omitempty"`
-	Notes      jsonempty.List[ModelNote] `json:"notes"`
-}
-
-// ModelPool A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model.
-type ModelPool struct {
-	ID           string                `json:"id"`
-	ProviderKind ModelPoolProviderKind `json:"providerKind"`
-	ProviderID   string                `json:"providerId"`
-
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
-	Runtime   NativeRuntimeID                 `json:"runtime"`
-	Label     string                          `json:"label"`
-	Members   jsonempty.List[ModelPoolMember] `json:"members"`
-	CreatedAt string                          `json:"createdAt"`
-	UpdatedAt string                          `json:"updatedAt"`
-}
-
-// ModelPoolProviderKind defines model for ModelPool.ProviderKind.
-type ModelPoolProviderKind string
-
-// ModelPoolInput Create or replace one equivalent-model group.
-type ModelPoolInput struct {
-	ProviderKind ModelPoolInputProviderKind `json:"providerKind"`
-	ProviderID   string                     `json:"providerId"`
-
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
-	Runtime NativeRuntimeID                 `json:"runtime"`
-	Label   string                          `json:"label"`
-	Members jsonempty.List[ModelPoolMember] `json:"members"`
-}
-
-// ModelPoolInputProviderKind defines model for ModelPoolInput.ProviderKind.
-type ModelPoolInputProviderKind string
-
-// ModelPoolMember One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight.
-type ModelPoolMember struct {
-	Model           string `json:"model"`
-	TokensPerMinute int64  `json:"tokensPerMinute,omitempty"`
-	Weight          int    `json:"weight,omitempty"`
-}
 
 // NativeAccountHold NativeAccountHold is Foundry's durable block, not an online health claim.
 type NativeAccountHold struct {
@@ -705,6 +652,37 @@ type ProviderStatus = string
 // configuration on that machine; `server` means the control plane's sealed
 // secret store and the key is dispatched per run.
 type SecretPlacement = string
+
+// WorkerGroup A person's named group of models that workers can be assigned from. Members may come from different providers and runtimes. A new worker takes one member available on its device and keeps it for the whole session.
+type WorkerGroup struct {
+	ID        string                            `json:"id"`
+	Label     string                            `json:"label"`
+	Members   jsonempty.List[WorkerGroupMember] `json:"members"`
+	CreatedAt string                            `json:"createdAt"`
+	UpdatedAt string                            `json:"updatedAt"`
+}
+
+// WorkerGroupInput Create or replace one worker group.
+type WorkerGroupInput struct {
+	Label   string                            `json:"label"`
+	Members jsonempty.List[WorkerGroupMember] `json:"members"`
+}
+
+// WorkerGroupMember One model of a worker group, on one provider. `tokensPerMinute` is that model's independently metered quota; without it, allocation uses the optional weight. `effort` is the effort a worker started on this member runs with; without it the runtime's default applies.
+type WorkerGroupMember struct {
+	ProviderKind WorkerGroupMemberProviderKind `json:"providerKind"`
+	ProviderID   string                        `json:"providerId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime         NativeRuntimeID `json:"runtime"`
+	Model           string          `json:"model"`
+	Effort          string          `json:"effort,omitempty"`
+	TokensPerMinute int64           `json:"tokensPerMinute,omitempty"`
+	Weight          int             `json:"weight,omitempty"`
+}
+
+// WorkerGroupMemberProviderKind defines model for WorkerGroupMember.ProviderKind.
+type WorkerGroupMemberProviderKind string
 
 // WorkerRuntimeID defines model for WorkerRuntimeId.
 type WorkerRuntimeID = string

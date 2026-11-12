@@ -19,6 +19,7 @@ import {
   WorkspaceFormActions,
 } from "./workspace-form";
 import { WorkspacePathPicker } from "./workspace-path-picker";
+import { deviceConnection } from "../../lib/device-connection";
 import {
   folderPathForSubmit,
   parentFolderInput,
@@ -56,7 +57,7 @@ export function WorkspaceLocateDialog({
   const [error, setError] = useState("");
   const pending = useRef(false);
   const field = useRef<HTMLInputElement>(null);
-  const offline = device.status !== "connected";
+  const offline = deviceConnection(device) !== "online";
 
   useEffect(() => {
     if (offline) return;

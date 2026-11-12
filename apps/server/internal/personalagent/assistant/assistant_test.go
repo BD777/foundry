@@ -29,14 +29,18 @@ func TestMaintenanceResultRejectsWritesOutsideReviewedContract(t *testing.T) {
 }
 
 func TestAssistantRefusalsKeepTheirStatus(t *testing.T) {
-	settings := "https://foundry.example/assistant/settings"
+	service := Service{origin: "https://foundry.example"}
+	settings := service.settingsURL(store.PersonalAgent{ID: "asst_work"})
+	if settings != "https://foundry.example/assistants/asst_work/settings" {
+		t.Fatalf("settings link = %q", settings)
+	}
 	if err := notAllowed(store.PersonalAgentActionArchive, settings); refusalStatus(err) != http.StatusUnprocessableEntity || !strings.Contains(err.Error(), settings) {
 		t.Fatalf("not allowed answers %d: %v", refusalStatus(err), err)
 	}
 	// The link the assistant passes on is a full one: a Feishu chat cannot
 	// open a path of the web app.
 	limit := limitRefusal(&personalagent.LimitError{Limit: "dailyWorkspaces", Max: 3}, settings)
-	if kind := refusalKind(limit); kind != store.PersonalAgentRefusalLimit || !strings.Contains(limit.Error(), "("+settings+")") {
+	if kind := refusalKind(limit); kind != store.PersonalAgentRefusalLimit || !strings.Contains(limit.Error(), "/assistants/asst_work/settings") {
 		t.Fatalf("a limit is refused as %s: %v", kind, limit)
 	}
 }

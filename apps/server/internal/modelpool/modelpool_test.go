@@ -39,18 +39,6 @@ func TestChooseUsesWeightedRoundRobinWithoutQuota(t *testing.T) {
 	}
 }
 
-func TestNextAvoidsTheFailedModel(t *testing.T) {
-	pool := Pool{Members: []Member{{Model: "a"}, {Model: "b"}}}
-	got, ok := Next(pool, "a", nil, 0)
-	if !ok || got.Model != "b" {
-		t.Fatalf("Next = %+v, %v; want b", got, ok)
-	}
-	single := Pool{Members: []Member{{Model: "a"}}}
-	if got, ok = Next(single, "a", nil, 0); !ok || got.Model != "a" {
-		t.Fatalf("single-member Next = %+v, %v; want same member", got, ok)
-	}
-}
-
 func TestBackoffIsExponentialCappedAndJittered(t *testing.T) {
 	cases := []struct {
 		attempt int

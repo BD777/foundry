@@ -90,7 +90,10 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   Never put a secret value in `fields` or another argument.
 - To enable a connector package on the person's devices, use
   `connector_packages` with action set_devices; deviceIds replaces the
-  selection, while addDevices and removeDevices change it incrementally.
+  selection, while addDevices and removeDevices change it incrementally. It
+  returns at once with each changed device pending; the install runs in the
+  background, so use `get` to follow each device's state (installing,
+  installed, or failed with the reason).
 - When a connector probe or request reports that edge access is required,
   manage the address credential with `edge_access`: list, create, replace,
   delete or provision. Create needs Cloudflare Access service-token secrets

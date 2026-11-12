@@ -190,11 +190,11 @@ login_path='if command -v bash >/dev/null 2>&1; then p=$(bash -lc '"'"'printf %s
 # job <name> <timeout seconds> <shell line>: runs a line in the background on the device
 # (stopped if the lease ends), printing its output as it comes; answers its exit status.
 job() {
-  local out="remote-check/$1.log" status="remote-check/$1.status" offset=0 count exit_code file
+  local out="remote-check/$1.log" status="remote-check/$1.status" pidfile="remote-check/$1.pid" offset=0 count exit_code file alive
   # The line runs in a subshell, so its own exit still records the status. It
   # gets the login shell's PATH first: compute runs commands with a minimal PATH,
   # and a device's pnpm and go often live only on its login PATH (~/.local/bin).
-  file="$(LINE="$3" OUT="$out" STATUS="$status" SETUP="$login_path" args '{command: `rm -f "$JOB_OUT" "$JOB_STATUS"; nohup sh -c '"'"'(eval "$JOB_SETUP"; eval "$JOB_LINE"); echo $? > "$JOB_STATUS"'"'"' > "$JOB_OUT" 2>&1 < /dev/null &`, env: {JOB_SETUP: process.env.SETUP, JOB_LINE: process.env.LINE, JOB_OUT: process.env.OUT, JOB_STATUS: process.env.STATUS}, timeoutSec: 60}')"
+  file="$(LINE="$3" OUT="$out" STATUS="$status" PIDFILE="$pidfile" SETUP="$login_path" args '{command: `rm -f "$JOB_OUT" "$JOB_STATUS" "$JOB_PID"; nohup sh -c '"'"'(eval "$JOB_SETUP"; eval "$JOB_LINE"); echo $? > "$JOB_STATUS"'"'"' > "$JOB_OUT" 2>&1 < /dev/null & echo $! > "$JOB_PID"`, env: {JOB_SETUP: process.env.SETUP, JOB_LINE: process.env.LINE, JOB_OUT: process.env.OUT, JOB_STATUS: process.env.STATUS, JOB_PID: process.env.PIDFILE}, timeoutSec: 60}')"
   operate "$file" run >/dev/null
   local deadline=$(($(date +%s) + $2))
   while :; do
@@ -205,6 +205,14 @@ job() {
     if [ -n "$exit_code" ]; then
       more_output "$out" "$offset" >/dev/null # written since the last read
       return "$exit_code"
+    fi
+    # No status and no process: the device killed the job (its worker restarted,
+    # or its lease ended) rather than the job finishing. Say so, do not wait out the deadline.
+    alive="$(run_shell 30 "kill -0 \$(cat $pidfile 2>/dev/null) 2>/dev/null && echo yes || echo no" 2>/dev/null || echo unknown)"
+    if [ "$alive" = no ] && [ -z "$(run_shell 30 "cat $status 2>/dev/null || true" 2>/dev/null)" ]; then
+      more_output "$out" "$offset" >/dev/null
+      log "$1 was stopped on the device before it finished (its worker restarted, or the lease ended)"
+      return 125
     fi
     [ "$(date +%s)" -lt "$deadline" ] || { log "$1 ran past ${2}s"; return 124; }
     sleep 5
@@ -270,7 +278,12 @@ deps='cd repo && want="$(cat pnpm-lock.yaml apps/server/go.sum 2>/dev/null | (sh
 if [ "$(cat .git/remote-check-deps 2>/dev/null)" != "$want" ]; then
   pnpm install --frozen-lockfile && (cd apps/server && go mod download) && echo "$want" > .git/remote-check-deps
 fi && pnpm --filter @bd777/foundry-protocol build'
-job deps 1800 "$deps" || die "installing dependencies failed (output above)"
+job deps 1800 "$deps" && deps_status=0 || deps_status=$?
+if [ "$deps_status" -eq 125 ]; then
+  log "starting deps again"
+  job deps 1800 "$deps" && deps_status=0 || deps_status=$?
+fi
+[ "$deps_status" -eq 0 ] || die "installing dependencies failed (output above)"
 
 # Prefer Homebrew bash, but use the device's own bash (3.2 on macOS) as the fallback.
 quoted=""
@@ -283,5 +296,10 @@ done; bash scripts/check-changed.sh $quoted"
 set +e
 job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$check_line"
 status=$?
+if [ "$status" -eq 125 ]; then
+  log "starting the check again"
+  job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$check_line"
+  status=$?
+fi
 set -e
 exit $status

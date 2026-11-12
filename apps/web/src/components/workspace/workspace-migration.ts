@@ -5,6 +5,7 @@ import type {
   WorkspaceMigrationSummary,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
+import { deviceConnection } from "../../lib/device-connection";
 import { i18n } from "../../i18n";
 import { formatBytes } from "../../lib/format";
 
@@ -216,7 +217,7 @@ export function moveTargetDenial(
 ): "current" | "notOwned" | "offline" | undefined {
   if (device.id === sourceDeviceId) return "current";
   if (!device.owned) return "notOwned";
-  if (device.status !== "connected") return "offline";
+  if (deviceConnection(device) !== "online") return "offline";
   return undefined;
 }
 

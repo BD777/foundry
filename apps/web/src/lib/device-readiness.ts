@@ -6,6 +6,7 @@ import type {
   ProfileDefinition,
   ProviderHealth,
 } from "@bd777/foundry-protocol";
+import { deviceConnection } from "./device-connection";
 
 export type AgentRuntime = "claude" | "codex";
 export const agentRuntimes: readonly AgentRuntime[] = ["claude", "codex"];
@@ -176,7 +177,7 @@ export function deviceReadiness({
   profiles?: Pick<ProfileDefinition, "id" | "runtime" | "authMode">[];
   installs?: ReadonlyMap<string, RuntimeInstallActivity>;
 }): DeviceReadiness {
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
   const assignedRuntimes = bindings
     .filter((row) => row.enabled && row.deviceId === device.id)
     .flatMap((row) => {
@@ -278,7 +279,7 @@ export function disconnectCause(
 export function offlineSince(
   device: Pick<DeviceProjection, "status" | "lastSeenAt" | "lastDisconnect">,
 ): string | undefined {
-  if (device.status === "connected") return undefined;
+  if (deviceConnection(device) !== "offline") return undefined;
   return device.lastDisconnect?.at ?? device.lastSeenAt;
 }
 

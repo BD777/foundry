@@ -23,6 +23,7 @@ export interface UseAppRouteSyncInput {
   onPopState: (route: AppRoute, workspaceId: string) => void;
   chatView?: "active" | "archived";
   selectedChatId: string;
+  selectedAssistantId?: string;
   selectedIssueId: string;
   selectedDeviceId?: string;
   deviceSection?: AppRoute["deviceSection"];
@@ -46,6 +47,7 @@ export function useAppRouteSync({
   activeWorkspaceId,
   onPopState,
   selectedChatId,
+  selectedAssistantId,
   chatView,
   selectedIssueId,
   selectedDeviceId,
@@ -113,8 +115,17 @@ export function useAppRouteSync({
                 : activeView === "profiles"
                   ? { view: "profiles", providerTab }
                   : activeView === "assistantSettings"
-                    ? { view: "assistantSettings", assistantSection }
-                    : { view: activeView };
+                    ? {
+                        view: "assistantSettings",
+                        assistantId: selectedAssistantId,
+                        assistantSection,
+                      }
+                    : activeView === "assistant"
+                      ? {
+                          view: "assistant",
+                          assistantId: selectedAssistantId,
+                        }
+                      : { view: activeView };
     const nextPath = pathForAppRoute(nextRoute);
     const nextUrl = `${nextPath}${searchWithWorkspace(activeWorkspaceId)}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -132,6 +143,7 @@ export function useAppRouteSync({
     activeView,
     activeWorkspaceId,
     selectedChatId,
+    selectedAssistantId,
     chatView,
     selectedIssueId,
     selectedDeviceId,

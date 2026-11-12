@@ -51,6 +51,8 @@ type DaemonHub struct {
 	// onDeviceRunner receives a worker's news of its session runner.
 	onDeviceRunner func(c *daemonConnection, deviceID string, runner store.DeviceRunner)
 	connections    map[string]*daemonConnection
+	// reconnects keeps the grace window after each device connection ended.
+	reconnects map[string]*deviceReconnect
 	// claims keeps when each device last claimed each session it runs
 	// (session_claims.go).
 	claims *sessionClaims
@@ -107,6 +109,7 @@ func NewDaemonHub(store Backend, notifiers daemonNotifiers, allowedOrigin string
 	return &DaemonHub{
 		daemonNotifiers: notifiers,
 		connections:     make(map[string]*daemonConnection),
+		reconnects:      make(map[string]*deviceReconnect),
 		claims:          newSessionClaims(time.Now()),
 		live:            make(map[*daemonConnection]struct{}),
 		work:            newWorkGroup(nil),
@@ -360,6 +363,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		}
 		return err
 	}
+	c.hub.connectionResuming(registration.Device.ID)
 	c.hub.sections.keep(registration.Device.ID, registration)
 	if changes.DeletedWorkspace != "" {
 		// The person deleted this workspace from the device; the device
@@ -421,6 +425,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		c.closePermanent(wsDeviceRemovedCloseCode, wsDeviceRemovedReason)
 		return store.ErrDeviceRemoved
 	}
+	c.hub.connectionEstablished(deviceID)
 	if c.hub.onEvidenceConnected != nil && registration.Workspace.ID != "" {
 		c.hub.work.Go(func() {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -467,7 +472,6 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	if current != connection {
 		return
 	}
-	h.resourcesOffline(deviceID)
 
 	connection.registrationMu.Lock()
 	registrations := make([]store.DaemonRegistration, 0, len(connection.registrations))
@@ -483,28 +487,7 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 		deviceOnly = connection.registration.Workspace.ID == ""
 	}
 	connection.registrationMu.Unlock()
-	if len(registrations) == 0 || deviceOnly {
-		// Its disconnect record (lastDisconnect) is news too, and no device
-		// event reaches a workspace-less device's viewers.
-		defer h.dataChanges.changed("", fieldDevices)
-	}
-	if len(registrations) == 0 {
-		return
-	}
-	for _, registration := range registrations {
-		registration.Device.Status = "disconnected"
-		registration.Device.LastSeenLabel = "offline"
-		if _, err := h.registerDaemon(context.Background(), registration); err == nil {
-			h.devices.registrationChanged(registration)
-		} else {
-			// A removed device is expected to fail the offline upsert;
-			// its connection was dropped on purpose, so this is not worth a
-			// log line on every teardown.
-			if !errors.Is(err, store.ErrDeviceRemoved) {
-				log.Printf("daemon websocket offline update failed for %s: %v", deviceID, err)
-			}
-		}
-	}
+	h.startDeviceReconnect(deviceID, registrations, deviceOnly)
 }
 
 // logWorkerStalls writes the event-loop stalls a worker reported: a stall

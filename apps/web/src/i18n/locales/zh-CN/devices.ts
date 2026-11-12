@@ -144,6 +144,7 @@ export const devices: Translation<typeof en> = {
   },
   status: {
     online: "在线",
+    reconnecting: "重连中…",
     offline: "离线",
   },
   detail: {
@@ -155,6 +156,7 @@ export const devices: Translation<typeof en> = {
     sharedNote: "共享设备 · 查看这台设备不会切换你的工作区。",
     offline:
       "这台设备已离线。已保存的工作区和历史仍可查看；登录和执行需要设备重新连接。",
+    reconnecting: "这台设备正在重连，通常几秒内恢复；恢复前无法登录或执行。",
     sections: "设备分区",
     workspacesLink_one: "{{count}} 个工作区",
     workspacesLink_other: "{{count}} 个工作区",

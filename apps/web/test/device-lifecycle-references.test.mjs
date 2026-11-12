@@ -56,11 +56,23 @@ const settings = {
   devices: [{ deviceId: "gone", allowWork: true, allowCreate: true }],
   preferredDeviceId: "gone",
 };
-globalThis.fetch = async () =>
-  new Response("[]", {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+const permissionPackage = {
+  id: "perm_default",
+  owner: "usr_1",
+  workspaces: { scope: "all", include: [], exclude: [] },
+  connectorAccounts: [],
+  identityResources: { scope: "all", allowed: [] },
+};
+globalThis.fetch = async (input) =>
+  new Response(
+    JSON.stringify(
+      String(input).endsWith("/permission-package") ? permissionPackage : [],
+    ),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 
 test("owned candidates retain offline identities, excluding shared", () => {
   assert.deepEqual(
@@ -79,9 +91,12 @@ test("unlisted permissions have no checkbox or management link; current invalid 
       createElement(PlacesSection, {
         draft: settings,
         change: () => {},
-        owned: devices.filter((d) => d.owned),
+        devices,
+        assistants: [],
+        workspaces: [],
         homeDeviceId: "online",
         onOpenComputer: (id) => opened.push(id),
+        onNotice: () => {},
       }),
     ),
   );

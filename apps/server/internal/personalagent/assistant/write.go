@@ -113,7 +113,7 @@ func (s *Service) RunTool(ctx context.Context, scope Scope, tool string, args ma
 // limit; denied, proposed or applied as the policy says; audited in
 // pa_actions whatever happens.
 func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args map[string]json.RawMessage, plan Planner) (any, error) {
-	record := store.PersonalAgentActionRecord{UserID: scope.Agent.UserID, SessionID: scope.SessionID, Tool: tool}
+	record := store.PersonalAgentActionRecord{UserID: scope.Agent.UserID, AssistantID: scope.Agent.ID, SessionID: scope.SessionID, Tool: tool}
 	var spec []byte
 	refused := func(err error) (any, error) {
 		record.Outcome, record.Refusal, record.Error = store.PersonalAgentOutcomeRefused, refusalKind(err), err.Error()
@@ -140,7 +140,7 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 	for _, step := range write.Decisions {
 		if step.Decision == store.PersonalAgentDeny {
 			record.Decision = store.PersonalAgentDeny
-			return refused(notAllowed(step.Action, s.settingsURL()))
+			return refused(notAllowed(step.Action, s.settingsURL(scope.Agent)))
 		}
 		decision = personalagent.Strictest(cmp.Or(decision, store.PersonalAgentAuto), step.Decision)
 		if step.Decision == store.PersonalAgentAsk && askKind == "" {
@@ -176,7 +176,7 @@ func (s *Service) proposeWrite(ctx context.Context, scope Scope, record store.Pe
 		summary = personalagent.RenameSummary(language, write.Subject, write.RenameTo)
 	}
 	proposal, err := s.store.CreatePersonalAgentProposal(ctx, store.PersonalAgentProposal{
-		UserID: scope.Agent.UserID, SessionID: scope.SessionID, Kind: kind, WorkspaceID: write.WorkspaceID,
+		UserID: scope.Agent.UserID, AssistantID: scope.Agent.ID, SessionID: scope.SessionID, Kind: kind, WorkspaceID: write.WorkspaceID,
 		Spec: spec, Summary: summary,
 		ExpiresAt: formatPATime(time.Now().Add(personalagent.ProposalTTL)),
 	})
@@ -199,7 +199,7 @@ func (s *Service) supersedeProposals(ctx context.Context, proposal store.Persona
 	if proposal.WorkspaceID == "" {
 		return
 	}
-	pending, err := s.store.ListPersonalAgentProposals(ctx, proposal.UserID, []string{store.PersonalAgentProposalPending})
+	pending, err := s.store.ListPersonalAgentProposals(ctx, proposal.AssistantID, []string{store.PersonalAgentProposalPending})
 	if err != nil {
 		log.Printf("personal agent %s: list proposals to supersede: %v", proposal.UserID, err)
 		return
@@ -208,7 +208,7 @@ func (s *Service) supersedeProposals(ctx context.Context, proposal store.Persona
 		if older.ID == proposal.ID || older.Kind != proposal.Kind || older.WorkspaceID != proposal.WorkspaceID {
 			continue
 		}
-		expired, err := s.store.SetPersonalAgentProposalStatus(ctx, proposal.UserID, older.ID,
+		expired, err := s.store.SetPersonalAgentProposalStatus(ctx, proposal.AssistantID, older.ID,
 			[]string{store.PersonalAgentProposalPending}, store.PersonalAgentProposalExpired, "superseded", "")
 		if err != nil {
 			continue
@@ -220,7 +220,7 @@ func (s *Service) supersedeProposals(ctx context.Context, proposal store.Persona
 // applyProposal applies an accepted proposal's spec as the person's
 // assistant, re-checking what may have changed since (ownership, limits).
 func (s *Service) applyProposal(ctx context.Context, proposal store.PersonalAgentProposal) (any, error) {
-	agent, err := s.store.GetPersonalAgent(ctx, proposal.UserID)
+	agent, err := s.store.GetAssistant(ctx, proposal.AssistantID)
 	if err != nil {
 		return nil, err
 	}

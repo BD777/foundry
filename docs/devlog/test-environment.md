@@ -69,3 +69,7 @@ DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 
 2026-11-03 DEV-107：部署后用 e2e-alice 真实浏览器在设备页移除三台离线合成设备 DEV048（`dev_1d7e8a04-…`）、DEV053（`dev_2682e76d-…`）、DEV076（`dev_faace23c-…`），其工作区与会话随之删除；e2e-alice 现只余 DEV023 合成设备（承载其助理工作区）。仓库外的 `~/.foundry/dev048-acceptance/`、`~/.foundry/dev053-proxy-acceptance/` 本地状态未删（移除设备不删本机文件）。浏览器为临时上下文，密码仅由脚本从文件读取、未输出。
 
 2026-11-08 DEV-147：复用 e2e-alice（密码只由脚本从仓库外文件读入登录表单，未输出；headless Chromium 独立上下文，验后登出）。只打开其既有会话 `sess_1794014494961809154`，在浏览器内替换 `GET /api/agent-session-threads/…` 的事件为两轮合成空答；未写库、未发消息、未运行模型。用户本人会话 `sess_1793699947780564649` 只读读取 Server DB 事件；byte-dev 上的 Codex rollout 经本人允许用 compute lease 只读 grep（未放代码、未构建），lease 已释放。
+
+2026-11-12 DEV-189：复用 e2e-alice 做 Web 真实浏览器截图（headless Chromium，独立会话，验后登出、清 cookie、关闭浏览器并删除临时目录）。为核对登录请求的 Origin 头，`agent-browser network requests` 意外带出了登录请求体；随即用 `foundry-server users reset-password --password-stdin` 轮换 e2e-alice 密码并让旧会话失效，新密码只写入 0600 的仓库外 `~/.foundry/server/e2e-alice.password`，未输出。重新登录后确认 `/api/auth/login` 为 200 且请求含 `Origin: https://dev.foundryapp.app`；设备页只拦截 `GET /api/foundry-data` 渲染一台重连、一台离线设备，未写服务器数据。
+
+2026-11-12 DEV-191 executor：复用 e2e-alice（密码只由 agent-browser 从仓库外文件读入 auth vault，未输出；验收后删除 vault、登出并关闭浏览器）。只打开助理设置的“用哪个模型”页：先确认无 executor 覆盖时显示“沿用工作区或全局”，再通过同源 API 临时写入一个合成覆盖并刷新确认 UI 显示 `Codex Local / gpt-6.1-terra`，最后用页面“改回沿用工作区或全局”与共享保存按钮清除并回读确认 `executionModels` 已不存在。另在 390×844、深色模式下确认按钮和说明文字均在视口内且页面无横向溢出。没有发消息、运行模型、修改工作区或其他助理设置。

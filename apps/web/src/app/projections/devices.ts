@@ -3,6 +3,7 @@ import type {
   DeviceStatusChangedPayload,
 } from "@bd777/foundry-protocol";
 import type { FoundryData, FoundryDataField } from "../../api-types";
+import { deviceConnection } from "../../lib/device-connection";
 import { carriedData } from "../../stream/carried-data";
 import {
   eachPayload,
@@ -102,10 +103,11 @@ function applyDeviceStatus(
     devices: data.devices.map((device) => {
       if (device.id !== deviceId) return device;
       if (!streamed) {
+        const connection = deviceConnection({ status });
         return {
           ...device,
           status,
-          lastSeenLabel: status === "connected" ? "online" : "offline",
+          lastSeenLabel: connection,
         };
       }
       return withViewerOwnFields(streamed, device);

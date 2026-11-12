@@ -274,7 +274,7 @@ export interface PreparedConnectors {
  * Sets up what run_session carried for the session's connectors (the
  * server alone decides which sessions get any: connectors.takesConnectors);
  * call the release when the session's run ends, whatever the outcome, or
- * once the agent's own work it left running ends (holdUntilNativeWorkEnds).
+ * once the agent process it left running exits (holdWhileAgentRuns).
  * A newer run of the session takes over its profiles, variables and tool
  * folder; an older run's release then leaves them.
  */

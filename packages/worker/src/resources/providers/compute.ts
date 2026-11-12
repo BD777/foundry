@@ -110,6 +110,7 @@ export function createComputeProvider(
     platforms: ["darwin", "linux", "win32"],
     maxDeadlineMs: maxComputeDeadlineMs,
     idleCloseMs: 0,
+    survivesDisconnect: true,
     async open(_key, lease) {
       if (!settings().allowRemoteCommands) throw remoteCommandsOff();
       const session = new ComputeSession(context, lease, settings, () =>

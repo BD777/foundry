@@ -1,3 +1,4 @@
+import { i18n } from "../i18n";
 import type { FoundryData } from "../api-types";
 import { runtimeMeta } from "../components/agent-runtime/runtime-mark";
 
@@ -12,7 +13,11 @@ export function workspaceComposerSkills(data: FoundryData) {
       value: skill.name,
       label: skill.name,
       description: skill.description,
-      tag: (skill as { draft?: boolean }).draft ? "Draft" : undefined,
+      tag: skill.package
+        ? i18n.t("ui:slashMenu.packageTag", { name: skill.package })
+        : (skill as { draft?: boolean }).draft
+          ? "Draft"
+          : undefined,
     })),
     byAgent: Object.fromEntries(
       data.providerHealth

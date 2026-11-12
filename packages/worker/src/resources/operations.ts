@@ -26,13 +26,22 @@ import { SerialQueue } from "../platform/serial-queue.js";
 export const defaultDeadlineMs = 30_000;
 export const maxDeadlineMs = 120_000;
 export const sessionIdleMs = 5 * 60_000;
+/**
+ * How long a session of a provider that survives a disconnect stays open
+ * without the server link. The server keeps a device's leases through
+ * its own grace (two minutes); a reconnect fences stale generations anyway.
+ */
+export const disconnectGraceMs = 5 * 60_000;
 
 interface OpenSession {
+  key: string;
   backend: string;
   leaseId: string;
   generation: number;
   session: ProviderSession;
   idleTimer?: NodeJS.Timeout;
+  /** Ends the session when the server link stays away. */
+  graceTimer?: NodeJS.Timeout;
 }
 
 interface InFlight {
@@ -52,6 +61,7 @@ export interface ResourceOperationsOptions {
   providers?: ProviderRegistry;
   platform?: NodeJS.Platform;
   idleMs?: number;
+  disconnectGraceMs?: number;
   /** Shows a notice to the person at the device (macOS: a notification). */
   notify?: (message: string) => Promise<void>;
 }
@@ -61,6 +71,7 @@ export class ResourceOperations {
   private readonly providers: ProviderRegistry;
   private readonly platform: NodeJS.Platform;
   private readonly idleMs: number;
+  private readonly graceMs: number;
   private readonly notify: (message: string) => Promise<void>;
 
   constructor(options: ResourceOperationsOptions = {}) {
@@ -68,6 +79,7 @@ export class ResourceOperations {
       options.providers ?? new ProviderRegistry([createCuaDriverProvider()]);
     this.platform = options.platform ?? process.platform;
     this.idleMs = options.idleMs ?? sessionIdleMs;
+    this.graceMs = options.disconnectGraceMs ?? disconnectGraceMs;
     this.notify =
       options.notify ?? ((message) => macNotification(message, this.platform));
   }
@@ -148,8 +160,33 @@ export class ResourceOperations {
     return result;
   }
 
-  /** Aborts everything and closes every session (disconnect, shutdown). */
+  /** Aborts everything and closes every session (shutdown). */
   async closeAll(): Promise<void> {
+    await this.release(() => true);
+  }
+
+  /**
+   * The server link dropped: aborts what is in flight (no answer can reach
+   * the server) and closes every session, except those of providers that
+   * survive a disconnect, which stay open for the grace period unless their
+   * lease operates them again.
+   */
+  async suspendAll(): Promise<void> {
+    await this.release((open) => {
+      if (!this.providers.get(open.backend)?.survivesDisconnect) return true;
+      open.graceTimer ??= setTimeout(() => {
+        open.graceTimer = undefined;
+        const state = this.instances.get(open.key);
+        if (state?.current !== open) return;
+        state.current = undefined;
+        void this.end(open);
+      }, this.graceMs);
+      open.graceTimer.unref();
+      return false;
+    });
+  }
+
+  private async release(ends: (open: OpenSession) => boolean): Promise<void> {
     const ending: Promise<void>[] = [];
     for (const state of this.instances.values()) {
       for (const flight of state.inFlight)
@@ -159,8 +196,10 @@ export class ResourceOperations {
             "the worker disconnected from the server",
           ),
         );
-      if (state.current) ending.push(this.end(state.current));
-      state.current = undefined;
+      if (state.current && ends(state.current)) {
+        ending.push(this.end(state.current));
+        state.current = undefined;
+      }
     }
     await Promise.all(ending);
   }
@@ -224,6 +263,7 @@ export class ResourceOperations {
         generation: request.generation,
       });
       current = {
+        key: request.key,
         backend: request.backend,
         leaseId: request.leaseId,
         generation: request.generation,
@@ -239,6 +279,8 @@ export class ResourceOperations {
       opened = true;
     }
     if (current.idleTimer) clearTimeout(current.idleTimer);
+    if (current.graceTimer) clearTimeout(current.graceTimer);
+    current.graceTimer = undefined;
     const results: ResourceActionResult[] = [];
     for (const action of request.actions) {
       if (signal.aborted) {
@@ -272,6 +314,7 @@ export class ResourceOperations {
 
   private async end(open: OpenSession): Promise<void> {
     if (open.idleTimer) clearTimeout(open.idleTimer);
+    if (open.graceTimer) clearTimeout(open.graceTimer);
     await open.session.reset().catch(() => undefined);
     await open.session.close().catch(() => undefined);
   }

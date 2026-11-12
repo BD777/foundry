@@ -10,6 +10,7 @@ import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";
 import { LocationDescription } from "./workspace-form";
+import { deviceConnection } from "../../lib/device-connection";
 
 function Detail({ children, label }: { children: ReactNode; label: string }) {
   return (
@@ -35,7 +36,9 @@ export function WorkspaceDetails({
   const [err, setErr] = useState("");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const connected = device.status === "connected";
+  const connection = deviceConnection(device);
+  const connected = connection === "online";
+  const reconnecting = connection === "reconnecting";
   useEffect(() => {
     if (!connected) return;
     let disposed = false;
@@ -65,7 +68,11 @@ export function WorkspaceDetails({
       <dl className="m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-3.5 text-sm leading-[1.6] max-[700px]:grid-cols-[minmax(0,1fr)] max-[700px]:gap-y-1.5">
         <Detail label={t("details.device")}>
           {device.label} ·{" "}
-          {connected ? t("shared.online") : t("shared.offline")}
+          {connected
+            ? t("shared.online")
+            : reconnecting
+              ? t("shared.reconnecting")
+              : t("shared.offline")}
         </Detail>
         <Detail label={t("details.folder")}>
           <code>{workspace.localPath}</code>
@@ -97,7 +104,9 @@ export function WorkspaceDetails({
       </dl>
       {busy ? <p role="status">{t("details.inspecting")}</p> : null}
       {!connected ? (
-        <LocationDescription>{t("details.offlineNote")}</LocationDescription>
+        <LocationDescription>
+          {t(reconnecting ? "details.reconnectingNote" : "details.offlineNote")}
+        </LocationDescription>
       ) : null}
       {err ? <Alert tone="error" size="compact" title={err} /> : null}
       {inspection?.errors.map((message) => (

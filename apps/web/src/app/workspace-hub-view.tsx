@@ -46,7 +46,7 @@ export function WorkspaceHubView({
         <WorkspaceOverview
           key={data.workspace.id}
           workspace={data.workspace}
-          deviceOnline={current.deviceOnline}
+          deviceConnection={current.deviceConnection}
           deviceLabel={device?.label}
           devices={data.devices}
           workspaces={data.workspaces}

@@ -192,6 +192,18 @@ test("unknown devices show a recoverable empty state without another device's wo
   await view.cleanup();
 });
 
+test("a reconnecting device is labeled as reconnecting, not offline", async () => {
+  const view = await setup({
+    devices: [{ id: "r", label: "Reconnecting Mac", status: "reconnecting" }],
+    workspaces: [],
+    activeWorkspaceId: "",
+  });
+  assert.match(view.container.textContent, /Reconnecting Mac/);
+  assert.match(view.container.textContent, /Reconnecting…/);
+  assert.doesNotMatch(view.container.textContent, /Offline/);
+  await view.cleanup();
+});
+
 test("a device shared through a workspace is browse-only and shows the caller's role", async () => {
   const view = await setup({
     devices: [{ id: "s", label: "Alice's Mac", status: "connected" }],

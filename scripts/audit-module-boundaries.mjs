@@ -163,7 +163,7 @@ export const serverPackages = {
     "gateway",
     "permission",
   ],
-  // Pure equivalent-model choice and retry timing; callers own storage,
+  // Pure worker group member choice and retry timing; callers own storage,
   // transport and inference.
   modelpool: [],
   resources: ["store", "textcut"],

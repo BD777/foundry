@@ -51,19 +51,19 @@ func TestDeviceLifecycleReferencesAndRepair(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, vault) {
 		t.Fatalf("knowledge root changed: %+v %v", got, err)
 	}
-	if _, err = db.SavePersonalAgentSettings(ctx, original.UserID, original.Settings); !errors.Is(err, store.ErrDeviceRemoved) {
+	if _, err = db.SavePersonalAgentSettings(ctx, original.ID, original.Settings); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("stale grant accepted: %v", err)
 	}
 	saved.Settings.AssistantName = "Still editable"
-	if _, err = db.SavePersonalAgentSettings(ctx, original.UserID, saved.Settings); err != nil {
+	if _, err = db.SavePersonalAgentSettings(ctx, original.ID, saved.Settings); err != nil {
 		t.Fatalf("unchanged invalid reference blocked other preferences: %v", err)
 	}
-	if _, err = db.MovePersonalAgentHome(ctx, original.UserID, "ws_old", "dev_old"); !errors.Is(err, store.ErrDeviceRemoved) {
+	if _, err = db.MovePersonalAgentHome(ctx, original.ID, "ws_old", "dev_old"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("moved to removed: %v", err)
 	}
 	// Simulate a pre-fix row; purging again repairs it, scoped and idempotent.
 	raw, _ := json.Marshal(original.Settings)
-	if _, err = db.conn().ExecContext(ctx, `UPDATE personal_agents SET settings_json=? WHERE user_id=?`, string(raw), original.UserID); err != nil {
+	if _, err = db.conn().ExecContext(ctx, `UPDATE assistants SET settings_json=? WHERE id=?`, string(raw), original.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
@@ -133,7 +133,7 @@ func TestDeviceLifecycleLateWritesAndSameNameOffline(t *testing.T) {
 			return err
 		},
 		"snapshot": func() error {
-			_, err := db.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{ID: "late", UserID: agent.UserID, DeviceID: "dev_old", WorkspaceID: "ws_old", ConfigHash: "fixed"})
+			_, err := db.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{ID: "late", UserID: agent.UserID, AssistantID: agent.ID, DeviceID: "dev_old", WorkspaceID: "ws_old", ConfigHash: "fixed"})
 			return err
 		},
 		"service": func() error {
@@ -167,7 +167,7 @@ func TestDeviceLifecycleRemovalRacesGrantAndLease(t *testing.T) {
 				defer wg.Done()
 				<-start
 				if kind == "settings" {
-					_, write = db.SavePersonalAgentSettings(ctx, agent.UserID, agent.Settings)
+					_, write = db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings)
 				} else {
 					write = db.SaveResourceLeaseChanges(ctx, store.ResourceLeaseChanges{Leases: []store.ResourceLease{{ID: "race", ResourceID: "res", SourceID: "dev_old", State: store.LeaseActive}}})
 				}

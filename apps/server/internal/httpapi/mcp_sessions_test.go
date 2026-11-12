@@ -130,8 +130,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(append(append(personalAgentToolNames(), modelProviderToolNames()...), repositorySourceToolNames()...), "connector_instances", "connector_packages", "edge_access")...)) {
-		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider, skill source, connector package, edge access or personal credential tools", names)
+	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(append(append(personalAgentToolNames(), modelProviderToolNames()...), repositorySourceToolNames()...), "connector_instances", "connector_packages", "edge_access", "model_guides")...)) {
+		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider, skill source, connector package, edge access, model guide or personal credential tools", names)
 	}
 }
 

@@ -2,7 +2,13 @@ import { ToastFeedback } from "../../components/ui/toast";
 import { FieldHint } from "../../components/ui/field";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, OctagonX, Play, SlidersHorizontal } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChevronRight,
+  OctagonX,
+  Play,
+  SlidersHorizontal,
+} from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -36,6 +42,8 @@ import { useAssistantConversation } from "./use-assistant-conversation";
 import { Skeleton } from "../../components/ui/loading";
 
 export interface AssistantHomeProps {
+  /** The assistant this route belongs to; absent only while bootstrapping. */
+  assistantId?: string;
   /** Every computer the person can see; their own ones carry `owned`. */
   devices: DeviceProjection[];
   /** What the computers run, for the assistant's conversations. */
@@ -50,21 +58,25 @@ export interface AssistantHomeProps {
     open: number;
     items: { id: string; title: string; where: string }[];
   };
+  /** Multiple assistants: offer the list as the switch surface. */
+  showAssistantSwitcher?: boolean;
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
 /**
- * The assistant's home (/assistant): one conversation with proposals in
+ * The assistant's home (/assistants/{id}): one conversation with proposals in
  * it, what it is doing, and the stop switch. It reads the assistant's own
  * project directly and never changes the project the rest of Foundry shows.
  */
 export function AssistantHome({
+  assistantId,
   devices,
   workspaces,
   needsYou,
+  showAssistantSwitcher = false,
   onEvent,
 }: AssistantHomeProps) {
-  const assistant = useAssistant();
+  const assistant = useAssistant(assistantId);
   return (
     <AssistantGate
       assistant={assistant}
@@ -84,6 +96,7 @@ export function AssistantHome({
             }
             needsYou={needsYou}
             onEvent={onEvent}
+            showAssistantSwitcher={showAssistantSwitcher}
             workspaces={workspaces}
           />
         );
@@ -100,6 +113,7 @@ function AssistantHomeReady({
   homeOnline,
   needsYou,
   onEvent,
+  showAssistantSwitcher,
   workspaces,
 }: {
   agent: PersonalAgent;
@@ -109,10 +123,12 @@ function AssistantHomeReady({
   homeOnline: boolean;
   needsYou: AssistantHomeProps["needsYou"];
   onEvent: (event: AssistantFeatureEvent) => void;
+  showAssistantSwitcher: boolean;
   workspaces: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("personalAgent");
   const conversation = useAssistantConversation(
+    agent.id,
     agent.workspaceId,
     agent.formerWorkspaceIds,
   );
@@ -351,6 +367,15 @@ function AssistantHomeReady({
             <SlidersHorizontal aria-hidden="true" size={15} />
             {t("home.openSettings")}
           </Button>
+          {showAssistantSwitcher ? (
+            <Button
+              onClick={() => onEvent({ type: "assistants.open" })}
+              variant="ghost"
+            >
+              <ArrowLeftRight aria-hidden="true" size={15} />
+              {t("assistants.switch")}
+            </Button>
+          ) : null}
         </div>
         {switchError ? (
           <ToastFeedback tone="error" title={t("loadFailed")}>
@@ -504,6 +529,7 @@ function AssistantHomeReady({
           </section>
         ) : null}
         <PersonList
+          assistantId={agent.id}
           error={assistant.listItemsError}
           items={assistant.listItems}
           onDelete={assistant.deleteItem}

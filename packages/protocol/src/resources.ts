@@ -34,12 +34,13 @@ export type ResourcePlatform =
 /**
  * Where an instance stands as the server sees it: available (ready when last
  * seen), busy (available, and a session holds a lease on it), unready (seen,
- * but a session cannot use it yet: see the reason), offline (its source is
- * disconnected; last known values) or gone (its source's last full report no
- * longer has it).
+ * but a session cannot use it yet: see the reason), reconnecting (its source
+ * just disconnected and may return during grace), offline (its source is
+ * disconnected for good; last known values) or gone (its source's last full
+ * report no longer has it).
  */
 export type ResourceState =
-  "available" | "busy" | "unready" | "offline" | "gone";
+  "available" | "busy" | "unready" | "reconnecting" | "offline" | "gone";
 
 /**
  * How far a resource is set up. A detector reports the level it actually

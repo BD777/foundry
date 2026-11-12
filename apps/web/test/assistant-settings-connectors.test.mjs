@@ -229,7 +229,10 @@ test("choosing read for a device-held account explains that writes are not isola
 
 test("saving sends every account's three-state level as the full replacement payload", async () => {
   calls = [];
-  await setPersonalAgentConnectors(connectorLevels(initialConnectors));
+  await setPersonalAgentConnectors(
+    undefined,
+    connectorLevels(initialConnectors),
+  );
   assert.deepEqual(
     calls.filter((call) => call.method === "PUT").map((call) => call.body),
     [

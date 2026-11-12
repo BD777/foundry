@@ -5,16 +5,30 @@
 // tools. Times are RFC 3339 strings.
 
 import type { WorkspaceAccessRole, WorkspaceKind } from "./workspace.js";
+import type { ExecutionModelDefault } from "./profiles.js";
+import type { MemoryLayerScope } from "./contract.gen.js";
 
 export type {
+  AddMemoryEntryInput,
+  AssistantList,
+  AssistantMemoryLayers,
+  AssistantSummary,
   ConnectorAccessLevel,
   ConnectorAccountPermission,
-  PermissionDeviceResources,
+  CreateAssistantInput,
+  MemoryEntryMove,
+  MemoryLayer,
+  MemoryLayerEntry,
+  MemoryLayerScope,
+  MoveMemoryEntryInput,
+  PermissionIdentityResources,
   PermissionListRule,
+  PermissionListScope,
   PermissionPackage,
   PersonalAgentConnector,
   PersonalAgentConnectorsView,
   SetPersonalAgentConnectorLevelsInput,
+  UpdateAssistantInput,
 } from "./contract.gen.js";
 
 /** "stopped": the stop switch was pressed; nothing runs until resumed. */
@@ -67,6 +81,13 @@ export type PersonalAgentDelegateModel = "same_as_assistant" | "device_default";
 
 /** A person's assistant (table personal_agents). */
 export interface PersonalAgent {
+  /** The assistant id (asst_…); a person may have several (DEV-191). */
+  id: string;
+  /** Its label in lists; empty means the language's default name. */
+  name: string;
+  /** The person's default assistant: the one /api/personal-agent answers. */
+  isDefault: boolean;
+  /** The owner. */
   userId: string;
   /** The person's Personal Agent Workspace (kind personal_agent). */
   workspaceId: string;
@@ -100,6 +121,11 @@ export interface PersonalAgentSettings {
     string,
     import("./personal-agent-runtime.js").PersonalAgentRunPreference
   >;
+  /**
+   * This assistant's helper override. Absent: follow the target workspace's
+   * execution model, then the global one.
+   */
+  executionModels?: PersonalAgentExecutionModels;
   /** Empty: "助理" or "Assistant", by language. */
   assistantName: string;
   /** A BCP 47 tag; empty: the account's language. */
@@ -144,6 +170,18 @@ export interface PersonalAgentSettings {
   urgentAnytime: boolean;
   limits: PersonalAgentLimits;
 }
+
+/** The default and alternatives a coordinator may choose for this assistant's helpers. */
+export type PersonalAgentExecutionModels = Pick<
+  ExecutionModelDefault,
+  | "providerKind"
+  | "providerId"
+  | "runtime"
+  | "model"
+  | "workerGroupId"
+  | "effort"
+  | "alternatives"
+>;
 
 /** What the assistant may do on one of the person's devices. */
 export interface PersonalAgentDeviceSettings {
@@ -236,6 +274,8 @@ export interface PersonalAgentMemoryItem {
   updatedAt: string;
   /** When the person last confirmed it, or wrote it. */
   verifiedAt?: string;
+  /** The memory layer a recalled fact is in; absent on a legacy record. */
+  scope?: MemoryLayerScope;
 }
 
 /** remember's op. */

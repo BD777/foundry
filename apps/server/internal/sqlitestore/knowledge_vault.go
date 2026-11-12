@@ -6,13 +6,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func (s *Store) setupKnowledge(ctx context.Context) error {
+	if _, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS knowledge_vaults(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',scope TEXT NOT NULL DEFAULT '',kind TEXT NOT NULL,workspace_id TEXT NOT NULL,device_id TEXT NOT NULL,root_path TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(device_id,workspace_id,root_path))`); err != nil {
+		return err
+	}
+	for _, column := range []string{"assistant_id", "scope"} {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE knowledge_vaults ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate knowledge_vaults %s: %w", column, err)
+		}
+	}
 	for _, q := range []string{
-		`CREATE TABLE IF NOT EXISTS knowledge_vaults(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,kind TEXT NOT NULL,workspace_id TEXT NOT NULL,device_id TEXT NOT NULL,root_path TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(device_id,workspace_id,root_path))`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_primary ON knowledge_vaults(user_id) WHERE kind='memory'`,
+		// DEV-191 P2: the one memory vault a person had (keyed by person, then
+		// backfilled to their default assistant by A1) becomes their person
+		// layer. Rows written since carry their scope, so this runs once.
+		`UPDATE knowledge_vaults SET scope='person',assistant_id='' WHERE kind='memory' AND scope=''`,
+		`DROP INDEX IF EXISTS idx_knowledge_primary`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_memory_layer ON knowledge_vaults(user_id,scope,assistant_id) WHERE kind='memory'`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_vaults_assistant ON knowledge_vaults(assistant_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_domain ON knowledge_vaults(user_id,workspace_id) WHERE kind='domain'`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, q); err != nil {
@@ -23,8 +38,8 @@ func (s *Store) setupKnowledge(ctx context.Context) error {
 }
 func scanKnowledgeVault(row interface{ Scan(...any) error }) (store.KnowledgeVault, error) {
 	var v store.KnowledgeVault
-	var raw string
-	err := row.Scan(&v.UserID, &raw)
+	var raw, assistantID, scope string
+	err := row.Scan(&v.UserID, &assistantID, &scope, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, store.ErrNotFound
 	}
@@ -32,14 +47,27 @@ func scanKnowledgeVault(row interface{ Scan(...any) error }) (store.KnowledgeVau
 		return v, err
 	}
 	err = json.Unmarshal([]byte(raw), &v)
+	// The columns own the layer: payloads written before P2 have none.
+	v.AssistantID, v.Scope = assistantID, scope
 	return v, err
 }
+
+const knowledgeVaultColumns = `user_id,assistant_id,scope,payload_json`
+
 func (s *Store) GetKnowledgeVault(ctx context.Context, user, id string) (store.KnowledgeVault, error) {
-	return scanKnowledgeVault(s.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM knowledge_vaults WHERE user_id=? AND id=?`, user, id))
+	return scanKnowledgeVault(s.reader().QueryRowContext(ctx, `SELECT `+knowledgeVaultColumns+` FROM knowledge_vaults WHERE user_id=? AND id=?`, user, id))
 }
 func (s *Store) CreateKnowledgeVault(ctx context.Context, v store.KnowledgeVault) (store.KnowledgeVault, error) {
 	if v.ID == "" || v.UserID == "" || v.WorkspaceID == "" || v.DeviceID == "" || v.RootPath == "" || (v.Kind != "memory" && v.Kind != "domain") {
 		return v, fmt.Errorf("incomplete knowledge location")
+	}
+	switch {
+	case v.Kind == "domain":
+		v.AssistantID, v.Scope = "", ""
+	case v.AssistantID == "":
+		v.Scope = store.MemoryScopePerson
+	default:
+		v.Scope = store.MemoryScopeAssistant
 	}
 	var saved store.KnowledgeVault
 	err := s.withTx(ctx, func(tx *Store) error {
@@ -48,7 +76,7 @@ func (s *Store) CreateKnowledgeVault(ctx context.Context, v store.KnowledgeVault
 		}
 		old, err := tx.GetKnowledgeVault(ctx, v.UserID, v.ID)
 		if err == nil {
-			if old.Kind != v.Kind || old.WorkspaceID != v.WorkspaceID || old.DeviceID != v.DeviceID || old.RootPath != v.RootPath {
+			if old.Kind != v.Kind || old.AssistantID != v.AssistantID || old.WorkspaceID != v.WorkspaceID || old.DeviceID != v.DeviceID || old.RootPath != v.RootPath {
 				return store.ErrIdempotencyConflict
 			}
 			saved = old
@@ -63,7 +91,7 @@ func (s *Store) CreateKnowledgeVault(ctx context.Context, v store.KnowledgeVault
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO knowledge_vaults(id,user_id,kind,workspace_id,device_id,root_path,revision,state,payload_json) VALUES(?,?,?,?,?,?,?,?,?)`, v.ID, v.UserID, v.Kind, v.WorkspaceID, v.DeviceID, v.RootPath, v.Revision, v.State, string(raw))
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO knowledge_vaults(id,user_id,assistant_id,scope,kind,workspace_id,device_id,root_path,revision,state,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, v.ID, v.UserID, v.AssistantID, v.Scope, v.Kind, v.WorkspaceID, v.DeviceID, v.RootPath, v.Revision, v.State, string(raw))
 		saved = v
 		return err
 	})
@@ -102,7 +130,7 @@ func (s *Store) SaveKnowledgeVault(ctx context.Context, v store.KnowledgeVault) 
 	return saved, err
 }
 func (s *Store) queryKnowledgeVaults(ctx context.Context, where string, args ...any) ([]store.KnowledgeVault, error) {
-	rows, err := s.reader().QueryContext(ctx, `SELECT user_id,payload_json FROM knowledge_vaults WHERE `+where, args...)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+knowledgeVaultColumns+` FROM knowledge_vaults WHERE `+where, args...)
 	if err != nil {
 		return nil, err
 	}

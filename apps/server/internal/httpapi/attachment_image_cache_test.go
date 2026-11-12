@@ -165,3 +165,35 @@ func TestFileChunkPipelineOverlapsAndPreservesOrder(t *testing.T) {
 		}
 	}
 }
+
+// A workspace registered through a linked home (/home/u -> /data/u) while the
+// agent names the real path: the device, which resolves links, decides.
+func TestAttachmentImageThroughLinkedWorkspacePath(t *testing.T) {
+	f := newIsolationFixture(t)
+	live := httptest.NewServer(f.handler)
+	defer live.Close()
+	data := append([]byte{0x89, 'P', 'N', 'G', 13, 10, 26, 10}, bytes.Repeat([]byte{7}, 2000)...)
+	connectFakeDevice(t, live, f.aliceDevice, map[string]any{"capabilities": []string{"attachment_image_v2"}, "device": map[string]any{"id": "dev_alice", "status": "connected"}, "workspace": map[string]any{"id": "ws_alice", "localPath": "/home/u/w", "name": "W"}}, map[string]fakeAnswer{wsAttachmentReadType: func(raw json.RawMessage) (string, any) {
+		var r wsAttachmentReadPayload
+		_ = json.Unmarshal(raw, &r)
+		switch r.Path {
+		case "/data/u/w/.foundry/attachments/image.png":
+			end := min(r.Offset+65536, int64(len(data)))
+			return wsAttachmentChunkReadType, map[string]any{"size": len(data), "mimeType": "image/png", "realPath": r.Path, "revision": "r1", "dataBase64": base64.StdEncoding.EncodeToString(data[min(r.Offset, end):end])}
+		case "/data/u/w/.foundry/attachments/gone.png":
+			return wsAttachmentChunkReadType, map[string]any{"error": "image not found", "code": "not_found"}
+		default:
+			return wsAttachmentChunkReadType, map[string]any{"error": "image is outside the workspace's attachments", "code": "invalid_path"}
+		}
+	}})
+	get := func(path string) *httptest.ResponseRecorder {
+		return doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/local-files/image?path="+url.QueryEscape(path), ""))
+	}
+	found := get("/data/u/w/.foundry/attachments/image.png")
+	expectStatus(t, found, http.StatusOK, "image named by its real path")
+	if !bytes.Equal(found.Body.Bytes(), data) {
+		t.Fatal("wrong image bytes")
+	}
+	expectStatus(t, get("/data/u/w/.foundry/attachments/gone.png"), http.StatusNotFound, "deleted image")
+	expectStatus(t, get("/etc/passwd.png"), http.StatusForbidden, "outside every workspace")
+}

@@ -7,6 +7,7 @@ import type {
 import { Tooltip } from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/cn";
+import { deviceConnection } from "../../lib/device-connection";
 
 const entryClass =
   "grid h-auto w-full grid-cols-[18px_minmax(0,1fr)_14px] items-center justify-start gap-2.5 rounded-sm px-3 py-1.5 text-left text-sm font-semibold text-ink hover:bg-control-ghost-hover aria-expanded:bg-control-ghost-hover focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-accent)]";
@@ -33,8 +34,13 @@ export function CompactLocationSwitcher({
   const { t } = useTranslation("workspaces");
   const workspaceLabel = workspace?.name ?? t("location.selectWorkspace");
   const deviceLabel = device?.label;
+  const connection = deviceConnection(device);
   const status =
-    device && device.status !== "connected" ? t("shared.offline") : undefined;
+    connection === "reconnecting"
+      ? t("shared.reconnecting")
+      : connection === "offline"
+        ? t("shared.offline")
+        : undefined;
   const context = [workspaceLabel, deviceLabel, status]
     .filter(Boolean)
     .join(" · ");

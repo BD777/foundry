@@ -48,8 +48,8 @@ func connectFakeDevice(t *testing.T, live *httptest.Server, credential string, h
 	}
 	t.Cleanup(func() { conn.Close() })
 	writeWSForTest(t, conn, "hello", hello)
-	readWSTypeForTest(t, conn, "registered")
 	device := &fakeDevice{conn: conn}
+	registered := make(chan struct{}, 1)
 	go func() {
 		for {
 			var envelope struct {
@@ -59,6 +59,13 @@ func connectFakeDevice(t *testing.T, live *httptest.Server, credential string, h
 			}
 			if conn.ReadJSON(&envelope) != nil {
 				return
+			}
+			if envelope.Type == wsRegisteredType {
+				select {
+				case registered <- struct{}{}:
+				default:
+				}
+				continue
 			}
 			device.mu.Lock()
 			device.requests = append(device.requests, fakeDeviceRequest{envelope.Type, envelope.Payload})
@@ -73,6 +80,11 @@ func connectFakeDevice(t *testing.T, live *httptest.Server, credential string, h
 			}
 		}
 	}()
+	select {
+	case <-registered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon never registered")
+	}
 	return device
 }
 

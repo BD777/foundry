@@ -87,7 +87,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	agent, _ := f.server.store.GetPersonalAgent(ctx, f.aliceID)
 	helper := f.startSession(t, "ws_alice", conversation.ID, "review the draft")
 	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper)
-	tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, f.aliceID, nil)
+	tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, agent.ID, nil)
 	if linked, text, failed := update("update", map[string]any{"id": talk.ID, "taskId": tasks[0].ID}); failed || linked.TaskID != tasks[0].ID {
 		t.Fatalf("linking its own task needs no quote: %s", text)
 	}
@@ -111,7 +111,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	}
 
 	// Stopped, the assistant changes nothing.
-	if _, err := f.server.store.SetPersonalAgentState(ctx, f.aliceID, store.PersonalAgentStopped); err != nil {
+	if _, err := f.server.store.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped); err != nil {
 		t.Fatal(err)
 	}
 	if _, text, failed := update("update", map[string]any{"id": talk.ID, "status": "done", "quote": "下午要去给大家捋一下"}); !failed {
@@ -125,8 +125,9 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 func TestThePersonEditsTheirList(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	later := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "Reply on WeChat", When: "after work", At: later, Remind: true})
+	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Reply on WeChat", When: "after work", At: later, Remind: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +172,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	ctx := context.Background()
 	agent, _ := f.db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.Language = "en"
-	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
@@ -207,7 +208,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 		return stored.Input.Prompt
 	}
 	due := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
-	item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "Reply on WeChat", When: "after work", At: due, Remind: true})
+	item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Reply on WeChat", When: "after work", At: due, Remind: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +226,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	// The digest: on, in its window; once a day.
 	agent, _ = f.db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.DailyDigest, agent.Settings.DailyDigestTime = true, time.Now().UTC().Add(-time.Minute).Format("15:04")
-	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.server.assistant.SendDigests(ctx, time.Now()); err != nil {
@@ -240,15 +241,15 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	quiet()
 
 	// Stopped: the reminder waits, unsent.
-	if _, err := f.db.SetPersonalAgentState(ctx, f.aliceID, store.PersonalAgentStopped); err != nil {
+	if _, err := f.db.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped); err != nil {
 		t.Fatal(err)
 	}
-	stoppedItem, _ := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "Check Maimai", At: due, Remind: true})
+	stoppedItem, _ := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Check Maimai", At: due, Remind: true})
 	if err := f.server.assistant.SendReminders(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	quiet()
-	if kept, _ := f.db.GetPersonalAgentItem(ctx, f.aliceID, stoppedItem.ID); kept.RemindedAt != "" {
+	if kept, _ := f.db.GetPersonalAgentItem(ctx, agent.ID, stoppedItem.ID); kept.RemindedAt != "" {
 		t.Fatalf("a stopped assistant's reminder went out: %+v", kept)
 	}
 }

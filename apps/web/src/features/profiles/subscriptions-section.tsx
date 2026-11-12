@@ -22,6 +22,11 @@ import {
   NativeSignInDialog,
   type NativeSignInTarget,
 } from "./native-sign-in-dialog";
+import {
+  executionSources,
+  sourceModels,
+} from "../../components/workspace/execution-sources";
+import { ModelGuideTags } from "./model-guide-tag";
 import { subscriptionName } from "./subscription-text";
 
 /**
@@ -120,6 +125,26 @@ export function SubscriptionsSection({
                       }
                     />
                   ))}
+                </div>
+              ) : null}
+              {open ? (
+                <div className="border-t border-line px-3.5 py-2">
+                  <ModelGuideTags
+                    targets={executionSources(profiles, serverProfiles)
+                      .filter(
+                        (source) =>
+                          source.providerKind === "subscription" &&
+                          source.runtime === runtime,
+                      )
+                      .flatMap((source) =>
+                        sourceModels(source).map((model) => ({
+                          providerKind: source.providerKind,
+                          providerId: source.providerId,
+                          runtime: source.runtime,
+                          model,
+                        })),
+                      )}
+                  />
                 </div>
               ) : null}
             </SectionPanel>

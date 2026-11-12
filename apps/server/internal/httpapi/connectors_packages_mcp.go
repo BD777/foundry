@@ -27,19 +27,34 @@ type connectorPackageMCPDevice struct {
 	Name     string `json:"name"`
 	Online   bool   `json:"online"`
 	Selected bool   `json:"selected"`
+	// State is pending, installing, installed or failed (Error says why);
+	// empty when the device has no part in the package.
+	State    string `json:"state,omitempty"`
+	Error    string `json:"error,omitempty"`
 	Eligible bool   `json:"eligible"`
 	Reason   string `json:"reason,omitempty"`
+	// ReasonCode is no_instance when a server-held connector has no Ready
+	// instance usable on this device; Instances are the ones that are.
+	ReasonCode string                              `json:"reasonCode,omitempty"`
+	Instances  []store.ConnectorPackageInstanceRef `json:"instances,omitempty"`
 }
 
 type connectorPackageMCPSummary struct {
-	Kind             string                      `json:"kind"`
-	Label            string                      `json:"label"`
-	Repository       string                      `json:"repository"`
-	Enabled          bool                        `json:"enabled"`
+	Kind       string `json:"kind"`
+	Label      string `json:"label"`
+	Repository string `json:"repository"`
+	Enabled    bool   `json:"enabled"`
+	// EnabledDevices are the devices where the package is installed; Applying
+	// says a selection is still being applied in the background (see each
+	// device's state).
 	EnabledDevices   []string                    `json:"enabledDevices"`
+	Applying         bool                        `json:"applying"`
 	ExtensionVersion string                      `json:"extensionVersion,omitempty"`
 	ToolVersion      string                      `json:"toolVersion,omitempty"`
 	Devices          []connectorPackageMCPDevice `json:"devices"`
+	// Instances are a server-held connector's Ready instances and the
+	// devices (ids) whose sessions can use each.
+	Instances []store.ConnectorPackageInstance `json:"instances,omitempty"`
 }
 
 type connectorPackageMCPList struct {
@@ -156,6 +171,7 @@ func (s *Server) connectorPackageMCPSummary(
 		Enabled:        view.Enabled,
 		EnabledDevices: []string{},
 		Devices:        make([]connectorPackageMCPDevice, 0, len(view.Devices)),
+		Instances:      view.Instances,
 	}
 	if descriptor.Package != nil {
 		summary.Repository = descriptor.Package.Upstream.Repository
@@ -178,15 +194,22 @@ func (s *Server) connectorPackageMCPSummary(
 			reason = "The person's assistant permission package does not allow this connector on this device."
 		}
 		summary.Devices = append(summary.Devices, connectorPackageMCPDevice{
-			DeviceID: device.DeviceID,
-			Name:     device.Name,
-			Online:   device.Online,
-			Selected: device.Selected,
-			Eligible: eligible,
-			Reason:   reason,
+			DeviceID:   device.DeviceID,
+			Name:       device.Name,
+			Online:     device.Online,
+			Selected:   device.Selected,
+			State:      string(device.State),
+			Error:      device.Error,
+			Eligible:   eligible,
+			Reason:     reason,
+			ReasonCode: string(device.ReasonCode),
+			Instances:  device.Instances,
 		})
-		if device.Selected {
+		switch device.State {
+		case store.ConnectorPackageDeviceStateInstalled:
 			summary.EnabledDevices = append(summary.EnabledDevices, device.DeviceID)
+		case store.ConnectorPackageDeviceStatePending, store.ConnectorPackageDeviceStateInstalling:
+			summary.Applying = true
 		}
 	}
 	return summary, nil
@@ -280,7 +303,7 @@ func (s *Server) connectorPackagesForMCP(call mcpCall) (text string, resultErr e
 		if currentErr != nil && !errors.Is(currentErr, store.ErrNotFound) {
 			return "", currentErr
 		}
-		wanted, err := connectorPackageDesiredDeviceIDs(current.Devices, call.args)
+		wanted, err := connectorPackageDesiredDeviceIDs(current.Selected, call.args)
 		if err != nil {
 			return "", err
 		}
@@ -318,14 +341,11 @@ func (s *Server) connectorPackagesForMCP(call mcpCall) (text string, resultErr e
 		} else if descriptorErr != nil {
 			return "", descriptorErr
 		}
-		if err := s.disableConnectorPackageDevices(call.r.Context(), caller.ownerID, descriptor, current.Devices); err != nil {
+		removed, err := s.removeConnectorPackage(call.r.Context(), caller.ownerID, descriptor)
+		if err != nil {
 			return "", err
 		}
-		if err := s.store.DeleteConnectorPackage(call.r.Context(), caller.ownerID, kind); err != nil && !errors.Is(err, store.ErrNotFound) {
-			return "", err
-		}
-		s.projectionsChanged("", fieldConnectorPackages)
-		text, err := encodeJSON(map[string]any{"kind": kind, "disabled": true, "devices": current.Devices})
+		text, err := encodeJSON(map[string]any{"kind": kind, "disabled": true, "devices": removed})
 		return text, err
 	default:
 		return "", &statusError{http.StatusBadRequest, errors.New("action must be list, get, set_devices or disable")}

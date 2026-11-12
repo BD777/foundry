@@ -16,7 +16,9 @@ import {
   useWorkspaceChoiceRedirect,
 } from "./app/use-app-location";
 import { useAppRouteSync } from "./app/use-app-route-sync";
+import { useAssistantRouteResolution } from "./app/use-assistant-route-resolution";
 import { useAssistantShell } from "./app/use-assistant-shell";
+import { useAssistants } from "./app/use-assistants";
 import { useChatView } from "./app/use-chat-view";
 import { useCurrentWorkspace } from "./app/use-current-workspace";
 import { useDocumentTitle } from "./app/use-document-title";
@@ -31,6 +33,8 @@ import { needsWorkspaceChoice } from "./app/workspace-selectors";
 export function App() {
   const { t } = useTranslation("shell");
   const location = useAppLocation();
+  const { directory: assistants, reload: reloadAssistants } = useAssistants();
+  useAssistantRouteResolution(location, assistants);
   const { activeView, selectedChatId, selectedDeviceId, selectedIssueId } =
     location;
   const [, setNotice] = useTransientNotice();
@@ -52,7 +56,10 @@ export function App() {
     workspaceData,
   );
 
-  const assistantShell = useAssistantShell(location);
+  const assistantShell = useAssistantShell(
+    location,
+    location.selectedAssistantId,
+  );
   const {
     connectorTab,
     setConnectorTab,
@@ -73,6 +80,7 @@ export function App() {
       }
     },
     selectedChatId,
+    selectedAssistantId: location.selectedAssistantId,
     selectedIssueId,
     selectedDeviceId,
     deviceSection: location.deviceSection,
@@ -116,6 +124,7 @@ export function App() {
     >
       <AppSidebar
         activeView={activeView}
+        assistantCount={assistants.assistants.length}
         interfaceMode={assistantShell.interfaceMode}
         counts={{
           review: current.reviewCount,
@@ -149,6 +158,7 @@ export function App() {
               selectedChatId,
               selectedIssueId,
               selectedDeviceId,
+              selectedAssistantId: location.selectedAssistantId,
               view: activeView,
               workspaceId: data.workspace.id,
             })}
@@ -157,6 +167,8 @@ export function App() {
             <ActiveView
               {...viewContext}
               assistantSection={assistantSection}
+              assistants={assistants}
+              onAssistantsReload={reloadAssistants}
               onAssistantSectionChange={setAssistantSection}
               onInterfaceModeChange={assistantShell.setInterfaceMode}
               chatView={chatView}

@@ -19,6 +19,7 @@ type memoryStore struct {
 	bindings   []store.DeviceConnectorBinding
 	workspaces map[string]store.WorkspaceProjection
 	assistants map[string]store.PersonalAgent
+	helpers    map[string]store.PersonalAgent
 	packages   map[string]store.PermissionPackage
 	sessions   map[string]store.AgentSession
 	// extensions: what each device's extensions provide; "*" for every device.
@@ -133,9 +134,21 @@ func (m *memoryStore) GetWorkspace(_ context.Context, workspaceID string) (store
 	return store.WorkspaceProjection{ID: workspaceID, Kind: store.WorkspaceKindProject}, nil
 }
 
-func (m *memoryStore) PersonalAgentForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
+func (m *memoryStore) AssistantForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
 	if agent, ok := m.assistants[workspaceID]; ok {
 		return agent, nil
+	}
+	return store.PersonalAgent{}, store.ErrNotFound
+}
+
+func (m *memoryStore) AssistantForSession(_ context.Context, sessionID string) (store.PersonalAgent, error) {
+	if agent, ok := m.helpers[sessionID]; ok {
+		return agent, nil
+	}
+	if session, ok := m.sessions[sessionID]; ok {
+		if agent, ok := m.assistants[session.WorkspaceID]; ok {
+			return agent, nil
+		}
 	}
 	return store.PersonalAgent{}, store.ErrNotFound
 }
@@ -550,6 +563,49 @@ func TestPersonalAgentDeviceConnectorLevelIsolatesTheLogin(t *testing.T) {
 	st.packages[pkg.ID] = pkg
 	if use := github(); use == nil || use.Access != "none" {
 		t.Fatalf("disabled assistant login: %+v", use)
+	}
+}
+
+// DEV-191 P0: a helper the assistant started inherits the package's off.
+func TestAssistantHelperDeviceConnectorOffIsolatesTheLogin(t *testing.T) {
+	st := newMemoryStore()
+	pkg := permission.DefaultPackage("owner", "pp_owner")
+	st.packages[pkg.ID] = pkg
+	agent := store.PersonalAgent{ID: "asst_work", UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev", PermissionPackageID: pkg.ID}
+	st.helpers = map[string]store.PersonalAgent{"helper": agent}
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "github", Status: store.DeviceConnectorReady, Installed: true, SignedIn: true, Identity: "BD777"}); err != nil {
+		t.Fatal(err)
+	}
+	helper := store.AgentSession{ID: "helper", WorkspaceID: "ws_project", DeviceID: "dev", CreatedByUserID: "owner", Source: store.SessionSourceAgent}
+	ordinary := helper
+	ordinary.ID = "ordinary"
+	st.sessions[helper.ID], st.sessions[ordinary.ID] = helper, ordinary
+	github := func(session store.AgentSession) string {
+		uses, err := devices.SessionUses(ctx, session, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, use := range uses {
+			if use.Kind == "github" {
+				return use.Access
+			}
+		}
+		return ""
+	}
+	if got := github(helper); got != "device_login" {
+		t.Fatalf("helper with the login allowed = %q", got)
+	}
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{
+		{AccountID: externalaccounts.DeviceAccountID("dev", "github"), Level: store.ConnectorAccessLevelOff},
+	}
+	st.packages[pkg.ID] = pkg
+	if got := github(helper); got != "none" {
+		t.Fatalf("helper with the login off = %q", got)
+	}
+	if got := github(ordinary); got != "device_login" {
+		t.Fatalf("an ordinary session followed the assistant's package: %q", got)
 	}
 }
 

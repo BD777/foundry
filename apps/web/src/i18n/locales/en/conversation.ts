@@ -14,6 +14,8 @@ export const conversation = {
     offline: "The device is offline. Reconnect it, then retry.",
     slow: "The device took too long to send the image. Try again.",
     missing: "Original image deleted",
+    outside:
+      "This image is outside the workspace attachments, so it cannot be shown.",
     removed:
       "This screenshot was removed: a chat keeps its newest 200 screenshots (50 MB).",
     unavailable:

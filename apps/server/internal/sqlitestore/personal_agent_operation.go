@@ -12,8 +12,11 @@ import (
 
 func (s *Store) setupPersonalAgentOperations(ctx context.Context) error {
 	for _, q := range []string{
-		`CREATE TABLE IF NOT EXISTS pa_operations(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,item_id TEXT NOT NULL,intent_revision INTEGER NOT NULL,step_key TEXT NOT NULL,input_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL,revision INTEGER NOT NULL,lease_until TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,request_hash TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,item_id,intent_revision,step_key))`,
+		`CREATE TABLE IF NOT EXISTS pa_operations(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',item_id TEXT NOT NULL,intent_revision INTEGER NOT NULL,step_key TEXT NOT NULL,input_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL,revision INTEGER NOT NULL,lease_until TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,request_hash TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,item_id,intent_revision,step_key))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_operations_due ON pa_operations(status,lease_until,created_at)`,
+		// AssistantForSession finds the assistant of a session a dispatched
+		// step started on every gateway request: index that lookup.
+		`CREATE INDEX IF NOT EXISTS idx_pa_operations_session ON pa_operations(json_extract(payload_json, '$.sessionId'))`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, q); err != nil {
 			return err
@@ -25,7 +28,7 @@ func (s *Store) setupPersonalAgentOperations(ctx context.Context) error {
 func scanPAOperation(row interface{ Scan(...any) error }) (store.PersonalAgentOperation, error) {
 	var op store.PersonalAgentOperation
 	var raw string
-	err := row.Scan(&raw, &op.UserID, &op.Status, &op.Revision, &op.LeaseUntil, &op.CreatedAt, &op.UpdatedAt, &op.RequestHash)
+	err := row.Scan(&raw, &op.UserID, &op.AssistantID, &op.Status, &op.Revision, &op.LeaseUntil, &op.CreatedAt, &op.UpdatedAt, &op.RequestHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return op, store.ErrNotFound
 	}
@@ -37,18 +40,18 @@ func scanPAOperation(row interface{ Scan(...any) error }) (store.PersonalAgentOp
 	return op, err
 }
 
-const paOperationColumns = `payload_json,user_id,status,revision,lease_until,created_at,updated_at,request_hash`
+const paOperationColumns = `payload_json,user_id,assistant_id,status,revision,lease_until,created_at,updated_at,request_hash`
 
-func (s *Store) GetPersonalAgentOperation(ctx context.Context, user, id string) (store.PersonalAgentOperation, error) {
-	return scanPAOperation(s.reader().QueryRowContext(ctx, `SELECT `+paOperationColumns+` FROM pa_operations WHERE user_id=? AND id=?`, user, id))
+func (s *Store) GetPersonalAgentOperation(ctx context.Context, assistantID, id string) (store.PersonalAgentOperation, error) {
+	return scanPAOperation(s.reader().QueryRowContext(ctx, `SELECT `+paOperationColumns+` FROM pa_operations WHERE assistant_id=? AND id=?`, assistantID, id))
 }
 func (s *Store) CapturePersonalAgentOperation(ctx context.Context, op store.PersonalAgentOperation) (store.PersonalAgentOperation, error) {
-	if op.ID == "" || op.UserID == "" || op.InputID == "" || op.RequestHash == "" || op.StepKey == "" || op.Prompt == "" || op.WorkspaceID == "" || op.SourceSessionID == "" {
+	if op.ID == "" || op.UserID == "" || op.AssistantID == "" || op.InputID == "" || op.RequestHash == "" || op.StepKey == "" || op.Prompt == "" || op.WorkspaceID == "" || op.SourceSessionID == "" {
 		return op, fmt.Errorf("incomplete operation")
 	}
 	var result store.PersonalAgentOperation
 	err := s.withTx(ctx, func(tx *Store) error {
-		previous, err := tx.GetPersonalAgentOperation(ctx, op.UserID, op.ID)
+		previous, err := tx.GetPersonalAgentOperation(ctx, op.AssistantID, op.ID)
 		if err == nil {
 			if previous.RequestHash != op.RequestHash {
 				return store.ErrIdempotencyConflict
@@ -59,14 +62,14 @@ func (s *Store) CapturePersonalAgentOperation(ctx context.Context, op store.Pers
 		if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		if agent, e := tx.GetPersonalAgent(ctx, op.UserID); e == nil && agent.State == store.PersonalAgentStopped {
+		if agent, e := tx.GetAssistant(ctx, op.AssistantID); e == nil && agent.State == store.PersonalAgentStopped {
 			return fmt.Errorf("assistant dispatch is paused")
 		} else if e != nil && !errors.Is(e, store.ErrNotFound) {
 			return e
 		}
 		if op.SourceInputID != "" {
 			var stopped bool
-			if e := tx.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_controls WHERE user_id=? AND session_id=? AND input_id=? AND state IN ('stop_requested','stopped'))`, op.UserID, op.SourceSessionID, op.SourceInputID).Scan(&stopped); e != nil {
+			if e := tx.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_controls WHERE assistant_id=? AND session_id=? AND input_id=? AND state IN ('stop_requested','stopped'))`, op.AssistantID, op.SourceSessionID, op.SourceInputID).Scan(&stopped); e != nil {
 				return e
 			}
 			if stopped {
@@ -77,7 +80,7 @@ func (s *Store) CapturePersonalAgentOperation(ctx context.Context, op store.Pers
 			return err
 		}
 		var active bool
-		if err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_operations WHERE user_id=? AND item_id=? AND status IN ('pending','waiting','dispatching','unknown','delivered'))`, op.UserID, op.ItemID).Scan(&active); err != nil {
+		if err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_operations WHERE assistant_id=? AND item_id=? AND status IN ('pending','waiting','dispatching','unknown','delivered'))`, op.AssistantID, op.ItemID).Scan(&active); err != nil {
 			return err
 		}
 		if active {
@@ -89,14 +92,14 @@ func (s *Store) CapturePersonalAgentOperation(ctx context.Context, op store.Pers
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_operations(id,user_id,item_id,intent_revision,step_key,input_id,status,revision,created_at,updated_at,request_hash,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, op.ID, op.UserID, op.ItemID, op.IntentRevision, op.StepKey, op.InputID, op.Status, op.Revision, op.CreatedAt, op.UpdatedAt, op.RequestHash, string(raw))
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_operations(id,user_id,assistant_id,item_id,intent_revision,step_key,input_id,status,revision,created_at,updated_at,request_hash,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, op.ID, op.UserID, op.AssistantID, op.ItemID, op.IntentRevision, op.StepKey, op.InputID, op.Status, op.Revision, op.CreatedAt, op.UpdatedAt, op.RequestHash, string(raw))
 		result = op
 		return err
 	})
 	return result, err
 }
 func (s *Store) checkPAOperationIntent(ctx context.Context, op store.PersonalAgentOperation, checkDependencies bool) error {
-	item, err := s.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
+	item, err := s.GetPersonalAgentItem(ctx, op.AssistantID, op.ItemID)
 	if err != nil {
 		return err
 	}
@@ -113,7 +116,7 @@ func (s *Store) checkPAOperationIntent(ctx context.Context, op store.PersonalAge
 		return nil
 	}
 	for _, id := range item.Plan.Dependencies {
-		dep, err := s.GetPersonalAgentItem(ctx, op.UserID, id)
+		dep, err := s.GetPersonalAgentItem(ctx, op.AssistantID, id)
 		if err != nil {
 			return err
 		}
@@ -126,7 +129,7 @@ func (s *Store) checkPAOperationIntent(ctx context.Context, op store.PersonalAge
 func (s *Store) SavePersonalAgentOperation(ctx context.Context, op store.PersonalAgentOperation) (store.PersonalAgentOperation, error) {
 	var result store.PersonalAgentOperation
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := tx.GetPersonalAgentOperation(ctx, op.UserID, op.ID)
+		old, err := tx.GetPersonalAgentOperation(ctx, op.AssistantID, op.ID)
 		if err != nil {
 			return err
 		}
@@ -167,7 +170,7 @@ func (s *Store) SavePersonalAgentOperation(ctx context.Context, op store.Persona
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `UPDATE pa_operations SET status=?,revision=?,lease_until=?,updated_at=?,payload_json=? WHERE user_id=? AND id=?`, old.Status, old.Revision, old.LeaseUntil, old.UpdatedAt, string(raw), old.UserID, old.ID)
+		_, err = tx.conn().ExecContext(ctx, `UPDATE pa_operations SET status=?,revision=?,lease_until=?,updated_at=?,payload_json=? WHERE assistant_id=? AND id=?`, old.Status, old.Revision, old.LeaseUntil, old.UpdatedAt, string(raw), old.AssistantID, old.ID)
 		result = old
 		return err
 	})
@@ -189,8 +192,8 @@ func (s *Store) queryPAOperations(ctx context.Context, where string, args ...any
 	}
 	return result, rows.Err()
 }
-func (s *Store) ListPersonalAgentOperations(ctx context.Context, user string) ([]store.PersonalAgentOperation, error) {
-	return s.queryPAOperations(ctx, `user_id=? ORDER BY created_at DESC LIMIT 200`, user)
+func (s *Store) ListPersonalAgentOperations(ctx context.Context, assistantID string) ([]store.PersonalAgentOperation, error) {
+	return s.queryPAOperations(ctx, `assistant_id=? ORDER BY created_at DESC LIMIT 200`, assistantID)
 }
 func (s *Store) DuePersonalAgentOperations(ctx context.Context, now string, limit int) ([]store.PersonalAgentOperation, error) {
 	return s.queryPAOperations(ctx, `status IN ('pending','waiting','dispatching','unknown','delivered') AND (lease_until='' OR julianday(lease_until)<=julianday(?)) ORDER BY created_at,id LIMIT ?`, now, min(max(limit, 1), 100))
@@ -199,10 +202,11 @@ func (s *Store) DuePersonalAgentOperations(ctx context.Context, now string, limi
 // Called inside the transaction that persists the native input. An edit or
 // cancellation winning that transaction prevents a stale dispatch entirely.
 func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision int64, user, workspace, input string) error {
+	// The session input carries only the person; the operation id finds its assistant.
 	if id == "" {
 		return nil
 	}
-	op, err := s.GetPersonalAgentOperation(ctx, user, id)
+	op, err := scanPAOperation(s.reader().QueryRowContext(ctx, `SELECT `+paOperationColumns+` FROM pa_operations WHERE user_id=? AND id=?`, user, id))
 	if err != nil {
 		return err
 	}
@@ -236,15 +240,15 @@ func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision i
 
 // A stopped assistant cannot accept more inputs (checkPARunInput). Keep any
 // accepted native identity reconcilable; cancel only instructions with none.
-func (s *Store) CancelUndispatchedPersonalAgentOperations(ctx context.Context, user string) error {
-	_, err := s.conn().ExecContext(ctx, `UPDATE pa_operations SET status='cancelled',revision=revision+1,lease_until='',payload_json=json_set(payload_json,'$.status','cancelled','$.reason','assistant_stopped_before_dispatch','$.revision',revision+1,'$.updatedAt',?) WHERE user_id=? AND status IN ('pending','waiting','dispatching') AND NOT EXISTS(SELECT 1 FROM agent_session_events e WHERE e.id=?||pa_operations.input_id) AND NOT EXISTS(SELECT 1 FROM pa_run_snapshots r WHERE r.user_id=pa_operations.user_id AND r.session_id<>'' AND json_extract(r.payload_json,'$.inputId')=pa_operations.input_id)`, paNow(), user, store.SessionInputEventID(""))
+func (s *Store) CancelUndispatchedPersonalAgentOperations(ctx context.Context, assistantID string) error {
+	_, err := s.conn().ExecContext(ctx, `UPDATE pa_operations SET status='cancelled',revision=revision+1,lease_until='',payload_json=json_set(payload_json,'$.status','cancelled','$.reason','assistant_stopped_before_dispatch','$.revision',revision+1,'$.updatedAt',?) WHERE assistant_id=? AND status IN ('pending','waiting','dispatching') AND NOT EXISTS(SELECT 1 FROM agent_session_events e WHERE e.id=?||pa_operations.input_id) AND NOT EXISTS(SELECT 1 FROM pa_run_snapshots r WHERE r.assistant_id=pa_operations.assistant_id AND r.session_id<>'' AND json_extract(r.payload_json,'$.inputId')=pa_operations.input_id)`, paNow(), assistantID, store.SessionInputEventID(""))
 	return err
 }
 
-func (s *Store) CancelPendingPersonalAgentOperation(ctx context.Context, user, id string, revision int64) (store.PersonalAgentOperation, error) {
+func (s *Store) CancelPendingPersonalAgentOperation(ctx context.Context, assistantID, id string, revision int64) (store.PersonalAgentOperation, error) {
 	var result store.PersonalAgentOperation
 	err := s.withTx(ctx, func(tx *Store) error {
-		op, e := tx.GetPersonalAgentOperation(ctx, user, id)
+		op, e := tx.GetPersonalAgentOperation(ctx, assistantID, id)
 		if e != nil {
 			return e
 		}
@@ -258,7 +262,7 @@ func (s *Store) CancelPendingPersonalAgentOperation(ctx context.Context, user, i
 		if (op.Status != "pending" && op.Status != "waiting") || op.SessionID != "" {
 			return fmt.Errorf("only an unaccepted pending dispatch can be cancelled here; stop the exact running input instead")
 		}
-		accepted, e := tx.personalAgentInputAccepted(ctx, user, op.InputID)
+		accepted, e := tx.personalAgentInputAccepted(ctx, assistantID, op.InputID)
 		if e != nil {
 			return e
 		}

@@ -1,6 +1,8 @@
 package personalagent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,6 +14,21 @@ import (
 // orchestration.md §g): its conversation (coordinator), the work it hands
 // off (executor), project summaries (digest), memory and project upkeep.
 var RunRoles = []string{"coordinator", "executor", "digest", "memory", "governance"}
+
+// ExecutionChoiceID names one alternative independently of its position.
+// Provider kind may change from discovered to api when the same endpoint is
+// promoted, so the visible identity is provider, runtime, model or group.
+func ExecutionChoiceID(choice store.ExecutionModelChoice) string {
+	identity := strings.Join([]string{
+		choice.ProviderID,
+		string(choice.Runtime),
+		choice.Model,
+		choice.WorkerGroupID,
+		choice.Effort,
+	}, "\x00")
+	sum := sha256.Sum256([]byte(identity))
+	return "execution_choice_" + hex.EncodeToString(sum[:8])
+}
 
 // RunPreference is how one flow runs: its own override when the person set
 // one; else the conversation its default (runDefault, then the older

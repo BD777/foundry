@@ -30,6 +30,8 @@ type fixture struct {
 	pipe      *Pipeline
 	assistant *store.PersonalAgent
 	pkg       *store.PermissionPackage
+	// helper makes the session one the assistant started.
+	helper bool
 }
 
 func newFixture() *fixture {
@@ -76,8 +78,14 @@ func (f *fixture) GetWorkspace(_ context.Context, workspaceID string) (store.Wor
 	}
 	return store.WorkspaceProjection{ID: workspaceID, Kind: store.WorkspaceKindProject}, nil
 }
-func (f *fixture) PersonalAgentForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
+func (f *fixture) AssistantForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
 	if f.assistant != nil && workspaceID == f.assistant.WorkspaceID {
+		return *f.assistant, nil
+	}
+	return store.PersonalAgent{}, store.ErrNotFound
+}
+func (f *fixture) AssistantForSession(_ context.Context, sessionID string) (store.PersonalAgent, error) {
+	if f.assistant != nil && sessionID == f.session.ID && (f.helper || f.session.WorkspaceID == f.assistant.WorkspaceID) {
 		return *f.assistant, nil
 	}
 	return store.PersonalAgent{}, store.ErrNotFound
@@ -160,6 +168,23 @@ func (f *fixture) enableAssistant(level string) {
 	f.assistant = &store.PersonalAgent{
 		UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1", PermissionPackageID: pkg.ID,
 	}
+}
+
+// enableHelper makes the session a helper the assistant started in an
+// ordinary project whose binding holds the account, with the package
+// setting the account to level.
+func (f *fixture) enableHelper(level string) {
+	f.pipe.Scheme.Provider = "feishu"
+	f.account.Provider = "feishu"
+	pkg := permission.DefaultPackage("alice", "pp_alice")
+	pkg.ConnectorAccounts = jsonempty.List[store.ConnectorAccountPermission]{
+		{AccountID: f.account.ID, Level: level},
+	}
+	f.pkg = &pkg
+	f.assistant = &store.PersonalAgent{
+		ID: "asst_work", UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1", PermissionPackageID: pkg.ID,
+	}
+	f.helper = true
 }
 
 type fakeConfirmer struct {
@@ -462,6 +487,59 @@ func TestNonAssistantConnectorWriteIgnoresAssistantConfirmations(t *testing.T) {
 	}
 	if len(confirmer.requests) != 0 {
 		t.Fatalf("ordinary session asked for assistant confirmation: %+v", confirmer.requests)
+	}
+}
+
+// DEV-191 P0: a helper the assistant started inherits its package.
+func TestHelperConnectorOffIsRefused(t *testing.T) {
+	f := newFixture()
+	f.enableHelper(store.ConnectorAccessLevelOff)
+	response := f.serve("tk_good")
+	if !strings.HasPrefix(response.Body.String(), "refused") || strings.Contains(strings.Join(f.steps, ","), "upstream") {
+		t.Fatalf("helper with its account off = %q, steps %v", response.Body.String(), f.steps)
+	}
+	subject := Subject{SessionID: "s1", WorkspaceID: "w1", DeviceID: "d1", UserID: "alice", AccountID: "a1", AppID: "app1"}
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
+		t.Fatalf("helper's grant with its account off: %v", err)
+	}
+}
+
+func TestHelperConnectorReadOnlyRefusesWrites(t *testing.T) {
+	f := newFixture()
+	f.enableHelper(store.ConnectorAccessLevelRead)
+	f.need = Need{Level: "write", Write: true}
+	response := f.serve("tk_good")
+	if response.Body.String() != "refused "+ReasonConnectorRead || strings.Contains(strings.Join(f.steps, ","), "upstream") {
+		t.Fatalf("helper read-only write = %q, steps %v", response.Body.String(), f.steps)
+	}
+	f.steps, f.need = nil, Need{Level: "read"}
+	if response := f.serve("tk_good"); response.Body.String() != "sent" {
+		t.Fatalf("helper read-only read = %q", response.Body.String())
+	}
+}
+
+func TestHelperRiskWriteAsksTheAssistantsConfirmation(t *testing.T) {
+	f := newFixture()
+	f.enableHelper(store.ConnectorAccessLevelWrite)
+	confirmer := &fakeConfirmer{decision: ConfirmationDecision{ProposalID: "proposal_1", Summary: "Send a message"}}
+	f.pipe.Confirm = confirmer
+	f.need = Need{Level: "write", Write: true, Risk: "external_message", RiskSummary: "Send a message"}
+	response := f.serve("tk_good")
+	if response.Body.String() != "refused "+ReasonNeedsConfirmation || strings.Contains(strings.Join(f.steps, ","), "upstream") {
+		t.Fatalf("helper risk write = %q, steps %v", response.Body.String(), f.steps)
+	}
+	if len(confirmer.requests) != 1 || confirmer.requests[0].AssistantID != "asst_work" {
+		t.Fatalf("helper confirmation request = %+v", confirmer.requests)
+	}
+}
+
+func TestHelperWithoutTheWorkspaceBindingIsRefused(t *testing.T) {
+	f := newFixture()
+	f.enableHelper(store.ConnectorAccessLevelWrite)
+	f.account.WorkspaceIDs = []string{"w_other"}
+	subject := Subject{SessionID: "s1", WorkspaceID: "w1", DeviceID: "d1", UserID: "alice", AccountID: "a1", AppID: "app1"}
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
+		t.Fatalf("helper reached an account its project does not bind: %v", err)
 	}
 }
 

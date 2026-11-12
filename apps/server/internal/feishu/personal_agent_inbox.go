@@ -12,7 +12,7 @@ import (
 // Optional during rolling upgrades: older desk implementations keep their
 // existing routing. The server desk implements this persistent-input path.
 type PersonalAgentInboxDesk interface {
-	CaptureInbox(context.Context, string, string, store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error)
+	CaptureInbox(context.Context, string, string, string, store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error)
 }
 
 type inboxAttachmentDispatcher interface {
@@ -28,7 +28,7 @@ func (m *WSManager) captureAssistantInput(ctx context.Context, app *botApp, chat
 	for _, r := range message.resources {
 		origin.Resources = append(origin.Resources, store.PersonalAgentInboxResource{Key: r.key, Type: r.resourceType, Name: r.name, Label: r.label})
 	}
-	entry, err := desk.CaptureInbox(ctx, chat.assistant.userID, message.text, origin)
+	entry, err := desk.CaptureInbox(ctx, chat.assistant.route.AssistantID, chat.assistant.userID, message.text, origin)
 	if err != nil {
 		m.replyCard(ctx, app.client, messageID, BuildAssistantCard(assistantText(language, "inboxFailedTitle"), assistantText(language, "inboxFailed"), "red"))
 		return true
@@ -52,7 +52,8 @@ func (m *WSManager) inboxApp(ctx context.Context, entry store.PersonalAgentInbox
 		return nil, err
 	}
 	userID, refusal := m.boundUser(ctx, chat.FeishuBotRoute)
-	if refusal != "" || userID != entry.UserID || chat.WorkspaceID != workspaceID || chat.assistant == nil {
+	if refusal != "" || userID != entry.UserID || chat.WorkspaceID != workspaceID || chat.assistant == nil ||
+		chat.assistant.route.AssistantID != entry.AssistantID {
 		return nil, errors.New("channel binding changed")
 	}
 	return app, nil
@@ -127,7 +128,7 @@ func (m *WSManager) FollowAssistantInbox(ctx context.Context, entry store.Person
 	if err != nil {
 		return err
 	}
-	language := m.PersonalAgents.Language(ctx, entry.UserID, entry.Text)
+	language := m.PersonalAgents.Language(ctx, entry.AssistantID, entry.UserID, entry.Text)
 	thread, err := m.inboxThread(ctx, app, entry, workspaceID, language)
 	if err != nil {
 		return err
@@ -158,7 +159,7 @@ func (m *WSManager) DeliverAssistantInboxResult(ctx context.Context, entry store
 	if err != nil {
 		return err
 	}
-	language := m.PersonalAgents.Language(ctx, entry.UserID, entry.Text)
+	language := m.PersonalAgents.Language(ctx, entry.AssistantID, entry.UserID, entry.Text)
 	thread, err := m.inboxThread(ctx, app, entry, workspaceID, language)
 	if err != nil {
 		return err

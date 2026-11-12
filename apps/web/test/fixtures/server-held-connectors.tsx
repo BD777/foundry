@@ -167,6 +167,19 @@ let instances: ConnectorServerHeldInstance[] = [
         status: "ok",
         checkedAt: iso(-86_400_000),
       },
+      {
+        deviceId: "dev_mac",
+        name: "alice-mac",
+        status: "ok",
+        checkedAt: iso(-86_400_000),
+      },
+      {
+        deviceId: "dev_nas",
+        name: "alice-nas",
+        status: "unreachable",
+        checkedAt: iso(-86_400_000),
+        detail: "Foundry could not reach the connector server",
+      },
     ],
     status: "needs_reauth",
     statusDetail: "unauthorized: the connector rejected the credential",
@@ -197,6 +210,37 @@ const devices = [
   { deviceId: "dev_byte", name: "byte-dev", online: true },
   { deviceId: "dev_office", name: "Office NAS", online: false },
 ];
+
+const deviceChecks = (probeDeviceId: string, baseUrl: string) => {
+  const probeName =
+    devices.find((device) => device.deviceId === probeDeviceId)?.name ??
+    probeDeviceId;
+  const checkedAt = iso();
+  const loopback = /\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(baseUrl);
+  return [
+    { deviceId: probeDeviceId, name: probeName, status: "ok", checkedAt },
+    ...(loopback
+      ? [
+          {
+            deviceId: "dev_mac",
+            name: "alice-mac",
+            status: "not_applicable",
+            checkedAt,
+            detail: `This address only works on ${probeName}.`,
+          },
+        ]
+      : [
+          { deviceId: "dev_mac", name: "alice-mac", status: "ok", checkedAt },
+          {
+            deviceId: "dev_nas",
+            name: "alice-nas",
+            status: "unreachable",
+            checkedAt,
+            detail: "Foundry could not reach the connector server",
+          },
+        ]),
+  ];
+};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -239,7 +283,19 @@ window.fetch = async (input, init = {}) => {
     method === "POST" &&
     url.pathname === "/api/connectors/extensions/acme-api/instances/probe"
   )
-    return json(probeResult);
+    return json(
+      body.network === "device"
+        ? {
+            ...probeResult,
+            network: "device",
+            probeDeviceId: body.deviceId,
+            availableDevices: deviceChecks(
+              body.deviceId,
+              String(body.fields?.baseUrl ?? ""),
+            ),
+          }
+        : probeResult,
+    );
   if (
     method === "POST" &&
     url.pathname === "/api/connectors/extensions/acme-api/instances"
@@ -253,16 +309,10 @@ window.fetch = async (input, init = {}) => {
       ...(body.network === "device"
         ? {
             probeDeviceId: body.deviceId,
-            availableDevices: [
-              {
-                deviceId: body.deviceId,
-                name:
-                  devices.find((device) => device.deviceId === body.deviceId)
-                    ?.name ?? body.deviceId,
-                status: "ok",
-                checkedAt: iso(),
-              },
-            ],
+            availableDevices: deviceChecks(
+              body.deviceId,
+              String(body.fields?.baseUrl ?? ""),
+            ),
           }
         : {}),
       status: "ready",

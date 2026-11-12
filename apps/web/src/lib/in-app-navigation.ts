@@ -347,12 +347,24 @@ export function navigateToModelProvider(profileId: string): void {
   });
 }
 
+/** Opens Model providers with one model guide's details open. */
+export function navigateToModelGuide(guideId: string): void {
+  navigateAppRoute({ view: "profiles", providerTab: "guides" }, undefined, {
+    guide: guideId,
+  });
+}
+
+/** Opens the Worker groups section of Model providers. */
+export function navigateToWorkerGroups(): void {
+  navigateAppRoute({ view: "profiles", providerTab: "groups" });
+}
+
 /** Opens Model providers, filtered to one device when one is named. */
 export function navigateToModelProviders({
   deviceId,
 }: { deviceId?: string } = {}): void {
   navigateAppRoute(
-    { view: "profiles" },
+    { view: "profiles", providerTab: "subscriptions" },
     undefined,
     deviceId ? { device: deviceId } : undefined,
   );
@@ -361,8 +373,13 @@ export function navigateToModelProviders({
 /** Opens the assistant's settings at one section. */
 export function navigateToAssistantSettings(
   section: AssistantSettingsSection,
+  assistantId = parseAppRoute(window.location.pathname).assistantId,
 ): void {
-  navigateAppRoute({ view: "assistantSettings", assistantSection: section });
+  navigateAppRoute({
+    view: "assistantSettings",
+    assistantId,
+    assistantSection: section,
+  });
 }
 
 /**

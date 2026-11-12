@@ -179,11 +179,15 @@ func (s *Server) handleRevokeKnowledgePublication(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleAssistantMemoryAccess(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
 	var input knowledge.MemoryRecall
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	grant, err := s.knowledge.GrantMemoryRecall(r.Context(), s.personFrom(r).ID, r.PathValue("vault"), input)
+	grant, err := s.knowledge.GrantMemoryRecall(r.Context(), agent, r.PathValue("vault"), input)
 	writeResult(w, grant, err)
 }
 
@@ -209,7 +213,7 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 		if e != nil {
 			return "", invalid("only the person's assistant discovers owner sources")
 		}
-		answer, err = s.knowledge.Sources(ctx, scope.Agent.UserID)
+		answer, err = s.knowledge.Sources(ctx, scope.Agent)
 	} else {
 		answer, err = s.knowledge.Recall(ctx, session, knowledge.RecallRequest{
 			PublicationID: mcpArgString(call.args, "publicationId"), EntryID: mcpArgString(call.args, "entryId"),

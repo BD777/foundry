@@ -14,7 +14,7 @@ import { readResponseBlob, type ReadProgress } from "./read-response-blob";
  */
 export type ImageVariant = "placeholder" | "preview" | "original";
 export type ImageFailure =
-  "offline" | "slow" | "missing" | "removed" | "unavailable";
+  "offline" | "slow" | "missing" | "outside" | "removed" | "unavailable";
 
 export type ImageSnapshot =
   | { phase: "idle" }
@@ -48,6 +48,7 @@ function failureReason(status: number): ImageFailure {
   if (status === 409) return "offline";
   if (status === 504) return "slow";
   if (status === 404) return "missing";
+  if (status === 403) return "outside";
   if (status === 410) return "removed";
   return "unavailable";
 }

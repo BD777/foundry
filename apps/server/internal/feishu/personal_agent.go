@@ -37,27 +37,27 @@ type PersonalAgentDesk interface {
 	// routeWorkspaceID is where the chat's own route points: when it is not
 	// the assistant's workspace, the strong prior for routing (§14).
 	Route(ctx context.Context, userID, appID, routeWorkspaceID string) (route PersonalAgentRoute, ok bool, err error)
-	// ClaimIntroduction records that the person's direct chat on appID is
-	// being told the assistant took it over (PersonalAgentRoute.Introduce);
-	// false when it already was, and nothing more is said.
-	ClaimIntroduction(ctx context.Context, userID, appID string) bool
+	// ClaimIntroduction records that the assistant's direct chat on appID is
+	// being told it took the chat over (PersonalAgentRoute.Introduce); false
+	// when it already was, and nothing more is said.
+	ClaimIntroduction(ctx context.Context, assistantID, userID, appID string) bool
 	// Language is the language to answer the person in, "zh" or "en": the
 	// one they chose for their assistant or account, else the one message
 	// is written in ("" for none), else Chinese.
-	Language(ctx context.Context, userID, message string) string
+	Language(ctx context.Context, assistantID, userID, message string) string
 	// Stop is the stop switch (§8): stopped, every session the assistant
 	// runs or started cancelled, pending proposals void.
-	Stop(ctx context.Context, userID, via string) (PersonalAgentStopped, error)
+	Stop(ctx context.Context, assistantID, userID, via string) (PersonalAgentStopped, error)
 	// Resume turns the assistant back on; nothing the stop cancelled
 	// restarts.
-	Resume(ctx context.Context, userID, via string) (PersonalAgentResumed, error)
+	Resume(ctx context.Context, assistantID, userID, via string) (PersonalAgentResumed, error)
 	// PendingProposals are the person's proposals waiting for an answer.
-	PendingProposals(ctx context.Context, userID string) ([]store.PersonalAgentProposal, error)
+	PendingProposals(ctx context.Context, assistantID, userID string) ([]store.PersonalAgentProposal, error)
 	// Accept and Decline answer the person's proposal and return it as it
 	// is now; an error when it is not theirs or no longer pending. Via is
 	// store.PersonalAgentViaFeishu (a card button) or ViaReply (a fixed word).
-	Accept(ctx context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error)
-	Decline(ctx context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error)
+	Accept(ctx context.Context, assistantID, userID, proposalID, via string) (store.PersonalAgentProposal, error)
+	Decline(ctx context.Context, assistantID, userID, proposalID, via string) (store.PersonalAgentProposal, error)
 }
 
 // The fixed words' meanings (PersonalAgentDesk.Word).
@@ -71,6 +71,8 @@ const (
 // PersonalAgentRoute is what a direct chat needs to know of the person's
 // assistant.
 type PersonalAgentRoute struct {
+	// AssistantID is the assistant bound to this user and app.
+	AssistantID string
 	// WorkspaceID is the person's Personal Agent Workspace.
 	WorkspaceID string
 	// TakesDirectChats: the person's direct chats on this app go to the
@@ -180,14 +182,14 @@ func (m *WSManager) handleAssistantWords(ctx context.Context, app *botApp, chat 
 		return true
 	}
 	word := m.PersonalAgents.Word(text)
-	language := m.PersonalAgents.Language(ctx, assistant.userID, text)
+	language := m.PersonalAgents.Language(ctx, assistant.route.AssistantID, assistant.userID, text)
 	switch {
 	case word == PersonalAgentWordStop:
-		m.stopAssistant(ctx, app.client, messageID, assistant.userID, language)
+		m.stopAssistant(ctx, app.client, messageID, assistant.route.AssistantID, assistant.userID, language)
 		return true
 	case assistant.route.Stopped:
 		if word == PersonalAgentWordResume {
-			card := m.resumeAssistant(ctx, assistant.userID, language)
+			card := m.resumeAssistant(ctx, assistant.route.AssistantID, assistant.userID, language)
 			m.replyCard(ctx, app.client, messageID, card)
 			return true
 		}
@@ -212,7 +214,7 @@ func (m *WSManager) handleAssistantWords(ctx context.Context, app *botApp, chat 
 		m.replyCard(ctx, app.client, messageID, BuildAssistantCard(assistantText(language, "offlineTitle"), body, "grey"))
 		return true
 	}
-	if assistant.route.Introduce && assistant.previousWorkspaceID != "" && m.PersonalAgents.ClaimIntroduction(ctx, assistant.userID, chat.stored.AppID) {
+	if assistant.route.Introduce && assistant.previousWorkspaceID != "" && m.PersonalAgents.ClaimIntroduction(ctx, assistant.route.AssistantID, assistant.userID, chat.stored.AppID) {
 		m.replyCard(ctx, app.client, messageID, BuildAssistantCard(assistantText(language, "introTitle"), m.introduction(ctx, assistant.previousWorkspaceID, language), "blue"))
 	}
 	return false
@@ -235,8 +237,8 @@ func (m *WSManager) replyCard(ctx context.Context, client botClient, messageID, 
 }
 
 // stopAssistant presses the stop switch and says so in the server's words.
-func (m *WSManager) stopAssistant(ctx context.Context, client botClient, messageID, userID, language string) {
-	stopped, err := m.PersonalAgents.Stop(ctx, userID, store.PersonalAgentViaFeishu)
+func (m *WSManager) stopAssistant(ctx context.Context, client botClient, messageID, assistantID, userID, language string) {
+	stopped, err := m.PersonalAgents.Stop(ctx, assistantID, userID, store.PersonalAgentViaFeishu)
 	if err != nil {
 		log.Printf("[feishu] stop the assistant of %s: %v", userID, err)
 		m.replyCard(ctx, client, messageID, BuildAssistantCard(assistantText(language, "stopFailedTitle"), assistantText(language, "stopFailed", err.Error()), "red"))
@@ -254,8 +256,8 @@ func stoppedText(language string, cancelled int) string {
 
 // resumeAssistant turns the assistant back on; the card it answers lists
 // what the stop cancelled, which does not restart by itself.
-func (m *WSManager) resumeAssistant(ctx context.Context, userID, language string) string {
-	resumed, err := m.PersonalAgents.Resume(ctx, userID, store.PersonalAgentViaFeishu)
+func (m *WSManager) resumeAssistant(ctx context.Context, assistantID, userID, language string) string {
+	resumed, err := m.PersonalAgents.Resume(ctx, assistantID, userID, store.PersonalAgentViaFeishu)
 	if err != nil {
 		log.Printf("[feishu] resume the assistant of %s: %v", userID, err)
 		return BuildAssistantCard(assistantText(language, "resumeFailedTitle"), assistantText(language, "resumeFailed", err.Error()), "red")
@@ -280,7 +282,7 @@ func (m *WSManager) resumeAssistant(ctx context.Context, userID, language string
 // for the buttons.
 func (m *WSManager) answerProposalByWord(ctx context.Context, client botClient, chat chatRoute, messageID, threadSessionID string, accept bool, language string) bool {
 	userID := chat.assistant.userID
-	pending, err := m.PersonalAgents.PendingProposals(ctx, userID)
+	pending, err := m.PersonalAgents.PendingProposals(ctx, chat.assistant.route.AssistantID, userID)
 	if err != nil {
 		log.Printf("[feishu] read the pending proposals of %s: %v", userID, err)
 		return false
@@ -304,7 +306,7 @@ func (m *WSManager) answerProposalByWord(ctx context.Context, client botClient, 
 	case 0:
 		return false
 	case 1:
-		m.decideProposal(ctx, client, userID, matches[0].ID, accept, store.PersonalAgentViaReply, messageID, "", language)
+		m.decideProposal(ctx, client, chat.assistant.route.AssistantID, userID, matches[0].ID, accept, store.PersonalAgentViaReply, messageID, "", language)
 	default:
 		m.replyCard(ctx, client, messageID, BuildAssistantCard(assistantText(language, "severalTitle"), assistantText(language, "several", len(matches)), "orange"))
 	}
@@ -315,16 +317,16 @@ func (m *WSManager) answerProposalByWord(ctx context.Context, client botClient, 
 // cardMessageID when the card's own button was pressed, else the card
 // posted for it, else a reply to messageID. language is the failure's; the
 // card is in the proposal's own (proposalLanguage).
-func (m *WSManager) decideProposal(ctx context.Context, client botClient, userID, proposalID string, accept bool, via, messageID, cardMessageID, language string) {
+func (m *WSManager) decideProposal(ctx context.Context, client botClient, assistantID, userID, proposalID string, accept bool, via, messageID, cardMessageID, language string) {
 	desk := m.PersonalAgents
 	var (
 		decided store.PersonalAgentProposal
 		err     error
 	)
 	if accept {
-		decided, err = desk.Accept(ctx, userID, proposalID, via)
+		decided, err = desk.Accept(ctx, assistantID, userID, proposalID, via)
 	} else {
-		decided, err = desk.Decline(ctx, userID, proposalID, via)
+		decided, err = desk.Decline(ctx, assistantID, userID, proposalID, via)
 	}
 	if err != nil {
 		log.Printf("[feishu] answer proposal %s of %s: %v", proposalID, userID, err)
@@ -344,7 +346,7 @@ func (m *WSManager) decideProposal(ctx context.Context, client botClient, userID
 			cardMessageID = card.cardMessageID
 		}
 	}
-	card := BuildProposalCard(decided, m.proposalLanguage(ctx, userID))
+	card := BuildProposalCard(decided, m.proposalLanguage(ctx, assistantID, userID))
 	if cardMessageID != "" {
 		if err := client.PatchCard(ctx, cardMessageID, card); err != nil {
 			log.Printf("[feishu] update the card of proposal %s: %v", proposalID, err)

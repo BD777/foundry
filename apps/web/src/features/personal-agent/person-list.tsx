@@ -28,6 +28,7 @@ import { FieldLabel } from "../../components/ui/form-field";
 type ItemDraft = { text: string; when: string };
 
 export interface PersonListProps {
+  assistantId?: string;
   items: PersonalAgentListItem[];
   /** The assistant's tasks, for the ones helping with an item. */
   tasks: PersonalAgentTask[];
@@ -105,6 +106,7 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
 }
 
 function PersonListRow({
+  assistantId,
   item,
   tasks,
   onTick,
@@ -299,6 +301,7 @@ function PersonListRow({
         </PaMuted>
       ) : null}
       <ItemPlan
+        assistantId={assistantId}
         item={item}
         items={allItems}
         operations={operations}

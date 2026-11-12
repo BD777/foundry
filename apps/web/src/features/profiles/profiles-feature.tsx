@@ -45,9 +45,9 @@ import {
   type RuntimeFilter,
 } from "./provider-filters";
 import type { ProviderTab } from "../../lib/provider-tabs";
-import { EndpointsSection, ProviderTabsControl } from "./provider-sections";
-import { ModelNotesSection, noteKindsForTab } from "./model-notes";
-import { ModelPoolsSection } from "./model-pools";
+import { EndpointsSection, ProviderNav } from "./provider-sections";
+import { ModelGuidesSection } from "./model-guides-section";
+import { WorkerGroupsSection } from "./worker-groups-section";
 import { GlobalExecutionDefault } from "./global-execution-default";
 
 export type ProfilesFeatureEvent =
@@ -155,71 +155,79 @@ export function ProfilesFeature({
     onTabChange("endpoints");
     open(profileId);
   });
+  const notify = (message: string, tone?: ToastTone) =>
+    void onEvent({
+      type: "notice.requested",
+      message,
+      ...(tone ? { tone } : {}),
+    });
   return (
     <PageSurface variant="profiles">
       <PageHeader title={t("page.title")} description={t("page.intro")} />
-      <GlobalExecutionDefault
-        profiles={agentProfiles}
-        servers={connections}
-        onNotice={(message, tone) =>
-          void onEvent({ type: "notice.requested", message, tone })
-        }
-      />
-      <ProviderTabsControl tab={tab} onTabChange={onTabChange} />
-      <ProviderFilters
-        devices={ownDevices}
-        deviceId={deviceFilter}
-        runtime={runtimeFilter}
-        onDeviceChange={(value) => {
-          setDeviceFilter(value);
-          replacePageQuery({ device: value });
-        }}
-        onRuntimeChange={setRuntimeFilter}
-      />
-      {tab === "subscriptions" ? (
-        <SubscriptionsSection
-          devices={shownDevices}
-          runtimes={runtimes}
-          profiles={agentProfiles}
-          providerHealth={providerHealth}
-          bindings={deviceProfiles}
-          serverProfiles={profiles}
-          onRefresh={refresh}
-        />
-      ) : tab === "endpoints" ? (
-        <EndpointsSection
-          busy={busy || saving}
-          connections={shownConnections}
-          deviceProfiles={deviceProfiles}
-          devices={shownDevices}
-          onCreate={() => open()}
-          onSelect={open}
-          onRefresh={refresh}
-          profiles={shownProfiles}
-          serverProfiles={profiles}
-        />
-      ) : (
-        <EnvironmentProviders
-          devices={shownDevices}
-          profiles={shownProfiles}
-          onRefresh={refresh}
-        />
-      )}
-      <ModelPoolsSection
-        agentProfiles={shownProfiles}
-        kinds={noteKindsForTab(tab)}
-        onNotice={(message, tone) =>
-          void onEvent({ type: "notice.requested", message, tone })
-        }
-        profiles={shownConnections}
-        runtimes={runtimes}
-      />
-      <ModelNotesSection
-        agentProfiles={shownProfiles}
-        kinds={noteKindsForTab(tab)}
-        profiles={shownConnections}
-        runtimes={runtimes}
-      />
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+        <div className="min-w-0 xl:sticky xl:top-0">
+          <ProviderNav tab={tab} onTabChange={onTabChange} />
+        </div>
+        <div className="grid min-w-0 content-start gap-6">
+          {tab === "default" ? (
+            <GlobalExecutionDefault
+              profiles={agentProfiles}
+              servers={connections}
+              onNotice={notify}
+            />
+          ) : tab === "groups" ? (
+            <WorkerGroupsSection
+              profiles={agentProfiles}
+              servers={connections}
+              onNotice={notify}
+            />
+          ) : tab === "guides" ? (
+            <ModelGuidesSection />
+          ) : (
+            <>
+              <ProviderFilters
+                devices={ownDevices}
+                deviceId={deviceFilter}
+                runtime={runtimeFilter}
+                onDeviceChange={(value) => {
+                  setDeviceFilter(value);
+                  replacePageQuery({ device: value });
+                }}
+                onRuntimeChange={setRuntimeFilter}
+              />
+              {tab === "subscriptions" ? (
+                <SubscriptionsSection
+                  devices={shownDevices}
+                  runtimes={runtimes}
+                  profiles={agentProfiles}
+                  providerHealth={providerHealth}
+                  bindings={deviceProfiles}
+                  serverProfiles={profiles}
+                  onRefresh={refresh}
+                />
+              ) : tab === "endpoints" ? (
+                <EndpointsSection
+                  busy={busy || saving}
+                  connections={shownConnections}
+                  deviceProfiles={deviceProfiles}
+                  devices={shownDevices}
+                  onCreate={() => open()}
+                  onSelect={open}
+                  onRefresh={refresh}
+                  profiles={shownProfiles}
+                  serverProfiles={profiles}
+                />
+              ) : (
+                <EnvironmentProviders
+                  devices={shownDevices}
+                  profiles={shownProfiles}
+                  onRefresh={refresh}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </div>
       <Dialog
         busy={saving || models.busy}
         description={t("page.modalDescription")}
@@ -304,9 +312,6 @@ export function ProfilesFeature({
                   insideDialog
                   value={catalogDevice?.id ?? ""}
                   options={[
-                    ...(!catalogDevice
-                      ? [{ value: "", label: t("page.chooseOnlineDevice") }]
-                      : []),
                     ...onlineDevices.map((device) => ({
                       value: device.id,
                       label: device.label,

@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, userInfo } from "node:os";
+import { servicePath } from "../platform/path-list.js";
 import { basename, dirname, resolve } from "node:path";
 import type { DaemonConfig } from "../platform/config.js";
 import { daemonConfigPath, readDaemonConfig } from "../platform/config.js";
@@ -102,18 +103,19 @@ export function serviceEnvironment(
     ...stackEnvironment(),
     HOME: homedir(),
     LOGNAME: process.env.LOGNAME ?? user,
-    PATH:
+    PATH: servicePath(
       process.env.PATH ??
-      [
-        resolve(homedir(), ".local", "bin"),
-        dirname(process.execPath),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-      ].join(":"),
+        [
+          resolve(homedir(), ".local", "bin"),
+          dirname(process.execPath),
+          "/opt/homebrew/bin",
+          "/usr/local/bin",
+          "/usr/bin",
+          "/bin",
+          "/usr/sbin",
+          "/sbin",
+        ].join(":"),
+    ),
     SHELL: process.env.SHELL ?? "/bin/bash",
     USER: user,
   };

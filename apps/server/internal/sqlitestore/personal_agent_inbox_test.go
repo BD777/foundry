@@ -14,7 +14,7 @@ import (
 
 func inboxFixture(user, channel, message string) store.PersonalAgentInboxEntry {
 	id := flow.Key("inbox", user, channel, message)
-	return store.PersonalAgentInboxEntry{ID: id, UserID: user, Channel: channel,
+	return store.PersonalAgentInboxEntry{ID: id, UserID: user, AssistantID: "asst_" + user, Channel: channel,
 		MessageID: message, InputID: flow.InputID(id), Text: "记下两个方向，先不要执行"}
 }
 
@@ -50,7 +50,7 @@ func TestInboxConcurrentCaptureAndRestartKeepOneReceipt(t *testing.T) {
 	if err != nil || saved.Revision != 1 {
 		t.Fatalf("replay after restart: %+v, %v", saved, err)
 	}
-	items, err := db.ListPersonalAgentInbox(ctx, input.UserID, 100)
+	items, err := db.ListPersonalAgentInbox(ctx, input.AssistantID, 100)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("duplicate captures: %+v, %v", items, err)
 	}
@@ -58,8 +58,8 @@ func TestInboxConcurrentCaptureAndRestartKeepOneReceipt(t *testing.T) {
 	if _, err := db.CapturePersonalAgentInbox(ctx, input); !errors.Is(err, store.ErrIdempotencyConflict) {
 		t.Fatalf("changed payload accepted: %v", err)
 	}
-	if _, err := db.GetPersonalAgentInbox(ctx, "person-b", saved.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("another person read the input: %v", err)
+	if _, err := db.GetPersonalAgentInbox(ctx, "asst_person-b", saved.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("another assistant read the input: %v", err)
 	}
 }
 
@@ -119,11 +119,11 @@ func TestInboxExplicitRetryKeepsRootAndDoesNotRaceUnknownDispatch(t *testing.T) 
 		t.Fatal(err)
 	}
 	next := inboxFixture("ignored-user", "web", "retry-key")
-	retry, err := db.RetryPersonalAgentInbox(ctx, first.UserID, first.ID, first.Revision, next)
-	if err != nil || retry.RootID != first.ID || retry.Text != first.Text || retry.UserID != first.UserID || retry.Timezone != first.Timezone {
+	retry, err := db.RetryPersonalAgentInbox(ctx, first.AssistantID, first.ID, first.Revision, next)
+	if err != nil || retry.RootID != first.ID || retry.Text != first.Text || retry.UserID != first.UserID || retry.AssistantID != first.AssistantID || retry.Timezone != first.Timezone {
 		t.Fatalf("retry changed source: %+v %v", retry, err)
 	}
-	again, err := db.RetryPersonalAgentInbox(ctx, first.UserID, first.ID, first.Revision, next)
+	again, err := db.RetryPersonalAgentInbox(ctx, first.AssistantID, first.ID, first.Revision, next)
 	if err != nil || again.ID != retry.ID {
 		t.Fatalf("retry request duplicated: %+v %v", again, err)
 	}
@@ -132,7 +132,7 @@ func TestInboxExplicitRetryKeepsRootAndDoesNotRaceUnknownDispatch(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.RetryPersonalAgentInbox(ctx, retry.UserID, retry.ID, retry.Revision, inboxFixture("person-a", "web", "third")); err == nil {
+	if _, err := db.RetryPersonalAgentInbox(ctx, retry.AssistantID, retry.ID, retry.Revision, inboxFixture("person-a", "web", "third")); err == nil {
 		t.Fatal("unknown dispatch was repeated")
 	}
 }
@@ -143,7 +143,7 @@ func TestInboxResolvedFailureCanRetryWithoutReplayingASuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	control, e := db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "failed-control", UserID: entry.UserID, SessionID: "historical-session", InputID: entry.InputID, DispatchAttempted: true})
+	control, e := db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "failed-control", UserID: entry.UserID, AssistantID: entry.AssistantID, SessionID: "historical-session", InputID: entry.InputID, DispatchAttempted: true})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -154,13 +154,13 @@ func TestInboxResolvedFailureCanRetryWithoutReplayingASuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, e = db.RetryPersonalAgentInbox(ctx, entry.UserID, entry.ID, entry.Revision, inboxFixture("person-a", "web", "before-native-end")); e == nil {
+	if _, e = db.RetryPersonalAgentInbox(ctx, entry.AssistantID, entry.ID, entry.Revision, inboxFixture("person-a", "web", "before-native-end")); e == nil {
 		t.Fatal("desired cancellation was treated as actual cessation")
 	}
 	if e = db.NotePersonalAgentNativeEnd(ctx, control.SessionID, control.InputID, "failed"); e != nil {
 		t.Fatal(e)
 	}
-	retry, err := db.RetryPersonalAgentInbox(ctx, entry.UserID, entry.ID, entry.Revision, inboxFixture("person-a", "web", "retry-failed"))
+	retry, err := db.RetryPersonalAgentInbox(ctx, entry.AssistantID, entry.ID, entry.Revision, inboxFixture("person-a", "web", "retry-failed"))
 	if err != nil || retry.RootID != entry.ID {
 		t.Fatalf("resolved failure did not retain its source on retry %+v %v", retry, err)
 	}
@@ -171,7 +171,7 @@ func TestInboxResolvedFailureCanRetryWithoutReplayingASuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.RetryPersonalAgentInbox(ctx, retry.UserID, retry.ID, retry.Revision, inboxFixture("person-a", "web", "repeat-success")); err == nil {
+	if _, err = db.RetryPersonalAgentInbox(ctx, retry.AssistantID, retry.ID, retry.Revision, inboxFixture("person-a", "web", "repeat-success")); err == nil {
 		t.Fatal("success was repeated by failure recovery")
 	}
 }

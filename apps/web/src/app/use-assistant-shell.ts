@@ -23,7 +23,10 @@ const modeOf = (agent: PersonalAgent): InterfaceMode =>
  *   server once and then forgotten; until there is an assistant to hold
  *   it, it still applies here.
  */
-export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
+export function useAssistantShell(
+  { activeView, setActiveView }: AppLocation,
+  assistantId?: string,
+) {
   const [interfaceMode, setInterfaceMode] = useState<InterfaceMode>(
     () => storedInterfaceMode() ?? "full",
   );
@@ -32,6 +35,7 @@ export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
   view.current = activeView;
 
   useEffect(() => {
+    if (!assistantId) return;
     let current = true;
     const leave = () => {
       if (!current || !landed.current || view.current !== "assistant") return;
@@ -42,7 +46,7 @@ export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
       );
       setActiveView("workspace");
     };
-    getPersonalAgent().then(
+    getPersonalAgent(assistantId).then(
       async (overview) => {
         const agent = overview.agent;
         if (!agent) return;
@@ -50,7 +54,7 @@ export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
         const kept = storedInterfaceMode();
         if (kept === "simple" && !agent.settings.simpleInterface) {
           try {
-            const saved = await updatePersonalAgentSettings({
+            const saved = await updatePersonalAgentSettings(assistantId, {
               ...agent.settings,
               simpleInterface: true,
             });
@@ -71,7 +75,7 @@ export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
     return () => {
       current = false;
     };
-  }, []);
+  }, [assistantId]);
 
   return { interfaceMode, setInterfaceMode };
 }

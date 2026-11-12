@@ -299,7 +299,7 @@ func TestCloudflareAccessRedirectIsEdgeAccessRequired(t *testing.T) {
 	service.ExtensionDeviceRequest = func(context.Context, string, externalaccounts.ExtensionDeviceHTTPRequest) (externalaccounts.ExtensionDeviceHTTPResponse, error) {
 		return externalaccounts.ExtensionDeviceHTTPResponse{Status: 302, Headers: http.Header{"Location": {accessURL}}}, nil
 	}
-	service.ExtensionCheckDevices = func(context.Context, store.ConnectorDescriptor, string, string) ([]store.ConnectorServerHeldDeviceCheck, error) {
+	service.ExtensionDevices = func(context.Context, string, string) ([]externalaccounts.ExtensionDeviceCandidate, error) {
 		return nil, nil
 	}
 	_, err = service.DoExtensionRequest(ctx, edgeTestApp(t, descriptor, "https://olk.example.com", "device"), "dev_1", http.MethodGet, "/api/routes", nil, nil, nil)

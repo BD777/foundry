@@ -276,3 +276,14 @@ test("execution services keep Claude's separate identity metadata source when re
   assert.equal(env.CLAUDE_CONFIG_DIR, "/Users/me/.claude");
   assert.equal(env.FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME, "/Users/me");
 });
+
+test("the service PATH keeps no Foundry session folders", () => {
+  const saved = process.env.PATH;
+  process.env.PATH =
+    "/h/.foundry/session-bin/sess_a:/usr/bin:/h/.foundry-tools/.sessions/sess_a:/usr/bin:/opt/x";
+  try {
+    assert.equal(serviceEnvironment().PATH, "/usr/bin:/opt/x");
+  } finally {
+    process.env.PATH = saved;
+  }
+});

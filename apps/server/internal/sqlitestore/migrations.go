@@ -19,9 +19,9 @@ func (s *Store) migrate(ctx context.Context) error {
 	steps := []func(context.Context) error{
 		s.createCoreSchema,
 		s.setupProfiles,
-		s.setupModelNotes,
+		s.setupModelGuides,
 		s.setupExecutionDefaults,
-		s.setupModelPools,
+		s.setupWorkerGroups,
 		s.setupSessionRetries,
 		s.setupSkillCatalog,
 		s.setupWorkspaceDraftSkills,
@@ -77,6 +77,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupKnowledgePublications,
 		s.setupKnowledgeMigrations,
 		s.setupKnowledgeReplicaCleanup,
+		// After every table an assistant's records live in.
+		s.setupAssistantRecords,
 		s.setupAgentDefaults,
 		s.setupWorkspaceMigrations,
 	}

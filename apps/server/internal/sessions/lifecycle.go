@@ -188,7 +188,7 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 			return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrAgentSessionActive}
 		}
 		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" ||
-			input.Model != "" || input.ModelPoolID != "" {
+			input.Model != "" {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, errors.New("a running session keeps its runtime; switch it once it settles")}
 		}
 		// Files steer in with the message, as they arrive with any message.
@@ -200,7 +200,9 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 			return store.AgentSession{}, &Refusal{http.StatusConflict, errors.New("this session already waits for its offline device: send more once it has started, or cancel it")}
 		}
 		if !s.devices.Connected(session.DeviceID) {
-			return store.AgentSession{}, &Refusal{http.StatusConflict, ErrLocalDaemonNotConnected}
+			if err := s.devices.WaitConnected(ctx, session.DeviceID); err != nil {
+				return store.AgentSession{}, &Refusal{cmp.Or(DeviceErrorStatus(err), http.StatusConflict), err}
+			}
 		}
 		if beforeDelivery != nil {
 			if err := beforeDelivery(ctx, session); err != nil {
@@ -297,7 +299,9 @@ func (s *Service) Cancel(ctx context.Context, sessionID, orchestrator string) (s
 	}
 	if !s.WaitsForDevice(session) {
 		if !s.devices.Connected(session.DeviceID) {
-			return store.AgentSession{}, &Refusal{http.StatusConflict, ErrLocalDaemonNotConnected}
+			if err := s.devices.WaitConnected(ctx, session.DeviceID); err != nil {
+				return store.AgentSession{}, &Refusal{cmp.Or(DeviceErrorStatus(err), http.StatusConflict), err}
+			}
 		}
 		cancelCtx, cancel := context.WithTimeout(ctx, ControlTimeout)
 		defer cancel()

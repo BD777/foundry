@@ -289,6 +289,11 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       { profileId: "claude_p" },
     ],
     [
+      ["device", "update-worker", "dev_a", "--action", "start"],
+      "update_worker",
+      { deviceId: "dev_a", action: "start" },
+    ],
+    [
       ["provider", "list", "--kind", "api", "--limit", "5"],
       "list_model_providers",
       { kind: "api", limit: 5 },

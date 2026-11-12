@@ -4,6 +4,32 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-12 文档：[DEV-195 AGENTS.md 重组与独立 worktree 规则](DEV-195-agents-md-reorg-worktree-rule.md)。根 `AGENTS.md` 从 12.8 KB 减到 5.6 KB，UI 规则移到 `apps/web/AGENTS.md`，代码与检查的位置移到 `docs/where-things-live.md`；删除 `CLAUDE.md` 软链接（Claude Code 2.1.277 起原生读取 AGENTS.md）；`docs/agent-orchestration.md` 规定会让代码树无法构建的切片用独立 worktree。只改文档，无需部署。 已合入 main（PR #264）。
+
+2026-11-12 执行模型：[DEV-188 默认 + 编排者可选列表](DEV-188-execution-model-alternatives.md)。Server 与 Web 已支持默认值、alternatives 和 Worker 组展开，保存失败与 Worker 组说明已修复；Server、Web build `728d8ae198733962` 已部署 dev，工作区成功保存路径与最终视觉仍待人工验收；已合入 main（PR #264）。
+
+2026-11-12 编排：[DEV-192 foundry-orchestration Skill 第 4–6 版](DEV-192-orchestration-skill-r4-r6.md)。第 4 版改为默认委派、第 5 版改为仅显式触发、第 6 版接入默认 + 可选执行模型并限制模型说明书只写本模型，Server 与 Web 已部署 dev、Worker `0.5.7-dev.354.geb87723d.local.1794475758` 已更新 7 台设备，模型说明书回读为 DeepSeek revision 4 / Opus revision 3；已合入 main（PR #264）。
+
+2026-11-12 提示：[DEV-193 概览页 FieldHint 与 `<Trans>` 提示审计](DEV-193-overview-field-hint-audit.md)。Git 状态说明与离线说明已改用共享 `FieldHint`，`audit-hints` 已识别静态 `<Trans i18nKey>`；Web build `eca52bfb4caeeb3e` 已部署 dev，检查脚本本身无需部署，审计仍只余两条既有失败；已合入 main（PR #264）。
+
+2026-11-12 运维：[macbook 旧本地 Foundry 栈清理](https://dev.foundryapp.app/chats/sess_1794473579735873154)。旧源码、旧 Server/Web/Worker plist 与旧状态目录已删除，27 个未推送提交逐项核实都在 `github.com/BD777/foundry-archive` 的 main，删除后 macbook 仍 online/ready 且磁盘可用空间从 146 GiB 增至 148 GiB；无产品部署，未提交（等提交窗口）。
+
+2026-11-12 运维：[sg-chaos 磁盘清理](https://dev.foundryapp.app/chats/sess_1794480577157431912)。两个数据库备份在 WAL checkpoint、`integrity_check` 与 gzip 解压字节数校验后保留压缩副本，并删除 14 个被取代的 Server 二进制，共腾出 2,766,376,960 bytes（约 2.58 GiB），运行中的 Server 与最近备份未动；无产品部署，未提交（等提交窗口）。
+
+2026-11-12 运维：[`launchctl submit` 遗留更新任务](DEV-190-mcp-update-worker.md#2026-11-12-launchctl-submit-残留更新任务事故)。Mac 的反复重连来自残留 update job 主动重启 Worker，CanWendeMac-mini 与 macbook 的残留 label 已核查并移除，常驻 Worker PID 保持稳定；以后统一使用 MCP `update_worker`，无产品部署，已合入 main（PR #264）。
+
+2026-11-12 设备连接：[DEV-189 断开后先「重连中」，宽限 60 秒再算离线](DEV-189-device-reconnect-grace.md)。Server 核心已实现并部署 dev：设备断开与 Server 启动都给 60 秒重连窗口，`list_resources` 新增 `connection`，资源实例在窗口内显示 `reconnecting`；部署后两次采样均无离线。租约申请与 steer/cancel 的等待逻辑、完整 Web 显示由后续切片处理。 已合入 main（PR #264）。
+
+2026-11-12 MCP：[DEV-190 Worker 自更新工具](DEV-190-mcp-update-worker.md)。新增 `update_worker`，设备所有者可查询 Worker 与 Server 版本及更新进度，或复用现有更新链路让 Worker 下载、切换、重启并重连；workspace 成员和共享设备不能调用。已部署 dev Server，后续首次实际使用已更新 7 台设备；已合入 main（PR #264）。
+
+2026-11-12 助理：[DEV-191 多助理 v1（P0 权限判定、P2 memory 两层、P3 飞书一应用一助理、Web 多助理）](DEV-191-multi-assistant.md#v1-合并与部署2026-11-12p0--p2--p3--web)。四个切片逐文件三方合并进 dev 检出；飞书设置链接改为指向该助理自己的设置页；`system.md` 的 memory 说明按两层重写，prompt 升到 `2026-11-12.2`。Server 和 Web（`47a9d998efad669c`）已部署 dev，部署前备份为 `foundry-20261112-pre-dev191-v1.db.gz`；Worker 不需要发布。e2e-alice 的 API 和浏览器验收通过，等待人工验收。 已合入 main（PR #264）。
+
+2026-11-12 助理：[DEV-191 v1b 补充切片与最终验证](DEV-191-multi-assistant.md#v1b-补充合并与部署2026-11-12)。web2 与 srv2 共 25 个文件逐文件三方合并，无冲突；补上权限包引用校验、每助理设置链接、legacy memory 日志、两层 memory、身份资源勾选、默认助理菜单和执行模型继承摘要。prompt 按真实助理设置路径压到 `AGENTS.md` 上限内并升到 `2026-11-12.3`，golden 已重新生成。Server `5521876828437bbc…` 与 Web build `d0c667fcd552460a` 已部署 dev，PM2 online、`/healthz` 200；指定 Go/Web 检查和四项 UI 审计完成，hint 审计仅余两条已知失败。四张 e2e-alice 截图已保存；记忆层页面没有删除入口，本次合成条目已通过同源 knowledge `forget` 清理并复核为空，合成助理已删除，浏览器已登出并关闭。 已合入 main（PR #264）。
+
+2026-11-12 助理：[DEV-194 executor 接入执行模型](DEV-194-executor-execution-models.md)。派出的 helper 改为按“助理覆盖 → 工作区 → 全局 → 旧角色规则”解析默认与 alternatives；worker group 复用现有成员选择。`dispatch_item` 可按序数或稳定 id 选择 alternative，列表外值拒绝；助理设置页复用共享执行模型组件，未覆盖时沿用工作区/全局。已部署 dev Server 与 Web，等待人工验收。 已合入 main（PR #264）。
+
+2026-11-12 助理：[DEV-191 A1 多助理数据模型](DEV-191-multi-assistant.md#a1-交接p1-server多助理数据模型与助理身份2026-11-12)。新增 `assistants` 表，原 personal_agents 迁成默认助理；所有 pa_* 表、pending_items、knowledge_vaults 加上 `assistant_id`；新增 `/api/assistants` 及每条 `/api/assistants/{id}/…`，`/api/personal-agent` 保留为默认助理的别名；停止、上限、摘要、收件箱都按助理处理。已部署 dev Server，e2e-alice 验证通过；Web、P0、P2、P3 是后续切片。 已合入 main（PR #264）。
+
 2026-11-12 Worker：[DEV-186 执行宿主轮换（多宿主并存）与编排效率规则](DEV-186-execution-host-rollover.md)。Worker 更新后新回合交给新宿主，旧宿主只留在跑的回合并在空闲后停掉；经两轮 review 与 limen-canada、CanWendeMac-mini 真机验证。同篇记录编排效率规则（DEV-187）。已部署 dev，等待提交窗口合入。
 
 2026-11-12 连接器：[DEV-185 集成包的 MCP 与私有上游代取](DEV-185-connector-packages-mcp-private-upstream.md)。Agent 可经 `connector_packages` 管理集成包在哪些设备启用；私有上游只要有一台设备能读，就由它代取并分发，目标设备不必登录 GitHub CLI。已部署 dev，等待提交窗口合入。
@@ -80,7 +106,7 @@
 2026-11-08 CI：[DEV-149 GitHub CI 偶发失败的根因、每个 PR 只跑一次、并行 job](DEV-149-ci-flakes-and-wall-time.md)。10-28 以来 47 次失败多为分支上的真实回归；仍会复现的偶发失败 7 个（含让 main 变红的 evidence e2e），逐个以注入延迟复现 CI 原断言后修复：两处 Server 竞态（hello 扫描抢在 `BeforeDispatch` 之前派发会话；推入结束回合的消息使聊天队列卡住）是产品问题，其余为测试时序假设；GitHub runner 上 7 个 Go 测试各压测 300 次通过。PR 只在 `pull_request` 上跑一次，verify 拆成 web / packages / go 三个并行 job（`verify` 汇总检查不变），墙钟约 13.5 → 7 分钟。已部署 dev Server，待人工验收。 已合入 main（#226，`ca999e10`）。 后续：新 worktree 缺 Worker 构建时 check-changed 先构建再跑 httpapi，已合入 main（#236，`89c43e4a`）。
 2026-11-08 文档：Issue 流程文档按代码校正。10-08 起草、一直未提交的 merge-and-acceptance-rules 草稿逐条核对：仍然成立的写入总纲（序列图加 Daemon 与“放弃”分支、按 `store/issue_loop.go` 画状态图、“要求修改”回到 Pending、Blocked 含系统错误、人工上传只用于 Agent 判定的条件、Chat 的直接修改不经候选），尚未决定的三条（对齐后沿用原接受、部分合入期间冻结、合入的 Skill 自动登记）作为提案移到 [Workflow 平台 · WF-2 待决规则](../workflow-platform.md#wf-2-待决规则)，待人决定；只改文档。
 2026-11-08 会话：[DEV-147 一轮的“无文字回复”被并到上一轮](DEV-147-input-answer-merged-across-turns.md)。本人看到有些回合跑完命令就结束、像被截断。byte-dev 上的 Codex rollout 显示是模型返回了正文为空的 final_answer（定时任务“保持静默”的指令，在线程里自我模仿），Codex 0.167 与网关都正常，不需要锁定版本。Foundry 的问题是 Web 把 Server 为每个输入记录的答复 `evt_<input>_answer` 当成会话唯一旧式流的快照，跨回合合并，提示总显示在更早的回合。改为按输入区分；测试与真实事件回放通过，已部署 dev Web `23b800df393d55b2` 并在真实浏览器验证，待人工验收。 已合入 main（#224，`a7f5e1d8`）。
-2026-11-06 模型服务：[DEV-135 分 Tab；启动环境可设默认值](DEV-135-model-providers-tabs.md)。订阅 / API 端点 / 启动环境改为 `/model-providers/<tab>` 三个 Tab；Limen 等连接器提供的服务用订阅同一套默认值控件，设备另存、每次重列时叠加，重列与暂时不可用不丢；自测通过，真实 Limen 回合因周额度用完未验证。后续修正：保存默认模型曾让已通过的检查失效（检查指纹含模型），改为按连接器给的连接计算，并把额度用完单独显示（已部署 dev）。 已合入 main（#212，`81d3532a`；后续修正 #217，`1f3063aa`）。
+2026-11-06 模型服务：[DEV-135 分 Tab；启动环境可设默认值](DEV-135-model-providers-tabs.md)。订阅 / API 端点 / 启动环境改为 `/model-providers/<tab>` 三个 Tab；Limen 等连接器提供的服务用订阅同一套默认值控件，设备另存、每次重列时叠加，重列与暂时不可用不丢；自测通过，真实 Limen 回合因周额度用完未验证。后续修正：保存默认模型曾让已通过的检查失效（检查指纹含模型），改为按连接器给的连接计算，并把额度用完单独显示（已部署 dev）。 已合入 main（#212，`81d3532a`；后续修正 #217，`1f3063aa`）。 2026-11-12：分区菜单分为「执行」「模型来源」两组（Web `2c57e5ca`，已部署 dev，未提交（等提交窗口））。
 2026-11-06 运行时：[DEV-143 启动慢的 Claude Code 被报成“未安装”](DEV-143-native-cli-slow-probe.md)。Mac mini 忙时 Claude Code 首次 `--version` 要 8.5 s 以上，Worker 的 10 s 探测超时被当作“未安装”，会话无法发送。超时现在算“在、只是慢”，版本由后台探测补上。后续：303 上线后 `claude auth status` 冷启动 18 s 超过 5 s 状态检查，仍报不可用；状态检查与账户检查改为同样处理（保留上次回答、后台重读，未登录不再算检查失败）；测试通过；已部署 dev，待人工验收。 已合入 main（#218，`4944df2a`）。
 2026-11-06 资源：[DEV-145 会话里跑不了 remote-check.sh](DEV-145-lease-command-token.md)。脚本要 `FOUNDRY_SESSION_TOKEN`，而 #123 起会话令牌有意不进命令环境，Claude Code / Codex 会话从来跑不了它。改为会话显式交出一份 compute 租约：`acquire_resource` 加 `forCommands`，回答的命令令牌只能经 `/api/mcp` 操作、查看、释放这份租约，租约结束即失效；CLI 读 `FOUNDRY_LEASE_TOKEN`，脚本接受 `<leaseId>`。Go / Worker 测试与对假 compute 的脚本全流程通过；已部署 dev 并真机验证，待人工验收。合入前按审查把令牌签发移到独立的 store 接口（详见事项）。 已合入 main（#221，`ec721cf9`）。
 2026-11-06 Workspace：[DEV-146 Workspace 跨设备迁移](DEV-146-workspace-migration.md)。把一台设备上的 Workspace 迁到另一台设备的目录：保留原 id，先复制并逐文件校验 sha256 再一次性切换，数据经 Server 中转的独立数据流；有活跃会话或 Issue 时拒绝并列出；源副本保留，另提供“删除旧副本”连同文件夹外的本地状态一起删。实现完成；scratch 栈上两台合成设备真实迁移、续聊 Codex 会话、删除旧副本、回迁全部通过；已部署 dev，e2e-alice 在 dev 上双向迁移与续聊通过（修了完成后目标名显示为主机名），待人工验收。 已合入 main（#225，`870cff11`）。

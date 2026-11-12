@@ -40,7 +40,11 @@ func (s *extensionPermissionStore) GetWorkspace(context.Context, string) (store.
 	return store.WorkspaceProjection{ID: s.workspaceID, Kind: store.WorkspaceKindPersonalAgent}, nil
 }
 
-func (s *extensionPermissionStore) PersonalAgentForWorkspace(context.Context, string) (store.PersonalAgent, error) {
+func (s *extensionPermissionStore) AssistantForWorkspace(context.Context, string) (store.PersonalAgent, error) {
+	return s.agent, nil
+}
+
+func (s *extensionPermissionStore) AssistantForSession(context.Context, string) (store.PersonalAgent, error) {
 	return s.agent, nil
 }
 
@@ -311,10 +315,15 @@ func TestExtensionAssistantWritesRequireWritePermissionAndConfirmation(t *testin
 
 func serveExtensionGateway(t *testing.T, extensionGateway *ExtensionGateway, kind, handle, method, path string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
+	return serveExtensionGatewayOn(t, extensionGateway, "device-alice", kind, handle, method, path, body)
+}
+
+func serveExtensionGatewayOn(t *testing.T, extensionGateway *ExtensionGateway, deviceID, kind, handle, method, path string, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
 	request := httptest.NewRequest(method, ExtensionGatewayPath(kind)+path, bytes.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+handle)
 	recorder := httptest.NewRecorder()
-	extensionGateway.Serve(recorder, request, gateway.Device{ID: "device-alice", OwnerUserID: "alice"}, kind)
+	extensionGateway.Serve(recorder, request, gateway.Device{ID: deviceID, OwnerUserID: "alice"}, kind)
 	return recorder
 }
 
@@ -426,18 +435,20 @@ func TestDeviceNetworkGatewayForwardsThroughTheSessionDeviceWithoutAuditSecrets(
 	}
 	data.Network = externalaccounts.ExtensionNetworkDevice
 	data.ProbeDeviceID = "device-alice"
-	data.AvailableDevices = []store.ConnectorServerHeldDeviceCheck{{
-		DeviceID: "device-alice", Name: "alice-mac", Status: "ok", CheckedAt: time.Now().UTC().Format(time.RFC3339),
-	}}
+	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	data.AvailableDevices = []store.ConnectorServerHeldDeviceCheck{
+		{DeviceID: "device-alice", Name: "alice-mac", Status: "ok", CheckedAt: checkedAt},
+		{DeviceID: "device-bob", Name: "alice-linux", Status: "ok", CheckedAt: checkedAt},
+		{DeviceID: "device-other", Name: "alice-nas", Status: "unreachable", CheckedAt: checkedAt, Detail: "no answer within 10 seconds"},
+	}
 	raw, _ := json.Marshal(data)
 	if _, err := st.SaveExternalProviderAppExtensionData(ctx, app.ID, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	var forwarded externalaccounts.ExtensionDeviceHTTPRequest
+	var forwardedVia string
 	service.ExtensionDeviceRequest = func(_ context.Context, deviceID string, request externalaccounts.ExtensionDeviceHTTPRequest) (externalaccounts.ExtensionDeviceHTTPResponse, error) {
-		if deviceID != "device-alice" {
-			t.Fatalf("device = %s", deviceID)
-		}
+		forwardedVia = deviceID
 		forwarded = request
 		return externalaccounts.ExtensionDeviceHTTPResponse{
 			Status: http.StatusOK, Headers: http.Header{"Content-Type": {"application/json"}},
@@ -448,7 +459,7 @@ func TestDeviceNetworkGatewayForwardsThroughTheSessionDeviceWithoutAuditSecrets(
 		t.Fatal(err)
 	}
 	session := store.AgentSession{ID: "session-alice", DeviceID: "device-alice", WorkspaceID: "workspace-a", CreatedByUserID: "alice", Status: "running"}
-	fake := &cfGatewayStore{Store: st, session: session}
+	fake := &cfGatewayStore{Store: st, session: session, aliceDevices: map[string]bool{"device-bob": true, "device-other": true, "device-new": true}}
 	extensionGateway := NewExtensionGateway(fake, service, func(context.Context, string, string) (store.ConnectorDescriptor, error) {
 		return descriptor, nil
 	})
@@ -465,6 +476,9 @@ func TestDeviceNetworkGatewayForwardsThroughTheSessionDeviceWithoutAuditSecrets(
 	response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodGet, "/api/read", nil)
 	if response.Code != http.StatusOK {
 		t.Fatalf("gateway: %d %s", response.Code, response.Body.String())
+	}
+	if forwardedVia != "device-alice" {
+		t.Fatalf("request left through %q, want the session's device", forwardedVia)
 	}
 	if forwarded.Headers["Authorization"] != "Bearer device-only-secret" {
 		t.Fatalf("forwarded headers = %#v", forwarded.Headers)
@@ -487,6 +501,60 @@ func TestDeviceNetworkGatewayForwardsThroughTheSessionDeviceWithoutAuditSecrets(
 		SessionID: otherSession.ID, DeviceID: otherSession.DeviceID, WorkspaceID: otherSession.WorkspaceID,
 		UserID: "alice", Account: account,
 	}); !errors.Is(err, ErrExtensionAccess) {
-		t.Fatalf("device outside available list error = %v", err)
+		t.Fatalf("unreachable device error = %v", err)
+	}
+
+	bobSession := session
+	bobSession.ID = "session-bob-device"
+	bobSession.DeviceID = "device-bob"
+	fake.session = bobSession
+	bobHandle, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: bobSession.ID, DeviceID: bobSession.DeviceID, WorkspaceID: bobSession.WorkspaceID,
+		UserID: "alice", Account: account,
+	})
+	if err != nil {
+		t.Fatalf("another reachable device: %v", err)
+	}
+	forwardedVia = ""
+	if response := serveExtensionGatewayOn(t, extensionGateway, "device-bob", "acme-api", bobHandle.UserHandle, http.MethodGet, "/api/read", nil); response.Code != http.StatusOK {
+		t.Fatalf("gateway on bob: %d %s", response.Code, response.Body.String())
+	}
+	if forwardedVia != "device-bob" {
+		t.Fatalf("request left through %q, want the session's device-bob", forwardedVia)
+	}
+
+	service.ExtensionDevices = func(context.Context, string, string) ([]externalaccounts.ExtensionDeviceCandidate, error) {
+		return []externalaccounts.ExtensionDeviceCandidate{
+			{ID: "device-alice", Name: "alice-mac", Online: true, Installed: true},
+			{ID: "device-new", Name: "alice-new", Online: true, Installed: true},
+		}, nil
+	}
+	if err := service.ProbeExtensionOnNewDevice(ctx, "alice", "device-new"); err != nil {
+		t.Fatal(err)
+	}
+	app, err = st.GetExternalProviderApp(ctx, instance.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err = service.ExtensionData(ctx, app); err != nil {
+		t.Fatal(err)
+	}
+	recorded := map[string]string{}
+	for _, check := range data.AvailableDevices {
+		recorded[check.DeviceID] = check.Status
+	}
+	if len(recorded) != 4 || recorded["device-new"] != externalaccounts.ExtensionDeviceNotApplicable || recorded["device-bob"] != "ok" {
+		t.Fatalf("devices after the new one came online = %v", recorded)
+	}
+
+	unknownSession := session
+	unknownSession.ID = "session-unprobed-device"
+	unknownSession.DeviceID = "device-new"
+	fake.session = unknownSession
+	if _, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: unknownSession.ID, DeviceID: unknownSession.DeviceID, WorkspaceID: unknownSession.WorkspaceID,
+		UserID: "alice", Account: account,
+	}); !errors.Is(err, ErrExtensionAccess) {
+		t.Fatalf("device never probed error = %v", err)
 	}
 }

@@ -188,14 +188,14 @@ test("registrations wait for a hello the server has to ask for whole", () => {
   roster.close();
 });
 
-test("a skill scan answer the server keeps goes as its digest only", () => {
+test("a skill scan answer the server keeps goes as its digest only", async () => {
   const answer = { skills: [{ dirName: "one" }], tools: { git: true } };
-  const whole = scanAnswer(answer, undefined);
+  const whole = await scanAnswer(answer, undefined);
   assert.equal(typeof whole.digest, "string");
   assert.deepEqual(whole.skills, answer.skills);
-  assert.deepEqual(scanAnswer(answer, whole.digest), {
+  assert.deepEqual(await scanAnswer(answer, whole.digest), {
     unchanged: true,
     digest: whole.digest,
   });
-  assert.deepEqual(scanAnswer(answer, "older").skills, answer.skills);
+  assert.deepEqual((await scanAnswer(answer, "older")).skills, answer.skills);
 });

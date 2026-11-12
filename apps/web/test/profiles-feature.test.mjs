@@ -76,6 +76,8 @@ function createRoot(container) {
   return wrapped;
 }
 const { ProfilesFeature } = await import("../src/features/profiles/index.ts");
+const { WorkspaceExecutionDefaultFeature } =
+  await import("../src/features/agent-defaults/index.ts");
 
 const profile = {
   authMode: "custom",
@@ -97,8 +99,88 @@ const connectedDevice = {
 
 const realFetch = globalThis.fetch;
 
+const updatedBy = { userId: "user_1", name: "Orchestrator" };
+const flashSummary = {
+  id: "flash-1017",
+  owner: "deepseek",
+  displayName: "DeepSeek Flash 1017",
+  aliasCount: 2,
+  summary: "Fast and cheap for small, well-specified slices.",
+  revision: 2,
+  updatedAt: "2026-11-10T10:00:00Z",
+  updatedBy,
+};
+const flashDetail = {
+  guide: {
+    id: "flash-1017",
+    owner: "deepseek",
+    displayName: "DeepSeek Flash 1017",
+    aliases: [
+      { providerId: "p1", runtime: "codex", model: "gpt-5" },
+      { model: "deepseek/flash" },
+    ],
+    sections: {
+      summary: "Fast and cheap for small, well-specified slices.",
+      pitfalls: "- Drops **required** evidence when the brief is long",
+    },
+    revision: 2,
+    updatedAt: "2026-11-10T10:00:00Z",
+    updatedBy,
+  },
+  facts: {
+    providers: [
+      {
+        alias: { model: "gpt-5" },
+        contextWindow: 128000,
+        workerGroupLabel: "Flash",
+        tokensPerMinute: 6000000,
+      },
+    ],
+    usage: {
+      windowDays: 30,
+      workerSessions: 12,
+      requests: 340,
+      avgRequestMs: 2400,
+      tokPerSec: 58.3,
+    },
+  },
+  observations: {
+    total: 1,
+    offset: 0,
+    observations: [
+      {
+        id: "obs_1",
+        guideId: "flash-1017",
+        body: "Skipped the tests twice.",
+        sessionIds: ["sess_42"],
+        createdAt: "2026-11-09T10:00:00Z",
+      },
+    ],
+  },
+  revisions: [
+    {
+      revision: 2,
+      changeSummary: "add pitfalls",
+      updatedAt: "2026-11-10T10:00:00Z",
+      updatedBy,
+    },
+    {
+      revision: 1,
+      changeSummary: "first draft",
+      updatedAt: "2026-11-08T10:00:00Z",
+      updatedBy,
+    },
+  ],
+};
+let guidesOverride;
+let resolveOverride;
+afterEach(() => {
+  guidesOverride = undefined;
+  resolveOverride = undefined;
+});
+
 /** The server's answers: a saved provider echoes its input. */
-function serveProfiles({ path, body }) {
+function serveProfiles({ path, body, method }) {
   if (path.endsWith("/models")) return Response.json([{ id: "gpt-5.6" }]);
   if (path === "/api/execution-default")
     return Response.json({
@@ -117,24 +199,29 @@ function serveProfiles({ path, body }) {
         scope: "global",
       },
     });
-  if (path === "/api/model-pools") return Response.json([]);
-  if (path === "/api/model-notes")
+  if (path === "/api/worker-groups") return Response.json([]);
+  if (path === "/api/model-guides")
+    return Response.json({ guides: guidesOverride ?? [flashSummary] });
+  if (path === "/api/model-guides/resolve") {
+    const resolution = resolveOverride ?? {
+      guide: flashSummary,
+      suggestedId: "flash-1017",
+      suggestedIdTaken: true,
+    };
+    return Response.json(
+      method === "POST"
+        ? { resolutions: body.targets.map(() => resolution) }
+        : resolution,
+    );
+  }
+  if (path === "/api/model-guides/flash-1017")
+    return Response.json(flashDetail);
+  if (path === "/api/model-guides/flash-1017/revisions/1")
     return Response.json({
-      total: 1,
-      offset: 0,
-      notes: [
-        {
-          id: "note_1",
-          providerKind: "api",
-          providerId: "p1",
-          runtime: "codex",
-          model: "gpt-5",
-          body: "Give exact files and commands.",
-          authorUserId: "user_1",
-          authorName: "Alice",
-          createdAt: "2026-11-10T10:00:00Z",
-        },
-      ],
+      guideId: "flash-1017",
+      revision: 1,
+      changeSummary: "first draft",
+      snapshot: { ...flashDetail.guide, revision: 1 },
     });
   if (path.startsWith("/api/profiles") && body)
     return Response.json({
@@ -145,130 +232,700 @@ function serveProfiles({ path, body }) {
   return Response.json(profile);
 }
 
-test("each provider model shows its orchestration notes", async () => {
-  const view = await renderFeature();
+test("the model guides list opens a guide's details", async () => {
+  const view = await renderFeature({ tab: "guides" });
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  assert.match(
-    view.query("section")?.textContent ?? "",
-    /Default execution model/,
-  );
-  assert.match(view.container.textContent, /Relay · gpt-5 · High/);
-  assert.doesNotMatch(view.container.textContent, /\bp1\b/);
-  const headings = [...view.container.querySelectorAll("h2,h3")];
-  const endpoints = headings.find(
-    (heading) => heading.textContent === "API endpoints",
-  );
-  const notes = headings.find(
-    (heading) => heading.textContent === "Orchestration notes",
-  );
-  assert.ok(endpoints);
-  assert.ok(notes);
-  assert.ok(
-    endpoints.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  const provider = [...view.container.querySelectorAll("summary")].find(
-    (node) => node.textContent.includes("Relay"),
-  );
-  assert.ok(provider);
-  await act(async () => {
-    provider.click();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  });
-  const model = [...provider.parentElement.querySelectorAll("summary")].find(
-    (node) => node.textContent.includes("gpt-5"),
-  );
-  assert.ok(model);
-  await act(async () => {
-    model.click();
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
-  assert.match(model.parentElement.textContent, /Alice/);
-  assert.match(
-    model.parentElement.textContent,
-    /Give exact files and commands/,
+  const headings = [...view.container.querySelectorAll("h2,h3")].map(
+    (heading) => heading.textContent,
   );
+  assert.ok(headings.includes("Model guides"));
   assert.ok(
-    model.parentElement.querySelector(
-      'button[aria-label="Edit note for gpt-5"]',
-    ),
+    !headings.includes("Execution models"),
+    "the guides section is its own page",
   );
-  assert.ok(
-    view.requests.some(
-      (request) =>
-        request.method === "GET" && request.path === "/api/model-notes",
-    ),
+  assert.equal(
+    view.container.querySelector('[aria-label="Runtime"]'),
+    null,
+    "the runtime and device filters do not apply to guides",
+  );
+  assert.equal(view.container.querySelector('[aria-label^="Device"]'), null);
+  const row = window.document.querySelector(
+    'button[aria-label="Open guide DeepSeek Flash 1017"]',
+  );
+  assert.ok(row);
+  assert.match(row.textContent, /flash-1017/);
+  assert.match(row.textContent, /2 aliases/);
+  assert.match(row.textContent, /Fast and cheap/);
+  assert.match(row.textContent, /Orchestrator/);
+  await act(async () => {
+    row.click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  const dialog = window.document.querySelector(".fdy-dialog");
+  assert.ok(dialog);
+  const text = dialog.textContent;
+  assert.match(text, /Known pitfalls/);
+  assert.match(text, /required/);
+  assert.match(text, /deepseek\/flash/);
+  assert.match(text, /128,000 tokens/);
+  assert.match(text, /58\.3 tok\/s/);
+  assert.match(text, /2\.4 s/);
+  assert.match(text, /Skipped the tests twice/);
+  assert.match(text, /Add to the pitfalls of the flash-1017 guide/);
+  assert.ok(dialog.querySelector('button[aria-label="Copy the example"]'));
+  assert.ok(dialog.querySelector('a[href*="sess_42"]'));
+  assert.equal(
+    dialog.querySelectorAll("textarea, input[type=text]").length,
+    0,
+    "guides are read-only",
   );
 });
 
-test("equivalent model pools can be chosen as the execution default and edited in place", async () => {
-  const pool = {
-    id: "mpool_flash",
-    providerKind: "api",
-    providerId: "p1",
-    runtime: "codex",
+test("without guides the section says how they come to exist", async () => {
+  guidesOverride = [];
+  const view = await renderFeature({ tab: "guides" });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  assert.match(
+    view.container.textContent,
+    /No guides yet\. Your orchestrator creates one the first time it hands work to a model/,
+  );
+});
+
+test("the default execution model links to its guide, or says there is none", async () => {
+  const view = await renderFeature({ tab: "default" });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  const link = window.document.querySelector(
+    'button[aria-label="Open the guide for DeepSeek Flash 1017"]',
+  );
+  assert.ok(link);
+  assert.match(link.textContent, /Guide: DeepSeek Flash 1017/);
+  assert.ok(
+    view.requests.some(
+      (request) =>
+        request.path === "/api/model-guides/resolve" &&
+        request.method === "GET",
+    ),
+  );
+  document.body.replaceChildren();
+  resolveOverride = { suggestedId: "gpt-5", suggestedIdTaken: false };
+  const empty = await renderFeature({ tab: "default" });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  assert.match(empty.container.textContent, /No guide yet/);
+});
+
+const groupMember = (model, providerId = "p1", runtime = "codex") => ({
+  providerKind: "api",
+  providerId,
+  runtime,
+  model,
+  tokensPerMinute: 6_000_000,
+  weight: 1,
+});
+
+/** One saved group whose members come from two providers, and the default naming it. */
+function serveWorkerGroups() {
+  const group = {
+    id: "wg_flash",
     label: "DeepSeek Flash",
     members: [
-      { model: "deepseek-v4.1-flash-1017", tokensPerMinute: 6_000_000 },
-      { model: "deepseek/deepseek-flash", tokensPerMinute: 1_000_000 },
+      groupMember("deepseek-v4.1-flash-1017"),
+      groupMember("deepseek/deepseek-flash", "p2"),
     ],
     createdAt: "2026-11-10T10:00:00Z",
     updatedAt: "2026-11-10T10:00:00Z",
   };
-  const view = await renderFeature({}, (request) => {
-    if (
-      request.path === "/api/execution-default" &&
-      (!request.method || request.method === "GET")
-    )
-      return Response.json({
-        saved: {
-          providerKind: "api",
-          providerId: "p1",
-          runtime: "codex",
-          modelPoolId: pool.id,
-          effort: "high",
-          scope: "global",
-          pool,
-        },
-        effective: {
-          providerKind: "api",
-          providerId: "p1",
-          runtime: "codex",
-          modelPoolId: pool.id,
-          effort: "high",
-          scope: "global",
-          pool,
-        },
-      });
-    if (request.path === "/api/model-pools" && request.method === "GET")
-      return Response.json([pool]);
-    if (request.path === "/api/model-pools" && request.method === "POST")
-      return Response.json(
-        { ...pool, ...request.body, id: "mpool_new" },
-        { status: 201 },
-      );
-    return serveProfiles(request);
-  });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  assert.match(view.container.textContent, /pool DeepSeek Flash \(2 ids\)/);
-  assert.match(view.container.textContent, /Equivalent model pools/);
-  assert.match(view.container.textContent, /deepseek\/deepseek-flash/);
+  const groups = [group];
+  const executionDefault = { workerGroupId: group.id, scope: "global", group };
+  return {
+    groups,
+    serve(request) {
+      if (request.path === "/api/execution-default" && request.method === "GET")
+        return Response.json({
+          saved: executionDefault,
+          effective: executionDefault,
+        });
+      if (request.path === "/api/worker-groups" && request.method === "GET")
+        return Response.json(groups);
+      if (request.path === "/api/worker-groups" && request.method === "POST") {
+        const created = { ...group, ...request.body, id: "wg_new" };
+        groups.push(created);
+        return Response.json(created, { status: 201 });
+      }
+      return serveProfiles(request);
+    },
+  };
+}
 
-  await view.clickButton("New pool");
-  await view.type('input[aria-label="Pool name"]', "Fast fallback");
-  await view.clickButton("Save pool");
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+test("the default execution model can be a worker group, managed in the Worker groups section", async () => {
+  const { serve } = serveWorkerGroups();
+  const view = await renderFeature({ tab: "default" }, serve);
+  await settle();
+  assert.match(
+    view.container.textContent,
+    /Worker group DeepSeek Flash \(2 models\)/,
+  );
+  assert.ok(view.query('button[aria-label^="Worker group:"]'));
+  assert.ok(
+    !view.query('button[aria-label^="Model provider:"]'),
+    "a group default shows no provider or model fields",
+  );
+  assert.equal(
+    view.query('[aria-label="Group name"]'),
+    null,
+    "groups are edited in their own section, not here",
+  );
+  assert.ok(view.buttonWithText("Manage worker groups"));
+  await unmount(view.root);
+});
+
+test("a worker group is created with members from different providers", async () => {
+  const { serve } = serveWorkerGroups();
+  const view = await renderFeature({ tab: "groups" }, serve);
+  await settle();
+  const editGroup = view.query(
+    'button[aria-label="Edit worker group DeepSeek Flash"]',
+  );
+  assert.ok(editGroup);
+  assert.match(editGroup.textContent, /By quota/);
+  await view.clickButton("New worker group");
+  await view.type('input[aria-label="Group name"]', "Fast fallback");
+  assert.ok(view.query('button[aria-label^="Provider of model 1"]'));
+  await view.clickButton("Save group");
   const created = view.requests.find(
     (request) =>
-      request.method === "POST" && request.path === "/api/model-pools",
+      request.method === "POST" && request.path === "/api/worker-groups",
   );
   assert.ok(created);
-  assert.equal(created.body.providerKind, "api");
-  assert.equal(created.body.providerId, "p1");
   assert.equal(created.body.label, "Fast fallback");
-  assert.ok(created.body.members.length >= 1);
+  assert.equal(created.body.members[0].providerId, "p1");
+  assert.equal(created.body.members[0].runtime, "codex");
+  assert.ok(created.body.members[0].model);
+  assert.equal("providerId" in created.body, false);
+  assert.match(view.container.textContent, /Fast fallback/);
+  await unmount(view.root);
+});
+
+test("worker group weights lock while another model has a quota", async () => {
+  const { serve } = serveWorkerGroups();
+  const view = await renderFeature({ tab: "groups" }, serve);
+  await settle();
+  await view.clickButton("DeepSeek Flash");
+  await view.type('input[aria-label="Tokens per minute for model 2"]', "");
+  await settle();
+
+  const section = view.query('[aria-label="Worker groups"]');
+  const weights = [
+    ...section.querySelectorAll('input[aria-label^="Rotation weight"]'),
+  ];
+  assert.equal(weights.length, 2);
+  assert.ok(weights.every((input) => input.disabled));
+  assert.equal(
+    weights[0].getAttribute("aria-describedby"),
+    "worker-group-mode-hint",
+  );
+  assert.match(
+    section.querySelector("#worker-group-mode-hint").textContent,
+    /Weights are not used\./,
+  );
+  assert.equal(
+    section.querySelector('.fdy-field-hint[data-tone="warning"]').textContent,
+    "Other models have quotas set, so this model will not be selected. Add Tokens / minute, or clear every quota to use weights.",
+  );
+  assert.match(
+    section.textContent,
+    /Picks by remaining quota: each new worker gets the model with the most tokens left in the last minute\. Weights are not used\. Members a device cannot use are skipped\./,
+  );
+  await unmount(view.root);
+});
+
+test("worker group weights edit when no model has a quota", async () => {
+  const { serve } = serveWorkerGroups();
+  const view = await renderFeature({ tab: "groups" }, serve);
+  await settle();
+  await view.clickButton("DeepSeek Flash");
+  await view.type('input[aria-label="Tokens per minute for model 1"]', "");
+  await view.type('input[aria-label="Tokens per minute for model 2"]', "");
+  await settle();
+
+  const section = view.query('[aria-label="Worker groups"]');
+  const weights = [
+    ...section.querySelectorAll('input[aria-label^="Rotation weight"]'),
+  ];
+  assert.equal(weights.length, 2);
+  assert.ok(weights.every((input) => !input.disabled));
+  assert.equal(
+    section.querySelector('.fdy-field-hint[data-tone="warning"]'),
+    null,
+  );
+  assert.match(
+    section.textContent,
+    /No quotas set: new workers rotate through the models by weight\. Members a device cannot use are skipped\./,
+  );
+  await unmount(view.root);
+});
+
+async function renderWorkspaceExecution(
+  executionDefault,
+  endpoint,
+  groups = [],
+) {
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const requests = [];
+  const workspaceId = "ws_execution";
+  globalThis.fetch = async (input, init = {}) => {
+    const request = {
+      method: init.method ?? "GET",
+      path: new URL(String(input)).pathname,
+      body: init.body ? JSON.parse(init.body) : undefined,
+    };
+    requests.push(request);
+    if (
+      request.method === "GET" &&
+      request.path === `/api/workspaces/${workspaceId}/execution-default`
+    )
+      return Response.json(executionDefault);
+    if (request.method === "GET" && request.path === "/api/worker-groups")
+      return Response.json(groups);
+    if (request.method === "GET" && request.path.endsWith("/models"))
+      return Response.json([]);
+    if (
+      request.method === "GET" &&
+      request.path === "/api/model-guides/resolve"
+    )
+      return Response.json({
+        suggestedId: endpoint.model,
+        suggestedIdTaken: false,
+      });
+    if (
+      request.method === "PUT" &&
+      request.path === `/api/workspaces/${workspaceId}/execution-default`
+    ) {
+      const saved = { ...request.body, scope: "workspace" };
+      return Response.json({ workspaceId, saved, effective: saved });
+    }
+    throw new Error(`unexpected ${request.method} ${request.path}`);
+  };
+  await act(async () => {
+    root.render(
+      createElement(WorkspaceExecutionDefaultFeature, {
+        profiles: [],
+        servers: [endpoint],
+        workspaceId,
+      }),
+    );
+  });
+  await settle();
+
+  const choose = async (ariaLabel, optionText) => {
+    const trigger = [...window.document.querySelectorAll("button")].find(
+      (button) => {
+        const label = button.getAttribute("aria-label") ?? "";
+        return label === ariaLabel || label.startsWith(`${ariaLabel}:`);
+      },
+    );
+    assert.ok(trigger, `missing ${ariaLabel} picker`);
+    await act(async () => {
+      trigger.dispatchEvent(
+        new window.PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const option = [
+      ...window.document.querySelectorAll('[role="menuitemradio"]'),
+    ].find((item) => item.textContent.includes(optionText));
+    assert.ok(option, `missing ${optionText} in ${ariaLabel}`);
+    await act(async () => {
+      option.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  const clickButton = async (text) => {
+    const button = [...window.document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent.trim() === text,
+    );
+    assert.ok(button, `missing ${text}`);
+    await act(async () => {
+      button.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  const clickAria = async (ariaLabel) => {
+    const button = window.document.querySelector(
+      `button[aria-label="${ariaLabel}"]`,
+    );
+    assert.ok(button, `missing button ${ariaLabel}`);
+    await act(async () => {
+      button.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  return { choose, clickAria, clickButton, container, requests, root };
+}
+
+test("workspace execution saves the API endpoint, model and effort as protocol fields only", async () => {
+  const endpoint = {
+    ...profile,
+    id: "prof_byte_llm",
+    label: "byte-llm-gateway",
+    model: "gpt-5",
+    models: ["gpt-5", "flux/GPT-6.1-Sol"],
+  };
+  const view = await renderWorkspaceExecution(
+    { effective: { scope: "none" } },
+    endpoint,
+  );
+  try {
+    assert.match(
+      view.container.textContent,
+      /Agents hand work to this model only after you start orchestration with \/foundry-orchestration in a chat; otherwise they use their own subagents as usual\./,
+    );
+    await view.choose("Model provider", "byte-llm-gateway");
+    await view.choose("Model", "flux/GPT-6.1-Sol");
+    await view.choose("Effort", "High");
+    await view.clickButton("Save workspace override");
+    const saved = view.requests.find((request) => request.method === "PUT");
+    assert.deepEqual(saved.body, {
+      providerKind: "api",
+      providerId: endpoint.id,
+      runtime: "codex",
+      model: "flux/GPT-6.1-Sol",
+      effort: "high",
+      alternatives: [],
+    });
+    assert.equal("workerGroupId" in saved.body, false);
+    assert.equal("modelPoolId" in saved.body, false);
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("workspace execution saves model and worker group alternatives as protocol fields only", async () => {
+  const endpoint = {
+    ...profile,
+    id: "prof_alternatives",
+    label: "Alternatives gateway",
+    model: "gpt-5",
+    models: ["gpt-5", "gpt-6.1"],
+  };
+  const group = {
+    id: "wg_fallback",
+    label: "Fallback group",
+    members: [groupMember("deepseek-v4.1-flash-1017")],
+    createdAt: "2026-11-12T10:00:00Z",
+    updatedAt: "2026-11-12T10:00:00Z",
+  };
+  const view = await renderWorkspaceExecution(
+    {
+      effective: {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "gpt-5",
+        effort: "high",
+        alternatives: [],
+        scope: "global",
+      },
+    },
+    endpoint,
+    [group],
+  );
+  try {
+    await view.clickButton("Add");
+    await view.choose("Model provider 1", "Alternatives gateway");
+    await view.choose("Model 1", "gpt-6.1");
+    await view.choose("Effort 1", "High");
+    await view.clickButton("Add");
+    await view.choose("Source 2", "A worker group");
+    await view.choose("Worker group 2", "Fallback group");
+    await view.clickButton("Save workspace override");
+
+    const saved = view.requests.find((request) => request.method === "PUT");
+    assert.deepEqual(saved.body.alternatives, [
+      {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "gpt-6.1",
+        effort: "high",
+      },
+      { workerGroupId: group.id },
+    ]);
+    assert.equal("group" in saved.body.alternatives[1], false);
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("removing a workspace execution alternative changes the saved payload", async () => {
+  const endpoint = {
+    ...profile,
+    id: "prof_remove_alternative",
+    label: "Removal gateway",
+    model: "gpt-5",
+    models: ["gpt-5", "gpt-6.1"],
+  };
+  const saved = {
+    providerKind: "api",
+    providerId: endpoint.id,
+    runtime: "codex",
+    model: "gpt-5",
+    effort: "high",
+    alternatives: [
+      {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "gpt-6.1",
+        effort: "high",
+      },
+      {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "gpt-5",
+        effort: "low",
+      },
+    ],
+    scope: "workspace",
+  };
+  const view = await renderWorkspaceExecution(
+    { saved, effective: saved },
+    endpoint,
+  );
+  try {
+    await view.clickAria("Remove alternative 1");
+    await view.clickButton("Save workspace override");
+    const request = view.requests.find(
+      (candidate) => candidate.method === "PUT",
+    );
+    assert.deepEqual(request.body.alternatives, [saved.alternatives[1]]);
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("a workspace without an override shows the inherited execution alternatives read-only", async () => {
+  const endpoint = {
+    ...profile,
+    id: "prof_inherited_alternatives",
+    label: "Inherited gateway",
+    model: "gpt-5",
+    models: ["gpt-5", "gpt-6.1"],
+  };
+  const group = {
+    id: "wg_inherited",
+    label: "Inherited group",
+    members: [groupMember("deepseek-v4.1-flash-1017")],
+    createdAt: "2026-11-12T10:00:00Z",
+    updatedAt: "2026-11-12T10:00:00Z",
+  };
+  const inherited = {
+    providerKind: "api",
+    providerId: endpoint.id,
+    runtime: "codex",
+    model: "gpt-5",
+    effort: "high",
+    alternatives: [
+      {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "gpt-6.1",
+        effort: "high",
+      },
+      { workerGroupId: group.id, group },
+    ],
+    scope: "global",
+  };
+  const view = await renderWorkspaceExecution(
+    { effective: inherited },
+    endpoint,
+    [group],
+  );
+  try {
+    assert.match(view.container.textContent, /The orchestrator may also use/);
+    assert.match(
+      view.container.textContent,
+      /Inherited from the global default/,
+    );
+    assert.match(
+      view.container.textContent,
+      /Inherited gateway · gpt-6\.1 · High/,
+    );
+    assert.match(view.container.textContent, /Worker group Inherited group/);
+    assert.match(view.container.textContent, /2 alternatives/);
+    assert.equal(
+      view.container.querySelector('button[aria-label^="Model provider 1"]'),
+      null,
+    );
+    assert.equal(
+      view.container.querySelector('button[aria-label="Remove alternative 1"]'),
+      null,
+    );
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("execution summary names an API model and an unresolved worker group", async () => {
+  const endpoint = {
+    ...profile,
+    id: "prof_byte_llm",
+    label: "byte-llm-gateway",
+    model: "flux/GPT-6.1-Sol",
+  };
+  const modelView = await renderWorkspaceExecution(
+    {
+      effective: {
+        providerKind: "api",
+        providerId: endpoint.id,
+        runtime: "codex",
+        model: "flux/GPT-6.1-Sol",
+        effort: "high",
+        scope: "global",
+      },
+    },
+    endpoint,
+  );
+  try {
+    assert.match(
+      modelView.container.textContent,
+      /byte-llm-gateway · flux\/GPT-6\.1-Sol · High — global default/,
+    );
+  } finally {
+    await unmount(modelView.root);
+  }
+
+  const groupView = await renderWorkspaceExecution(
+    {
+      effective: {
+        workerGroupId: "wgroup_missing",
+        scope: "global",
+      },
+    },
+    endpoint,
+  );
+  try {
+    assert.match(
+      groupView.container.textContent,
+      /wgroup_missing \(worker group no longer available\)/,
+    );
+    assert.doesNotMatch(
+      groupView.container.textContent,
+      /\(no longer available\) · · Runtime default/,
+    );
+  } finally {
+    await unmount(groupView.root);
+  }
+});
+
+test("model pickers show a placeholder, never a selectable placeholder option", async () => {
+  const empty = { scope: "global" };
+  const view = await renderFeature({ tab: "default" }, (request) =>
+    request.path === "/api/execution-default" && request.method === "GET"
+      ? Response.json({ effective: empty })
+      : serveProfiles(request),
+  );
+  await settle();
+  const triggers = [
+    ...view.container.querySelectorAll('button[aria-haspopup="menu"]'),
+  ];
+  assert.ok(triggers.length >= 2, "the provider and model pickers render");
+  let menusWithItems = 0;
+  for (const trigger of triggers) {
+    await act(async () => {
+      trigger.dispatchEvent(
+        new window.PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    await settle();
+    const labels = [
+      ...window.document.querySelectorAll(
+        '[role="menuitemradio"], [role="option"], [role="menuitem"]',
+      ),
+    ].map((item) => item.textContent.trim());
+    if (labels.length) menusWithItems += 1;
+    assert.ok(
+      !labels.some((label) => /^choose (a|an) /i.test(label)),
+      `no placeholder option among ${JSON.stringify(labels)}`,
+    );
+    await act(async () => {
+      window.document.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+  }
+  assert.ok(menusWithItems > 0, "at least one picker opened with options");
+  const { agents } = await import("../src/i18n/locales/en/agents.ts");
+  for (const key of ["chooseProvider", "chooseModel"])
+    assert.equal(key in agents.executionDefault, false, key);
+  await unmount(view.root);
+});
+
+test("the guides section lists the models in use that no guide covers, with a suggested id and an example sentence", async () => {
+  resolveOverride = { suggestedId: "gpt-5", suggestedIdTaken: false };
+  const view = await renderFeature({ tab: "guides" });
+  await settle();
+  const notice = view.query("[data-unlinked-models]");
+  assert.ok(notice, "the default model has no guide");
+  assert.match(notice.textContent, /Models without a guide/);
+  assert.match(notice.textContent, /gpt-5/);
+  assert.match(notice.textContent, /Suggested id: gpt-5/);
+  assert.match(notice.textContent, /Execution models/);
+  assert.ok(notice.querySelector('button[aria-label="Copy the example"]'));
+  assert.ok(
+    view.requests.some(
+      (request) =>
+        request.method === "POST" &&
+        request.path === "/api/model-guides/resolve" &&
+        request.body.targets.some((target) => target.model === "gpt-5"),
+    ),
+  );
+  await unmount(view.root);
+
+  resolveOverride = undefined;
+  const covered = await renderFeature({ tab: "guides" });
+  await settle();
+  assert.equal(
+    covered.query("[data-unlinked-models]"),
+    null,
+    "nothing is shown when every model has a guide",
+  );
+  await unmount(covered.root);
+});
+
+test("endpoint models link to their guide in small type; models without one show nothing", async () => {
+  const relay = { ...profile, model: "gpt-5", models: ["gpt-5", "gpt-5-mini"] };
+  const view = await renderFeature({ tab: "endpoints", profiles: [relay] });
+  await settle();
+  const tags = view.query("[data-model-guide-tags]");
+  assert.ok(tags);
+  assert.ok(
+    tags.querySelector('button[aria-label^="Open the guide DeepSeek Flash"]'),
+  );
+  await unmount(view.root);
+  resolveOverride = { suggestedId: "gpt-5", suggestedIdTaken: false };
+  const none = await renderFeature({ tab: "endpoints", profiles: [relay] });
+  await settle();
+  assert.equal(none.query("[data-model-guide-tags]"), null);
+  await unmount(none.root);
 });
 
 async function renderFeature(overrides = {}, serve = serveProfiles) {
@@ -354,9 +1011,12 @@ const operationalRequests = (view) =>
   view.requests.filter(
     (request) =>
       !(
-        request.method === "GET" &&
-        (request.path === "/api/execution-default" ||
-          request.path === "/api/model-pools")
+        (request.method === "GET" &&
+          (request.path === "/api/execution-default" ||
+            request.path === "/api/worker-groups" ||
+            request.path.startsWith("/api/model-guides"))) ||
+        (request.method === "POST" &&
+          request.path === "/api/model-guides/resolve")
       ),
   );
 const sent = (view) =>
@@ -699,30 +1359,83 @@ test("a Claude endpoint has no Codex transport", async () => {
   await unmount(view.root);
 });
 
-test("the kinds of provider are tabs and only the open one is shown", async () => {
+test("Model providers is a flat section menu in two groups, and the filters belong to the model source sections only", async () => {
   const view = await renderFeature({ tab: "subscriptions" });
   try {
-    const tabs = [
-      ...window.document.querySelectorAll(
-        '[aria-label="Kinds of model provider"] button',
-      ),
-    ];
+    const nav = window.document.querySelector("[data-provider-nav]");
     assert.deepEqual(
-      tabs.map((tab) => tab.textContent),
-      ["Subscriptions", "API endpoints", "Launch environments"],
+      [...nav.querySelectorAll("section")].map((group) => [
+        group.querySelector("h2").textContent,
+        [...group.querySelectorAll("a")].map((item) => item.textContent),
+      ]),
+      [
+        ["Execution", ["Execution models", "Worker groups", "Model guides"]],
+        [
+          "Model sources",
+          ["Subscriptions", "API endpoints", "Launch environments"],
+        ],
+      ],
     );
-    assert.equal(tabs[0].getAttribute("data-state"), "on");
+    const items = [...nav.querySelectorAll("a")];
+    assert.deepEqual(
+      items.map((item) => item.textContent),
+      [
+        "Execution models",
+        "Worker groups",
+        "Model guides",
+        "Subscriptions",
+        "API endpoints",
+        "Launch environments",
+      ],
+    );
+    assert.deepEqual(
+      items.map((item) => item.getAttribute("href")),
+      [
+        "default",
+        "groups",
+        "guides",
+        "subscriptions",
+        "endpoints",
+        "environments",
+      ].map((section) => `/model-providers/${section}`),
+    );
+    assert.equal(items[3].getAttribute("aria-current"), "page");
+    assert.ok(view.query('[aria-label="Runtime"]'));
+    assert.ok(view.query('[aria-label^="Device"]'));
     // The page-wide default execution model may name Relay; its endpoint
-    // card belongs to the API endpoints tab only.
+    // card belongs to the API endpoints section only.
     assert.ok(
       ![...window.document.querySelectorAll(".fdy-profile-card")].some((card) =>
         card.textContent.includes("Relay"),
       ),
     );
-    await view.clickButton("API endpoints");
+    await act(async () => {
+      items[4].dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
     assert.deepEqual(view.events.at(-1), { type: "tab", tab: "endpoints" });
   } finally {
     await unmount(view.root);
+  }
+  for (const tab of ["default", "groups", "guides"]) {
+    const other = await renderFeature({ tab });
+    try {
+      assert.equal(other.query('[aria-label="Runtime"]'), null, tab);
+      assert.equal(other.query('[aria-label^="Device"]'), null, tab);
+      assert.equal(other.query(".fdy-profile-card"), null, tab);
+    } finally {
+      await unmount(other.root);
+    }
+  }
+  for (const tab of ["endpoints", "environments"]) {
+    const filtered = await renderFeature({ tab });
+    try {
+      assert.ok(filtered.query('[aria-label="Runtime"]'), tab);
+      assert.ok(filtered.query('[aria-label^="Device"]'), tab);
+    } finally {
+      await unmount(filtered.root);
+    }
   }
 });
 

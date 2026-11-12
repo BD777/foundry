@@ -727,6 +727,60 @@ components:
         reason:
           description: Why the device cannot be selected, when Eligible is false.
           type: string
+        reasonCode:
+          description: Machine-readable form of Reason when the cause is that no instance is usable here.
+          type: string
+          enum: [no_instance]
+        instances:
+          description:
+            Ready instances of a server-held connector whose sessions on this device can use them.
+            Absent for connectors without instances.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorPackageInstanceRef"
+        state:
+          description:
+            Where applying the selection stands on this device. Selecting a device returns at once
+            with pending; the install runs in the background. Absent when the device has no part in
+            the package.
+          type: string
+          enum: [pending, installing, installed, failed]
+        error:
+          description: Why the install or removal failed, when State is failed.
+          type: string
+    ConnectorPackageInstanceRef:
+      description: A server-held instance, as named in a package view.
+      type: object
+      required:
+        - id
+        - label
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    ConnectorPackageInstance:
+      description: A Ready instance of a server-held connector and the devices where sessions can use it.
+      type: object
+      required:
+        - id
+        - label
+        - network
+        - deviceIds
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        network:
+          type: string
+          description: server (every device) or device (only the devices that probed it).
+        deviceIds:
+          type: array
+          items:
+            type: string
     ConnectorPackageView:
       description: A package at the person level, its bundle, and where it is enabled.
       type: object
@@ -743,6 +797,11 @@ components:
           type: boolean
         repositoryId:
           type: string
+        instances:
+          description: Ready instances of a server-held connector, with the devices that can use each.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorPackageInstance"
         devices:
           type: array
           items:
@@ -1028,6 +1087,7 @@ components:
         name:
           type: string
         status:
+          description: ok (the device reaches the upstream), unreachable, error (the probe was refused or failed) or not_applicable (a loopback address that only the validating device reaches).
           type: string
         checkedAt:
           type: string

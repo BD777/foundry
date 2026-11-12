@@ -5,12 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"net"
+	"log"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
@@ -385,12 +383,8 @@ func sendConnectorRequest(ctx context.Context, connection *daemonConnection, pay
 	return reply, err
 }
 
-func (s *Server) checkExtensionDevices(ctx context.Context, descriptor store.ConnectorDescriptor, baseURL, probeDeviceID string) ([]store.ConnectorServerHeldDeviceCheck, error) {
-	owner, err := s.store.DeviceOwner(ctx, probeDeviceID)
-	if err != nil {
-		return nil, err
-	}
-	owned, err := s.store.DevicesOwnedBy(ctx, owner)
+func (s *Server) extensionDevices(ctx context.Context, ownerUserID, kind string) ([]externalaccounts.ExtensionDeviceCandidate, error) {
+	owned, err := s.store.DevicesOwnedBy(ctx, ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -400,135 +394,30 @@ func (s *Server) checkExtensionDevices(ctx context.Context, descriptor store.Con
 	}
 	names := map[string]string{}
 	for _, device := range devices {
-		name := strings.TrimSpace(device.Label)
-		if name == "" {
-			name = device.ID
-		}
-		names[device.ID] = name
+		names[device.ID] = strings.TrimSpace(device.Label)
 	}
-	target, err := extensionNetworkTarget(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	checks, err := s.store.ListConnectorVisibilityChecks(ctx, owned)
-	if err != nil {
-		return nil, err
-	}
-	cached := map[string]store.ConnectorVisibilityCheck{}
-	for _, check := range checks {
-		if check.Result == "extension-network" && check.Via == target {
-			cached[check.DeviceID] = check
-		}
-	}
-	now := time.Now().UTC()
-	result := make([]store.ConnectorServerHeldDeviceCheck, 0, len(owned))
-	// The selected device's full probe already proved the upstream works.
-	result = append(result, store.ConnectorServerHeldDeviceCheck{
-		DeviceID: probeDeviceID, Name: names[probeDeviceID], Status: "ok", CheckedAt: now.Format(time.RFC3339),
-	})
-	var (
-		mu      sync.Mutex
-		waits   sync.WaitGroup
-		results []store.ConnectorServerHeldDeviceCheck
-	)
-	// A loopback or localhost address names each device's own machine, so
-	// only the device that validated it reaches this upstream.
-	if extensionNetworkLoopback(target) {
-		return result, nil
-	}
+	candidates := make([]externalaccounts.ExtensionDeviceCandidate, 0, len(owned))
 	for _, deviceID := range owned {
-		if deviceID == probeDeviceID || s.hub.connectionFor(deviceID) == nil {
-			continue
+		name := names[deviceID]
+		if name == "" {
+			name = deviceID
 		}
-		if _, err := s.connectors.Devices.ServerHeldDescriptorOn(ctx, deviceID, descriptor.Kind); err != nil {
-			continue
-		}
-		if check, ok := cached[deviceID]; ok {
-			checked, parseErr := time.Parse(time.RFC3339, check.CheckedAt)
-			if parseErr == nil && now.Sub(checked) < connectorVisibilityMaxAge {
-				if check.Status == "ok" {
-					result = append(result, store.ConnectorServerHeldDeviceCheck{
-						DeviceID: deviceID, Name: names[deviceID], Status: check.Status, CheckedAt: check.CheckedAt,
-					})
-				}
-				continue
-			}
-		}
-		waits.Add(1)
-		go func(deviceID string) {
-			defer waits.Done()
-			requirement := descriptor
-			host, port := extensionNetworkHostPort(target)
-			requirement.Requires = []store.ConnectorRequirement{{
-				Kind: "tcp_reachable", Host: host, Port: port, Label: "the instance's upstream network",
-			}}
-			reply, askErr := s.askDeviceConnector(ctx, deviceID, requirement, "requirements", true, connectorVisibilityCheck)
-			check := store.ConnectorVisibilityCheck{
-				DeviceID: deviceID, Result: "extension-network", Kind: descriptor.Kind,
-				Via: target, CheckedAt: time.Now().UTC().Format(time.RFC3339), Status: "error",
-			}
-			if askErr != nil {
-				check.Detail = visibilityDetail(askErr.Error())
-			} else if reply.RequirementsCheck == nil {
-				check.Detail = "the device answered without a reachability result"
-			} else if reply.RequirementsCheck.OK {
-				check.Status = "ok"
-			} else {
-				check.Status = "unreachable"
-				check.Requirement = visibilityDetail(reply.RequirementsCheck.Requirement)
-			}
-			_ = s.store.SaveConnectorVisibilityCheck(ctx, check)
-			mu.Lock()
-			if check.Status == "ok" {
-				results = append(results, store.ConnectorServerHeldDeviceCheck{
-					DeviceID: deviceID, Name: names[deviceID], Status: "ok", CheckedAt: check.CheckedAt,
-				})
-			}
-			mu.Unlock()
-		}(deviceID)
+		_, installedErr := s.connectors.Devices.ServerHeldDescriptorOn(ctx, deviceID, kind)
+		candidates = append(candidates, externalaccounts.ExtensionDeviceCandidate{
+			ID: deviceID, Name: name, Online: s.hub.connectionFor(deviceID) != nil, Installed: installedErr == nil,
+		})
 	}
-	waits.Wait()
-	result = append(result, results...)
-	return result, nil
+	return candidates, nil
 }
 
-// extensionNetworkLoopback reports a host:port that only the machine itself reaches.
-func extensionNetworkLoopback(target string) bool {
-	host, _ := extensionNetworkHostPort(target)
-	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
-		return true
+// probeExtensionsOnDevice probes the owner's device-network instances from a
+// device that just came online and has not been probed for them yet.
+func (s *Server) probeExtensionsOnDevice(ctx context.Context, deviceID string) {
+	owner, err := s.store.DeviceOwner(ctx, deviceID)
+	if err != nil || owner == "" {
+		return
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func extensionNetworkTarget(rawURL string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || parsed.Hostname() == "" {
-		return "", errors.New("the connector URL has no host to check from devices")
+	if err := s.connectors.ServerHeld.ProbeExtensionOnNewDevice(ctx, owner, deviceID); err != nil {
+		log.Printf("probe connector instances on device %s: %v", deviceID, err)
 	}
-	port := parsed.Port()
-	if port == "" {
-		if parsed.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-	return net.JoinHostPort(parsed.Hostname(), port), nil
-}
-
-func extensionNetworkHostPort(target string) (string, int) {
-	host, portText, err := net.SplitHostPort(target)
-	if err != nil {
-		return target, 0
-	}
-	port := 0
-	for _, digit := range portText {
-		if digit < '0' || digit > '9' {
-			return host, 0
-		}
-		port = port*10 + int(digit-'0')
-	}
-	return host, port
 }

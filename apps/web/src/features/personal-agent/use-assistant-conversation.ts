@@ -66,6 +66,7 @@ function sentInputs(sessions: Iterable<AgentSession>): Set<string> {
  * personal_agent).
  */
 export function useAssistantConversation(
+  assistantId: string | undefined,
   workspaceId: string,
   formerWorkspaceIds: readonly string[] = [],
 ) {
@@ -103,7 +104,7 @@ export function useAssistantConversation(
     try {
       const [current, received, ...earlier] = await Promise.all([
         listPersonalAgentSessions(workspaceId),
-        listPersonalAgentInbox(),
+        listPersonalAgentInbox(assistantId),
         // A project it left may be gone; its conversations go with it.
         ...former
           .split("\n")
@@ -132,7 +133,7 @@ export function useAssistantConversation(
       setError(serverErrorText(reason));
       setState((current) => (current === "ready" ? current : "failed"));
     }
-  }, [workspaceId, former]);
+  }, [assistantId, workspaceId, former]);
 
   useEffect(() => {
     setState("loading");
@@ -167,7 +168,7 @@ export function useAssistantConversation(
   useEffect(() => {
     if (!needsInboxRefresh) return;
     const timer = window.setInterval(() => {
-      void listPersonalAgentInbox().then(
+      void listPersonalAgentInbox(assistantId).then(
         (items) => {
           setInbox(items);
           setInboxError("");
@@ -176,7 +177,7 @@ export function useAssistantConversation(
       );
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [needsInboxRefresh]);
+  }, [assistantId, needsInboxRefresh]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -280,7 +281,7 @@ export function useAssistantConversation(
       setRetryingInboxId(entry.id);
       setInboxError("");
       try {
-        const saved = await actOnPersonalAgentInbox(entry.id, {
+        const saved = await actOnPersonalAgentInbox(assistantId, entry.id, {
           action: "retry",
           revision: entry.revision,
           requestId,
@@ -310,7 +311,7 @@ export function useAssistantConversation(
         { clientId, text, at: new Date().toISOString() },
       ]);
       try {
-        const receipt = await capturePersonalAgentInbox({
+        const receipt = await capturePersonalAgentInbox(assistantId, {
           text,
           messageId: clientId,
         });

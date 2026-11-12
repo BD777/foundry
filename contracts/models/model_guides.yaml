@@ -1,0 +1,344 @@
+openapi: 3.1.0
+info:
+  title: Foundry model guides
+  version: 1.0.0
+  description:
+    "Model guides: what an orchestrator needs to know before handing work to a model, kept per canonical model id
+    with aliases for the ids each provider uses. Part of the Foundry contract (contracts/foundry.openapi.yaml);
+    `pnpm generate:contracts` generates its TypeScript types and Go models
+    (apps/server/internal/store/model_guides_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    ModelGuideAlias:
+      description:
+        Maps one provider's model id to a guide. An absent `providerId` or `runtime` matches any; the most specific alias
+        wins on resolve.
+      type: object
+      required: [model]
+      additionalProperties: false
+      properties:
+        providerKind:
+          type: string
+          enum: [subscription, api, environment, discovered]
+          x-go-type: string
+        providerId:
+          type: string
+        runtime:
+          $ref: ./profiles.yaml#/components/schemas/NativeRuntimeId
+        model:
+          type: string
+    ModelGuideSections:
+      description: Short Markdown sections (at most 8 bullet points each) of what handing work to the model takes.
+      type: object
+      additionalProperties: false
+      properties:
+        summary:
+          description: One line on where the model fits.
+          type: string
+        strengths:
+          type: string
+        weaknesses:
+          type: string
+        briefing:
+          description: How to write its brief, such as slice size, context budget, required evidence and how it should read code.
+          type: string
+        avoid:
+          description: Work not to hand to it.
+          type: string
+        pitfalls:
+          description: Known failure modes, each with evidence where possible.
+          type: string
+        settings:
+          description: Recommended effort, quota and concurrency.
+          type: string
+    ModelGuideUpdater:
+      type: object
+      required: [userId, name]
+      additionalProperties: false
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        sessionId:
+          description: The agent session that wrote the revision; absent for a person.
+          type: string
+    ModelGuide:
+      description: One revision of a guide, the whole snapshot.
+      type: object
+      required:
+        [
+          id,
+          owner,
+          displayName,
+          aliases,
+          sections,
+          revision,
+          updatedAt,
+          updatedBy,
+        ]
+      additionalProperties: false
+      properties:
+        id:
+          description: The canonical id, a lower-case slug such as `deepseek-flash-1017`.
+          type: string
+        owner:
+          description: Who makes the model weights, such as `deepseek`.
+          type: string
+        displayName:
+          type: string
+        family:
+          type: string
+        aliases:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideAlias"
+        sections:
+          $ref: "#/components/schemas/ModelGuideSections"
+        revision:
+          type: integer
+        updatedAt:
+          type: string
+        updatedBy:
+          $ref: "#/components/schemas/ModelGuideUpdater"
+    ModelGuideSummary:
+      type: object
+      required:
+        [
+          id,
+          owner,
+          displayName,
+          aliasCount,
+          summary,
+          revision,
+          updatedAt,
+          updatedBy,
+        ]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        owner:
+          type: string
+        displayName:
+          type: string
+        family:
+          type: string
+        aliasCount:
+          type: integer
+        summary:
+          type: string
+        revision:
+          type: integer
+        updatedAt:
+          type: string
+        updatedBy:
+          $ref: "#/components/schemas/ModelGuideUpdater"
+    ModelGuideList:
+      type: object
+      required: [guides]
+      additionalProperties: false
+      properties:
+        guides:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideSummary"
+    ModelGuideRevisionSummary:
+      type: object
+      required: [revision, changeSummary, updatedAt, updatedBy]
+      additionalProperties: false
+      properties:
+        revision:
+          type: integer
+        changeSummary:
+          type: string
+        updatedAt:
+          type: string
+        updatedBy:
+          $ref: "#/components/schemas/ModelGuideUpdater"
+    ModelGuideRevision:
+      description: One saved revision with its full snapshot, for reading history and diffing against the revision before.
+      type: object
+      required: [guideId, revision, changeSummary, snapshot]
+      additionalProperties: false
+      properties:
+        guideId:
+          type: string
+        revision:
+          type: integer
+        changeSummary:
+          type: string
+        snapshot:
+          $ref: "#/components/schemas/ModelGuide"
+    ModelObservation:
+      description: One append-only observation about a guide's model, with the sessions that show it.
+      type: object
+      required: [id, guideId, body, sessionIds, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        guideId:
+          type: string
+        body:
+          type: string
+          maxLength: 12000
+        sessionIds:
+          type: array
+          items:
+            type: string
+        authorSessionId:
+          type: string
+        createdAt:
+          type: string
+    ModelObservationPage:
+      description: One page of observations, newest first.
+      type: object
+      required: [total, offset, observations]
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+        offset:
+          type: integer
+        nextOffset:
+          type: integer
+        observations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelObservation"
+    ModelGuideProviderFacts:
+      description: What the server knows about one alias's provider. Computed on read, never stored.
+      type: object
+      required: [alias]
+      additionalProperties: false
+      properties:
+        alias:
+          $ref: "#/components/schemas/ModelGuideAlias"
+        providerLabel:
+          type: string
+        contextWindow:
+          description: Tokens, when the provider's configuration or catalog knows the window.
+          type: integer
+        workerGroupId:
+          description: The person's worker group that holds this model id.
+          type: string
+        workerGroupLabel:
+          type: string
+        tokensPerMinute:
+          description: The worker group member's quota.
+          type: integer
+    ModelGuideUsageFacts:
+      description: Worker usage of the guide's aliases over the last `windowDays`. Computed from the usage statistics.
+      type: object
+      required: [windowDays, workerSessions, requests]
+      additionalProperties: false
+      properties:
+        windowDays:
+          type: integer
+        workerSessions:
+          description: Sessions started by another session or an Issue that made a request with the model.
+          type: integer
+        requests:
+          type: integer
+        avgRequestMs:
+          description: Mean time of one model request; absent without timed requests.
+          type: integer
+        tokPerSec:
+          description: Output tokens per second of generation over requests with observed timing; absent without any.
+          type: number
+          format: double
+    ModelGuideFacts:
+      type: object
+      required: [providers, usage]
+      additionalProperties: false
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideProviderFacts"
+        usage:
+          $ref: "#/components/schemas/ModelGuideUsageFacts"
+    ModelGuideDetail:
+      type: object
+      required: [guide, facts, observations, revisions]
+      additionalProperties: false
+      properties:
+        guide:
+          $ref: "#/components/schemas/ModelGuide"
+        facts:
+          $ref: "#/components/schemas/ModelGuideFacts"
+        observations:
+          description: The latest 20 observations; the MCP tool pages further.
+          $ref: "#/components/schemas/ModelObservationPage"
+        revisions:
+          description: Every revision, newest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideRevisionSummary"
+    ModelGuideResolution:
+      description: The guide a provider's model id maps to. `guide` is absent when none does; `suggestedId` is then the canonical id to create it under.
+      type: object
+      required: [suggestedId, suggestedIdTaken]
+      additionalProperties: false
+      properties:
+        guide:
+          x-go-type-skip-optional-pointer: false
+          $ref: "#/components/schemas/ModelGuideSummary"
+        matchedAlias:
+          x-go-type-skip-optional-pointer: false
+          $ref: "#/components/schemas/ModelGuideAlias"
+        suggestedId:
+          type: string
+        suggestedIdTaken:
+          description: A guide with the suggested id already exists, so add the model to it as an alias instead.
+          type: boolean
+    ModelGuideResolveBatch:
+      description: Several provider model ids to resolve at once (`POST /api/model-guides/resolve`, read-only).
+      type: object
+      required: [targets]
+      additionalProperties: false
+      properties:
+        targets:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/ModelGuideAlias"
+    ModelGuideResolveBatchResult:
+      description: One resolution per requested target, in the same order.
+      type: object
+      required: [resolutions]
+      additionalProperties: false
+      properties:
+        resolutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideResolution"
+    ModelGuideUpsertInput:
+      description: The `upsert` action of the model_guides tool. Absent fields keep their value; a section set to an empty string is cleared.
+      type: object
+      required: [id, changeSummary]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        owner:
+          type: string
+        displayName:
+          type: string
+        family:
+          type: string
+        sections:
+          $ref: "#/components/schemas/ModelGuideSections"
+        aliases:
+          description: Replaces the whole alias set when given.
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelGuideAlias"
+        changeSummary:
+          description: "Why the guide changed: which sessions, what happened."
+          type: string

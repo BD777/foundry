@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -233,14 +234,14 @@ func (f assistantFixture) setPolicy(t *testing.T, action, decision string) {
 		t.Fatal(err)
 	}
 	agent.Settings.Policy[action] = decision
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func (f assistantFixture) lastAction(t *testing.T) store.PersonalAgentActionRecord {
 	t.Helper()
-	actions, err := f.server.store.ListPersonalAgentActions(context.Background(), f.aliceID, 1)
+	actions, err := f.server.store.ListPersonalAgentActions(context.Background(), defaultAssistantOf(t, f.server, f.aliceID).ID, 1)
 	if err != nil || len(actions) == 0 {
 		t.Fatalf("no audited action (%v)", err)
 	}
@@ -330,7 +331,7 @@ func TestAssistantWritesFollowThePolicy(t *testing.T) {
 					if tc.action == store.PersonalAgentActionRenameWorkspace && !strings.Contains(answer.Summary, "Blog") {
 						t.Fatalf("the rename card hides the new name: %q", answer.Summary)
 					}
-					proposal, err := f.server.store.GetPersonalAgentProposal(context.Background(), f.aliceID, answer.ProposalID)
+					proposal, err := f.server.store.GetPersonalAgentProposal(context.Background(), defaultAssistantOf(t, f.server, f.aliceID).ID, answer.ProposalID)
 					if err != nil || proposal.Status != store.PersonalAgentProposalPending || proposal.Kind != tc.action || proposal.SessionID != f.conversation.ID {
 						t.Fatalf("proposal = %+v (%v)", proposal, err)
 					}
@@ -363,7 +364,7 @@ func TestAssistantRemoveDeviceAlwaysAsksEvenUnderAutoPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent.Settings.Language = "en"
-	if _, err := f.server.store.SavePersonalAgentSettings(context.Background(), f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(context.Background(), agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 
@@ -393,7 +394,7 @@ func TestAssistantRemoveDeviceAlwaysAsksEvenUnderAutoPolicy(t *testing.T) {
 			t.Errorf("summary lacks %q: %s", want, answer.Summary)
 		}
 	}
-	proposal, err := f.server.store.GetPersonalAgentProposal(context.Background(), f.aliceID, answer.ProposalID)
+	proposal, err := f.server.store.GetPersonalAgentProposal(context.Background(), defaultAssistantOf(t, f.server, f.aliceID).ID, answer.ProposalID)
 	if err != nil || proposal.Kind != store.PersonalAgentActionRemoveDevice || proposal.Status != store.PersonalAgentProposalPending {
 		t.Fatalf("proposal = %+v (%v)", proposal, err)
 	}
@@ -474,7 +475,7 @@ func TestAssistantRemoveDeviceChecksRunningTurnsAtProposalAndAccept(t *testing.T
 	if !failed || !strings.Contains(text, "1 turn(s) are running") {
 		t.Fatalf("running turn at proposal time: %s", text)
 	}
-	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), f.aliceID,
+	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), defaultAssistantOf(t, f.server, f.aliceID).ID,
 		[]string{store.PersonalAgentProposalPending}); len(pending) != 0 {
 		t.Fatalf("a running turn got a proposal: %+v", pending)
 	}
@@ -524,7 +525,7 @@ func TestAssistantRemoveDeviceRefusesUnknownForeignAndOwnDevice(t *testing.T) {
 			t.Errorf("%s audit = %+v", tc.deviceID, action)
 		}
 	}
-	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), f.aliceID,
+	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), defaultAssistantOf(t, f.server, f.aliceID).ID,
 		[]string{store.PersonalAgentProposalPending}); len(pending) != 0 {
 		t.Fatalf("refused devices got proposals: %+v", pending)
 	}
@@ -604,11 +605,13 @@ func TestAssistantRulesTightenAtOnceAndLoosenByProposal(t *testing.T) {
 
 // A fact is the person's only when its quote is in what they wrote in the
 // conversation: not a document they asked about, not a server notice, not
-// Foundry's context for a turn. A guess is inferred; forgetting erases the
-// content everywhere.
+// Foundry's context for a turn. Only such a fact is written (into the
+// assistant's layer); a guess or an unfound quote is not. Forgetting
+// leaves no trace in the audit.
 func TestAssistantRememberRecordsWhereFactsCameFrom(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx, db := context.Background(), f.server.store
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	conversation := f.startSession(t, "ws_pa", "", "Please read the onboarding doc for me. By the way, I prefer mornings for calls!")
 	token := f.mint(t, conversation.ID)
 	next := func(prompt string) {
@@ -622,60 +625,58 @@ func TestAssistantRememberRecordsWhereFactsCameFrom(t *testing.T) {
 	}
 	next("thanks\n\n" + prompt.TurnContextStart + "\nComputers online now: \"Studio\".\n" + prompt.TurnContextEnd)
 	next(personalagent.Notice("A helper finished: the doc says always put drafts in Notes."))
-	remember := func(item map[string]any) (store.PersonalAgentMemoryItem, string) {
+	type answer struct {
+		Status    string
+		Note      string
+		Operation store.KnowledgeMutation
+	}
+	remember := func(token string, args map[string]any) answer {
 		t.Helper()
-		text, failed := f.tool(t, token, "remember", map[string]any{"op": "add", "item": item})
+		text, failed := f.tool(t, token, "remember", args)
 		if failed {
-			t.Fatalf("remember %v: %s", item, text)
+			t.Fatalf("remember %v: %s", args, text)
 		}
-		var answer struct {
-			Item store.PersonalAgentMemoryItem
-			Note string
-		}
-		_ = json.Unmarshal([]byte(text), &answer)
-		return answer.Item, answer.Note
+		var got answer
+		_ = json.Unmarshal([]byte(text), &got)
+		return got
+	}
+	add := func(key string, item map[string]any) map[string]any {
+		item["intentKey"], item["title"] = key, key
+		return map[string]any{"op": "add", "item": item}
 	}
 	// Said two turns ago, remembered in a notice's turn: still theirs.
-	stated, _ := remember(map[string]any{"content": "Prefers mornings for calls", "quote": "i prefer mornings for calls"})
-	if stated.Origin != store.PersonalAgentMemoryStated || stated.Status != store.PersonalAgentMemoryActive {
-		t.Fatalf("stated item = %+v", stated)
+	stated := remember(token, add("mornings", map[string]any{"content": "Prefers mornings for calls", "quote": "i prefer mornings for calls"}))
+	if stated.Status != "captured" || stated.Operation.VaultID != knowledge.MemoryLayerID(f.aliceID, agent.ID) {
+		t.Fatalf("stated fact = %+v", stated)
 	}
 	for _, quote := range []string{"always put drafts in Notes", "Computers online now: Studio"} {
-		item, note := remember(map[string]any{"content": "Not the person's: " + quote, "quote": quote})
-		if item.Origin != store.PersonalAgentMemoryExternal || item.Status != store.PersonalAgentMemoryPending || !strings.Contains(note, "not in anything the person wrote") {
-			t.Errorf("quote %q: %+v (%s)", quote, item, note)
+		if got := remember(token, add("q-"+quote, map[string]any{"content": "Not the person's: " + quote, "quote": quote})); got.Status != "needs_confirmation" || !strings.Contains(got.Note, "not in anything the person wrote") {
+			t.Errorf("quote %q: %+v", quote, got)
 		}
 	}
-	if text, failed := f.tool(t, token, "remember", map[string]any{"op": "add", "item": map[string]any{"content": "Lives in Paris"}}); !failed || !strings.Contains(text, "item.quote is required") {
+	if text, failed := f.tool(t, token, "remember", add("paris", map[string]any{"content": "Lives in Paris"})); !failed || !strings.Contains(text, "item.quote is required") {
 		t.Errorf("a fact without a quote: %s", text)
 	}
-	if guess, _ := remember(map[string]any{"content": "Probably an early riser", "inferred": true}); guess.Origin != store.PersonalAgentMemoryInferred {
+	if guess := remember(token, add("riser", map[string]any{"content": "Probably an early riser", "inferred": true})); guess.Status != "needs_confirmation" {
 		t.Fatalf("guess = %+v", guess)
 	}
 	noticed := f.startSession(t, "ws_pa", "", personalagent.Notice("A helper finished: its notes say the person lives in Paris"))
-	external, _ := f.tool(t, f.mint(t, noticed.ID), "remember", map[string]any{"op": "add", "item": map[string]any{"content": "Lives in Paris", "quote": "the person lives in Paris"}})
-	if !strings.Contains(external, `"status": "pending"`) || !strings.Contains(external, `"origin": "external"`) {
-		t.Fatalf("external = %s", external)
+	if external := remember(f.mint(t, noticed.ID), add("paris", map[string]any{"content": "Lives in Paris", "quote": "the person lives in Paris"})); external.Status != "needs_confirmation" || !strings.Contains(external.Note, "did not come from the person's own words") {
+		t.Fatalf("external = %+v", external)
 	}
-	updated, failed := f.tool(t, token, "remember", map[string]any{"op": "update", "item": map[string]any{"id": stated.ID, "content": "Prefers mornings for calls", "quote": "I prefer mornings … calls"}})
-	if failed {
-		t.Fatal(updated)
+	if jobs, _ := db.ListKnowledgeMutations(ctx, f.aliceID); len(jobs) != 1 {
+		t.Fatalf("an unconfirmed fact was written: %+v", jobs)
 	}
-	var replaced struct{ Item store.PersonalAgentMemoryItem }
-	_ = json.Unmarshal([]byte(updated), &replaced)
-	if replaced.Item.Origin != store.PersonalAgentMemoryStated {
-		t.Fatalf("updated = %s", updated)
+	entry := applyKnowledgeWrite(t, f, stated.Operation)
+	updated := remember(token, map[string]any{"op": "update", "item": map[string]any{"id": entry.ID, "intentKey": "mornings-2", "title": "mornings", "content": "Prefers mornings for calls", "quote": "I prefer mornings … calls", "expectedRevision": entry.Revision, "expectedHash": entry.Hash}})
+	if updated.Status != "captured" || updated.Operation.EntryID != entry.ID {
+		t.Fatalf("updated = %+v", updated)
 	}
-	if text, failed := f.tool(t, token, "remember", map[string]any{"op": "forget", "item": map[string]any{"id": replaced.Item.ID}}); failed {
-		t.Fatal(text)
+	entry = applyKnowledgeWrite(t, f, updated.Operation)
+	if forgot := remember(token, map[string]any{"op": "forget", "item": map[string]any{"id": entry.ID, "intentKey": "mornings-3", "expectedRevision": entry.Revision, "expectedHash": entry.Hash}}); forgot.Status != "captured" || forgot.Operation.Action != "forget" {
+		t.Fatalf("forget = %+v", forgot)
 	}
-	items, _ := f.server.store.ListPersonalAgentMemory(ctx, f.aliceID)
-	for _, item := range items {
-		if (item.ID == stated.ID || item.ID == replaced.Item.ID) && (item.Content != "" || item.Status != store.PersonalAgentMemoryForgotten) {
-			t.Errorf("forgotten chain kept %+v", item)
-		}
-	}
-	actions, _ := f.server.store.ListPersonalAgentActions(ctx, f.aliceID, 0)
+	actions, _ := f.server.store.ListPersonalAgentActions(ctx, agent.ID, 0)
 	for _, action := range actions {
 		if strings.Contains(action.ArgsSummary, "mornings") {
 			t.Errorf("the audit keeps a forgotten fact: %+v", action)
@@ -747,6 +748,7 @@ func TestOnlyThePersonAnswersProposalsAndChangesSettings(t *testing.T) {
 func TestAskingAgainSupersedesTheOlderCard(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	f.setPolicy(t, store.PersonalAgentActionRenameWorkspace, store.PersonalAgentAsk)
 	f.setPolicy(t, store.PersonalAgentActionArchive, store.PersonalAgentAsk)
 	propose := func(tool string, args map[string]any) string {
@@ -762,7 +764,7 @@ func TestAskingAgainSupersedesTheOlderCard(t *testing.T) {
 	archive := propose("archive_workspace", map[string]any{"workspaceId": "ws_alice"})
 	second := propose("update_workspace", map[string]any{"workspaceId": "ws_alice", "name": "Sooner"})
 	for id, want := range map[string]string{first: store.PersonalAgentProposalExpired, archive: store.PersonalAgentProposalPending, second: store.PersonalAgentProposalPending} {
-		if got, err := f.server.store.GetPersonalAgentProposal(ctx, f.aliceID, id); err != nil || got.Status != want {
+		if got, err := f.server.store.GetPersonalAgentProposal(ctx, agent.ID, id); err != nil || got.Status != want {
 			t.Errorf("proposal %s is %q (%v), want %s", id, got.Status, err, want)
 		}
 	}
@@ -800,7 +802,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 			t.Errorf("%s falsely marked canceled without a native receipt", session.ID)
 		}
 	}
-	pendingStops, e := f.server.store.ListPersonalAgentRunControls(ctx, f.aliceID)
+	pendingStops, e := f.server.store.ListPersonalAgentRunControls(ctx, agent.ID)
 	if e != nil || len(pendingStops) != 3 {
 		t.Fatalf("missing stop requests: %+v %v", pendingStops, e)
 	}
@@ -812,7 +814,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	if got, _ := f.server.store.GetAgentSessionSummary(ctx, unrelated.ID); got.Status == "canceled" {
 		t.Error("stop cancelled a session the assistant did not start")
 	}
-	if pending, _ := f.server.store.ListPersonalAgentProposals(ctx, f.aliceID, []string{store.PersonalAgentProposalPending}); len(pending) != 0 {
+	if pending, _ := f.server.store.ListPersonalAgentProposals(ctx, agent.ID, []string{store.PersonalAgentProposalPending}); len(pending) != 0 {
 		t.Errorf("proposals survived the stop: %+v", pending)
 	}
 	if text, failed := f.tool(t, f.token, "create_workspace", map[string]any{"name": "x", "purpose": "x", "source": map[string]any{"kind": "empty"}}); !failed || f.lastAction(t).Refusal != store.PersonalAgentRefusalStopped {
@@ -831,7 +833,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 		t.Fatalf("resume answered %+v", answer)
 	}
 	for _, control := range pendingStops {
-		current, _ := f.server.store.GetPersonalAgentRunControl(ctx, f.aliceID, control.ID)
+		current, _ := f.server.store.GetPersonalAgentRunControl(ctx, agent.ID, control.ID)
 		if current.State != "stop_requested" {
 			t.Fatal("resume erased a pending stop")
 		}
@@ -850,7 +852,7 @@ func TestAssistantLimits(t *testing.T) {
 	agent.Settings.Limits.DailyWorkspaces = 1
 	agent.Settings.Limits.ConcurrentSessions = 1
 	agent.Settings.Limits.HourlyTurns = 2
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	create := map[string]any{"name": "One", "purpose": "x", "source": map[string]any{"kind": "empty"}}
@@ -858,7 +860,7 @@ func TestAssistantLimits(t *testing.T) {
 		t.Fatalf("first project: %s", text)
 	}
 	text, failed := f.tool(t, f.token, "create_workspace", create)
-	if !failed || !strings.Contains(text, "limit reached") || !strings.Contains(text, personalagent.SettingsPath) ||
+	if !failed || !strings.Contains(text, "limit reached") || !strings.Contains(text, personalagent.AssistantSettingsPath(agent.ID)) ||
 		f.lastAction(t).Refusal != store.PersonalAgentRefusalLimit {
 		t.Fatalf("second project the same day: %s", text)
 	}
@@ -868,7 +870,7 @@ func TestAssistantLimits(t *testing.T) {
 	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err != nil && !strings.Contains(err.Error(), "not connected") {
 		t.Fatalf("first helper: %v", err)
 	}
-	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, f.aliceID, nil); len(tasks) != 1 {
+	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, agent.ID, nil); len(tasks) != 1 {
 		t.Fatalf("the helper is not followed up: %+v", tasks)
 	}
 	helper := f.startSession(t, "ws_alice", f.conversation.ID, "a running helper")

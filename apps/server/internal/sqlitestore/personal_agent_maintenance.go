@@ -12,7 +12,7 @@ import (
 
 func (s *Store) setupPersonalAgentMaintenance(ctx context.Context) error {
 	for _, q := range []string{
-		`CREATE TABLE IF NOT EXISTS pa_maintenance(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,role TEXT NOT NULL,workspace_id TEXT NOT NULL,event_key TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,due_at TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,role,workspace_id,event_key))`,
+		`CREATE TABLE IF NOT EXISTS pa_maintenance(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',role TEXT NOT NULL,workspace_id TEXT NOT NULL,event_key TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,due_at TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,role,workspace_id,event_key))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_due ON pa_maintenance(status,due_at)`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, q); err != nil {
@@ -24,7 +24,7 @@ func (s *Store) setupPersonalAgentMaintenance(ctx context.Context) error {
 func scanPAMaintenance(row interface{ Scan(...any) error }) (store.PersonalAgentMaintenance, error) {
 	var v store.PersonalAgentMaintenance
 	var raw string
-	err := row.Scan(&v.UserID, &raw)
+	err := row.Scan(&v.UserID, &v.AssistantID, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, store.ErrNotFound
 	}
@@ -34,8 +34,8 @@ func scanPAMaintenance(row interface{ Scan(...any) error }) (store.PersonalAgent
 	err = json.Unmarshal([]byte(raw), &v)
 	return v, err
 }
-func (s *Store) GetPersonalAgentMaintenance(ctx context.Context, user, id string) (store.PersonalAgentMaintenance, error) {
-	return scanPAMaintenance(s.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_maintenance WHERE user_id=? AND id=?`, user, id))
+func (s *Store) GetPersonalAgentMaintenance(ctx context.Context, assistantID, id string) (store.PersonalAgentMaintenance, error) {
+	return scanPAMaintenance(s.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE assistant_id=? AND id=?`, assistantID, id))
 }
 func (s *Store) EnqueuePersonalAgentMaintenance(ctx context.Context, v store.PersonalAgentMaintenance) (store.PersonalAgentMaintenance, error) {
 	if v.ID == "" || v.EventKey == "" || v.WorkspaceID == "" || (v.Role != "memory" && v.Role != "governance") {
@@ -43,7 +43,7 @@ func (s *Store) EnqueuePersonalAgentMaintenance(ctx context.Context, v store.Per
 	}
 	var out store.PersonalAgentMaintenance
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := scanPAMaintenance(tx.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_maintenance WHERE user_id=? AND role=? AND workspace_id=? AND event_key=?`, v.UserID, v.Role, v.WorkspaceID, v.EventKey))
+		old, err := scanPAMaintenance(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND role=? AND workspace_id=? AND event_key=?`, v.UserID, v.Role, v.WorkspaceID, v.EventKey))
 		if err == nil {
 			out = old
 			return nil
@@ -77,7 +77,7 @@ func (s *Store) EnqueuePersonalAgentMaintenance(ctx context.Context, v store.Per
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_maintenance VALUES(?,?,?,?,?,?,?,?,?)`, v.ID, v.UserID, v.Role, v.WorkspaceID, v.EventKey, v.Status, v.Revision, v.DueAt, string(raw))
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_maintenance(id,user_id,assistant_id,role,workspace_id,event_key,status,revision,due_at,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?)`, v.ID, v.UserID, v.AssistantID, v.Role, v.WorkspaceID, v.EventKey, v.Status, v.Revision, v.DueAt, string(raw))
 		out = v
 		return err
 	})
@@ -99,15 +99,15 @@ func (s *Store) listPAMaintenance(ctx context.Context, q string, args ...any) ([
 	}
 	return out, rows.Err()
 }
-func (s *Store) ListPersonalAgentMaintenance(ctx context.Context, user string) ([]store.PersonalAgentMaintenance, error) {
-	return s.listPAMaintenance(ctx, `SELECT user_id,payload_json FROM pa_maintenance WHERE user_id=? ORDER BY rowid DESC LIMIT 200`, user)
+func (s *Store) ListPersonalAgentMaintenance(ctx context.Context, assistantID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200`, assistantID)
 }
 func (s *Store) DuePersonalAgentMaintenance(ctx context.Context, now string) ([]store.PersonalAgentMaintenance, error) {
-	return s.listPAMaintenance(ctx, `SELECT user_id,payload_json FROM pa_maintenance WHERE status IN ('pending','waiting','starting','running') AND due_at<=? ORDER BY due_at LIMIT 20`, now)
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE status IN ('pending','waiting','starting','running') AND due_at<=? ORDER BY due_at LIMIT 20`, now)
 }
 func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.PersonalAgentMaintenance) (store.PersonalAgentMaintenance, error) {
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := tx.GetPersonalAgentMaintenance(ctx, v.UserID, v.ID)
+		old, err := tx.GetPersonalAgentMaintenance(ctx, v.AssistantID, v.ID)
 		if err != nil {
 			return err
 		}
@@ -123,11 +123,11 @@ func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.Person
 				return fmt.Errorf("invalid maintenance retry")
 			}
 			if old.InputID != "" {
-				accepted, e := tx.personalAgentInputAccepted(ctx, old.UserID, old.InputID)
+				accepted, e := tx.personalAgentInputAccepted(ctx, old.AssistantID, old.InputID)
 				if e != nil {
 					return e
 				}
-				control, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_run_controls WHERE user_id=? AND input_id=?`, old.UserID, old.InputID))
+				control, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE assistant_id=? AND input_id=?`, old.AssistantID, old.InputID))
 				if e != nil && !errors.Is(e, store.ErrNotFound) {
 					return e
 				}
@@ -138,7 +138,7 @@ func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.Person
 		}
 		if v.Status == "starting" && old.Status != "starting" && old.Status != "running" {
 			var busy bool
-			err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_maintenance WHERE user_id=? AND id<>? AND status IN ('starting','running'))`, v.UserID, v.ID).Scan(&busy)
+			err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_maintenance WHERE assistant_id=? AND id<>? AND status IN ('starting','running'))`, v.AssistantID, v.ID).Scan(&busy)
 			if err != nil {
 				return err
 			}
@@ -146,7 +146,7 @@ func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.Person
 				return fmt.Errorf("maintenance_busy")
 			}
 			var count int
-			err = tx.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM pa_run_snapshots WHERE user_id=? AND session_id<>'' AND created_at>? AND json_extract(payload_json,'$.role') IN ('memory','governance')`, v.UserID, time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339Nano)).Scan(&count)
+			err = tx.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM pa_run_snapshots WHERE assistant_id=? AND session_id<>'' AND created_at>? AND json_extract(payload_json,'$.role') IN ('memory','governance')`, v.AssistantID, time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339Nano)).Scan(&count)
 			if err != nil {
 				return err
 			}
@@ -161,7 +161,7 @@ func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.Person
 		if err != nil {
 			return err
 		}
-		res, err := tx.conn().ExecContext(ctx, `UPDATE pa_maintenance SET status=?,revision=?,due_at=?,payload_json=? WHERE user_id=? AND id=? AND revision=?`, v.Status, v.Revision, v.DueAt, string(raw), v.UserID, v.ID, old.Revision)
+		res, err := tx.conn().ExecContext(ctx, `UPDATE pa_maintenance SET status=?,revision=?,due_at=?,payload_json=? WHERE assistant_id=? AND id=? AND revision=?`, v.Status, v.Revision, v.DueAt, string(raw), v.AssistantID, v.ID, old.Revision)
 		if err != nil {
 			return err
 		}

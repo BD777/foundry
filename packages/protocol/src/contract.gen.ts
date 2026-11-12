@@ -492,12 +492,41 @@ interface components {
       eligible: boolean;
       /** @description Why the device cannot be selected, when Eligible is false. */
       reason?: string;
+      /**
+       * @description Machine-readable form of Reason when the cause is that no instance is usable here.
+       * @enum {string}
+       */
+      reasonCode?: "no_instance";
+      /** @description Ready instances of a server-held connector whose sessions on this device can use them. Absent for connectors without instances. */
+      instances?: components["schemas"]["ConnectorPackageInstanceRef"][];
+      /**
+       * @description Where applying the selection stands on this device. Selecting a device returns at once with pending; the install runs in the background. Absent when the device has no part in the package.
+       * @enum {string}
+       */
+      state?: "pending" | "installing" | "installed" | "failed";
+      /** @description Why the install or removal failed, when State is failed. */
+      error?: string;
+    };
+    /** @description A server-held instance, as named in a package view. */
+    ConnectorPackageInstanceRef: {
+      id: string;
+      label: string;
+    };
+    /** @description A Ready instance of a server-held connector and the devices where sessions can use it. */
+    ConnectorPackageInstance: {
+      id: string;
+      label: string;
+      /** @description server (every device) or device (only the devices that probed it). */
+      network: string;
+      deviceIds: string[];
     };
     /** @description A package at the person level, its bundle, and where it is enabled. */
     ConnectorPackageView: {
       connector: components["schemas"]["ConnectorDescriptor"];
       enabled: boolean;
       repositoryId?: string;
+      /** @description Ready instances of a server-held connector, with the devices that can use each. */
+      instances?: components["schemas"]["ConnectorPackageInstance"][];
       devices: components["schemas"]["ConnectorPackageDevice"][];
     };
     /** @description Replace the devices on which a package is enabled. */
@@ -638,6 +667,7 @@ interface components {
     ConnectorServerHeldDeviceCheck: {
       deviceId: string;
       name: string;
+      /** @description ok (the device reaches the upstream), unreachable, error (the probe was refused or failed) or not_applicable (a loopback address that only the validating device reaches). */
       status: string;
       checkedAt: string;
       detail?: string;
@@ -929,7 +959,7 @@ interface components {
       id: string;
       label: string;
       /** @enum {string} */
-      status: "connected" | "disconnected";
+      status: "connected" | "reconnecting" | "disconnected";
       lastSeenLabel: string;
       runtimeSettings?: components["schemas"]["AgentRuntimeSettings"];
       /** @description `runtimeState` is the latest admission sample its worker reported: the effective adaptive or forced limit, running and queued turns, why, the host signals and the per-workspace estimates. The server stores it without recalculating it. */
@@ -1018,9 +1048,18 @@ interface components {
      * @enum {string}
      */
     WorkerUpdateFailureCode: "exited" | "vanished" | "not_back";
-    /** @description DeviceWorkerUpdate is an update in progress: when it was asked for and the version it brings. */
+    /** @description DeviceWorkerUpdate describes an update requested from Foundry: while it runs, or as the most recent completed result retained by update_worker status. */
     DeviceWorkerUpdate: {
+      /** @description `id` identifies this update request. */
+      id?: string;
       startedAt: string;
+      /** @description `completedAt` is when the update succeeded or failed. */
+      completedAt?: string;
+      /**
+       * Format: int64
+       * @description `elapsedMs` is the time from the start to completion, or to the current status.
+       */
+      elapsedMs?: number;
       /** @description The version it brings. */
       version?: string;
       /** @description `fromVersion` is the version the device ran when the update started. */
@@ -2292,13 +2331,171 @@ interface components {
       error?: string;
       code?: string;
     };
+    /** @description Maps one provider's model id to a guide. An absent `providerId` or `runtime` matches any; the most specific alias wins on resolve. */
+    ModelGuideAlias: {
+      /** @enum {string} */
+      providerKind?: "subscription" | "api" | "environment" | "discovered";
+      providerId?: string;
+      runtime?: components["schemas"]["NativeRuntimeId"];
+      model: string;
+    };
+    /** @description Short Markdown sections (at most 8 bullet points each) of what handing work to the model takes. */
+    ModelGuideSections: {
+      /** @description One line on where the model fits. */
+      summary?: string;
+      strengths?: string;
+      weaknesses?: string;
+      /** @description How to write its brief, such as slice size, context budget, required evidence and how it should read code. */
+      briefing?: string;
+      /** @description Work not to hand to it. */
+      avoid?: string;
+      /** @description Known failure modes, each with evidence where possible. */
+      pitfalls?: string;
+      /** @description Recommended effort, quota and concurrency. */
+      settings?: string;
+    };
+    ModelGuideUpdater: {
+      userId: string;
+      name: string;
+      /** @description The agent session that wrote the revision; absent for a person. */
+      sessionId?: string;
+    };
+    /** @description One revision of a guide, the whole snapshot. */
+    ModelGuide: {
+      /** @description The canonical id, a lower-case slug such as `deepseek-flash-1017`. */
+      id: string;
+      /** @description Who makes the model weights, such as `deepseek`. */
+      owner: string;
+      displayName: string;
+      family?: string;
+      aliases: components["schemas"]["ModelGuideAlias"][];
+      sections: components["schemas"]["ModelGuideSections"];
+      revision: number;
+      updatedAt: string;
+      updatedBy: components["schemas"]["ModelGuideUpdater"];
+    };
+    ModelGuideSummary: {
+      id: string;
+      owner: string;
+      displayName: string;
+      family?: string;
+      aliasCount: number;
+      summary: string;
+      revision: number;
+      updatedAt: string;
+      updatedBy: components["schemas"]["ModelGuideUpdater"];
+    };
+    ModelGuideList: {
+      guides: components["schemas"]["ModelGuideSummary"][];
+    };
+    ModelGuideRevisionSummary: {
+      revision: number;
+      changeSummary: string;
+      updatedAt: string;
+      updatedBy: components["schemas"]["ModelGuideUpdater"];
+    };
+    /** @description One saved revision with its full snapshot, for reading history and diffing against the revision before. */
+    ModelGuideRevision: {
+      guideId: string;
+      revision: number;
+      changeSummary: string;
+      snapshot: components["schemas"]["ModelGuide"];
+    };
+    /** @description One append-only observation about a guide's model, with the sessions that show it. */
+    ModelObservation: {
+      id: string;
+      guideId: string;
+      body: string;
+      sessionIds: string[];
+      authorSessionId?: string;
+      createdAt: string;
+    };
+    /** @description One page of observations, newest first. */
+    ModelObservationPage: {
+      total: number;
+      offset: number;
+      nextOffset?: number;
+      observations: components["schemas"]["ModelObservation"][];
+    };
+    /** @description What the server knows about one alias's provider. Computed on read, never stored. */
+    ModelGuideProviderFacts: {
+      alias: components["schemas"]["ModelGuideAlias"];
+      providerLabel?: string;
+      /** @description Tokens, when the provider's configuration or catalog knows the window. */
+      contextWindow?: number;
+      /** @description The person's worker group that holds this model id. */
+      workerGroupId?: string;
+      workerGroupLabel?: string;
+      /** @description The worker group member's quota. */
+      tokensPerMinute?: number;
+    };
+    /** @description Worker usage of the guide's aliases over the last `windowDays`. Computed from the usage statistics. */
+    ModelGuideUsageFacts: {
+      windowDays: number;
+      /** @description Sessions started by another session or an Issue that made a request with the model. */
+      workerSessions: number;
+      requests: number;
+      /** @description Mean time of one model request; absent without timed requests. */
+      avgRequestMs?: number;
+      /**
+       * Format: double
+       * @description Output tokens per second of generation over requests with observed timing; absent without any.
+       */
+      tokPerSec?: number;
+    };
+    ModelGuideFacts: {
+      providers: components["schemas"]["ModelGuideProviderFacts"][];
+      usage: components["schemas"]["ModelGuideUsageFacts"];
+    };
+    ModelGuideDetail: {
+      guide: components["schemas"]["ModelGuide"];
+      facts: components["schemas"]["ModelGuideFacts"];
+      /** @description The latest 20 observations; the MCP tool pages further. */
+      observations: components["schemas"]["ModelObservationPage"];
+      /** @description Every revision, newest first. */
+      revisions: components["schemas"]["ModelGuideRevisionSummary"][];
+    };
+    /** @description The guide a provider's model id maps to. `guide` is absent when none does; `suggestedId` is then the canonical id to create it under. */
+    ModelGuideResolution: {
+      guide?: components["schemas"]["ModelGuideSummary"];
+      matchedAlias?: components["schemas"]["ModelGuideAlias"];
+      suggestedId: string;
+      /** @description A guide with the suggested id already exists, so add the model to it as an alias instead. */
+      suggestedIdTaken: boolean;
+    };
+    /** @description Several provider model ids to resolve at once (`POST /api/model-guides/resolve`, read-only). */
+    ModelGuideResolveBatch: {
+      targets: components["schemas"]["ModelGuideAlias"][];
+    };
+    /** @description One resolution per requested target, in the same order. */
+    ModelGuideResolveBatchResult: {
+      resolutions: components["schemas"]["ModelGuideResolution"][];
+    };
+    /** @description The `upsert` action of the model_guides tool. Absent fields keep their value; a section set to an empty string is cleared. */
+    ModelGuideUpsertInput: {
+      id: string;
+      owner?: string;
+      displayName?: string;
+      family?: string;
+      sections?: components["schemas"]["ModelGuideSections"];
+      /** @description Replaces the whole alias set when given. */
+      aliases?: components["schemas"]["ModelGuideAlias"][];
+      /** @description Why the guide changed: which sessions, what happened. */
+      changeSummary: string;
+    };
     /**
      * @description What one assistant may do through one connector account.
      * @enum {string}
      */
     ConnectorAccessLevel: "off" | "read" | "write";
-    /** @description An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one. */
+    /**
+     * @description What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.
+     * @enum {string}
+     */
+    PermissionListScope: "all" | "listed";
+    /** @description An include/exclude rule. With scope all (or none given) an empty include list means every object the person can already reach; with scope listed only the included ones. Exclude always removes one. */
     PermissionListRule: {
+      scope?: components["schemas"]["PermissionListScope"];
       include: string[];
       exclude: string[];
     };
@@ -2307,20 +2504,20 @@ interface components {
       accountId: string;
       level: components["schemas"]["ConnectorAccessLevel"];
     };
-    /** @description What an assistant may lease directly; resources stay visible either way. */
-    PermissionDeviceResources: {
-      /** @description Device ids whose resources the assistant may lease itself. */
-      directLeaseAllowed: string[];
+    /** @description The resources that carry an identity (a signed-in browser, screen control, a device CLI account, a phone) the assistant and its helpers may lease. With scope all they follow the device like every other resource (compute, GPU, containers, toolchains, disks, simulators): any device with a workspace the package allows. With scope listed only the allowed ones. */
+    PermissionIdentityResources: {
+      scope: components["schemas"]["PermissionListScope"];
+      /** @description Resource ids (res_…) the assistant may lease under scope listed. */
+      allowed: string[];
     };
-    /** @description One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none. */
+    /** @description One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, connector accounts default to write, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace. */
     PermissionPackage: {
       id: string;
       /** @description The Foundry user id the package belongs to. */
       owner: string;
       workspaces: components["schemas"]["PermissionListRule"];
       connectorAccounts: components["schemas"]["ConnectorAccountPermission"][];
-      devicesResources: components["schemas"]["PermissionDeviceResources"];
-      skills: components["schemas"]["PermissionListRule"];
+      identityResources: components["schemas"]["PermissionIdentityResources"];
     };
     /** @description One connector account as the Assistant settings list it. */
     PersonalAgentConnector: {
@@ -2352,6 +2549,94 @@ interface components {
       state: string;
       error?: string;
       code?: string;
+    };
+    /** @description One of the person's assistants as GET /api/assistants lists it (DEV-191). Exactly one is the default, the one /api/personal-agent answers. */
+    AssistantSummary: {
+      /** @description The assistant id (asst_…). */
+      id: string;
+      /** @description Its label; empty means the language's default name. */
+      name: string;
+      isDefault: boolean;
+      /** @description Its home workspace (kind personal_agent), one per assistant. */
+      workspaceId: string;
+      homeDeviceId: string;
+      state: string;
+      permissionPackageId: string;
+      /** @description The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner. */
+      feishuAppId: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+    /** @description The person's assistants, the default first. */
+    AssistantList: {
+      assistants: components["schemas"]["AssistantSummary"][];
+    };
+    /** @description POST /api/assistants. Creates a home workspace on homeDeviceId as setup does; the new assistant's permission package reaches no workspace until the person adds them. */
+    CreateAssistantInput: {
+      name: string;
+      homeDeviceId: string;
+    };
+    /** @description PATCH /api/assistants/{id}. Absent fields stay. */
+    UpdateAssistantInput: {
+      name?: string;
+    };
+    /**
+     * @description A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+     * @enum {string}
+     */
+    MemoryLayerScope: "person" | "assistant";
+    /** @description One current entry of a memory layer, metadata only; read its body from the knowledge entry route of its vault. */
+    MemoryLayerEntry: {
+      id: string;
+      vaultId: string;
+      scope: components["schemas"]["MemoryLayerScope"];
+      title: string;
+      /** Format: int64 */
+      revision: number;
+      hash: string;
+      sourceRef?: string;
+      expiresAt?: string;
+      updatedAt: string;
+    };
+    /** @description One layer of an assistant's memory. vaultId is absent until the layer is first needed; then state is its vault's (pending until its device initializes it, active). */
+    MemoryLayer: {
+      scope: components["schemas"]["MemoryLayerScope"];
+      vaultId?: string;
+      state?: string;
+      reason?: string;
+      workspaceId?: string;
+      deviceId?: string;
+      rootPath?: string;
+      entries: components["schemas"]["MemoryLayerEntry"][];
+    };
+    /** @description GET /api/assistants/{id}/memory/layers. What the assistant recalls: the person's layer first, then its own. legacyUncopied counts the active legacy facts (read-only pa_memory) not yet copied to the person's layer. */
+    AssistantMemoryLayers: {
+      assistantId: string;
+      layers: components["schemas"]["MemoryLayer"][];
+      legacyUncopied: number;
+    };
+    /** @description POST /api/assistants/{id}/memory/layers/{scope}/entries. The person writes a fact into a layer, which is created the first time; requestId makes a retry the same write. */
+    AddMemoryEntryInput: {
+      requestId: string;
+      title: string;
+      body: string;
+      expiresAt?: string;
+    };
+    /** @description POST /api/assistants/{id}/memory/entries/{entry}/move. Moves the entry of the assistant's other layer to toScope, at the revision and hash the person saw. */
+    MoveMemoryEntryInput: {
+      toScope: components["schemas"]["MemoryLayerScope"];
+      /** Format: int64 */
+      expectedRevision: number;
+      expectedHash: string;
+    };
+    /** @description A captured move: the body is written to targetEntryId in the target layer and the source entry forgotten, each applied by its device. */
+    MemoryEntryMove: {
+      fromScope: components["schemas"]["MemoryLayerScope"];
+      toScope: components["schemas"]["MemoryLayerScope"];
+      sourceEntryId: string;
+      targetVaultId: string;
+      targetEntryId: string;
+      status: string;
     };
     /**
      * @description A runtime Foundry runs natively: Claude Code or Codex.
@@ -2716,81 +3001,62 @@ interface components {
       /** @description `deviceBound`: the base URL is the device's own loopback address, which no other device can reach, so the profile may run only on that device. */
       deviceBound?: boolean;
     };
-    /** @description One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight. */
-    ModelPoolMember: {
+    /** @description One model of a worker group, on one provider. `tokensPerMinute` is that model's independently metered quota; without it, allocation uses the optional weight. `effort` is the effort a worker started on this member runs with; without it the runtime's default applies. */
+    WorkerGroupMember: {
+      /** @enum {string} */
+      providerKind: "subscription" | "api" | "environment" | "discovered";
+      providerId: string;
+      runtime: components["schemas"]["NativeRuntimeId"];
       model: string;
+      effort?: string;
       /** Format: int64 */
       tokensPerMinute?: number;
       weight?: number;
     };
-    /** @description A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model. */
-    ModelPool: {
+    /** @description A person's named group of models that workers can be assigned from. Members may come from different providers and runtimes. A new worker takes one member available on its device and keeps it for the whole session. */
+    WorkerGroup: {
       id: string;
-      /** @enum {string} */
-      providerKind: "subscription" | "api" | "environment" | "discovered";
-      providerId: string;
-      runtime: components["schemas"]["NativeRuntimeId"];
       label: string;
-      members: components["schemas"]["ModelPoolMember"][];
+      members: components["schemas"]["WorkerGroupMember"][];
       createdAt: string;
       updatedAt: string;
     };
-    /** @description Create or replace one equivalent-model group. */
-    ModelPoolInput: {
-      /** @enum {string} */
-      providerKind: "subscription" | "api" | "environment" | "discovered";
-      providerId: string;
-      runtime: components["schemas"]["NativeRuntimeId"];
+    /** @description Create or replace one worker group. */
+    WorkerGroupInput: {
       label: string;
-      members: components["schemas"]["ModelPoolMember"][];
-    };
-    /** @description ModelNote is one observation an orchestrator recorded about a specific model. */
-    ModelNote: {
-      id: string;
-      /** @enum {string} */
-      providerKind: "subscription" | "api" | "environment" | "discovered";
-      providerId: string;
-      runtime: components["schemas"]["NativeRuntimeId"];
-      model: string;
-      /** @description What the orchestrator learned about handing work to this model. */
-      body: string;
-      authorUserId: string;
-      authorName: string;
-      /** @description The agent session that appended the note; absent for a person. */
-      authorSessionId?: string;
-      createdAt: string;
-      updatedAt?: string;
-    };
-    /** @description One page of model notes, newest first. */
-    ModelNotePage: {
-      total: number;
-      offset: number;
-      nextOffset?: number;
-      notes: components["schemas"]["ModelNote"][];
-    };
-    /** @description ModelNoteInput appends one note to a provider's model. */
-    ModelNoteInput: {
-      /** @enum {string} */
-      providerKind: "subscription" | "api" | "environment" | "discovered";
-      providerId: string;
-      runtime: components["schemas"]["NativeRuntimeId"];
-      model: string;
-      body: string;
+      members: components["schemas"]["WorkerGroupMember"][];
     };
     /** @enum {string} */
-    ExecutionDefaultScope: "global" | "workspace" | "none";
-    /** @description The model a person's orchestrator uses for delegated execution when a child names no model. */
+    ExecutionDefaultScope: "global" | "workspace" | "assistant" | "none";
+    /** @description One model or worker group the person's orchestrator may use, never both. With a group, a worker takes one member available on its device and that member's own effort. */
+    ExecutionModelChoice: {
+      /** @description Stable identifier for choosing this alternative when dispatching a worker. */
+      id?: string;
+      /** @enum {string} */
+      providerKind?: "subscription" | "api" | "environment" | "discovered";
+      providerId?: string;
+      runtime?: components["schemas"]["NativeRuntimeId"];
+      model?: string;
+      /** @description When set, a new session takes one member of this worker group. */
+      workerGroupId?: string;
+      /** @description The saved worker group, resolved when this choice is read. */
+      group?: components["schemas"]["WorkerGroup"];
+      effort?: string;
+    };
+    /** @description The model a person's orchestrator uses for delegated execution when a child names no model, either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`), never both. With a group, a worker takes one member available on its device and that member's own effort; scope `none` has neither. Alternatives are the other models and groups the orchestrator may choose from when the default's guide says this step is not a good fit. */
     ExecutionModelDefault: {
       /** @enum {string} */
       providerKind?: "subscription" | "api" | "environment" | "discovered";
-      providerId: string;
-      runtime: components["schemas"]["NativeRuntimeId"];
+      providerId?: string;
+      runtime?: components["schemas"]["NativeRuntimeId"];
       model?: string;
-      /** @description When set, a new session allocates one member from this group. */
-      modelPoolId?: string;
-      /** @description The saved group, resolved when the default is read. */
-      pool?: components["schemas"]["ModelPool"];
+      /** @description When set, a new session takes one member of this worker group. */
+      workerGroupId?: string;
+      /** @description The saved worker group, resolved when the default is read. */
+      group?: components["schemas"]["WorkerGroup"];
       effort?: string;
+      /** @description Other models or worker groups the orchestrator may use. */
+      alternatives?: components["schemas"]["ExecutionModelChoice"][];
       scope: components["schemas"]["ExecutionDefaultScope"];
       updatedBy?: string;
       updatedAt?: string;
@@ -3418,8 +3684,8 @@ interface components {
       profileId?: string;
       profileFingerprint?: string;
       profileLabel?: string;
-      /** @description The equivalent-model group this session was allocated from. Foundry uses it to choose another id after a model rate limit. */
-      modelPoolId?: string;
+      /** @description The worker group this session's provider and model were picked from, once at creation. The session keeps that member. */
+      workerGroupId?: string;
       /** @description Identifies this dispatch of the current input. It equals the input id until an automatic retry gives the same logical input a fresh native execution identity. */
       dispatchId?: string;
       /** @description "digest": a Personal Agent digest summary session (read-only). */
@@ -4000,6 +4266,10 @@ export type ConnectorPackageTool =
   components["schemas"]["ConnectorPackageTool"];
 export type ConnectorPackageDevice =
   components["schemas"]["ConnectorPackageDevice"];
+export type ConnectorPackageInstanceRef =
+  components["schemas"]["ConnectorPackageInstanceRef"];
+export type ConnectorPackageInstance =
+  components["schemas"]["ConnectorPackageInstance"];
 export type ConnectorPackageView =
   components["schemas"]["ConnectorPackageView"];
 export type SetConnectorPackageDevicesInput =
@@ -4231,13 +4501,40 @@ export type KnowledgeDocument = components["schemas"]["KnowledgeDocument"];
 export type KnowledgeSourceReview =
   components["schemas"]["KnowledgeSourceReview"];
 export type KnowledgeReply = components["schemas"]["KnowledgeReply"];
+export type ModelGuideAlias = components["schemas"]["ModelGuideAlias"];
+export type ModelGuideSections = components["schemas"]["ModelGuideSections"];
+export type ModelGuideUpdater = components["schemas"]["ModelGuideUpdater"];
+export type ModelGuide = components["schemas"]["ModelGuide"];
+export type ModelGuideSummary = components["schemas"]["ModelGuideSummary"];
+export type ModelGuideList = components["schemas"]["ModelGuideList"];
+export type ModelGuideRevisionSummary =
+  components["schemas"]["ModelGuideRevisionSummary"];
+export type ModelGuideRevision = components["schemas"]["ModelGuideRevision"];
+export type ModelObservation = components["schemas"]["ModelObservation"];
+export type ModelObservationPage =
+  components["schemas"]["ModelObservationPage"];
+export type ModelGuideProviderFacts =
+  components["schemas"]["ModelGuideProviderFacts"];
+export type ModelGuideUsageFacts =
+  components["schemas"]["ModelGuideUsageFacts"];
+export type ModelGuideFacts = components["schemas"]["ModelGuideFacts"];
+export type ModelGuideDetail = components["schemas"]["ModelGuideDetail"];
+export type ModelGuideResolution =
+  components["schemas"]["ModelGuideResolution"];
+export type ModelGuideResolveBatch =
+  components["schemas"]["ModelGuideResolveBatch"];
+export type ModelGuideResolveBatchResult =
+  components["schemas"]["ModelGuideResolveBatchResult"];
+export type ModelGuideUpsertInput =
+  components["schemas"]["ModelGuideUpsertInput"];
 export type ConnectorAccessLevel =
   components["schemas"]["ConnectorAccessLevel"];
+export type PermissionListScope = components["schemas"]["PermissionListScope"];
 export type PermissionListRule = components["schemas"]["PermissionListRule"];
 export type ConnectorAccountPermission =
   components["schemas"]["ConnectorAccountPermission"];
-export type PermissionDeviceResources =
-  components["schemas"]["PermissionDeviceResources"];
+export type PermissionIdentityResources =
+  components["schemas"]["PermissionIdentityResources"];
 export type PermissionPackage = components["schemas"]["PermissionPackage"];
 export type PersonalAgentConnector =
   components["schemas"]["PersonalAgentConnector"];
@@ -4246,6 +4543,21 @@ export type PersonalAgentConnectorsView =
 export type SetPersonalAgentConnectorLevelsInput =
   components["schemas"]["SetPersonalAgentConnectorLevelsInput"];
 export type ContextPatchReply = components["schemas"]["ContextPatchReply"];
+export type AssistantSummary = components["schemas"]["AssistantSummary"];
+export type AssistantList = components["schemas"]["AssistantList"];
+export type CreateAssistantInput =
+  components["schemas"]["CreateAssistantInput"];
+export type UpdateAssistantInput =
+  components["schemas"]["UpdateAssistantInput"];
+export type MemoryLayerScope = components["schemas"]["MemoryLayerScope"];
+export type MemoryLayerEntry = components["schemas"]["MemoryLayerEntry"];
+export type MemoryLayer = components["schemas"]["MemoryLayer"];
+export type AssistantMemoryLayers =
+  components["schemas"]["AssistantMemoryLayers"];
+export type AddMemoryEntryInput = components["schemas"]["AddMemoryEntryInput"];
+export type MoveMemoryEntryInput =
+  components["schemas"]["MoveMemoryEntryInput"];
+export type MemoryEntryMove = components["schemas"]["MemoryEntryMove"];
 export type NativeRuntimeId = components["schemas"]["NativeRuntimeId"];
 export type WorkerRuntimeId = components["schemas"]["WorkerRuntimeId"];
 export type CodexSpeed = components["schemas"]["CodexSpeed"];
@@ -4298,14 +4610,13 @@ export type CodexTransportReport =
   components["schemas"]["CodexTransportReport"];
 export type ProfilePromotionSource =
   components["schemas"]["ProfilePromotionSource"];
-export type ModelPoolMember = components["schemas"]["ModelPoolMember"];
-export type ModelPool = components["schemas"]["ModelPool"];
-export type ModelPoolInput = components["schemas"]["ModelPoolInput"];
-export type ModelNote = components["schemas"]["ModelNote"];
-export type ModelNotePage = components["schemas"]["ModelNotePage"];
-export type ModelNoteInput = components["schemas"]["ModelNoteInput"];
+export type WorkerGroupMember = components["schemas"]["WorkerGroupMember"];
+export type WorkerGroup = components["schemas"]["WorkerGroup"];
+export type WorkerGroupInput = components["schemas"]["WorkerGroupInput"];
 export type ExecutionDefaultScope =
   components["schemas"]["ExecutionDefaultScope"];
+export type ExecutionModelChoice =
+  components["schemas"]["ExecutionModelChoice"];
 export type ExecutionModelDefault =
   components["schemas"]["ExecutionModelDefault"];
 export type ExecutionDefaultsView =

@@ -8,6 +8,12 @@ const (
 	ConnectorAccessLevelWrite = "write"
 )
 
+// PermissionListRule.Scope: all (also when empty) or only the listed ids.
+const (
+	PermissionListScopeAll    = "all"
+	PermissionListScopeListed = "listed"
+)
+
 // PermissionPackageStore keeps each assistant's permission package. The
 // package is the one source of what that assistant may reach; workspace and
 // skill rules with an empty include list mean every object the person already

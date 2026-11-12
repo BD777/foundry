@@ -75,7 +75,7 @@ func newAccountsFixture(t *testing.T) accountsFixture {
 	f.service = service
 	agent, _ := f.db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.Language = "en"
-	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
@@ -305,6 +305,7 @@ func TestRetryingHelperIsNotReportedAsAsking(t *testing.T) {
 	instantNotices(t)
 	f := newAccountsFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	helper := f.createHelper(t, map[string]any{"profileId": accountsGateway})
 	if _, err := f.db.StartAgentSession(ctx, helper.ID); err != nil {
 		t.Fatal(err)
@@ -315,7 +316,7 @@ func TestRetryingHelperIsNotReportedAsAsking(t *testing.T) {
 	}
 	f.server.sessions.Changed(ctx, sessions.Blocked, blocked)
 	f.quiet(t, "a retrying helper was reported")
-	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, f.aliceID, []string{store.PersonalAgentTaskAsking}); len(tasks) != 0 {
+	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskAsking}); len(tasks) != 0 {
 		t.Fatalf("asking tasks = %+v", tasks)
 	}
 }
