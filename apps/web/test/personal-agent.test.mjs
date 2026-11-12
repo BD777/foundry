@@ -1396,7 +1396,10 @@ test("memory location is independent from the assistant home and survives an off
       ),
     );
     assert.match(page.container.textContent, /Memory desktop/);
-    assert.match(page.container.textContent, /source computer is offline/);
+    assert.match(
+      page.container.textContent,
+      /being prepared or is temporarily unavailable/,
+    );
   } finally {
     await page.unmount();
     knowledgeVaults = [];

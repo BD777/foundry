@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { sessionEnvironment } from "../dist/session/session-ambient.js";
 import { setLoginShellPathReaderForTests } from "../dist/session/login-path.js";
+import { servicePath } from "../dist/platform/path-list.js";
 
 const ambientKeys = [
   "ANTHROPIC_AUTH_TOKEN",
@@ -47,8 +48,9 @@ test("a keyless server codex profile never inherits the daemon's credentials", (
     // The endpoint and its non-credential configuration still go through.
     assert.equal(env.OPENAI_BASE_URL, "http://gateway.internal/v1");
     assert.equal(env.CODEX_BASE_URL, "http://gateway.internal/v1");
-    // Inherited PATH is kept; only Foundry's tools folder goes in front.
-    assert.ok(env.PATH.endsWith(`:${process.env.PATH}`));
+    // Inherited PATH is kept, repeats dropped; only Foundry's tools folder
+    // goes in front.
+    assert.ok(env.PATH.endsWith(`:${servicePath(process.env.PATH)}`));
   });
 });
 
