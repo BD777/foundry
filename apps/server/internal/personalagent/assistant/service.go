@@ -24,8 +24,8 @@
 //	svc.RunTool(ctx, scope, tool, args)              // a write tool: refused, proposed or applied
 //	svc.AdmitSession(ctx, input); svc.AdmitTurn(ctx, session) // the limits
 //	svc.RunFor(ctx, session)                         // a run's instructions and turn context
-//	svc.Stop(ctx, userID); svc.Resume(ctx, userID)   // the stop switch
-//	svc.DecideProposal(ctx, userID, id, accept, via) // the person's answer
+//	svc.Stop(ctx, agent); svc.Resume(ctx, agent)     // one assistant's stop switch
+//	svc.DecideProposal(ctx, agent, id, accept, via) // the person's answer
 //
 // Dependencies: store, sessions, workspacedigest, redact, personalagent and
 // its flow, run and knowledge packages. It must not import httpapi.
@@ -72,6 +72,7 @@ type Store interface {
 	store.WorkspaceDigestStore
 	store.KnowledgeVaultStore
 	store.KnowledgeEntryStore
+	store.KnowledgeLegacyTransferStore
 	store.KnowledgePublicationStore
 	store.FeishuIssueThreads
 }
@@ -273,13 +274,13 @@ func (s *Service) WebURL(path string) string {
 	return strings.TrimRight(s.origin, "/") + path
 }
 
-// DefaultAccount is the account the person chose for their assistant,
-// the one they set as their own default; "" without one.
-func (s *Service) DefaultAccount(ctx context.Context, userID string) string {
-	if userID == "" {
+// DefaultAccount is the account the person chose for this assistant;
+// "" without one.
+func (s *Service) DefaultAccount(ctx context.Context, assistantID string) string {
+	if assistantID == "" {
 		return ""
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, userID)
+	agent, err := s.store.GetAssistant(ctx, assistantID)
 	if err != nil {
 		return ""
 	}

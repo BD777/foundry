@@ -42,7 +42,11 @@ export function ResourceRow({
 }) {
   const { t } = useTranslation("resources");
   const [activityOpen, setActivityOpen] = useState(false);
-  const reachable = instance.state !== "offline" && instance.state !== "gone";
+  const reconnecting = instance.state === "reconnecting";
+  const reachable =
+    instance.state !== "reconnecting" &&
+    instance.state !== "offline" &&
+    instance.state !== "gone";
   const operated =
     Boolean(instance.holder) ||
     instance.backends.some((backend) => backend.mode === "remote_ops");
@@ -127,7 +131,8 @@ export function ResourceRow({
       />
       <ResourceBackends
         instance={instance}
-        setup={manageable && reachable}
+        setup={manageable && (reachable || reconnecting)}
+        disabled={reconnecting}
         onChanged={onChanged}
       />
       {computeDetails ? (
@@ -138,6 +143,7 @@ export function ResourceRow({
       {compute && manageable ? (
         <ResourceComputeAccess
           allowed={remoteCommands}
+          disabled={reconnecting}
           instance={instance}
           onChanged={onChanged}
         />

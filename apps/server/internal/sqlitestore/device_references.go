@@ -13,7 +13,7 @@ import (
 func (s *Store) invalidateRemovedDeviceReferences(ctx context.Context, deviceID string) error {
 	// Only authorization entries change. JSON updates preserve unknown fields
 	// from newer settings versions and every explicitly configured location.
-	_, err := s.conn().ExecContext(ctx, `UPDATE personal_agents
+	_, err := s.conn().ExecContext(ctx, `UPDATE assistants
  SET settings_json = json_set(settings_json, '$.devices', json((
    SELECT json_group_array(json(value)) FROM json_each(settings_json, '$.devices')
    WHERE json_extract(value, '$.deviceId') != ?

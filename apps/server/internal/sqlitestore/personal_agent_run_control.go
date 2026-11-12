@@ -10,13 +10,13 @@ import (
 )
 
 func (s *Store) setupPersonalAgentRunControls(ctx context.Context) error {
-	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pa_run_controls(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,session_id TEXT NOT NULL,input_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL)`)
+	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pa_run_controls(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',session_id TEXT NOT NULL,input_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL)`)
 	return err
 }
 func scanPARunControl(row interface{ Scan(...any) error }) (store.PersonalAgentRunControl, error) {
 	var v store.PersonalAgentRunControl
 	var raw string
-	err := row.Scan(&v.UserID, &raw)
+	err := row.Scan(&v.UserID, &v.AssistantID, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, store.ErrNotFound
 	}
@@ -26,16 +26,16 @@ func scanPARunControl(row interface{ Scan(...any) error }) (store.PersonalAgentR
 	err = json.Unmarshal([]byte(raw), &v)
 	return v, err
 }
-func (s *Store) GetPersonalAgentRunControl(ctx context.Context, user, id string) (store.PersonalAgentRunControl, error) {
-	return scanPARunControl(s.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_run_controls WHERE user_id=? AND id=?`, user, id))
+func (s *Store) GetPersonalAgentRunControl(ctx context.Context, assistantID, id string) (store.PersonalAgentRunControl, error) {
+	return scanPARunControl(s.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE assistant_id=? AND id=?`, assistantID, id))
 }
 func (s *Store) EnsurePersonalAgentRunControl(ctx context.Context, v store.PersonalAgentRunControl) (store.PersonalAgentRunControl, error) {
-	if v.ID == "" || v.UserID == "" || v.SessionID == "" || v.InputID == "" {
+	if v.ID == "" || v.UserID == "" || v.AssistantID == "" || v.SessionID == "" || v.InputID == "" {
 		return v, fmt.Errorf("run control requires an exact accepted input")
 	}
 	var saved store.PersonalAgentRunControl
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := tx.GetPersonalAgentRunControl(ctx, v.UserID, v.ID)
+		old, err := tx.GetPersonalAgentRunControl(ctx, v.AssistantID, v.ID)
 		if err == nil {
 			if old.SessionID != v.SessionID || old.InputID != v.InputID {
 				return store.ErrIdempotencyConflict
@@ -47,7 +47,7 @@ func (s *Store) EnsurePersonalAgentRunControl(ctx context.Context, v store.Perso
 			return err
 		}
 		v.State, v.Revision, v.UpdatedAt, v.UsageState = "monitoring", 1, paNow(), "not_observed"
-		if agent, e := tx.GetPersonalAgent(ctx, v.UserID); e == nil && agent.State == store.PersonalAgentStopped {
+		if agent, e := tx.GetAssistant(ctx, v.AssistantID); e == nil && agent.State == store.PersonalAgentStopped {
 			v.State = "stop_requested"
 			v.StopReason = "assistant_stopped"
 		}
@@ -55,7 +55,7 @@ func (s *Store) EnsurePersonalAgentRunControl(ctx context.Context, v store.Perso
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_run_controls(id,user_id,session_id,input_id,state,revision,payload_json) VALUES(?,?,?,?,?,?,?)`, v.ID, v.UserID, v.SessionID, v.InputID, v.State, v.Revision, string(raw))
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_run_controls(id,user_id,assistant_id,session_id,input_id,state,revision,payload_json) VALUES(?,?,?,?,?,?,?,?)`, v.ID, v.UserID, v.AssistantID, v.SessionID, v.InputID, v.State, v.Revision, string(raw))
 		saved = v
 		return err
 	})
@@ -68,13 +68,13 @@ func (s *Store) writePARunControl(ctx context.Context, v store.PersonalAgentRunC
 	if err != nil {
 		return v, err
 	}
-	_, err = s.conn().ExecContext(ctx, `UPDATE pa_run_controls SET state=?,revision=?,payload_json=? WHERE user_id=? AND id=?`, v.State, v.Revision, string(raw), v.UserID, v.ID)
+	_, err = s.conn().ExecContext(ctx, `UPDATE pa_run_controls SET state=?,revision=?,payload_json=? WHERE assistant_id=? AND id=?`, v.State, v.Revision, string(raw), v.AssistantID, v.ID)
 	return v, err
 }
 func (s *Store) SavePersonalAgentRunControl(ctx context.Context, v store.PersonalAgentRunControl) (store.PersonalAgentRunControl, error) {
 	var saved store.PersonalAgentRunControl
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := tx.GetPersonalAgentRunControl(ctx, v.UserID, v.ID)
+		old, err := tx.GetPersonalAgentRunControl(ctx, v.AssistantID, v.ID)
 		if err != nil {
 			return err
 		}
@@ -97,10 +97,10 @@ func (s *Store) SavePersonalAgentRunControl(ctx context.Context, v store.Persona
 	})
 	return saved, err
 }
-func (s *Store) RequestPersonalAgentRunStop(ctx context.Context, user, id, reason string) (store.PersonalAgentRunControl, error) {
+func (s *Store) RequestPersonalAgentRunStop(ctx context.Context, assistantID, id, reason string) (store.PersonalAgentRunControl, error) {
 	var saved store.PersonalAgentRunControl
 	err := s.withTx(ctx, func(tx *Store) error {
-		v, err := tx.GetPersonalAgentRunControl(ctx, user, id)
+		v, err := tx.GetPersonalAgentRunControl(ctx, assistantID, id)
 		if err != nil {
 			return err
 		}
@@ -115,7 +115,7 @@ func (s *Store) RequestPersonalAgentRunStop(ctx context.Context, user, id, reaso
 	return saved, err
 }
 func (s *Store) queryPARunControls(ctx context.Context, where string, args ...any) ([]store.PersonalAgentRunControl, error) {
-	rows, err := s.reader().QueryContext(ctx, `SELECT user_id,payload_json FROM pa_run_controls WHERE `+where, args...)
+	rows, err := s.reader().QueryContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +130,8 @@ func (s *Store) queryPARunControls(ctx context.Context, where string, args ...an
 	}
 	return items, rows.Err()
 }
-func (s *Store) ListPersonalAgentRunControls(ctx context.Context, user string) ([]store.PersonalAgentRunControl, error) {
-	return s.queryPARunControls(ctx, `user_id=? AND (state IN ('monitoring','stop_requested') OR id IN (SELECT id FROM pa_run_controls WHERE user_id=? ORDER BY rowid DESC LIMIT 200)) ORDER BY CASE WHEN state IN ('monitoring','stop_requested') THEN 0 ELSE 1 END,rowid DESC`, user, user)
+func (s *Store) ListPersonalAgentRunControls(ctx context.Context, assistantID string) ([]store.PersonalAgentRunControl, error) {
+	return s.queryPARunControls(ctx, `assistant_id=? AND (state IN ('monitoring','stop_requested') OR id IN (SELECT id FROM pa_run_controls WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200)) ORDER BY CASE WHEN state IN ('monitoring','stop_requested') THEN 0 ELSE 1 END,rowid DESC`, assistantID, assistantID)
 }
 func (s *Store) ActivePersonalAgentRunControls(ctx context.Context) ([]store.PersonalAgentRunControl, error) {
 	return s.queryPARunControls(ctx, `state IN ('monitoring','stop_requested') ORDER BY CASE state WHEN 'stop_requested' THEN 0 ELSE 1 END,json_extract(payload_json,'$.updatedAt') LIMIT 100`)
@@ -163,14 +163,14 @@ func (s *Store) CancelPersonalAgentInput(ctx context.Context, sessionID, inputID
 func (s *Store) AuthorizePersonalAgentDispatch(ctx context.Context, sessionID, inputID string) (bool, error) {
 	allowed := true
 	err := s.withTx(ctx, func(tx *Store) error {
-		v, err := scanPARunControl(tx.conn().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_run_controls WHERE session_id=? AND input_id=?`, sessionID, inputID))
+		v, err := scanPARunControl(tx.conn().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE session_id=? AND input_id=?`, sessionID, inputID))
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if agent, e := tx.GetPersonalAgent(ctx, v.UserID); e == nil && agent.State == store.PersonalAgentStopped && v.State == "monitoring" {
+		if agent, e := tx.GetAssistant(ctx, v.AssistantID); e == nil && agent.State == store.PersonalAgentStopped && v.State == "monitoring" {
 			v.State = "stop_requested"
 			v.StopReason = "assistant_stopped"
 			if _, e = tx.writePARunControl(ctx, v); e != nil {
@@ -201,7 +201,7 @@ func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budge
 	if !account.Active() {
 		return fmt.Errorf("assistant account is disabled")
 	}
-	snapshot, err := s.GetPersonalAgentRunSnapshot(ctx, user, budget.SnapshotID)
+	snapshot, err := s.RunSnapshotForUser(ctx, user, budget.SnapshotID)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budge
 		return fmt.Errorf("assistant execution location changed")
 	}
 
-	agent, err := s.GetPersonalAgent(ctx, user)
+	agent, err := s.GetAssistant(ctx, snapshot.AssistantID)
 	if err != nil {
 		return err
 	}
@@ -234,8 +234,8 @@ func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budge
 	return nil
 }
 
-func (s *Store) ActivePersonalAgentRunControlsForUser(ctx context.Context, user string) ([]store.PersonalAgentRunControl, error) {
-	return s.queryPARunControls(ctx, `user_id=? AND state IN ('monitoring','stop_requested') ORDER BY rowid`, user)
+func (s *Store) ActivePersonalAgentRunControlsFor(ctx context.Context, assistantID string) ([]store.PersonalAgentRunControl, error) {
+	return s.queryPARunControls(ctx, `assistant_id=? AND state IN ('monitoring','stop_requested') ORDER BY rowid`, assistantID)
 }
 
 // Only the authenticated device-completion path calls this method. A Server
@@ -245,7 +245,7 @@ func (s *Store) NotePersonalAgentNativeEnd(ctx context.Context, sessionID, input
 		return nil
 	}
 	return s.withTx(ctx, func(tx *Store) error {
-		v, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_run_controls WHERE session_id=? AND input_id=?`, sessionID, inputID))
+		v, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE session_id=? AND input_id=?`, sessionID, inputID))
 		if errors.Is(e, store.ErrNotFound) {
 			return nil
 		}
@@ -268,8 +268,8 @@ func (s *Store) NotePersonalAgentNativeEnd(ctx context.Context, sessionID, input
 		return e
 	})
 }
-func (s *Store) personalAgentInputAccepted(ctx context.Context, user, input string) (bool, error) {
+func (s *Store) personalAgentInputAccepted(ctx context.Context, assistantID, input string) (bool, error) {
 	var accepted bool
-	e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_snapshots WHERE user_id=? AND session_id<>'' AND json_extract(payload_json,'$.inputId')=?) OR EXISTS(SELECT 1 FROM agent_session_events WHERE id=?)`, user, input, store.SessionInputEventID(input)).Scan(&accepted)
+	e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_snapshots WHERE assistant_id=? AND session_id<>'' AND json_extract(payload_json,'$.inputId')=?) OR EXISTS(SELECT 1 FROM agent_session_events WHERE id=?)`, assistantID, input, store.SessionInputEventID(input)).Scan(&accepted)
 	return accepted, e
 }

@@ -9,6 +9,8 @@ export interface PersonalAgentOperation {
   sourceInputId?: string;
   targetSessionId?: string;
   replaceOwner?: boolean;
+  /** The execution model choice the helper was started with (DEV-188). */
+  executionChoice?: string;
   inputId: string;
   prompt: string;
   snapshotId?: string;

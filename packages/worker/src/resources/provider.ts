@@ -44,6 +44,13 @@ export interface ResourceProvider {
    * it until its lease ends.
    */
   idleCloseMs?: number;
+  /**
+   * Keep an open session through a dropped server link, for up to
+   * disconnectGraceMs, so work it started (a background job) survives a
+   * server restart or a network blip. A session whose lease is operated again
+   * meanwhile stays; the rest is closed when the grace ends.
+   */
+  survivesDisconnect?: boolean;
   /** Throws a ProviderError when the backend cannot be started. */
   open(key: string, lease: ProviderLease): Promise<ProviderSession>;
 }

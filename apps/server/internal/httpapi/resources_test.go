@@ -63,6 +63,7 @@ func waitForResources(t *testing.T, server *Server, query string, ok func(store.
 // keeps it per device, lists it by type and device, and lists it offline
 // once the device disconnects.
 func TestDeviceResourcesReportIsListed(t *testing.T) {
+	shortenDeviceReconnectGrace(t, 100*time.Millisecond)
 	db := newTestStore(t)
 	registerMacWorkspaces(t, db)
 	server := NewServer(db)

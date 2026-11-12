@@ -68,7 +68,23 @@ func TestConnectorPackagesMCPAddDevicesAndAudit(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if !summary.Enabled || !slices.Equal(summary.EnabledDevices, []string{"dev_alice"}) ||
+	if !summary.Applying || len(summary.Devices) != 1 || summary.Devices[0].State == "" {
+		t.Fatalf("set_devices did not return the pending state: %+v", summary)
+	}
+	waitFor(t, "the package to be installed", func() bool {
+		record, err := f.server.store.GetConnectorPackage(context.Background(), f.aliceID, "openlark")
+		return err == nil && len(record.Devices) == 1 && !record.Unfinished()
+	})
+	text, failed = call("connector_packages", map[string]any{"action": "get", "kind": "openlark"})
+	if failed {
+		t.Fatalf("get = %q", text)
+	}
+	summary = connectorPackageMCPSummary{}
+	if err := json.Unmarshal([]byte(text), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if !summary.Enabled || summary.Applying || !slices.Equal(summary.EnabledDevices, []string{"dev_alice"}) ||
+		summary.Devices[0].State != "installed" ||
 		summary.Repository == "" || summary.ExtensionVersion == "" || summary.ToolVersion == "" {
 		t.Fatalf("package after addDevices = %+v", summary)
 	}
@@ -104,8 +120,8 @@ func TestConnectorPackagesMCPAddDevicesAndAudit(t *testing.T) {
 			audited++
 		}
 	}
-	if audited != 4 {
-		t.Fatalf("connector package audit events = %d, want 4: %+v", audited, events)
+	if audited != 5 {
+		t.Fatalf("connector package audit events = %d, want 5: %+v", audited, events)
 	}
 }
 

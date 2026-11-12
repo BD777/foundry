@@ -370,9 +370,17 @@ type DeviceWorker struct {
 	Command string `json:"command,omitempty"`
 }
 
-// DeviceWorkerUpdate DeviceWorkerUpdate is an update in progress: when it was asked for and the version it brings.
+// DeviceWorkerUpdate DeviceWorkerUpdate describes an update requested from Foundry: while it runs, or as the most recent completed result retained by update_worker status.
 type DeviceWorkerUpdate struct {
+	// ID `id` identifies this update request.
+	ID        string `json:"id,omitempty"`
 	StartedAt string `json:"startedAt"`
+
+	// CompletedAt `completedAt` is when the update succeeded or failed.
+	CompletedAt string `json:"completedAt,omitempty"`
+
+	// ElapsedMs `elapsedMs` is the time from the start to completion, or to the current status.
+	ElapsedMs int64 `json:"elapsedMs,omitempty"`
 
 	// Version The version it brings.
 	Version string `json:"version,omitempty"`

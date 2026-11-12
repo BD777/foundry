@@ -10,6 +10,7 @@ import (
 // When its connection ends it reads offline, not Online forever, and keeps
 // what it reported about its login service (DEV-088).
 func TestWorkspacelessDeviceGoesOfflineWhenItsConnectionEnds(t *testing.T) {
+	shortenDeviceReconnectGrace(t, 100*time.Millisecond)
 	db := newTestStore(t)
 	server := NewServer(db)
 	httpServer := serveForTest(t, server)

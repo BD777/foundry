@@ -10,6 +10,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { BadgeTone } from "./asset-meta";
 import { i18n } from "../i18n";
+import { deviceConnection } from "./device-connection";
 
 export interface ResolvedProfileStatus {
   status: ProviderStatus;
@@ -72,7 +73,7 @@ export function resolveServerProfileStatus({
   if (projection) {
     return { status: projection.status, statusDetail: projection.statusDetail };
   }
-  if (device?.status !== "connected") {
+  if (!device || deviceConnection(device) !== "online") {
     return {
       status: "unavailable",
       statusDetail: i18n.t("agents:profileStatus.deviceOffline"),

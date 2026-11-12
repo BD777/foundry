@@ -26,6 +26,9 @@ func (l *Leases) Acquire(ctx context.Context, req AcquireRequest) ([]store.Resou
 	if err != nil {
 		return nil, leaseError(CodeInvalid, "session %s not found", req.SessionID)
 	}
+	if err := l.waitForHosts(ctx, ids); err != nil {
+		return nil, err
+	}
 	attempt, err := l.tryAcquire(ctx, req, ids, session)
 	if err != nil || attempt.waiter == nil {
 		return attempt.leases, err
@@ -250,10 +253,42 @@ func OperableBackend(instance store.ResourceInstance) (store.ResourceBackend, er
 }
 
 func (l *Leases) hostOnline(sourceID string) bool {
+	if l.HostOnline != nil {
+		return l.HostOnline(sourceID)
+	}
 	if _, away := l.hostOffline[sourceID]; away {
 		return false
 	}
-	return l.HostOnline == nil || l.HostOnline(sourceID)
+	return true
+}
+
+// waitForHosts lets reconnect grace pass before taking the lease mutex. A
+// source that becomes offline during the wait is left to usable, which gives
+// the same refusal as before reconnecting became a visible state.
+func (l *Leases) waitForHosts(ctx context.Context, ids []string) error {
+	if l.WaitHostReconnect == nil {
+		return nil
+	}
+	state, err := l.load(ctx)
+	if err != nil {
+		return err
+	}
+	waited := map[string]bool{}
+	for _, id := range ids {
+		instance, ok := state.instances[id]
+		if !ok {
+			continue
+		}
+		sourceID := instance.Source.ID
+		if l.hostOnline(sourceID) || waited[sourceID] {
+			continue
+		}
+		waited[sourceID] = true
+		if err := l.WaitHostReconnect(ctx, sourceID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func heldBy(state *leaseState, sessionID string) []*store.ResourceLease {

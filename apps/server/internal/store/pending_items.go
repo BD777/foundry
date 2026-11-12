@@ -69,8 +69,10 @@ const (
 // PendingItem is one thing waiting for the person, with the words its
 // source wrote: the question, the failure, the tool's output.
 type PendingItem struct {
-	ID          string `json:"id"`
-	UserID      string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID string `json:"-"`
 	WorkspaceID string `json:"workspaceId"`
 	SessionID   string `json:"sessionId,omitempty"`
 	IssueID     string `json:"issueId,omitempty"`

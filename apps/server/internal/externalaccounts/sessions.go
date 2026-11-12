@@ -127,22 +127,20 @@ func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionID, s
 	if deviceOwner != sessionOwner {
 		return nil, nil
 	}
-	workspace, err := s.store.GetWorkspace(ctx, workspaceID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, err
-	}
 	var policy Policy
-	if err == nil && workspace.Kind == store.WorkspaceKindPersonalAgent {
+	if sessionID != "" {
 		session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
-		if err != nil {
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}
-		policy, err = ResolvePolicy(ctx, s.store, session)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			if policy, err = ResolvePolicy(ctx, s.store, session); err != nil {
+				return nil, err
+			}
 		}
 	}
 	var candidates []store.ExternalAccount
+	var err error
 	if policy.PersonalAgent() {
 		candidates, err = s.store.ListExternalAccounts(ctx, sessionOwner)
 	} else {

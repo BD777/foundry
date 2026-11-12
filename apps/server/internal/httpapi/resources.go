@@ -21,6 +21,7 @@ var resourcesChangedEvent = browserevent.Define[browserevent.ResourcesChangedPay
 func newResourceService(st Backend, hub *DaemonHub, stream eventstream.Publisher) *resources.Service {
 	service := resources.NewService(st)
 	service.Online = hub.HasConnection
+	service.Connection = hub.deviceConnection
 	service.Changed = func(sourceID string) {
 		// It carries no data, so it reaches every stream; readers filter.
 		resourcesChangedEvent.Publish(stream, eventstream.Route{Everyone: true}, browserevent.ResourcesChangedPayload{SourceID: sourceID})
@@ -87,10 +88,14 @@ func (c *daemonConnection) resourcesReported(ctx context.Context, envelope wsEnv
 // resourcesOffline marks a disconnected device's inventory offline and
 // starts the graces of the leases on it and of those its sessions hold.
 func (h *DaemonHub) resourcesOffline(deviceID string) {
-	if err := h.resources.SourceOffline(context.Background(), deviceID); err != nil {
-		log.Printf("daemon %s: resources not marked offline: %v", deviceID, err)
+	if h.resources != nil {
+		if err := h.resources.SourceOffline(context.Background(), deviceID); err != nil {
+			log.Printf("daemon %s: resources not marked offline: %v", deviceID, err)
+		}
 	}
-	if err := h.leases.DeviceDisconnected(context.Background(), deviceID); err != nil {
-		log.Printf("daemon %s: resource leases not told it went away: %v", deviceID, err)
+	if h.leases != nil {
+		if err := h.leases.DeviceDisconnected(context.Background(), deviceID); err != nil {
+			log.Printf("daemon %s: resource leases not told it went away: %v", deviceID, err)
+		}
 	}
 }

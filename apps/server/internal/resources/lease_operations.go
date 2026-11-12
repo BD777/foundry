@@ -19,9 +19,18 @@ type Ticket struct {
 // at the instance's generation, on a device that is online. A parked lease
 // operated outside a turn (background work) is kept ParkTTL longer.
 func (l *Leases) Begin(ctx context.Context, leaseID, sessionID string) (Ticket, error) {
+	lease, err := l.leaseByID(ctx, leaseID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	if !l.hostOnline(lease.SourceID) && l.WaitHostReconnect != nil {
+		if err := l.WaitHostReconnect(ctx, lease.SourceID); err != nil {
+			return Ticket{}, err
+		}
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	lease, err := l.leaseByID(ctx, leaseID)
+	lease, err = l.leaseByID(ctx, leaseID)
 	if err != nil {
 		return Ticket{}, err
 	}

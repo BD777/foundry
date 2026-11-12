@@ -11,7 +11,7 @@ func TestMaintenanceCoalescesUnsentButPreservesAcceptedReceipt(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	add := func(id, key string) store.PersonalAgentMaintenance {
 		t.Helper()
-		j, e := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: id, UserID: "u", WorkspaceID: "w", Role: "governance", EventKey: key})
+		j, e := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: id, UserID: "u", AssistantID: "asst_u", WorkspaceID: "w", Role: "governance", EventKey: key})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -23,7 +23,7 @@ func TestMaintenanceCoalescesUnsentButPreservesAcceptedReceipt(t *testing.T) {
 		t.Fatal("same event duplicated")
 	}
 	b := add("b", "v2")
-	a, _ = db.GetPersonalAgentMaintenance(ctx, "u", a.ID)
+	a, _ = db.GetPersonalAgentMaintenance(ctx, "asst_u", a.ID)
 	if a.Status != "superseded" {
 		t.Fatal("unsent event not coalesced")
 	}
@@ -34,7 +34,7 @@ func TestMaintenanceCoalescesUnsentButPreservesAcceptedReceipt(t *testing.T) {
 		t.Fatal(e)
 	}
 	c := add("c", "v3")
-	b, _ = db.GetPersonalAgentMaintenance(ctx, "u", b.ID)
+	b, _ = db.GetPersonalAgentMaintenance(ctx, "asst_u", b.ID)
 	if b.Status != "starting" {
 		t.Fatal("accepted input replaced")
 	}
@@ -42,8 +42,8 @@ func TestMaintenanceCoalescesUnsentButPreservesAcceptedReceipt(t *testing.T) {
 	if _, e = db.SavePersonalAgentMaintenance(ctx, c); e == nil {
 		t.Fatal("parallel maintenance bypassed concurrency cap")
 	}
-	if _, e = db.GetPersonalAgentMaintenance(ctx, "other", b.ID); !errors.Is(e, store.ErrNotFound) {
-		t.Fatal("cross user read")
+	if _, e = db.GetPersonalAgentMaintenance(ctx, "asst_other", b.ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("cross assistant read")
 	}
 	b.Status = "review"
 	saved, e := db.SavePersonalAgentMaintenance(ctx, b)
@@ -61,7 +61,7 @@ func TestMaintenanceCoalescesUnsentButPreservesAcceptedReceipt(t *testing.T) {
 
 func TestMaintenanceRetryRequiresNativeEndAndCanRefreshUnsentSettings(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	job, err := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "review", UserID: "person", Role: "governance", WorkspaceID: "workspace", EventKey: "context-version"})
+	job, err := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "review", UserID: "person", AssistantID: "asst_person", Role: "governance", WorkspaceID: "workspace", EventKey: "context-version"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestMaintenanceRetryRequiresNativeEndAndCanRefreshUnsentSettings(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "control", UserID: job.UserID, SessionID: job.SessionID, InputID: job.InputID, DispatchAttempted: true})
+	_, err = db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "control", UserID: job.UserID, AssistantID: job.AssistantID, SessionID: job.SessionID, InputID: job.InputID, DispatchAttempted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestMaintenanceRetryRequiresNativeEndAndCanRefreshUnsentSettings(t *testing
 	if _, err = db.SavePersonalAgentMaintenance(ctx, retry); err != nil {
 		t.Fatal(err)
 	}
-	pending, err := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "waiting", UserID: "person", Role: "memory", WorkspaceID: "other", EventKey: "fresh"})
+	pending, err := db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "waiting", UserID: "person", AssistantID: "asst_person", Role: "memory", WorkspaceID: "other", EventKey: "fresh"})
 	if err != nil {
 		t.Fatal(err)
 	}

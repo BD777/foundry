@@ -10,6 +10,7 @@ import {
 import { providerTabFrom, type ProviderTab } from "./provider-tabs";
 
 export type NavView =
+  | "assistants"
   | "assistant"
   | "assistantSettings"
   | "pending"
@@ -37,6 +38,7 @@ export type NavView =
 export type SidebarView = Exclude<NavView, "issue">;
 
 export interface AppRoute {
+  assistantId?: string;
   selectedDeviceId?: string;
   deviceSection?:
     "resources" | "agents" | "skills" | "settings" | "diagnostics";
@@ -74,6 +76,18 @@ export function parseAppRoute(pathname: string): AppRoute {
     // the shell turns back to the workspace when the person chose so.
     case undefined:
       return { view: "assistant" };
+    case "assistants": {
+      if (!id) return { view: "assistants" };
+      const assistantSection = assistantSettingsSectionValue(segments[3]);
+      return segments[2] === "settings"
+        ? {
+            view: "assistantSettings",
+            assistantId: decodePathSegment(id),
+            ...(assistantSection ? { assistantSection } : {}),
+          }
+        : { view: "assistant", assistantId: decodePathSegment(id) };
+    }
+    // Legacy aliases resolve to the default assistant in the app shell.
     case "assistant": {
       const assistantSection = assistantSettingsSectionValue(segments[2]);
       return id === "settings"
@@ -173,11 +187,17 @@ export function parseAppRoute(pathname: string): AppRoute {
 export function pathForAppRoute(route: AppRoute): string {
   switch (route.view) {
     case "assistant":
-      return "/assistant";
+      return route.assistantId
+        ? `/assistants/${encodePathSegment(route.assistantId)}`
+        : "/assistant";
     case "assistantSettings":
-      return route.assistantSection
-        ? `/assistant/settings/${route.assistantSection}`
-        : "/assistant/settings";
+      return route.assistantId
+        ? `/assistants/${encodePathSegment(route.assistantId)}/settings${route.assistantSection ? `/${route.assistantSection}` : ""}`
+        : route.assistantSection
+          ? `/assistant/settings/${route.assistantSection}`
+          : "/assistant/settings";
+    case "assistants":
+      return "/assistants";
     case "locations":
       return route.selectedDeviceId
         ? `/locations/${encodePathSegment(route.selectedDeviceId)}`
@@ -238,6 +258,7 @@ export function pathForAppRoute(route: AppRoute): string {
 const appSections = new Set([
   "",
   "assistant",
+  "assistants",
   "pending",
   "locations",
   "account",

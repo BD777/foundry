@@ -127,7 +127,7 @@ func (s *Service) retryAdvice(ctx context.Context, agent store.PersonalAgent, se
 		}
 		return s.sayTask(ctx, agent, "noOtherAccount")
 	}
-	first, _ := s.accounts.Pick(others, "", s.DefaultAccount(ctx, agent.UserID))
+	first, _ := s.accounts.Pick(others, "", s.DefaultAccount(ctx, agent.ID))
 	listed := []string{first.Describe()}
 	for _, account := range others {
 		if account.ProfileID != first.ProfileID {

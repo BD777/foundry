@@ -20,6 +20,7 @@ func (s *Store) setupPendingItems(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pending_items (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			workspace_id TEXT NOT NULL,
 			session_id TEXT NOT NULL DEFAULT '',
 			issue_id TEXT NOT NULL DEFAULT '',
@@ -54,11 +55,11 @@ func (s *Store) setupPendingItems(ctx context.Context) error {
 // pendingStates are the states an item may be in.
 var pendingStates = []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
 
-const pendingItemColumns = `id, user_id, state, payload_json, created_at, updated_at, resolved_at`
+const pendingItemColumns = `id, user_id, assistant_id, state, payload_json, created_at, updated_at, resolved_at`
 
 func scanPendingItem(row interface{ Scan(...any) error }) (store.PendingItem, error) {
-	var id, userID, state, payload, createdAt, updatedAt, resolvedAt string
-	if err := row.Scan(&id, &userID, &state, &payload, &createdAt, &updatedAt, &resolvedAt); err != nil {
+	var id, userID, assistantID, state, payload, createdAt, updatedAt, resolvedAt string
+	if err := row.Scan(&id, &userID, &assistantID, &state, &payload, &createdAt, &updatedAt, &resolvedAt); err != nil {
 		return store.PendingItem{}, err
 	}
 	var stored pendingPayload
@@ -67,7 +68,7 @@ func scanPendingItem(row interface{ Scan(...any) error }) (store.PendingItem, er
 	}
 	item := stored.PendingItem
 	item.Key = stored.Key
-	item.ID, item.UserID, item.State = id, userID, state
+	item.ID, item.UserID, item.AssistantID, item.State = id, userID, assistantID, state
 	item.CreatedAt, item.UpdatedAt, item.ResolvedAt = createdAt, updatedAt, resolvedAt
 	return item, nil
 }
@@ -84,16 +85,17 @@ func (s *Store) savePendingItem(ctx context.Context, item store.PendingItem) err
 		return err
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO pending_items
-		(id, user_id, workspace_id, session_id, issue_id, source, item_key, state, payload_json, created_at, updated_at, resolved_at, handler)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, user_id, workspace_id, session_id, issue_id, source, item_key, state, payload_json, created_at, updated_at, resolved_at, handler, assistant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			state = excluded.state,
 			handler = excluded.handler,
+			assistant_id = CASE WHEN excluded.assistant_id <> '' THEN excluded.assistant_id ELSE pending_items.assistant_id END,
 			payload_json = excluded.payload_json,
 			updated_at = excluded.updated_at,
 			resolved_at = excluded.resolved_at`,
 		item.ID, item.UserID, item.WorkspaceID, item.SessionID, item.IssueID, item.Source, item.Key, item.State,
-		payload, item.CreatedAt, item.UpdatedAt, item.ResolvedAt, store.PendingHandledBy(item))
+		payload, item.CreatedAt, item.UpdatedAt, item.ResolvedAt, store.PendingHandledBy(item), item.AssistantID)
 	if err != nil {
 		return fmt.Errorf("save pending item: %w", err)
 	}

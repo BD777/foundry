@@ -15,7 +15,8 @@ import (
 
 // Links provide context; they never grant the caller control of a session,
 // ownership of a service, or permission to copy another workspace's content.
-func (s *Service) validateItemPlan(ctx context.Context, userID, itemID string, plan *store.PersonalAgentItemPlan) error {
+func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgent, itemID string, plan *store.PersonalAgentItemPlan) error {
+	userID := agent.UserID
 	if !slices.Contains([]string{"record", "execute"}, plan.Mode) ||
 		!slices.Contains([]string{"inbox", "ready", "waiting", "working", "review"}, plan.Progress) {
 		return invalid("plan requires mode record/execute and progress inbox/ready/waiting/working/review")
@@ -121,7 +122,7 @@ func (s *Service) validateItemPlan(ctx context.Context, userID, itemID string, p
 			}
 		}
 	}
-	items, err := s.store.ListPersonalAgentItems(ctx, userID, "0001-01-01")
+	items, err := s.store.ListPersonalAgentItems(ctx, agent.ID, "0001-01-01")
 	if err != nil {
 		return err
 	}

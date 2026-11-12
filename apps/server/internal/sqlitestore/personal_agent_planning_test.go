@@ -11,7 +11,7 @@ import (
 
 func TestItemCaptureReturnsUpdatedItemAndRefusesChangedOriginal(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	input := store.PersonalAgentListItem{UserID: "person", Text: "Compare export formats", CaptureKey: "input-1:part-1", CaptureHash: "original", SourceInputID: "input-1"}
+	input := store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Compare export formats", CaptureKey: "input-1:part-1", CaptureHash: "original", SourceInputID: "input-1"}
 	item, err := db.AddPersonalAgentItem(ctx, input)
 	if err != nil {
 		t.Fatal(err)
@@ -33,25 +33,25 @@ func TestItemCaptureReturnsUpdatedItemAndRefusesChangedOriginal(t *testing.T) {
 		t.Fatalf("key reused with changed intent: %v", err)
 	}
 	input.CaptureHash = "original"
-	if err := db.DeletePersonalAgentItem(ctx, "person", item.ID); err != nil {
+	if err := db.DeletePersonalAgentItem(ctx, "asst_person", item.ID); err != nil {
 		t.Fatal(err)
 	}
 	removed, err := db.AddPersonalAgentItem(ctx, input)
 	if err != nil || removed.ID != item.ID || removed.Text != "" || removed.Status != "dropped" {
 		t.Fatalf("deleted item resurrected on retry: %+v %v", removed, err)
 	}
-	if items, _ := db.ListPersonalAgentItems(ctx, "person", "0001-01-01"); len(items) != 0 {
+	if items, _ := db.ListPersonalAgentItems(ctx, "asst_person", "0001-01-01"); len(items) != 0 {
 		t.Fatal("deleted words remain visible")
 	}
 }
 
 func TestConcurrentItemEdgesCannotCreateCycle(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	a, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", Text: "Research"})
+	a, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Research"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", Text: "Design"})
+	b, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Design"})
 	if err != nil {
 		t.Fatal(err)
 	}

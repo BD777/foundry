@@ -39,6 +39,7 @@ export const resources = {
     available: "Available",
     busy: "In use",
     unready: "Not ready",
+    reconnecting: "Reconnecting…",
     offline: "Device offline",
     gone: "Gone",
   },
@@ -57,6 +58,8 @@ export const resources = {
   staleNotice:
     "Its detector failed on the latest scan; this is the last known report.",
   staleHelpLabel: "About stale resources",
+  reconnectingActionNote:
+    "The device is reconnecting and usually recovers within seconds.",
   backendLine: "Used through {{backend}} — {{readiness}}",
   backend: {
     named: "{{id}} {{version}}",

@@ -76,11 +76,24 @@ func (s *Server) feishuEventsForMCP(r *http.Request, actor Actor, args map[strin
 	}
 	wait := feishuPollWait
 	if id == "" {
-		subscription, err := s.feishuEvents.Subscribe(ctx, feishuevents.SubscribeInput{
+		input := feishuevents.SubscribeInput{
 			Who: who, AppID: mcpArgString(args, "appId"), EventTypes: mcpArgList(args, "eventTypes"), ChatID: mcpArgString(args, "chatId"),
-		})
+		}
+		if actor.Agent() {
+			scope, err := s.contextScope(ctx, actor)
+			if err != nil {
+				return "", err
+			}
+			if scope.assistant.Applicable {
+				input.AllowAccount = scope.assistant.AllowsConnector
+			}
+		}
+		subscription, err := s.feishuEvents.Subscribe(ctx, input)
 		if errors.Is(err, integrations.ErrOff) {
 			return "", &statusError{http.StatusServiceUnavailable, err}
+		}
+		if errors.Is(err, feishuevents.ErrAccountOff) {
+			return "", &statusError{http.StatusForbidden, err}
 		}
 		if err != nil {
 			return "", &statusError{http.StatusBadRequest, err}

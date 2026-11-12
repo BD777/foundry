@@ -90,6 +90,7 @@ components:
           type: string
           enum:
             - connected
+            - reconnecting
             - disconnected
           x-go-type: string
         lastSeenLabel:
@@ -298,15 +299,26 @@ components:
       x-go-type: string
     DeviceWorkerUpdate:
       description:
-        "DeviceWorkerUpdate is an update in progress: when it was asked for and the version it
-        brings."
+        "DeviceWorkerUpdate describes an update requested from Foundry: while it runs, or as the
+        most recent completed result retained by update_worker status."
       type: object
       required:
         - startedAt
       additionalProperties: false
       properties:
+        id:
+          description: "`id` identifies this update request."
+          type: string
         startedAt:
           type: string
+        completedAt:
+          description: "`completedAt` is when the update succeeded or failed."
+          type: string
+        elapsedMs:
+          description: "`elapsedMs` is the time from the start to completion, or to the current status."
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: true
         version:
           description: The version it brings.
           type: string

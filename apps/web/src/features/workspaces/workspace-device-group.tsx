@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, Monitor, Plus } from "lucide-react";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
+import { FieldHint } from "../../components/ui/field";
+import { deviceConnection } from "../../lib/device-connection";
 import { addReasonId } from "./workspace-row";
 import { LocationEmpty } from "./location-empty";
 
@@ -32,7 +34,8 @@ export function WorkspaceDeviceGroup({
   children: ReactNode;
 }) {
   const { t } = useTranslation("workspaces");
-  const online = device.status === "connected";
+  const connection = deviceConnection(device);
+  const online = connection === "online";
   const reasonId = addReasonId(device.id);
   const count = t("shared.workspaceCount", { count: workspaceCount });
   return (
@@ -46,7 +49,11 @@ export function WorkspaceDeviceGroup({
         <Monitor size={17} />
         <h2 className="text-md font-semibold text-ink">{device.label}</h2>
         <small className="text-xs text-ink-muted">
-          {online ? count : t("location.offlineSummary", { workspaces: count })}
+          {online
+            ? count
+            : connection === "reconnecting"
+              ? t("location.reconnectingSummary", { workspaces: count })
+              : t("location.offlineSummary", { workspaces: count })}
         </small>
         <span className="ml-auto flex items-center gap-1">
           {device.owned ? (
@@ -74,9 +81,15 @@ export function WorkspaceDeviceGroup({
         </span>
       </header>
       {device.owned && !online ? (
-        <p id={reasonId} className="px-2 text-xs leading-[1.4] text-ink-muted">
-          {t("deviceList.reconnect")}
-        </p>
+        <FieldHint
+          id={reasonId}
+          className="mt-0 px-2 leading-[1.4]"
+          role="status"
+        >
+          {connection === "reconnecting"
+            ? t("location.reconnectingNote")
+            : t("deviceList.reconnect")}
+        </FieldHint>
       ) : null}
       {children}
       {!workspaceCount ? (

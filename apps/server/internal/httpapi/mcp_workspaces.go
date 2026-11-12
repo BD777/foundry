@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -108,6 +109,7 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		DeviceID    string                `json:"deviceId"`
 		DeviceLabel string                `json:"deviceLabel"`
 		Online      bool                  `json:"online"`
+		Connection  string                `json:"connection"`
 		Workspaces  []workspaceOnDevice   `json:"workspaces"`
 		Instances   []mcpResourceInstance `json:"instances"`
 	}
@@ -141,8 +143,10 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		if deviceID != "" && device.ID != deviceID {
 			continue
 		}
+		connection := s.hub.deviceConnection(device.ID)
 		entry := deviceResources{
-			DeviceID: device.ID, DeviceLabel: device.Label, Online: s.hub.HasConnection(device.ID),
+			DeviceID: device.ID, DeviceLabel: device.Label,
+			Online: connection.State == resources.ConnectionOnline, Connection: connection.State,
 			Workspaces: []workspaceOnDevice{},
 			Instances:  append([]mcpResourceInstance{}, instances[device.ID]...),
 		}

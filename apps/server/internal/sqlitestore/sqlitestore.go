@@ -333,6 +333,24 @@ func (s *Store) MarkAllDevicesOffline(ctx context.Context) error {
 	return err
 }
 
+// SetDeviceStatus updates a device's presence without replacing the rest of
+// its last report.
+func (s *Store) SetDeviceStatus(ctx context.Context, id string, status string, lastSeenLabel string) error {
+	result, err := s.conn().ExecContext(ctx, `UPDATE devices SET
+		status = ?, last_seen_label = ?, updated_at = ?,
+		payload_json = json_set(json_set(payload_json, '$.status', ?), '$.lastSeenLabel', ?)
+		WHERE id = ? AND id NOT IN (SELECT device_id FROM removed_devices)`,
+		status, lastSeenLabel, formatTime(time.Now()),
+		status, lastSeenLabel, id)
+	if err != nil {
+		return fmt.Errorf("set device status: %w", err)
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 // deviceDisplayName is the name a person gave the device, if any.
 func (s *Store) deviceDisplayName(ctx context.Context, id string) (string, error) {
 	var name string

@@ -36,7 +36,13 @@ import type {
   WorkspaceFileRead,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { nativeChatThreadsForWorkspace } from "../session/chat/native-chat.js";
+import { nativeChatSnapshotForWorkspace } from "../session/chat/native-chat.js";
+import {
+  nativeChatsFromThread,
+  scanNativeChatsForDaemon,
+  type NativeChatScanInput,
+  type NativeChatScanResult,
+} from "../session/chat/native-chat-scan-thread.js";
 import {
   readDaemonConfig,
   writeDaemonConfig,
@@ -52,7 +58,12 @@ import { deviceSystem, getDevice } from "../device/device.js";
 import { deviceAccountIdentity } from "../device/device-pairing.js";
 import { managedRoots } from "../workspace/personal-agent-settings.js";
 import { runningWorker } from "../install/worker-identity.js";
-import { optionValue, safeID, sizeLabel } from "../platform/utils.js";
+import {
+  errorMessage,
+  optionValue,
+  safeID,
+  sizeLabel,
+} from "../platform/utils.js";
 import {
   isForgottenWorkspaceFolder,
   readRegistry,
@@ -278,6 +289,32 @@ interface SyncedChats {
 
 const summaryBatchSize = 20;
 
+async function fullChatsForUpload(
+  input: NativeChatScanInput,
+  scan: NativeChatScanResult,
+  ids: readonly string[],
+): Promise<ChatThread[]> {
+  if (ids.length === 0) return [];
+  if (scan.scanId) {
+    try {
+      return await nativeChatsFromThread(input, scan.scanId, ids);
+    } catch (error) {
+      console.warn(
+        `Native chat detail worker failed (${errorMessage(error)}); reading on the daemon thread`,
+      );
+    }
+  }
+  const wanted = new Set(ids);
+  return (
+    await nativeChatSnapshotForWorkspace(
+      input.workspace,
+      input.profiles,
+      input.limit,
+      new Set(input.includeIds),
+    )
+  ).chats.filter((chat) => wanted.has(chat.id));
+}
+
 export async function syncNativeChats(
   serverURL: string,
   workspacePath: string,
@@ -293,22 +330,31 @@ export async function syncNativeChats(
   // Backfills must target existing records, not discover extra list entries.
   const historyIds = historicalChatIds ? new Set(historicalChatIds) : undefined;
   const uploads = chatUploads(serverURL, workspace.id);
-  const candidates = await nativeChatThreadsForWorkspace(
+  const scanInput: NativeChatScanInput = {
     workspace,
     profiles,
-    historyIds ? Number.POSITIVE_INFINITY : 60,
-    new Set(
-      [...uploads.nativeArchiveStates]
-        .filter(([, archived]) => archived)
-        .map(([id]) => id),
-    ),
-  );
+    limit: historyIds ? Number.POSITIVE_INFINITY : 60,
+    includeIds: [...uploads.nativeArchiveStates]
+      .filter(([, archived]) => archived)
+      .map(([id]) => id),
+  };
+  const scan = await scanNativeChatsForDaemon(scanInput);
+  const candidates = scan.chats;
+  const fingerprints = new Map(scan.fingerprints);
+  const transcriptMessages = new Map(scan.transcriptMessages);
   // What was uploaded (by fingerprint), and the chats the server never
   // keeps (deleted, or a Foundry session owns them: its native chat changes
   // all the time it runs), are kept across restarts in the state root.
   const { uploaded, refused } = uploads;
   if (!uploads.reconciled) {
-    await reconcileWithServer(serverURL, workspace.id, uploads, candidates);
+    await reconcileWithServer(
+      serverURL,
+      workspace.id,
+      uploads,
+      candidates,
+      transcriptMessages,
+      fingerprints,
+    );
     uploads.save();
   }
   const remember = (
@@ -364,7 +410,7 @@ export async function syncNativeChats(
     .filter((chat) =>
       historyIds
         ? historyIds.has(chat.id)
-        : uploaded.get(chat.id) !== chatFingerprint(chat),
+        : uploaded.get(chat.id) !== fingerprints.get(chat.id),
     );
   // Chats this worker has not sent yet go up first as summaries, a batch per
   // request, so the whole list appears at once; the server keeps any
@@ -382,7 +428,23 @@ export async function syncNativeChats(
   }
   // Full detail includes typed transcripts: one chat per request so a long
   // history cannot exceed the HTTP request size limit.
-  for (const chat of chats) {
+  const details = new Map(
+    (
+      await fullChatsForUpload(
+        scanInput,
+        scan,
+        chats.map((chat) => chat.id),
+      )
+    ).map((chat) => [chat.id, chat]),
+  );
+  for (const summary of chats) {
+    const chat = details.get(summary.id);
+    if (!chat) {
+      console.warn(
+        `Native chat ${summary.id} changed while syncing; it will be retried`,
+      );
+      continue;
+    }
     if (refused.has(chat.id)) continue;
     remember(
       await postJSON<SyncedChats>(serverURL, "/api/daemon/chats/sync", {
@@ -391,7 +453,7 @@ export async function syncNativeChats(
       }),
       [chat],
     );
-    rememberUpload(uploads, chat);
+    rememberUpload(uploads, chat, fingerprints.get(chat.id));
     uploads.save();
   }
   return chats.length;

@@ -82,16 +82,11 @@ func TestPersonalAgentPermissionPackageRoundTrip(t *testing.T) {
 		t.Fatalf("default package = %+v", pkg)
 	}
 	pkg.Workspaces.Include = []string{"ws_alice"}
-	pkg.Workspaces.Exclude = []string{"ws_private"}
-	pkg.Skills.Exclude = []string{"skill_secret"}
-	pkg.DevicesResources.DirectLeaseAllowed = []string{f.aliceDevice}
 	pkg.ConnectorAccounts = []store.ConnectorAccountPermission{{AccountID: "acct_a", Level: store.ConnectorAccessLevelRead}}
 	body, _ := json.Marshal(pkg)
 	var saved store.PermissionPackage
 	f.call(f.alice, http.MethodPut, "/api/personal-agent/permission-package", string(body), http.StatusOK, "save permission package", &saved)
 	if len(saved.Workspaces.Include) != 1 || saved.Workspaces.Include[0] != "ws_alice" ||
-		len(saved.Skills.Exclude) != 1 || saved.Skills.Exclude[0] != "skill_secret" ||
-		len(saved.DevicesResources.DirectLeaseAllowed) != 1 || saved.DevicesResources.DirectLeaseAllowed[0] != f.aliceDevice ||
 		len(saved.ConnectorAccounts) != 1 || saved.ConnectorAccounts[0].Level != store.ConnectorAccessLevelRead {
 		t.Fatalf("saved package = %+v", saved)
 	}

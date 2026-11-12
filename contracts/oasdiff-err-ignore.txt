@@ -1,0 +1,4 @@
+# DEV-191 P0: sqlitestore migrateIdentityResources rewrites rows saved with devicesResources and skills.
+POST /x-storage/PermissionPackage added the new required request property `identityResources`
+POST /x-storage/PermissionPackage removed the required property `devicesResources` from the response with the `200` status
+POST /x-storage/PermissionPackage removed the required property `skills` from the response with the `200` status

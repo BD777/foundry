@@ -419,7 +419,7 @@ func (s *Service) ProbeExtensionInstance(ctx context.Context, ownerUserID string
 			}
 		}
 	}
-	probed, _, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
+	probed, _, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets, nil)
 	if err != nil {
 		return store.ConnectorServerHeldProbeResult{}, err
 	}
@@ -432,7 +432,7 @@ func (s *Service) ProbeExtensionInstance(ctx context.Context, ownerUserID string
 	return probed, nil
 }
 
-func (s *Service) probeExtension(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, network, deviceID string, values, secrets map[string]string) (store.ConnectorServerHeldProbeResult, []store.ConnectorServerHeldRoute, error) {
+func (s *Service) probeExtension(ctx context.Context, ownerUserID string, descriptor store.ConnectorDescriptor, network, deviceID string, values, secrets map[string]string, previous []store.ConnectorServerHeldDeviceCheck) (store.ConnectorServerHeldProbeResult, []store.ConnectorServerHeldRoute, error) {
 	serverHeld := descriptor.ServerHeld
 	if serverHeld == nil {
 		return store.ConnectorServerHeldProbeResult{}, nil, fmt.Errorf("%w: connector has no serverHeld declaration", ErrInvalidExtensionInstance)
@@ -514,10 +514,7 @@ func (s *Service) probeExtension(ctx context.Context, ownerUserID string, descri
 	}
 	result.RouteCount = len(routes)
 	if network == ExtensionNetworkDevice {
-		if s.ExtensionCheckDevices == nil {
-			return store.ConnectorServerHeldProbeResult{}, nil, errors.New("this server cannot check extension devices")
-		}
-		devices, checkErr := s.ExtensionCheckDevices(ctx, descriptor, values[serverHeld.Upstream.BaseField], deviceID)
+		devices, checkErr := s.checkExtensionDevices(ctx, ownerUserID, descriptor, values, secrets, deviceID, previous, false)
 		if checkErr != nil {
 			return store.ConnectorServerHeldProbeResult{}, nil, checkErr
 		}
@@ -1053,7 +1050,7 @@ func (s *Service) CreateExtensionInstance(ctx context.Context, ownerUserID strin
 		return store.ConnectorServerHeldInstance{}, err
 	}
 	secrets := extensionInputSecrets(input, descriptor, nil)
-	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets, nil)
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}
@@ -1142,7 +1139,7 @@ func (s *Service) CheckExtensionInstance(ctx context.Context, ownerUserID, kind,
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}
-	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets, data.AvailableDevices)
 	account, accountErr := s.extensionAccount(ctx, ownerUserID, kind, app.ID)
 	if err != nil {
 		data.StatusDetail = extensionProbeDetail(err)
@@ -1201,7 +1198,7 @@ func (s *Service) ReplaceExtensionInstance(ctx context.Context, ownerUserID, kin
 		return store.ConnectorServerHeldInstance{}, err
 	}
 	secrets := extensionInputSecrets(input, descriptor, existingSecrets)
-	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets)
+	probe, routes, err := s.probeExtension(ctx, ownerUserID, descriptor, network, input.DeviceID, values, secrets, nil)
 	if err != nil {
 		return store.ConnectorServerHeldInstance{}, err
 	}

@@ -166,7 +166,7 @@ createRoot(document.getElementById("root")!).render(
       ) : (
         <WorkspaceOverview
           workspace={workspace}
-          deviceOnline
+          deviceConnection="online"
           deviceLabel={device.label}
           acceptedCount={0}
         />

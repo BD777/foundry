@@ -21,6 +21,12 @@ test("a device status event updates the device list at once", () => {
   assert.equal(offline.devices[1].status, "disconnected");
   assert.equal(offline.devices[1].lastSeenLabel, "offline");
   assert.equal(offline.devices[0], data.devices[0]);
+  const reconnecting = applyFoundryStreamEvent(data, {
+    type: "device_status_changed",
+    payload: { workspaceId: "ws", deviceId: "dev_b", status: "reconnecting" },
+  });
+  assert.equal(reconnecting.devices[1].status, "reconnecting");
+  assert.equal(reconnecting.devices[1].lastSeenLabel, "reconnecting");
   const unknown = applyFoundryStreamEvent(data, {
     type: "device_status_changed",
     payload: { workspaceId: "ws", deviceId: "dev_x", status: "connected" },

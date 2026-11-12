@@ -79,9 +79,12 @@ test("unlisted permissions have no checkbox or management link; current invalid 
       createElement(PlacesSection, {
         draft: settings,
         change: () => {},
-        owned: devices.filter((d) => d.owned),
+        devices,
+        assistants: [],
+        workspaces: [],
         homeDeviceId: "online",
         onOpenComputer: (id) => opened.push(id),
+        onNotice: () => {},
       }),
     ),
   );

@@ -155,7 +155,7 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	if repositorySourceMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant change where their skill repositories are read")}
 	}
-	if (connectorInstanceMCPTools[name] || connectorPackageMCPTools[name] || edgeAccessMCPTools[name]) && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
+	if (connectorInstanceMCPTools[name] || connectorPackageMCPTools[name] || edgeAccessMCPTools[name] || modelGuideMCPTools[name]) && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to Issue, clarification or verifier sessions")}
 	}
 	if modelProviderMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
@@ -420,6 +420,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	},
 	"release_resource":    mcpRequestTool((*Server).releaseResourceForMCP),
 	"resource_status":     mcpRequestTool((*Server).resourceStatusForMCP),
+	"update_worker":       mcpTextTool((*Server).updateWorkerForMCP),
 	"list_profiles":       mcpTextTool((*Server).listProfilesForMCP),
 	"list_models":         mcpTextTool((*Server).listModelsForMCP),
 	"create_session":      mcpTextTool((*Server).createSessionForMCP),
@@ -471,8 +472,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"check_model_provider":  mcpTextTool((*Server).checkModelProviderForMCP),
 	"set_model_defaults":    mcpTextTool((*Server).setModelDefaultsForMCP),
 	"sign_in_subscription":  mcpTextTool((*Server).signInSubscriptionForMCP),
-	"get_model_notes":       mcpTextTool((*Server).getModelNotesForMCP),
-	"append_model_note":     mcpTextTool((*Server).appendModelNoteForMCP),
+	"model_guides":          mcpTextTool((*Server).modelGuidesForMCP),
 	"get_execution_default": mcpTextTool((*Server).getExecutionDefaultForMCP),
 	"connector_instances":   mcpTextTool((*Server).connectorInstancesForMCP),
 	"connector_packages":    mcpTextTool((*Server).connectorPackagesForMCP),

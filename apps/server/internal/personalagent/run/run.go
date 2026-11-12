@@ -33,7 +33,10 @@ type Store interface {
 	store.Store
 	store.OwnershipStore
 	store.PersonalAgentStore
+	store.PermissionPackageStore
 	store.PersonalAgentRuntimeStore
+	store.ExecutionDefaultStore
+	store.WorkerGroupStore
 }
 
 // Account is one account a workspace's device offers to run a session
@@ -73,6 +76,9 @@ type Accounts interface {
 	// naming no account would: preferred is the person's default; ok is
 	// false when none is usable.
 	Pick(accounts []Account, runtime, preferred string) (Account, bool)
+	// ChooseWorkerGroupMember selects one member available on the workspace's
+	// computer through the server's existing worker-group allocator.
+	ChooseWorkerGroupMember(ctx context.Context, group store.StoredWorkerGroup, workspace store.WorkspaceProjection) (store.WorkerGroupMember, error)
 }
 
 // Resolver resolves and pins the assistant's runs.

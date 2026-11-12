@@ -12,6 +12,7 @@ import type { ConnectorType } from "../lib/connector-types";
 import type { ProviderTab } from "../lib/provider-tabs";
 import {
   AssistantHome,
+  AssistantList,
   AssistantSettings,
   type AssistantFeatureEvent,
 } from "../features/personal-agent";
@@ -52,6 +53,7 @@ import {
   profilesViewFields,
 } from "./view-fields";
 import { WorkspaceHubView } from "./workspace-hub-view";
+import type { AssistantDirectory } from "./use-assistants";
 
 /** What the shell hands every page it renders. */
 export interface AppViewContext {
@@ -63,6 +65,8 @@ export interface AppViewContext {
 
 export interface ActiveViewProps extends AppViewContext {
   assistantSection?: AssistantSettingsSection;
+  assistants: AssistantDirectory;
+  onAssistantsReload: () => Promise<void>;
   onAssistantSectionChange: (section: AssistantSettingsSection) => void;
   /** The assistant saved a new interface (its simpleInterface setting). */
   onInterfaceModeChange: (mode: InterfaceMode) => void;
@@ -81,6 +85,8 @@ export interface ActiveViewProps extends AppViewContext {
 /** The page the route shows, wired to the shell's data and navigation. */
 export function ActiveView({
   assistantSection,
+  assistants,
+  onAssistantsReload,
   onAssistantSectionChange,
   onInterfaceModeChange,
   chatView,
@@ -108,6 +114,22 @@ export function ActiveView({
         if (event.section) onAssistantSectionChange(event.section);
         location.setActiveView("assistantSettings");
         return;
+      case "assistants.open":
+        location.setActiveView("assistants");
+        return;
+      case "assistant.open":
+        location.setSelectedAssistantId(event.assistantId);
+        location.setActiveView("assistant");
+        return;
+      case "assistant.created":
+        location.setSelectedAssistantId(event.assistantId);
+        onAssistantSectionChange("places");
+        location.setActiveView("assistantSettings");
+        void onAssistantsReload();
+        return;
+      case "assistants.changed":
+        void onAssistantsReload();
+        return;
       case "home.open":
         location.setActiveView("assistant");
         return;
@@ -127,27 +149,73 @@ export function ActiveView({
   }
 
   switch (activeView) {
+    case "assistants":
+      return (
+        <AssistantList
+          assistants={assistants.assistants}
+          devices={data.devices}
+          error={assistants.state === "failed" ? assistants.message : undefined}
+          onEvent={handleAssistantEvent}
+          onReload={onAssistantsReload}
+          state={assistants.state}
+        />
+      );
     case "assistant":
+      if (!location.selectedAssistantId) {
+        return (
+          <AssistantList
+            assistants={assistants.assistants}
+            devices={data.devices}
+            error={
+              assistants.state === "failed" ? assistants.message : undefined
+            }
+            onEvent={handleAssistantEvent}
+            onReload={onAssistantsReload}
+            state={assistants.state}
+          />
+        );
+      }
       return (
         <AssistantHome
+          assistantId={location.selectedAssistantId}
           agentProfiles={data.agentProfiles}
           devices={data.devices}
+          key={location.selectedAssistantId}
           needsYou={
             pending.list
               ? needsYouSummary(pending.list.items, pending.list.open)
               : undefined
           }
           onEvent={handleAssistantEvent}
+          showAssistantSwitcher={assistants.assistants.length > 1}
           workspaces={data.workspaces}
         />
       );
     case "assistantSettings":
+      if (!location.selectedAssistantId) {
+        return (
+          <AssistantList
+            assistants={assistants.assistants}
+            devices={data.devices}
+            error={
+              assistants.state === "failed" ? assistants.message : undefined
+            }
+            onEvent={handleAssistantEvent}
+            onReload={onAssistantsReload}
+            state={assistants.state}
+          />
+        );
+      }
       return (
         <AssistantSettings
           agentProfiles={data.agentProfiles}
+          assistantId={location.selectedAssistantId}
+          assistants={assistants.assistants}
           devices={data.devices}
+          key={location.selectedAssistantId}
           onEvent={handleAssistantEvent}
           onSectionChange={onAssistantSectionChange}
+          profiles={data.profiles}
           section={assistantSection}
           workspaces={data.workspaces}
         />

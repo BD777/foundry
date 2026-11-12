@@ -285,6 +285,7 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 			d = &Denial{Reason: ReasonInternal, Err: errors.New("risk write has no confirmation service")}
 		} else {
 			request, err := p.confirmationRequest(r, lease, need)
+			request.AssistantID = permissionAccess.Agent.ID
 			if err != nil {
 				d = &Denial{Reason: ReasonBadRequest, Message: err.Error()}
 			} else {

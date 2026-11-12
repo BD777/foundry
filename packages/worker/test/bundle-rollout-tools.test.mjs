@@ -14,6 +14,8 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -387,4 +389,53 @@ test("a session keeps its pinned and snapshotted tool versions while bin moves o
   // Without pins (an older server) a session keeps the shared bin.
   prepareSessionTools("sess_old", undefined).release();
   assert.equal(sessionToolsFolder("sess_old"), undefined);
+});
+
+test("a repository package's pinned CLI and its sibling bin are on the session PATH", () => {
+  const sha = "756224216f4f38c02ab665cda9ef0aa364a551d6";
+  placeVersion("olk", sha, "echo olk");
+  const folderOf = dirname(toolVersionEntry("olk", sha));
+  writeFileSync(join(folderOf, "olk-ctx"), "#!/bin/sh\necho ctx\n", {
+    mode: 0o755,
+  });
+  const bin = managedToolsBin();
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(`../olk/${sha}/olk`, join(bin, "olk"));
+  symlinkSync(`../olk/${sha}/olk-ctx`, join(bin, "olk-ctx"));
+  assert.ok(existsSync(join(folderOf, "olk-ctx")));
+  const tools = prepareSessionTools("sess_repo_pkg", [
+    { name: "olk", version: sha, bundleId: "repo_x", bundle: "OpenLark" },
+  ]);
+  try {
+    const env = sessionEnvironment(
+      "/w",
+      { id: "p", runtime: "codex", connectionType: "local_login" },
+      { id: "sess_repo_pkg", input: { id: "i", prompt: "x" } },
+    );
+    assert.equal(env.PATH.split(":")[0], sessionToolsFolder("sess_repo_pkg"));
+    for (const [command, out] of [
+      ["olk", "olk"],
+      ["olk-ctx", "ctx"],
+    ])
+      assert.equal(
+        execFileSync("sh", ["-c", command], { env, encoding: "utf8" }),
+        `${out}\n`,
+      );
+    // bin moves to a newer version; the session keeps the pinned sibling.
+    const next = "1111111111111111111111111111111111111111";
+    placeVersion("olk", next, "echo olk2");
+    writeFileSync(
+      join(dirname(toolVersionEntry("olk", next)), "olk-ctx"),
+      "#!/bin/sh\necho ctx2\n",
+      { mode: 0o755 },
+    );
+    rmSync(join(bin, "olk-ctx"));
+    symlinkSync(`../olk/${next}/olk-ctx`, join(bin, "olk-ctx"));
+    assert.equal(
+      execFileSync("sh", ["-c", "olk-ctx"], { env, encoding: "utf8" }),
+      "ctx\n",
+    );
+  } finally {
+    tools.release();
+  }
 });

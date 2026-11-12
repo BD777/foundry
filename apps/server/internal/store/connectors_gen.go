@@ -6,6 +6,45 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for ConnectorPackageDeviceReasonCode.
+const (
+	ConnectorPackageDeviceReasonCodeNoInstance ConnectorPackageDeviceReasonCode = "no_instance"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorPackageDeviceReasonCode enum.
+func (e ConnectorPackageDeviceReasonCode) Valid() bool {
+	switch e {
+	case ConnectorPackageDeviceReasonCodeNoInstance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectorPackageDeviceState.
+const (
+	ConnectorPackageDeviceStateFailed     ConnectorPackageDeviceState = "failed"
+	ConnectorPackageDeviceStateInstalled  ConnectorPackageDeviceState = "installed"
+	ConnectorPackageDeviceStateInstalling ConnectorPackageDeviceState = "installing"
+	ConnectorPackageDeviceStatePending    ConnectorPackageDeviceState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorPackageDeviceState enum.
+func (e ConnectorPackageDeviceState) Valid() bool {
+	switch e {
+	case ConnectorPackageDeviceStateFailed:
+		return true
+	case ConnectorPackageDeviceStateInstalled:
+		return true
+	case ConnectorPackageDeviceStateInstalling:
+		return true
+	case ConnectorPackageDeviceStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorServerHeldAccessLevel.
 const (
 	ConnectorServerHeldAccessLevelRead  ConnectorServerHeldAccessLevel = "read"
@@ -307,6 +346,40 @@ type ConnectorPackageDevice struct {
 
 	// Reason Why the device cannot be selected, when Eligible is false.
 	Reason string `json:"reason,omitempty"`
+
+	// ReasonCode Machine-readable form of Reason when the cause is that no instance is usable here.
+	ReasonCode ConnectorPackageDeviceReasonCode `json:"reasonCode,omitempty"`
+
+	// Instances Ready instances of a server-held connector whose sessions on this device can use them. Absent for connectors without instances.
+	Instances []ConnectorPackageInstanceRef `json:"instances,omitempty"`
+
+	// State Where applying the selection stands on this device. Selecting a device returns at once with pending; the install runs in the background. Absent when the device has no part in the package.
+	State ConnectorPackageDeviceState `json:"state,omitempty"`
+
+	// Error Why the install or removal failed, when State is failed.
+	Error string `json:"error,omitempty"`
+}
+
+// ConnectorPackageDeviceReasonCode Machine-readable form of Reason when the cause is that no instance is usable here.
+type ConnectorPackageDeviceReasonCode string
+
+// ConnectorPackageDeviceState Where applying the selection stands on this device. Selecting a device returns at once with pending; the install runs in the background. Absent when the device has no part in the package.
+type ConnectorPackageDeviceState string
+
+// ConnectorPackageInstance A Ready instance of a server-held connector and the devices where sessions can use it.
+type ConnectorPackageInstance struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+
+	// Network server (every device) or device (only the devices that probed it).
+	Network   string                 `json:"network"`
+	DeviceIDs jsonempty.List[string] `json:"deviceIds"`
+}
+
+// ConnectorPackageInstanceRef A server-held instance, as named in a package view.
+type ConnectorPackageInstanceRef struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 // ConnectorPackageSkills The folder in Upstream holding the bundle's Skill folders.
@@ -341,10 +414,13 @@ type ConnectorPackageUpstream struct {
 // ConnectorPackageView A package at the person level, its bundle, and where it is enabled.
 type ConnectorPackageView struct {
 	// Connector ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.
-	Connector    ConnectorDescriptor                    `json:"connector"`
-	Enabled      bool                                   `json:"enabled"`
-	RepositoryID string                                 `json:"repositoryId,omitempty"`
-	Devices      jsonempty.List[ConnectorPackageDevice] `json:"devices"`
+	Connector    ConnectorDescriptor `json:"connector"`
+	Enabled      bool                `json:"enabled"`
+	RepositoryID string              `json:"repositoryId,omitempty"`
+
+	// Instances Ready instances of a server-held connector, with the devices that can use each.
+	Instances []ConnectorPackageInstance             `json:"instances,omitempty"`
+	Devices   jsonempty.List[ConnectorPackageDevice] `json:"devices"`
 }
 
 // ConnectorPermissions A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead.
@@ -456,8 +532,10 @@ type ConnectorServerHeldDevice struct {
 
 // ConnectorServerHeldDeviceCheck The recorded reachability of one device for an instance.
 type ConnectorServerHeldDeviceCheck struct {
-	DeviceID  string `json:"deviceId"`
-	Name      string `json:"name"`
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+
+	// Status ok (the device reaches the upstream), unreachable, error (the probe was refused or failed) or not_applicable (a loopback address that only the validating device reaches).
 	Status    string `json:"status"`
 	CheckedAt string `json:"checkedAt"`
 	Detail    string `json:"detail,omitempty"`

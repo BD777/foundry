@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -30,8 +31,71 @@ func (s *Server) handleSavePersonalAgentPermissionPackage(w http.ResponseWriter,
 	}
 	pkg.ID = agent.PermissionPackageID
 	pkg.Owner = agent.UserID
+	pkg = permission.Normalize(pkg)
+	invalidWorkspaces, invalidResources, err := s.invalidPermissionPackageReferences(r.Context(), r, pkg)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if len(invalidWorkspaces) > 0 || len(invalidResources) > 0 {
+		parts := []string{}
+		if len(invalidWorkspaces) > 0 {
+			parts = append(parts, "inaccessible workspace ids: "+strings.Join(invalidWorkspaces, ", "))
+		}
+		if len(invalidResources) > 0 {
+			parts = append(parts, "identity resources missing or not identity-bearing on your devices: "+strings.Join(invalidResources, ", "))
+		}
+		writeError(w, http.StatusBadRequest, "permission package contains invalid references ("+strings.Join(parts, "; ")+")")
+		return
+	}
 	saved, err := s.store.SavePermissionPackage(r.Context(), pkg)
 	writeResult(w, saved, err)
+}
+
+// invalidPermissionPackageReferences checks every named workspace and
+// identity resource against the same reach the person's own requests use.
+func (s *Server) invalidPermissionPackageReferences(ctx context.Context, r *http.Request, pkg store.PermissionPackage) ([]string, []string, error) {
+	invalidWorkspaces := []string{}
+	workspaceIDs := append(append([]string{}, pkg.Workspaces.Include...), pkg.Workspaces.Exclude...)
+	if len(workspaceIDs) > 0 {
+		scope, err := s.requestScope(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, id := range workspaceIDs {
+			if !scope.can(id, store.WorkspaceRoleViewer) {
+				invalidWorkspaces = append(invalidWorkspaces, id)
+			}
+		}
+	}
+
+	invalidResources := []string{}
+	if len(pkg.IdentityResources.Allowed) > 0 {
+		devices, err := s.ownDevices(ctx, pkg.Owner)
+		if err != nil {
+			return nil, nil, err
+		}
+		owned := make(map[string]bool, len(devices))
+		for _, device := range devices {
+			owned[device.ID] = true
+		}
+		instances, err := s.store.ListResourceInstances(ctx, store.ResourceFilter{})
+		if err != nil {
+			return nil, nil, err
+		}
+		identity := map[string]bool{}
+		for _, instance := range instances {
+			if owned[instance.Source.ID] && permission.IdentityResourceType(instance.Type) {
+				identity[instance.ID] = true
+			}
+		}
+		for _, id := range pkg.IdentityResources.Allowed {
+			if !identity[id] {
+				invalidResources = append(invalidResources, id)
+			}
+		}
+	}
+	return invalidWorkspaces, invalidResources, nil
 }
 
 func (s *Server) handlePersonalAgentConnectors(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +139,7 @@ func (s *Server) handleSetPersonalAgentConnectors(w http.ResponseWriter, r *http
 		clean = append(clean, store.ConnectorAccountPermission{AccountID: accountID, Level: level})
 	}
 	sort.Slice(clean, func(i, j int) bool { return clean[i].AccountID < clean[j].AccountID })
-	agent, err := s.store.SetPersonalAgentConnectorLevels(r.Context(), agent.UserID, clean)
+	agent, err := s.store.SetPersonalAgentConnectorLevels(r.Context(), agent.ID, clean)
 	if err != nil {
 		writeResult(w, nil, err)
 		return

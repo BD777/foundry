@@ -114,9 +114,9 @@ type Service struct {
 	// device for a device-network extension instance. Headers may carry the
 	// rendered credential, so implementations must keep them in memory.
 	ExtensionDeviceRequest func(ctx context.Context, deviceID string, request ExtensionDeviceHTTPRequest) (ExtensionDeviceHTTPResponse, error)
-	// ExtensionCheckDevices checks which of the owner's online devices can
-	// reach a device-network instance and records their display metadata.
-	ExtensionCheckDevices func(ctx context.Context, descriptor store.ConnectorDescriptor, baseURL, probeDeviceID string) ([]store.ConnectorServerHeldDeviceCheck, error)
+	// ExtensionDevices lists the owner's devices a device-network instance of
+	// the connector may be probed from, with their display names.
+	ExtensionDevices func(ctx context.Context, ownerUserID, kind string) ([]ExtensionDeviceCandidate, error)
 
 	authorizationEpochs sync.Map
 	loginsMu            sync.Mutex

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -232,7 +233,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		Provider:             mcpArgString(args, "provider"),
 		ProfileID:            mcpArgString(args, "profileId"),
 		Model:                mcpArgString(args, "model"),
-		ModelPoolID:          mcpArgString(args, "modelPoolId"),
+		WorkerGroupID:        cmp.Or(mcpArgString(args, "workerGroupId"), mcpArgString(args, "modelPoolId")),
 		ClaudeEffort:         mcpArgString(args, "claudeEffort"),
 		ClaudePermissionMode: mcpArgString(args, "claudePermissionMode"),
 		CodexReasoningEffort: mcpArgString(args, "codexReasoningEffort"),
@@ -301,32 +302,17 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		s.assistant.AdoptTask(ctx, call.actor.Identity.SessionID, target)
 	}
 	if sender := messageSender(call.actor); sender != "" && mcpArgString(args, "profileId") == "" &&
-		mcpArgString(args, "provider") == "" && mcpArgString(args, "model") == "" &&
-		mcpArgString(args, "modelPoolId") == "" {
+		mcpArgString(args, "provider") == "" && mcpArgString(args, "model") == "" {
 		return s.sendInboxMessageForMCP(call, target, sender, attachments)
 	}
-	profileID, provider, model, modelPoolID := mcpArgString(args, "profileId"),
-		mcpArgString(args, "provider"), mcpArgString(args, "model"), mcpArgString(args, "modelPoolId")
-	if modelPoolID != "" {
-		if model != "" {
-			return "", invalid("modelPoolId cannot be combined with model")
-		}
-		pool, selected, err := s.selectModelPool(ctx, call.actor, modelPoolID, "")
-		if err != nil {
-			return "", err
-		}
-		if provider != "" && provider != pool.Runtime || profileID != "" && profileID != pool.ProviderID {
-			return "", invalid("modelPoolId cannot be combined with a different provider or profile")
-		}
-		profileID, provider, model = pool.ProviderID, pool.Runtime, selected
-	}
+	profileID, provider, model := mcpArgString(args, "profileId"),
+		mcpArgString(args, "provider"), mcpArgString(args, "model")
 	session, err := s.sessionService.Send(ctx, target.ID, store.SendAgentSessionInput{
 		Prompt:          mcpArgString(args, "prompt"),
 		Attachments:     attachments.list(),
 		ProfileID:       profileID,
 		Provider:        provider,
 		Model:           model,
-		ModelPoolID:     modelPoolID,
 		SentBySessionID: messageSender(call.actor),
 	}, s.publishHandedOver(attachments))
 	if err != nil {

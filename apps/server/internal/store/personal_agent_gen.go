@@ -6,6 +6,65 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for MemoryLayerScope.
+const (
+	MemoryLayerScopeAssistant MemoryLayerScope = "assistant"
+	MemoryLayerScopePerson    MemoryLayerScope = "person"
+)
+
+// Valid indicates whether the value is a known member of the MemoryLayerScope enum.
+func (e MemoryLayerScope) Valid() bool {
+	switch e {
+	case MemoryLayerScopeAssistant:
+		return true
+	case MemoryLayerScopePerson:
+		return true
+	default:
+		return false
+	}
+}
+
+// AddMemoryEntryInput POST /api/assistants/{id}/memory/layers/{scope}/entries. The person writes a fact into a layer, which is created the first time; requestId makes a retry the same write.
+type AddMemoryEntryInput struct {
+	RequestID string `json:"requestId"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	ExpiresAt string `json:"expiresAt,omitempty"`
+}
+
+// AssistantList The person's assistants, the default first.
+type AssistantList struct {
+	Assistants jsonempty.List[AssistantSummary] `json:"assistants"`
+}
+
+// AssistantMemoryLayers GET /api/assistants/{id}/memory/layers. What the assistant recalls: the person's layer first, then its own. legacyUncopied counts the active legacy facts (read-only pa_memory) not yet copied to the person's layer.
+type AssistantMemoryLayers struct {
+	AssistantID    string                      `json:"assistantId"`
+	Layers         jsonempty.List[MemoryLayer] `json:"layers"`
+	LegacyUncopied int                         `json:"legacyUncopied"`
+}
+
+// AssistantSummary One of the person's assistants as GET /api/assistants lists it (DEV-191). Exactly one is the default, the one /api/personal-agent answers.
+type AssistantSummary struct {
+	// ID The assistant id (asst_…).
+	ID string `json:"id"`
+
+	// Name Its label; empty means the language's default name.
+	Name      string `json:"name"`
+	IsDefault bool   `json:"isDefault"`
+
+	// WorkspaceID Its home workspace (kind personal_agent), one per assistant.
+	WorkspaceID         string `json:"workspaceId"`
+	HomeDeviceID        string `json:"homeDeviceId"`
+	State               string `json:"state"`
+	PermissionPackageID string `json:"permissionPackageId"`
+
+	// FeishuAppID The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner.
+	FeishuAppID string `json:"feishuAppId"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
 // ConnectorAccessLevel What one assistant may do through one connector account.
 type ConnectorAccessLevel = string
 
@@ -28,34 +87,97 @@ type ContextPatchReply struct {
 	Code        string `json:"code,omitempty"`
 }
 
-// PermissionDeviceResources What an assistant may lease directly; resources stay visible either way.
-type PermissionDeviceResources struct {
-	// DirectLeaseAllowed Device ids whose resources the assistant may lease itself.
-	DirectLeaseAllowed jsonempty.List[string] `json:"directLeaseAllowed"`
+// CreateAssistantInput POST /api/assistants. Creates a home workspace on homeDeviceId as setup does; the new assistant's permission package reaches no workspace until the person adds them.
+type CreateAssistantInput struct {
+	Name         string `json:"name"`
+	HomeDeviceID string `json:"homeDeviceId"`
 }
 
-// PermissionListRule An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
+// MemoryEntryMove A captured move: the body is written to targetEntryId in the target layer and the source entry forgotten, each applied by its device.
+type MemoryEntryMove struct {
+	// FromScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	FromScope MemoryLayerScope `json:"fromScope"`
+
+	// ToScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	ToScope       MemoryLayerScope `json:"toScope"`
+	SourceEntryID string           `json:"sourceEntryId"`
+	TargetVaultID string           `json:"targetVaultId"`
+	TargetEntryID string           `json:"targetEntryId"`
+	Status        string           `json:"status"`
+}
+
+// MemoryLayer One layer of an assistant's memory. vaultId is absent until the layer is first needed; then state is its vault's (pending until its device initializes it, active).
+type MemoryLayer struct {
+	// Scope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	Scope       MemoryLayerScope                 `json:"scope"`
+	VaultID     string                           `json:"vaultId,omitempty"`
+	State       string                           `json:"state,omitempty"`
+	Reason      string                           `json:"reason,omitempty"`
+	WorkspaceID string                           `json:"workspaceId,omitempty"`
+	DeviceID    string                           `json:"deviceId,omitempty"`
+	RootPath    string                           `json:"rootPath,omitempty"`
+	Entries     jsonempty.List[MemoryLayerEntry] `json:"entries"`
+}
+
+// MemoryLayerEntry One current entry of a memory layer, metadata only; read its body from the knowledge entry route of its vault.
+type MemoryLayerEntry struct {
+	ID      string `json:"id"`
+	VaultID string `json:"vaultId"`
+
+	// Scope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	Scope     MemoryLayerScope `json:"scope"`
+	Title     string           `json:"title"`
+	Revision  int64            `json:"revision"`
+	Hash      string           `json:"hash"`
+	SourceRef string           `json:"sourceRef,omitempty"`
+	ExpiresAt string           `json:"expiresAt,omitempty"`
+	UpdatedAt string           `json:"updatedAt"`
+}
+
+// MemoryLayerScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+type MemoryLayerScope string
+
+// MoveMemoryEntryInput POST /api/assistants/{id}/memory/entries/{entry}/move. Moves the entry of the assistant's other layer to toScope, at the revision and hash the person saw.
+type MoveMemoryEntryInput struct {
+	// ToScope A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).
+	ToScope          MemoryLayerScope `json:"toScope"`
+	ExpectedRevision int64            `json:"expectedRevision"`
+	ExpectedHash     string           `json:"expectedHash"`
+}
+
+// PermissionIdentityResources The resources that carry an identity (a signed-in browser, screen control, a device CLI account, a phone) the assistant and its helpers may lease. With scope all they follow the device like every other resource (compute, GPU, containers, toolchains, disks, simulators): any device with a workspace the package allows. With scope listed only the allowed ones.
+type PermissionIdentityResources struct {
+	// Scope What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.
+	Scope PermissionListScope `json:"scope"`
+
+	// Allowed Resource ids (res_…) the assistant may lease under scope listed.
+	Allowed jsonempty.List[string] `json:"allowed"`
+}
+
+// PermissionListRule An include/exclude rule. With scope all (or none given) an empty include list means every object the person can already reach; with scope listed only the included ones. Exclude always removes one.
 type PermissionListRule struct {
+	// Scope What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.
+	Scope   PermissionListScope    `json:"scope,omitempty"`
 	Include jsonempty.List[string] `json:"include"`
 	Exclude jsonempty.List[string] `json:"exclude"`
 }
 
-// PermissionPackage One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none.
+// PermissionListScope What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.
+type PermissionListScope = string
+
+// PermissionPackage One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, connector accounts default to write, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace.
 type PermissionPackage struct {
 	ID string `json:"id"`
 
 	// Owner The Foundry user id the package belongs to.
 	Owner string `json:"owner"`
 
-	// Workspaces An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
+	// Workspaces An include/exclude rule. With scope all (or none given) an empty include list means every object the person can already reach; with scope listed only the included ones. Exclude always removes one.
 	Workspaces        PermissionListRule                         `json:"workspaces"`
 	ConnectorAccounts jsonempty.List[ConnectorAccountPermission] `json:"connectorAccounts"`
 
-	// DevicesResources What an assistant may lease directly; resources stay visible either way.
-	DevicesResources PermissionDeviceResources `json:"devicesResources"`
-
-	// Skills An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.
-	Skills PermissionListRule `json:"skills"`
+	// IdentityResources The resources that carry an identity (a signed-in browser, screen control, a device CLI account, a phone) the assistant and its helpers may lease. With scope all they follow the device like every other resource (compute, GPU, containers, toolchains, disks, simulators): any device with a workspace the package allows. With scope listed only the allowed ones.
+	IdentityResources PermissionIdentityResources `json:"identityResources"`
 }
 
 // PersonalAgentConnector One connector account as the Assistant settings list it.
@@ -86,4 +208,9 @@ type SetPersonalAgentConnectorLevelsInput struct {
 
 	// Disabled Legacy form of levels; these accounts become "off".
 	Disabled []string `json:"disabled,omitempty"`
+}
+
+// UpdateAssistantInput PATCH /api/assistants/{id}. Absent fields stay.
+type UpdateAssistantInput struct {
+	Name string `json:"name,omitempty"`
 }

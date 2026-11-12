@@ -9,6 +9,7 @@
  * packages install without running their install scripts. A tool's setup
  * step (e.g. downloading the browser it drives) runs only on its own click.
  */
+import { joinPaths } from "../platform/path-list.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
@@ -110,12 +111,13 @@ export function withManagedTools(
 ): string {
   const bin = managedToolsBin();
   const first = sessionTools ?? bin;
-  return [
+  return joinPaths(
     first,
-    ...(path ?? "")
+    (path ?? "")
       .split(":")
-      .filter((part) => part && part !== bin && part !== first),
-  ].join(":");
+      .filter((part) => part !== bin)
+      .join(":"),
+  );
 }
 
 /** The versions Foundry installed here, by tool name. */

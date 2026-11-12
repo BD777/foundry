@@ -9,6 +9,9 @@ import { foundryStatePath } from "../platform/state-root.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
 import { getJSON } from "../transport/server-http.js";
 import { errorMessage } from "../platform/utils.js";
+import { chatFingerprint } from "../session/chat/chat-fingerprint.js";
+
+export { chatFingerprint } from "../session/chat/chat-fingerprint.js";
 
 /** Uploads remembered per server and workspace; the oldest go first. */
 const uploadsKept = 5000;
@@ -33,11 +36,6 @@ export interface ChatUploads {
   /** Whether this process compared the record with the server's chats. */
   reconciled: boolean;
   save(): void;
-}
-
-/** A chat's content: its time is its last activity, never a label. */
-export function chatFingerprint(chat: ChatThread): string {
-  return createHash("sha256").update(JSON.stringify(chat)).digest("hex");
 }
 
 function uploadsPath(serverURL: string, workspaceId: string): string {
@@ -168,6 +166,8 @@ export async function reconcileWithServer(
   workspaceId: string,
   uploads: ChatUploads,
   chats: readonly ChatThread[],
+  transcriptMessages: ReadonlyMap<string, number> = new Map(),
+  fingerprints: ReadonlyMap<string, string> = new Map(),
 ): Promise<void> {
   const { chats: digests } = await getJSON<{ chats: ServerChatDigest[] }>(
     serverURL,
@@ -182,7 +182,8 @@ export async function reconcileWithServer(
       continue;
     }
     if (uploads.recorded) continue;
-    const messages = chat.transcript?.length ?? 0;
+    const messages =
+      transcriptMessages.get(chat.id) ?? chat.transcript?.length ?? 0;
     if (
       messages > 0 &&
       digest.transcriptMessages === messages &&
@@ -192,6 +193,6 @@ export async function reconcileWithServer(
       (digest.title ?? "") === chat.title &&
       (digest.preview ?? "") === chat.preview
     )
-      rememberUpload(uploads, chat);
+      rememberUpload(uploads, chat, fingerprints.get(chat.id));
   }
 }

@@ -69,6 +69,7 @@ export const workspaces = {
   /** Words the workspace lists and dialogs share. */
   shared: {
     online: "Online",
+    reconnecting: "Reconnecting…",
     offline: "Offline",
     details: "Details",
     viewDetails: "View details for {{name}}",
@@ -122,6 +123,9 @@ export const workspaces = {
     noWorkspaceSelected: "No workspace selected",
     chooseWorkspace: "Choose a workspace below and Switch to it.",
     offlineSummary: "Offline · {{workspaces}}",
+    reconnectingSummary: "Reconnecting… · {{workspaces}}",
+    reconnectingNote:
+      "The device is reconnecting and usually recovers within seconds.",
     noDevices: "No devices yet. Add one under Devices.",
     addWorkspace: "Add workspace",
     openDevice: "Device",
@@ -180,6 +184,7 @@ export const workspaces = {
     },
     statusTitle: "Workspace status",
     deviceOnline: "Device online",
+    deviceReconnecting: "Device reconnecting…",
     deviceOffline: "Device offline",
     rootRepository: "Root repository",
     checking: "Checking…",
@@ -202,6 +207,8 @@ export const workspaces = {
     refreshStatus: "Refresh status",
     offlineNote:
       "Connect the device to inspect this workspace. No Git state is inferred while offline.",
+    reconnectingNote:
+      "The device is reconnecting and usually recovers within seconds. Inspection and rescanning are unavailable until it reconnects.",
     repositoriesTitle: "Git repositories",
     scanSummary:
       "{{unique}} · {{locations}} · {{worktrees}} · Last scanned {{time}}",
@@ -246,6 +253,8 @@ export const workspaces = {
     inspecting: "Inspecting the folder on this device…",
     offlineNote:
       "Offline · Saved path only. Live repository status is unavailable.",
+    reconnectingNote:
+      "Reconnecting · The device is reconnecting and usually recovers within seconds. Live repository status is unavailable until it does.",
     failed: "Inspection failed.",
     retry: "Retry inspection",
     refresh: "Refresh inspection",

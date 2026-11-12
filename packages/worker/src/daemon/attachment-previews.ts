@@ -1,11 +1,11 @@
 /** Earlier transfer of derivatives only. Interactive file reads cancel a push. */
 import { isAbsolute, join } from "node:path";
-import { gzipSync } from "node:zlib";
 import type { ProtocolEnvelope } from "@bd777/foundry-protocol";
 import { daemonRequestHeaders } from "../transport/server-http.js";
 import { serverFetch } from "../platform/server-link/server-proxy.js";
 import { AttachmentError } from "../workspace/workspace-attachments.js";
 import { readAttachmentPreviewChunk } from "../workspace/image-previews.js";
+import { gzipJSONInThread } from "./json-digest-thread.js";
 
 type Job = {
   serverURL: string;
@@ -133,7 +133,7 @@ async function pump() {
             ...daemonRequestHeaders(true),
             "Content-Encoding": "gzip",
           },
-          body: new Uint8Array(gzipSync(Buffer.from(JSON.stringify(payload)))),
+          body: await gzipJSONInThread(payload),
           signal: controller.signal,
         },
       );

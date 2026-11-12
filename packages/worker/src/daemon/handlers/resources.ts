@@ -109,10 +109,14 @@ export function serveResources(ctx: DaemonContext): void {
   });
 }
 
-/** A closed connection reports nothing and holds no lease open. */
+/**
+ * A closed connection reports nothing and answers nothing. Sessions whose
+ * work outlives a short outage (compute's background jobs) stay open for a
+ * grace period; the rest close at once.
+ */
 export function stopServingResources(): void {
   resourceScanner.detach();
-  void resourceOperations.closeAll();
+  void resourceOperations.suspendAll();
 }
 
 /** The device's resources: access, leased operations, settings, backends. */

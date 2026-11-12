@@ -30,6 +30,8 @@ export const ui = {
       offline: "The device is offline. Reconnect it, then retry.",
       slow: "The device took too long to send the image. Try again.",
       missing: "The original image was deleted.",
+      outside:
+        "This image is outside the workspace attachments, so it cannot be shown.",
       removed:
         "This screenshot was removed: a chat keeps its newest 200 screenshots (50 MB).",
       unavailable:
@@ -121,7 +123,7 @@ export const ui = {
   },
   slashMenu: {
     label: "Skills",
-    empty:
-      "No skills match “{{query}}”. Promote and select one in workspace → Skills.",
+    empty: "No skills match “{{query}}”.",
+    packageTag: "{{name}} package",
   },
 };

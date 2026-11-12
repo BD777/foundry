@@ -122,6 +122,16 @@ type LeaseError struct {
 
 func (e *LeaseError) Error() string { return e.Message }
 
+// DeviceReconnectingError says that a device stayed in its reconnect grace
+// for the whole request wait. Its message is what people and agents read.
+type DeviceReconnectingError struct {
+	Device string
+}
+
+func (e *DeviceReconnectingError) Error() string {
+	return e.Device + " is reconnecting; try again shortly"
+}
+
 func leaseError(code, format string, args ...any) *LeaseError {
 	return &LeaseError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
@@ -157,6 +167,10 @@ type Leases struct {
 	Router  Router
 	// HostOnline reports whether an instance's source is connected.
 	HostOnline func(sourceID string) bool
+	// WaitHostReconnect waits while a source is in its reconnect grace. A
+	// source that is already offline returns at once; request cancellation
+	// and a reconnect timeout end the wait with their error.
+	WaitHostReconnect func(ctx context.Context, sourceID string) error
 
 	waiters     map[string]chan struct{}
 	inflight    map[string]int

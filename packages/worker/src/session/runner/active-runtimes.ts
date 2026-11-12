@@ -569,8 +569,7 @@ export function claudeProcessRunsSubagent(taskId: string): boolean {
  * The sessions whose agents work on their own now, outside any Foundry turn
  * or after it: a Claude process with background tasks, timers or a turn it
  * continues by itself; a kept Codex app-server with a goal, background
- * terminals or queued input. Their connector environment stays (see
- * holdUntilNativeWorkEnds) and the worker claims them to the server, which
+ * terminals or queued input. The worker claims them to the server, which
  * keeps their connector grants live meanwhile (DEV-155).
  */
 export function sessionsWithNativeWork(): string[] {
@@ -592,61 +591,68 @@ export function sessionHasNativeWork(sessionId: string): boolean {
   return sessionsWithNativeWork().includes(sessionId);
 }
 
-/**
- * How long a session without native work keeps what its run set up: the
- * moment between a background task's end and the turn Claude starts on its
- * notification, and a Codex goal's next round.
- */
-export const nativeWorkGraceMs = 30_000;
-const nativeWorkSweepMs = 5_000;
+const agentEnvironmentSweepMs = 5_000;
 
-interface NativeWorkHold {
+interface AgentEnvironmentHold {
   sessionId: string;
   release: () => void;
-  idleSince?: number;
 }
 
-const nativeWorkHolds = new Set<NativeWorkHold>();
-let nativeWorkSweep: NodeJS.Timeout | undefined;
+const agentEnvironmentHolds = new Set<AgentEnvironmentHold>();
+let agentEnvironmentSweep: NodeJS.Timeout | undefined;
+
+/** The sessions whose agent process lives in this worker, idle or not. */
+function sessionsWithLiveAgent(): Set<string> {
+  return new Set(residentSessions().map((resident) => resident.sessionId));
+}
 
 /**
  * Runs `release` (what a run set up for its session's processes: connector
- * profiles and forwarders, the tool folder) once the session's agent no
- * longer works on its own; at once when it does not now. Processes the
- * agent started during the run (a background command, a turn it starts on
- * a task's notification or a timer) were started with that environment and
- * keep using it after the run.
+ * launchers, profiles and forwarders, the tool folder) once the session's
+ * agent process has exited (a Claude process, a kept Codex app-server); at
+ * once when none lives now. The process was started with that environment
+ * and keeps it while it lives: its background commands and the turns it
+ * starts by itself (on a task's notification, a timer, a goal) use it, also
+ * after it was idle. Each call through it is still authorized by the server
+ * (gateway.SessionLive), so keeping it grants nothing beyond that.
  */
-export function holdUntilNativeWorkEnds(
+export function holdWhileAgentRuns(
   sessionId: string,
   release: () => void,
 ): void {
-  if (!sessionId || !sessionHasNativeWork(sessionId)) {
+  if (!sessionId || !sessionsWithLiveAgent().has(sessionId)) {
     release();
     return;
   }
-  nativeWorkHolds.add({ sessionId, release });
-  nativeWorkSweep ??= setInterval(
-    () => sweepNativeWorkHolds(),
-    nativeWorkSweepMs,
+  agentEnvironmentHolds.add({ sessionId, release });
+  agentEnvironmentSweep ??= setInterval(
+    () => sweepAgentEnvironmentHolds(),
+    agentEnvironmentSweepMs,
   );
-  nativeWorkSweep.unref();
+  agentEnvironmentSweep.unref();
 }
 
-/** Releases the holds whose sessions have had no native work for a while. */
-export function sweepNativeWorkHolds(
-  now = Date.now(),
-  graceMs = nativeWorkGraceMs,
+/**
+ * Releases at once what the session's earlier runs keep for its agent
+ * process: the session ended for good (it failed or was canceled), and the
+ * server no longer serves it.
+ */
+export function releaseAgentEnvironment(sessionId: string): void {
+  releaseAgentEnvironmentHolds((hold) => hold.sessionId === sessionId);
+}
+
+/** Releases the holds whose sessions' agent processes have exited. */
+export function sweepAgentEnvironmentHolds(): void {
+  const live = sessionsWithLiveAgent();
+  releaseAgentEnvironmentHolds((hold) => !live.has(hold.sessionId));
+}
+
+function releaseAgentEnvironmentHolds(
+  ended: (hold: AgentEnvironmentHold) => boolean,
 ): void {
-  const working = new Set(sessionsWithNativeWork());
-  for (const hold of nativeWorkHolds) {
-    if (working.has(hold.sessionId)) {
-      hold.idleSince = undefined;
-      continue;
-    }
-    hold.idleSince ??= now;
-    if (now - hold.idleSince < graceMs) continue;
-    nativeWorkHolds.delete(hold);
+  for (const hold of agentEnvironmentHolds) {
+    if (!ended(hold)) continue;
+    agentEnvironmentHolds.delete(hold);
     try {
       hold.release();
     } catch (error) {
@@ -655,9 +661,9 @@ export function sweepNativeWorkHolds(
       );
     }
   }
-  if (nativeWorkHolds.size === 0 && nativeWorkSweep) {
-    clearInterval(nativeWorkSweep);
-    nativeWorkSweep = undefined;
+  if (agentEnvironmentHolds.size === 0 && agentEnvironmentSweep) {
+    clearInterval(agentEnvironmentSweep);
+    agentEnvironmentSweep = undefined;
   }
 }
 

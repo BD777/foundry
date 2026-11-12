@@ -17,6 +17,7 @@ import { InfoRow } from "../../components/ui/info-row";
 import { SectionHeader } from "../../components/ui/page-header";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { cn } from "../../lib/cn";
+import { deviceConnection } from "../../lib/device-connection";
 import { useCopied } from "../../lib/use-copied";
 import { useWorkerRelease } from "../../lib/worker-commands";
 import {
@@ -50,7 +51,9 @@ export function workerBehind(
  * up with `install` and is connected.
  */
 export function canSelfUpdate(device: DeviceProjection): boolean {
-  return Boolean(device.worker?.command) && device.status === "connected";
+  return (
+    Boolean(device.worker?.command) && deviceConnection(device) === "online"
+  );
 }
 
 /**
@@ -389,7 +392,7 @@ export function DeviceWorker({
   // the server leads with Update instead.
   const switchNow =
     device.owned &&
-    device.status === "connected" &&
+    deviceConnection(device) === "online" &&
     !updatingNow &&
     !(prominent && behind) &&
     (runner?.state === "pending" || runner?.state === "failed") ? (

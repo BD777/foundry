@@ -31,8 +31,6 @@ var modelProviderMCPTools = map[string]bool{
 	"check_model_provider":  true,
 	"set_model_defaults":    true,
 	"sign_in_subscription":  true,
-	"get_model_notes":       true,
-	"append_model_note":     true,
 	"get_execution_default": true,
 }
 

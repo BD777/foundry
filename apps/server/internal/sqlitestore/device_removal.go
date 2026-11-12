@@ -366,7 +366,8 @@ var deviceReferences = []deviceReference{
 	{"workspace_digests", `summary_session_id = ''`, `summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"pa_items", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
 	{"pa_memory", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
-	{"model_notes", `author_session_id = ''`, `author_session_id IN (` + deviceSessions + `)`},
+	{"model_observations", `author_session_id = ''`, `author_session_id IN (` + deviceSessions + `)`},
+	{"model_guides", `updated_by_session_id = ''`, `updated_by_session_id IN (` + deviceSessions + `)`},
 	// A task followed up for a conversation that is gone has no one to
 	// report to.
 	{"pa_tasks", "", `conversation_session_id IN (` + deviceSessions + `)`},

@@ -58,7 +58,15 @@ func (c *Confirmations) Review(ctx context.Context, request gateway.Confirmation
 	}
 	nowValue := now().UTC()
 	nowText := nowValue.Format(time.RFC3339Nano)
-	proposals, err := c.Store.ListPersonalAgentProposals(ctx, request.Lease.Grant.UserID, []string{
+	assistantID := request.AssistantID
+	if assistantID == "" {
+		agent, err := c.Store.AssistantForSession(ctx, request.Lease.Grant.SessionID)
+		if err != nil {
+			return gateway.ConfirmationDecision{}, &gateway.Denial{Reason: gateway.ReasonInternal, Err: fmt.Errorf("the assistant of the session: %w", err)}
+		}
+		assistantID = agent.ID
+	}
+	proposals, err := c.Store.ListPersonalAgentProposals(ctx, assistantID, []string{
 		store.PersonalAgentProposalPending, store.PersonalAgentProposalAccepted,
 	})
 	if err != nil {
@@ -73,7 +81,7 @@ func (c *Confirmations) Review(ctx context.Context, request gateway.Confirmation
 			continue
 		}
 		if proposal.ExpiresAt <= nowText {
-			_, _ = c.Store.SetPersonalAgentProposalStatus(ctx, proposal.UserID, proposal.ID,
+			_, _ = c.Store.SetPersonalAgentProposalStatus(ctx, assistantID, proposal.ID,
 				[]string{proposal.Status}, store.PersonalAgentProposalExpired, "", "expired before the request was retried")
 			continue
 		}
@@ -83,7 +91,7 @@ func (c *Confirmations) Review(ctx context.Context, request gateway.Confirmation
 			}, nil
 		}
 		if proposal.Status == store.PersonalAgentProposalAccepted {
-			if _, err := c.Store.SetPersonalAgentProposalStatus(ctx, proposal.UserID, proposal.ID,
+			if _, err := c.Store.SetPersonalAgentProposalStatus(ctx, assistantID, proposal.ID,
 				[]string{store.PersonalAgentProposalAccepted}, store.PersonalAgentProposalApplied, "", ""); err == nil {
 				proposal.Status = store.PersonalAgentProposalApplied
 				if c.OnChanged != nil {
@@ -110,7 +118,7 @@ func (c *Confirmations) Review(ctx context.Context, request gateway.Confirmation
 		return gateway.ConfirmationDecision{}, &gateway.Denial{Reason: gateway.ReasonInternal, Err: err}
 	}
 	proposal, err := c.Store.CreatePersonalAgentProposal(ctx, store.PersonalAgentProposal{
-		UserID: request.Lease.Grant.UserID, SessionID: request.Lease.Grant.SessionID,
+		UserID: request.Lease.Grant.UserID, AssistantID: assistantID, SessionID: request.Lease.Grant.SessionID,
 		Kind: store.PersonalAgentProposalConnectorWrite, WorkspaceID: request.Lease.Session.WorkspaceID,
 		Spec: raw, Summary: summary,
 		ExpiresAt: nowValue.Add(c.ProposalTTL).Format(time.RFC3339Nano),

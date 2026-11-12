@@ -61,8 +61,10 @@ function concerning(
 
 /** The audit trail: what it changed, or tried to, and how that ended. */
 export function ActivitySection({
+  assistantId,
   projectName,
 }: {
+  assistantId?: string;
   projectName: (workspaceId: string) => string | undefined;
 }) {
   const { t } = useTranslation("personalAgent");
@@ -70,12 +72,12 @@ export function ActivitySection({
   const [error, setError] = useState("");
   const read = useCallback(async () => {
     try {
-      setRecords(await listPersonalAgentActions());
+      setRecords(await listPersonalAgentActions(assistantId));
       setError("");
     } catch (reason) {
       setError(serverErrorText(reason));
     }
-  }, []);
+  }, [assistantId]);
   useEffect(() => {
     void read();
   }, [read]);

@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,9 +29,11 @@ func registerHelperAccounts(t *testing.T, f assistantFixture) store.WorkspacePro
 			Provider: account.runtime, ProfileID: account.id, ConnectionType: "local_login", Status: "healthy", AuthMode: "local_config", ConfigScope: "device",
 		})
 		profile := store.AgentProfileProjection{ID: account.id, DeviceID: workspace.DeviceID, Runtime: account.runtime, ConnectionType: "local_login", Status: "healthy", AuthMode: "local_config", ConfigScope: "device"}
+		profile.Model = "smart-model"
 		if account.runtime == "codex" {
-			profile.Model, profile.Models = "cheap-model", []string{"cheap-model"}
+			profile.Model = "cheap-model"
 		}
+		profile.Models = []string{profile.Model}
 		profiles = append(profiles, profile)
 	}
 	if err := f.server.store.RegisterDaemon(ctx, store.DaemonRegistration{Device: store.DeviceProjection{ID: workspace.DeviceID, Status: "connected"}, Workspace: workspace, Agents: agents, AgentProfiles: profiles}); err != nil {
@@ -57,7 +61,7 @@ func TestHelperModelIsTheAssistantsSecondChoice(t *testing.T) {
 	if err != nil || helper.ProfileID != "codex_local" || helper.Model != "cheap-model" || helper.Effort != "low" || helper.SelectionReason != "configured" {
 		t.Fatalf("helper: %+v %v", helper, err)
 	}
-	if preview := f.server.previewHelper(ctx, agent, "ws_alice"); preview.Model != "cheap-model" || preview.Unavailable != "" || preview.Note != "" {
+	if preview := f.server.previewHelper(ctx, agent, "ws_alice", "default"); preview.Model != "cheap-model" || preview.Unavailable != "" || preview.Note != "" {
 		t.Fatalf("preview: %+v", preview)
 	}
 
@@ -67,7 +71,7 @@ func TestHelperModelIsTheAssistantsSecondChoice(t *testing.T) {
 	if _, err := f.server.runs.Resolve(ctx, agent, "executor", "ws_alice"); err == nil || !strings.Contains(err.Error(), "model_unavailable") {
 		t.Fatalf("missing model silently replaced: %v", err)
 	}
-	if preview := f.server.previewHelper(ctx, agent, "ws_alice"); !strings.Contains(preview.Unavailable, "model_unavailable") || preview.Note == "" {
+	if preview := f.server.previewHelper(ctx, agent, "ws_alice", "default"); !strings.Contains(preview.Unavailable, "model_unavailable") || preview.Note == "" {
 		t.Fatalf("unavailable preview: %+v", preview)
 	}
 	agent.Settings.RoleOverrides["executor"] = store.PersonalAgentRunPreference{ProfileID: "prof_absent", Runtime: "claude", Model: "x"}
@@ -85,7 +89,7 @@ func TestHelperModelIsTheAssistantsSecondChoice(t *testing.T) {
 		if err != nil || helper.SelectionReason != run.ReasonUsedDeviceDefault || helper.Model == "absent-model" || helper.Model == "x" {
 			t.Fatalf("fallback for %+v: %+v %v", override, helper, err)
 		}
-		if preview := f.server.previewHelper(ctx, agent, "ws_alice"); preview.Reason != run.ReasonUsedDeviceDefault || preview.Note == "" {
+		if preview := f.server.previewHelper(ctx, agent, "ws_alice", "default"); preview.Reason != run.ReasonUsedDeviceDefault || preview.Note == "" {
 			t.Fatalf("fallback preview: %+v", preview)
 		}
 	}
@@ -94,6 +98,188 @@ func TestHelperModelIsTheAssistantsSecondChoice(t *testing.T) {
 	coordinator, err := personalagent.RunPreference(agent.Settings, "coordinator")
 	if err != nil || coordinator.Model != "smart-model" {
 		t.Fatalf("assistant: %+v %v", coordinator, err)
+	}
+}
+
+func TestExecutorUsesAssistantWorkspaceGlobalThenLegacy(t *testing.T) {
+	t.Run("assistant override", func(t *testing.T) {
+		f := newAssistantFixture(t)
+		ctx := context.Background()
+		registerHelperAccounts(t, f)
+		agent := mustAgent(t, f)
+		agent.Settings.ExecutionModels = &store.PersonalAgentExecutionModels{
+			ProviderKind: store.ExecutionModelChoiceProviderKindSubscription,
+			ProviderID:   "claude_local", Runtime: "claude", Model: "smart-model",
+		}
+		agent.Settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{
+			"executor": {ProfileID: "codex_local", Runtime: "codex", Model: "cheap-model"},
+		}
+		if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+			t.Fatal(err)
+		}
+		for _, scope := range []string{"", "ws_alice"} {
+			if err := f.server.store.SetExecutionDefault(ctx, store.StoredExecutionModelDefault{
+				OwnerUserID: f.aliceID, WorkspaceID: scope, ProviderID: "codex_local",
+				Runtime: "codex", Model: "cheap-model", Alternatives: []store.ExecutionModelChoice{},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		helper, err := f.server.runs.Resolve(ctx, agent, "executor", "ws_alice")
+		if err != nil || helper.ProfileID != "claude_local" || helper.Model != "smart-model" {
+			t.Fatalf("assistant override: %+v %v", helper, err)
+		}
+	})
+
+	t.Run("workspace", func(t *testing.T) {
+		f := newAssistantFixture(t)
+		ctx := context.Background()
+		registerHelperAccounts(t, f)
+		agent := mustAgent(t, f)
+		for scope, model := range map[string]string{"": "cheap-model", "ws_alice": "smart-model"} {
+			runtime, profileID := "codex", "codex_local"
+			if model == "smart-model" {
+				runtime, profileID = "claude", "claude_local"
+			}
+			if err := f.server.store.SetExecutionDefault(ctx, store.StoredExecutionModelDefault{
+				OwnerUserID: f.aliceID, WorkspaceID: scope, ProviderID: profileID,
+				Runtime: runtime, Model: model, Alternatives: []store.ExecutionModelChoice{},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		helper, err := f.server.runs.Resolve(ctx, agent, "executor", "ws_alice")
+		if err != nil || helper.ProfileID != "claude_local" || helper.Model != "smart-model" {
+			t.Fatalf("workspace: %+v %v", helper, err)
+		}
+	})
+
+	t.Run("global", func(t *testing.T) {
+		f := newAssistantFixture(t)
+		ctx := context.Background()
+		registerHelperAccounts(t, f)
+		agent := mustAgent(t, f)
+		if err := f.server.store.SetExecutionDefault(ctx, store.StoredExecutionModelDefault{
+			OwnerUserID: f.aliceID, ProviderID: "codex_local", Runtime: "codex",
+			Model: "cheap-model", Alternatives: []store.ExecutionModelChoice{},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		helper, err := f.server.runs.Resolve(ctx, agent, "executor", "ws_alice")
+		if err != nil || helper.ProfileID != "codex_local" || helper.Model != "cheap-model" {
+			t.Fatalf("global: %+v %v", helper, err)
+		}
+	})
+
+	t.Run("legacy", func(t *testing.T) {
+		f := newAssistantFixture(t)
+		ctx := context.Background()
+		registerHelperAccounts(t, f)
+		agent := mustAgent(t, f)
+		agent.Settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{
+			"executor": {ProfileID: "claude_local", Runtime: "claude", Model: "smart-model"},
+		}
+		if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+			t.Fatal(err)
+		}
+		helper, err := f.server.runs.Resolve(ctx, agent, "executor", "ws_alice")
+		if err != nil || helper.ProfileID != "claude_local" || helper.Model != "smart-model" {
+			t.Fatalf("legacy: %+v %v", helper, err)
+		}
+	})
+}
+
+func TestExecutorWorkerGroupAndAlternatives(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	registerHelperAccounts(t, f)
+	group, err := f.server.store.SaveWorkerGroup(ctx, store.StoredWorkerGroup{
+		OwnerUserID: f.aliceID, Label: "Interchangeable helpers",
+		Members: []store.WorkerGroupMember{
+			{ProviderKind: "subscription", ProviderID: "claude_local", Runtime: "claude", Model: "smart-model"},
+			{ProviderKind: "subscription", ProviderID: "codex_local", Runtime: "codex", Model: "cheap-model"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := mustAgent(t, f)
+	agent.Settings.ExecutionModels = &store.PersonalAgentExecutionModels{
+		WorkerGroupID: group.ID,
+		Alternatives: []store.ExecutionModelChoice{{
+			ProviderKind: store.ExecutionModelChoiceProviderKindSubscription,
+			ProviderID:   "codex_local", Runtime: "codex", Model: "cheap-model",
+		}},
+	}
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+		t.Fatal(err)
+	}
+	helper, err := f.server.runs.ResolveExecutor(ctx, agent, "ws_alice", "default")
+	if err != nil || helper.Model == "" || !slices.Contains([]string{"smart-model", "cheap-model"}, helper.Model) {
+		t.Fatalf("group member: %+v %v", helper, err)
+	}
+	alternativeID := personalagent.ExecutionChoiceID(agent.Settings.ExecutionModels.Alternatives[0])
+	alternative, err := f.server.runs.ResolveExecutor(ctx, agent, "ws_alice", alternativeID)
+	if err != nil || alternative.ProfileID != "codex_local" || alternative.Model != "cheap-model" ||
+		alternative.SelectionReason != run.ReasonExecutionAlternative {
+		t.Fatalf("alternative by id: %+v %v", alternative, err)
+	}
+	if err := f.server.runs.ValidateExecutorChoice(ctx, agent, "ws_alice", "not-listed"); err == nil || !strings.Contains(err.Error(), "executionChoice") {
+		t.Fatalf("invalid choice: %v", err)
+	}
+}
+
+func TestDispatchItemRejectsExecutionChoiceOutsideTheList(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	agent := mustAgent(t, f)
+	agent.Settings.ExecutionModels = &store.PersonalAgentExecutionModels{
+		ProviderID: "claude_local", Runtime: "claude", Model: "smart-model",
+		Alternatives: []store.ExecutionModelChoice{{
+			ProviderID: "codex_local", Runtime: "codex", Model: "cheap-model",
+		}},
+	}
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+		t.Fatal(err)
+	}
+	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{
+		UserID: f.aliceID, AssistantID: agent.ID, Text: "Reject an unlisted helper model",
+		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, failed := f.tool(t, f.token, "dispatch_item", map[string]any{
+		"itemId": item.ID, "intentRevision": item.IntentRevision,
+		"stepKey": "reject-choice", "workspaceId": "ws_alice",
+		"prompt": "Do not run with an unlisted model.", "executionChoice": "not-listed",
+	})
+	if !failed || !strings.Contains(text, "executionChoice") {
+		t.Fatalf("unlisted executionChoice was accepted: %s", text)
+	}
+}
+
+func TestAssistantGetExecutionDefaultReturnsItsOwnOverride(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	agent := mustAgent(t, f)
+	agent.Settings.ExecutionModels = &store.PersonalAgentExecutionModels{
+		ProviderID: "claude_local", Runtime: "claude", Model: "smart-model",
+		Alternatives: []store.ExecutionModelChoice{{
+			ProviderID: "codex_local", Runtime: "codex", Model: "cheap-model",
+		}},
+	}
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+		t.Fatal(err)
+	}
+	text, failed := f.tool(t, f.token, "get_execution_default", map[string]any{"workspaceId": "ws_alice"})
+	var view executionDefaultsView
+	if failed || json.Unmarshal([]byte(text), &view) != nil {
+		t.Fatalf("read assistant execution model: %s", text)
+	}
+	if view.Effective.Scope != "assistant" || view.Effective.Model != "smart-model" ||
+		len(view.Effective.Alternatives) != 1 || view.Effective.Alternatives[0].ID == "" {
+		t.Fatalf("assistant execution model = %+v", view.Effective)
 	}
 }
 
@@ -119,7 +305,7 @@ func TestChatAccountIgnoresTheAssistantsChoice(t *testing.T) {
 	agent.Settings.AssistantProfileID = other
 	agent.Settings.RunDefault = &store.PersonalAgentRunPreference{ProfileID: other}
 	agent.Settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{"executor": {ProfileID: other}}
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	chosen, _, err := f.server.chooseAccount(ctx, workspace, "", f.aliceID)

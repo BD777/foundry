@@ -41,10 +41,10 @@ func TestBrowserTimezoneFillsOnlyAnEmptyOne(t *testing.T) {
 	// Stored straight, a zone saved meanwhile also stays.
 	agent := mustAgent(t, f)
 	agent.Settings.Timezone = "America/New_York"
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	if kept, err := f.server.store.FillPersonalAgentTimezone(ctx, f.aliceID, "Asia/Tokyo"); err != nil || kept.Settings.Timezone != "America/New_York" {
+	if kept, err := f.server.store.FillPersonalAgentTimezone(ctx, agent.ID, "Asia/Tokyo"); err != nil || kept.Settings.Timezone != "America/New_York" {
 		t.Fatalf("store fill over a set zone = %q %v", kept.Settings.Timezone, err)
 	}
 }

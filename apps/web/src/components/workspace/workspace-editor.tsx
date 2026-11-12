@@ -16,6 +16,7 @@ import {
   WorkspaceFormActions,
 } from "./workspace-form";
 import { WorkspacePathPicker } from "./workspace-path-picker";
+import { deviceConnection } from "../../lib/device-connection";
 
 export type WorkspaceEdit =
   | { kind: "add" }
@@ -57,7 +58,7 @@ export function WorkspaceEditor({
   const blocked = current && !folderMissing;
   // Its device is connected (it reported the folder missing); removing
   // never touches the folder.
-  const offline = device.status !== "connected" && !folderMissing;
+  const offline = deviceConnection(device) !== "online" && !folderMissing;
   const title = t(`editor.titles.${edit.kind}`);
   async function submit() {
     if (pending.current || blocked || (edit.kind !== "rename" && offline))

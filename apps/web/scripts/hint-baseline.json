@@ -1,5 +1,4 @@
 [
-  "src/components/workspace/workspace-details.tsx details.offlineNote <LocationDescription>",
   "src/components/workspace/workspace-editor.tsx editor.addNote <LocationDescription>",
   "src/components/workspace/workspace-editor.tsx editor.removeNote <LocationDescription>",
   "src/components/workspace/workspace-service-tunnels.tsx tunnels.compatibilityNote <p>",
@@ -9,14 +8,11 @@
   "src/features/channels/feishu-agent-default-panel.tsx defaultAgent.channelIntro attribute intro",
   "src/features/external-accounts/extension-install-dialog.tsx extensionInstall.githubHint attribute title",
   "src/features/external-accounts/sign-in-chooser.tsx signInChooser.terminalIntro <p>",
-  "src/features/personal-agent/settings-memory.tsx knowledge.legacyIntro <PaMuted>",
   "src/features/skill-library/add-repository-dialog.tsx library.repo.bundleNote <p>",
   "src/features/skill-library/add-repository-dialog.tsx library.repo.pickNote <p>",
   "src/features/skill-library/bundle-tool-status.tsx library.bundle.setupRunningNote <SkillNote>",
   "src/features/skill-library/repository-source.tsx library.repo.workingNote <p>",
   "src/features/skill-library/skill-bundle-row.tsx library.repo.removeBundleNote attribute unfollowCopy",
   "src/features/skill-library/skill-pick-row.tsx library.repo.removePickedNote attribute unfollowCopy",
-  "src/features/workspaces/workspace-overview.tsx overview.notGitNote <p>",
-  "src/features/workspaces/workspace-overview.tsx overview.offlineNote <p>",
   "src/features/workspaces/workspace-overview.tsx overview.rescanHint attribute body"
 ]

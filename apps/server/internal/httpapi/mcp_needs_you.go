@@ -48,7 +48,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	note := strings.TrimSpace(mcpArgString(call.args, "note"))
 	switch op {
 	case "list":
-		return s.needsYouList(ctx, user)
+		return s.needsYouList(ctx, scope.Agent)
 	case "hand_over":
 		if note == "" || utf8.RuneCountInString(note) > needsYouNoteLimit {
 			return "", &statusError{http.StatusBadRequest, fmt.Errorf("hand_over needs a note for the person of 1 to %d characters", needsYouNoteLimit)}
@@ -60,7 +60,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	if (itemID == "") == (sessionID == "") {
 		return "", &statusError{http.StatusBadRequest, fmt.Errorf("name exactly one of itemId and sessionId")}
 	}
-	items, helper, err := s.needsYouTargets(ctx, user, itemID, sessionID)
+	items, helper, err := s.needsYouTargets(ctx, scope.Agent, itemID, sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -79,7 +79,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		// A helper that asked in its answer, without a question card.
 		now := formatPendingTime(time.Now())
 		item, _, err := s.store.RecordPendingItem(ctx, store.PendingItem{
-			UserID: user, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
+			UserID: user, AssistantID: scope.Agent.ID, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
 			Source: store.PendingSourceQuestion, Rule: store.PendingRuleHandedOver,
 			Key:   "handover:" + helper.ID + ":" + helper.Input.ID,
 			Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
@@ -104,7 +104,8 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 // needsYouTargets are the open items an op names: the item, or the open
 // items of the helper session; either must be a helper of the person's
 // assistant. helper is that session.
-func (s *Server) needsYouTargets(ctx context.Context, user, itemID, sessionID string) ([]store.PendingItem, store.AgentSession, error) {
+func (s *Server) needsYouTargets(ctx context.Context, agent store.PersonalAgent, itemID, sessionID string) ([]store.PendingItem, store.AgentSession, error) {
+	user := agent.UserID
 	notYours := &statusError{http.StatusForbidden, fmt.Errorf("only items of your own helpers: the person handles the others in their list")}
 	if itemID != "" {
 		item, err := s.store.GetPendingItem(ctx, user, itemID)
@@ -115,13 +116,13 @@ func (s *Server) needsYouTargets(ctx context.Context, user, itemID, sessionID st
 			return nil, store.AgentSession{}, &statusError{http.StatusConflict, fmt.Errorf("item %s is %s, no longer open", itemID, item.State)}
 		}
 		sessionID = item.SessionID
-		helper, ok := s.needsYouHelper(ctx, user, sessionID)
+		helper, ok := s.needsYouHelper(ctx, agent, sessionID)
 		if !ok {
 			return nil, store.AgentSession{}, notYours
 		}
 		return []store.PendingItem{item}, helper, nil
 	}
-	helper, ok := s.needsYouHelper(ctx, user, sessionID)
+	helper, ok := s.needsYouHelper(ctx, agent, sessionID)
 	if !ok {
 		return nil, store.AgentSession{}, notYours
 	}
@@ -138,8 +139,8 @@ func (s *Server) needsYouTargets(ctx context.Context, user, itemID, sessionID st
 	return items, helper, nil
 }
 
-// needsYouHelper is sessionID when it is a helper of user's assistant.
-func (s *Server) needsYouHelper(ctx context.Context, user, sessionID string) (store.AgentSession, bool) {
+// needsYouHelper is sessionID when it is a helper of this assistant.
+func (s *Server) needsYouHelper(ctx context.Context, assistant store.PersonalAgent, sessionID string) (store.AgentSession, bool) {
 	if sessionID == "" {
 		return store.AgentSession{}, false
 	}
@@ -148,17 +149,21 @@ func (s *Server) needsYouHelper(ctx context.Context, user, sessionID string) (st
 		return store.AgentSession{}, false
 	}
 	agent, ok := s.assistant.HelperOf(ctx, session)
-	return session, ok && agent.UserID == user
+	return session, ok && agent.ID == assistant.ID
 }
 
-// needsYouList is op list: the open items, the assistant's first.
-func (s *Server) needsYouList(ctx context.Context, user string) (string, error) {
-	items, err := s.store.ListPendingItems(ctx, user, []string{store.PendingOpen}, "", 200)
+// needsYouList is op list: the open items, the assistant's first; another
+// assistant's items are not listed.
+func (s *Server) needsYouList(ctx context.Context, agent store.PersonalAgent) (string, error) {
+	items, err := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", 200)
 	if err != nil {
 		return "", err
 	}
 	yours, persons := []needsYouLine{}, []needsYouLine{}
 	for _, item := range items {
+		if item.AssistantID != "" && item.AssistantID != agent.ID {
+			continue
+		}
 		line := s.needsYouLineOf(ctx, item)
 		if line.Handler == store.PendingHandlerAssistant {
 			yours = append(yours, line)

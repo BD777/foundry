@@ -1,9 +1,10 @@
 // DEV-155: what a run sets up for its session's connectors (the feishu-cli
-// profile, forwarders, the tool folder) lives as long as the session's agent
-// works on its own, not just for the Foundry turn: a command Claude moved to
-// the background, a turn it starts on a task's notification or a timer, a
-// Codex goal. The worker claims those sessions to the server, which keeps
-// their grants live meanwhile.
+// profile, forwarders, the tool folder) outlives the Foundry turn: a command
+// Claude moved to the background, a turn it starts on a task's notification
+// or a timer, a Codex goal. It lives as long as the session's agent process
+// does (session-environment-agent-lifetime.test.mjs). The worker claims the
+// sessions whose agents work on their own to the server, which keeps their
+// grants live meanwhile.
 import "./fixtures/native-test-homes.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -22,11 +23,10 @@ import {
   SessionExecutionRegistry,
 } from "../dist/session/session-state.js";
 import {
-  holdUntilNativeWorkEnds,
-  nativeWorkGraceMs,
+  holdWhileAgentRuns,
   sessionHasNativeWork,
   sessionsWithNativeWork,
-  sweepNativeWorkHolds,
+  sweepAgentEnvironmentHolds,
 } from "../dist/session/runner/active-runtimes.js";
 import { daemonHeartbeat } from "../dist/daemon/control-connection.js";
 import {
@@ -122,22 +122,20 @@ test("a background command that outlives the turn keeps the session's feishu-cli
   let out = "";
   reads.stdout.on("data", (chunk) => (out += chunk));
   // The turn ends with the loop still running.
-  holdUntilNativeWorkEnds(session.id, prepared.release);
+  holdWhileAgentRuns(session.id, prepared.release);
   await new Promise((resolve) => reads.on("exit", resolve));
   assert.equal(out.trim(), "15", "every read after the turn found the profile");
   assert.deepEqual(sessionExternalAccountEnvironment(session.id), {
     FEISHU_PROFILE: "foundry-one-5e55104e00",
   });
 
-  // The loop ends; the profile goes once the grace has passed without the
-  // agent working (it might still pick up the task's notification).
+  // The loop ends; the idle process keeps the profile (it may still pick
+  // up the task's notification), which goes when the process exits.
   runtime.set({ background: false });
-  const now = Date.now();
-  sweepNativeWorkHolds(now);
+  sweepAgentEnvironmentHolds();
   assert.equal(existsSync(profileDir(paths)), true);
-  sweepNativeWorkHolds(now + nativeWorkGraceMs - 1);
-  assert.equal(existsSync(profileDir(paths)), true);
-  sweepNativeWorkHolds(now + nativeWorkGraceMs);
+  runtime.close();
+  sweepAgentEnvironmentHolds();
   assert.equal(existsSync(profileDir(paths)), false);
   assert.deepEqual(sessionExternalAccountEnvironment(session.id), {});
 });
@@ -149,7 +147,7 @@ test("a turn without native work releases at once, as before", async () => {
     [material(1)],
     paths,
   );
-  holdUntilNativeWorkEnds("sess_plain", prepared.release);
+  holdWhileAgentRuns("sess_plain", prepared.release);
   assert.equal(existsSync(profileDir(paths)), false);
 });
 
@@ -163,20 +161,20 @@ test("a turn the agent's notification or timer starts finds the environment", as
     [material(1)],
     paths,
   );
-  holdUntilNativeWorkEnds(session.id, prepared.release);
-  const start = Date.now();
+  holdWhileAgentRuns(session.id, prepared.release);
   // A ScheduleWakeup pending, then the turn Claude runs when it fires.
-  sweepNativeWorkHolds(start + 10 * nativeWorkGraceMs);
+  sweepAgentEnvironmentHolds();
   assert.equal(existsSync(profileDir(paths)), true);
   runtime.set({ timer: false });
   runtime.continue({ turn: "own" });
   assert.equal(sessionHasNativeWork(session.id), true);
-  sweepNativeWorkHolds(start + 20 * nativeWorkGraceMs);
-  sweepNativeWorkHolds(start + 30 * nativeWorkGraceMs);
+  sweepAgentEnvironmentHolds();
   assert.equal(userToken(paths), handles(1).userHandle);
   runtime.continue(undefined);
-  sweepNativeWorkHolds(start + 40 * nativeWorkGraceMs);
-  sweepNativeWorkHolds(start + 41 * nativeWorkGraceMs);
+  sweepAgentEnvironmentHolds();
+  assert.equal(existsSync(profileDir(paths)), true);
+  runtime.close();
+  sweepAgentEnvironmentHolds();
   assert.equal(existsSync(profileDir(paths)), false);
 });
 
@@ -186,7 +184,7 @@ test("a newer run of the session takes over the profile; the held run's end leav
   const runtime = claudeRuntime(session.id, { background: true });
   t.after(runtime.close);
   const first = await materializeSessionAccounts(session, [material(1)], paths);
-  holdUntilNativeWorkEnds(session.id, first.release);
+  holdWhileAgentRuns(session.id, first.release);
   // The person's next message: a new run with fresh handles, on the same
   // process, whose background work the first run left going.
   const second = await materializeSessionAccounts(
@@ -195,10 +193,9 @@ test("a newer run of the session takes over the profile; the held run's end leav
     paths,
   );
   assert.equal(userToken(paths), handles(2).userHandle);
-  runtime.set({ background: false });
-  const now = Date.now();
-  sweepNativeWorkHolds(now);
-  sweepNativeWorkHolds(now + nativeWorkGraceMs);
+  // The process ends; the first run's hold is released.
+  runtime.close();
+  sweepAgentEnvironmentHolds();
   assert.equal(
     userToken(paths),
     handles(2).userHandle,
@@ -221,15 +218,14 @@ test("a held profile is live: a reap in its own process leaves it", async (t) =>
     [material(1)],
     paths,
   );
-  holdUntilNativeWorkEnds("sess_reap", prepared.release);
+  holdWhileAgentRuns("sess_reap", prepared.release);
   assert.deepEqual(
     reapExternalAccountProfiles({ manifestPath: paths.manifestPath }),
     [],
   );
   assert.equal(existsSync(profileDir(paths)), true);
-  runtime.set({ background: false });
-  sweepNativeWorkHolds(Date.now() + 10 * nativeWorkGraceMs);
-  sweepNativeWorkHolds(Date.now() + 20 * nativeWorkGraceMs);
+  runtime.close();
+  sweepAgentEnvironmentHolds();
 });
 
 test("a kept Codex app-server's own work holds the session too", () => {

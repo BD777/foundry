@@ -31,14 +31,7 @@ const (
 
 // MoveHome moves the person's assistant to their device deviceID (see
 // above); moving to the computer it is on changes nothing.
-func (s *Service) MoveHome(ctx context.Context, account *store.User, deviceID string) (store.PersonalAgent, error) {
-	agent, err := s.store.GetPersonalAgent(ctx, account.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		return agent, ErrNoAssistant
-	}
-	if err != nil {
-		return agent, err
-	}
+func (s *Service) MoveHome(ctx context.Context, account *store.User, agent store.PersonalAgent, deviceID string) (store.PersonalAgent, error) {
 	owned, err := store.AvailableOwnedDevices(ctx, s.store, account.ID)
 	if err != nil {
 		return agent, err
@@ -67,7 +60,7 @@ func (s *Service) MoveHome(ctx context.Context, account *store.User, deviceID st
 			return agent, err
 		}
 	}
-	moved, err := s.store.MovePersonalAgentHome(ctx, account.ID, workspace.ID, deviceID)
+	moved, err := s.store.MovePersonalAgentHome(ctx, agent.ID, workspace.ID, deviceID)
 	if err != nil {
 		return agent, err
 	}

@@ -54,7 +54,7 @@ globalThis.fetch = async (url) =>
     },
   );
 
-async function renderOverview(accessRole) {
+async function renderOverview(accessRole, deviceConnection = "online") {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
@@ -71,7 +71,7 @@ async function renderOverview(accessRole) {
           resolvedCount: 0,
           accessRole,
         },
-        deviceOnline: true,
+        deviceConnection,
         acceptedCount: 0,
       }),
     ),
@@ -105,5 +105,15 @@ test("a member may rescan", async () => {
   const view = await renderOverview("member");
   assert.equal(view.button("Rescan repositories").disabled, false);
   assert.doesNotMatch(view.container.textContent, /needs Member/);
+  await view.cleanup();
+});
+
+test("a reconnecting device is not offline and its inspection actions are disabled", async () => {
+  const view = await renderOverview("member", "reconnecting");
+  assert.match(view.container.textContent, /Device reconnecting…/);
+  assert.doesNotMatch(view.container.textContent, /Device offline/);
+  assert.equal(view.button("Refresh status").disabled, true);
+  assert.equal(view.button("Rescan repositories").disabled, true);
+  assert.match(view.container.textContent, /usually recovers within seconds/);
   await view.cleanup();
 });

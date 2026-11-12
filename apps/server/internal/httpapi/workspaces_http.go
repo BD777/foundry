@@ -41,12 +41,17 @@ func selectWorkspace(ctx context.Context, st store.Store, workspaces []store.Wor
 // assistant created last. The person reaches those through the assistant.
 func (s *Server) defaultWorkspacesFirst(ctx context.Context, userID string, workspaces []store.WorkspaceProjection) []store.WorkspaceProjection {
 	ordered := slices.Clone(workspaces)
+	assistants, _ := s.store.ListAssistants(ctx, userID)
 	background := func(workspace store.WorkspaceProjection) bool {
 		if workspace.Kind == store.WorkspaceKindPersonalAgent || workspace.ArchivedAt != "" {
 			return true
 		}
-		created, err := s.store.PersonalAgentCreatedWorkspace(ctx, userID, workspace.ID)
-		return err == nil && created
+		for _, agent := range assistants {
+			if created, err := s.store.PersonalAgentCreatedWorkspace(ctx, agent.ID, workspace.ID); err == nil && created {
+				return true
+			}
+		}
+		return false
 	}
 	rank := make(map[string]int, len(ordered))
 	for _, workspace := range ordered {

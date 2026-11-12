@@ -1197,10 +1197,10 @@ components:
               type: string
             profileLabel:
               type: string
-            modelPoolId:
+            workerGroupId:
               description:
-                The equivalent-model group this session was allocated from.
-                Foundry uses it to choose another id after a model rate limit.
+                The worker group this session's provider and model were picked from,
+                once at creation. The session keeps that member.
               type: string
             dispatchId:
               description:

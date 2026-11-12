@@ -4,8 +4,7 @@ import { cn } from "../../lib/cn";
 const headerClass =
   "flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-3";
 const copyClass = "fdy-page-header-copy min-w-0 flex-[1_1_18rem]";
-const descriptionClass =
-  "mt-1 max-w-[72ch] text-sm leading-[1.55] text-ink-muted";
+const descriptionClass = "mt-1 text-sm leading-[1.55] text-ink-muted";
 const actionsClass =
   "fdy-page-header-actions flex flex-wrap items-center gap-2";
 

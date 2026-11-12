@@ -60,6 +60,27 @@ func personOnly() accessRule {
 	}}
 }
 
+// assistantOwner is a person's route to one of their assistants
+// (/api/assistants/{assistant}/…, DEV-191): personOnly, and the path's
+// assistant must be the signed-in person's; another person's is not found.
+// Session tokens never reach these routes: an assistant's own session
+// reaches its records through its MCP tools, scoped to the assistant
+// whose home workspace the session is in (paScope).
+func assistantOwner() accessRule {
+	person := personOnly()
+	return accessRule{kind: "assistant-owner", check: func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		if !person.check(s, w, r) {
+			return false
+		}
+		agent, err := s.store.GetAssistant(r.Context(), r.PathValue("assistant"))
+		if err != nil || agent.UserID != actorFromContext(r.Context()).AccountID() {
+			writeError(w, http.StatusNotFound, "assistant not found")
+			return false
+		}
+		return true
+	}}
+}
+
 func inHandler() accessRule { return accessRule{kind: ruleInHandler, check: allow} }
 func filtered() accessRule  { return accessRule{kind: ruleFiltered, check: allow} }
 func daemonProtocol() accessRule {
@@ -439,15 +460,18 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
 		// And who owns the device it checks on (in handler).
 		fn("POST /api/profiles/{id}/check", s.handleCheckProfile, connectionOwner("id")),
-		// Model learning and the default execution model (model_notes.go).
-		fn("GET /api/model-notes", s.handleListModelNotes, accountOnly()),
-		fn("POST /api/model-notes", s.handleAppendModelNote, accountOnly()),
-		fn("PUT /api/model-notes/{id}", s.handleUpdateModelNote, accountOnly()),
-		fn("DELETE /api/model-notes/{id}", s.handleDeleteModelNote, accountOnly()),
-		fn("GET /api/model-pools", s.handleListModelPools, accountOnly()),
-		fn("POST /api/model-pools", s.handleCreateModelPool, accountOnly()),
-		fn("PUT /api/model-pools/{id}", s.handleUpdateModelPool, accountOnly()),
-		fn("DELETE /api/model-pools/{id}", s.handleDeleteModelPool, accountOnly()),
+		// Model guides (model_guides.go): the person reads them; sessions write through the model_guides tool.
+		fn("GET /api/model-guides", s.handleListModelGuides, accountOnly()),
+		fn("GET /api/model-guides/resolve", s.handleResolveModelGuide, accountOnly()),
+		fn("POST /api/model-guides/resolve", s.handleResolveModelGuides, accountOnly()),
+		fn("GET /api/model-guides/{id}", s.handleGetModelGuide, accountOnly()),
+		fn("GET /api/model-guides/{id}/revisions/{n}", s.handleGetModelGuideRevision, accountOnly()),
+		fn("GET /api/model-guides/{id}/observations", s.handleListModelGuideObservations, accountOnly()),
+		// The default execution model (execution_defaults.go).
+		fn("GET /api/worker-groups", s.handleListWorkerGroups, accountOnly()),
+		fn("POST /api/worker-groups", s.handleCreateWorkerGroup, accountOnly()),
+		fn("PUT /api/worker-groups/{id}", s.handleUpdateWorkerGroup, accountOnly()),
+		fn("DELETE /api/worker-groups/{id}", s.handleDeleteWorkerGroup, accountOnly()),
 		fn("GET /api/execution-default", s.handleGetExecutionDefault, accountOnly()),
 		fn("PUT /api/execution-default", s.handleSetExecutionDefault, accountOnly()),
 		fn("GET /api/workspaces/{id}/execution-default", s.handleGetWorkspaceExecutionDefault, workspaceRole(viewer, pathWorkspace("id"))),
@@ -619,6 +643,9 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/personal-agent/run-controls", s.handleAssistantRunControls, personOnly()),
 		fn("POST /api/personal-agent/run-controls/{control}/stop", s.handleStopAssistantRun, personOnly()),
 		fn("POST /api/personal-agent/memory/{id}/transfer", s.handleLegacyKnowledgeTransfer, personOnly()),
+		fn("GET /api/personal-agent/memory/layers", s.handleMemoryLayers, personOnly()),
+		fn("POST /api/personal-agent/memory/layers/{scope}/entries", s.handleAddMemoryLayerEntry, personOnly()),
+		fn("POST /api/personal-agent/memory/entries/{entry}/move", s.handleMoveMemoryEntry, personOnly()),
 		fn("GET /api/personal-agent/context-patches", s.handleContextPatches, personOnly()),
 		fn("POST /api/personal-agent/maintenance/{job}/patch", s.handleContextPatch, personOnly()),
 		fn("GET /api/personal-agent/maintenance", s.handleMaintenanceList, personOnly()),
@@ -740,10 +767,35 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/daemon/repository-tool-archives/{id}", s.handleDaemonRepositoryToolArchive, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}
+	routes = append(routes, assistantRoutes(routes, fn, s)...)
 	if s.options.EnableDevReset {
 		routes = append(routes, fn("POST /api/dev/reset-demo", s.handleDevResetDemo, adminOnly()))
 	}
 	return routes
+}
+
+// assistantRoutes are a person's assistants (DEV-191): the list, creating
+// and deleting one, and for every /api/personal-agent/… route the same
+// handler at /api/assistants/{assistant}/…. The /api/personal-agent routes
+// stay as the alias of the person's default assistant (personalAgentOf)
+// until the web uses assistant ids; then they go.
+func assistantRoutes(routes []route, fn func(string, http.HandlerFunc, accessRule) route, s *Server) []route {
+	out := []route{
+		fn("GET /api/assistants", s.handleListAssistants, personOnly()),
+		fn("POST /api/assistants", s.handleCreateAssistant, personOnly()),
+		fn("GET /api/assistants/{assistant}", s.handlePersonalAgentOverview, assistantOwner()),
+		fn("PATCH /api/assistants/{assistant}", s.handleUpdateAssistant, assistantOwner()),
+		fn("DELETE /api/assistants/{assistant}", s.handleDeleteAssistant, assistantOwner()),
+	}
+	for _, alias := range routes {
+		method, path, _ := strings.Cut(alias.pattern, " ")
+		rest, ok := strings.CutPrefix(path, "/api/personal-agent/")
+		if !ok {
+			continue
+		}
+		out = append(out, route{pattern: method + " /api/assistants/{assistant}/" + rest, handler: alias.handler, rule: assistantOwner()})
+	}
+	return out
 }
 
 // guard evaluates the route's rule before the handler and caches the scope

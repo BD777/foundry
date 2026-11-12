@@ -181,7 +181,7 @@ test("paths outside the attachments, directly or through a link, are refused", (
         offset: 0,
         maxBytes: 1024,
       }),
-    /not found/,
+    /outside the workspace/,
   );
   assert.throws(
     () =>
@@ -197,7 +197,7 @@ test("paths outside the attachments, directly or through a link, are refused", (
         offset: 0,
         maxBytes: 1024,
       }),
-    /not found/,
+    /outside the workspace/,
   );
 });
 
@@ -268,4 +268,52 @@ test("any file inside the workspace is read for an attachment, nothing outside",
   assert.throws(() => read(join(workspacePath, "shot.png"), 10), {
     code: "too_large",
   });
+});
+
+test("an image is read through a linked home or workspace, and absence stays apart from refusal", (t) => {
+  const real = workspace(t);
+  const linkedHome = join(
+    tmpdir(),
+    `foundry-home-link-${process.pid}-${Date.now()}`,
+  );
+  symlinkSync(real, linkedHome);
+  t.after(() => rmSync(linkedHome, { force: true }));
+  const written = writeAttachmentChunk({
+    workspacePath: real,
+    relativePath: "d/shot.png",
+    offset: 0,
+    data: png,
+    final: true,
+  });
+  const read = (workspacePath, path) =>
+    readAttachmentImageChunk({
+      workspacePath,
+      path,
+      offset: 0,
+      maxBytes: 1024,
+    });
+  // Registered through the link, named by its real path.
+  assert.equal(read(linkedHome, written.path).size, png.length);
+  // Registered by its real path, named through the link.
+  assert.equal(
+    read(real, join(linkedHome, ".foundry", "attachments", "d", "shot.png"))
+      .size,
+    png.length,
+  );
+  // Gone: its nearest existing folder is inside the attachments.
+  assert.throws(
+    () =>
+      read(linkedHome, join(real, ".foundry", "attachments", "d", "gone.png")),
+    (error) => error.code === "not_found",
+  );
+  // Outside, existing or not, is a refusal, not an absence.
+  for (const path of [
+    join(real, "elsewhere.png"),
+    join(real, "..", "nope.png"),
+  ]) {
+    assert.throws(
+      () => read(linkedHome, path),
+      (error) => error.code === "invalid_path",
+    );
+  }
 });

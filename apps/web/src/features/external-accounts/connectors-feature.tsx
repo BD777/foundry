@@ -6,12 +6,11 @@ import type {
   DeviceConnectorsView,
 } from "@bd777/foundry-protocol";
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getConnectorCatalog,
   getDeviceConnectors,
-  listSkillRepositories,
   recheckConnectorAccess,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -33,7 +32,7 @@ import {
 } from "./connector-picker";
 import { CredentialHolding } from "./credential-holding";
 import { DeviceHeldConnector } from "./device-held-connector";
-import { ConnectorPackage } from "./connector-package";
+import { ConnectorPackagePanel } from "./connector-package-panel";
 import { useConnectorPackage } from "./use-connector-package";
 import { ExtensionInstallDialog } from "./extension-install-dialog";
 import { FeishuConnector } from "./feishu-connector";
@@ -156,6 +155,7 @@ export function ConnectorsFeature({
     catalog?.find((entry) => entry.kind === tab) ??
     (edgeAccess ? undefined : catalog?.[0]);
   const pkg = useConnectorPackage(catalog, edgeAccess ? "" : tab);
+  const instancesRef = useRef<HTMLDivElement>(null);
   return (
     <PageSurface variant="connectors">
       <PageHeader
@@ -233,45 +233,16 @@ export function ConnectorsFeature({
                 signOutLocal={connector!.signIn?.signOut === false}
               />
               {connector!.package ? (
-                pkg.loading ? (
-                  <Skeleton
-                    label={t("connectorPackage.loading")}
-                    rows={2}
-                    variant="rows"
-                  />
-                ) : pkg.error ? (
-                  <Alert
-                    title={t("connectorPackage.loadFailed", {
-                      error: pkg.error,
-                    })}
-                    tone="error"
-                  >
-                    <Button onClick={() => pkg.retry()} size="sm">
-                      {t("common:actions.retry")}
-                    </Button>
-                  </Alert>
-                ) : pkg.view ? (
-                  <ConnectorPackage
-                    onNotice={props.onNotice}
-                    onSaved={(updated) => {
-                      pkg.setView(updated);
-                      void listSkillRepositories()
-                        .then((repositories) =>
-                          pkg.setRepository(
-                            repositories.find(
-                              (repository) =>
-                                repository.id === updated.repositoryId,
-                            ),
-                          ),
-                        )
-                        .catch((cause: unknown) =>
-                          props.onNotice(errorText(cause), "error"),
-                        );
-                    }}
-                    repository={pkg.repository}
-                    view={pkg.view}
-                  />
-                ) : null
+                <ConnectorPackagePanel
+                  onAddInstance={() =>
+                    instancesRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    })
+                  }
+                  onNotice={props.onNotice}
+                  pkg={pkg}
+                />
               ) : null}
               {connector!.holding === "device_held" ? (
                 <DeviceHeldConnector
@@ -302,11 +273,16 @@ export function ConnectorsFeature({
                   onNotice={props.onNotice}
                 />
               ) : connector!.extension && connector!.serverHeld ? (
-                <ServerHeldConnector
-                  connector={connector!}
-                  currentUserId={props.currentUserId}
-                  onNotice={props.onNotice}
-                />
+                <div ref={instancesRef}>
+                  <ServerHeldConnector
+                    connector={connector!}
+                    currentUserId={props.currentUserId}
+                    onInstancesChanged={pkg.refresh}
+                    onNotice={props.onNotice}
+                    onPackageChanged={pkg.setView}
+                    packageView={pkg.view}
+                  />
+                </div>
               ) : null}
             </>
           )}

@@ -157,8 +157,9 @@ func TestCancelWorkWaitingForItsDevice(t *testing.T) {
 func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	items := f.server.store.(store.PersonalAgentListStore)
-	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "tidy the synthetic photos", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"}})
+	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "tidy the synthetic photos", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,12 +169,12 @@ func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	if failed || json.Unmarshal([]byte(text), &op) != nil {
 		t.Fatalf("capture: %s", text)
 	}
-	op, err = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	op, err = f.server.store.GetPersonalAgentOperation(ctx, agent.ID, op.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.server.assistant.DeliverOperation(ctx, op)
-	waiting, err := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	waiting, err := f.server.store.GetPersonalAgentOperation(ctx, agent.ID, op.ID)
 	if err != nil || waiting.Status != "waiting" || waiting.Reason != "device_offline" || waiting.SessionID != "" {
 		t.Fatalf("offline receipt: %+v %v", waiting, err)
 	}

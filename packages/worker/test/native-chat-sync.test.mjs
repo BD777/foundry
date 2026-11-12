@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 
 const root = mkdtempSync(join(tmpdir(), "native-sync-"));
 // Discovery must inspect only synthetic native homes, including cold worker processes.
@@ -76,6 +84,22 @@ test(
       );
       assert.equal(await syncNativeChats(url, workspace), 1);
       assert.equal(posts.length, 1, "only the changed chat, in full");
+      const { nativeChatTranscript } =
+        await import("../dist/session/chat/native-chat-transcript.js");
+      const lines = readFileSync(paths[1], "utf8")
+        .split(/\r?\n/)
+        .filter(Boolean);
+      const offsets = [];
+      let offset = 0;
+      for (const line of lines) {
+        offsets.push(offset);
+        offset += Buffer.byteLength(line) + 1;
+      }
+      assert.deepEqual(
+        posts[0].chats[0].transcript,
+        nativeChatTranscript(lines, "claude", offsets),
+        "the threaded scan uploads the same adapted transcript as before",
+      );
     } finally {
       server.close();
     }
@@ -496,5 +520,203 @@ test(
       1,
     );
     assert.deepEqual(server.full(), [`native_claude_${same}`]);
+  },
+);
+
+test("an unchanged native chat scan reuses its parse and fingerprint", async () => {
+  const { NativeChatScanClient } =
+    await import("../dist/session/chat/native-chat-scan-thread.js");
+  const workspace = join(root, "ws-scan-cache");
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, "claude-scan-cache");
+  mkdirSync(workspace);
+  const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  session(workspace, id, "cache me");
+  const input = {
+    workspace: { id: "ws_scan_cache", localPath: workspace },
+    profiles: [],
+  };
+  const client = new NativeChatScanClient();
+  try {
+    const first = await client.scan(input);
+    assert.ok(first.parsedFiles > 0);
+    assert.equal(first.chats[0].transcript, undefined);
+    const firstFingerprint = new Map(first.fingerprints).get(first.chats[0].id);
+
+    const second = await client.scan(input);
+    assert.equal(second.parsedFiles, 0, "the unchanged file was parsed again");
+    assert.ok(second.reusedFiles > 0);
+    assert.equal(
+      new Map(second.fingerprints).get(second.chats[0].id),
+      firstFingerprint,
+    );
+    const [detail] = await client.details(
+      input,
+      second.scanId,
+      second.chats.map((chat) => chat.id),
+    );
+    assert.ok(detail.transcript.length > 0);
+  } finally {
+    client.stop();
+    process.env.CLAUDE_CONFIG_DIR = previousHome;
+  }
+});
+
+class FailingNativeChatWorker extends EventEmitter {
+  ref() {}
+  unref() {}
+  terminate() {
+    return Promise.resolve(0);
+  }
+  postMessage() {
+    queueMicrotask(() => this.emit("error", new Error("scan exploded")));
+  }
+}
+
+class HangingNativeChatWorker extends EventEmitter {
+  ref() {}
+  unref() {}
+  terminate() {
+    return Promise.resolve(0);
+  }
+  postMessage() {}
+}
+
+class RefusingNativeChatWorker extends EventEmitter {
+  ref() {}
+  unref() {}
+  terminate() {
+    return Promise.resolve(0);
+  }
+  postMessage() {
+    throw new Error("request was not cloneable");
+  }
+}
+
+test("native chat worker errors and timeouts reject without killing the daemon", async () => {
+  const { NativeChatScanClient } =
+    await import("../dist/session/chat/native-chat-scan-thread.js");
+  const input = {
+    workspace: { id: "ws_failure", localPath: root },
+    profiles: [],
+  };
+  const failed = new NativeChatScanClient({
+    createWorker: () => new FailingNativeChatWorker(),
+  });
+  await assert.rejects(failed.scan(input), /scan exploded/);
+  failed.stop();
+
+  const hanging = new NativeChatScanClient({
+    timeoutMs: 20,
+    createWorker: () => new HangingNativeChatWorker(),
+  });
+  await assert.rejects(hanging.scan(input), /timed out after 20 ms/);
+  hanging.stop();
+
+  const refusing = new NativeChatScanClient({
+    createWorker: () => new RefusingNativeChatWorker(),
+  });
+  await assert.rejects(refusing.scan(input), /request was not cloneable/);
+  refusing.stop();
+});
+
+test("a worker failure degrades to a daemon-thread scan and logs it", async () => {
+  const { scanNativeChatsForDaemon } =
+    await import("../dist/session/chat/native-chat-scan-thread.js");
+  const workspace = join(root, "ws-scan-fallback");
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, "claude-scan-fallback");
+  mkdirSync(workspace);
+  const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  session(workspace, id, "fallback");
+  const warnings = [];
+  try {
+    const result = await scanNativeChatsForDaemon(
+      {
+        workspace: { id: "ws_scan_fallback", localPath: workspace },
+        profiles: [],
+      },
+      {
+        scanner: {
+          scan: async () => {
+            throw new Error("worker unavailable");
+          },
+        },
+        warn: (message) => warnings.push(message),
+      },
+    );
+    assert.equal(result.scanId, "");
+    assert.equal(result.chats[0].nativeSessionId, id);
+    assert.equal(result.chats[0].transcript, undefined);
+    assert.match(warnings[0], /worker unavailable/);
+    assert.match(warnings[0], /scanning on the daemon thread/);
+  } finally {
+    process.env.CLAUDE_CONFIG_DIR = previousHome;
+  }
+});
+
+test(
+  "a multi-megabyte transcript blocks the daemon loop below 500 ms",
+  { timeout: 120000 },
+  async () => {
+    const { NativeChatScanClient } =
+      await import("../dist/session/chat/native-chat-scan-thread.js");
+    const { nativeChatSnapshotForWorkspace } =
+      await import("../dist/session/chat/native-chat.js");
+    const workspace = join(root, "ws-large");
+    const previousHome = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = join(root, "claude-large");
+    mkdirSync(workspace);
+    const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const path = session(workspace, id, "start");
+    const lines = [];
+    for (let index = 0; index < 5000; index += 1) {
+      lines.push(
+        JSON.stringify({
+          type: index % 2 ? "assistant" : "user",
+          timestamp: new Date(Date.UTC(2026, 9, 1, 0, 0, index)).toISOString(),
+          message: {
+            role: index % 2 ? "assistant" : "user",
+            content: `${index} ${"x".repeat(900)}`,
+          },
+        }),
+      );
+    }
+    appendFileSync(path, `${lines.join("\n")}\n`);
+    const input = {
+      workspace: { id: "ws_large", localPath: workspace },
+      profiles: [],
+    };
+    const measure = async (run) => {
+      const histogram = monitorEventLoopDelay({ resolution: 10 });
+      histogram.enable();
+      histogram.reset();
+      await run();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      histogram.disable();
+      return histogram.max / 1e6;
+    };
+    const client = new NativeChatScanClient();
+    try {
+      const beforeMs = await measure(() =>
+        nativeChatSnapshotForWorkspace(
+          input.workspace,
+          input.profiles,
+          60,
+          new Set(),
+        ),
+      );
+      const afterMs = await measure(() => client.scan(input));
+      console.log(
+        JSON.stringify({ nativeChatBlockingMs: { beforeMs, afterMs } }),
+      );
+      assert.ok(
+        afterMs < 500,
+        `worker-backed scan blocked the daemon for ${afterMs.toFixed(1)} ms`,
+      );
+    } finally {
+      client.stop();
+      process.env.CLAUDE_CONFIG_DIR = previousHome;
+    }
   },
 );

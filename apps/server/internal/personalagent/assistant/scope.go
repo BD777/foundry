@@ -22,8 +22,8 @@ type Scope struct {
 	SessionID string
 	Turn      store.SessionInput
 	owned     map[string]bool
-	// owner holds every workspace the person can read: true where they
-	// are its Owner.
+	// owner holds every workspace the person can read and the assistant's
+	// permission package allows: true where they are its Owner.
 	owner map[string]bool
 }
 
@@ -49,7 +49,9 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 	}
 	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
 	for workspaceID, role := range roles {
-		scope.owner[workspaceID] = access.WorkspaceAllowed(workspaceID) && role == store.WorkspaceRoleOwner
+		if access.WorkspaceAllowed(workspaceID) {
+			scope.owner[workspaceID] = role == store.WorkspaceRoleOwner
+		}
 	}
 	devices, err := s.store.DevicesOwnedBy(ctx, agent.UserID)
 	if err != nil {
@@ -59,6 +61,13 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 		scope.owned[deviceID] = true
 	}
 	return scope, nil
+}
+
+// reaches reports whether the person can read the workspace and the
+// assistant's permission package allows it.
+func (p Scope) reaches(workspaceID string) bool {
+	_, visible := p.owner[workspaceID]
+	return visible
 }
 
 // manages reports whether the assistant may change the workspace: the

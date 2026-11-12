@@ -15,10 +15,11 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// The Personal Agent's tables (docs/personal-agent.md §2–§9): one assistant
-// per person, its memory about the person, the actions waiting for the
-// person's yes, the work it handed off, its audit trail and its routing
-// decisions. Every row belongs to one person (user_id).
+// The Personal Agent's tables (docs/personal-agent.md §2–§9): a person's
+// assistants (assistants.go), each one's memory about the person, the
+// actions waiting for the person's yes, the work it handed off, its audit
+// trail and its routing decisions. Every row belongs to one assistant
+// (assistant_id) of one person (user_id).
 
 var _ store.PersonalAgentStore = (*Store)(nil)
 
@@ -27,24 +28,10 @@ const personalAgentActionRetention = 90 * 24 * time.Hour
 
 func (s *Store) setupPersonalAgents(ctx context.Context) error {
 	statements := []string{
-		`CREATE TABLE IF NOT EXISTS personal_agents (
-			user_id TEXT PRIMARY KEY,
-			workspace_id TEXT NOT NULL UNIQUE,
-			home_device_id TEXT NOT NULL,
-			state TEXT NOT NULL,
-			settings_json TEXT NOT NULL,
-			permission_package_id TEXT NOT NULL DEFAULT '',
-			prompt_version TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			stopped_at TEXT NOT NULL DEFAULT '',
-			former_workspace_ids TEXT NOT NULL DEFAULT '[]',
-			digest_sent_on TEXT NOT NULL DEFAULT '',
-			connector_opt_out TEXT NOT NULL DEFAULT '[]'
-		)`,
 		`CREATE TABLE IF NOT EXISTS pa_memory (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			content TEXT NOT NULL,
 			origin TEXT NOT NULL,
 			status TEXT NOT NULL,
@@ -59,6 +46,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_proposals (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			session_id TEXT NOT NULL,
 			kind TEXT NOT NULL,
 			workspace_id TEXT NOT NULL DEFAULT '',
@@ -75,6 +63,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_tasks (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			conversation_session_id TEXT NOT NULL,
 			session_id TEXT NOT NULL DEFAULT '',
 			workspace_id TEXT NOT NULL,
@@ -92,6 +81,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_actions (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			session_id TEXT NOT NULL DEFAULT '',
 			tool TEXT NOT NULL,
 			args_summary TEXT NOT NULL,
@@ -109,6 +99,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_routing_decisions (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			session_id TEXT NOT NULL,
 			input_id TEXT NOT NULL DEFAULT '',
 			request TEXT NOT NULL,
@@ -125,10 +116,11 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 		// The person's Feishu direct chats (one per app) told once that the
 		// assistant took them over (§14).
 		`CREATE TABLE IF NOT EXISTS pa_direct_chats (
+			assistant_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
 			app_id TEXT NOT NULL,
 			introduced_at TEXT NOT NULL,
-			PRIMARY KEY (user_id, app_id)
+			PRIMARY KEY (assistant_id, app_id)
 		)`,
 	}
 	for _, statement := range statements {
@@ -136,16 +128,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite personal agents: %w", err)
 		}
 	}
-	var present int
-	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('personal_agents') WHERE name = 'connector_opt_out'`).Scan(&present); err != nil {
-		return fmt.Errorf("migrate sqlite personal agents: %w", err)
-	}
-	if present == 0 {
-		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE personal_agents ADD COLUMN connector_opt_out TEXT NOT NULL DEFAULT '[]'`); err != nil {
-			return fmt.Errorf("migrate sqlite personal agents: %w", err)
-		}
-	}
-	return nil
+	return s.setupAssistants(ctx)
 }
 
 func paNow() string { return formatTime(time.Now()) }
@@ -164,91 +147,15 @@ func inStatuses(column string, statuses []string) (string, []any) {
 	return " AND " + column + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(statuses)), ", ") + ")", args
 }
 
-const personalAgentColumns = `user_id, workspace_id, home_device_id, state, settings_json, permission_package_id, prompt_version, created_at, updated_at, stopped_at`
-
-// personalAgentRead is what reading an assistant selects.
-const personalAgentRead = personalAgentColumns + `, former_workspace_ids`
-
-func scanPersonalAgent(row interface{ Scan(...any) error }) (store.PersonalAgent, error) {
-	var agent store.PersonalAgent
-	var settings, former string
-	if err := row.Scan(&agent.UserID, &agent.WorkspaceID, &agent.HomeDeviceID, &agent.State, &settings,
-		&agent.PermissionPackageID, &agent.PromptVersion, &agent.CreatedAt, &agent.UpdatedAt, &agent.StoppedAt, &former); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return store.PersonalAgent{}, store.ErrNotFound
-		}
-		return store.PersonalAgent{}, err
-	}
-	if err := json.Unmarshal([]byte(settings), &agent.Settings); err != nil {
-		return store.PersonalAgent{}, fmt.Errorf("personal agent settings: %w", err)
-	}
-	if err := json.Unmarshal([]byte(former), &agent.FormerWorkspaceIDs); err != nil {
-		return store.PersonalAgent{}, fmt.Errorf("personal agent former workspaces: %w", err)
-	}
-	return agent, nil
-}
-
-func (s *Store) GetPersonalAgent(ctx context.Context, userID string) (store.PersonalAgent, error) {
-	return scanPersonalAgent(s.conn().QueryRowContext(ctx, `SELECT `+personalAgentRead+` FROM personal_agents WHERE user_id = ?`, userID))
-}
-
-func (s *Store) PersonalAgentForWorkspace(ctx context.Context, workspaceID string) (store.PersonalAgent, error) {
-	return scanPersonalAgent(s.conn().QueryRowContext(ctx, `SELECT `+personalAgentRead+` FROM personal_agents WHERE workspace_id = ?`, workspaceID))
-}
-
-func (s *Store) CreatePersonalAgent(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgent, error) {
+func (s *Store) SavePersonalAgentSettings(ctx context.Context, assistantID string, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
 	var saved store.PersonalAgent
 	err := s.withTx(ctx, func(tx *Store) error {
-		if err := tx.assertDeviceNotRemoved(ctx, agent.HomeDeviceID); err != nil {
-			return err
-		}
-		if err := tx.validatePersonalAgentDeviceReferences(ctx, store.PersonalAgentSettings{}, agent.Settings); err != nil {
-			return err
-		}
-		var err error
-		saved, err = tx.createPersonalAgent(ctx, agent)
-		return err
-	})
-	return saved, err
-}
-
-func (s *Store) createPersonalAgent(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgent, error) {
-	if agent.UserID == "" || agent.WorkspaceID == "" {
-		return store.PersonalAgent{}, errors.New("an assistant needs a person and a workspace")
-	}
-	settings, err := json.Marshal(agent.Settings)
-	if err != nil {
-		return store.PersonalAgent{}, err
-	}
-	now := paNow()
-	agent.CreatedAt, agent.UpdatedAt = now, now
-	if agent.State == "" {
-		agent.State = store.PersonalAgentActive
-	}
-	pkg, err := s.createDefaultPermissionPackage(ctx, agent.UserID)
-	if err != nil {
-		return store.PersonalAgent{}, err
-	}
-	agent.PermissionPackageID = pkg.ID
-	result, err := s.conn().ExecContext(ctx, `INSERT INTO personal_agents (`+personalAgentColumns+`)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ''
-		WHERE NOT EXISTS (SELECT 1 FROM personal_agents WHERE user_id = ? OR workspace_id = ?)`,
-		agent.UserID, agent.WorkspaceID, agent.HomeDeviceID, agent.State, string(settings), agent.PermissionPackageID, agent.PromptVersion, now, now,
-		agent.UserID, agent.WorkspaceID)
-	if err != nil {
-		return store.PersonalAgent{}, fmt.Errorf("create personal agent: %w", err)
-	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return store.PersonalAgent{}, store.ErrPersonalAgentExists
-	}
-	return agent, nil
-}
-
-func (s *Store) SavePersonalAgentSettings(ctx context.Context, userID string, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
-	var saved store.PersonalAgent
-	err := s.withTx(ctx, func(tx *Store) error {
-		previous, err := tx.GetPersonalAgent(ctx, userID)
+		previous, err := tx.GetAssistant(ctx, assistantID)
 		if err != nil {
+			return err
+		}
+		settings.FeishuAppID = strings.TrimSpace(settings.FeishuAppID)
+		if err := tx.checkPersonalAgentFeishuApp(ctx, previous.UserID, assistantID, settings.FeishuAppID); err != nil {
 			return err
 		}
 		if err := tx.validatePersonalAgentDeviceReferences(ctx, previous.Settings, settings); err != nil {
@@ -262,23 +169,40 @@ func (s *Store) SavePersonalAgentSettings(ctx context.Context, userID string, se
 		if err != nil {
 			return err
 		}
-		if err := tx.updatePersonalAgent(ctx, userID, `settings_json = ?, updated_at = ?`, string(raw), paNow()); err != nil {
+		if err := tx.updatePersonalAgent(ctx, assistantID, `settings_json = ?, updated_at = ?`, string(raw), paNow()); err != nil {
 			return err
 		}
-		saved, err = tx.GetPersonalAgent(ctx, userID)
+		saved, err = tx.GetAssistant(ctx, assistantID)
 		return err
 	})
 	return saved, err
 }
 
-func (s *Store) SetPersonalAgentConnectorLevels(ctx context.Context, userID string, levels []store.ConnectorAccountPermission) (store.PersonalAgent, error) {
+func (s *Store) checkPersonalAgentFeishuApp(ctx context.Context, ownerUserID, assistantID, appID string) error {
+	if appID == "" {
+		return nil
+	}
+	other, err := s.AssistantForFeishuApp(ctx, ownerUserID, appID)
+	if err == nil && other.ID != assistantID {
+		return &store.PersonalAgentFeishuAppInUse{AppID: appID, AssistantID: other.ID, AssistantName: other.Name}
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) SetPersonalAgentConnectorLevels(ctx context.Context, assistantID string, levels []store.ConnectorAccountPermission) (store.PersonalAgent, error) {
 	var saved store.PersonalAgent
 	err := s.withTx(ctx, func(tx *Store) error {
-		agent, err := tx.GetPersonalAgent(ctx, userID)
+		agent, err := tx.GetAssistant(ctx, assistantID)
 		if err != nil {
 			return err
 		}
-		pkg, err := tx.GetPermissionPackage(ctx, userID, agent.PermissionPackageID)
+		pkg, err := tx.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
 		if err != nil {
 			return err
 		}
@@ -286,26 +210,26 @@ func (s *Store) SetPersonalAgentConnectorLevels(ctx context.Context, userID stri
 		if _, err := tx.SavePermissionPackage(ctx, pkg); err != nil {
 			return err
 		}
-		if err := tx.updatePersonalAgent(ctx, userID, `updated_at = ?`, paNow()); err != nil {
+		if err := tx.updatePersonalAgent(ctx, assistantID, `updated_at = ?`, paNow()); err != nil {
 			return err
 		}
-		saved, err = tx.GetPersonalAgent(ctx, userID)
+		saved, err = tx.GetAssistant(ctx, assistantID)
 		return err
 	})
 	return saved, err
 }
 
-func (s *Store) FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (store.PersonalAgent, error) {
-	if _, err := s.conn().ExecContext(ctx, `UPDATE personal_agents
+func (s *Store) FillPersonalAgentTimezone(ctx context.Context, assistantID, timezone string) (store.PersonalAgent, error) {
+	if _, err := s.conn().ExecContext(ctx, `UPDATE assistants
 		SET settings_json = json_set(settings_json, '$.timezone', ?), updated_at = ?
-		WHERE user_id = ? AND coalesce(json_extract(settings_json, '$.timezone'), '') = ''`,
-		timezone, paNow(), userID); err != nil {
+		WHERE id = ? AND coalesce(json_extract(settings_json, '$.timezone'), '') = ''`,
+		timezone, paNow(), assistantID); err != nil {
 		return store.PersonalAgent{}, fmt.Errorf("fill personal agent time zone: %w", err)
 	}
-	return s.GetPersonalAgent(ctx, userID)
+	return s.GetAssistant(ctx, assistantID)
 }
 
-func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string) (store.PersonalAgent, error) {
+func (s *Store) SetPersonalAgentState(ctx context.Context, assistantID, state string) (store.PersonalAgent, error) {
 	if state != store.PersonalAgentActive && state != store.PersonalAgentStopped {
 		return store.PersonalAgent{}, fmt.Errorf("invalid assistant state %q", state)
 	}
@@ -314,14 +238,14 @@ func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string)
 		stoppedAt = now
 	}
 	if err := s.withTx(ctx, func(tx *Store) error {
-		if e := tx.updatePersonalAgent(ctx, userID, `state = ?, stopped_at = ?, updated_at = ?`, state, stoppedAt, now); e != nil {
+		if e := tx.updatePersonalAgent(ctx, assistantID, `state = ?, stopped_at = ?, updated_at = ?`, state, stoppedAt, now); e != nil {
 			return e
 		}
 		if state == store.PersonalAgentStopped {
-			if _, e := tx.conn().ExecContext(ctx, `UPDATE pa_run_controls SET state='stop_requested',revision=revision+1,payload_json=json_set(payload_json,'$.state','stop_requested','$.stopReason','assistant_stopped','$.revision',revision+1,'$.updatedAt',?) WHERE user_id=? AND state='monitoring'`, now, userID); e != nil {
+			if _, e := tx.conn().ExecContext(ctx, `UPDATE pa_run_controls SET state='stop_requested',revision=revision+1,payload_json=json_set(payload_json,'$.state','stop_requested','$.stopReason','assistant_stopped','$.revision',revision+1,'$.updatedAt',?) WHERE assistant_id=? AND state='monitoring'`, now, assistantID); e != nil {
 				return e
 			}
-			if e := tx.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
+			if e := tx.CancelUndispatchedPersonalAgentOperations(ctx, assistantID); e != nil {
 				return e
 			}
 		}
@@ -329,19 +253,19 @@ func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string)
 	}); err != nil {
 		return store.PersonalAgent{}, err
 	}
-	return s.GetPersonalAgent(ctx, userID)
+	return s.GetAssistant(ctx, assistantID)
 }
 
 // MovePersonalAgentHome makes workspaceID on deviceID the assistant's
 // workspace and home (§2); the workspace it leaves joins its former ones,
 // and one it comes back to leaves them.
-func (s *Store) MovePersonalAgentHome(ctx context.Context, userID, workspaceID, deviceID string) (store.PersonalAgent, error) {
+func (s *Store) MovePersonalAgentHome(ctx context.Context, assistantID, workspaceID, deviceID string) (store.PersonalAgent, error) {
 	var moved store.PersonalAgent
 	err := s.withTx(ctx, func(tx *Store) error {
 		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
 			return err
 		}
-		agent, err := tx.GetPersonalAgent(ctx, userID)
+		agent, err := tx.GetAssistant(ctx, assistantID)
 		if err != nil {
 			return err
 		}
@@ -355,21 +279,21 @@ func (s *Store) MovePersonalAgentHome(ctx context.Context, userID, workspaceID, 
 		if err != nil {
 			return err
 		}
-		if err := tx.updatePersonalAgent(ctx, userID, `workspace_id = ?, home_device_id = ?, former_workspace_ids = ?, updated_at = ?`,
+		if err := tx.updatePersonalAgent(ctx, assistantID, `home_workspace_id = ?, home_device_id = ?, former_workspace_ids = ?, updated_at = ?`,
 			workspaceID, deviceID, string(encoded), paNow()); err != nil {
 			return err
 		}
-		moved, err = tx.GetPersonalAgent(ctx, userID)
+		moved, err = tx.GetAssistant(ctx, assistantID)
 		return err
 	})
 	return moved, err
 }
 
-// PersonalAgentChatIntroduced reports whether the person's direct chat on
-// app appID was told the assistant took it over.
-func (s *Store) PersonalAgentChatIntroduced(ctx context.Context, userID, appID string) (bool, error) {
+// PersonalAgentChatIntroduced reports whether the assistant's direct chat on
+// app appID was told it took the chat over.
+func (s *Store) PersonalAgentChatIntroduced(ctx context.Context, assistantID, appID string) (bool, error) {
 	var found int
-	err := s.conn().QueryRowContext(ctx, `SELECT 1 FROM pa_direct_chats WHERE user_id = ? AND app_id = ?`, userID, appID).Scan(&found)
+	err := s.conn().QueryRowContext(ctx, `SELECT 1 FROM pa_direct_chats WHERE assistant_id = ? AND app_id = ?`, assistantID, appID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -381,9 +305,10 @@ func (s *Store) PersonalAgentChatIntroduced(ctx context.Context, userID, appID s
 
 // ClaimPersonalAgentChatIntroduction records that the chat is being told;
 // false when it was already.
-func (s *Store) ClaimPersonalAgentChatIntroduction(ctx context.Context, userID, appID string) (bool, error) {
-	result, err := s.conn().ExecContext(ctx, `INSERT INTO pa_direct_chats (user_id, app_id, introduced_at) VALUES (?, ?, ?)
-		ON CONFLICT (user_id, app_id) DO NOTHING`, userID, appID, paNow())
+func (s *Store) ClaimPersonalAgentChatIntroduction(ctx context.Context, assistantID, userID, appID string) (bool, error) {
+	result, err := s.conn().ExecContext(ctx, `INSERT INTO pa_direct_chats (user_id, assistant_id, app_id, introduced_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (assistant_id, app_id) DO NOTHING`, userID, assistantID, appID, paNow())
 	if err != nil {
 		return false, fmt.Errorf("record direct chat introduction: %w", err)
 	}
@@ -391,22 +316,11 @@ func (s *Store) ClaimPersonalAgentChatIntroduction(ctx context.Context, userID, 
 	return count > 0, nil
 }
 
-func (s *Store) updatePersonalAgent(ctx context.Context, userID, set string, args ...any) error {
-	result, err := s.conn().ExecContext(ctx, `UPDATE personal_agents SET `+set+` WHERE user_id = ?`, append(args, userID)...)
-	if err != nil {
-		return fmt.Errorf("update personal agent: %w", err)
-	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return store.ErrNotFound
-	}
-	return nil
-}
-
-const memoryColumns = `id, user_id, content, origin, status, source_session_id, source_input_id, supersedes, created_at, updated_at, verified_at`
+const memoryColumns = `id, user_id, assistant_id, content, origin, status, source_session_id, source_input_id, supersedes, created_at, updated_at, verified_at`
 
 func scanMemory(row interface{ Scan(...any) error }) (store.PersonalAgentMemoryItem, error) {
 	var item store.PersonalAgentMemoryItem
-	err := row.Scan(&item.ID, &item.UserID, &item.Content, &item.Origin, &item.Status, &item.SourceSessionID,
+	err := row.Scan(&item.ID, &item.UserID, &item.AssistantID, &item.Content, &item.Origin, &item.Status, &item.SourceSessionID,
 		&item.SourceInputID, &item.Supersedes, &item.CreatedAt, &item.UpdatedAt, &item.VerifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, store.ErrNotFound
@@ -444,8 +358,8 @@ func (s *Store) AddPersonalAgentMemory(ctx context.Context, item store.PersonalA
 	if item.Origin == store.PersonalAgentMemoryStated || item.Origin == store.PersonalAgentMemoryEdited {
 		item.VerifiedAt = now
 	}
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_memory (`+memoryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		item.ID, item.UserID, item.Content, item.Origin, item.Status, item.SourceSessionID, item.SourceInputID,
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_memory (`+memoryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		item.ID, item.UserID, item.AssistantID, item.Content, item.Origin, item.Status, item.SourceSessionID, item.SourceInputID,
 		item.Supersedes, item.CreatedAt, item.UpdatedAt, item.VerifiedAt)
 	if err != nil {
 		return item, fmt.Errorf("add personal agent memory: %w", err)
@@ -553,12 +467,12 @@ func (s *Store) ForgetAllPersonalAgentMemory(ctx context.Context, userID string)
 	return count, err
 }
 
-const proposalColumns = `id, user_id, session_id, kind, workspace_id, spec_json, summary, status, created_at, expires_at, decided_at, decided_via, error`
+const proposalColumns = `id, user_id, assistant_id, session_id, kind, workspace_id, spec_json, summary, status, created_at, expires_at, decided_at, decided_via, error`
 
 func scanProposal(row interface{ Scan(...any) error }) (store.PersonalAgentProposal, error) {
 	var proposal store.PersonalAgentProposal
 	var spec string
-	err := row.Scan(&proposal.ID, &proposal.UserID, &proposal.SessionID, &proposal.Kind, &proposal.WorkspaceID, &spec,
+	err := row.Scan(&proposal.ID, &proposal.UserID, &proposal.AssistantID, &proposal.SessionID, &proposal.Kind, &proposal.WorkspaceID, &spec,
 		&proposal.Summary, &proposal.Status, &proposal.CreatedAt, &proposal.ExpiresAt, &proposal.DecidedAt,
 		&proposal.DecidedVia, &proposal.Error)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -569,7 +483,7 @@ func scanProposal(row interface{ Scan(...any) error }) (store.PersonalAgentPropo
 }
 
 func (s *Store) CreatePersonalAgentProposal(ctx context.Context, proposal store.PersonalAgentProposal) (store.PersonalAgentProposal, error) {
-	if proposal.UserID == "" || proposal.Kind == "" || proposal.ExpiresAt == "" {
+	if proposal.UserID == "" || proposal.AssistantID == "" || proposal.Kind == "" || proposal.ExpiresAt == "" {
 		return proposal, errors.New("a proposal needs a person, a kind and an expiry")
 	}
 	if len(proposal.Spec) == 0 {
@@ -577,8 +491,8 @@ func (s *Store) CreatePersonalAgentProposal(ctx context.Context, proposal store.
 	}
 	proposal.ID, proposal.CreatedAt = paID("pap"), paNow()
 	proposal.Status = store.PersonalAgentProposalPending
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_proposals (`+proposalColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '')`,
-		proposal.ID, proposal.UserID, proposal.SessionID, proposal.Kind, proposal.WorkspaceID, string(proposal.Spec),
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_proposals (`+proposalColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '')`,
+		proposal.ID, proposal.UserID, proposal.AssistantID, proposal.SessionID, proposal.Kind, proposal.WorkspaceID, string(proposal.Spec),
 		proposal.Summary, proposal.Status, proposal.CreatedAt, proposal.ExpiresAt)
 	if err != nil {
 		return proposal, fmt.Errorf("create personal agent proposal: %w", err)
@@ -586,14 +500,14 @@ func (s *Store) CreatePersonalAgentProposal(ctx context.Context, proposal store.
 	return proposal, nil
 }
 
-func (s *Store) GetPersonalAgentProposal(ctx context.Context, userID, id string) (store.PersonalAgentProposal, error) {
-	return scanProposal(s.conn().QueryRowContext(ctx, `SELECT `+proposalColumns+` FROM pa_proposals WHERE user_id = ? AND id = ?`, userID, id))
+func (s *Store) GetPersonalAgentProposal(ctx context.Context, assistantID, id string) (store.PersonalAgentProposal, error) {
+	return scanProposal(s.conn().QueryRowContext(ctx, `SELECT `+proposalColumns+` FROM pa_proposals WHERE assistant_id = ? AND id = ?`, assistantID, id))
 }
 
-func (s *Store) ListPersonalAgentProposals(ctx context.Context, userID string, statuses []string) ([]store.PersonalAgentProposal, error) {
+func (s *Store) ListPersonalAgentProposals(ctx context.Context, assistantID string, statuses []string) ([]store.PersonalAgentProposal, error) {
 	filter, args := inStatuses("status", statuses)
-	rows, err := s.reader().QueryContext(ctx, `SELECT `+proposalColumns+` FROM pa_proposals WHERE user_id = ?`+filter+`
-		ORDER BY created_at DESC, rowid DESC`, append([]any{userID}, args...)...)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+proposalColumns+` FROM pa_proposals WHERE assistant_id = ?`+filter+`
+		ORDER BY created_at DESC, rowid DESC`, append([]any{assistantID}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("list personal agent proposals: %w", err)
 	}
@@ -609,7 +523,7 @@ func (s *Store) ListPersonalAgentProposals(ctx context.Context, userID string, s
 	return proposals, rows.Err()
 }
 
-func (s *Store) SetPersonalAgentProposalStatus(ctx context.Context, userID, id string, from []string, status, via, errText string) (store.PersonalAgentProposal, error) {
+func (s *Store) SetPersonalAgentProposalStatus(ctx context.Context, assistantID, id string, from []string, status, via, errText string) (store.PersonalAgentProposal, error) {
 	filter, args := inStatuses("status", from)
 	if filter == "" {
 		return store.PersonalAgentProposal{}, errors.New("a proposal moves from a known status")
@@ -619,12 +533,12 @@ func (s *Store) SetPersonalAgentProposalStatus(ctx context.Context, userID, id s
 		set += `, decided_at = ?, decided_via = ?`
 		setArgs = append(setArgs, paNow(), via)
 	}
-	query := `UPDATE pa_proposals SET ` + set + ` WHERE user_id = ? AND id = ?` + filter
-	result, err := s.conn().ExecContext(ctx, query, append(append(setArgs, userID, id), args...)...)
+	query := `UPDATE pa_proposals SET ` + set + ` WHERE assistant_id = ? AND id = ?` + filter
+	result, err := s.conn().ExecContext(ctx, query, append(append(setArgs, assistantID, id), args...)...)
 	if err != nil {
 		return store.PersonalAgentProposal{}, fmt.Errorf("answer personal agent proposal: %w", err)
 	}
-	proposal, err := s.GetPersonalAgentProposal(ctx, userID, id)
+	proposal, err := s.GetPersonalAgentProposal(ctx, assistantID, id)
 	if err != nil {
 		return proposal, err
 	}
@@ -634,9 +548,9 @@ func (s *Store) SetPersonalAgentProposalStatus(ctx context.Context, userID, id s
 	return proposal, nil
 }
 
-func (s *Store) ExpirePersonalAgentProposals(ctx context.Context, userID, now string) (int, error) {
-	query, args := `UPDATE pa_proposals SET status = ? WHERE user_id = ? AND status = ?`,
-		[]any{store.PersonalAgentProposalExpired, userID, store.PersonalAgentProposalPending}
+func (s *Store) ExpirePersonalAgentProposals(ctx context.Context, assistantID, now string) (int, error) {
+	query, args := `UPDATE pa_proposals SET status = ? WHERE assistant_id = ? AND status = ?`,
+		[]any{store.PersonalAgentProposalExpired, assistantID, store.PersonalAgentProposalPending}
 	if now != "" {
 		query += ` AND expires_at <= ?`
 		args = append(args, now)
@@ -649,11 +563,11 @@ func (s *Store) ExpirePersonalAgentProposals(ctx context.Context, userID, now st
 	return int(count), nil
 }
 
-const taskColumns = `id, user_id, conversation_session_id, session_id, workspace_id, title, status, read_only, created_at, updated_at, last_event_at, ended_at, stuck_since`
+const taskColumns = `id, user_id, assistant_id, conversation_session_id, session_id, workspace_id, title, status, read_only, created_at, updated_at, last_event_at, ended_at, stuck_since`
 
 func scanTask(row interface{ Scan(...any) error }) (store.PersonalAgentTask, error) {
 	var task store.PersonalAgentTask
-	err := row.Scan(&task.ID, &task.UserID, &task.ConversationSessionID, &task.SessionID, &task.WorkspaceID, &task.Title,
+	err := row.Scan(&task.ID, &task.UserID, &task.AssistantID, &task.ConversationSessionID, &task.SessionID, &task.WorkspaceID, &task.Title,
 		&task.Status, &task.ReadOnly, &task.CreatedAt, &task.UpdatedAt, &task.LastEventAt, &task.EndedAt, &task.StuckSince)
 	if errors.Is(err, sql.ErrNoRows) {
 		return task, store.ErrNotFound
@@ -665,7 +579,7 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.Personal
 	var out store.PersonalAgentTask
 	err := s.withTx(ctx, func(tx *Store) error {
 		if task.SessionID != "" {
-			old, e := scanTask(tx.reader().QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE user_id=? AND session_id=? ORDER BY created_at DESC LIMIT 1`, task.UserID, task.SessionID))
+			old, e := scanTask(tx.reader().QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id=? AND session_id=? ORDER BY created_at DESC LIMIT 1`, task.AssistantID, task.SessionID))
 			if e == nil {
 				if old.WorkspaceID != task.WorkspaceID {
 					return store.ErrIdempotencyConflict
@@ -690,7 +604,7 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.Personal
 	return out, err
 }
 func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
-	if task.UserID == "" || task.WorkspaceID == "" {
+	if task.UserID == "" || task.AssistantID == "" || task.WorkspaceID == "" {
 		return task, errors.New("a task needs a person and a workspace")
 	}
 	now := paNow()
@@ -698,8 +612,8 @@ func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.Persona
 	if task.Status == "" {
 		task.Status = store.PersonalAgentTaskRunning
 	}
-	_, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		task.ID, task.UserID, task.ConversationSessionID, task.SessionID, task.WorkspaceID, task.Title, task.Status,
+	_, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.ID, task.UserID, task.AssistantID, task.ConversationSessionID, task.SessionID, task.WorkspaceID, task.Title, task.Status,
 		task.ReadOnly, task.CreatedAt, task.UpdatedAt, task.LastEventAt, task.EndedAt, task.StuckSince)
 	if err != nil {
 		return task, fmt.Errorf("create personal agent task: %w", err)
@@ -707,10 +621,10 @@ func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.Persona
 	return task, nil
 }
 
-func (s *Store) ListPersonalAgentTasks(ctx context.Context, userID string, statuses []string) ([]store.PersonalAgentTask, error) {
+func (s *Store) ListPersonalAgentTasks(ctx context.Context, assistantID string, statuses []string) ([]store.PersonalAgentTask, error) {
 	filter, args := inStatuses("status", statuses)
-	rows, err := s.reader().QueryContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE user_id = ?`+filter+`
-		ORDER BY created_at DESC, rowid DESC`, append([]any{userID}, args...)...)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id = ?`+filter+`
+		ORDER BY created_at DESC, rowid DESC`, append([]any{assistantID}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("list personal agent tasks: %w", err)
 	}
@@ -728,8 +642,8 @@ func (s *Store) ListPersonalAgentTasks(ctx context.Context, userID string, statu
 
 func (s *Store) UpdatePersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) error {
 	result, err := s.conn().ExecContext(ctx, `UPDATE pa_tasks SET conversation_session_id = ?, session_id = ?, title = ?, status = ?, updated_at = ?,
-		last_event_at = ?, ended_at = ?, stuck_since = ? WHERE user_id = ? AND id = ?`,
-		task.ConversationSessionID, task.SessionID, task.Title, task.Status, paNow(), task.LastEventAt, task.EndedAt, task.StuckSince, task.UserID, task.ID)
+		last_event_at = ?, ended_at = ?, stuck_since = ? WHERE assistant_id = ? AND id = ?`,
+		task.ConversationSessionID, task.SessionID, task.Title, task.Status, paNow(), task.LastEventAt, task.EndedAt, task.StuckSince, task.AssistantID, task.ID)
 	if err != nil {
 		return fmt.Errorf("update personal agent task: %w", err)
 	}
@@ -739,10 +653,10 @@ func (s *Store) UpdatePersonalAgentTask(ctx context.Context, task store.Personal
 	return nil
 }
 
-const actionColumns = `id, user_id, session_id, tool, args_summary, workspace_id, decision, outcome, refusal, proposal_id, confirmed_via, error, created_at`
+const actionColumns = `id, user_id, assistant_id, session_id, tool, args_summary, workspace_id, decision, outcome, refusal, proposal_id, confirmed_via, error, created_at`
 
 func (s *Store) RecordPersonalAgentAction(ctx context.Context, record store.PersonalAgentActionRecord, args json.RawMessage) (store.PersonalAgentActionRecord, error) {
-	if record.UserID == "" || record.Tool == "" || record.Outcome == "" {
+	if record.UserID == "" || record.AssistantID == "" || record.Tool == "" || record.Outcome == "" {
 		return record, errors.New("an action record needs a person, a tool and an outcome")
 	}
 	if len(args) == 0 || !json.Valid(args) {
@@ -752,24 +666,24 @@ func (s *Store) RecordPersonalAgentAction(ctx context.Context, record store.Pers
 	record.ID, record.CreatedAt = paID("paa"), formatTime(now)
 	err := s.withTx(ctx, func(tx *Store) error {
 		if _, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_actions (`+actionColumns+`, args_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			record.ID, record.UserID, record.SessionID, record.Tool, record.ArgsSummary, record.WorkspaceID, record.Decision,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			record.ID, record.UserID, record.AssistantID, record.SessionID, record.Tool, record.ArgsSummary, record.WorkspaceID, record.Decision,
 			record.Outcome, record.Refusal, record.ProposalID, record.ConfirmedVia, record.Error, record.CreatedAt, string(args)); err != nil {
 			return fmt.Errorf("record personal agent action: %w", err)
 		}
-		_, err := tx.conn().ExecContext(ctx, `DELETE FROM pa_actions WHERE user_id = ? AND created_at < ?`,
-			record.UserID, formatTime(now.Add(-personalAgentActionRetention)))
+		_, err := tx.conn().ExecContext(ctx, `DELETE FROM pa_actions WHERE assistant_id = ? AND created_at < ?`,
+			record.AssistantID, formatTime(now.Add(-personalAgentActionRetention)))
 		return err
 	})
 	return record, err
 }
 
-func (s *Store) ListPersonalAgentActions(ctx context.Context, userID string, limit int) ([]store.PersonalAgentActionRecord, error) {
+func (s *Store) ListPersonalAgentActions(ctx context.Context, assistantID string, limit int) ([]store.PersonalAgentActionRecord, error) {
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.reader().QueryContext(ctx, `SELECT `+actionColumns+` FROM pa_actions WHERE user_id = ?
-		ORDER BY created_at DESC, rowid DESC LIMIT ?`, userID, limit)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+actionColumns+` FROM pa_actions WHERE assistant_id = ?
+		ORDER BY created_at DESC, rowid DESC LIMIT ?`, assistantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list personal agent actions: %w", err)
 	}
@@ -777,7 +691,7 @@ func (s *Store) ListPersonalAgentActions(ctx context.Context, userID string, lim
 	records := []store.PersonalAgentActionRecord{}
 	for rows.Next() {
 		var record store.PersonalAgentActionRecord
-		if err := rows.Scan(&record.ID, &record.UserID, &record.SessionID, &record.Tool, &record.ArgsSummary, &record.WorkspaceID,
+		if err := rows.Scan(&record.ID, &record.UserID, &record.AssistantID, &record.SessionID, &record.Tool, &record.ArgsSummary, &record.WorkspaceID,
 			&record.Decision, &record.Outcome, &record.Refusal, &record.ProposalID, &record.ConfirmedVia, &record.Error, &record.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -786,24 +700,24 @@ func (s *Store) ListPersonalAgentActions(ctx context.Context, userID string, lim
 	return records, rows.Err()
 }
 
-func (s *Store) PersonalAgentCreatedWorkspace(ctx context.Context, userID, workspaceID string) (bool, error) {
+func (s *Store) PersonalAgentCreatedWorkspace(ctx context.Context, assistantID, workspaceID string) (bool, error) {
 	var created bool
-	err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pa_actions WHERE user_id = ? AND workspace_id = ?
-		AND tool IN (?, ?) AND outcome = ?)`, userID, workspaceID, store.PersonalAgentActionCreateWorkspace,
+	err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pa_actions WHERE assistant_id = ? AND workspace_id = ?
+		AND tool IN (?, ?) AND outcome = ?)`, assistantID, workspaceID, store.PersonalAgentActionCreateWorkspace,
 		store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied).Scan(&created)
 	return created, err
 }
 
-func (s *Store) PersonalAgentConnectorBoundBefore(ctx context.Context, userID, workspaceID, accountID string) (bool, error) {
+func (s *Store) PersonalAgentConnectorBoundBefore(ctx context.Context, assistantID, workspaceID, accountID string) (bool, error) {
 	var bound bool
 	err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pa_actions, json_each(pa_actions.args_json, '$.connectors.add') AS added
-		WHERE pa_actions.user_id = ? AND pa_actions.workspace_id = ? AND pa_actions.outcome = ? AND added.value = ?)`,
-		userID, workspaceID, store.PersonalAgentOutcomeApplied, accountID).Scan(&bound)
+		WHERE pa_actions.assistant_id = ? AND pa_actions.workspace_id = ? AND pa_actions.outcome = ? AND added.value = ?)`,
+		assistantID, workspaceID, store.PersonalAgentOutcomeApplied, accountID).Scan(&bound)
 	return bound, err
 }
 
 func (s *Store) RecordPersonalAgentRoutingDecision(ctx context.Context, decision store.PersonalAgentRoutingDecision) (store.PersonalAgentRoutingDecision, error) {
-	if decision.UserID == "" {
+	if decision.UserID == "" || decision.AssistantID == "" {
 		return decision, errors.New("a routing decision needs a person")
 	}
 	candidates, err := json.Marshal(nonNilStrings(decision.Candidates))
@@ -811,10 +725,10 @@ func (s *Store) RecordPersonalAgentRoutingDecision(ctx context.Context, decision
 		return decision, err
 	}
 	decision.ID, decision.CreatedAt = paID("prd"), paNow()
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_routing_decisions (id, user_id, session_id, input_id, request, request_class,
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_routing_decisions (id, user_id, assistant_id, session_id, input_id, request, request_class,
 		target, workspace_id, confidence, candidates_json, corrected, corrected_workspace_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		decision.ID, decision.UserID, decision.SessionID, decision.InputID, decision.Request, decision.RequestClass, decision.Target,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		decision.ID, decision.UserID, decision.AssistantID, decision.SessionID, decision.InputID, decision.Request, decision.RequestClass, decision.Target,
 		decision.WorkspaceID, decision.Confidence, string(candidates), decision.Corrected, decision.CorrectedWorkspaceID, decision.CreatedAt)
 	if err != nil {
 		return decision, fmt.Errorf("record personal agent routing decision: %w", err)
@@ -822,13 +736,13 @@ func (s *Store) RecordPersonalAgentRoutingDecision(ctx context.Context, decision
 	return decision, nil
 }
 
-func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, userID string, limit int) ([]store.PersonalAgentRoutingDecision, error) {
+func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, assistantID string, limit int) ([]store.PersonalAgentRoutingDecision, error) {
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.reader().QueryContext(ctx, `SELECT id, user_id, session_id, input_id, request, request_class, target, workspace_id,
-		confidence, candidates_json, corrected, corrected_workspace_id, created_at FROM pa_routing_decisions WHERE user_id = ?
-		ORDER BY created_at DESC, rowid DESC LIMIT ?`, userID, limit)
+	rows, err := s.reader().QueryContext(ctx, `SELECT id, user_id, assistant_id, session_id, input_id, request, request_class, target, workspace_id,
+		confidence, candidates_json, corrected, corrected_workspace_id, created_at FROM pa_routing_decisions WHERE assistant_id = ?
+		ORDER BY created_at DESC, rowid DESC LIMIT ?`, assistantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list personal agent routing decisions: %w", err)
 	}
@@ -837,7 +751,7 @@ func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, userID st
 	for rows.Next() {
 		var decision store.PersonalAgentRoutingDecision
 		var candidates string
-		if err := rows.Scan(&decision.ID, &decision.UserID, &decision.SessionID, &decision.InputID, &decision.Request,
+		if err := rows.Scan(&decision.ID, &decision.UserID, &decision.AssistantID, &decision.SessionID, &decision.InputID, &decision.Request,
 			&decision.RequestClass, &decision.Target, &decision.WorkspaceID, &decision.Confidence, &candidates,
 			&decision.Corrected, &decision.CorrectedWorkspaceID, &decision.CreatedAt); err != nil {
 			return nil, err
@@ -864,13 +778,13 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 			args   []any
 		}{
 			{&usage.ActiveSessions, `SELECT COUNT(*) FROM pa_tasks JOIN agent_sessions ON agent_sessions.id = pa_tasks.session_id
-				WHERE pa_tasks.user_id = ? AND agent_sessions.status IN ` + store.ActiveSessionStatusesSQL, []any{agent.UserID}},
-			{&usage.SessionsToday, `SELECT COUNT(*) FROM pa_tasks WHERE user_id = ? AND session_id != '' AND created_at >= ?`,
-				[]any{agent.UserID, windows.DayStart}},
-			{&usage.WorkspacesToday, `SELECT COUNT(*) FROM pa_actions WHERE user_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
-				[]any{agent.UserID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.DayStart}},
-			{&usage.WorkspacesThisWeek, `SELECT COUNT(*) FROM pa_actions WHERE user_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
-				[]any{agent.UserID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.WeekStart}},
+				WHERE pa_tasks.assistant_id = ? AND agent_sessions.status IN ` + store.ActiveSessionStatusesSQL, []any{agent.ID}},
+			{&usage.SessionsToday, `SELECT COUNT(*) FROM pa_tasks WHERE assistant_id = ? AND session_id != '' AND created_at >= ?`,
+				[]any{agent.ID, windows.DayStart}},
+			{&usage.WorkspacesToday, `SELECT COUNT(*) FROM pa_actions WHERE assistant_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
+				[]any{agent.ID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.DayStart}},
+			{&usage.WorkspacesThisWeek, `SELECT COUNT(*) FROM pa_actions WHERE assistant_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
+				[]any{agent.ID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.WeekStart}},
 			{&usage.TurnsThisHour, `SELECT COUNT(*) FROM agent_session_events WHERE session_id IN (` + assistantSessions + `)
 				AND json_extract(payload_json, '$.label') = ? AND created_at >= ?`,
 				[]any{agent.WorkspaceID, store.EventLabelUserMessage, windows.HourAgo}},
@@ -889,16 +803,16 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 				COALESCE(json_extract(payload_json, '$.metadata.turnUsage.inputTokens'), 0) +
 				COALESCE(json_extract(payload_json, '$.metadata.turnUsage.outputTokens'), 0)), 0)
 			FROM agent_session_events WHERE created_at >= ? AND json_type(payload_json, '$.metadata.turnUsage') IS NOT NULL
-			AND session_id IN (`+assistantSessions+` UNION SELECT session_id FROM pa_tasks WHERE user_id = ? AND session_id != '')`,
-			windows.MonthStart, agent.WorkspaceID, agent.UserID).Scan(&usage.TokensThisMonth)
+			AND session_id IN (`+assistantSessions+` UNION SELECT session_id FROM pa_tasks WHERE assistant_id = ? AND session_id != '')`,
+			windows.MonthStart, agent.WorkspaceID, agent.ID).Scan(&usage.TokensThisMonth)
 	})
 	return usage, err
 }
 
 func (s *Store) PersonalAgentActiveSessions(ctx context.Context, agent store.PersonalAgent) ([]string, error) {
 	rows, err := s.conn().QueryContext(ctx, `SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`
-		AND (id IN (`+assistantSessions+`) OR id IN (SELECT session_id FROM pa_tasks WHERE user_id = ? AND session_id != ''))
-		ORDER BY created_at`, agent.WorkspaceID, agent.UserID)
+		AND (id IN (`+assistantSessions+`) OR id IN (SELECT session_id FROM pa_tasks WHERE assistant_id = ? AND session_id != ''))
+		ORDER BY created_at`, agent.WorkspaceID, agent.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list the assistant's active sessions: %w", err)
 	}

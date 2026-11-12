@@ -30,7 +30,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	t.Cleanup(cancel)
 	agent, _ := f.db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.Language = "en"
-	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
@@ -144,7 +144,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 
 	// Nothing reaches a stopped assistant.
 	f.server.assistant.NoteOfflineRefusal(ctx, scope, "create_workspace", assistant.Write{ArgsSummary: `create "Albums" (empty)`, DeviceID: "dev_studio"}, refusal)
-	if _, err := f.db.SetPersonalAgentState(ctx, f.aliceID, store.PersonalAgentStopped); err != nil {
+	if _, err := f.db.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped); err != nil {
 		t.Fatal(err)
 	}
 	connects(time.Hour)

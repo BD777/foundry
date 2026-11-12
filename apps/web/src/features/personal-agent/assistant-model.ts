@@ -155,6 +155,7 @@ const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export type SettingsProblem =
   | { kind: "extraInstructions" }
+  | { kind: "executionModels" }
   | { kind: "time"; field: "dailyDigestTime" | "activeHours" }
   | { kind: "limit"; key: LimitKey; max?: number; min: number };
 
@@ -163,6 +164,26 @@ export function settingsProblems(
   settings: PersonalAgentSettings,
 ): SettingsProblem[] {
   const problems: SettingsProblem[] = [];
+  const completeExecutionModel = (value?: {
+    providerId?: string;
+    runtime?: string;
+    model?: string;
+    workerGroupId?: string;
+  }) =>
+    Boolean(
+      value?.workerGroupId ||
+      (value?.providerId &&
+        value.model &&
+        (value.runtime === "claude" || value.runtime === "codex")),
+    );
+  if (
+    settings.executionModels &&
+    (!completeExecutionModel(settings.executionModels) ||
+      (settings.executionModels.alternatives ?? []).some(
+        (alternative) => !completeExecutionModel(alternative),
+      ))
+  )
+    problems.push({ kind: "executionModels" });
   if (settings.extraInstructions.length > extraInstructionsMaxChars)
     problems.push({ kind: "extraInstructions" });
   if (!clockPattern.test(settings.dailyDigestTime))

@@ -50,6 +50,12 @@ const flag = (argument: string, kind: FlagKind = "string"): FlagSpec => ({
   argument,
   kind,
 });
+const ALIAS_FLAGS: Record<string, FlagSpec> = {
+  "--kind": flag("providerKind"),
+  "--provider": flag("providerId"),
+  "--runtime": flag("runtime"),
+  "--model": flag("model"),
+};
 const field = (
   argument: string,
   name: string,
@@ -236,6 +242,7 @@ export const foundryCommands: Record<
         "--profile": flag("profileId"),
         "--provider": flag("provider"),
         "--model": flag("model"),
+        "--worker-group": flag("workerGroupId"),
         "--context": flag("importedContext"),
         "--issue": flag("issueId"),
         "--fork": flag("forkSessionId"),
@@ -458,6 +465,11 @@ export const foundryCommands: Record<
         "--device": flag("deviceId"),
       },
     },
+    "update-worker": {
+      tool: "update_worker",
+      positional: "deviceId",
+      flags: { "--action": flag("action") },
+    },
   },
   resource: {
     acquire: {
@@ -543,28 +555,6 @@ export const foundryCommands: Record<
         "--code": flag("code"),
       },
     },
-    notes: {
-      tool: "get_model_notes",
-      flags: {
-        "--kind": flag("providerKind"),
-        "--provider": flag("providerId"),
-        "--runtime": flag("runtime"),
-        "--model": flag("model"),
-        "--offset": flag("offset", "number"),
-        "--limit": flag("limit", "number"),
-      },
-    },
-    note: {
-      tool: "append_model_note",
-      flags: {
-        "--kind": flag("providerKind"),
-        "--provider": flag("providerId"),
-        "--runtime": flag("runtime"),
-        "--model": flag("model"),
-        "--body": flag("body"),
-        "--body-file": flag("body", "file"),
-      },
-    },
     "execution-default": {
       tool: "get_execution_default",
       flags: { "--workspace": flag("workspaceId") },
@@ -605,6 +595,68 @@ export const foundryCommands: Record<
         "--devices": flag("deviceIds", "list"),
         "--add-devices": flag("addDevices", "list"),
         "--remove-devices": flag("removeDevices", "list"),
+      },
+    },
+  },
+  // Model guides: what to know before handing work to a model.
+  "model-guides": {
+    list: { tool: "model_guides", fixed: { action: "list" }, flags: {} },
+    get: {
+      tool: "model_guides",
+      positional: "id",
+      fixed: { action: "get" },
+      flags: {
+        "--revision": flag("revision", "number"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
+    },
+    resolve: {
+      tool: "model_guides",
+      fixed: { action: "resolve" },
+      flags: ALIAS_FLAGS,
+    },
+    upsert: {
+      tool: "model_guides",
+      positional: "id",
+      fixed: { action: "upsert" },
+      flags: {
+        "--change": flag("changeSummary"),
+        "--name": flag("displayName"),
+        "--owner": flag("owner"),
+        "--family": flag("family"),
+        "--aliases": flag("aliases", "json"),
+        "--sections": flag("sections", "json"),
+        "--sections-file": flag("sections", "jsonFile"),
+        "--summary": field("sections", "summary"),
+        "--strengths": field("sections", "strengths"),
+        "--weaknesses": field("sections", "weaknesses"),
+        "--briefing": field("sections", "briefing"),
+        "--avoid": field("sections", "avoid"),
+        "--pitfalls": field("sections", "pitfalls"),
+        "--settings": field("sections", "settings"),
+      },
+    },
+    "add-alias": {
+      tool: "model_guides",
+      positional: "id",
+      fixed: { action: "add_alias" },
+      flags: { ...ALIAS_FLAGS, "--change": flag("changeSummary") },
+    },
+    "remove-alias": {
+      tool: "model_guides",
+      positional: "id",
+      fixed: { action: "remove_alias" },
+      flags: { ...ALIAS_FLAGS, "--change": flag("changeSummary") },
+    },
+    observe: {
+      tool: "model_guides",
+      positional: "id",
+      fixed: { action: "observe" },
+      flags: {
+        "--body": flag("body"),
+        "--body-file": flag("body", "file"),
+        "--sessions": flag("sessionIds", "list"),
       },
     },
   },

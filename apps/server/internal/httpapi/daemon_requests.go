@@ -24,14 +24,22 @@ func (h *DaemonHub) SteerAgentSessionWith(ctx context.Context, session store.Age
 		return err
 	}
 	steer.SessionID, steer.InputID = session.ID, strings.TrimSpace(steer.InputID)
-	_, err := callDevice[wsSessionSteeredPayload](ctx, h.connectionFor(session.DeviceID), wsSteerSessionType, steer)
+	connection, err := h.waitForConnection(ctx, session.DeviceID)
+	if err != nil {
+		return err
+	}
+	_, err = callDevice[wsSessionSteeredPayload](ctx, connection, wsSteerSessionType, steer)
 	return err
 }
 
 // CancelAgentSession stops a session on its device. answered reports that
 // the turn had already answered: the device completes it with that answer.
 func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentSession) (answered bool, err error) {
-	value, err := callDevice[wsSessionCanceledPayload](ctx, h.connectionFor(session.DeviceID), wsCancelSessionType,
+	connection, err := h.waitForConnection(ctx, session.DeviceID)
+	if err != nil {
+		return false, err
+	}
+	value, err := callDevice[wsSessionCanceledPayload](ctx, connection, wsCancelSessionType,
 		wsCancelSessionPayload{SessionID: session.ID, InputID: session.Input.ID})
 	return value.Answered, err
 }
@@ -265,5 +273,9 @@ func (h *DaemonHub) RefreshDeviceResources(ctx context.Context, deviceID, reques
 }
 
 func (h *DaemonHub) cancelExactAssistantInput(ctx context.Context, session store.AgentSession) (wsSessionCanceledPayload, error) {
-	return callDevice[wsSessionCanceledPayload](ctx, h.connectionFor(session.DeviceID), wsCancelSessionType, wsCancelSessionPayload{SessionID: session.ID, InputID: session.Input.ID})
+	connection, err := h.waitForConnection(ctx, session.DeviceID)
+	if err != nil {
+		return wsSessionCanceledPayload{}, err
+	}
+	return callDevice[wsSessionCanceledPayload](ctx, connection, wsCancelSessionType, wsCancelSessionPayload{SessionID: session.ID, InputID: session.Input.ID})
 }

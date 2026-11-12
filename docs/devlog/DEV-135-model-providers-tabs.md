@@ -117,3 +117,13 @@
 - 未核对：步骤 2「额度已用完」标签。需要本人在 byte-dev 上按「验证」（仅限所有者，且会发起一次检查）。
 
 - 2026-11-07 01:17 UTC+8：已合入 main，PR #217（squash `1f3063aa`），即本节“后续修正”；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
+
+### 分区菜单分两组（2026-11-12 14:30 UTC+8，[编排会话](https://dev.foundryapp.app/chats/sess_1794464313271186377)）
+
+- 问题：模型服务左侧分区菜单（由 Tab 改为扁平菜单，见当日未提交批次）六项同在「分区」一个标题下；后三项订阅 / API 端点 / 启动环境是同一类：模型从哪来。
+- 改动：`lib/provider-tabs.ts` 新增 `providerTabGroups`（`execution`：默认执行模型、Worker 组、模型说明书；`sources`：订阅、API 端点、启动环境），`providerTabs` 与 `filteredProviderTabs` 由它推出；`ProviderNav` 每组一个 `NavGroup`（与助理设置同一写法）；文案 `page.groups.{execution,sources}` = Execution / Model sources，执行 / 模型来源（与默认执行模型表单里的「模型来源」字段同义）。
+- 检查：`pnpm typecheck` 通过；`test/profiles-feature.test.mjs` 27/27（菜单测试新增两组标题与成员断言）；`audit:*` 中本项涉及的全部通过，未通过的 `feature-architecture`（connectors 文件行数）与 `hints`（模型说明书两处 MutedText）来自同批其他未提交改动，非本项。
+- 部署：Web build `2c57e5cae249809f`（前一版 `eab77450e15d8bf5`，存于 `~/.foundry/server/web-releases/provider-nav-groups/`）。
+- 真机：e2e-alice 只读登录 dev，zh-CN，1280 浅色 / 深色、390 深色；点击「订阅」后 URL 为 `/model-providers/subscriptions`、该项为选中底色、运行时与设备筛选出现；未改任何数据，验后登出、浏览器关闭。英文文案只在单测中核对。
+
+验收：打开 模型服务，左侧菜单应为两组——「执行」下 默认执行模型 / Worker 组 / 模型说明书，「模型来源」下 订阅 / API 端点 / 启动环境；点任一项地址与选中态随之变化，只有「模型来源」组的三项显示运行时与设备筛选。

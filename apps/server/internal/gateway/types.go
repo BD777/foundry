@@ -155,6 +155,9 @@ type ConfirmationRequest struct {
 	BodyDigest  string
 	Fingerprint string
 	Summary     string
+	// AssistantID is the assistant whose permission package required the
+	// confirmation (DEV-191); its proposals hold the card.
+	AssistantID string
 }
 
 // ConfirmationDecision says whether the exact request was accepted. Pending

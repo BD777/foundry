@@ -345,13 +345,19 @@ export function clearClaudeSettingsFiles(): void {
  * `*TOKEN*` names in some versions only, and its shell snapshot writes the
  * whole environment, excluded names included, to a file under CODEX_HOME
  * that every command sources, so the snapshot is off.
+ *
+ * Commands also run without a login shell: `bash -lc` rebuilds PATH from
+ * /etc/profile (Debian and Ubuntu reset it), which drops the session's tool
+ * folder, so pinned package CLIs (olk, ...) were not found.
  */
 export function codexSessionSecretsConfig(): {
   shell_environment_policy: { exclude: string[] };
+  allow_login_shell: boolean;
   features: Record<string, boolean>;
 } {
   return {
     shell_environment_policy: { exclude: [foundryTokenEnvName] },
+    allow_login_shell: false,
     features: { shell_snapshot: false },
   };
 }

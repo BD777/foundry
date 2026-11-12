@@ -59,7 +59,8 @@ func (s *Service) Workspace(ctx context.Context, user string, v store.KnowledgeV
 }
 
 // VaultRequest chooses where a vault's sources live: Kind memory (the
-// person's, one per person) or domain (a project's); CreateNew makes the
+// person's layer, one per person; an assistant's layer is made by
+// EnsureMemoryLayer) or domain (a project's); CreateNew makes the
 // person's private Personal Memory workspace on DeviceID for it.
 type VaultRequest struct {
 	Kind        string `json:"kind"`
@@ -194,6 +195,7 @@ func (s *Service) Drain(ctx context.Context) {
 	s.drainMutations(ctx)
 	s.drainMigrations(ctx)
 	s.drainReplicaForgets(ctx)
+	s.drainLegacyMemory(ctx)
 }
 
 // LegacyTransfer is the person's confirmation of a legacy fact
@@ -213,9 +215,9 @@ func (s *Service) TransferLegacy(ctx context.Context, user string, v store.Knowl
 	return s.store.TransferPersonalAgentMemory(ctx, user, memoryID, v.ID, input.UpdatedAt, input.BodyHash)
 }
 
-// MemoryVault is the person's memory vault, authorized for use now.
+// MemoryVault is the person's memory layer, authorized for use now.
 func (s *Service) MemoryVault(ctx context.Context, user string) (store.KnowledgeVault, error) {
-	return s.AuthorizedVault(ctx, user, flow.Key("vault", user, "memory"))
+	return s.AuthorizedVault(ctx, user, MemoryLayerID(user, ""))
 }
 
 // LocationReset moves a vault that never became active to another folder.
@@ -258,7 +260,7 @@ func (s *Service) AuthorizedVault(ctx context.Context, user, vaultID string) (st
 	return v, err
 }
 
-// PrimaryVault is the person's memory vault, as recorded.
+// PrimaryVault is the person's memory layer, as recorded.
 func (s *Service) PrimaryVault(ctx context.Context, user string) (store.KnowledgeVault, error) {
-	return s.store.GetKnowledgeVault(ctx, user, flow.Key("vault", user, "memory"))
+	return s.store.GetKnowledgeVault(ctx, user, MemoryLayerID(user, ""))
 }

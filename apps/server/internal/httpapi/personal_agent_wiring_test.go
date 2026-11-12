@@ -208,7 +208,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	ctx := context.Background()
 	agent, _ := f.db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.Language = "en"
-	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
@@ -260,7 +260,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	if text := notice(); !strings.Contains(text, "Ended with a question") || !strings.Contains(text, "Bars or lines?") {
 		t.Fatalf("question notice: %q", text)
 	}
-	tasks, _ := f.db.ListPersonalAgentTasks(ctx, f.aliceID, []string{store.PersonalAgentTaskAsking})
+	tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskAsking})
 	if len(tasks) != 1 || tasks[0].SessionID != asking.ID {
 		t.Fatalf("asking tasks = %+v", tasks)
 	}
@@ -279,7 +279,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	if err := f.server.assistant.Supervise(ctx, later.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.server.assistant.Stop(ctx, f.aliceID); err != nil {
+	if _, err := f.server.assistant.Stop(ctx, agent); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -301,6 +301,7 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	t.Cleanup(func() { assistant.CoalesceNotices = previous })
 	f := newDigestFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	converse := func(workspaceID, agentID, prompt string) store.AgentSession {
 		t.Helper()
 		conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
@@ -344,7 +345,7 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	if err := f.db.SetWorkspaceMember(ctx, "ws_pa2", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.MovePersonalAgentHome(ctx, f.aliceID, "ws_pa2", "dev_home"); err != nil {
+	if _, err := f.db.MovePersonalAgentHome(ctx, agent.ID, "ws_pa2", "dev_home"); err != nil {
 		t.Fatal(err)
 	}
 	second := converse("ws_pa2", "agent_pa2", "and a chart")
@@ -359,7 +360,7 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	}
 	f.daemon.complete(again, "Added the chart.")
 	toldIs(second.ID)
-	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, f.aliceID, nil); len(tasks) != 1 || tasks[0].ConversationSessionID != second.ID || tasks[0].Status != store.PersonalAgentTaskDone {
+	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, nil); len(tasks) != 1 || tasks[0].ConversationSessionID != second.ID || tasks[0].Status != store.PersonalAgentTaskDone {
 		t.Fatalf("tasks = %+v", tasks)
 	}
 }
@@ -371,20 +372,21 @@ func TestFeishuDeskActsForThePairedPersonOnly(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	desk := personalAgentDesk{f.server}
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	f.setPolicy(t, store.PersonalAgentActionArchive, store.PersonalAgentAsk)
 	text, _ := f.tool(t, f.token, "archive_workspace", map[string]any{"workspaceId": "ws_alice"})
 	var proposed store.PersonalAgentNeedsConfirmation
 	if err := json.Unmarshal([]byte(text), &proposed); err != nil || proposed.ProposalID == "" {
 		t.Fatalf("archive proposed %s", text)
 	}
-	pending, err := desk.PendingProposals(ctx, f.aliceID)
+	pending, err := desk.PendingProposals(ctx, agent.ID, f.aliceID)
 	if err != nil || len(pending) != 1 || pending[0].ID != proposed.ProposalID {
 		t.Fatalf("pending = %+v %v", pending, err)
 	}
-	if _, err := desk.Accept(ctx, f.bobID, proposed.ProposalID, store.PersonalAgentViaFeishu); err == nil || errorStatus(err) != http.StatusNotFound {
+	if _, err := desk.Accept(ctx, agent.ID, f.bobID, proposed.ProposalID, store.PersonalAgentViaFeishu); err == nil || errorStatus(err) != http.StatusNotFound {
 		t.Fatalf("bob accepted alice's proposal: %v", err)
 	}
-	accepted, err := desk.Accept(ctx, f.aliceID, proposed.ProposalID, store.PersonalAgentViaFeishu)
+	accepted, err := desk.Accept(ctx, agent.ID, f.aliceID, proposed.ProposalID, store.PersonalAgentViaFeishu)
 	if err != nil || accepted.Status != store.PersonalAgentProposalApplied || !strings.Contains(strings.Join(f.lifecycle.calls, ";"), "archive ws_alice") {
 		t.Fatalf("accepted = %+v %v, calls %v", accepted, err, f.lifecycle.calls)
 	}
@@ -396,10 +398,10 @@ func TestFeishuDeskActsForThePairedPersonOnly(t *testing.T) {
 	}
 
 	route, ok, err := desk.Route(ctx, f.aliceID, "xapp_1", "ws_alice")
-	if err != nil || !ok || route.WorkspaceID != "ws_pa" || !route.TakesDirectChats || !route.Introduce || !strings.HasSuffix(route.SettingsURL, personalagent.SettingsPath) {
+	if err != nil || !ok || route.AssistantID != agent.ID || route.WorkspaceID != "ws_pa" || !route.TakesDirectChats || !route.Introduce || !strings.HasSuffix(route.SettingsURL, "/assistants/"+agent.ID+"/settings") {
 		t.Fatalf("route = %+v %v %v", route, ok, err)
 	}
-	if !desk.ClaimIntroduction(ctx, f.aliceID, "xapp_1") || desk.ClaimIntroduction(ctx, f.aliceID, "xapp_1") {
+	if !desk.ClaimIntroduction(ctx, agent.ID, f.aliceID, "xapp_1") || desk.ClaimIntroduction(ctx, agent.ID, f.aliceID, "xapp_1") {
 		t.Fatal("the introduction is claimed once")
 	}
 	if route, _, _ = desk.Route(ctx, f.aliceID, "xapp_1", "ws_alice"); route.Introduce {
@@ -407,6 +409,98 @@ func TestFeishuDeskActsForThePairedPersonOnly(t *testing.T) {
 	}
 	if _, ok, _ := desk.Route(ctx, f.bobID, "xapp_1", "ws_bob"); ok {
 		t.Fatal("bob, without an assistant, has one")
+	}
+}
+
+// Each Feishu app reaches the assistant that reserves it; an unclaimed app
+// keeps the old default-assistant behavior. The introduction is per assistant
+// and app, and a second assistant cannot reserve an app already in use.
+func TestFeishuAppsChooseTheirBoundAssistant(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	desk := personalAgentDesk{f.server}
+
+	first, err := f.server.store.RenameAssistant(ctx, defaultAssistantOf(t, f.server, f.aliceID).ID, "Personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Settings.FeishuAppID = "xapp_personal"
+	if first, err = f.server.store.SavePersonalAgentSettings(ctx, first.ID, first.Settings); err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.server.store.CreatePersonalAgent(ctx, store.PersonalAgent{
+		UserID: f.aliceID, Name: "Research", WorkspaceID: "ws_alice", HomeDeviceID: "dev_alice",
+		Settings: personalagent.DefaultSettings(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.Settings.FeishuAppID = "xapp_research"
+	if second, err = f.server.store.SavePersonalAgentSettings(ctx, second.ID, second.Settings); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		appID string
+		want  store.PersonalAgent
+	}{
+		{"xapp_personal", first},
+		{"xapp_research", second},
+		{"xapp_unbound", first},
+	} {
+		route, ok, err := desk.Route(ctx, f.aliceID, test.appID, "ws_project")
+		if err != nil || !ok || route.AssistantID != test.want.ID || route.WorkspaceID != test.want.WorkspaceID {
+			t.Fatalf("route %s = %+v %v %v, want %s", test.appID, route, ok, err, test.want.ID)
+		}
+	}
+	if route, _, _ := desk.Route(ctx, f.aliceID, "xapp_personal", "ws_project"); !route.Introduce {
+		t.Fatal("the bound app was not introduced")
+	}
+	if !desk.ClaimIntroduction(ctx, first.ID, f.aliceID, "xapp_personal") {
+		t.Fatal("claim the first app's introduction")
+	}
+	if route, _, _ := desk.Route(ctx, f.aliceID, "xapp_personal", "ws_project"); route.Introduce {
+		t.Fatal("the first app was introduced twice")
+	}
+	if route, _, _ := desk.Route(ctx, f.aliceID, "xapp_research", "ws_project"); !route.Introduce {
+		t.Fatal("another assistant's introduction was consumed by the first assistant")
+	}
+
+	for _, inbox := range []struct {
+		appID       string
+		assistantID string
+		messageID   string
+	}{
+		{"xapp_personal", first.ID, "om_personal"},
+		{"xapp_research", second.ID, "om_research"},
+		{"xapp_unbound", first.ID, "om_unbound"},
+	} {
+		route, ok, err := desk.Route(ctx, f.aliceID, inbox.appID, "ws_project")
+		if err != nil || !ok || route.AssistantID != inbox.assistantID {
+			t.Fatalf("route before inbox %s = %+v %v %v", inbox.appID, route, ok, err)
+		}
+		if _, err := desk.CaptureInbox(ctx, route.AssistantID, f.aliceID, "hello from "+inbox.appID, store.PersonalAgentInboxOrigin{
+			AppID: inbox.appID, ChatID: "oc_" + inbox.appID, MessageID: inbox.messageID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstInbox, err := f.server.store.ListPersonalAgentInbox(ctx, first.ID, 10)
+	if err != nil || len(firstInbox) != 2 {
+		t.Fatalf("first assistant inbox = %+v %v, want its app and the fallback", firstInbox, err)
+	}
+	secondInbox, err := f.server.store.ListPersonalAgentInbox(ctx, second.ID, 10)
+	if err != nil || len(secondInbox) != 1 || secondInbox[0].Origin.AppID != "xapp_research" {
+		t.Fatalf("second assistant inbox = %+v %v", secondInbox, err)
+	}
+
+	conflictSettings := second.Settings
+	conflictSettings.FeishuAppID = first.Settings.FeishuAppID
+	body, _ := json.Marshal(conflictSettings)
+	conflict := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/assistants/"+second.ID+"/settings", string(body)))
+	expectStatus(t, conflict, http.StatusConflict, "reuse another assistant's Feishu app")
+	if response := conflict.Body.String(); !strings.Contains(response, "Personal") || !strings.Contains(response, "xapp_personal") {
+		t.Fatalf("conflict does not name the assistant using the app: %s", response)
 	}
 }
 
@@ -486,6 +580,7 @@ func TestSetupAndMovingTheAssistantsHome(t *testing.T) {
 func TestAssistantConversationsShowTheirRole(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	read := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/agent-sessions/"+f.conversation.ID+"?events=none", ""))
 	expectStatus(t, read, http.StatusOK, "read the conversation")
 	var session store.AgentSession
@@ -514,7 +609,7 @@ func TestAssistantConversationsShowTheirRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaces := []store.WorkspaceProjection{{ID: "ws_pa", Kind: store.WorkspaceKindPersonalAgent}, {ID: "ws_made", Kind: store.WorkspaceKindProject}, {ID: "ws_alice"}}
-	f.server.store.RecordPersonalAgentAction(ctx, store.PersonalAgentActionRecord{UserID: f.aliceID, Tool: store.PersonalAgentActionCreateWorkspace,
+	f.server.store.RecordPersonalAgentAction(ctx, store.PersonalAgentActionRecord{AssistantID: agent.ID, UserID: f.aliceID, Tool: store.PersonalAgentActionCreateWorkspace,
 		WorkspaceID: "ws_made", Outcome: store.PersonalAgentOutcomeApplied}, nil)
 	if ordered := f.server.defaultWorkspacesFirst(ctx, f.aliceID, workspaces); ordered[0].ID != "ws_alice" {
 		t.Fatalf("the default workspace is %s", ordered[0].ID)

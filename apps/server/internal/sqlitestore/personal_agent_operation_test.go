@@ -9,11 +9,11 @@ import (
 
 func TestPersonalAgentOperationFences(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", Text: "Prepare a comparison", Plan: &store.PersonalAgentItemPlan{Mode: "record", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Prepare a comparison", Plan: &store.PersonalAgentItemPlan{Mode: "record", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	op := store.PersonalAgentOperation{ID: "op", UserID: "p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "input", Prompt: "Compare", RequestHash: "hash"}
+	op := store.PersonalAgentOperation{ID: "op", UserID: "p", AssistantID: "asst_p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "input", Prompt: "Compare", RequestHash: "hash"}
 	if _, err = db.CapturePersonalAgentOperation(ctx, op); err == nil {
 		t.Fatal("record-only item dispatched")
 	}
@@ -80,22 +80,22 @@ func TestPersonalAgentOperationFences(t *testing.T) {
 	if _, err = db.SavePersonalAgentOperation(ctx, delivered); err != nil {
 		t.Fatal(err)
 	}
-	actual, _ := db.GetPersonalAgentItem(ctx, "p", item.ID)
+	actual, _ := db.GetPersonalAgentItem(ctx, "asst_p", item.ID)
 	if actual.Status != "open" {
 		t.Fatal("session completion closed item")
 	}
 }
 func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	dependency, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", Text: "Approve inputs"})
+	dependency, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Approve inputs"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", Text: "Use inputs", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws", Dependencies: []string{dependency.ID}}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Use inputs", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws", Dependencies: []string{dependency.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := db.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "op", UserID: "p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "use", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "input", Prompt: "Use", RequestHash: "hash"})
+	op, err := db.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "op", UserID: "p", AssistantID: "asst_p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "use", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "input", Prompt: "Use", RequestHash: "hash"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,29 +118,29 @@ func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 
 func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", Text: "Synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := db.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "pending-op", UserID: "p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "unique-input", Prompt: "Compare", RequestHash: "hash"})
+	op, err := db.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "pending-op", UserID: "p", AssistantID: "asst_p", ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws", SourceSessionID: "parent", InputID: "unique-input", Prompt: "Compare", RequestHash: "hash"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := db.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{ID: "accepted-snapshot", UserID: "p", InputID: op.InputID, Role: "executor", WorkspaceID: "ws", ConfigHash: "config"})
+	snapshot, err := db.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{ID: "accepted-snapshot", UserID: "p", AssistantID: "asst_p", InputID: op.InputID, Role: "executor", WorkspaceID: "ws", ConfigHash: "config"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.BindPersonalAgentRunSnapshot(ctx, "p", snapshot.ID, "a-deleted-session"); err != nil {
+	if err = db.BindPersonalAgentRunSnapshot(ctx, "asst_p", snapshot.ID, "a-deleted-session"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.CancelPendingPersonalAgentOperation(ctx, "p", op.ID, op.Revision); err == nil {
+	if _, err = db.CancelPendingPersonalAgentOperation(ctx, "asst_p", op.ID, op.Revision); err == nil {
 		t.Fatal("absence of session event erased the immutable acceptance")
 	}
 	op.InputID = "unsent-input"
 	op.ID = "other-pending-op"
 	op.StepKey = "later"
 	op.ItemID = ""
-	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", Text: "Other synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Other synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelled, err := db.CancelPendingPersonalAgentOperation(ctx, "p", op.ID, op.Revision)
+	cancelled, err := db.CancelPendingPersonalAgentOperation(ctx, "asst_p", op.ID, op.Revision)
 	if err != nil || cancelled.Status != "cancelled" || cancelled.SessionID != "" {
 		t.Fatalf("unaccepted intent not safely cancelled %+v %v", cancelled, err)
 	}

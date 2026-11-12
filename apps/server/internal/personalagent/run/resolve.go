@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -19,15 +21,28 @@ import (
 // allowed the computer's default instead (whenUnavailable).
 const ReasonUsedDeviceDefault = "unavailable_used_device_default"
 
-// Resolve chooses once from the accounts of the data workspace.
-// An explicit choice never falls back to a different account implicitly.
+const (
+	ReasonExecutionDefault     = "execution_default"
+	ReasonExecutionAlternative = "execution_alternative"
+)
+
+// Resolve chooses once from the accounts of the data workspace. A new
+// executor uses its execution model's default.
 func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role, workspaceID string) (store.PersonalAgentRunSnapshot, error) {
+	return s.resolve(ctx, agent, role, workspaceID, "default")
+}
+
+// ResolveExecutor resolves a new helper from the default or one named
+// alternative. A continued session keeps its own model through PinSession.
+func (s *Resolver) ResolveExecutor(ctx context.Context, agent store.PersonalAgent, workspaceID, executionChoice string) (store.PersonalAgentRunSnapshot, error) {
+	return s.resolve(ctx, agent, "executor", workspaceID, executionChoice)
+}
+
+// An explicit choice never falls back to a different account implicitly.
+func (s *Resolver) resolve(ctx context.Context, agent store.PersonalAgent, role, workspaceID, executionChoice string) (store.PersonalAgentRunSnapshot, error) {
 	preference, err := personalagent.RunPreference(agent.Settings, role)
 	if err != nil {
 		return store.PersonalAgentRunSnapshot{}, invalid("%v", err)
-	}
-	if preference.Disabled {
-		return store.PersonalAgentRunSnapshot{}, invalid("this assistant role is disabled")
 	}
 	if workspaceID == "" && role == "coordinator" {
 		workspaceID = agent.WorkspaceID
@@ -50,14 +65,20 @@ func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role,
 	if !store.WorkspaceRoleAtLeast(roles[workspace.ID], required) {
 		return store.PersonalAgentRunSnapshot{}, &personalagent.Refusal{Status: http.StatusForbidden, Err: errors.New("workspace permission does not allow this role")}
 	}
+	if workspace.ID != agent.WorkspaceID {
+		pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+		if err != nil {
+			return store.PersonalAgentRunSnapshot{}, err
+		}
+		if !(permission.Access{Applicable: true, Agent: agent, Package: pkg}).WorkspaceAllowed(workspace.ID) {
+			return store.PersonalAgentRunSnapshot{}, &personalagent.Refusal{Status: http.StatusForbidden, Err: errors.New("the assistant's permissions do not include this workspace")}
+		}
+	}
 	if err := store.RequireDeviceAvailable(ctx, s.store, workspace.DeviceID); err != nil {
 		return store.PersonalAgentRunSnapshot{}, err
 	}
 	if role != "coordinator" && !personalagent.DeviceSettings(agent.Settings.Devices, workspace.DeviceID, agent.HomeDeviceID).AllowWork {
 		return store.PersonalAgentRunSnapshot{}, invalid("execution_on_device_not_allowed")
-	}
-	if preference.DeviceID != "" && preference.DeviceID != workspace.DeviceID {
-		return store.PersonalAgentRunSnapshot{}, invalid("execution_location_mismatch: this role runs on the data workspace's computer")
 	}
 	if workspace.ArchivedAt != "" || workspace.UnavailableOnDevice != nil {
 		return store.PersonalAgentRunSnapshot{}, invalid("workspace_unavailable")
@@ -65,6 +86,19 @@ func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role,
 	accounts, err := s.accounts.WorkspaceAccounts(ctx, workspace, agent.UserID)
 	if err != nil {
 		return store.PersonalAgentRunSnapshot{}, err
+	}
+	preferenceReason := "configured"
+	if role == "executor" {
+		preference, preferenceReason, err = s.executorPreference(ctx, agent, workspace, executionChoice)
+		if err != nil {
+			return store.PersonalAgentRunSnapshot{}, err
+		}
+	}
+	if preference.Disabled {
+		return store.PersonalAgentRunSnapshot{}, invalid("this assistant role is disabled")
+	}
+	if preference.DeviceID != "" && preference.DeviceID != workspace.DeviceID {
+		return store.PersonalAgentRunSnapshot{}, invalid("execution_location_mismatch: this role runs on the data workspace's computer")
 	}
 	pick := func(profileID, runtime string) (Account, bool) {
 		if profileID == "device_default" {
@@ -78,7 +112,7 @@ func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role,
 		return Account{}, false
 	}
 	chosen, found := pick(preference.ProfileID, preference.Runtime)
-	reason := "configured"
+	reason := preferenceReason
 	if preference.ProfileID == "device_default" {
 		reason = "device_default"
 	}
@@ -132,19 +166,174 @@ func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role,
 		return store.PersonalAgentRunSnapshot{}, err
 	}
 	return store.PersonalAgentRunSnapshot{
-		UserID: agent.UserID, Role: role, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, AccountLabel: profile.AccountLabel,
+		UserID: agent.UserID, AssistantID: agent.ID, Role: role, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, AccountLabel: profile.AccountLabel,
 		Runtime: chosen.Runtime, ProfileID: chosen.ProfileID, AgentID: chosen.Agent.ID, Model: model, Effort: effort,
 		ProfileFingerprint: chosen.Agent.ProfileFingerprint, ProviderOrigin: origin, ProviderConfigHash: providerConfigHash, ConfigHash: configHash,
 		TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes, SelectionReason: reason,
 	}, nil
 }
 
+type executorModels struct {
+	defaultChoice store.ExecutionModelChoice
+	alternatives  []store.ExecutionModelChoice
+}
+
+func (s *Resolver) executorModels(ctx context.Context, agent store.PersonalAgent, workspaceID string) (executorModels, bool, error) {
+	if settings := agent.Settings.ExecutionModels; settings != nil {
+		return executorModels{
+			defaultChoice: store.ExecutionModelChoice{
+				ProviderKind: settings.ProviderKind, ProviderID: settings.ProviderID,
+				Runtime: settings.Runtime, Model: settings.Model, WorkerGroupID: settings.WorkerGroupID,
+				Effort: settings.Effort,
+			},
+			alternatives: settings.Alternatives,
+		}, true, nil
+	}
+	for _, scope := range []string{workspaceID, ""} {
+		stored, err := s.store.GetExecutionDefault(ctx, agent.UserID, scope)
+		if errors.Is(err, store.ErrExecutionDefaultNotFound) {
+			continue
+		}
+		if err != nil {
+			return executorModels{}, false, err
+		}
+		return executorModels{
+			defaultChoice: store.ExecutionModelChoice{
+				ProviderKind: store.ExecutionModelChoiceProviderKind(stored.ProviderKind),
+				ProviderID:   stored.ProviderID, Runtime: store.NativeRuntimeID(stored.Runtime),
+				Model: stored.Model, WorkerGroupID: stored.WorkerGroupID, Effort: stored.Effort,
+			},
+			alternatives: stored.Alternatives,
+		}, true, nil
+	}
+	return executorModels{}, false, nil
+}
+
+func normalizedExecutionChoice(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "default"
+	}
+	return value
+}
+
+func selectedExecutionChoice(models executorModels, executionChoice string) (store.ExecutionModelChoice, string, error) {
+	choice := normalizedExecutionChoice(executionChoice)
+	if choice == "default" {
+		return models.defaultChoice, ReasonExecutionDefault, nil
+	}
+	value := strings.TrimPrefix(choice, "alternative:")
+	if index, err := strconv.Atoi(value); err == nil && index >= 1 && index <= len(models.alternatives) {
+		return models.alternatives[index-1], ReasonExecutionAlternative, nil
+	}
+	for _, alternative := range models.alternatives {
+		if strings.EqualFold(alternative.ID, value) || strings.EqualFold(personalagent.ExecutionChoiceID(alternative), value) {
+			return alternative, ReasonExecutionAlternative, nil
+		}
+	}
+	return store.ExecutionModelChoice{}, "", invalid("executionChoice %q is not this execution model's default or one of its alternatives; use default, an alternative's 1-based number, or its id", executionChoice)
+}
+
+func validateExecutionChoice(choice store.ExecutionModelChoice) error {
+	if choice.WorkerGroupID != "" {
+		if choice.ProviderID != "" || choice.Runtime != "" || choice.Model != "" || choice.Effort != "" {
+			return invalid("an execution choice must be a worker group or a provider with a model, not both")
+		}
+		return nil
+	}
+	if choice.ProviderID == "" || choice.Model == "" || (choice.Runtime != "claude" && choice.Runtime != "codex") {
+		return invalid("an execution choice needs workerGroupId, or providerId, runtime and model")
+	}
+	return nil
+}
+
+// ValidateExecutorChoice refuses a named alternative that this helper's
+// effective execution model does not offer. It does not reserve a worker
+// group member or inspect accounts: delivery still waits for availability.
+func (s *Resolver) ValidateExecutorChoice(ctx context.Context, agent store.PersonalAgent, workspaceID, executionChoice string) error {
+	models, found, err := s.executorModels(ctx, agent, workspaceID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		if normalizedExecutionChoice(executionChoice) != "default" {
+			return invalid("executionChoice %q is unavailable because this helper has no execution model alternatives; use default", executionChoice)
+		}
+		return nil
+	}
+	choice, _, err := selectedExecutionChoice(models, executionChoice)
+	if err != nil {
+		return err
+	}
+	return validateExecutionChoice(choice)
+}
+
+func (s *Resolver) executorPreference(ctx context.Context, agent store.PersonalAgent, workspace store.WorkspaceProjection, executionChoice string) (store.PersonalAgentRunPreference, string, error) {
+	models, found, err := s.executorModels(ctx, agent, workspace.ID)
+	if err != nil {
+		return store.PersonalAgentRunPreference{}, "", err
+	}
+	if !found {
+		if normalizedExecutionChoice(executionChoice) != "default" {
+			return store.PersonalAgentRunPreference{}, "", invalid("executionChoice %q is unavailable because this helper has no execution model alternatives; use default", executionChoice)
+		}
+		preference, err := personalagent.RunPreference(agent.Settings, "executor")
+		if err != nil {
+			return store.PersonalAgentRunPreference{}, "", invalid("%v", err)
+		}
+		reason := "configured"
+		if preference.ProfileID == "device_default" {
+			reason = "device_default"
+		}
+		return preference, reason, nil
+	}
+	choice, reason, err := selectedExecutionChoice(models, executionChoice)
+	if err != nil {
+		return store.PersonalAgentRunPreference{}, "", err
+	}
+	if err := validateExecutionChoice(choice); err != nil {
+		return store.PersonalAgentRunPreference{}, "", err
+	}
+	if choice.WorkerGroupID != "" {
+		group, err := s.store.GetWorkerGroup(ctx, choice.WorkerGroupID)
+		if errors.Is(err, store.ErrWorkerGroupNotFound) || err == nil && group.OwnerUserID != agent.UserID {
+			return store.PersonalAgentRunPreference{}, "", invalid("worker group %q is not one of this person's groups", choice.WorkerGroupID)
+		}
+		if err != nil {
+			return store.PersonalAgentRunPreference{}, "", err
+		}
+		member, err := s.accounts.ChooseWorkerGroupMember(ctx, group, workspace)
+		if err != nil {
+			return store.PersonalAgentRunPreference{}, "", err
+		}
+		choice.ProviderKind, choice.ProviderID = store.ExecutionModelChoiceProviderKind(member.ProviderKind), member.ProviderID
+		choice.Runtime, choice.Model, choice.Effort = member.Runtime, member.Model, member.Effort
+	}
+	base, err := personalagent.RunPreference(agent.Settings, "executor")
+	if err != nil {
+		return store.PersonalAgentRunPreference{}, "", invalid("%v", err)
+	}
+	preference := store.PersonalAgentRunPreference{
+		ProfileID: choice.ProviderID, Runtime: string(choice.Runtime), Model: choice.Model, Effort: choice.Effort,
+		TokenBudget: base.TokenBudget, TimeoutMinutes: base.TimeoutMinutes,
+	}
+	if err := personalagent.ValidateRunPreference(preference); err != nil {
+		return store.PersonalAgentRunPreference{}, "", invalid("%v", err)
+	}
+	return preference, reason, nil
+}
+
 // Pin is the run of the assistant's operationID, resolved the first time
 // and kept: asked again, it answers the same snapshot, and refuses another
 // role or workspace for the operation.
 func (s *Resolver) Pin(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID string) (store.PersonalAgentRunSnapshot, error) {
+	return s.PinExecutor(ctx, agent, operationID, role, workspaceID, "default")
+}
+
+// PinExecutor is Pin with the coordinator's choice for a new helper.
+func (s *Resolver) PinExecutor(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID, executionChoice string) (store.PersonalAgentRunSnapshot, error) {
 	id := flow.Key("parun", agent.UserID, operationID)
-	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.UserID, id)
+	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, id)
 	if err == nil {
 		if existing.Role != role || existing.WorkspaceID != workspaceID {
 			return existing, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrIdempotencyConflict}
@@ -154,7 +343,12 @@ func (s *Resolver) Pin(ctx context.Context, agent store.PersonalAgent, operation
 	if !errors.Is(err, store.ErrNotFound) {
 		return existing, err
 	}
-	snapshot, err := s.Resolve(ctx, agent, role, workspaceID)
+	var snapshot store.PersonalAgentRunSnapshot
+	if role == "executor" {
+		snapshot, err = s.ResolveExecutor(ctx, agent, workspaceID, executionChoice)
+	} else {
+		snapshot, err = s.Resolve(ctx, agent, role, workspaceID)
+	}
 	if err != nil {
 		return snapshot, err
 	}
@@ -174,7 +368,7 @@ const ReasonContinuedSession = "continued_session"
 // permission still allow it, never the role's account choice.
 func (s *Resolver) PinSession(ctx context.Context, agent store.PersonalAgent, operationID, role string, session store.AgentSession) (store.PersonalAgentRunSnapshot, error) {
 	id := flow.Key("parun", agent.UserID, operationID)
-	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.UserID, id)
+	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, id)
 	if err == nil {
 		if existing.Role != role || existing.WorkspaceID != session.WorkspaceID {
 			return existing, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrIdempotencyConflict}
@@ -216,7 +410,7 @@ func (s *Resolver) PinSession(ctx context.Context, agent store.PersonalAgent, op
 		return store.PersonalAgentRunSnapshot{}, err
 	}
 	return s.store.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{
-		ID: id, InputID: flow.InputID(operationID), UserID: agent.UserID, Role: role,
+		ID: id, InputID: flow.InputID(operationID), UserID: agent.UserID, AssistantID: agent.ID, Role: role,
 		WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Runtime: session.Provider, ProfileID: session.ProfileID,
 		AgentID: session.AgentID, Model: session.Model, Effort: effort, ConfigHash: configHash,
 		TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes, SelectionReason: ReasonContinuedSession,
@@ -269,7 +463,7 @@ func (s *Resolver) CheckPinned(ctx context.Context, snapshot store.PersonalAgent
 	if !store.WorkspaceRoleAtLeast(roles[workspace.ID], required) {
 		return fmt.Errorf("workspace permission changed")
 	}
-	agent, e := s.store.GetPersonalAgent(ctx, snapshot.UserID)
+	agent, e := s.store.GetAssistant(ctx, snapshot.AssistantID)
 	if e != nil {
 		return e
 	}

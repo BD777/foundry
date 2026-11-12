@@ -248,7 +248,7 @@ async function openConversation() {
   inbox.length = 0;
   const view = {};
   function Harness() {
-    view.conversation = useAssistantConversation(workspaceId);
+    view.conversation = useAssistantConversation(undefined, workspaceId);
     return null;
   }
   const root = createRoot(window.document.createElement("div"));

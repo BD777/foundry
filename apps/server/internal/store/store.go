@@ -172,6 +172,7 @@ type Store interface {
 	DeleteWorkspace(ctx context.Context, id string) (WorkspaceProjection, error)
 
 	ListDevices(ctx context.Context) ([]DeviceProjection, error)
+	DevicePresenceStore
 	// DeviceRemoved reports whether the device is tombstoned. Hub code uses it
 	// inside the connection-map critical section to close registrations that
 	// raced a removal.
@@ -185,9 +186,9 @@ type Store interface {
 	DeleteProfile(ctx context.Context, id string) error
 	ListDeviceProfiles(ctx context.Context, deviceID string) ([]DeviceProfileBinding, error)
 	SetDeviceProfiles(ctx context.Context, input SetDeviceProfilesInput) error
-	ModelNoteStore
+	ModelGuideStore
 	ExecutionDefaultStore
-	ModelPoolStore
+	WorkerGroupStore
 	SessionRetryStore
 
 	ListDeviceSkillRoots(ctx context.Context, deviceID string) ([]DeviceSkillRoot, error)

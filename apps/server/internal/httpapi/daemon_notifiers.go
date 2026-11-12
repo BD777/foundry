@@ -31,6 +31,7 @@ type (
 	deviceReportNotifier interface {
 		registrationChanged(registration store.DaemonRegistration)
 		reported(ctx context.Context, deviceID string, changes store.DaemonChanges)
+		changed(ctx context.Context, deviceID string) bool
 	}
 	chatSyncNotifier interface {
 		chatsSynced(ctx context.Context, input store.SyncChatsInput, changes store.DaemonChanges)

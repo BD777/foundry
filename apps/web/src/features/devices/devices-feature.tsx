@@ -40,6 +40,7 @@ import { deviceReadiness } from "../../lib/device-readiness";
 import { useRuntimeInstalls } from "../../lib/runtime-installs";
 import { DeviceStatusNotices, PairedReadiness } from "./device-readiness-views";
 import { PageHeader } from "../../components/ui/page-header";
+import { deviceConnection } from "../../lib/device-connection";
 
 export type DeviceSection =
   "agents" | "resources" | "skills" | "settings" | "diagnostics";
@@ -72,6 +73,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
     onRefresh,
   } = props;
   const device = devices.find((row) => row.id === selectedDeviceId);
+  const selectedConnection = deviceConnection(device);
   const ownProfiles = props.agentProfiles.filter(
     (row) => row.deviceId === selectedDeviceId,
   );
@@ -225,12 +227,14 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                   </Button>
                 ) : null}
                 <Badge
-                  tone={device.status === "connected" ? "online" : "neutral"}
+                  tone={selectedConnection === "online" ? "online" : "neutral"}
                 >
                   {t(
-                    device.status === "connected"
+                    selectedConnection === "online"
                       ? "status.online"
-                      : "status.offline",
+                      : selectedConnection === "reconnecting"
+                        ? "status.reconnecting"
+                        : "status.offline",
                   )}
                 </Badge>
               </>

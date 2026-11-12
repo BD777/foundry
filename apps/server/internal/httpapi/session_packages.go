@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -101,6 +102,25 @@ func containsDevice(devices []string, deviceID string) bool {
 		}
 	}
 	return false
+}
+
+// workspacePackageSkills is the one decision of which connector package
+// Skills a workspace's session on deviceID gets, shared by session dispatch
+// and the composer's "/" menu: the connectors the session receives, the
+// packages enabled on the device (kinds: connectorKinds, or
+// the kinds the Workspace is bound to before a session exists), then the Workspace's own choices and
+// exclusions on top (mergePackageSkillRefs). base is the Workspace's refs
+// the package Skills are added to.
+func workspacePackageSkills(ctx context.Context, db Backend, ownerUserID, workspaceID, deviceID string, kinds map[string]bool, base []store.SessionSkillRef) ([]store.SessionSkillRef, []store.SessionToolPin, error) {
+	extra, pins, err := sessionPackageSkills(ctx, db, ownerUserID, deviceID, kinds)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve connector package skills: %w", err)
+	}
+	merged, err := mergePackageSkillRefs(ctx, db, workspaceID, base, extra)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merge connector package skills: %w", err)
+	}
+	return merged, pins, nil
 }
 
 // mergePackageSkillRefs adds package Skills after Workspace choices. An

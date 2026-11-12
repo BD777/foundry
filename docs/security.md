@@ -427,9 +427,11 @@ started with the session's connector environment and keeps using it.
   it could already use them during an open turn.
 - **Lifetime.** At most `HeldSessionMaxIdle` (24 hours) after the session's
   last turn; within that, until no claim has been heard for 2 minutes. On the
-  device the profile and forwarders stay while the agent works on its own,
-  and are removed 30 seconds after it stops (`holdUntilNativeWorkEnds`), or
-  at the next start after a crash.
+  device the profile, forwarders and launchers stay while the session's agent
+  process lives, idle or not (`holdWhileAgentRuns`): they hold only Foundry
+  stand-ins, and the server still decides each call. They are removed when
+  the process exits, at once when the session fails or is canceled, or at
+  the next start after a crash.
 - **Audit.** Every call is a line in `feishu_gateway_requests` (Cloudflare:
   the account's activity) with its session, device, account and identity, as
   during a turn; calls made between turns are those whose time falls outside

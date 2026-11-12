@@ -13,7 +13,7 @@ import (
 )
 
 // The person's list (store.PersonalAgentListItem, table pa_items) and the
-// day the person's daily digest last went out (personal_agents
+// day the assistant's daily digest last went out (assistants
 // digest_sent_on).
 
 var _ store.PersonalAgentListStore = (*Store)(nil)
@@ -23,6 +23,7 @@ func (s *Store) setupPersonalAgentList(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_items (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
+			assistant_id TEXT NOT NULL DEFAULT '',
 			text TEXT NOT NULL,
 			when_text TEXT NOT NULL DEFAULT '',
 			at TEXT NOT NULL DEFAULT '',
@@ -45,7 +46,7 @@ func (s *Store) setupPersonalAgentList(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_user ON pa_items (user_id, status, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_reminders ON pa_items (status, remind, at)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_items_capture ON pa_items(user_id,capture_key) WHERE capture_key<>''`,
+		// The capture key is unique per assistant (setupAssistantRecords).
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
@@ -55,12 +56,12 @@ func (s *Store) setupPersonalAgentList(ctx context.Context) error {
 	return nil
 }
 
-const itemColumns = `id, user_id, text, when_text, at, remind, status, quote, task_id, source_session_id, created_at, updated_at, closed_at, reminded_at, revision,source_input_id,capture_key,capture_hash,plan_json,source_inbox_id,intent_revision`
+const itemColumns = `id, user_id, assistant_id, text, when_text, at, remind, status, quote, task_id, source_session_id, created_at, updated_at, closed_at, reminded_at, revision,source_input_id,capture_key,capture_hash,plan_json,source_inbox_id,intent_revision`
 
 func scanItem(row interface{ Scan(...any) error }) (store.PersonalAgentListItem, error) {
 	var item store.PersonalAgentListItem
 	var plan string
-	err := row.Scan(&item.ID, &item.UserID, &item.Text, &item.When, &item.At, &item.Remind, &item.Status, &item.Quote,
+	err := row.Scan(&item.ID, &item.UserID, &item.AssistantID, &item.Text, &item.When, &item.At, &item.Remind, &item.Status, &item.Quote,
 		&item.TaskID, &item.SourceSessionID, &item.CreatedAt, &item.UpdatedAt, &item.ClosedAt, &item.RemindedAt,
 		&item.Revision, &item.SourceInputID, &item.CaptureKey, &item.CaptureHash, &plan, &item.SourceInboxID, &item.IntentRevision)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -89,26 +90,26 @@ func (s *Store) queryItems(ctx context.Context, query string, args ...any) ([]st
 	return items, rows.Err()
 }
 
-func (s *Store) ListPersonalAgentItems(ctx context.Context, userID, closedSince string) ([]store.PersonalAgentListItem, error) {
+func (s *Store) ListPersonalAgentItems(ctx context.Context, assistantID, closedSince string) ([]store.PersonalAgentListItem, error) {
 	if closedSince == "" {
-		return s.queryItems(ctx, `user_id = ? AND text<>'' AND status = ? ORDER BY created_at, rowid`, userID, store.PersonalAgentItemOpen)
+		return s.queryItems(ctx, `assistant_id = ? AND text<>'' AND status = ? ORDER BY created_at, rowid`, assistantID, store.PersonalAgentItemOpen)
 	}
-	return s.queryItems(ctx, `user_id = ? AND text<>'' AND (status = ? OR closed_at >= ?) ORDER BY created_at, rowid`,
-		userID, store.PersonalAgentItemOpen, closedSince)
+	return s.queryItems(ctx, `assistant_id = ? AND text<>'' AND (status = ? OR closed_at >= ?) ORDER BY created_at, rowid`,
+		assistantID, store.PersonalAgentItemOpen, closedSince)
 }
 
-func (s *Store) GetPersonalAgentItem(ctx context.Context, userID, id string) (store.PersonalAgentListItem, error) {
-	return scanItem(s.conn().QueryRowContext(ctx, `SELECT `+itemColumns+` FROM pa_items WHERE user_id = ? AND id = ?`, userID, id))
+func (s *Store) GetPersonalAgentItem(ctx context.Context, assistantID, id string) (store.PersonalAgentListItem, error) {
+	return scanItem(s.conn().QueryRowContext(ctx, `SELECT `+itemColumns+` FROM pa_items WHERE assistant_id = ? AND id = ?`, assistantID, id))
 }
 
 func (s *Store) AddPersonalAgentItem(ctx context.Context, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
-	if item.UserID == "" || item.Text == "" {
+	if item.UserID == "" || item.AssistantID == "" || item.Text == "" {
 		return item, errors.New("a list item needs a person and a text")
 	}
 	var saved store.PersonalAgentListItem
 	err := s.withTx(ctx, func(tx *Store) error {
 		if item.CaptureKey != "" {
-			existing, err := scanItem(tx.conn().QueryRowContext(ctx, `SELECT `+itemColumns+` FROM pa_items WHERE user_id=? AND capture_key=?`, item.UserID, item.CaptureKey))
+			existing, err := scanItem(tx.conn().QueryRowContext(ctx, `SELECT `+itemColumns+` FROM pa_items WHERE assistant_id=? AND capture_key=?`, item.AssistantID, item.CaptureKey))
 			if err == nil {
 				if existing.CaptureHash != item.CaptureHash {
 					return store.ErrIdempotencyConflict
@@ -142,8 +143,8 @@ func (s *Store) addPersonalAgentItem(ctx context.Context, item store.PersonalAge
 	if err != nil {
 		return item, err
 	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_items (`+itemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)`,
-		item.ID, item.UserID, item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.TaskID,
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_items (`+itemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)`,
+		item.ID, item.UserID, item.AssistantID, item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.TaskID,
 		item.SourceSessionID, item.CreatedAt, item.UpdatedAt, item.ClosedAt, item.RemindedAt,
 		item.Revision, item.SourceInputID, item.CaptureKey, item.CaptureHash, string(plan), item.SourceInboxID, item.IntentRevision)
 	if err != nil {
@@ -160,7 +161,7 @@ func (s *Store) addPersonalAgentItem(ctx context.Context, item store.PersonalAge
 func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
 	var saved store.PersonalAgentListItem
 	err := s.withTx(ctx, func(tx *Store) error {
-		previous, err := tx.GetPersonalAgentItem(ctx, item.UserID, item.ID)
+		previous, err := tx.GetPersonalAgentItem(ctx, item.AssistantID, item.ID)
 		if err != nil {
 			return err
 		}
@@ -195,9 +196,9 @@ func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAg
 		}
 		item.CreatedAt, item.UpdatedAt = previous.CreatedAt, now
 		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_items SET text = ?, when_text = ?, at = ?, remind = ?, status = ?, quote = ?,
-			task_id = ?, updated_at = ?, closed_at = ?, reminded_at = ?,revision=?,plan_json=?,intent_revision=? WHERE user_id = ? AND id = ?`,
+			task_id = ?, updated_at = ?, closed_at = ?, reminded_at = ?,revision=?,plan_json=?,intent_revision=? WHERE assistant_id = ? AND id = ?`,
 			item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.TaskID, item.UpdatedAt, item.ClosedAt,
-			item.RemindedAt, item.Revision, string(plan), item.IntentRevision, item.UserID, item.ID); err != nil {
+			item.RemindedAt, item.Revision, string(plan), item.IntentRevision, item.AssistantID, item.ID); err != nil {
 			return fmt.Errorf("save personal agent item: %w", err)
 		}
 		item.SourceSessionID = previous.SourceSessionID
@@ -216,7 +217,7 @@ func (s *Store) checkItemDependencies(ctx context.Context, changed store.Persona
 	if changed.Plan == nil || len(changed.Plan.Dependencies) == 0 {
 		return nil
 	}
-	items, err := s.ListPersonalAgentItems(ctx, changed.UserID, "0001-01-01")
+	items, err := s.ListPersonalAgentItems(ctx, changed.AssistantID, "0001-01-01")
 	if err != nil {
 		return err
 	}
@@ -230,9 +231,9 @@ func (s *Store) checkItemDependencies(ctx context.Context, changed store.Persona
 	return flow.CheckItemDependencies(changed.ID, graph)
 }
 
-func (s *Store) DeletePersonalAgentItem(ctx context.Context, userID, id string) error {
+func (s *Store) DeletePersonalAgentItem(ctx context.Context, assistantID, id string) error {
 	return s.withTx(ctx, func(tx *Store) error {
-		item, err := tx.GetPersonalAgentItem(ctx, userID, id)
+		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
 		if err != nil {
 			return err
 		}
@@ -240,7 +241,7 @@ func (s *Store) DeletePersonalAgentItem(ctx context.Context, userID, id string) 
 			return store.ErrNotFound
 		}
 		var used bool
-		if err := tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_items,json_each(pa_items.plan_json,'$.dependencies') AS dep WHERE user_id=? AND dep.value=?)`, userID, id).Scan(&used); err != nil {
+		if err := tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_items,json_each(pa_items.plan_json,'$.dependencies') AS dep WHERE assistant_id=? AND dep.value=?)`, assistantID, id).Scan(&used); err != nil {
 			return err
 		}
 		if used {
@@ -249,9 +250,9 @@ func (s *Store) DeletePersonalAgentItem(ctx context.Context, userID, id string) 
 		if item.CaptureKey != "" {
 			// Keep only the identity fence. A replay after a person's delete
 			// must not resurrect the original words or launch the work again.
-			_, err = tx.conn().ExecContext(ctx, `UPDATE pa_items SET text='',quote='',when_text='',at='',remind=0,task_id='',plan_json='null',status='dropped',revision=revision+1,closed_at=?,updated_at=? WHERE user_id=? AND id=?`, paNow(), paNow(), userID, id)
+			_, err = tx.conn().ExecContext(ctx, `UPDATE pa_items SET text='',quote='',when_text='',at='',remind=0,task_id='',plan_json='null',status='dropped',revision=revision+1,closed_at=?,updated_at=? WHERE assistant_id=? AND id=?`, paNow(), paNow(), assistantID, id)
 		} else {
-			_, err = tx.conn().ExecContext(ctx, `DELETE FROM pa_items WHERE user_id=? AND id=?`, userID, id)
+			_, err = tx.conn().ExecContext(ctx, `DELETE FROM pa_items WHERE assistant_id=? AND id=?`, assistantID, id)
 		}
 		return err
 	})
@@ -263,9 +264,9 @@ func (s *Store) DuePersonalAgentReminders(ctx context.Context, now string) ([]st
 		store.PersonalAgentItemOpen, now)
 }
 
-func (s *Store) ClaimPersonalAgentReminder(ctx context.Context, userID, id, at string) (bool, error) {
-	result, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET reminded_at = ? WHERE user_id = ? AND id = ? AND at = ? AND reminded_at = ''`,
-		paNow(), userID, id, at)
+func (s *Store) ClaimPersonalAgentReminder(ctx context.Context, assistantID, id, at string) (bool, error) {
+	result, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET reminded_at = ? WHERE assistant_id = ? AND id = ? AND at = ? AND reminded_at = ''`,
+		paNow(), assistantID, id, at)
 	if err != nil {
 		return false, fmt.Errorf("claim personal agent reminder: %w", err)
 	}
@@ -274,25 +275,12 @@ func (s *Store) ClaimPersonalAgentReminder(ctx context.Context, userID, id, at s
 }
 
 func (s *Store) ListPersonalAgents(ctx context.Context) ([]store.PersonalAgent, error) {
-	rows, err := s.reader().QueryContext(ctx, `SELECT `+personalAgentRead+` FROM personal_agents ORDER BY user_id`)
-	if err != nil {
-		return nil, fmt.Errorf("list personal agents: %w", err)
-	}
-	defer rows.Close()
-	agents := []store.PersonalAgent{}
-	for rows.Next() {
-		agent, err := scanPersonalAgent(rows)
-		if err != nil {
-			return nil, err
-		}
-		agents = append(agents, agent)
-	}
-	return agents, rows.Err()
+	return s.queryAssistants(ctx, `1 ORDER BY owner_user_id, is_default DESC, created_at, id`)
 }
 
-func (s *Store) ClaimPersonalAgentDigest(ctx context.Context, userID, day string) (bool, error) {
-	result, err := s.conn().ExecContext(ctx, `UPDATE personal_agents SET digest_sent_on = ? WHERE user_id = ? AND digest_sent_on != ?`,
-		day, userID, day)
+func (s *Store) ClaimPersonalAgentDigest(ctx context.Context, assistantID, day string) (bool, error) {
+	result, err := s.conn().ExecContext(ctx, `UPDATE assistants SET digest_sent_on = ? WHERE id = ? AND digest_sent_on != ?`,
+		day, assistantID, day)
 	if err != nil {
 		return false, fmt.Errorf("claim personal agent digest: %w", err)
 	}

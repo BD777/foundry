@@ -857,17 +857,34 @@ components:
             "`deviceBound`: the base URL is the device's own loopback address, which no other
             device can reach, so the profile may run only on that device."
           type: boolean
-    ModelPoolMember:
+    WorkerGroupMember:
       description:
-        One model id in an equivalent-model group. `tokensPerMinute` is that
-        id's independently metered quota; without it, allocation uses the
-        optional weight.
+        One model of a worker group, on one provider. `tokensPerMinute` is that
+        model's independently metered quota; without it, allocation uses the
+        optional weight. `effort` is the effort a worker started on this member
+        runs with; without it the runtime's default applies.
       type: object
       required:
+        - providerKind
+        - providerId
+        - runtime
         - model
       additionalProperties: false
       properties:
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
         model:
+          type: string
+        effort:
           type: string
         tokensPerMinute:
           type: integer
@@ -876,17 +893,15 @@ components:
         weight:
           type: integer
           minimum: 1
-    ModelPool:
+    WorkerGroup:
       description:
-        A person's named equivalent-model group under one provider. Members are
-        interchangeable model ids with separate quota, such as two ids for the
-        same underlying model.
+        A person's named group of models that workers can be assigned from.
+        Members may come from different providers and runtimes. A new worker
+        takes one member available on its device and keeps it for the whole
+        session.
       type: object
       required:
         - id
-        - providerKind
-        - providerId
-        - runtime
         - label
         - members
         - createdAt
@@ -895,161 +910,80 @@ components:
       properties:
         id:
           type: string
-        providerKind:
-          type: string
-          enum:
-            - subscription
-            - api
-            - environment
-            - discovered
-        providerId:
-          type: string
-        runtime:
-          $ref: "#/components/schemas/NativeRuntimeId"
         label:
           type: string
         members:
           type: array
           items:
-            $ref: "#/components/schemas/ModelPoolMember"
+            $ref: "#/components/schemas/WorkerGroupMember"
         createdAt:
           type: string
         updatedAt:
           type: string
-    ModelPoolInput:
-      description: Create or replace one equivalent-model group.
+    WorkerGroupInput:
+      description: Create or replace one worker group.
       type: object
       required:
-        - providerKind
-        - providerId
-        - runtime
         - label
         - members
       additionalProperties: false
       properties:
-        providerKind:
-          type: string
-          enum:
-            - subscription
-            - api
-            - environment
-            - discovered
-        providerId:
-          type: string
-        runtime:
-          $ref: "#/components/schemas/NativeRuntimeId"
         label:
           type: string
         members:
           type: array
           minItems: 1
           items:
-            $ref: "#/components/schemas/ModelPoolMember"
-    ModelNote:
-      description: ModelNote is one observation an orchestrator recorded about a specific model.
-      type: object
-      required:
-        - id
-        - providerKind
-        - providerId
-        - runtime
-        - model
-        - body
-        - authorUserId
-        - authorName
-        - createdAt
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        providerKind:
-          type: string
-          enum:
-            - subscription
-            - api
-            - environment
-            - discovered
-          x-go-type: string
-        providerId:
-          type: string
-        runtime:
-          $ref: "#/components/schemas/NativeRuntimeId"
-        model:
-          type: string
-        body:
-          description: What the orchestrator learned about handing work to this model.
-          type: string
-        authorUserId:
-          type: string
-        authorName:
-          type: string
-        authorSessionId:
-          description: The agent session that appended the note; absent for a person.
-          type: string
-        createdAt:
-          type: string
-        updatedAt:
-          type: string
-    ModelNotePage:
-      description: One page of model notes, newest first.
-      type: object
-      required:
-        - total
-        - offset
-        - notes
-      additionalProperties: false
-      properties:
-        total:
-          type: integer
-        offset:
-          type: integer
-        nextOffset:
-          type: integer
-        notes:
-          type: array
-          items:
-            $ref: "#/components/schemas/ModelNote"
-    ModelNoteInput:
-      description: ModelNoteInput appends one note to a provider's model.
-      type: object
-      required:
-        - providerKind
-        - providerId
-        - runtime
-        - model
-        - body
-      additionalProperties: false
-      properties:
-        providerKind:
-          type: string
-          enum:
-            - subscription
-            - api
-            - environment
-            - discovered
-          x-go-type: string
-        providerId:
-          type: string
-        runtime:
-          $ref: "#/components/schemas/NativeRuntimeId"
-        model:
-          type: string
-        body:
-          type: string
-          maxLength: 12000
+            $ref: "#/components/schemas/WorkerGroupMember"
     ExecutionDefaultScope:
       type: string
       enum:
         - global
         - workspace
+        - assistant
         - none
       x-go-type: string
+    ExecutionModelChoice:
+      description: >-
+        One model or worker group the person's orchestrator may use, never both. With a group,
+        a worker takes one member available on its device and that member's own effort.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          description: Stable identifier for choosing this alternative when dispatching a worker.
+          type: string
+        providerKind:
+          type: string
+          enum:
+            - subscription
+            - api
+            - environment
+            - discovered
+        providerId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        model:
+          type: string
+        workerGroupId:
+          description: When set, a new session takes one member of this worker group.
+          type: string
+        group:
+          description: The saved worker group, resolved when this choice is read.
+          $ref: "#/components/schemas/WorkerGroup"
+          x-go-type-skip-optional-pointer: false
+        effort:
+          type: string
     ExecutionModelDefault:
-      description: The model a person's orchestrator uses for delegated execution when a child names no model.
+      description: >-
+        The model a person's orchestrator uses for delegated execution when a child names no model,
+        either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`),
+        never both. With a group, a worker takes one member available on its device and that member's own
+        effort; scope `none` has neither. Alternatives are the other models and groups the
+        orchestrator may choose from when the default's guide says this step is not a good fit.
       type: object
       required:
-        - providerId
-        - runtime
         - scope
       additionalProperties: false
       properties:
@@ -1066,15 +1000,21 @@ components:
           $ref: "#/components/schemas/NativeRuntimeId"
         model:
           type: string
-        modelPoolId:
-          description: When set, a new session allocates one member from this group.
+        workerGroupId:
+          description: When set, a new session takes one member of this worker group.
           type: string
-        pool:
-          description: The saved group, resolved when the default is read.
-          $ref: "#/components/schemas/ModelPool"
+        group:
+          description: The saved worker group, resolved when the default is read.
+          $ref: "#/components/schemas/WorkerGroup"
           x-go-type-skip-optional-pointer: false
         effort:
           type: string
+        alternatives:
+          description: Other models or worker groups the orchestrator may use.
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionModelChoice"
+          x-omitempty: false
         scope:
           $ref: "#/components/schemas/ExecutionDefaultScope"
         updatedBy:

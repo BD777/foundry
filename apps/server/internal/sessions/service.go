@@ -60,6 +60,9 @@ type DeviceLink struct {
 type Devices interface {
 	// Connected reports whether the device is connected.
 	Connected(deviceID string) bool
+	// WaitConnected waits while the device is reconnecting and reports its
+	// connection, immediate offline, cancellation, or reconnect timeout.
+	WaitConnected(ctx context.Context, deviceID string) error
 	// Link is how the device is connected now.
 	Link(deviceID string) DeviceLink
 	// Label is the device's name as people know it.

@@ -8,6 +8,7 @@ import type {
 import { ApiError, removeDevice } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+import { deviceConnection } from "../../lib/device-connection";
 
 function errorStatus(cause: unknown): number | undefined {
   if (typeof cause === "object" && cause !== null && "status" in cause) {
@@ -47,7 +48,7 @@ export function DeviceRemovalDialog({
   // Set once the server said turns run now: the next submit stops them.
   const [stopRunningTurns, setStopRunningTurns] = useState(false);
   const pending = useRef(false);
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
   const ownsCurrentWorkspace = workspaces.some(
     (workspace) => workspace.id === activeWorkspaceId,
   );

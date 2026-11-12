@@ -55,10 +55,10 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 		input.L0Index = ""
 	}
 	turnContext := prompt.TurnContext(input)
-	if entry, err := s.store.PersonalAgentInboxByInput(ctx, agent.UserID, session.Input.ID); err == nil {
+	if entry, err := s.store.PersonalAgentInboxByInput(ctx, agent.ID, session.Input.ID); err == nil {
 		root := entry
 		if entry.RootID != entry.ID {
-			if source, err := s.store.GetPersonalAgentInbox(ctx, agent.UserID, entry.RootID); err == nil {
+			if source, err := s.store.GetPersonalAgentInbox(ctx, agent.ID, entry.RootID); err == nil {
 				root = source
 			}
 		}
@@ -111,27 +111,15 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		settings.Policy = personalagent.DefaultPolicy()
 	}
 	settings.Limits = personalagent.EffectiveLimits(settings.Limits)
-	memory, err := s.store.ListPersonalAgentMemory(ctx, agent.UserID)
+	memory, err := s.turnMemory(ctx, agent)
 	if err != nil {
 		return prompt.Input{}, err
 	}
-	// An old inferred record may be active for UI purposes, but is not a confirmed fact.
-	memory = slices.DeleteFunc(memory, func(item store.PersonalAgentMemoryItem) bool {
-		return item.Origin == store.PersonalAgentMemoryInferred || item.Origin == store.PersonalAgentMemoryExternal
-	})
 	digests := s.digests
-	records, err := s.workspaceCandidates(ctx, agent.UserID)
+	records, err := s.workspaceCandidates(ctx, agent)
 	if err != nil {
 		return prompt.Input{}, err
 	}
-	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
-	if err != nil {
-		return prompt.Input{}, err
-	}
-	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
-	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
-		return !access.WorkspaceAllowed(record.Digest.WorkspaceID)
-	})
 	workspaces := make([]store.WorkspaceDigest, len(records))
 	for i, record := range records {
 		workspaces[i] = record.Digest
@@ -145,12 +133,12 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
-	s.RefreshTasks(ctx, agent.UserID)
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.UserID, nil)
+	s.RefreshTasks(ctx, agent)
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.ID, nil)
 	if err != nil {
 		return prompt.Input{}, err
 	}
-	list, err := s.store.ListPersonalAgentItems(ctx, agent.UserID, "")
+	list, err := s.store.ListPersonalAgentItems(ctx, agent.ID, "")
 	if err != nil {
 		return prompt.Input{}, err
 	}
@@ -158,6 +146,11 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	// The person's own items show to each assistant; another assistant's
+	// items stay with it.
+	needsYou = slices.DeleteFunc(needsYou, func(item store.PendingItem) bool {
+		return item.AssistantID != "" && item.AssistantID != agent.ID
+	})
 	return prompt.Input{
 		Now:                           now,
 		PersonName:                    cmp.Or(user.DisplayName, user.Username),
@@ -174,7 +167,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		NeedsYou:                      needsYou,
 		DirectChatPreviousWorkspaceID: s.directChatPrior(ctx, agent),
 		ConnectorsURL:                 s.WebURL("/connectors"),
-		SettingsURL:                   s.WebURL(personalagent.SettingsPath),
+		SettingsURL:                   s.WebURL(personalagent.AssistantSettingsPath(agent.ID)),
 	}, nil
 }
 
@@ -222,11 +215,21 @@ func (s *Service) directChatPrior(ctx context.Context, agent store.PersonalAgent
 // A removed device's digest stays readable through get_workspace and its old
 // work stays attributable, but neither the prompt index nor find_workspace may
 // propose it for new work. Shared workspaces retain their membership scope.
-func (s *Service) workspaceCandidates(ctx context.Context, userID string) ([]store.WorkspaceDigestRecord, error) {
-	records, err := s.digests.Sync(ctx, userID)
+// Digests are kept per person; an assistant reads only those of the
+// workspaces its permission package allows.
+func (s *Service) workspaceCandidates(ctx context.Context, agent store.PersonalAgent) ([]store.WorkspaceDigestRecord, error) {
+	records, err := s.digests.Sync(ctx, agent.UserID)
 	if err != nil {
 		return nil, err
 	}
+	pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID)
+	if err != nil {
+		return nil, err
+	}
+	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
+	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
+		return !access.WorkspaceAllowed(record.Digest.WorkspaceID)
+	})
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseAppRoute, pathForAppRoute } from "../src/lib/routes.ts";
+import { defaultAssistantDestination } from "../src/app/use-assistant-route-resolution.ts";
+import {
+  navSections,
+  navSectionsForAssistantCount,
+} from "../src/app/navigation.ts";
 import {
   viewErrorLabel,
   viewErrorResetKey,
@@ -30,9 +35,17 @@ test("module load failures require a page reload, ordinary render errors do not"
 });
 
 const routes = [
+  { view: "assistants" },
   { view: "assistant" },
+  { view: "assistant", assistantId: "asst_work" },
   { view: "assistantSettings" },
+  { view: "assistantSettings", assistantId: "asst_work" },
   { view: "assistantSettings", assistantSection: "rules" },
+  {
+    view: "assistantSettings",
+    assistantId: "asst/work",
+    assistantSection: "places",
+  },
   { view: "issues" },
   { view: "issue", selectedIssueId: "iss_42" },
   { view: "chats" },
@@ -55,6 +68,9 @@ const routes = [
   },
   { view: "locations", selectedDeviceId: "dev2" },
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
+  { view: "profiles", providerTab: "default" },
+  { view: "profiles", providerTab: "groups" },
+  { view: "profiles", providerTab: "guides" },
   { view: "profiles", providerTab: "subscriptions" },
   { view: "profiles", providerTab: "endpoints" },
   { view: "profiles", providerTab: "environments" },
@@ -65,8 +81,8 @@ const routes = [
 
 test("workspace sections have canonical URLs while legacy links still resolve", () => {
   // Model providers was "Server connections" at /connections (and /profiles).
-  // Its tabs are in the path; the bare page, an unknown tab and the old
-  // names open Subscriptions.
+  // Its sections are in the path; the bare page, an unknown section and the
+  // old names open the default execution model.
   for (const path of [
     "/model-providers",
     "/model-providers/nope",
@@ -75,15 +91,27 @@ test("workspace sections have canonical URLs while legacy links still resolve", 
   ])
     assert.deepEqual(parseAppRoute(path), {
       view: "profiles",
-      providerTab: "subscriptions",
+      providerTab: "default",
     });
-  assert.deepEqual(parseAppRoute("/model-providers/environments"), {
-    view: "profiles",
-    providerTab: "environments",
-  });
+  for (const section of [
+    "groups",
+    "guides",
+    "subscriptions",
+    "endpoints",
+    "environments",
+  ]) {
+    assert.deepEqual(parseAppRoute(`/model-providers/${section}`), {
+      view: "profiles",
+      providerTab: section,
+    });
+    assert.equal(
+      pathForAppRoute({ view: "profiles", providerTab: section }),
+      `/model-providers/${section}`,
+    );
+  }
   assert.equal(
     pathForAppRoute({ view: "profiles" }),
-    "/model-providers/subscriptions",
+    "/model-providers/default",
   );
   // Connectors has one tab per connector in its path; the bare page and the
   // old External accounts page open the first tab. Which kinds exist is the
@@ -218,6 +246,52 @@ test("opening Foundry lands on the assistant; unknown paths open the workspace o
   for (const path of ["/nope", "/unknown/deep/path"]) {
     assert.deepEqual(parseAppRoute(path), { view: "workspace" });
   }
+});
+
+test("assistant routes name their object while legacy routes resolve to the default", () => {
+  assert.deepEqual(parseAppRoute("/assistants"), { view: "assistants" });
+  assert.equal(pathForAppRoute({ view: "assistants" }), "/assistants");
+  assert.deepEqual(parseAppRoute("/assistants/asst%2Fwork"), {
+    view: "assistant",
+    assistantId: "asst/work",
+  });
+  assert.deepEqual(parseAppRoute("/assistants/asst_work/settings/places"), {
+    view: "assistantSettings",
+    assistantId: "asst_work",
+    assistantSection: "places",
+  });
+  assert.deepEqual(
+    defaultAssistantDestination("/assistant/settings/rules", [
+      { id: "asst_other", isDefault: false },
+      { id: "asst_default", isDefault: true },
+    ]),
+    {
+      view: "assistantSettings",
+      assistantId: "asst_default",
+      assistantSection: "rules",
+    },
+  );
+  assert.deepEqual(
+    defaultAssistantDestination("/", [{ id: "asst_default", isDefault: true }]),
+    { view: "assistant", assistantId: "asst_default" },
+  );
+});
+
+test("the assistant sidebar keeps its one-assistant shape and links the list for several", () => {
+  const one = navSectionsForAssistantCount(navSections, 1);
+  const many = navSectionsForAssistantCount(navSections, 2);
+  assert.deepEqual(
+    one
+      .find((section) => section.id === "assistant")
+      ?.items.map((item) => item.id),
+    ["assistant", "pending", "assistantSettings"],
+  );
+  assert.deepEqual(
+    many
+      .find((section) => section.id === "assistant")
+      ?.items.map((item) => item.id),
+    ["assistants", "pending", "assistantSettings"],
+  );
 });
 
 test("the assistant's settings sections have their own URLs", () => {

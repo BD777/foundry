@@ -72,9 +72,14 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 		// works on that device (chooseSessionAccount).
 		if runLikeParent && input.ProfileID == "" && input.Provider == "" {
 			if parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID); err == nil && input.WorkspaceID == parent.WorkspaceID {
-				input.Provider, input.ProfileID = parent.Provider, parent.ProfileID
-				if input.Model == "" && input.ModelPoolID == "" {
-					input.ModelPoolID = parent.ModelPoolID
+				switch {
+				case input.WorkerGroupID != "":
+				case input.Model == "" && parent.WorkerGroupID != "":
+					// The group chooses the member, so the parent's own
+					// provider is not copied.
+					input.WorkerGroupID = parent.WorkerGroupID
+				default:
+					input.Provider, input.ProfileID = parent.Provider, parent.ProfileID
 				}
 			}
 		}
@@ -95,19 +100,23 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 	if err := workspaceRefusal(scope, input.WorkspaceID, store.WorkspaceRoleMember); err != nil {
 		return err
 	}
-	if input.ModelPoolID != "" {
-		if input.Model != "" {
-			return invalid("modelPoolId cannot be combined with model")
+	if input.WorkerGroupID != "" {
+		if input.Model != "" || input.Provider != "" || input.ProfileID != "" || input.AgentID != "" {
+			return invalid("workerGroupId cannot be combined with model, provider, profileId or agentId: the group's member decides them")
 		}
-		pool, model, err := s.selectModelPool(ctx, actor, input.ModelPoolID, "")
+		choice, err := s.selectWorkerGroup(ctx, actor, input.WorkerGroupID, input.WorkspaceID)
 		if err != nil {
 			return err
 		}
-		if input.Provider != "" && input.Provider != pool.Runtime ||
-			input.ProfileID != "" && input.ProfileID != pool.ProviderID {
-			return invalid("modelPoolId cannot be combined with a different provider or profile")
+		member := choice.Member
+		input.WorkerGroupID, input.Provider, input.ProfileID, input.Model = choice.Group.ID, string(member.Runtime), member.ProviderID, member.Model
+		if member.Effort != "" {
+			if member.Runtime == "codex" {
+				input.CodexReasoningEffort = member.Effort
+			} else {
+				input.ClaudeEffort = member.Effort
+			}
 		}
-		input.ModelPoolID, input.Provider, input.ProfileID, input.Model = pool.ID, pool.Runtime, pool.ProviderID, model
 	}
 	// A session adopts a native chat only from the workspace it starts in,
 	// which it reaches as Member; an unassigned chat is in no workspace a
@@ -171,7 +180,9 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 // as for a new topic (CreateSessionAndDispatch).
 func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message string, attachments []store.ChatAttachment) error {
 	if session, err := s.store.GetAgentSessionSummary(ctx, sessionID); err == nil && !s.hub.HasConnection(session.DeviceID) {
-		return &statusError{http.StatusConflict, sessions.ErrLocalDaemonNotConnected}
+		if _, waitErr := s.hub.waitForConnection(ctx, session.DeviceID); waitErr != nil {
+			return &statusError{http.StatusConflict, waitErr}
+		}
 	}
 	_, err := s.sessionService.Send(ctx, sessionID, store.SendAgentSessionInput{Prompt: message, Attachments: attachments}, nil)
 	return err

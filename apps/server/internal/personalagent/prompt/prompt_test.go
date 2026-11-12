@@ -23,6 +23,10 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
+	"2026-11-12.4": "8ea02a38cff4ed22e6c314a221957065c5e8672e172d12d000c0fe033c054141", // slim the assistant prompt: tool mechanics live in tool descriptions; 31KB → 15.5KB
+	"2026-11-12.3": "724e990d1ec63d55ec24e653f73ba00d1d968e6cf764f403a71509dded298aa5", // DEV-191 v1b: fit the per-assistant settings link within the AGENTS.md limit
+	"2026-11-12.2": "97d1dab13c7a1a13c37073aba25036d9d3e964ebee3b49c0f8e91e6a0872f392", // DEV-191 P2: two memory layers, unconfirmed facts are not kept
+	"2026-11-12.1": "ea64a17c0f1471f28ed3b14b2a90d757ad5c32e60035510b9778dfebcbb30e29", // executor defaults and configured alternatives
 	"2026-11-10.2": "03ec0bea5367e340fd8cc92d84ca8ad9d6afbed85bc2191c0bcfead809b1e792", // project index opens each conversation
 	"2026-11-10.1": "7c7e2555657dac302e514781dac1ec3fabe88ab1ee9c921a3c1f5d2705a70568", // device removal always asks
 	"2026-10-30.1": "3598a48427e1294664fa26b93cbce452055d31c7b287223a49514a50eed3c0ff",
@@ -55,7 +59,7 @@ var (
 	bannedEnglish = regexp.MustCompile(`(?i)\b(workspaces?|devices?|sessions?|repos?|repositor(?:y|ies)|branch(?:es)?|commits?|profiles?|runtimes?|models?|mcp|tokens?|agents?|prompts?|director(?:y|ies)|paths?|claude|codex)\b`)
 	// "issue" is an ordinary word; Foundry's Issue is capitalised.
 	bannedIssue   = regexp.MustCompile(`\bIssues?\b`)
-	bannedEnList  = []string{"workspace", "device", "session", "repo", "repository", "branch", "commit", "Issue", "profile", "runtime", "model", "MCP", "token", "agent", "prompt", "directory", "path", "Claude", "Codex"}
+	bannedEnList  = []string{"workspace", "device", "session", "repo", "branch", "commit", "Issue", "profile", "runtime", "model", "MCP", "token", "agent", "prompt", "path"}
 	bannedChinese = []string{"工作区", "设备", "会话", "仓库", "分支", "提交", "模型", "令牌", "智能体", "提示词", "目录", "路径"}
 	foundryIDs    = regexp.MustCompile(`\b(ws|sess|dev|iss|native_claude|native_codex)_`)
 )
@@ -70,16 +74,21 @@ func bannedIn(text string) []string {
 	return append(found, foundryIDs.FindAllString(text, -1)...)
 }
 
-// userFacingLines are the prompt's lines the assistant would say: example
-// replies ("Reply:"; "Reply (mirroring their words):" is the one example of
-// echoing a technical person) and the plain words it is told to use.
+// userFacingLines are the prompt's lines the assistant would say in plain
+// words. The one example after "they used technical words" may mirror them.
 func userFacingLines() []string {
 	lines := []string{}
 	inSayInstead := false
+	mirroringTechnicalWords := false
 	for _, line := range strings.Split(prompt.System(), "\n") {
 		switch {
+		case strings.HasPrefix(line, "You:"):
+			mirroringTechnicalWords = strings.Contains(line, "technical words")
 		case strings.HasPrefix(line, "Reply:"):
-			lines = append(lines, strings.TrimPrefix(line, "Reply:"))
+			if !mirroringTechnicalWords {
+				lines = append(lines, strings.TrimPrefix(line, "Reply:"))
+			}
+			mirroringTechnicalWords = false
 		case strings.Contains(line, "Say instead:"):
 			inSayInstead = true
 		case inSayInstead && strings.HasPrefix(line, "  - for a "):
@@ -105,7 +114,7 @@ func TestUserFacingLinesUseNoImplementationWords(t *testing.T) {
 			t.Errorf("user-facing line says %v: %s", words, line)
 		}
 	}
-	if english < 6 || chinese < 3 {
+	if english < 3 || chinese < 2 {
 		t.Fatalf("found %d English and %d Chinese user-facing lines; the scan is not reading the examples", english, chinese)
 	}
 	// The scan itself catches what it should.
@@ -121,14 +130,14 @@ func TestUserFacingLinesUseNoImplementationWords(t *testing.T) {
 
 func TestPromptForbidsTheWordsTheScanChecks(t *testing.T) {
 	text := prompt.System()
-	start := strings.Index(text, "Never use these words with the person")
+	start := strings.Index(text, "Never introduce technical words they did not use first")
 	end := strings.Index(text, "Never show ids")
 	if start < 0 || end < start {
 		t.Fatal("the prompt's list of forbidden words moved; keep it and this test together")
 	}
 	list := strings.Join(strings.Fields(text[start:end]), " ")
 	for _, word := range append(append([]string{}, bannedEnList...), bannedChinese...) {
-		if !regexp.MustCompile(`(^|[ ,:.])` + regexp.QuoteMeta(word) + `([ ,.]|$)`).MatchString(list) {
+		if !regexp.MustCompile(`(^|[ ,.:()])` + regexp.QuoteMeta(word) + `([ ,.:()]|$)`).MatchString(list) {
 			t.Errorf("the prompt does not forbid %q", word)
 		}
 	}
@@ -364,7 +373,7 @@ func fullInput() prompt.Input {
 		},
 		DirectChatPreviousWorkspaceID: "ws_budget",
 		ConnectorsURL:                 "https://foundry.example/connectors",
-		SettingsURL:                   "https://foundry.example/assistant/settings",
+		SettingsURL:                   "https://foundry.example/assistants/asst_work/settings",
 	}
 	in.L0Index = workspacedigest.Index(in.Workspaces, in.Devices, in.Now)
 	return in

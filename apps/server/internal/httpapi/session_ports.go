@@ -25,6 +25,11 @@ type sessionDevices struct{ s *Server }
 
 func (d sessionDevices) Connected(deviceID string) bool { return d.s.hub.HasConnection(deviceID) }
 
+func (d sessionDevices) WaitConnected(ctx context.Context, deviceID string) error {
+	_, err := d.s.hub.waitForConnection(ctx, deviceID)
+	return err
+}
+
 func (d sessionDevices) Link(deviceID string) sessions.DeviceLink {
 	runner, reported := d.s.deviceRunners.get(deviceID, d.s.hub.connectionFor(deviceID))
 	_, lag, connectedAt, connected := d.s.hub.connectedDevice(deviceID)

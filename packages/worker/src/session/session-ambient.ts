@@ -4,6 +4,8 @@ import { mkdirSync, readdirSync } from "node:fs";
 import { foundryStatePath } from "../platform/state-root.js";
 import { isolatedClaudeEnvironment } from "../harness/runtime-isolation.js";
 import { withManagedTools } from "../skills/managed-tools.js";
+import { loginShellPath } from "./login-path.js";
+import { joinPaths, servicePath } from "../platform/path-list.js";
 import { sessionToolsFolder } from "../skills/session-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
@@ -166,7 +168,12 @@ export function sessionEnvironment(
     ...base,
     // Tools Foundry installed for skills come first: the session's own
     // pinned folder when its run has one.
-    PATH: withManagedTools(base.PATH, sessionToolsFolder(session?.id)),
+    // then the login shell's PATH (Codex runs commands without a login
+    // shell, which would rebuild it), then the service's own.
+    PATH: withManagedTools(
+      servicePath(joinPaths(loginShellPath(), base.PATH)),
+      sessionToolsFolder(session?.id),
+    ),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
     FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(

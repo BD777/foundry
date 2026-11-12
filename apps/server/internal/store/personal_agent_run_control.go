@@ -16,24 +16,26 @@ type PersonalAgentRunControl struct {
 	DispatchAttempted bool   `json:"dispatchAttempted"`
 	ID                string `json:"id"`
 	UserID            string `json:"-"`
-	SnapshotID        string `json:"snapshotId,omitempty"`
-	SessionID         string `json:"sessionId"`
-	InputID           string `json:"inputId"`
-	Role              string `json:"role"`
-	State             string `json:"state"`
-	StopReason        string `json:"stopReason,omitempty"`
-	ObservedTokens    int64  `json:"observedTokens"`
-	UsageState        string `json:"usageState"`
-	TokenBudget       int64  `json:"tokenBudget"`
-	TimeoutMinutes    int    `json:"timeoutMinutes"`
-	LastUsageAt       string `json:"lastUsageAt,omitempty"`
-	ConfirmedAt       string `json:"confirmedAt,omitempty"`
-	Revision          int64  `json:"revision"`
-	UpdatedAt         string `json:"updatedAt"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID    string `json:"-"`
+	SnapshotID     string `json:"snapshotId,omitempty"`
+	SessionID      string `json:"sessionId"`
+	InputID        string `json:"inputId"`
+	Role           string `json:"role"`
+	State          string `json:"state"`
+	StopReason     string `json:"stopReason,omitempty"`
+	ObservedTokens int64  `json:"observedTokens"`
+	UsageState     string `json:"usageState"`
+	TokenBudget    int64  `json:"tokenBudget"`
+	TimeoutMinutes int    `json:"timeoutMinutes"`
+	LastUsageAt    string `json:"lastUsageAt,omitempty"`
+	ConfirmedAt    string `json:"confirmedAt,omitempty"`
+	Revision       int64  `json:"revision"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type PersonalAgentRunControlStore interface {
-	ActivePersonalAgentRunControlsForUser(context.Context, string) ([]PersonalAgentRunControl, error)
+	ActivePersonalAgentRunControlsFor(context.Context, string) ([]PersonalAgentRunControl, error)
 	NotePersonalAgentNativeEnd(context.Context, string, string, string) error
 	AuthorizePersonalAgentDispatch(context.Context, string, string) (bool, error)
 	EnsurePersonalAgentRunControl(context.Context, PersonalAgentRunControl) (PersonalAgentRunControl, error)

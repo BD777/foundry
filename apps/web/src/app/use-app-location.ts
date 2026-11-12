@@ -22,6 +22,9 @@ import { initialFoundryData } from "./use-workspace-data";
 export interface AppLocation {
   activeView: NavView;
   setActiveView: Dispatch<SetStateAction<NavView>>;
+  /** The assistant whose chat, settings, or list context is open. */
+  selectedAssistantId?: string;
+  setSelectedAssistantId: Dispatch<SetStateAction<string | undefined>>;
   selectedDeviceId: string | undefined;
   setSelectedDeviceId: Dispatch<SetStateAction<string | undefined>>;
   deviceSection: DeviceSection;
@@ -71,6 +74,9 @@ export function useAppLocation(): AppLocation {
   const [selectedDeviceId, setSelectedDeviceId] = useState(
     initialRoute.selectedDeviceId,
   );
+  const [selectedAssistantId, setSelectedAssistantId] = useState(
+    initialRoute.assistantId,
+  );
   const [deviceSection, setDeviceSection] = useState<DeviceSection>(
     initialRoute.deviceSection ?? "agents",
   );
@@ -96,6 +102,8 @@ export function useAppLocation(): AppLocation {
   return {
     activeView,
     setActiveView,
+    selectedAssistantId,
+    setSelectedAssistantId,
     selectedDeviceId,
     setSelectedDeviceId,
     deviceSection,
@@ -111,6 +119,8 @@ export function useAppLocation(): AppLocation {
       setActiveView(route.view);
       setChatView(route.chatView ?? "active");
       setSelectedDeviceId(route.selectedDeviceId);
+      if (route.assistantId !== undefined)
+        setSelectedAssistantId(route.assistantId);
       setDeviceSection(route.deviceSection ?? "agents");
       if (route.selectedChatId !== undefined) {
         updateSelectedChatId(route.selectedChatId);

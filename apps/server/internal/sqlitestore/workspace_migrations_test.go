@@ -222,8 +222,8 @@ func TestActivateWorkspaceMigrationRewritesTheWorkspaceRows(t *testing.T) {
 			VALUES ('mat_a', 'ws_home', 'iss_mig', 'material', 1, '{"material":{"storageDeviceId":"dev_home"}}')`,
 		`INSERT INTO pending_items (id, user_id, workspace_id, source, item_key, state, payload_json, created_at, updated_at)
 			VALUES ('pend_a', 'person', 'ws_home', 'session', 'k', 'open', '{"deviceId":"dev_home","path":"/home/me/Foundry/f.md"}', '', '')`,
-		`INSERT INTO personal_agents (user_id, workspace_id, home_device_id, state, settings_json, created_at, updated_at)
-			VALUES ('person', 'ws_home', 'dev_home', 'active', '{}', '', '')`,
+		`INSERT INTO assistants (id, owner_user_id, is_default, home_workspace_id, home_device_id, state, settings_json, created_at, updated_at)
+			VALUES ('asst_person', 'person', 1, 'ws_home', 'dev_home', 'active', '{}', '', '')`,
 		`INSERT INTO workspace_draft_skills (workspace_id, execution_root_id, payload_json) VALUES ('ws_home', 'root', '{"path":"/home/me/.cache/skill"}')`,
 		`INSERT INTO agent_defaults (workspace_id, scope, profile_id, updated_at) VALUES ('ws_home', 'chat', 'src_profile', '')`,
 		`INSERT INTO device_connector_bindings (workspace_id, kind, device_id, granted_by, created_at) VALUES ('ws_home', 'browser', 'dev_home', 'person', '')`,
@@ -285,7 +285,7 @@ func TestActivateWorkspaceMigrationRewritesTheWorkspaceRows(t *testing.T) {
 		`SELECT json_extract(payload_json, '$.material.storageDeviceId') FROM evidence_records WHERE id = 'mat_a'`:                                            "dev_mac",
 		`SELECT device_id FROM knowledge_vaults WHERE id = 'memory'`:                                                                                          "dev_mac",
 		`SELECT json_extract(payload_json, '$.deviceId') || ' ' || json_extract(payload_json, '$.path') FROM pending_items WHERE id = 'pend_a'`:               "dev_mac /Users/me/Foundry/f.md",
-		`SELECT home_device_id FROM personal_agents WHERE user_id = 'person'`:                                                                                 "dev_mac",
+		`SELECT home_device_id FROM assistants WHERE id = 'asst_person'`:                                                                                      "dev_mac",
 		`SELECT CAST(count(*) AS TEXT) FROM workspace_draft_skills WHERE workspace_id = 'ws_home'`:                                                            "0",
 		`SELECT CAST(count(*) AS TEXT) FROM agents WHERE workspace_id = 'ws_home'`:                                                                            "0",
 		`SELECT profile_id FROM agent_defaults WHERE workspace_id = 'ws_home'`:                                                                                "",

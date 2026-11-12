@@ -6,16 +6,23 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  symlinkSync,
   readFileSync,
   readlinkSync,
+  readdirSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(
-  join(tmpdir(), "repo-tools-root-"),
+// The tools root is reached through a symlink, as on devices whose home
+// folder is a link to another volume.
+const realToolsRoot = mkdtempSync(join(tmpdir(), "repo-tools-root-"));
+process.env.FOUNDRY_TOOLS_ROOT = join(
+  mkdtempSync(join(tmpdir(), "repo-tools-link-")),
+  "tools",
 );
+symlinkSync(realToolsRoot, process.env.FOUNDRY_TOOLS_ROOT);
 process.env.HOME = mkdtempSync(join(tmpdir(), "repo-tools-home-"));
 const {
   activateRepositoryTool,
@@ -49,7 +56,7 @@ writeFileSync(
   { mode: 0o755 },
 );
 
-function fixture(commit) {
+function fixture(commit, options = {}) {
   const work = mkdtempSync(join(tmpdir(), "open-lark-fixture-"));
   const root = `nwverse-open-lark-${commit.slice(0, 7)}`;
   const plugin = join(work, root, "plugins/open-lark");
@@ -70,8 +77,22 @@ function fixture(commit) {
     '#!/bin/sh\nhere=$(dirname "$(readlink -f "$0")")\nexec node "$here/../server/olk.mjs" ctx "$@"\n',
     { mode: 0o755 },
   );
+  const members = [];
+  if (options.metadata) {
+    writeFileSync(join(work, "pax_global_header"), "metadata\n");
+    writeFileSync(join(work, `._${root}`), "metadata\n");
+    writeFileSync(join(plugin, "._metadata"), "metadata\n");
+    members.push("pax_global_header", `._${root}`);
+  }
+  if (options.extraRoot) {
+    const extra = "another-root";
+    mkdirSync(join(work, extra));
+    writeFileSync(join(work, extra, "file"), "not part of the repository\n");
+    members.push(extra);
+  }
+  members.push(root);
   const archive = join(work, "repository.tar.gz");
-  execFileSync("tar", ["-czf", archive, "-C", work, root]);
+  execFileSync("tar", ["-czf", archive, "-C", work, ...members]);
   return archive;
 }
 
@@ -243,6 +264,51 @@ test("a device that cannot read the repository installs the folder another devic
   assert.equal(
     execFileSync(join(managedToolsBin(), "olk"), ["x"]).toString(),
     "olk c x\n",
+  );
+  delete process.env.GH_FAIL;
+});
+
+test("archive metadata does not become another root or leak into the installed tool", async () => {
+  const commit = "1".repeat(40);
+  const source = fixture(commit, { metadata: true });
+  process.env.GH_ARCHIVE = source;
+  delete process.env.GH_FAIL;
+  const { archive } = await packRepositoryTool(spec(commit));
+  const listing = execFileSync("tar", ["-tzf", "-"], {
+    input: archive,
+  }).toString();
+  assert.doesNotMatch(listing, /(^|\/)\._/m);
+  assert.doesNotMatch(listing, /(^|\/)pax_global_header(?:\/|$)/m);
+
+  process.env.GH_FAIL = "auth";
+  await installRepositoryTool(spec(commit), {
+    archive: readFileSync(source),
+  });
+  const folder = join(process.env.FOUNDRY_TOOLS_ROOT, "olk", commit);
+  assert.deepEqual(readdirSync(folder).sort(), [
+    "olk",
+    "olk-ctx",
+    "repository",
+  ]);
+  assert.deepEqual(readdirSync(join(folder, "repository")).sort(), [
+    "bin",
+    "server",
+  ]);
+  assert.equal(
+    execFileSync(join(managedToolsBin(), "olk"), ["x"]).toString(),
+    "olk 1 x\n",
+  );
+
+  const rejected = "2".repeat(40);
+  const rejectedArchive = fixture(rejected, {
+    metadata: true,
+    extraRoot: true,
+  });
+  await assert.rejects(
+    installRepositoryTool(spec(rejected), {
+      archive: readFileSync(rejectedArchive),
+    }),
+    /more than one root folder/,
   );
   delete process.env.GH_FAIL;
 });

@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Store) setupPersonalAgentContextPatch(ctx context.Context) error {
-	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pa_context_patches(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,workspace_id TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL)`)
+	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pa_context_patches(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',workspace_id TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL)`)
 	if err != nil {
 		return err
 	}
@@ -20,7 +20,7 @@ func (s *Store) setupPersonalAgentContextPatch(ctx context.Context) error {
 func scanPAContextPatch(row interface{ Scan(...any) error }) (store.PersonalAgentContextPatch, error) {
 	var v store.PersonalAgentContextPatch
 	var raw string
-	err := row.Scan(&v.UserID, &raw)
+	err := row.Scan(&v.UserID, &v.AssistantID, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, store.ErrNotFound
 	}
@@ -47,7 +47,7 @@ func (s *Store) checkPAContextPatchFence(ctx context.Context, workspace string) 
 func (s *Store) BeginPersonalAgentContextPatch(ctx context.Context, v store.PersonalAgentContextPatch, jobRevision int64) (store.PersonalAgentContextPatch, error) {
 	var out store.PersonalAgentContextPatch
 	err := s.withTx(ctx, func(tx *Store) error {
-		old, err := scanPAContextPatch(tx.reader().QueryRowContext(ctx, `SELECT user_id,payload_json FROM pa_context_patches WHERE user_id=? AND id=?`, v.UserID, v.ID))
+		old, err := scanPAContextPatch(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE assistant_id=? AND id=?`, v.AssistantID, v.ID))
 		if err == nil {
 			out = old
 			return nil
@@ -55,7 +55,7 @@ func (s *Store) BeginPersonalAgentContextPatch(ctx context.Context, v store.Pers
 		if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		job, err := tx.GetPersonalAgentMaintenance(ctx, v.UserID, v.JobID)
+		job, err := tx.GetPersonalAgentMaintenance(ctx, v.AssistantID, v.JobID)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func (s *Store) BeginPersonalAgentContextPatch(ctx context.Context, v store.Pers
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_context_patches VALUES(?,?,?,?,?,?)`, v.ID, v.UserID, v.WorkspaceID, v.Status, v.Revision, string(raw))
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_context_patches(id,user_id,assistant_id,workspace_id,status,revision,payload_json) VALUES(?,?,?,?,?,?,?)`, v.ID, v.UserID, v.AssistantID, v.WorkspaceID, v.Status, v.Revision, string(raw))
 		out = v
 		return err
 	})
@@ -121,11 +121,11 @@ func (s *Store) listPAContextPatches(ctx context.Context, q string, args ...any)
 	}
 	return out, rows.Err()
 }
-func (s *Store) ListPersonalAgentContextPatches(ctx context.Context, user string) ([]store.PersonalAgentContextPatch, error) {
-	return s.listPAContextPatches(ctx, `SELECT user_id,payload_json FROM pa_context_patches WHERE user_id=? ORDER BY rowid DESC LIMIT 200`, user)
+func (s *Store) ListPersonalAgentContextPatches(ctx context.Context, assistantID string) ([]store.PersonalAgentContextPatch, error) {
+	return s.listPAContextPatches(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200`, assistantID)
 }
 func (s *Store) PendingPersonalAgentContextPatches(ctx context.Context) ([]store.PersonalAgentContextPatch, error) {
-	return s.listPAContextPatches(ctx, `SELECT user_id,payload_json FROM pa_context_patches WHERE status='applying' ORDER BY rowid LIMIT 20`)
+	return s.listPAContextPatches(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE status='applying' ORDER BY rowid LIMIT 20`)
 }
 func (s *Store) SavePersonalAgentContextPatch(ctx context.Context, v store.PersonalAgentContextPatch) (store.PersonalAgentContextPatch, error) {
 	old := v.Revision
@@ -135,7 +135,7 @@ func (s *Store) SavePersonalAgentContextPatch(ctx context.Context, v store.Perso
 	if err != nil {
 		return v, err
 	}
-	res, err := s.conn().ExecContext(ctx, `UPDATE pa_context_patches SET status=?,revision=?,payload_json=? WHERE user_id=? AND id=? AND revision=? AND status='applying'`, v.Status, v.Revision, string(raw), v.UserID, v.ID, old)
+	res, err := s.conn().ExecContext(ctx, `UPDATE pa_context_patches SET status=?,revision=?,payload_json=? WHERE assistant_id=? AND id=? AND revision=? AND status='applying'`, v.Status, v.Revision, string(raw), v.AssistantID, v.ID, old)
 	if err != nil {
 		return v, err
 	}

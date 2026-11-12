@@ -10,6 +10,7 @@ import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
 import { RunnerStateBadge } from "./device-runner";
 import { offlineSince, type DeviceReadiness } from "../../lib/device-readiness";
+import { deviceConnection } from "../../lib/device-connection";
 import { clockTime } from "../../lib/time-format";
 
 /** The device list: one row per device, opening it or acting on it. */
@@ -40,82 +41,89 @@ export function DeviceList({
   const { t } = useTranslation("devices");
   return (
     <div className="grid min-w-0 gap-4">
-      {devices.map((row) => (
-        <ManagementRow
-          className="transition-colors hover:bg-control-ghost-hover max-[700px]:flex-nowrap"
-          key={row.id}
-        >
-          <Button
-            className="h-auto min-w-0 flex-1 basis-auto justify-start gap-3.5 rounded-lg p-0 text-left leading-normal active:scale-100 max-[700px]:basis-full max-[700px]:flex-wrap max-[700px]:gap-x-2.5 max-[700px]:gap-y-2 max-[700px]:pl-[35px]"
-            variant="bare"
-            onClick={() => onOpen(row.id)}
+      {devices.map((row) => {
+        const connection = deviceConnection(row);
+        return (
+          <ManagementRow
+            className="transition-colors hover:bg-control-ghost-hover max-[700px]:flex-nowrap"
+            key={row.id}
           >
-            <Monitor
-              size={25}
-              className="max-[700px]:absolute max-[700px]:top-0 max-[700px]:left-0"
-            />
-            <span className="grid min-w-0 flex-1 gap-[5px] leading-[1.3] whitespace-normal max-[700px]:basis-full">
-              <strong>{row.label}</strong>
-              <small>
-                {[
-                  row.system && row.system.hostname !== row.label
-                    ? row.system.hostname
-                    : undefined,
-                  deviceSummary(row),
-                  t("list.workspaceCount", {
-                    count: workspaceCount(row.id),
-                  }),
-                  offlineSince(row)
-                    ? t("list.offlineSince", {
-                        time: clockTime(offlineSince(row), { date: "short" }),
-                      })
-                    : undefined,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </small>
-            </span>
-            <WorkerStateBadge device={row} release={release} />
-            {readiness ? (
-              <ReadinessBadge device={row} readiness={readiness(row)} />
-            ) : null}
-            <RunnerStateBadge device={row} />
-            <Badge tone={row.status === "connected" ? "online" : "neutral"}>
-              {t(
-                row.status === "connected" ? "status.online" : "status.offline",
-              )}
-            </Badge>
-            <span>{t("list.view")}</span>
-          </Button>
-          <AccountShareIcon device={row} onRefresh={onRefresh} />
-          {!row.owned ? (
-            <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
-          ) : (
-            <RowMenu
-              items={[
-                {
-                  key: "rename",
-                  label: t("rename.action"),
-                  icon: <Pencil size={15} />,
-                  onSelect: () => onRename(row),
-                },
-                {
-                  key: "remove",
-                  tone: "danger" as const,
-                  label: t("list.removeFromFoundry"),
-                  icon: <Trash2 size={15} />,
-                  onSelect: () => onRemove(row),
-                },
-              ]}
-              label={t("list.actionsFor", { device: row.label })}
-              triggerRef={(element) => {
-                if (element) triggers.set(row.id, element);
-                else triggers.delete(row.id);
-              }}
-            />
-          )}
-        </ManagementRow>
-      ))}
+            <Button
+              className="h-auto min-w-0 flex-1 basis-auto justify-start gap-3.5 rounded-lg p-0 text-left leading-normal active:scale-100 max-[700px]:basis-full max-[700px]:flex-wrap max-[700px]:gap-x-2.5 max-[700px]:gap-y-2 max-[700px]:pl-[35px]"
+              variant="bare"
+              onClick={() => onOpen(row.id)}
+            >
+              <Monitor
+                size={25}
+                className="max-[700px]:absolute max-[700px]:top-0 max-[700px]:left-0"
+              />
+              <span className="grid min-w-0 flex-1 gap-[5px] leading-[1.3] whitespace-normal max-[700px]:basis-full">
+                <strong>{row.label}</strong>
+                <small>
+                  {[
+                    row.system && row.system.hostname !== row.label
+                      ? row.system.hostname
+                      : undefined,
+                    deviceSummary(row),
+                    t("list.workspaceCount", {
+                      count: workspaceCount(row.id),
+                    }),
+                    offlineSince(row)
+                      ? t("list.offlineSince", {
+                          time: clockTime(offlineSince(row), { date: "short" }),
+                        })
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </small>
+              </span>
+              <WorkerStateBadge device={row} release={release} />
+              {readiness ? (
+                <ReadinessBadge device={row} readiness={readiness(row)} />
+              ) : null}
+              <RunnerStateBadge device={row} />
+              <Badge tone={connection === "online" ? "online" : "neutral"}>
+                {t(
+                  connection === "online"
+                    ? "status.online"
+                    : connection === "reconnecting"
+                      ? "status.reconnecting"
+                      : "status.offline",
+                )}
+              </Badge>
+              <span>{t("list.view")}</span>
+            </Button>
+            <AccountShareIcon device={row} onRefresh={onRefresh} />
+            {!row.owned ? (
+              <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
+            ) : (
+              <RowMenu
+                items={[
+                  {
+                    key: "rename",
+                    label: t("rename.action"),
+                    icon: <Pencil size={15} />,
+                    onSelect: () => onRename(row),
+                  },
+                  {
+                    key: "remove",
+                    tone: "danger" as const,
+                    label: t("list.removeFromFoundry"),
+                    icon: <Trash2 size={15} />,
+                    onSelect: () => onRemove(row),
+                  },
+                ]}
+                label={t("list.actionsFor", { device: row.label })}
+                triggerRef={(element) => {
+                  if (element) triggers.set(row.id, element);
+                  else triggers.delete(row.id);
+                }}
+              />
+            )}
+          </ManagementRow>
+        );
+      })}
     </div>
   );
 }
@@ -163,7 +171,7 @@ function ReadinessBadge({
   readiness: DeviceReadiness;
 }) {
   const { t } = useTranslation("devices");
-  if (!device.owned || device.status !== "connected") return null;
+  if (!device.owned || deviceConnection(device) !== "online") return null;
   if (readiness.summary === "installing")
     return <Badge tone="brass">{t("readiness.summary.installing")}</Badge>;
   if (readiness.summary === "needs_setup")

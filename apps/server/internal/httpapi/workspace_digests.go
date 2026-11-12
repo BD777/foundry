@@ -403,6 +403,8 @@ func (s *Server) runDigestSummaries(ctx context.Context, ahead time.Duration) {
 
 func (s *Server) startDigestSummary(ctx context.Context, service *workspacedigest.Service, record store.WorkspaceDigestRecord) error {
 	now := service.Now()
+	// Transitional (DEV-191 A1): digests are the person's and run under
+	// their default assistant until upkeep is filtered per package (P5).
 	agent, err := s.store.GetPersonalAgent(ctx, record.Digest.UserID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && agent.State != store.PersonalAgentActive) {
 		return service.Postpone(ctx, record, now.Add(digestRetryAway))
@@ -445,7 +447,7 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	claim := func(ctx context.Context, session store.AgentSession) error {
-		_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.ID, snapshot.ID, session.ID)
 		claimed, err := service.Claim(ctx, record, session.ID)
 		if err == nil && !claimed {
 			err = errDigestRunning

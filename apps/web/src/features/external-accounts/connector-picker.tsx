@@ -2,6 +2,7 @@ import type {
   ConnectorDescriptor,
   ConnectorRestricted,
   ConnectorRestrictedDevice,
+  ConnectorServerHeldInstance,
   DeviceConnectorsView,
   ExternalAccount,
 } from "@bd777/foundry-protocol";
@@ -9,7 +10,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getExternalAccounts } from "../../api";
+import { getExternalAccounts, getServerHeldInstances } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { DividedList } from "../../components/ui/divided-list";
@@ -43,11 +44,21 @@ const statusTone = {
 /** A reading this recent from a device still online counts as current (connectorStaleAfter). */
 const currentForMs = 2 * 60_000;
 
-/** A server-held connector's accounts, as the server keeps them. */
-function serverHeldStatus(
+/**
+ * A server-held connector's accounts, as the server keeps them. An
+ * extension's instances are not in the account list (they are managed as
+ * instances), so for those the instances decide.
+ */
+export function serverHeldStatus(
   kind: string,
   accounts: ExternalAccount[] | undefined,
+  instances?: ConnectorServerHeldInstance[],
 ): PickerStatus | undefined {
+  if (instances) {
+    if (instances.some((i) => i.status === "ready" || i.status === "expiring"))
+      return "connected";
+    return instances.length ? "needsSignIn" : "notSetUp";
+  }
   if (!accounts) return undefined;
   const own = accounts.filter((account) => account.provider === kind);
   if (own.some((a) => a.status === "ready" || a.status === "expiring"))
@@ -326,6 +337,9 @@ export function ConnectorPicker({
 }: ConnectorPickerProps) {
   const { t } = useTranslation("externalAccounts");
   const [accounts, setAccounts] = useState<ExternalAccount[]>();
+  const [instances, setInstances] = useState<
+    Record<string, ConnectorServerHeldInstance[]>
+  >({});
   const [restrictedOpen, setRestrictedOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -342,10 +356,40 @@ export function ConnectorPicker({
     };
   }, []);
 
+  const instanceKinds = catalog
+    .filter(
+      (entry) =>
+        entry.holding === "server_held" && entry.extension && entry.serverHeld,
+    )
+    .map((entry) => entry.kind)
+    .join("\n");
+  useEffect(() => {
+    let cancelled = false;
+    for (const kind of instanceKinds ? instanceKinds.split("\n") : []) {
+      getServerHeldInstances(kind)
+        .then((view) => {
+          if (!cancelled)
+            setInstances((current) => ({ ...current, [kind]: view.instances }));
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceKinds]);
+
   function option(connector: ConnectorDescriptor): SearchSelectOption {
     const status =
       connector.holding === "server_held"
-        ? serverHeldStatus(connector.kind, accounts)
+        ? connector.extension && connector.serverHeld
+          ? instances[connector.kind]
+            ? serverHeldStatus(
+                connector.kind,
+                accounts,
+                instances[connector.kind],
+              )
+            : undefined
+          : serverHeldStatus(connector.kind, accounts)
         : deviceHeldStatus(connector.kind, devices);
     return {
       value: connector.kind,

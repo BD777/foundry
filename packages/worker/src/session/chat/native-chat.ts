@@ -36,6 +36,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { FileHandle } from "node:fs/promises";
 import { isInside } from "../../platform/paths.js";
+import { chatFingerprint } from "./chat-fingerprint.js";
 
 interface CodexSessionIndexEntry {
   id: string;
@@ -65,11 +66,22 @@ interface NativeChatCandidate {
 interface NativeChatCacheEntry {
   mtimeMs: number;
   size: number;
+  estimatedBytes: number;
   value: Promise<NativeChatCandidate | undefined>;
 }
 
 const codexNativeChatCache = new Map<string, NativeChatCacheEntry>();
 const claudeNativeChatCache = new Map<string, NativeChatCacheEntry>();
+const nativeChatFingerprints = new WeakMap<
+  NativeChatCandidate,
+  { key: string; value: string }
+>();
+const nativeChatCacheBytes = new WeakMap<
+  Map<string, NativeChatCacheEntry>,
+  number
+>();
+const nativeChatCacheByteLimit = 64 * 1024 * 1024;
+const nativeChatCacheEntryLimit = 1000;
 const nativeSessionHeaderByteLimit = 256 * 1024;
 // A chat carries its log's latest part of about this size; older parts are
 // read a page of this size at a time when someone scrolls up to them.
@@ -80,12 +92,35 @@ const nativeLogLineLimit = 16 * 1024 * 1024;
 // to show: a long run of tool output or bookkeeping is not a whole page.
 const nativeLogReachLimit = 8 * 1024 * 1024;
 
+export interface NativeChatScanStats {
+  parsedFiles: number;
+  reusedFiles: number;
+}
+
+export interface NativeChatSnapshot {
+  chats: ChatThread[];
+  fingerprints: Map<string, string>;
+  stats: NativeChatScanStats;
+}
+
 export async function nativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
   profiles: AgentProfileProjection[],
   limit = 60,
   includeIds: ReadonlySet<string> = new Set(),
 ): Promise<ChatThread[]> {
+  return (
+    await nativeChatSnapshotForWorkspace(workspace, profiles, limit, includeIds)
+  ).chats;
+}
+
+export async function nativeChatSnapshotForWorkspace(
+  workspace: WorkspaceProjection,
+  profiles: AgentProfileProjection[],
+  limit = 60,
+  includeIds: ReadonlySet<string> = new Set(),
+  stats: NativeChatScanStats = { parsedFiles: 0, reusedFiles: 0 },
+): Promise<NativeChatSnapshot> {
   const nativeProfiles = new Map<
     Exclude<WorkerRuntimeId, "mock">,
     AgentProfileProjection | undefined
@@ -94,45 +129,52 @@ export async function nativeChatThreadsForWorkspace(
     ["claude", nativeProfileForRuntime(profiles, "claude")],
   ]);
   const [codexChats, claudeChats] = await Promise.all([
-    codexNativeChatThreadsForWorkspace(workspace),
-    claudeNativeChatThreadsForWorkspace(workspace),
+    codexNativeChatThreadsForWorkspace(workspace, stats),
+    claudeNativeChatThreadsForWorkspace(workspace, stats),
   ]);
-  return [...codexChats, ...claudeChats]
+  const candidates = [...codexChats, ...claudeChats]
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
     .filter(
       (candidate, index) =>
         index < limit ||
         candidate.archived ||
         includeIds.has(`native_${candidate.provider}_${candidate.id}`),
-    )
-    .map((candidate) => {
-      const profile = nativeProfiles.get(candidate.provider);
-      return {
-        id: `native_${candidate.provider}_${candidate.id}`,
-        handoffContext: candidate.handoffContext,
-        transcript: candidate.transcript,
-        ...(candidate.transcriptBefore
-          ? { transcriptBefore: candidate.transcriptBefore }
-          : {}),
-        answerRevision: candidate.answerRevision,
-        recentMessages: candidate.recentMessages,
-        status: candidate.status,
-        archived: candidate.archived,
-        nativeSessionId: candidate.id,
-        preview: candidate.preview,
-        provider: candidate.provider,
-        profileFingerprint:
-          candidate.profileFingerprint ?? profile?.fingerprint,
-        profileId: candidate.profileId ?? profile?.id,
-        profileLabel: candidate.profileLabel ?? profile?.label,
-        readonly: false,
-        title: candidate.title,
-        // Its last conversation activity; lists label it themselves, so
-        // time passing never changes what is uploaded.
-        updatedAt: candidate.updatedAt.toISOString(),
-        workspaceId: workspace.id,
-      };
-    });
+    );
+  const chats = candidates.map((candidate) => {
+    const profile = nativeProfiles.get(candidate.provider);
+    return {
+      id: `native_${candidate.provider}_${candidate.id}`,
+      handoffContext: candidate.handoffContext,
+      transcript: candidate.transcript,
+      ...(candidate.transcriptBefore
+        ? { transcriptBefore: candidate.transcriptBefore }
+        : {}),
+      answerRevision: candidate.answerRevision,
+      recentMessages: candidate.recentMessages,
+      status: candidate.status,
+      archived: candidate.archived,
+      nativeSessionId: candidate.id,
+      preview: candidate.preview,
+      provider: candidate.provider,
+      profileFingerprint: candidate.profileFingerprint ?? profile?.fingerprint,
+      profileId: candidate.profileId ?? profile?.id,
+      profileLabel: candidate.profileLabel ?? profile?.label,
+      readonly: false,
+      title: candidate.title,
+      // Its last conversation activity; lists label it themselves, so
+      // time passing never changes what is uploaded.
+      updatedAt: candidate.updatedAt.toISOString(),
+      workspaceId: workspace.id,
+    } satisfies ChatThread;
+  });
+  const fingerprints = new Map<string, string>();
+  for (const [index, chat] of chats.entries()) {
+    const candidate = candidates[index];
+    if (candidate) {
+      fingerprints.set(chat.id, fingerprintForCandidate(candidate, chat));
+    }
+  }
+  return { chats, fingerprints, stats };
 }
 
 /**
@@ -267,8 +309,24 @@ function nativeProfileForRuntime(
   );
 }
 
+function fingerprintForCandidate(
+  candidate: NativeChatCandidate,
+  chat: ChatThread,
+): string {
+  // The file cache skips parsing unchanged logs. Reuse the digest too unless
+  // session-index titles, profiles, archive state, or another visible field
+  // changed after the transcript was parsed.
+  const key = JSON.stringify({ ...chat, transcript: undefined });
+  const cached = nativeChatFingerprints.get(candidate);
+  if (cached?.key === key) return cached.value;
+  const value = chatFingerprint(chat);
+  nativeChatFingerprints.set(candidate, { key, value });
+  return value;
+}
+
 async function codexNativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
+  stats: NativeChatScanStats,
 ): Promise<NativeChatCandidate[]> {
   const workspacePath = resolve(workspace.localPath);
   const byID = new Map<string, NativeChatCandidate>();
@@ -292,6 +350,7 @@ async function codexNativeChatThreadsForWorkspace(
         codexNativeChatCache,
         sessionPath,
         parseCodexSessionCandidate,
+        stats,
       );
       if (index % 4 === 3) {
         await yieldToEventLoop();
@@ -318,6 +377,7 @@ async function codexNativeChatThreadsForWorkspace(
 
 async function claudeNativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
+  stats: NativeChatScanStats,
 ): Promise<NativeChatCandidate[]> {
   const workspacePath = resolve(workspace.localPath);
   const byID = new Map<string, NativeChatCandidate>();
@@ -352,6 +412,7 @@ async function claudeNativeChatThreadsForWorkspace(
         claudeNativeChatCache,
         sessionPath,
         parseClaudeSessionCandidate,
+        stats,
       );
       if (index % 4 === 3) {
         await yieldToEventLoop();
@@ -436,8 +497,14 @@ const claudeSessionDepth = 2;
 const codexSessionDepth = 5;
 // One listing serves every workspace synced in the same round.
 const listingReuseMs = 5000;
+let listingsRevision = 0;
 export function invalidateNativeChatListings(): void {
   listings.clear();
+  listingsRevision += 1;
+}
+
+export function nativeChatListingsRevision(): number {
+  return listingsRevision;
 }
 
 const listings = new Map<string, { at: number; files: Promise<string[]> }>();
@@ -509,12 +576,13 @@ async function cachedNativeChatCandidate(
     path: string,
     stat: Stats,
   ) => Promise<NativeChatCandidate | undefined>,
+  stats: NativeChatScanStats = { parsedFiles: 0, reusedFiles: 0 },
 ): Promise<NativeChatCandidate | undefined> {
   let stat: Stats;
   try {
     stat = statSync(sessionPath);
   } catch {
-    cache.delete(sessionPath);
+    deleteCachedNativeChat(cache, sessionPath);
     return undefined;
   }
   const existing = cache.get(sessionPath);
@@ -523,17 +591,61 @@ async function cachedNativeChatCandidate(
     existing.mtimeMs === stat.mtimeMs &&
     existing.size === stat.size
   ) {
+    stats.reusedFiles += 1;
+    // Refresh insertion order for the byte-bounded cache.
+    cache.delete(sessionPath);
+    cache.set(sessionPath, existing);
     return existing.value;
   }
+  stats.parsedFiles += 1;
   const value = parse(sessionPath, stat);
-  const entry = { mtimeMs: stat.mtimeMs, size: stat.size, value };
-  cache.set(sessionPath, entry);
+  const entry = {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    estimatedBytes: Math.min(stat.size, nativeLogReachLimit),
+    value,
+  };
+  setCachedNativeChat(cache, sessionPath, entry);
   void value.catch(() => {
     if (cache.get(sessionPath) === entry) {
-      cache.delete(sessionPath);
+      deleteCachedNativeChat(cache, sessionPath);
     }
   });
   return value;
+}
+
+function setCachedNativeChat(
+  cache: Map<string, NativeChatCacheEntry>,
+  path: string,
+  entry: NativeChatCacheEntry,
+): void {
+  deleteCachedNativeChat(cache, path);
+  cache.set(path, entry);
+  nativeChatCacheBytes.set(
+    cache,
+    (nativeChatCacheBytes.get(cache) ?? 0) + entry.estimatedBytes,
+  );
+  while (
+    cache.size > nativeChatCacheEntryLimit ||
+    (nativeChatCacheBytes.get(cache) ?? 0) > nativeChatCacheByteLimit
+  ) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    deleteCachedNativeChat(cache, oldest);
+  }
+}
+
+function deleteCachedNativeChat(
+  cache: Map<string, NativeChatCacheEntry>,
+  path: string,
+): void {
+  const entry = cache.get(path);
+  if (!entry) return;
+  cache.delete(path);
+  nativeChatCacheBytes.set(
+    cache,
+    Math.max(0, (nativeChatCacheBytes.get(cache) ?? 0) - entry.estimatedBytes),
+  );
 }
 
 async function readSessionPrefixLines(

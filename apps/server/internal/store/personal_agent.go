@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // The Personal Agent's records (docs/personal-agent.md), one Go struct per
@@ -28,6 +29,22 @@ const (
 	PersonalAgentActive  = "active"
 	PersonalAgentStopped = "stopped"
 )
+
+// PersonalAgentFeishuAppInUse says another of the owner's assistants already
+// answers direct chats for the app.
+type PersonalAgentFeishuAppInUse struct {
+	AppID         string
+	AssistantID   string
+	AssistantName string
+}
+
+func (e *PersonalAgentFeishuAppInUse) Error() string {
+	name := e.AssistantName
+	if name == "" {
+		name = "the default assistant"
+	}
+	return fmt.Sprintf("Feishu app %s is already used by assistant %q", e.AppID, name)
+}
 
 // Policy decisions.
 const (
@@ -87,9 +104,21 @@ const PersonalAgentProposalConnectorWrite = "connector_write"
 // PersonalAgentPolicy maps each managed action to its decision.
 type PersonalAgentPolicy map[string]string
 
-// PersonalAgent is a person's assistant (table personal_agents).
+// PersonalAgent is one of a person's assistants (table assistants,
+// DEV-191). A person may have several; exactly one is their default, the
+// one the /api/personal-agent aliases and GetPersonalAgent answer.
 type PersonalAgent struct {
-	UserID              string                `json:"userId"`
+	// ID is the assistant's id (asst_…): every pa_* record, inbox entry,
+	// operation and maintenance job carries it as assistant_id.
+	ID string `json:"id"`
+	// Name labels the assistant in lists and switchers; how it introduces
+	// itself stays Settings.AssistantName.
+	Name      string `json:"name"`
+	IsDefault bool   `json:"isDefault"`
+	// UserID is the owner (owner_user_id).
+	UserID string `json:"userId"`
+	// WorkspaceID is the assistant's home workspace (home_workspace_id,
+	// kind personal_agent, one per assistant).
 	WorkspaceID         string                `json:"workspaceId"`
 	HomeDeviceID        string                `json:"homeDeviceId"`
 	State               string                `json:"state"`
@@ -110,6 +139,7 @@ type PersonalAgent struct {
 type PersonalAgentSettings struct {
 	RunDefault         *PersonalAgentRunPreference           `json:"runDefault,omitempty"`
 	RoleOverrides      map[string]PersonalAgentRunPreference `json:"roleOverrides,omitempty"`
+	ExecutionModels    *PersonalAgentExecutionModels         `json:"executionModels,omitempty"`
 	AssistantName      string                                `json:"assistantName"`
 	Language           string                                `json:"language"`
 	Timezone           string                                `json:"timezone"`
@@ -132,6 +162,19 @@ type PersonalAgentSettings struct {
 	ActiveHoursEnd     string                                `json:"activeHoursEnd"`
 	UrgentAnytime      bool                                  `json:"urgentAnytime"`
 	Limits             PersonalAgentLimits                   `json:"limits"`
+}
+
+// PersonalAgentExecutionModels is this assistant's helper override: the same
+// default and alternatives as a workspace execution model, scoped to this
+// assistant. An absent value follows the workspace, then global, choice.
+type PersonalAgentExecutionModels struct {
+	ProviderKind  ExecutionModelChoiceProviderKind `json:"providerKind,omitempty"`
+	ProviderID    string                           `json:"providerId,omitempty"`
+	Runtime       NativeRuntimeID                  `json:"runtime,omitempty"`
+	Model         string                           `json:"model,omitempty"`
+	WorkerGroupID string                           `json:"workerGroupId,omitempty"`
+	Effort        string                           `json:"effort,omitempty"`
+	Alternatives  []ExecutionModelChoice           `json:"alternatives"`
 }
 
 // PersonalAgentDeviceSettings is what the assistant may do on one device.
@@ -211,8 +254,10 @@ const (
 // PersonalAgentMemoryItem is one fact about the person (table pa_memory).
 // Forgetting erases Content.
 type PersonalAgentMemoryItem struct {
-	ID              string `json:"id"`
-	UserID          string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID     string `json:"-"`
 	Content         string `json:"content"`
 	Origin          string `json:"origin"`
 	Status          string `json:"status"`
@@ -222,6 +267,9 @@ type PersonalAgentMemoryItem struct {
 	CreatedAt       string `json:"createdAt"`
 	UpdatedAt       string `json:"updatedAt"`
 	VerifiedAt      string `json:"verifiedAt,omitempty"`
+	// Scope is the memory layer a recalled fact is in (MemoryScopePerson or
+	// MemoryScopeAssistant); empty on a legacy record.
+	Scope string `json:"scope,omitempty"`
 }
 
 // PersonalAgentMemoryInput is remember's item and the panel's add and edit.
@@ -251,8 +299,10 @@ const (
 // PersonalAgentProposal is an action waiting for the person's yes (table
 // pa_proposals). Spec is the tool's arguments, applied exactly as approved.
 type PersonalAgentProposal struct {
-	ID          string          `json:"id"`
-	UserID      string          `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID string          `json:"-"`
 	SessionID   string          `json:"sessionId"`
 	Kind        string          `json:"kind"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
@@ -298,8 +348,10 @@ const (
 // PersonalAgentTask is work the assistant handed off and follows up (table
 // pa_tasks).
 type PersonalAgentTask struct {
-	ID                    string `json:"id"`
-	UserID                string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID           string `json:"-"`
 	ConversationSessionID string `json:"conversationSessionId"`
 	SessionID             string `json:"sessionId,omitempty"`
 	WorkspaceID           string `json:"workspaceId"`
@@ -337,7 +389,9 @@ type PersonalAgentTaskEvent struct {
 // WorkspaceDigest is what the server knows of one project for one person
 // (table workspace_digests): the deterministic part and the summary.
 type WorkspaceDigest struct {
-	UserID         string                   `json:"-"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID    string                   `json:"-"`
 	WorkspaceID    string                   `json:"workspaceId"`
 	Name           string                   `json:"name"`
 	Kind           string                   `json:"kind"`
@@ -492,8 +546,10 @@ type WorkspaceCandidate struct {
 // values of the protocol's PersonalAgentRequestClass, RouteTarget and
 // RouteConfidence.
 type PersonalAgentRoutingDecision struct {
-	ID                   string   `json:"id"`
-	UserID               string   `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID          string   `json:"-"`
 	SessionID            string   `json:"sessionId"`
 	InputID              string   `json:"inputId,omitempty"`
 	Request              string   `json:"request"`
@@ -530,8 +586,10 @@ const (
 // PersonalAgentActionRecord is one write tool call, refused ones included,
 // or one approved proposal applied (table pa_actions).
 type PersonalAgentActionRecord struct {
-	ID           string `json:"id"`
-	UserID       string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID  string `json:"-"`
 	SessionID    string `json:"sessionId"`
 	Tool         string `json:"tool"`
 	ArgsSummary  string `json:"argsSummary"`
@@ -554,36 +612,71 @@ type PersonalAgentWindows struct {
 	MonthStart string
 }
 
-// PersonalAgentStore keeps the Personal Agent's records. Every read and
-// write is scoped to one person (userID); another person's id answers
+// PersonalAgentStore keeps the assistants' records. Every read and write
+// is scoped to one assistant (assistantID, PersonalAgent.ID) that the caller
+// resolved for its owner first; another assistant's record answers
 // ErrNotFound.
 type PersonalAgentStore interface {
-	// GetPersonalAgent is the person's assistant, ErrNotFound before setup.
+	// GetPersonalAgent is the person's default assistant, ErrNotFound before
+	// setup. Transitional (DEV-191 A1): callers that only know the person
+	// use it until they carry an assistant id; it equals DefaultAssistant.
 	GetPersonalAgent(ctx context.Context, userID string) (PersonalAgent, error)
-	// PersonalAgentForWorkspace is the assistant whose workspace this is.
-	PersonalAgentForWorkspace(ctx context.Context, workspaceID string) (PersonalAgent, error)
-	// CreatePersonalAgent stores a new assistant; ErrPersonalAgentExists
-	// when the person or the workspace already has one.
+	// GetAssistant is one assistant by id, whoever owns it: the caller checks
+	// the owner.
+	GetAssistant(ctx context.Context, assistantID string) (PersonalAgent, error)
+	// ListAssistants are the owner's assistants, the default first, then by
+	// creation.
+	ListAssistants(ctx context.Context, ownerUserID string) ([]PersonalAgent, error)
+	// DefaultAssistant is the owner's default assistant.
+	DefaultAssistant(ctx context.Context, ownerUserID string) (PersonalAgent, error)
+	// AssistantForWorkspace is the assistant whose home workspace this is.
+	AssistantForWorkspace(ctx context.Context, workspaceID string) (PersonalAgent, error)
+	// AssistantForFeishuApp is the owner's assistant bound to the Feishu app,
+	// ErrNotFound when the app has no explicit binding.
+	AssistantForFeishuApp(ctx context.Context, ownerUserID, appID string) (PersonalAgent, error)
+	// AssistantForSession is the assistant a session works for: the one
+	// whose home (or former home) workspace the session is in, else the one
+	// whose task (pa_tasks.session_id) or dispatched operation started it.
+	// ErrNotFound for a session no assistant owns.
+	AssistantForSession(ctx context.Context, sessionID string) (PersonalAgent, error)
+	// CreatePersonalAgent stores a new assistant. The owner's first one is
+	// their default with a package that reaches every workspace; a later one
+	// (agent.IsDefault false) gets a package that reaches none until the
+	// person adds them. ErrPersonalAgentExists when the workspace already
+	// has an assistant, or agent.IsDefault and the owner already has one.
 	CreatePersonalAgent(ctx context.Context, agent PersonalAgent) (PersonalAgent, error)
-	SavePersonalAgentSettings(ctx context.Context, userID string, settings PersonalAgentSettings) (PersonalAgent, error)
+	// RenameAssistant sets the assistant's label.
+	RenameAssistant(ctx context.Context, assistantID, name string) (PersonalAgent, error)
+	// DeleteAssistant removes a non-default assistant and its own records
+	// (memory, proposals, tasks, actions, routing decisions, list, inbox,
+	// operations, run snapshots and controls, maintenance jobs, context
+	// patches and its permission package); ErrAssistantIsDefault for the
+	// default one. Its home workspace and sessions stay: the caller archives
+	// the workspace.
+	DeleteAssistant(ctx context.Context, assistantID string) error
+	SavePersonalAgentSettings(ctx context.Context, assistantID string, settings PersonalAgentSettings) (PersonalAgent, error)
 	// SetPersonalAgentConnectorLevels replaces the connector-account overrides
 	// in the assistant's permission package. Omitted accounts use write.
-	SetPersonalAgentConnectorLevels(ctx context.Context, userID string, levels []ConnectorAccountPermission) (PersonalAgent, error)
+	SetPersonalAgentConnectorLevels(ctx context.Context, assistantID string, levels []ConnectorAccountPermission) (PersonalAgent, error)
 	// FillPersonalAgentTimezone sets the assistant's time zone to timezone
 	// only while it has none: a zone the person chose is never replaced.
-	FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (PersonalAgent, error)
+	FillPersonalAgentTimezone(ctx context.Context, assistantID, timezone string) (PersonalAgent, error)
 	// SetPersonalAgentState switches active and stopped.
-	SetPersonalAgentState(ctx context.Context, userID, state string) (PersonalAgent, error)
+	SetPersonalAgentState(ctx context.Context, assistantID, state string) (PersonalAgent, error)
 	// MovePersonalAgentHome makes workspaceID on deviceID the assistant's
 	// workspace and home device.
-	MovePersonalAgentHome(ctx context.Context, userID, workspaceID, deviceID string) (PersonalAgent, error)
-	// PersonalAgentChatIntroduced reports whether the person's Feishu
-	// direct chat on Connectors app appID was told that the assistant took
-	// it over; ClaimPersonalAgentChatIntroduction records it, false when it
+	MovePersonalAgentHome(ctx context.Context, assistantID, workspaceID, deviceID string) (PersonalAgent, error)
+	// PersonalAgentChatIntroduced reports whether the assistant's Feishu
+	// direct chat on Connectors app appID was told that it took the chat
+	// over; ClaimPersonalAgentChatIntroduction records it, false when it
 	// already was.
-	PersonalAgentChatIntroduced(ctx context.Context, userID, appID string) (bool, error)
-	ClaimPersonalAgentChatIntroduction(ctx context.Context, userID, appID string) (bool, error)
+	PersonalAgentChatIntroduced(ctx context.Context, assistantID, appID string) (bool, error)
+	ClaimPersonalAgentChatIntroduction(ctx context.Context, assistantID, userID, appID string) (bool, error)
 
+	// The legacy memory (pa_memory) stays the person's, shared by their
+	// assistants, until memory layering (DEV-191 P2) moves it into the
+	// vaults; each item records the assistant that wrote it (AssistantID).
+	//
 	// ListPersonalAgentMemory lists every item, forgotten ones without
 	// content, newest first.
 	ListPersonalAgentMemory(ctx context.Context, userID string) ([]PersonalAgentMemoryItem, error)
@@ -601,21 +694,21 @@ type PersonalAgentStore interface {
 	ForgetAllPersonalAgentMemory(ctx context.Context, userID string) (int, error)
 
 	CreatePersonalAgentProposal(ctx context.Context, proposal PersonalAgentProposal) (PersonalAgentProposal, error)
-	GetPersonalAgentProposal(ctx context.Context, userID, id string) (PersonalAgentProposal, error)
+	GetPersonalAgentProposal(ctx context.Context, assistantID, id string) (PersonalAgentProposal, error)
 	// ListPersonalAgentProposals lists the person's proposals in these
 	// statuses (all when none), newest first.
-	ListPersonalAgentProposals(ctx context.Context, userID string, statuses []string) ([]PersonalAgentProposal, error)
+	ListPersonalAgentProposals(ctx context.Context, assistantID string, statuses []string) ([]PersonalAgentProposal, error)
 	// SetPersonalAgentProposalStatus moves a proposal from one of from to
 	// status; ErrPersonalAgentProposalSettled when it is in none of them.
-	SetPersonalAgentProposalStatus(ctx context.Context, userID, id string, from []string, status, via, errText string) (PersonalAgentProposal, error)
+	SetPersonalAgentProposalStatus(ctx context.Context, assistantID, id string, from []string, status, via, errText string) (PersonalAgentProposal, error)
 	// ExpirePersonalAgentProposals expires the pending proposals that
 	// expired before now, or every pending one when now is empty.
-	ExpirePersonalAgentProposals(ctx context.Context, userID, now string) (int, error)
+	ExpirePersonalAgentProposals(ctx context.Context, assistantID, now string) (int, error)
 
 	CreatePersonalAgentTask(ctx context.Context, task PersonalAgentTask) (PersonalAgentTask, error)
 	// ListPersonalAgentTasks lists tasks in these statuses (all when none),
 	// newest first.
-	ListPersonalAgentTasks(ctx context.Context, userID string, statuses []string) ([]PersonalAgentTask, error)
+	ListPersonalAgentTasks(ctx context.Context, assistantID string, statuses []string) ([]PersonalAgentTask, error)
 	// UpdatePersonalAgentTask saves a task's status and times, and the
 	// conversation it reports to.
 	UpdatePersonalAgentTask(ctx context.Context, task PersonalAgentTask) error
@@ -624,16 +717,16 @@ type PersonalAgentStore interface {
 	// arguments (kept for the server, never sent) and drops rows older than
 	// the retention.
 	RecordPersonalAgentAction(ctx context.Context, record PersonalAgentActionRecord, args json.RawMessage) (PersonalAgentActionRecord, error)
-	ListPersonalAgentActions(ctx context.Context, userID string, limit int) ([]PersonalAgentActionRecord, error)
+	ListPersonalAgentActions(ctx context.Context, assistantID string, limit int) ([]PersonalAgentActionRecord, error)
 	// PersonalAgentCreatedWorkspace reports whether the assistant created
 	// the workspace.
-	PersonalAgentCreatedWorkspace(ctx context.Context, userID, workspaceID string) (bool, error)
+	PersonalAgentCreatedWorkspace(ctx context.Context, assistantID, workspaceID string) (bool, error)
 	// PersonalAgentConnectorBoundBefore reports whether the assistant bound
 	// the account to the workspace before.
-	PersonalAgentConnectorBoundBefore(ctx context.Context, userID, workspaceID, accountID string) (bool, error)
+	PersonalAgentConnectorBoundBefore(ctx context.Context, assistantID, workspaceID, accountID string) (bool, error)
 
 	RecordPersonalAgentRoutingDecision(ctx context.Context, decision PersonalAgentRoutingDecision) (PersonalAgentRoutingDecision, error)
-	ListPersonalAgentRoutingDecisions(ctx context.Context, userID string, limit int) ([]PersonalAgentRoutingDecision, error)
+	ListPersonalAgentRoutingDecisions(ctx context.Context, assistantID string, limit int) ([]PersonalAgentRoutingDecision, error)
 
 	// PersonalAgentUsage counts what §9's limits apply to.
 	PersonalAgentUsage(ctx context.Context, agent PersonalAgent, windows PersonalAgentWindows) (PersonalAgentUsage, error)
@@ -646,5 +739,6 @@ type PersonalAgentStore interface {
 // Personal Agent store refusals.
 var (
 	ErrPersonalAgentExists          = errors.New("this person already has an assistant")
+	ErrAssistantIsDefault           = errors.New("the default assistant cannot be deleted")
 	ErrPersonalAgentProposalSettled = errors.New("this proposal was already answered or has expired")
 )

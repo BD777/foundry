@@ -58,6 +58,12 @@ func (s *Service) CaptureMaintenanceEvents(ctx context.Context) {
 		return
 	}
 	for _, agent := range agents {
+		// Upkeep is the person's, not one assistant's: it runs under their
+		// default assistant until it is split per vault and filtered per
+		// permission package (DEV-191 P5).
+		if !agent.IsDefault {
+			continue
+		}
 		if user, e := s.store.GetUser(ctx, agent.UserID); e != nil || !user.Active() {
 			continue
 		}
@@ -76,34 +82,46 @@ func (s *Service) CaptureMaintenanceEvents(ctx context.Context) {
 			key := GovernanceEventKey(record)
 			// Governance sees only changes to content/contract, never presence, usage
 			// counters, job status or the model's previous review.
-			s.EnqueueMaintenance(ctx, agent.UserID, "governance", d.WorkspaceID, "", key)
+			s.EnqueueMaintenance(ctx, agent, "governance", d.WorkspaceID, "", key)
 		}
 		vaults, err := s.store.ListKnowledgeVaults(ctx, agent.UserID)
 		if err != nil {
 			continue
 		}
+		// One review per vault, each reading only its own vault
+		// (maintenancePrompt): an assistant's memory layer is reviewed as
+		// that assistant, the person's layer and domain sources as the
+		// default one.
 		for _, v := range vaults {
 			if v.State != "active" {
 				continue
+			}
+			reviewer := agent
+			if v.Kind == "memory" && v.AssistantID != "" && v.AssistantID != agent.ID {
+				owner, err := s.store.GetAssistant(ctx, v.AssistantID)
+				if err != nil || owner.UserID != agent.UserID || owner.State != store.PersonalAgentActive {
+					continue
+				}
+				reviewer = owner
 			}
 			items, err := s.store.ListKnowledgeEntries(ctx, agent.UserID, v.ID)
 			if err != nil || len(items) == 0 {
 				continue
 			}
 			key := maintenanceMemoryKey(v, items)
-			s.EnqueueMaintenance(ctx, agent.UserID, "memory", v.WorkspaceID, v.ID, key)
+			s.EnqueueMaintenance(ctx, reviewer, "memory", v.WorkspaceID, v.ID, key)
 		}
 	}
 }
 
 // EnqueueMaintenance queues a role's review of a workspace (or vault) for
 // the event key, once per key.
-func (s *Service) EnqueueMaintenance(ctx context.Context, user, role, workspace, vault, key string) {
+func (s *Service) EnqueueMaintenance(ctx context.Context, agent store.PersonalAgent, role, workspace, vault, key string) {
 	if key == "" {
 		return
 	}
-	id := flow.Key("pamaint", user, role, workspace, key)
-	_, _ = s.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: id, UserID: user, Role: role, WorkspaceID: workspace, VaultID: vault, EventKey: key, DueAt: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)})
+	id := flow.Key("pamaint", agent.UserID, role, workspace, key)
+	_, _ = s.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: id, UserID: agent.UserID, AssistantID: agent.ID, Role: role, WorkspaceID: workspace, VaultID: vault, EventKey: key, DueAt: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)})
 }
 
 // RunMaintenance moves one review job on: reconciles its run, or starts it
@@ -129,7 +147,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 				return
 			}
 			job.SessionID = id
-			_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.UserID, job.SnapshotID, id)
+			_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.AssistantID, job.SnapshotID, id)
 			if store.IsActiveSessionStatus(session.Status) {
 				// A server restart may have occurred between accepting and sending the
 				// input. DispatchOrFail's exact-input reservation reconciles that gap.
@@ -182,7 +200,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("superseded", "source_changed", 0)
 		return
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, job.UserID)
+	agent, err := s.store.GetAssistant(ctx, job.AssistantID)
 	if err != nil {
 		return
 	}
@@ -218,7 +236,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("waiting", "worker_update_required", 5*time.Minute)
 		return
 	}
-	prompt, err := s.maintenancePrompt(ctx, job)
+	prompt, err := s.MaintenancePrompt(ctx, job)
 	if err != nil {
 		save("waiting", "source_unavailable", time.Minute)
 		return
@@ -244,7 +262,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 	}
 	bind := func(ctx context.Context, session store.AgentSession) error {
 		job.SessionID = session.ID
-		_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.UserID, snapshot.ID, session.ID)
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.AssistantID, snapshot.ID, session.ID)
 		return nil
 	}
 	session, err := s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{FailOffline: true, BeforeDispatch: bind})
@@ -259,7 +277,9 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 	save("running", "", 30*time.Second)
 }
 
-func (s *Service) maintenancePrompt(ctx context.Context, job store.PersonalAgentMaintenance) (string, error) {
+// MaintenancePrompt is what a review job starts with: a memory review reads
+// only the index of its own vault.
+func (s *Service) MaintenancePrompt(ctx context.Context, job store.PersonalAgentMaintenance) (string, error) {
 	scope := "Review only AGENTS.md and README.md in this workspace, and the purpose below. Identify stale, conflicting or duplicate instructions. A workspace can serve any domain; do not assume software or require Git. If a file is absent, propose a small initialization with purpose, authoritative sources and explicit open questions; do not invent personal facts."
 	if job.Role == "memory" {
 		v, e := s.store.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
@@ -268,6 +288,9 @@ func (s *Service) maintenancePrompt(ctx context.Context, job store.PersonalAgent
 		}
 		if v.WorkspaceID != job.WorkspaceID {
 			return "", invalid("knowledge authority moved")
+		}
+		if v.Kind == "memory" && v.AssistantID != "" && v.AssistantID != job.AssistantID {
+			return "", invalid("another assistant's memory layer")
 		}
 		if _, e = s.knowledge.Workspace(ctx, job.UserID, v); e != nil {
 			return "", e
@@ -482,7 +505,7 @@ func (s *Service) ContextPatch(ctx context.Context, job store.PersonalAgentMaint
 	if s.devices.Connection(workspace.DeviceID) == nil {
 		return nil, false, invalid("device_offline")
 	}
-	value, err := s.store.BeginPersonalAgentContextPatch(ctx, store.PersonalAgentContextPatch{ID: id, UserID: job.UserID, JobID: job.ID, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Index: input.Index, Path: patch.Path, BaseHash: patch.BaseHash, Hash: hex.EncodeToString(digest[:])}, job.Revision)
+	value, err := s.store.BeginPersonalAgentContextPatch(ctx, store.PersonalAgentContextPatch{ID: id, UserID: job.UserID, AssistantID: job.AssistantID, JobID: job.ID, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Index: input.Index, Path: patch.Path, BaseHash: patch.BaseHash, Hash: hex.EncodeToString(digest[:])}, job.Revision)
 	return value, true, err
 }
 
@@ -497,7 +520,7 @@ func (s *Service) drainContextPatches(ctx context.Context) {
 			_, _ = s.store.SavePersonalAgentContextPatch(ctx, op)
 			continue
 		}
-		job, err := s.store.GetPersonalAgentMaintenance(ctx, op.UserID, op.JobID)
+		job, err := s.store.GetPersonalAgentMaintenance(ctx, op.AssistantID, op.JobID)
 		if err != nil || job.Result == nil || op.Index >= len(job.Result.Patches) {
 			continue
 		}

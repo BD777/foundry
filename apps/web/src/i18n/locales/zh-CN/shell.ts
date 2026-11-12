@@ -5,6 +5,7 @@ export const shell: Translation<typeof en> = {
   nav: {
     assistantSection: "助理",
     assistant: "助理",
+    assistants: "助理",
     pending: "等你处理",
     assistantSettings: "助理设置",
     workspace: "工作区",
@@ -23,6 +24,7 @@ export const shell: Translation<typeof en> = {
   },
   views: {
     assistant: "助理",
+    assistants: "助理",
     pending: "等你处理",
     assistantSettings: "助理设置",
     account: "账户",

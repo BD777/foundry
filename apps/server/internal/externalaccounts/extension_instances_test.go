@@ -138,10 +138,8 @@ func TestDeviceNetworkProbePreservesPathAndRunsOnSelectedDevice(t *testing.T) {
 			Status: response.StatusCode, Headers: response.Header.Clone(), Body: body,
 		}, err
 	}
-	service.ExtensionCheckDevices = func(context.Context, store.ConnectorDescriptor, string, string) ([]store.ConnectorServerHeldDeviceCheck, error) {
-		return []store.ConnectorServerHeldDeviceCheck{{
-			DeviceID: "byte-dev", Name: "byte-dev", Status: "ok", CheckedAt: "now",
-		}}, nil
+	service.ExtensionDevices = func(context.Context, string, string) ([]ExtensionDeviceCandidate, error) {
+		return []ExtensionDeviceCandidate{{ID: "byte-dev", Name: "byte-dev", Online: true, Installed: true}}, nil
 	}
 	descriptor := extensionTestDescriptor(upstream.URL + "/openlark")
 	result, err := service.ProbeExtensionInstance(context.Background(), "owner_1", descriptor, store.ConnectorServerHeldInstanceInput{

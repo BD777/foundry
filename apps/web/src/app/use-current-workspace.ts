@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { FoundryData } from "../api-types";
 import { issueSortValue } from "../lib/issue-meta";
+import { deviceConnection } from "../lib/device-connection";
 import { initialDevicePairingMode, type DevicePairingMode } from "./navigation";
 import {
   currentDevice,
@@ -68,15 +69,16 @@ export function useCurrentWorkspace(
       ),
     [data.providerHealth, agents, device?.id],
   );
+  const connection =
+    devicePairingMode === "online" ? "online" : deviceConnection(device);
 
   return {
     activeSkillCount,
     agents,
     assets,
     device,
-    deviceOnline:
-      devicePairingMode === "online" ||
-      (devicePairingMode === "auto" && device?.status === "connected"),
+    deviceConnection: connection,
+    deviceOnline: connection === "online",
     files,
     providerHealth,
     reviewCount: sortedIssues.filter((issue) => issue.status === "verifying")

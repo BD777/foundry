@@ -3,6 +3,7 @@ package personalagent
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -10,6 +11,15 @@ import (
 
 // SettingsPath is where the person raises a limit (§9, §11).
 const SettingsPath = "/assistant/settings"
+
+// AssistantSettingsPath is one assistant's own settings page in the web
+// (/assistants/{id}/settings); SettingsPath, the default's alias, without an id.
+func AssistantSettingsPath(assistantID string) string {
+	if assistantID == "" {
+		return SettingsPath
+	}
+	return "/assistants/" + url.PathEscape(assistantID) + "/settings"
+}
 
 // LimitError is a §9 limit the assistant reached: what it tells the person,
 // with the settings link.

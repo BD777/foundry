@@ -21,10 +21,12 @@ import (
 type fakeAssistant struct {
 	mu        sync.Mutex
 	route     PersonalAgentRoute
+	routes    map[string]PersonalAgentRoute
 	pending   []store.PersonalAgentProposal
 	priors    []string
 	stops     []string
 	resumes   int
+	resumeIDs []string
 	decisions []string
 	// language is the one the person chose, "" for none.
 	language string
@@ -32,16 +34,17 @@ type fakeAssistant struct {
 	introduced map[string]bool
 }
 
-func (a *fakeAssistant) ClaimIntroduction(_ context.Context, userID, appID string) bool {
+func (a *fakeAssistant) ClaimIntroduction(_ context.Context, assistantID, userID, appID string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.introduced == nil {
 		a.introduced = map[string]bool{}
 	}
-	if a.introduced[userID+"/"+appID] {
+	key := assistantID + "/" + userID + "/" + appID
+	if a.introduced[key] {
 		return false
 	}
-	a.introduced[userID+"/"+appID] = true
+	a.introduced[key] = true
 	return true
 }
 
@@ -64,7 +67,7 @@ func (a *fakeAssistant) Word(text string) string {
 }
 
 // Language answers as personalagent.ReplyLanguage does.
-func (a *fakeAssistant) Language(_ context.Context, _, message string) string {
+func (a *fakeAssistant) Language(_ context.Context, _, _, message string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.language != "" {
@@ -81,42 +84,54 @@ func (a *fakeAssistant) Language(_ context.Context, _, message string) string {
 	return "zh"
 }
 
-func (a *fakeAssistant) Route(_ context.Context, userID, _ string, routeWorkspaceID string) (PersonalAgentRoute, bool, error) {
+func (a *fakeAssistant) Route(_ context.Context, userID, appID, routeWorkspaceID string) (PersonalAgentRoute, bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.priors = append(a.priors, routeWorkspaceID)
-	return a.route, a.route.WorkspaceID != "", nil
+	route := a.route
+	if mapped, ok := a.routes[appID]; ok {
+		route = mapped
+	}
+	return route, route.WorkspaceID != "", nil
 }
 
-func (a *fakeAssistant) Stop(_ context.Context, userID, via string) (PersonalAgentStopped, error) {
+func (a *fakeAssistant) Stop(_ context.Context, assistantID, _ string, via string) (PersonalAgentStopped, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.stops = append(a.stops, userID+"/"+via)
+	a.stops = append(a.stops, assistantID+"/"+via)
 	a.route.Stopped = true
 	return PersonalAgentStopped{Cancelled: 2}, nil
 }
 
-func (a *fakeAssistant) Resume(context.Context, string, string) (PersonalAgentResumed, error) {
+func (a *fakeAssistant) Resume(_ context.Context, assistantID, _, _ string) (PersonalAgentResumed, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.resumes++
+	a.resumeIDs = append(a.resumeIDs, assistantID)
 	a.route.Stopped = false
 	return PersonalAgentResumed{Stopped: []string{"Family budget page"}}, nil
 }
 
-func (a *fakeAssistant) PendingProposals(context.Context, string) ([]store.PersonalAgentProposal, error) {
+func (a *fakeAssistant) PendingProposals(_ context.Context, assistantID, _ string) ([]store.PersonalAgentProposal, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]store.PersonalAgentProposal(nil), a.pending...), nil
+	pending := []store.PersonalAgentProposal{}
+	for _, proposal := range a.pending {
+		if proposal.AssistantID == "" || proposal.AssistantID == assistantID {
+			pending = append(pending, proposal)
+		}
+	}
+	return pending, nil
 }
 
-func (a *fakeAssistant) decide(userID, proposalID, via, status string) (store.PersonalAgentProposal, error) {
+func (a *fakeAssistant) decide(assistantID, userID, proposalID, via, status string) (store.PersonalAgentProposal, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for index, proposal := range a.pending {
-		if proposal.ID == proposalID && proposal.UserID == userID {
+		if proposal.ID == proposalID && proposal.UserID == userID &&
+			(proposal.AssistantID == "" || proposal.AssistantID == assistantID) {
 			a.pending = append(a.pending[:index], a.pending[index+1:]...)
-			a.decisions = append(a.decisions, status+" "+proposalID+" via "+via)
+			a.decisions = append(a.decisions, assistantID+"/"+status+" "+proposalID+" via "+via)
 			proposal.Status, proposal.DecidedVia = status, via
 			return proposal, nil
 		}
@@ -124,12 +139,12 @@ func (a *fakeAssistant) decide(userID, proposalID, via, status string) (store.Pe
 	return store.PersonalAgentProposal{}, errors.New("no such pending proposal")
 }
 
-func (a *fakeAssistant) Accept(_ context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
-	return a.decide(userID, proposalID, via, store.PersonalAgentProposalAccepted)
+func (a *fakeAssistant) Accept(_ context.Context, assistantID, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
+	return a.decide(assistantID, userID, proposalID, via, store.PersonalAgentProposalAccepted)
 }
 
-func (a *fakeAssistant) Decline(_ context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
-	return a.decide(userID, proposalID, via, store.PersonalAgentProposalDeclined)
+func (a *fakeAssistant) Decline(_ context.Context, assistantID, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
+	return a.decide(assistantID, userID, proposalID, via, store.PersonalAgentProposalDeclined)
 }
 
 func (a *fakeAssistant) set(change func(*fakeAssistant)) {
@@ -169,7 +184,7 @@ func newAssistantFixture(t *testing.T) assistantFixture {
 	bindGroup(t, db, person.ID)
 	dispatcher := &recordingDispatcher{}
 	manager := NewWSManager(db, allSecrets{}, dispatcher, eventsForTest())
-	desk := &fakeAssistant{route: PersonalAgentRoute{WorkspaceID: "ws_pa", TakesDirectChats: true}}
+	desk := &fakeAssistant{route: PersonalAgentRoute{AssistantID: "asst_person", WorkspaceID: "ws_pa", TakesDirectChats: true}}
 	manager.PersonalAgents = desk
 	bot := &fakeBot{}
 	app := &botApp{clientID: "cli_x", client: bot}
@@ -263,7 +278,7 @@ func TestAssistantWordsAreHandledBeforeTheModel(t *testing.T) {
 
 	before := len(f.started())
 	f.send(t, personMessage("om_stop", "", " STOP ", "ou_person"))
-	if len(f.desk.stops) != 1 || f.desk.stops[0] != f.person.ID+"/feishu" || len(f.started()) != before {
+	if len(f.desk.stops) != 1 || f.desk.stops[0] != "asst_person/feishu" || len(f.started()) != before {
 		t.Fatalf("stop: %v, %d sessions started, want the switch pressed and no session", f.desk.stops, len(f.started())-before)
 	}
 	replies := f.bot.take()
@@ -276,8 +291,9 @@ func TestAssistantWordsAreHandledBeforeTheModel(t *testing.T) {
 	f.send(t, personMessage("om_resume", "", "继续", "ou_person"))
 	replies = f.bot.take()
 	if len(f.started()) != before || !repliesContain(replies, "om_while", "Your assistant is stopped") ||
-		f.desk.resumes != 1 || !repliesContain(replies, "om_resume", "Family budget page") {
-		t.Fatalf("while stopped: %d started, resumes %d, replies %+v", len(f.started())-before, f.desk.resumes, replies)
+		f.desk.resumes != 1 || len(f.desk.resumeIDs) != 1 || f.desk.resumeIDs[0] != "asst_person" ||
+		!repliesContain(replies, "om_resume", "Family budget page") {
+		t.Fatalf("while stopped: %d started, resumes %v, replies %+v", len(f.started())-before, f.desk.resumeIDs, replies)
 	}
 
 	// A topic of the assistant's: its session asks for approval; "好" in the
@@ -285,11 +301,11 @@ func TestAssistantWordsAreHandledBeforeTheModel(t *testing.T) {
 	f.send(t, personMessage("om_topic", "", "archive the old blog", "ou_person"))
 	topicSession := fmt.Sprintf("sess_%d", len(f.started()))
 	f.desk.set(func(a *fakeAssistant) {
-		a.pending = []store.PersonalAgentProposal{{ID: "pap_1", UserID: f.person.ID, SessionID: topicSession, Kind: "archive_workspace", Summary: "把『旧博客』收起来", Status: store.PersonalAgentProposalPending}}
+		a.pending = []store.PersonalAgentProposal{{ID: "pap_1", UserID: f.person.ID, AssistantID: "asst_person", SessionID: topicSession, Kind: "archive_workspace", Summary: "把『旧博客』收起来", Status: store.PersonalAgentProposalPending}}
 	})
 	started := len(f.started())
 	f.send(t, personMessage("om_yes", "om_topic", "好", "ou_person"))
-	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "accepted pap_1 via reply" || len(f.started()) != started {
+	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "asst_person/accepted pap_1 via reply" || len(f.started()) != started {
 		t.Fatalf("decisions %v, want pap_1 accepted by the reply and nothing sent on", f.desk.decisions)
 	}
 	if len(f.dispatcher.sent) != 0 {
@@ -310,7 +326,7 @@ func TestProposalCardButtonsAreThePairedPersons(t *testing.T) {
 	f := newAssistantFixture(t)
 	f.send(t, personMessage("om_topic", "", "archive the old blog", "ou_person"))
 	f.bot.take()
-	proposal := store.PersonalAgentProposal{ID: "pap_1", UserID: f.person.ID, SessionID: "sess_1", Summary: "把『旧博客』收起来", Status: store.PersonalAgentProposalPending}
+	proposal := store.PersonalAgentProposal{ID: "pap_1", UserID: f.person.ID, AssistantID: "asst_person", SessionID: "sess_1", Summary: "把『旧博客』收起来", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
 	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	replies := f.bot.take()
@@ -333,7 +349,7 @@ func TestProposalCardButtonsAreThePairedPersons(t *testing.T) {
 		t.Fatalf("a press by someone else or in a group decided: %v", f.desk.decisions)
 	}
 	press("ev_person", "ou_person", "oc_dm")
-	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "accepted pap_1 via feishu" {
+	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "asst_person/accepted pap_1 via feishu" {
 		t.Fatalf("decisions %v, want pap_1 accepted by the button", f.desk.decisions)
 	}
 	patches := f.bot.takePatches()
@@ -355,7 +371,7 @@ func TestProposalCardButtonsAreThePairedPersons(t *testing.T) {
 func TestProposalFromTheWebReachesTheDirectChat(t *testing.T) {
 	ctx := context.Background()
 	f := newAssistantFixture(t)
-	proposal := store.PersonalAgentProposal{ID: "pap_web", UserID: f.person.ID, SessionID: "sess_web", Summary: "把你的飞书接到『记账』", Status: store.PersonalAgentProposalPending}
+	proposal := store.PersonalAgentProposal{ID: "pap_web", UserID: f.person.ID, AssistantID: "asst_person", SessionID: "sess_web", Summary: "把你的飞书接到『记账』", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
 	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	f.bot.mu.Lock()
@@ -365,7 +381,7 @@ func TestProposalFromTheWebReachesTheDirectChat(t *testing.T) {
 		t.Fatalf("sent %+v, want the card in the direct chat", sent)
 	}
 	f.send(t, personMessage("om_no", "", "算了", "ou_person"))
-	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "declined pap_web via reply" || len(f.started()) != 0 {
+	if len(f.desk.decisions) != 1 || f.desk.decisions[0] != "asst_person/declined pap_web via reply" || len(f.started()) != 0 {
 		t.Fatalf("decisions %v, started %d, want pap_web declined before the model", f.desk.decisions, len(f.started()))
 	}
 	if patches := f.bot.takePatches(); len(patches) != 1 || patches[0].to != "card_sent_1" || !strings.Contains(patches[0].card, "你没有同意") {
@@ -454,7 +470,7 @@ func TestAssistantAnswersInThePersonsLanguage(t *testing.T) {
 
 	f.send(t, personMessage("om_topic", "", "archive the old blog", "ou_person"))
 	f.bot.take()
-	proposal := store.PersonalAgentProposal{ID: "pap_en", UserID: f.person.ID, SessionID: "sess_1", Summary: "Shall I put “Old blog” away?", Status: store.PersonalAgentProposalPending}
+	proposal := store.PersonalAgentProposal{ID: "pap_en", UserID: f.person.ID, AssistantID: "asst_person", SessionID: "sess_1", Summary: "Shall I put “Old blog” away?", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
 	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	if replies := f.bot.take(); len(replies) != 1 || !strings.Contains(replies[0].card, "Needs your OK") || !strings.Contains(replies[0].card, "No thanks") {

@@ -11,10 +11,12 @@ var ErrPersonalAgentRevision = errors.New("personal agent record changed; read i
 // the assistant's device or model. Text and source identity never change.
 // Delivered means its input exists in a session, not that its intent is done.
 type PersonalAgentInboxEntry struct {
-	ID                  string                    `json:"id"`
-	RootID              string                    `json:"rootId"`
-	Timezone            string                    `json:"timezone,omitempty"`
-	UserID              string                    `json:"-"`
+	ID       string `json:"id"`
+	RootID   string `json:"rootId"`
+	Timezone string `json:"timezone,omitempty"`
+	UserID   string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID         string                    `json:"-"`
 	Origin              *PersonalAgentInboxOrigin `json:"-"`
 	Channel             string                    `json:"channel"`
 	MessageID           string                    `json:"messageId"`

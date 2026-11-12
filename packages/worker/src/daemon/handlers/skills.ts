@@ -1,5 +1,6 @@
 import { serverFetch } from "../../platform/server-link/server-proxy.js";
 import { dirname } from "node:path";
+import { createHash } from "node:crypto";
 import { SkillPrewarmer } from "../../skills/skill-prewarm.js";
 import type WebSocket from "ws";
 import { readVerifiedSkillSnapshot } from "../../skills/skill-snapshots.js";
@@ -8,7 +9,6 @@ import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import { join } from "node:path";
 import { ExecutionStore } from "../../candidate-store/execution-storage.js";
 import { scanWorkspaceDraftsFromRefs } from "../../skills/workspace-draft-scan-thread.js";
-import { createHash } from "node:crypto";
 import {
   daemonMessageTypes,
   type CheckToolPayload,
@@ -54,6 +54,7 @@ import { daemonRequestHeaders } from "../../transport/server-http.js";
 import { sendWebSocket, trySendWebSocket } from "../../transport/transport.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../platform/utils.js";
+import { jsonDigestInThread } from "../json-digest-thread.js";
 
 /**
  * Posts a repository's files for a fetch the server asked for; the server
@@ -113,14 +114,11 @@ async function downloadToolArchive(
  * keeps an answer with that digest (knownDigest): the skills that did not
  * change are not sent again over a slow uplink on every reconnect.
  */
-export function scanAnswer(
+export async function scanAnswer(
   answer: Record<string, unknown>,
   knownDigest: unknown,
-): Record<string, unknown> {
-  const digest = createHash("sha256")
-    .update(JSON.stringify(answer))
-    .digest("base64url")
-    .slice(0, 32);
+): Promise<Record<string, unknown>> {
+  const digest = await jsonDigestInThread(answer);
   return digest === knownDigest
     ? { unchanged: true, digest }
     : { ...answer, digest };
@@ -319,14 +317,14 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
         : [];
       const scanStarted = Date.now();
       void duringActivity("skill scan", () => scanDeviceSkills(roots))
-        .then((skills) => {
+        .then(async (skills) => {
           recordActivity("skillScan", scanStarted, { count: skills.length });
           const end = beginActivity("skill scan reply");
           try {
             trySendWebSocket(
               ctx.socket,
               daemonMessageTypes.skillsScanned,
-              scanAnswer(
+              await scanAnswer(
                 {
                   skills,
                   tools: checkPrograms(payload?.tools),

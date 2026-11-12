@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
@@ -23,19 +25,31 @@ import (
 // caller names, refusing one it may not control.
 func (s *Service) DispatchItem(ctx context.Context, scope Scope, args map[string]json.RawMessage, control func(sessionID string) (store.AgentSession, error)) (store.PersonalAgentOperation, error) {
 	var spec struct {
-		ReplaceOwner   bool   `json:"replaceOwner"`
-		ItemID         string `json:"itemId"`
-		IntentRevision int64  `json:"intentRevision"`
-		StepKey        string `json:"stepKey"`
-		WorkspaceID    string `json:"workspaceId"`
-		SessionID      string `json:"sessionId"`
-		Prompt         string `json:"prompt"`
+		ReplaceOwner    bool   `json:"replaceOwner"`
+		ItemID          string `json:"itemId"`
+		IntentRevision  int64  `json:"intentRevision"`
+		StepKey         string `json:"stepKey"`
+		WorkspaceID     string `json:"workspaceId"`
+		SessionID       string `json:"sessionId"`
+		ExecutionChoice string `json:"executionChoice"`
+		Prompt          string `json:"prompt"`
 	}
 	if err := DecodeArgs(args, &spec); err != nil {
 		return store.PersonalAgentOperation{}, err
 	}
 	if strings.TrimSpace(spec.StepKey) == "" || len(spec.StepKey) > 100 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 128*1024 {
 		return store.PersonalAgentOperation{}, invalid("a stable stepKey and bounded prompt are required")
+	}
+	spec.ExecutionChoice = strings.TrimSpace(spec.ExecutionChoice)
+	if spec.ExecutionChoice == "" {
+		spec.ExecutionChoice = "default"
+	}
+	if !scope.reaches(spec.WorkspaceID) {
+		return store.PersonalAgentOperation{}, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden,
+			"not allowed: this assistant's permissions do not include project %s. Tell the person; they add it in the assistant's settings → Permissions.", spec.WorkspaceID)
+	}
+	if err := s.runs.ValidateExecutorChoice(ctx, scope.Agent, spec.WorkspaceID, spec.ExecutionChoice); err != nil {
+		return store.PersonalAgentOperation{}, err
 	}
 	// Explicit continuation must reference a session the caller may control.
 	if spec.ReplaceOwner && spec.SessionID == "" {
@@ -55,7 +69,7 @@ func (s *Service) DispatchItem(ctx context.Context, scope Scope, args map[string
 		return store.PersonalAgentOperation{}, err
 	}
 	id := flow.Key("paop", scope.Agent.UserID, spec.ItemID, strconv.FormatInt(spec.IntentRevision, 10), spec.StepKey)
-	return s.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: id, UserID: scope.Agent.UserID, ItemID: spec.ItemID, IntentRevision: spec.IntentRevision, StepKey: spec.StepKey, WorkspaceID: spec.WorkspaceID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID, TargetSessionID: spec.SessionID, ReplaceOwner: spec.ReplaceOwner, InputID: flow.InputID(id), Prompt: spec.Prompt, RequestHash: hash})
+	return s.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: id, UserID: scope.Agent.UserID, AssistantID: scope.Agent.ID, ItemID: spec.ItemID, IntentRevision: spec.IntentRevision, StepKey: spec.StepKey, WorkspaceID: spec.WorkspaceID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID, TargetSessionID: spec.SessionID, ExecutionChoice: spec.ExecutionChoice, ReplaceOwner: spec.ReplaceOwner, InputID: flow.InputID(id), Prompt: spec.Prompt, RequestHash: hash})
 }
 
 // drainOperations performs no inference. Each dispatch has a
@@ -101,7 +115,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 			save("review", "owner_input_changed_requires_evidence", receipt)
 			return
 		}
-		if agent, e := s.store.GetPersonalAgent(ctx, op.UserID); e == nil {
+		if agent, e := s.store.GetAssistant(ctx, op.AssistantID); e == nil {
 			s.RecordTask(ctx, agent, op.SourceSessionID, session)
 		}
 		if op.Status == "delivered" && session.Input.ID == op.InputID {
@@ -118,7 +132,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 		} else {
 			save("delivered", "", receipt)
 		}
-		_ = s.store.BindPersonalAgentRunSnapshot(ctx, op.UserID, flow.Key("parun", op.UserID, op.ID), receipt)
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, op.AssistantID, flow.Key("parun", op.UserID, op.ID), receipt)
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return
@@ -139,7 +153,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 		return
 	}
 	op = claimed
-	agent, err := s.store.GetPersonalAgent(ctx, op.UserID)
+	agent, err := s.store.GetAssistant(ctx, op.AssistantID)
 	if err != nil {
 		return
 	}
@@ -147,8 +161,15 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 		save("waiting", "assistant_paused", "")
 		return
 	}
+	// The package may have changed since the step was captured.
+	if pkg, err := s.store.GetPermissionPackage(ctx, agent.UserID, agent.PermissionPackageID); err != nil {
+		return
+	} else if !(permission.Access{Applicable: true, Agent: agent, Package: pkg}).WorkspaceAllowed(op.WorkspaceID) {
+		save("waiting", "workspace_not_permitted", "")
+		return
+	}
 	// Avoid adding a competing writer when an existing task already owns it.
-	item, err := s.store.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
+	item, err := s.store.GetPersonalAgentItem(ctx, op.AssistantID, op.ItemID)
 	if err != nil {
 		return
 	}
@@ -182,7 +203,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 	if targetID != "" && !op.ReplaceOwner {
 		snapshot, err = s.runs.PinSession(ctx, agent, op.ID, "executor", target)
 	} else {
-		snapshot, err = s.runs.Pin(ctx, agent, op.ID, "executor", op.WorkspaceID)
+		snapshot, err = s.runs.PinExecutor(ctx, agent, op.ID, "executor", op.WorkspaceID, op.ExecutionChoice)
 		if err == nil {
 			err = s.runs.CheckPinned(ctx, snapshot)
 		}
@@ -232,7 +253,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 }
 
 func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOperation, sessionID string) {
-	item, err := s.store.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
+	item, err := s.store.GetPersonalAgentItem(ctx, op.AssistantID, op.ItemID)
 	if err != nil || item.IntentRevision != op.IntentRevision || item.Plan == nil {
 		return
 	}
@@ -245,7 +266,7 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 			linked = true
 		}
 	}
-	if tasks, e := s.store.ListPersonalAgentTasks(ctx, op.UserID, nil); e == nil {
+	if tasks, e := s.store.ListPersonalAgentTasks(ctx, op.AssistantID, nil); e == nil {
 		for _, task := range tasks {
 			if task.SessionID == sessionID {
 				item.TaskID = task.ID

@@ -81,7 +81,7 @@ func TestDeviceLifecycleMCPAndExplicitDefault(t *testing.T) {
 	}
 	agent.Settings.PreferredDeviceID = "dev_retired"
 	agent.Settings.Devices = []store.PersonalAgentDeviceSettings{{DeviceID: "dev_retired", AllowWork: true, AllowCreate: true}, {DeviceID: "dev_alice", AllowWork: true, AllowCreate: true}}
-	if _, err = f.server.store.SavePersonalAgentSettings(ctx, agent.UserID, agent.Settings); err != nil {
+	if _, err = f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_retired", "")), http.StatusOK, "remove retired fixture")

@@ -4,34 +4,42 @@ import type {
   ContextPatchReply,
 } from "@bd777/foundry-protocol";
 import { request } from "./http";
-const base = "/api/personal-agent";
-export const listPersonalAgentMaintenance = (): Promise<
-  PersonalAgentMaintenance[]
-> => request("GET", `${base}/maintenance`);
-export const listPersonalAgentContextPatches = (): Promise<
-  PersonalAgentContextPatch[]
-> => request("GET", `${base}/context-patches`);
+import { personalAgentApiBase } from "./personal-agent";
+
+export const listPersonalAgentMaintenance = (
+  assistantId?: string,
+): Promise<PersonalAgentMaintenance[]> =>
+  request("GET", `${personalAgentApiBase(assistantId)}/maintenance`);
+export const listPersonalAgentContextPatches = (
+  assistantId?: string,
+): Promise<PersonalAgentContextPatch[]> =>
+  request("GET", `${personalAgentApiBase(assistantId)}/context-patches`);
 export function actOnPersonalAgentMaintenance(
+  assistantId: string | undefined,
   id: string,
   revision: number,
   action: "retry" | "dismiss",
 ): Promise<PersonalAgentMaintenance> {
-  return request("POST", `${base}/maintenance/${encodeURIComponent(id)}`, {
-    body: { revision, action },
-  });
+  return request(
+    "POST",
+    `${personalAgentApiBase(assistantId)}/maintenance/${encodeURIComponent(id)}`,
+    { body: { revision, action } },
+  );
 }
 export function previewPersonalAgentPatch(
+  assistantId: string | undefined,
   id: string,
   revision: number,
   index: number,
 ): Promise<ContextPatchReply> {
   return request(
     "POST",
-    `${base}/maintenance/${encodeURIComponent(id)}/patch`,
+    `${personalAgentApiBase(assistantId)}/maintenance/${encodeURIComponent(id)}/patch`,
     { body: { revision, index, action: "preview" } },
   );
 }
 export function applyPersonalAgentPatch(
+  assistantId: string | undefined,
   id: string,
   revision: number,
   index: number,
@@ -39,7 +47,7 @@ export function applyPersonalAgentPatch(
 ): Promise<PersonalAgentContextPatch> {
   return request(
     "POST",
-    `${base}/maintenance/${encodeURIComponent(id)}/patch`,
+    `${personalAgentApiBase(assistantId)}/maintenance/${encodeURIComponent(id)}/patch`,
     { body: { revision, index, action: "apply", reviewedHash } },
   );
 }

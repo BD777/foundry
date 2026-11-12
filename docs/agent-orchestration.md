@@ -26,6 +26,7 @@ What slowed or broke orchestrated work in practice (2026-11-10/11), and the rule
 - Save screenshots under the dev checkout's `.foundry/attachments/<task>/`, not inside a worktree. Merged worktrees are deleted, and answers would lose their images.
 - Exclude generated files from patches and regenerate after merging (`node scripts/generate-contracts.mjs`).
 - After merging a slice that started from an older baseline, take only that slice's own files; a whole-tree patch reverts newer work.
+- A slice that leaves the tree unbuildable while it works (a cross-package refactor, a schema migration) runs in its own worktree and merges back when it builds and passes its tests. In the shared dev checkout every deploy ships whatever is in the tree: on 2026-11-12 another slice's Server deploy ran DEV-191's unfinished migration on dev before its owner had backed the database up, and two slices sat blocked on its compile errors.
 - Topic-split PRs fail CI on files shared across topics (generated contracts, i18n, tests of a later topic). Land the verified final state as one PR and keep the topics apart in devlogs.
 - CI runs checks that per-batch checks skip, such as `prettier --check .`, migration column classification and stale generated files. Run `generate-contracts --check`, the contract and module audits and `prettier --check` on the branch before pushing.
 

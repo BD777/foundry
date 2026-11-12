@@ -60,7 +60,7 @@ func connectorMCPCall(t *testing.T, handler http.Handler, token string, args map
 func TestConnectorInstancesMCPCreateProbeAndListWithoutSecrets(t *testing.T) {
 	f := newExternalAccountsFixture(t)
 	f.server.connectors.ServerHeld.ExtensionDeviceRequest = f.server.extensionDeviceRequest
-	f.server.connectors.ServerHeld.ExtensionCheckDevices = f.server.checkExtensionDevices
+	f.server.connectors.ServerHeld.ExtensionDevices = f.server.extensionDevices
 	const secret = "mcp-fixture-secret-value"
 	var upstreamCalls []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

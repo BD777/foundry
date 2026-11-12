@@ -82,7 +82,7 @@ func placementFixture(t *testing.T) assistantFixture {
 		{DeviceID: "dev_alice", AllowWork: true, AllowCreate: true},
 		{DeviceID: "dev_alice_work", AllowWork: true, AllowCreate: true},
 	}
-	if _, err := db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -137,7 +137,7 @@ func TestNewProjectsGoWhereWhatTheyNeedIs(t *testing.T) {
 	ctx := context.Background()
 	agent, _ := f.server.store.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.PreferredDeviceID = "dev_alice_work"
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	f.create(t)
@@ -172,7 +172,7 @@ func TestPlacementUsesSharedComputersOnlyAsChosen(t *testing.T) {
 
 	agent, _ := db.GetPersonalAgent(ctx, f.aliceID)
 	agent.Settings.Devices[1].AllowCreate = false
-	if _, err := db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	answer, text = f.create(t, "network:corp")
@@ -192,7 +192,7 @@ func TestPlacementUsesSharedComputersOnlyAsChosen(t *testing.T) {
 		t.Fatalf("an existing folder on a shared computer nobody chose: %s", text)
 	}
 	agent.Settings.PreferredDeviceID = "dev_alice_work"
-	if _, err := db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
+	if _, err := db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
 	if text, failed := register(); failed {

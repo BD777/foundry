@@ -21,6 +21,8 @@ type cfGatewayStore struct {
 	*sqlitestore.Store
 	session store.AgentSession
 	removed bool
+	// aliceDevices are devices besides device-alice that alice owns.
+	aliceDevices map[string]bool
 }
 
 func (s *cfGatewayStore) GetAgentSessionSummary(_ context.Context, id string) (store.AgentSession, error) {
@@ -30,7 +32,7 @@ func (s *cfGatewayStore) GetAgentSessionSummary(_ context.Context, id string) (s
 	return s.session, nil
 }
 func (s *cfGatewayStore) DeviceOwner(_ context.Context, id string) (string, error) {
-	if id != "device-alice" {
+	if id != "device-alice" && !s.aliceDevices[id] {
 		return "bob", nil
 	}
 	return "alice", nil

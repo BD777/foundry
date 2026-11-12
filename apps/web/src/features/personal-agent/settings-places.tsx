@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type {
+  AssistantSummary,
   DevicePlacement,
   DeviceProjection,
   PersonalAgentDeviceSettings,
   PersonalAgentSettings,
+  WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { listDevicePlacements } from "../../api";
 import { Badge } from "../../components/ui/badge";
@@ -21,6 +23,7 @@ import {
 import { PaMuted } from "./pa-muted";
 import { DividedList } from "../../components/ui/divided-list";
 import { ButtonRow } from "../../components/ui/button-row";
+import { WorkspaceAccessEditor } from "./workspace-access-editor";
 
 /** A computer without an entry may take work but not new projects. */
 function deviceSettings(
@@ -38,20 +41,29 @@ function deviceSettings(
 
 /** Which of the person's computers it may use, and where new projects go. */
 export function PlacesSection({
+  assistantId,
+  assistants,
   draft,
   change,
-  owned,
+  devices,
   homeDeviceId,
   onOpenComputer,
+  workspaces,
+  onNotice,
 }: {
+  assistantId?: string;
+  assistants: AssistantSummary[];
   draft: PersonalAgentSettings;
   change: ChangeSettings;
-  /** The person's own computers. */
-  owned: DeviceProjection[];
+  /** Every computer, so shared project groups still have their status. */
+  devices: DeviceProjection[];
   homeDeviceId: string;
   onOpenComputer: (deviceId: string) => void;
+  workspaces: WorkspaceProjection[];
+  onNotice: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation("personalAgent");
+  const owned = devices.filter((device) => device.owned);
   const [placements, setPlacements] = useState<DevicePlacement[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +78,19 @@ export function PlacesSection({
       cancelled = true;
     };
   }, [owned.length]);
-  if (!owned.length) return <PaMuted>{t("settings.places.none")}</PaMuted>;
+  if (!owned.length)
+    return (
+      <>
+        <PaMuted>{t("settings.places.none")}</PaMuted>
+        <WorkspaceAccessEditor
+          assistantId={assistantId}
+          assistants={assistants}
+          devices={devices}
+          onNotice={onNotice}
+          workspaces={workspaces}
+        />
+      </>
+    );
   const home = owned.find((device) => device.id === homeDeviceId);
 
   function update(
@@ -190,6 +214,13 @@ export function PlacesSection({
           />
         </SettingsField>
       </SettingsGroup>
+      <WorkspaceAccessEditor
+        assistantId={assistantId}
+        assistants={assistants}
+        devices={devices}
+        onNotice={onNotice}
+        workspaces={workspaces}
+      />
     </>
   );
 }

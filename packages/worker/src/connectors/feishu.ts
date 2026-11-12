@@ -37,8 +37,8 @@ import { SingleFlight } from "../platform/single-flight.js";
  * refresh with the same stand-ins (the server alone refreshes the real
  * login) and refuses them once the session ends (gateway.SessionLive on
  * the server: its turn, or its agent's own work after it). The profile is
- * removed when the session's run ends, or once its agent stops working on
- * its own after it (holdUntilNativeWorkEnds); profiles a crashed worker
+ * removed when the session's run ends, or once the agent process that run
+ * left running exits (holdWhileAgentRuns); profiles a crashed worker
  * left behind are listed in a manifest under the state root and reaped at
  * the next start.
  */
@@ -68,7 +68,7 @@ export interface ExternalAccountsOptions {
 /**
  * Each live profile directory and the run that wrote it last. A session's
  * runs share its profile (one name per account and session): a run held
- * for its agent's own work (holdUntilNativeWorkEnds) may end after a newer
+ * for its agent process (holdWhileAgentRuns) may end after a newer
  * run of the session rewrote the profile, and must then leave it.
  */
 const liveProfiles = new Map<string, object>();

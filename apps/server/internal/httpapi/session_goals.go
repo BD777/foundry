@@ -62,8 +62,10 @@ func (s *Server) handleControlSessionGoal(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if !s.hub.HasConnection(session.DeviceID) {
-			writeError(w, http.StatusConflict, sessions.ErrLocalDaemonNotConnected.Error())
-			return
+			if _, err := s.hub.waitForConnection(r.Context(), session.DeviceID); err != nil {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
 		}
 		// Opening a closed thread starts Codex first.
 		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -99,9 +101,9 @@ func (s *Server) handleControlSessionGoal(w http.ResponseWriter, r *http.Request
 // ControlSessionGoal asks the session's device to apply a goal control to
 // its Codex thread.
 func (h *DaemonHub) ControlSessionGoal(ctx context.Context, session store.AgentSession, action string) error {
-	connection := h.connectionFor(session.DeviceID)
-	if connection == nil {
-		return sessions.ErrLocalDaemonNotConnected
+	connection, err := h.waitForConnection(ctx, session.DeviceID)
+	if err != nil {
+		return err
 	}
 	payload, err := json.Marshal(wsSessionGoalControlPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, Action: action})
 	if err != nil {

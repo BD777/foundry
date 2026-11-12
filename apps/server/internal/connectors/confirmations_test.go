@@ -43,12 +43,13 @@ func TestRiskConfirmationIsAOneUseProposal(t *testing.T) {
 		BodyDigest:  "body",
 		Fingerprint: "fingerprint",
 		Summary:     "Delete a DNS record",
+		AssistantID: agent.ID,
 	}
 	pending, denial := confirmations.Review(ctx, request)
 	if denial != nil || pending.Approved || pending.ProposalID == "" || pending.Summary != request.Summary {
 		t.Fatalf("pending confirmation = %+v (%+v)", pending, denial)
 	}
-	proposal, err := db.GetPersonalAgentProposal(ctx, agent.UserID, pending.ProposalID)
+	proposal, err := db.GetPersonalAgentProposal(ctx, agent.ID, pending.ProposalID)
 	if err != nil || proposal.Kind != store.PersonalAgentProposalConnectorWrite || proposal.Status != store.PersonalAgentProposalPending {
 		t.Fatalf("proposal = %+v (%v)", proposal, err)
 	}
@@ -56,7 +57,7 @@ func TestRiskConfirmationIsAOneUseProposal(t *testing.T) {
 	if err := json.Unmarshal(proposal.Spec, &spec); err != nil || spec.AccountName != "Work Cloudflare" {
 		t.Fatalf("proposal account name = %q (%v)", spec.AccountName, err)
 	}
-	if _, err := db.SetPersonalAgentProposalStatus(ctx, agent.UserID, proposal.ID,
+	if _, err := db.SetPersonalAgentProposalStatus(ctx, agent.ID, proposal.ID,
 		[]string{store.PersonalAgentProposalPending}, store.PersonalAgentProposalAccepted, "web", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestRiskConfirmationIsAOneUseProposal(t *testing.T) {
 	if denial != nil || !approved.Approved || approved.ProposalID != proposal.ID {
 		t.Fatalf("approved confirmation = %+v (%+v)", approved, denial)
 	}
-	applied, err := db.GetPersonalAgentProposal(ctx, agent.UserID, proposal.ID)
+	applied, err := db.GetPersonalAgentProposal(ctx, agent.ID, proposal.ID)
 	if err != nil || applied.Status != store.PersonalAgentProposalApplied {
 		t.Fatalf("applied proposal = %+v (%v)", applied, err)
 	}

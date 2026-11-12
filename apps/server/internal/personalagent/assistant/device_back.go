@@ -40,7 +40,7 @@ const offlineRefusalsMax = 20
 // was offline (a write refused, a helper that failed), for the
 // conversation that tried, as the back notice lists it.
 type OfflineRefusal struct {
-	UserID, ConversationID, Line string
+	UserID, AssistantID, ConversationID, Line string
 }
 
 // deviceWaits keeps the refused writes per computer until it
@@ -97,7 +97,7 @@ func (s *Service) NoteOfflineRefusal(ctx context.Context, scope Scope, tool stri
 		return
 	}
 	s.deviceWaits.refused(deviceID, OfflineRefusal{
-		UserID: scope.Agent.UserID, ConversationID: scope.SessionID,
+		UserID: scope.Agent.UserID, AssistantID: scope.Agent.ID, ConversationID: scope.SessionID,
 		Line: s.sayTask(ctx, scope.Agent, "refusedOffline", strings.TrimSpace(tool+": "+cutSummary(write.ArgsSummary))),
 	})
 }
@@ -109,17 +109,17 @@ func (s *Service) DeviceBack(ctx context.Context, deviceID string) {
 	away, dropID, known := s.devices.AwayFor(deviceID, now)
 	refusals, news := s.deviceWaits.back(deviceID, dropID)
 	type conversation struct {
-		userID string
-		lines  []string
+		assistantID string
+		lines       []string
 	}
 	conversations := map[string]*conversation{}
 	order := []string{}
-	add := func(userID, conversationID, line string) {
+	add := func(assistantID, conversationID, line string) {
 		if conversationID == "" {
 			return
 		}
 		if conversations[conversationID] == nil {
-			conversations[conversationID] = &conversation{userID: userID}
+			conversations[conversationID] = &conversation{assistantID: assistantID}
 			order = append(order, conversationID)
 		}
 		conversations[conversationID].lines = append(conversations[conversationID].lines, line)
@@ -134,11 +134,11 @@ func (s *Service) DeviceBack(ctx context.Context, deviceID string) {
 			if !ok || (task.Status != store.PersonalAgentTaskQueued && task.Status != store.PersonalAgentTaskRunning && task.Status != store.PersonalAgentTaskAsking) {
 				continue
 			}
-			add(agent.UserID, task.ConversationSessionID, s.waitLine(ctx, agent, task, session))
+			add(agent.ID, task.ConversationSessionID, s.waitLine(ctx, agent, task, session))
 		}
 	}
 	for _, refusal := range refusals {
-		add(refusal.UserID, refusal.ConversationID, refusal.Line)
+		add(refusal.AssistantID, refusal.ConversationID, refusal.Line)
 	}
 	if len(order) == 0 {
 		return
@@ -146,7 +146,7 @@ func (s *Service) DeviceBack(ctx context.Context, deviceID string) {
 	label := cmp.Or(s.devices.Labels(ctx)[deviceID], deviceID)
 	for _, conversationID := range order {
 		waited := conversations[conversationID]
-		agent, err := s.store.GetPersonalAgent(ctx, waited.userID)
+		agent, err := s.store.GetAssistant(ctx, waited.assistantID)
 		if err != nil || agent.State != store.PersonalAgentActive {
 			continue
 		}
@@ -154,7 +154,7 @@ func (s *Service) DeviceBack(ctx context.Context, deviceID string) {
 		text := s.sayTask(ctx, agent, "back", label, strings.Join(waited.lines, "\n- "))
 		s.notices.add(conversationID, language, text, now, func(text string) {
 			// The person may have pressed stop meanwhile.
-			current, err := s.store.GetPersonalAgent(context.Background(), agent.UserID)
+			current, err := s.store.GetAssistant(context.Background(), agent.ID)
 			if err != nil || current.State != store.PersonalAgentActive {
 				return
 			}
@@ -180,7 +180,7 @@ func (s *Service) noteHelperFailedOffline(ctx context.Context, agent store.Perso
 		return
 	}
 	s.deviceWaits.refused(session.DeviceID, OfflineRefusal{
-		UserID: agent.UserID, ConversationID: task.ConversationSessionID,
+		UserID: agent.UserID, AssistantID: agent.ID, ConversationID: task.ConversationSessionID,
 		Line: s.sayTask(ctx, agent, "failedOffline", s.taskWork(ctx, agent, task, session)),
 	})
 }

@@ -16,6 +16,7 @@ import { HelpHint } from "../../components/ui/help-hint";
 import { SectionHeader } from "../../components/ui/page-header";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { errorText } from "../../lib/errors";
+import { deviceConnection } from "../../lib/device-connection";
 import { useCopied } from "../../lib/use-copied";
 import {
   checkText,
@@ -104,7 +105,7 @@ export function DeviceDiagnostics({
     report?.checks.find((check) => check.id === "workspaces.missing")?.values
       ?.count ?? 0,
   );
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
 
   return (
     <DeviceSection className="grid-cols-[minmax(0,1fr)] gap-3">

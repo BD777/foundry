@@ -52,6 +52,11 @@ type SubscribeInput struct {
 	AppID      string
 	EventTypes []string
 	ChatID     string
+	// AllowAccount, when set, limits the apps to those with a Connectors
+	// account it allows: a session working for an assistant receives only
+	// apps its permission package does not turn off. nil allows every app
+	// the person connected.
+	AllowAccount func(accountID string) bool
 }
 
 // Subscription buffers the events it asked for until they are polled (or
@@ -109,6 +114,9 @@ var (
 	// ErrNoPerson: the caller acts for nobody whose Connectors could say
 	// which apps it may receive.
 	ErrNoPerson = errors.New("Feishu events are received for a person's connected apps, and this caller acts for no person")
+	// ErrAccountOff: the caller works for an assistant whose permission
+	// package turns the app's account off.
+	ErrAccountOff = errors.New("Feishu account off for this assistant")
 )
 
 func newID(prefix string) string {
@@ -119,7 +127,7 @@ func newID(prefix string) string {
 
 // resolveApp names the Feishu app who may receive events of: requested
 // as a Feishu or Connectors app id, or the only one they connected.
-func (h *Hub) resolveApp(ctx context.Context, who Subscriber, requested string) (string, error) {
+func (h *Hub) resolveApp(ctx context.Context, who Subscriber, requested string, allow func(string) bool) (string, error) {
 	if who.UserID == "" {
 		return "", ErrNoPerson
 	}
@@ -134,6 +142,21 @@ func (h *Hub) resolveApp(ctx context.Context, who Subscriber, requested string) 
 		return "", errors.New("no Feishu app is connected for this person: connect one in Connectors first")
 	}
 	requested = strings.TrimSpace(requested)
+	if allow != nil {
+		allowed := []ConnectedApp{}
+		for _, app := range apps {
+			named := requested != "" && (app.AppID == requested || app.ConnectorAppID == requested)
+			if slices.ContainsFunc(app.AccountIDs, allow) {
+				allowed = append(allowed, app)
+			} else if named {
+				return "", fmt.Errorf("%w: this assistant's permissions turn off the Feishu account of %s; the person changes it in the assistant's settings → Permissions", ErrAccountOff, app.String())
+			}
+		}
+		if len(allowed) == 0 {
+			return "", fmt.Errorf("%w: this assistant's permissions turn off every Feishu account the person connected; the person changes it in the assistant's settings → Permissions", ErrAccountOff)
+		}
+		apps = allowed
+	}
 	if requested == "" && len(apps) == 1 {
 		return apps[0].AppID, nil
 	}
@@ -155,7 +178,7 @@ func (h *Hub) Subscribe(ctx context.Context, in SubscribeInput) (*Subscription, 
 	if err := h.Integrations.Err(); err != nil {
 		return nil, err
 	}
-	appID, err := h.resolveApp(ctx, in.Who, in.AppID)
+	appID, err := h.resolveApp(ctx, in.Who, in.AppID, in.AllowAccount)
 	if err != nil {
 		return nil, err
 	}

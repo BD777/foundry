@@ -22,9 +22,11 @@ import { PaMuted } from "./pa-muted";
 import { DividedList } from "../../components/ui/divided-list";
 import { ButtonRow } from "../../components/ui/button-row";
 export function RoleRuns({
+  assistantId,
   workspaces,
   devices,
 }: {
+  assistantId?: string;
   workspaces: WorkspaceProjection[];
   devices: DeviceProjection[];
 }) {
@@ -35,12 +37,12 @@ export function RoleRuns({
   const [busy, setBusy] = useState("");
   const read = useCallback(async () => {
     const [controls, configs] = await Promise.all([
-      listPersonalAgentRunControls(),
-      listPersonalAgentRunSnapshots(),
+      listPersonalAgentRunControls(assistantId),
+      listPersonalAgentRunSnapshots(assistantId),
     ]);
     setRuns(controls);
     setSnapshots(configs);
-  }, []);
+  }, [assistantId]);
   useEffect(() => {
     void read().catch((e) => setError(serverErrorText(e)));
   }, [read]);
@@ -59,7 +61,7 @@ export function RoleRuns({
     setBusy(run.id);
     setError("");
     try {
-      await stopPersonalAgentRun(run.id);
+      await stopPersonalAgentRun(assistantId, run.id);
       await read();
     } catch (e) {
       toast({

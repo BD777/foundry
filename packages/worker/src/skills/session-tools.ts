@@ -1,14 +1,17 @@
 import type { SessionToolPin } from "@bd777/foundry-protocol";
 import {
+  accessSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readlinkSync,
   rmSync,
+  statSync,
   symlinkSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "../platform/utils.js";
 import {
   managedToolsBin,
@@ -68,6 +71,31 @@ function currentTools(): Map<string, string> {
   return tools;
 }
 
+/** The other executable commands in a tool version's own folder. */
+function siblingCommands(entry: string): Map<string, string> {
+  const siblings = new Map<string, string>();
+  const folder = dirname(entry);
+  let names: string[];
+  try {
+    names = readdirSync(folder);
+  } catch {
+    return siblings;
+  }
+  for (const name of names) {
+    const path = join(folder, name);
+    if (path === entry || !commandName.test(name) || name.endsWith(".tmp"))
+      continue;
+    try {
+      if (!statSync(path).isFile()) continue;
+      accessSync(path, constants.X_OK);
+      siblings.set(name, path);
+    } catch {
+      continue;
+    }
+  }
+  return siblings;
+}
+
 /**
  * Builds the session's tool folder from run_session's pins. Without pins
  * (an older server) the session keeps the shared `bin` folder.
@@ -79,6 +107,7 @@ export function prepareSessionTools(
 ): SessionTools {
   if (!sessionId || !Array.isArray(pins)) return none;
   const tools = currentTools();
+  const pinned = new Set<string>();
   for (const pin of pins) {
     let entry: string;
     try {
@@ -87,8 +116,13 @@ export function prepareSessionTools(
       log(`Tool pin ${pin.name} ${pin.version} is not a valid tool version.`);
       continue;
     }
-    if (existsSync(entry)) tools.set(pin.name, entry);
-    else
+    if (existsSync(entry)) {
+      tools.set(pin.name, entry);
+      pinned.add(pin.name);
+      // A package's other commands (olk-ctx) come from the same version.
+      for (const [name, sibling] of siblingCommands(entry))
+        if (!pinned.has(name)) tools.set(name, sibling);
+    } else
       log(
         `Session ${sessionId}: ${pin.name} ${pin.version} is not installed on this device; it runs ${tools.has(pin.name) ? "the current version" : "without it"}.`,
       );

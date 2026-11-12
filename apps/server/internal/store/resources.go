@@ -16,14 +16,15 @@ import (
 // packages/protocol/src/resources.ts declares the same types for clients;
 // scripts/audit-contract.mjs keeps their JSON fields in step.
 
-// Resource states (ResourceInstance.State). Busy is derived from a live
-// lease when listing; it is never stored.
+// Resource states (ResourceInstance.State). Reconnecting and busy are
+// derived when listing; they are never stored.
 const (
-	ResourceAvailable = "available"
-	ResourceBusy      = "busy"
-	ResourceUnready   = "unready"
-	ResourceOffline   = "offline"
-	ResourceGone      = "gone"
+	ResourceAvailable    = "available"
+	ResourceBusy         = "busy"
+	ResourceUnready      = "unready"
+	ResourceReconnecting = "reconnecting"
+	ResourceOffline      = "offline"
+	ResourceGone         = "gone"
 )
 
 // ResourceReadiness is how far a resource is set up. A detector reports

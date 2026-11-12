@@ -30,7 +30,7 @@ var unownedOwnerColumns = map[string]string{
 	"workspace_digests.workspace_id":  "a person's digest belongs to their membership, deleted with it (ON DELETE CASCADE)",
 	// The person's assistant outlives any one workspace: moving it gives it
 	// a new one, and the stop switch, not deleting, turns it off.
-	"personal_agents.workspace_id": "the person's assistant; its workspace cannot be deleted",
+	"assistants.home_workspace_id": "the person's assistant; its workspace cannot be deleted",
 	// The person's records of what the assistant did and decided: kept for
 	// their retention (pa_actions 90 days) and the routing evals, naming
 	// workspaces and sessions that may be gone.
@@ -480,12 +480,12 @@ func TestKnowledgeAuthorityAndPendingContextPatchProtectWorkspaceDeletion(t *tes
 	if _, err = db.conn().ExecContext(ctx, `DELETE FROM knowledge_vaults WHERE id=?`, vault.ID); err != nil {
 		t.Fatal(err)
 	}
-	execAll(t, db, `INSERT INTO pa_context_patches VALUES('patch','person','ws_home','applying',1,'{}')`)
+	execAll(t, db, `INSERT INTO pa_context_patches(id,user_id,assistant_id,workspace_id,status,revision,payload_json) VALUES('patch','person','asst_person','ws_home','applying',1,'{}')`)
 	if _, err = db.DeleteWorkspace(ctx, "ws_home"); !errors.Is(err, store.ErrWorkspaceBusy) {
 		t.Fatalf("unknown remote patch lost its fence: %v", err)
 	}
 	execAll(t, db, `UPDATE pa_context_patches SET status='applied' WHERE id='patch'`)
-	if _, err = db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "review", UserID: "person", Role: "governance", WorkspaceID: "ws_home", EventKey: "v1"}); err != nil {
+	if _, err = db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "review", UserID: "person", AssistantID: "asst_person", Role: "governance", WorkspaceID: "ws_home", EventKey: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.DeleteWorkspace(ctx, "ws_home"); err != nil {

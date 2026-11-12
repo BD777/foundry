@@ -877,7 +877,51 @@
         "reason": {
           "description": "Why the device cannot be selected, when Eligible is false.",
           "type": "string"
+        },
+        "reasonCode": {
+          "description": "Machine-readable form of Reason when the cause is that no instance is usable here.",
+          "type": "string",
+          "enum": ["no_instance"]
+        },
+        "instances": {
+          "description": "Ready instances of a server-held connector whose sessions on this device can use them. Absent for connectors without instances.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorPackageInstanceRef" }
+        },
+        "state": {
+          "description": "Where applying the selection stands on this device. Selecting a device returns at once with pending; the install runs in the background. Absent when the device has no part in the package.",
+          "type": "string",
+          "enum": ["pending", "installing", "installed", "failed"]
+        },
+        "error": {
+          "description": "Why the install or removal failed, when State is failed.",
+          "type": "string"
         }
+      }
+    },
+    "ConnectorPackageInstanceRef": {
+      "description": "A server-held instance, as named in a package view.",
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "ConnectorPackageInstance": {
+      "description": "A Ready instance of a server-held connector and the devices where sessions can use it.",
+      "type": "object",
+      "required": ["id", "label", "network", "deviceIds"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "network": {
+          "type": "string",
+          "description": "server (every device) or device (only the devices that probed it)."
+        },
+        "deviceIds": { "type": "array", "items": { "type": "string" } }
       }
     },
     "ConnectorPackageView": {
@@ -889,6 +933,11 @@
         "connector": { "$ref": "#/$defs/ConnectorDescriptor" },
         "enabled": { "type": "boolean" },
         "repositoryId": { "type": "string" },
+        "instances": {
+          "description": "Ready instances of a server-held connector, with the devices that can use each.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorPackageInstance" }
+        },
         "devices": {
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorPackageDevice" }
@@ -1180,7 +1229,10 @@
       "properties": {
         "deviceId": { "type": "string" },
         "name": { "type": "string" },
-        "status": { "type": "string" },
+        "status": {
+          "description": "ok (the device reaches the upstream), unreachable, error (the probe was refused or failed) or not_applicable (a loopback address that only the validating device reaches).",
+          "type": "string"
+        },
         "checkedAt": { "type": "string" },
         "detail": { "type": "string" }
       }
@@ -1712,7 +1764,10 @@
       "properties": {
         "id": { "type": "string" },
         "label": { "type": "string" },
-        "status": { "type": "string", "enum": ["connected", "disconnected"] },
+        "status": {
+          "type": "string",
+          "enum": ["connected", "reconnecting", "disconnected"]
+        },
         "lastSeenLabel": { "type": "string" },
         "runtimeSettings": { "$ref": "#/$defs/AgentRuntimeSettings" },
         "runtimeState": {
@@ -1884,12 +1939,24 @@
       "enum": ["exited", "vanished", "not_back"]
     },
     "DeviceWorkerUpdate": {
-      "description": "DeviceWorkerUpdate is an update in progress: when it was asked for and the version it brings.",
+      "description": "DeviceWorkerUpdate describes an update requested from Foundry: while it runs, or as the most recent completed result retained by update_worker status.",
       "type": "object",
       "required": ["startedAt"],
       "additionalProperties": false,
       "properties": {
+        "id": {
+          "description": "`id` identifies this update request.",
+          "type": "string"
+        },
         "startedAt": { "type": "string" },
+        "completedAt": {
+          "description": "`completedAt` is when the update succeeded or failed.",
+          "type": "string"
+        },
+        "elapsedMs": {
+          "description": "`elapsedMs` is the time from the start to completion, or to the current status.",
+          "type": "integer"
+        },
         "version": {
           "description": "The version it brings.",
           "type": "string"
@@ -4360,17 +4427,337 @@
         "code": { "type": "string" }
       }
     },
+    "ModelGuideAlias": {
+      "description": "Maps one provider's model id to a guide. An absent `providerId` or `runtime` matches any; the most specific alias wins on resolve.",
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "model": { "type": "string" }
+      }
+    },
+    "ModelGuideSections": {
+      "description": "Short Markdown sections (at most 8 bullet points each) of what handing work to the model takes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "description": "One line on where the model fits.",
+          "type": "string"
+        },
+        "strengths": { "type": "string" },
+        "weaknesses": { "type": "string" },
+        "briefing": {
+          "description": "How to write its brief, such as slice size, context budget, required evidence and how it should read code.",
+          "type": "string"
+        },
+        "avoid": { "description": "Work not to hand to it.", "type": "string" },
+        "pitfalls": {
+          "description": "Known failure modes, each with evidence where possible.",
+          "type": "string"
+        },
+        "settings": {
+          "description": "Recommended effort, quota and concurrency.",
+          "type": "string"
+        }
+      }
+    },
+    "ModelGuideUpdater": {
+      "type": "object",
+      "required": ["userId", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "sessionId": {
+          "description": "The agent session that wrote the revision; absent for a person.",
+          "type": "string"
+        }
+      }
+    },
+    "ModelGuide": {
+      "description": "One revision of a guide, the whole snapshot.",
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "displayName",
+        "aliases",
+        "sections",
+        "revision",
+        "updatedAt",
+        "updatedBy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The canonical id, a lower-case slug such as `deepseek-flash-1017`.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Who makes the model weights, such as `deepseek`.",
+          "type": "string"
+        },
+        "displayName": { "type": "string" },
+        "family": { "type": "string" },
+        "aliases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideAlias" }
+        },
+        "sections": { "$ref": "#/$defs/ModelGuideSections" },
+        "revision": { "type": "integer" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "$ref": "#/$defs/ModelGuideUpdater" }
+      }
+    },
+    "ModelGuideSummary": {
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "displayName",
+        "aliasCount",
+        "summary",
+        "revision",
+        "updatedAt",
+        "updatedBy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "owner": { "type": "string" },
+        "displayName": { "type": "string" },
+        "family": { "type": "string" },
+        "aliasCount": { "type": "integer" },
+        "summary": { "type": "string" },
+        "revision": { "type": "integer" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "$ref": "#/$defs/ModelGuideUpdater" }
+      }
+    },
+    "ModelGuideList": {
+      "type": "object",
+      "required": ["guides"],
+      "additionalProperties": false,
+      "properties": {
+        "guides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideSummary" }
+        }
+      }
+    },
+    "ModelGuideRevisionSummary": {
+      "type": "object",
+      "required": ["revision", "changeSummary", "updatedAt", "updatedBy"],
+      "additionalProperties": false,
+      "properties": {
+        "revision": { "type": "integer" },
+        "changeSummary": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "$ref": "#/$defs/ModelGuideUpdater" }
+      }
+    },
+    "ModelGuideRevision": {
+      "description": "One saved revision with its full snapshot, for reading history and diffing against the revision before.",
+      "type": "object",
+      "required": ["guideId", "revision", "changeSummary", "snapshot"],
+      "additionalProperties": false,
+      "properties": {
+        "guideId": { "type": "string" },
+        "revision": { "type": "integer" },
+        "changeSummary": { "type": "string" },
+        "snapshot": { "$ref": "#/$defs/ModelGuide" }
+      }
+    },
+    "ModelObservation": {
+      "description": "One append-only observation about a guide's model, with the sessions that show it.",
+      "type": "object",
+      "required": ["id", "guideId", "body", "sessionIds", "createdAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "guideId": { "type": "string" },
+        "body": { "type": "string", "maxLength": 12000 },
+        "sessionIds": { "type": "array", "items": { "type": "string" } },
+        "authorSessionId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "ModelObservationPage": {
+      "description": "One page of observations, newest first.",
+      "type": "object",
+      "required": ["total", "offset", "observations"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer" },
+        "offset": { "type": "integer" },
+        "nextOffset": { "type": "integer" },
+        "observations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelObservation" }
+        }
+      }
+    },
+    "ModelGuideProviderFacts": {
+      "description": "What the server knows about one alias's provider. Computed on read, never stored.",
+      "type": "object",
+      "required": ["alias"],
+      "additionalProperties": false,
+      "properties": {
+        "alias": { "$ref": "#/$defs/ModelGuideAlias" },
+        "providerLabel": { "type": "string" },
+        "contextWindow": {
+          "description": "Tokens, when the provider's configuration or catalog knows the window.",
+          "type": "integer"
+        },
+        "workerGroupId": {
+          "description": "The person's worker group that holds this model id.",
+          "type": "string"
+        },
+        "workerGroupLabel": { "type": "string" },
+        "tokensPerMinute": {
+          "description": "The worker group member's quota.",
+          "type": "integer"
+        }
+      }
+    },
+    "ModelGuideUsageFacts": {
+      "description": "Worker usage of the guide's aliases over the last `windowDays`. Computed from the usage statistics.",
+      "type": "object",
+      "required": ["windowDays", "workerSessions", "requests"],
+      "additionalProperties": false,
+      "properties": {
+        "windowDays": { "type": "integer" },
+        "workerSessions": {
+          "description": "Sessions started by another session or an Issue that made a request with the model.",
+          "type": "integer"
+        },
+        "requests": { "type": "integer" },
+        "avgRequestMs": {
+          "description": "Mean time of one model request; absent without timed requests.",
+          "type": "integer"
+        },
+        "tokPerSec": {
+          "description": "Output tokens per second of generation over requests with observed timing; absent without any.",
+          "type": "number"
+        }
+      }
+    },
+    "ModelGuideFacts": {
+      "type": "object",
+      "required": ["providers", "usage"],
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideProviderFacts" }
+        },
+        "usage": { "$ref": "#/$defs/ModelGuideUsageFacts" }
+      }
+    },
+    "ModelGuideDetail": {
+      "type": "object",
+      "required": ["guide", "facts", "observations", "revisions"],
+      "additionalProperties": false,
+      "properties": {
+        "guide": { "$ref": "#/$defs/ModelGuide" },
+        "facts": { "$ref": "#/$defs/ModelGuideFacts" },
+        "observations": {
+          "description": "The latest 20 observations; the MCP tool pages further.",
+          "$ref": "#/$defs/ModelObservationPage"
+        },
+        "revisions": {
+          "description": "Every revision, newest first.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideRevisionSummary" }
+        }
+      }
+    },
+    "ModelGuideResolution": {
+      "description": "The guide a provider's model id maps to. `guide` is absent when none does; `suggestedId` is then the canonical id to create it under.",
+      "type": "object",
+      "required": ["suggestedId", "suggestedIdTaken"],
+      "additionalProperties": false,
+      "properties": {
+        "guide": { "$ref": "#/$defs/ModelGuideSummary" },
+        "matchedAlias": { "$ref": "#/$defs/ModelGuideAlias" },
+        "suggestedId": { "type": "string" },
+        "suggestedIdTaken": {
+          "description": "A guide with the suggested id already exists, so add the model to it as an alias instead.",
+          "type": "boolean"
+        }
+      }
+    },
+    "ModelGuideResolveBatch": {
+      "description": "Several provider model ids to resolve at once (`POST /api/model-guides/resolve`, read-only).",
+      "type": "object",
+      "required": ["targets"],
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/ModelGuideAlias" }
+        }
+      }
+    },
+    "ModelGuideResolveBatchResult": {
+      "description": "One resolution per requested target, in the same order.",
+      "type": "object",
+      "required": ["resolutions"],
+      "additionalProperties": false,
+      "properties": {
+        "resolutions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideResolution" }
+        }
+      }
+    },
+    "ModelGuideUpsertInput": {
+      "description": "The `upsert` action of the model_guides tool. Absent fields keep their value; a section set to an empty string is cleared.",
+      "type": "object",
+      "required": ["id", "changeSummary"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "owner": { "type": "string" },
+        "displayName": { "type": "string" },
+        "family": { "type": "string" },
+        "sections": { "$ref": "#/$defs/ModelGuideSections" },
+        "aliases": {
+          "description": "Replaces the whole alias set when given.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelGuideAlias" }
+        },
+        "changeSummary": {
+          "description": "Why the guide changed: which sessions, what happened.",
+          "type": "string"
+        }
+      }
+    },
     "ConnectorAccessLevel": {
       "description": "What one assistant may do through one connector account.",
       "type": "string",
       "enum": ["off", "read", "write"]
     },
+    "PermissionListScope": {
+      "description": "What an include list means. all (the default when absent) lets an empty include list reach every object the person can already reach; listed reaches only the included objects, none while it is empty.",
+      "type": "string",
+      "enum": ["all", "listed"]
+    },
     "PermissionListRule": {
-      "description": "An include/exclude rule. An empty include list means every object the person can already reach; exclude always removes one.",
+      "description": "An include/exclude rule. With scope all (or none given) an empty include list means every object the person can already reach; with scope listed only the included ones. Exclude always removes one.",
       "type": "object",
       "required": ["include", "exclude"],
       "additionalProperties": false,
       "properties": {
+        "scope": { "$ref": "#/$defs/PermissionListScope" },
         "include": { "type": "array", "items": { "type": "string" } },
         "exclude": { "type": "array", "items": { "type": "string" } }
       }
@@ -4385,29 +4772,29 @@
         "level": { "$ref": "#/$defs/ConnectorAccessLevel" }
       }
     },
-    "PermissionDeviceResources": {
-      "description": "What an assistant may lease directly; resources stay visible either way.",
+    "PermissionIdentityResources": {
+      "description": "The resources that carry an identity (a signed-in browser, screen control, a device CLI account, a phone) the assistant and its helpers may lease. With scope all they follow the device like every other resource (compute, GPU, containers, toolchains, disks, simulators): any device with a workspace the package allows. With scope listed only the allowed ones.",
       "type": "object",
-      "required": ["directLeaseAllowed"],
+      "required": ["scope", "allowed"],
       "additionalProperties": false,
       "properties": {
-        "directLeaseAllowed": {
-          "description": "Device ids whose resources the assistant may lease itself.",
+        "scope": { "$ref": "#/$defs/PermissionListScope" },
+        "allowed": {
+          "description": "Resource ids (res_…) the assistant may lease under scope listed.",
           "type": "array",
           "items": { "type": "string" }
         }
       }
     },
     "PermissionPackage": {
-      "description": "One assistant's permissions. Workspace and skill rules default to all visible, connector accounts default to write, and direct resource leases default to none.",
+      "description": "One assistant's permissions, applied to its own conversation and to every helper it starts. Workspaces default to all visible, connector accounts default to write, and identity resources follow the device (a new assistant's packages list none). Skills are not part of it: they follow the workspace.",
       "type": "object",
       "required": [
         "id",
         "owner",
         "workspaces",
         "connectorAccounts",
-        "devicesResources",
-        "skills"
+        "identityResources"
       ],
       "additionalProperties": false,
       "properties": {
@@ -4421,8 +4808,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorAccountPermission" }
         },
-        "devicesResources": { "$ref": "#/$defs/PermissionDeviceResources" },
-        "skills": { "$ref": "#/$defs/PermissionListRule" }
+        "identityResources": { "$ref": "#/$defs/PermissionIdentityResources" }
       }
     },
     "PersonalAgentConnector": {
@@ -4484,6 +4870,179 @@
         "state": { "type": "string" },
         "error": { "type": "string" },
         "code": { "type": "string" }
+      }
+    },
+    "AssistantSummary": {
+      "description": "One of the person's assistants as GET /api/assistants lists it (DEV-191). Exactly one is the default, the one /api/personal-agent answers.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "isDefault",
+        "workspaceId",
+        "homeDeviceId",
+        "state",
+        "permissionPackageId",
+        "feishuAppId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "description": "The assistant id (asst_…).", "type": "string" },
+        "name": {
+          "description": "Its label; empty means the language's default name.",
+          "type": "string"
+        },
+        "isDefault": { "type": "boolean" },
+        "workspaceId": {
+          "description": "Its home workspace (kind personal_agent), one per assistant.",
+          "type": "string"
+        },
+        "homeDeviceId": { "type": "string" },
+        "state": { "type": "string" },
+        "permissionPackageId": { "type": "string" },
+        "feishuAppId": {
+          "description": "The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner.",
+          "type": "string"
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "AssistantList": {
+      "description": "The person's assistants, the default first.",
+      "type": "object",
+      "required": ["assistants"],
+      "additionalProperties": false,
+      "properties": {
+        "assistants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssistantSummary" }
+        }
+      }
+    },
+    "CreateAssistantInput": {
+      "description": "POST /api/assistants. Creates a home workspace on homeDeviceId as setup does; the new assistant's permission package reaches no workspace until the person adds them.",
+      "type": "object",
+      "required": ["name", "homeDeviceId"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "homeDeviceId": { "type": "string" }
+      }
+    },
+    "UpdateAssistantInput": {
+      "description": "PATCH /api/assistants/{id}. Absent fields stay.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "name": { "type": "string" } }
+    },
+    "MemoryLayerScope": {
+      "description": "A layer of the person's memory (DEV-191). person is recalled by every assistant of theirs (how to address them, language, style, tools, general preferences); assistant only by that assistant (the people, projects and arrangements of its domain).",
+      "type": "string",
+      "enum": ["person", "assistant"]
+    },
+    "MemoryLayerEntry": {
+      "description": "One current entry of a memory layer, metadata only; read its body from the knowledge entry route of its vault.",
+      "type": "object",
+      "required": [
+        "id",
+        "vaultId",
+        "scope",
+        "title",
+        "revision",
+        "hash",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "vaultId": { "type": "string" },
+        "scope": { "$ref": "#/$defs/MemoryLayerScope" },
+        "title": { "type": "string" },
+        "revision": { "type": "integer" },
+        "hash": { "type": "string" },
+        "sourceRef": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "MemoryLayer": {
+      "description": "One layer of an assistant's memory. vaultId is absent until the layer is first needed; then state is its vault's (pending until its device initializes it, active).",
+      "type": "object",
+      "required": ["scope", "entries"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": { "$ref": "#/$defs/MemoryLayerScope" },
+        "vaultId": { "type": "string" },
+        "state": { "type": "string" },
+        "reason": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "rootPath": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryLayerEntry" }
+        }
+      }
+    },
+    "AssistantMemoryLayers": {
+      "description": "GET /api/assistants/{id}/memory/layers. What the assistant recalls: the person's layer first, then its own. legacyUncopied counts the active legacy facts (read-only pa_memory) not yet copied to the person's layer.",
+      "type": "object",
+      "required": ["assistantId", "layers", "legacyUncopied"],
+      "additionalProperties": false,
+      "properties": {
+        "assistantId": { "type": "string" },
+        "layers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryLayer" }
+        },
+        "legacyUncopied": { "type": "integer" }
+      }
+    },
+    "AddMemoryEntryInput": {
+      "description": "POST /api/assistants/{id}/memory/layers/{scope}/entries. The person writes a fact into a layer, which is created the first time; requestId makes a retry the same write.",
+      "type": "object",
+      "required": ["requestId", "title", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      }
+    },
+    "MoveMemoryEntryInput": {
+      "description": "POST /api/assistants/{id}/memory/entries/{entry}/move. Moves the entry of the assistant's other layer to toScope, at the revision and hash the person saw.",
+      "type": "object",
+      "required": ["toScope", "expectedRevision", "expectedHash"],
+      "additionalProperties": false,
+      "properties": {
+        "toScope": { "$ref": "#/$defs/MemoryLayerScope" },
+        "expectedRevision": { "type": "integer" },
+        "expectedHash": { "type": "string" }
+      }
+    },
+    "MemoryEntryMove": {
+      "description": "A captured move: the body is written to targetEntryId in the target layer and the source entry forgotten, each applied by its device.",
+      "type": "object",
+      "required": [
+        "fromScope",
+        "toScope",
+        "sourceEntryId",
+        "targetVaultId",
+        "targetEntryId",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fromScope": { "$ref": "#/$defs/MemoryLayerScope" },
+        "toScope": { "$ref": "#/$defs/MemoryLayerScope" },
+        "sourceEntryId": { "type": "string" },
+        "targetVaultId": { "type": "string" },
+        "targetEntryId": { "type": "string" },
+        "status": { "type": "string" }
       }
     },
     "NativeRuntimeId": {
@@ -5061,142 +5620,89 @@
         }
       }
     },
-    "ModelPoolMember": {
-      "description": "One model id in an equivalent-model group. `tokensPerMinute` is that id's independently metered quota; without it, allocation uses the optional weight.",
+    "WorkerGroupMember": {
+      "description": "One model of a worker group, on one provider. `tokensPerMinute` is that model's independently metered quota; without it, allocation uses the optional weight. `effort` is the effort a worker started on this member runs with; without it the runtime's default applies.",
       "type": "object",
-      "required": ["model"],
+      "required": ["providerKind", "providerId", "runtime", "model"],
       "additionalProperties": false,
       "properties": {
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
         "model": { "type": "string" },
+        "effort": { "type": "string" },
         "tokensPerMinute": { "type": "integer", "minimum": 0 },
         "weight": { "type": "integer", "minimum": 1 }
       }
     },
-    "ModelPool": {
-      "description": "A person's named equivalent-model group under one provider. Members are interchangeable model ids with separate quota, such as two ids for the same underlying model.",
+    "WorkerGroup": {
+      "description": "A person's named group of models that workers can be assigned from. Members may come from different providers and runtimes. A new worker takes one member available on its device and keeps it for the whole session.",
       "type": "object",
-      "required": [
-        "id",
-        "providerKind",
-        "providerId",
-        "runtime",
-        "label",
-        "members",
-        "createdAt",
-        "updatedAt"
-      ],
+      "required": ["id", "label", "members", "createdAt", "updatedAt"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "providerKind": {
-          "type": "string",
-          "enum": ["subscription", "api", "environment", "discovered"]
-        },
-        "providerId": { "type": "string" },
-        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
         "label": { "type": "string" },
         "members": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ModelPoolMember" }
+          "items": { "$ref": "#/$defs/WorkerGroupMember" }
         },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       }
     },
-    "ModelPoolInput": {
-      "description": "Create or replace one equivalent-model group.",
+    "WorkerGroupInput": {
+      "description": "Create or replace one worker group.",
       "type": "object",
-      "required": ["providerKind", "providerId", "runtime", "label", "members"],
+      "required": ["label", "members"],
       "additionalProperties": false,
       "properties": {
-        "providerKind": {
-          "type": "string",
-          "enum": ["subscription", "api", "environment", "discovered"]
-        },
-        "providerId": { "type": "string" },
-        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
         "label": { "type": "string" },
         "members": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/ModelPoolMember" }
+          "items": { "$ref": "#/$defs/WorkerGroupMember" }
         }
-      }
-    },
-    "ModelNote": {
-      "description": "ModelNote is one observation an orchestrator recorded about a specific model.",
-      "type": "object",
-      "required": [
-        "id",
-        "providerKind",
-        "providerId",
-        "runtime",
-        "model",
-        "body",
-        "authorUserId",
-        "authorName",
-        "createdAt"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "id": { "type": "string" },
-        "providerKind": {
-          "type": "string",
-          "enum": ["subscription", "api", "environment", "discovered"]
-        },
-        "providerId": { "type": "string" },
-        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
-        "model": { "type": "string" },
-        "body": {
-          "description": "What the orchestrator learned about handing work to this model.",
-          "type": "string"
-        },
-        "authorUserId": { "type": "string" },
-        "authorName": { "type": "string" },
-        "authorSessionId": {
-          "description": "The agent session that appended the note; absent for a person.",
-          "type": "string"
-        },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
-      }
-    },
-    "ModelNotePage": {
-      "description": "One page of model notes, newest first.",
-      "type": "object",
-      "required": ["total", "offset", "notes"],
-      "additionalProperties": false,
-      "properties": {
-        "total": { "type": "integer" },
-        "offset": { "type": "integer" },
-        "nextOffset": { "type": "integer" },
-        "notes": { "type": "array", "items": { "$ref": "#/$defs/ModelNote" } }
-      }
-    },
-    "ModelNoteInput": {
-      "description": "ModelNoteInput appends one note to a provider's model.",
-      "type": "object",
-      "required": ["providerKind", "providerId", "runtime", "model", "body"],
-      "additionalProperties": false,
-      "properties": {
-        "providerKind": {
-          "type": "string",
-          "enum": ["subscription", "api", "environment", "discovered"]
-        },
-        "providerId": { "type": "string" },
-        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
-        "model": { "type": "string" },
-        "body": { "type": "string", "maxLength": 12000 }
       }
     },
     "ExecutionDefaultScope": {
       "type": "string",
-      "enum": ["global", "workspace", "none"]
+      "enum": ["global", "workspace", "assistant", "none"]
+    },
+    "ExecutionModelChoice": {
+      "description": "One model or worker group the person's orchestrator may use, never both. With a group, a worker takes one member available on its device and that member's own effort.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable identifier for choosing this alternative when dispatching a worker.",
+          "type": "string"
+        },
+        "providerKind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"]
+        },
+        "providerId": { "type": "string" },
+        "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
+        "model": { "type": "string" },
+        "workerGroupId": {
+          "description": "When set, a new session takes one member of this worker group.",
+          "type": "string"
+        },
+        "group": {
+          "description": "The saved worker group, resolved when this choice is read.",
+          "$ref": "#/$defs/WorkerGroup"
+        },
+        "effort": { "type": "string" }
+      }
     },
     "ExecutionModelDefault": {
-      "description": "The model a person's orchestrator uses for delegated execution when a child names no model.",
+      "description": "The model a person's orchestrator uses for delegated execution when a child names no model, either one model (`providerId`, `runtime`, `model`, `effort`) or a worker group (`workerGroupId`), never both. With a group, a worker takes one member available on its device and that member's own effort; scope `none` has neither. Alternatives are the other models and groups the orchestrator may choose from when the default's guide says this step is not a good fit.",
       "type": "object",
-      "required": ["providerId", "runtime", "scope"],
+      "required": ["scope"],
       "additionalProperties": false,
       "properties": {
         "providerKind": {
@@ -5206,15 +5712,20 @@
         "providerId": { "type": "string" },
         "runtime": { "$ref": "#/$defs/NativeRuntimeId" },
         "model": { "type": "string" },
-        "modelPoolId": {
-          "description": "When set, a new session allocates one member from this group.",
+        "workerGroupId": {
+          "description": "When set, a new session takes one member of this worker group.",
           "type": "string"
         },
-        "pool": {
-          "description": "The saved group, resolved when the default is read.",
-          "$ref": "#/$defs/ModelPool"
+        "group": {
+          "description": "The saved worker group, resolved when the default is read.",
+          "$ref": "#/$defs/WorkerGroup"
         },
         "effort": { "type": "string" },
+        "alternatives": {
+          "description": "Other models or worker groups the orchestrator may use.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExecutionModelChoice" }
+        },
         "scope": { "$ref": "#/$defs/ExecutionDefaultScope" },
         "updatedBy": { "type": "string" },
         "updatedAt": { "type": "string" }
@@ -6210,8 +6721,8 @@
             "profileId": { "type": "string" },
             "profileFingerprint": { "type": "string" },
             "profileLabel": { "type": "string" },
-            "modelPoolId": {
-              "description": "The equivalent-model group this session was allocated from. Foundry uses it to choose another id after a model rate limit.",
+            "workerGroupId": {
+              "description": "The worker group this session's provider and model were picked from, once at creation. The session keeps that member.",
               "type": "string"
             },
             "dispatchId": {

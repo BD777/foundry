@@ -14,6 +14,7 @@ import { FieldHint, TextInput } from "../../components/ui/field";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { EmptyState } from "../../components/ui/empty-state";
 import { workspaceDenial } from "../../lib/workspace-access";
+import type { DeviceConnection } from "../../lib/device-connection";
 import { i18n } from "../../i18n";
 import { LoadingState } from "../../components/ui/loading";
 import {
@@ -40,14 +41,14 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 export function WorkspaceOverview({
   workspace,
-  deviceOnline,
+  deviceConnection,
   deviceLabel,
   acceptedCount,
   devices = [],
   workspaces = [],
 }: {
   workspace: WorkspaceProjection;
-  deviceOnline: boolean;
+  deviceConnection: DeviceConnection;
   deviceLabel?: string;
   /** Absent: Issues are off and the count is not shown. */
   acceptedCount?: number;
@@ -57,6 +58,8 @@ export function WorkspaceOverview({
   workspaces?: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("workspaces");
+  const online = deviceConnection === "online";
+  const reconnecting = deviceConnection === "reconnecting";
   const rescanDenial = workspaceDenial(workspace, "member");
   const [data, setData] = useState<WorkspaceInspection>();
   const [error, setError] = useState("");
@@ -86,11 +89,11 @@ export function WorkspaceOverview({
     setData(undefined);
     setQuery("");
     setLimit(30);
-    if (workspace.id && deviceOnline) void load();
+    if (workspace.id && online) void load();
     return () => {
       sequence.current++;
     };
-  }, [workspace.id, deviceOnline]);
+  }, [workspace.id, online]);
   const inspection = data?.workspaceId === workspace.id ? data : undefined;
   const moving = migrationActive(workspace.migration)
     ? workspace.migration
@@ -111,10 +114,12 @@ export function WorkspaceOverview({
           <div>
             <h2>{t("overview.statusTitle")}</h2>
           </div>
-          <Badge tone={deviceOnline ? "online" : "neutral"}>
-            {deviceOnline
+          <Badge tone={online ? "online" : "neutral"}>
+            {online
               ? t("overview.deviceOnline")
-              : t("overview.deviceOffline")}
+              : reconnecting
+                ? t("overview.deviceReconnecting")
+                : t("overview.deviceOffline")}
           </Badge>
         </PanelHeader>
         {moving ? (
@@ -209,17 +214,19 @@ export function WorkspaceOverview({
           )}
         </dl>
         {inspection?.gitState === "not_git" ? (
-          <p>{t("overview.notGitNote")}</p>
+          <FieldHint className="m-0 leading-[1.6]">
+            {t("overview.notGitNote")}
+          </FieldHint>
         ) : null}
         {inspection?.gitState === "nested" ? (
-          <p>
+          <FieldHint className="m-0 leading-[1.6]">
             <Trans
               t={t}
               i18nKey="overview.nestedNote"
               values={{ path: inspection.containingRepository }}
               components={{ code: <code /> }}
             />
-          </p>
+          </FieldHint>
         ) : null}
         {inspection?.head ? (
           <FieldHint className="m-0 leading-[1.6]">
@@ -240,14 +247,20 @@ export function WorkspaceOverview({
           <Button
             busy={loading && !scanning}
             onClick={() => void load()}
-            disabled={loading || !deviceOnline || !workspace.id}
+            disabled={loading || !online || !workspace.id}
             variant="secondary"
           >
             {loading ? t("overview.checking") : t("overview.refreshStatus")}
           </Button>
         </div>
-        {!deviceOnline ? (
-          <p role="status">{t("overview.offlineNote")}</p>
+        {!online ? (
+          <FieldHint className="m-0 leading-[1.6]" role="status">
+            {t(
+              reconnecting
+                ? "overview.reconnectingNote"
+                : "overview.offlineNote",
+            )}
+          </FieldHint>
         ) : null}
         {error ? <Alert tone="error" size="compact" title={error} /> : null}
       </Panel>
@@ -286,9 +299,7 @@ export function WorkspaceOverview({
             {rescanDenial ? <p role="note">{rescanDenial}</p> : null}
           </div>
           <Button
-            disabled={
-              loading || !deviceOnline || !workspace.id || !!rescanDenial
-            }
+            disabled={loading || !online || !workspace.id || !!rescanDenial}
             busy={loading && scanning}
             onClick={() => void load(true)}
             variant="secondary"

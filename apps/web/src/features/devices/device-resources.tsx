@@ -17,6 +17,7 @@ import {
 } from "../../lib/resource-inventory";
 import { HelpHint } from "../../components/ui/help-hint";
 import { SectionHeader } from "../../components/ui/page-header";
+import { deviceConnection } from "../../lib/device-connection";
 import { DeviceSection } from "./device-section";
 
 /**
@@ -118,7 +119,8 @@ export function DeviceResources({
       !instance.readiness.ready &&
       instance.backends.some((backend) => backend.id === macWorkerBackend),
   );
-  const manageable = Boolean(device.owned) && device.status === "connected";
+  const manageable =
+    Boolean(device.owned) && deviceConnection(device) === "online";
   const { t } = useTranslation("devices");
   const [busy, setBusy] = useState<"detect" | "access" | null>(null);
   const [message, setMessage] = useState("");

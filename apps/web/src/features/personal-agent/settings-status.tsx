@@ -152,7 +152,9 @@ export function StatusSection({
                     t("settings.status.moveFailed"),
                     async () => {
                       assistant.replaceAgent(
-                        await movePersonalAgentHome({ deviceId: chosen.id }),
+                        await movePersonalAgentHome(agent.id, {
+                          deviceId: chosen.id,
+                        }),
                       );
                       await assistant.reload();
                       onNotice(

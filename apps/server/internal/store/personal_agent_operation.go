@@ -5,8 +5,10 @@ import "context"
 // PersonalAgentOperation is a durable dispatch instruction, not a copy of
 // live session state. InputID joins it to the authoritative native receipt.
 type PersonalAgentOperation struct {
-	ID              string `json:"id"`
-	UserID          string `json:"-"`
+	ID     string `json:"id"`
+	UserID string `json:"-"`
+	// AssistantID is the assistant the record belongs to (DEV-191).
+	AssistantID     string `json:"-"`
 	ItemID          string `json:"itemId"`
 	IntentRevision  int64  `json:"intentRevision"`
 	StepKey         string `json:"stepKey"`
@@ -15,6 +17,7 @@ type PersonalAgentOperation struct {
 	SourceSessionID string `json:"sourceSessionId"`
 	ReplaceOwner    bool   `json:"replaceOwner,omitempty"`
 	TargetSessionID string `json:"targetSessionId,omitempty"`
+	ExecutionChoice string `json:"executionChoice,omitempty"`
 	InputID         string `json:"inputId"`
 	Prompt          string `json:"prompt"`
 	RequestHash     string `json:"-"`

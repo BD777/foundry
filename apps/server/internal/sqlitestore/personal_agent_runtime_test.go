@@ -10,7 +10,7 @@ import (
 
 func TestAssistantRunSnapshotCannotChangeAfterIntentIsPinned(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	input := store.PersonalAgentRunSnapshot{ID: "run-1", UserID: "person", Role: "coordinator", WorkspaceID: "ws-own", DeviceID: "device-a", Runtime: "codex", ProfileID: "local", Model: "model-a", ConfigHash: "configuration-a"}
+	input := store.PersonalAgentRunSnapshot{ID: "run-1", UserID: "person", AssistantID: "asst_person", Role: "coordinator", WorkspaceID: "ws-own", DeviceID: "device-a", Runtime: "codex", ProfileID: "local", Model: "model-a", ConfigHash: "configuration-a"}
 	saved, err := db.RecordPersonalAgentRunSnapshot(ctx, input)
 	if err != nil {
 		t.Fatal(err)
@@ -23,14 +23,14 @@ func TestAssistantRunSnapshotCannotChangeAfterIntentIsPinned(t *testing.T) {
 	if _, err := db.RecordPersonalAgentRunSnapshot(ctx, input); !errors.Is(err, store.ErrIdempotencyConflict) {
 		t.Fatalf("model changed under a pinned operation: %v", err)
 	}
-	if err := db.BindPersonalAgentRunSnapshot(ctx, "person", input.ID, "session-1"); err != nil {
+	if err := db.BindPersonalAgentRunSnapshot(ctx, input.AssistantID, input.ID, "session-1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.BindPersonalAgentRunSnapshot(ctx, "person", input.ID, "session-2"); !errors.Is(err, store.ErrPersonalAgentRevision) {
+	if err := db.BindPersonalAgentRunSnapshot(ctx, input.AssistantID, input.ID, "session-2"); !errors.Is(err, store.ErrPersonalAgentRevision) {
 		t.Fatalf("operation rebound: %v", err)
 	}
-	if _, err := db.GetPersonalAgentRunSnapshot(ctx, "someone-else", input.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("snapshot crossed users: %v", err)
+	if _, err := db.GetPersonalAgentRunSnapshot(ctx, "asst_someone-else", input.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("snapshot crossed assistants: %v", err)
 	}
 }
 
@@ -43,7 +43,7 @@ func TestAssistantNativeEndRequiresExactInputReceipt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			control, err := db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "receipt-control", UserID: "person", SessionID: session.ID, InputID: session.Input.ID, DispatchAttempted: true})
+			control, err := db.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: "receipt-control", UserID: "person", AssistantID: "asst_person", SessionID: session.ID, InputID: session.Input.ID, DispatchAttempted: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -55,7 +55,7 @@ func TestAssistantNativeEndRequiresExactInputReceipt(t *testing.T) {
 			if err != nil || !applied {
 				t.Fatalf("settlement: %v %v", applied, err)
 			}
-			control, err = db.GetPersonalAgentRunControl(ctx, control.UserID, control.ID)
+			control, err = db.GetPersonalAgentRunControl(ctx, control.AssistantID, control.ID)
 			if err != nil || (control.NativeEndedAt != "") != exact {
 				t.Fatalf("exact native proof: %+v %v", control, err)
 			}

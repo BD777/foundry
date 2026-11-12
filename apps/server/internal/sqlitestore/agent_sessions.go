@@ -504,7 +504,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		ParentSessionID:      start.parent.ID,
 		IssueID:              start.issueID,
 		Model:                strings.TrimSpace(input.Model),
-		ModelPoolID:          strings.TrimSpace(input.ModelPoolID),
+		WorkerGroupID:        strings.TrimSpace(input.WorkerGroupID),
 		DispatchID:           inputID,
 		ClaudeEffort:         strings.TrimSpace(input.ClaudeEffort),
 		ClaudePermissionMode: strings.TrimSpace(input.ClaudePermissionMode),
@@ -599,14 +599,14 @@ func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input 
 		if e := s.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.createdByUserId'),'') FROM agent_sessions WHERE id=?`, sessionID).Scan(&user); e != nil {
 			return e
 		}
-		snap, e := s.GetPersonalAgentRunSnapshot(ctx, user, budget.SnapshotID)
+		snap, e := s.RunSnapshotForUser(ctx, user, budget.SnapshotID)
 		if e != nil {
 			return e
 		}
-		if e = s.BindPersonalAgentRunSnapshot(ctx, user, snap.ID, sessionID); e != nil {
+		if e = s.BindPersonalAgentRunSnapshot(ctx, snap.AssistantID, snap.ID, sessionID); e != nil {
 			return e
 		}
-		if _, e = s.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: flow.Key("parctl", sessionID, input.ID), UserID: user, SessionID: sessionID, InputID: input.ID, SnapshotID: snap.ID, Role: snap.Role, TokenBudget: snap.TokenBudget, TimeoutMinutes: snap.TimeoutMinutes}); e != nil {
+		if _, e = s.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: flow.Key("parctl", sessionID, input.ID), UserID: user, AssistantID: snap.AssistantID, SessionID: sessionID, InputID: input.ID, SnapshotID: snap.ID, Role: snap.Role, TokenBudget: snap.TokenBudget, TimeoutMinutes: snap.TimeoutMinutes}); e != nil {
 			return e
 		}
 	}
@@ -797,9 +797,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			}
 			session = next
 		}
-		if model, poolID := strings.TrimSpace(input.Model), strings.TrimSpace(input.ModelPoolID); model != "" || poolID != "" {
+		if model := strings.TrimSpace(input.Model); model != "" {
 			session.Model = model
-			session.ModelPoolID = poolID
+			session.WorkerGroupID = ""
 		}
 		for target, value := range map[*string]string{
 			&session.ClaudeEffort: input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,

@@ -24,8 +24,10 @@ import { DividedList } from "../../components/ui/divided-list";
 import { ButtonRow } from "../../components/ui/button-row";
 
 export function MaintenanceSection({
+  assistantId,
   workspaces,
 }: {
+  assistantId?: string;
   workspaces: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("personalAgent");
@@ -41,12 +43,12 @@ export function MaintenanceSection({
   } | null>(null);
   const read = useCallback(async () => {
     const [j, p] = await Promise.all([
-      listPersonalAgentMaintenance(),
-      listPersonalAgentContextPatches(),
+      listPersonalAgentMaintenance(assistantId),
+      listPersonalAgentContextPatches(assistantId),
     ]);
     setJobs(j);
     setPatches(p);
-  }, []);
+  }, [assistantId]);
   useEffect(() => {
     void read().catch((e) => setError(serverErrorText(e)));
   }, [read]);
@@ -187,6 +189,7 @@ export function MaintenanceSection({
                   onClick={() =>
                     void perform(job.id, () =>
                       actOnPersonalAgentMaintenance(
+                        assistantId,
                         job.id,
                         job.revision,
                         "retry",
@@ -207,6 +210,7 @@ export function MaintenanceSection({
                   onClick={() =>
                     void perform(job.id, () =>
                       actOnPersonalAgentMaintenance(
+                        assistantId,
                         job.id,
                         job.revision,
                         "dismiss",
@@ -252,6 +256,7 @@ export function MaintenanceSection({
                           void perform(`${job.id}:${index}`, async () => {
                             setPreview(null);
                             const source = await previewPersonalAgentPatch(
+                              assistantId,
                               job.id,
                               job.revision,
                               index,
@@ -291,6 +296,7 @@ export function MaintenanceSection({
                               onClick={() =>
                                 void perform(`${job.id}:${index}`, () =>
                                   applyPersonalAgentPatch(
+                                    assistantId,
                                     job.id,
                                     job.revision,
                                     index,

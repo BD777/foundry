@@ -37,8 +37,8 @@ func (s *Service) Conversation(ctx context.Context, session store.AgentSession) 
 	if session.ParentSessionID != "" || session.CreatedByUserID == "" || notAssistantSource(session.Source) {
 		return store.PersonalAgent{}, false
 	}
-	agent, err := s.store.GetPersonalAgent(ctx, session.CreatedByUserID)
-	if err != nil || agent.WorkspaceID != session.WorkspaceID {
+	agent, err := s.store.AssistantForWorkspace(ctx, session.WorkspaceID)
+	if err != nil || agent.UserID != session.CreatedByUserID {
 		return store.PersonalAgent{}, false
 	}
 	return agent, true
@@ -73,8 +73,8 @@ func limitRefusal(err error, settingsURL string) error {
 
 // settingsURL is the assistant's settings as a full link: what
 // the assistant passes on works in the web and in a Feishu chat alike.
-func (s *Service) settingsURL() string {
-	return s.WebURL(personalagent.SettingsPath)
+func (s *Service) settingsURL(agent store.PersonalAgent) string {
+	return s.WebURL(personalagent.AssistantSettingsPath(agent.ID))
 }
 
 // errStopped refuses what the assistant asks while the person has it
@@ -105,14 +105,14 @@ func (s *Service) AdmitSession(ctx context.Context, input store.CreateAgentSessi
 	}
 	if workspace, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && workspace.DeviceID != "" && workspace.ID != agent.WorkspaceID &&
 		!personalagent.DeviceSettings(agent.Settings.Devices, workspace.DeviceID, agent.HomeDeviceID).AllowWork {
-		return agent, true, &personalagent.Refusal{Status: http.StatusUnprocessableEntity, Err: errors.New("not allowed: the person keeps you from working on that project's computer; tell them, and that they can change it in your settings (" + s.settingsURL() + ")")}
+		return agent, true, &personalagent.Refusal{Status: http.StatusUnprocessableEntity, Err: errors.New("not allowed: the person keeps you from working on that project's computer; tell them, and that they can change it in your settings (" + s.settingsURL(agent) + ")")}
 	}
 	usage, err := s.usage(ctx, agent)
 	if err != nil {
 		return agent, true, err
 	}
 	if err := personalagent.CheckDelegate(agent.Settings.Limits, usage); err != nil {
-		return agent, true, limitRefusal(err, s.settingsURL())
+		return agent, true, limitRefusal(err, s.settingsURL(agent))
 	}
 	return agent, true, nil
 }
@@ -123,7 +123,7 @@ func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, con
 		return
 	}
 	task := store.PersonalAgentTask{
-		UserID: agent.UserID, ConversationSessionID: conversationID, SessionID: session.ID,
+		UserID: agent.UserID, AssistantID: agent.ID, ConversationSessionID: conversationID, SessionID: session.ID,
 		WorkspaceID: session.WorkspaceID, Title: session.Title, Status: taskStatusOf(session.Status),
 		ReadOnly: session.Source == store.SessionSourceVerification,
 	}
@@ -167,15 +167,16 @@ func (s *Service) AdmitTurn(ctx context.Context, session store.AgentSession) err
 		return err
 	}
 	if err := personalagent.CheckTurn(agent.Settings.Limits, usage); err != nil {
-		return limitRefusal(err, s.settingsURL())
+		return limitRefusal(err, s.settingsURL(agent))
 	}
 	return nil
 }
 
-// RefreshTasks brings the person's unfinished tasks up to date
+// RefreshTasks brings the assistant's unfinished tasks up to date
 // with their sessions.
-func (s *Service) RefreshTasks(ctx context.Context, userID string) {
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, userID, []string{
+func (s *Service) RefreshTasks(ctx context.Context, agent store.PersonalAgent) {
+	userID := agent.UserID
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.ID, []string{
 		store.PersonalAgentTaskQueued, store.PersonalAgentTaskRunning, store.PersonalAgentTaskAsking,
 	})
 	if err != nil {
@@ -210,16 +211,17 @@ func (s *Service) RefreshTasks(ctx context.Context, userID string) {
 // Stop is the stop switch (§8), run by the server without the
 // model: the assistant is stopped, its pending proposals void, and every
 // session it runs or handed work to is cancelled. It answers how many
-// sessions it stopped. Only the person's own request reaches it.
-func (s *Service) Stop(ctx context.Context, userID string) (int, error) {
-	agent, err := s.store.SetPersonalAgentState(ctx, userID, store.PersonalAgentStopped)
+// sessions it stopped. Only the person's own request reaches it. It stops
+// this one assistant: the person's other assistants keep working.
+func (s *Service) Stop(ctx context.Context, agent store.PersonalAgent) (int, error) {
+	agent, err := s.store.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped)
 	if err != nil {
 		return 0, err
 	}
-	if err := s.ExpireProposals(ctx, userID, time.Time{}); err != nil {
-		log.Printf("personal agent %s: void proposals on stop: %v", userID, err)
+	if err := s.ExpireProposals(ctx, agent, time.Time{}); err != nil {
+		log.Printf("assistant %s: void proposals on stop: %v", agent.ID, err)
 	}
-	if e := s.store.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
+	if e := s.store.CancelUndispatchedPersonalAgentOperations(ctx, agent.ID); e != nil {
 		return 0, e
 	}
 	ids, err := s.store.PersonalAgentActiveSessions(ctx, agent)
@@ -232,7 +234,7 @@ func (s *Service) Stop(ctx context.Context, userID string) (int, error) {
 			stopped++
 		}
 	}
-	if all, e := s.store.ActivePersonalAgentRunControlsForUser(ctx, userID); e == nil {
+	if all, e := s.store.ActivePersonalAgentRunControlsFor(ctx, agent.ID); e == nil {
 		seen := map[string]bool{}
 		for _, id := range ids {
 			seen[id] = true
@@ -241,17 +243,17 @@ func (s *Service) Stop(ctx context.Context, userID string) (int, error) {
 			if seen[control.SessionID] || (control.State != "monitoring" && control.State != "stop_requested") {
 				continue
 			}
-			if control, e = s.store.RequestPersonalAgentRunStop(ctx, userID, control.ID, "assistant_stopped"); e == nil {
+			if control, e = s.store.RequestPersonalAgentRunStop(ctx, agent.ID, control.ID, "assistant_stopped"); e == nil {
 				s.ReconcileRunControl(ctx, control)
-				if receipt, e := s.store.GetPersonalAgentRunControl(ctx, userID, control.ID); e == nil && receipt.State == "stopped" {
+				if receipt, e := s.store.GetPersonalAgentRunControl(ctx, agent.ID, control.ID); e == nil && receipt.State == "stopped" {
 					stopped++
 				}
 			}
 		}
 	}
-	s.RefreshTasks(ctx, userID)
+	s.RefreshTasks(ctx, agent)
 	// What the assistant handled is the person's now (§h).
-	s.HandOverAll(ctx, userID, store.PendingHandedStopped)
+	s.HandOverAll(ctx, agent, store.PendingHandedStopped)
 	return stopped, nil
 }
 
@@ -266,27 +268,27 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) bool {
 	if err != nil {
 		return false
 	}
-	c, err = s.store.RequestPersonalAgentRunStop(ctx, session.CreatedByUserID, c.ID, "assistant_stopped")
+	c, err = s.store.RequestPersonalAgentRunStop(ctx, c.AssistantID, c.ID, "assistant_stopped")
 	if err != nil {
 		return false
 	}
 	s.ReconcileRunControl(ctx, c)
-	current, err := s.store.GetPersonalAgentRunControl(ctx, c.UserID, c.ID)
+	current, err := s.store.GetPersonalAgentRunControl(ctx, c.AssistantID, c.ID)
 	return err == nil && current.State == "stopped"
 }
 
 // Resume turns the assistant back on (§8). Nothing it stopped
 // restarts; it answers the tasks the stop cancelled, for the assistant to
 // ask about.
-func (s *Service) Resume(ctx context.Context, userID string) ([]store.PersonalAgentTask, error) {
-	before, err := s.store.GetPersonalAgent(ctx, userID)
+func (s *Service) Resume(ctx context.Context, agent store.PersonalAgent) ([]store.PersonalAgentTask, error) {
+	before, err := s.store.GetAssistant(ctx, agent.ID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.store.SetPersonalAgentState(ctx, userID, store.PersonalAgentActive); err != nil {
+	if _, err := s.store.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentActive); err != nil {
 		return nil, err
 	}
-	cancelled, err := s.store.ListPersonalAgentTasks(ctx, userID, []string{store.PersonalAgentTaskCancelled})
+	cancelled, err := s.store.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskCancelled})
 	if err != nil {
 		return nil, err
 	}
@@ -306,16 +308,23 @@ var errProposalNotFound = &personalagent.Refusal{Status: http.StatusNotFound, Er
 // accepting applies exactly what was proposed, once. Callers have checked
 // that the person answered: their web login, or the Feishu user paired
 // with their direct chat. Session tokens and device credentials never
-// reach it. The assistant session that proposed it hears the outcome.
-func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string, accept bool, via string) (store.PersonalAgentProposal, error) {
-	if err := s.ExpireProposals(ctx, userID, time.Now()); err != nil {
+// reach it. The proposal must belong to agent; a card in one assistant's
+// chat cannot answer another assistant's proposal.
+func (s *Service) DecideProposal(ctx context.Context, agent store.PersonalAgent, proposalID string, accept bool, via string) (store.PersonalAgentProposal, error) {
+	if _, err := s.store.GetPersonalAgentProposal(ctx, agent.ID, proposalID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return store.PersonalAgentProposal{}, errProposalNotFound
+		}
+		return store.PersonalAgentProposal{}, err
+	}
+	if err := s.ExpireProposals(ctx, agent, time.Now()); err != nil {
 		return store.PersonalAgentProposal{}, err
 	}
 	status := store.PersonalAgentProposalDeclined
 	if accept {
 		status = store.PersonalAgentProposalAccepted
 	}
-	proposal, err := s.store.SetPersonalAgentProposalStatus(ctx, userID, proposalID, []string{store.PersonalAgentProposalPending}, status, via, "")
+	proposal, err := s.store.SetPersonalAgentProposalStatus(ctx, agent.ID, proposalID, []string{store.PersonalAgentProposalPending}, status, via, "")
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return proposal, errProposalNotFound
@@ -325,7 +334,7 @@ func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string,
 		return proposal, err
 	}
 	s.channel.PersonalAgentProposalChanged(proposal)
-	say := s.proposalNoticeSayer(ctx, userID)
+	say := s.proposalNoticeSayer(ctx, agent)
 	if !accept {
 		s.tell(ctx, proposal.SessionID, say("declined", proposal.Summary))
 		return proposal, nil
@@ -341,11 +350,11 @@ func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string,
 		final, outcome, errText = store.PersonalAgentProposalFailed, store.PersonalAgentOutcomeFailed, applyErr.Error()
 	}
 	s.recordAction(ctx, store.PersonalAgentActionRecord{
-		UserID: userID, SessionID: proposal.SessionID, Tool: proposal.Kind, ArgsSummary: proposal.Summary,
+		UserID: agent.UserID, AssistantID: agent.ID, SessionID: proposal.SessionID, Tool: proposal.Kind, ArgsSummary: proposal.Summary,
 		WorkspaceID: cmp.Or(proposal.WorkspaceID, workspaceIDOf(result)), Decision: store.PersonalAgentAsk,
 		Outcome: outcome, ProposalID: proposal.ID, ConfirmedVia: via, Error: errText,
 	}, proposal.Spec)
-	proposal, err = s.store.SetPersonalAgentProposalStatus(ctx, userID, proposalID, []string{store.PersonalAgentProposalAccepted}, final, "", errText)
+	proposal, err = s.store.SetPersonalAgentProposalStatus(ctx, agent.ID, proposalID, []string{store.PersonalAgentProposalAccepted}, final, "", errText)
 	if err != nil {
 		return proposal, err
 	}
@@ -383,11 +392,8 @@ var proposalNoticeTexts = map[string][2]string{
 }
 
 // proposalNoticeSayer renders proposalNoticeTexts in the person's language.
-func (s *Service) proposalNoticeSayer(ctx context.Context, userID string) func(key string, args ...any) string {
-	language := "zh"
-	if agent, err := s.store.GetPersonalAgent(ctx, userID); err == nil {
-		language = personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, userID))
-	}
+func (s *Service) proposalNoticeSayer(ctx context.Context, agent store.PersonalAgent) func(key string, args ...any) string {
+	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
 	return func(key string, args ...any) string {
 		return fmt.Sprintf(proposalNoticeTexts[key][languageIndex(language)], args...)
 	}
@@ -396,8 +402,8 @@ func (s *Service) proposalNoticeSayer(ctx context.Context, userID string) func(k
 // ExpireProposals expires the person's pending proposals that
 // expired by now, or every pending one when now is zero (the stop switch),
 // and shows it on their cards.
-func (s *Service) ExpireProposals(ctx context.Context, userID string, now time.Time) error {
-	pending, err := s.store.ListPersonalAgentProposals(ctx, userID, []string{store.PersonalAgentProposalPending})
+func (s *Service) ExpireProposals(ctx context.Context, agent store.PersonalAgent, now time.Time) error {
+	pending, err := s.store.ListPersonalAgentProposals(ctx, agent.ID, []string{store.PersonalAgentProposalPending})
 	if err != nil {
 		return err
 	}
@@ -405,7 +411,7 @@ func (s *Service) ExpireProposals(ctx context.Context, userID string, now time.T
 	if !now.IsZero() {
 		cutoff = formatPATime(now)
 	}
-	expired, err := s.store.ExpirePersonalAgentProposals(ctx, userID, cutoff)
+	expired, err := s.store.ExpirePersonalAgentProposals(ctx, agent.ID, cutoff)
 	if err != nil || expired == 0 {
 		return err
 	}
@@ -478,6 +484,26 @@ func (s *Service) Setup(ctx context.Context, account *store.User, deviceID, brow
 	if _, err := s.store.GetPersonalAgent(ctx, account.ID); err == nil {
 		return store.PersonalAgent{}, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentExists}
 	}
+	return s.create(ctx, account, "", deviceID, browserLanguage, browserTimezone, true)
+}
+
+// Create gives the person one more assistant (DEV-191), set up as Setup
+// does with its own home workspace on deviceID. It is not the default, and
+// its permission package reaches no workspace until the person adds them.
+// The first assistant a person creates this way becomes their default.
+func (s *Service) Create(ctx context.Context, account *store.User, name, deviceID, browserLanguage, browserTimezone string) (store.PersonalAgent, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return store.PersonalAgent{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("an assistant needs a name")}
+	}
+	_, err := s.store.DefaultAssistant(ctx, account.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return store.PersonalAgent{}, err
+	}
+	return s.create(ctx, account, name, deviceID, browserLanguage, browserTimezone, errors.Is(err, store.ErrNotFound))
+}
+
+func (s *Service) create(ctx context.Context, account *store.User, name, deviceID, browserLanguage, browserTimezone string, isDefault bool) (store.PersonalAgent, error) {
 	owned, err := store.AvailableOwnedDevices(ctx, s.store, account.ID)
 	if err != nil {
 		return store.PersonalAgent{}, err
@@ -493,21 +519,52 @@ func (s *Service) Setup(ctx context.Context, account *store.User, deviceID, brow
 	if settings, err = personalagent.NormalizeSettings(settings, owned, deviceID); err != nil {
 		return store.PersonalAgent{}, err
 	}
-	workspace, err := s.createFolder(ctx, account.ID, deviceID, assistantFolderName(settings, account.Locale), nil)
+	folderName := assistantFolderName(settings, account.Locale)
+	if name != "" {
+		folderName = name
+		settings.AssistantName = name
+	}
+	workspace, err := s.createFolder(ctx, account.ID, deviceID, folderName, nil)
 	if err != nil {
 		return store.PersonalAgent{}, err
 	}
 	agent, err := s.store.CreatePersonalAgent(ctx, store.PersonalAgent{
+		Name: name, IsDefault: isDefault,
 		UserID: account.ID, WorkspaceID: workspace.ID, HomeDeviceID: deviceID, State: store.PersonalAgentActive,
 		Settings: settings, PromptVersion: prompt.Version,
 	})
 	if errors.Is(err, store.ErrPersonalAgentExists) {
+		s.retireWorkspace(ctx, workspace)
 		return agent, &personalagent.Refusal{Status: http.StatusConflict, Err: err}
 	}
 	if err == nil {
 		s.digests.Prime(account.ID)
 	}
 	return agent, err
+}
+
+// Delete removes one of the person's assistants that is not their default
+// (DEV-191): it is stopped first (its sessions and helpers cancelled), its
+// own records go (store.DeleteAssistant), the person's "needs you" items
+// it handled return to the person, and its home workspace is archived with
+// its conversations, not deleted.
+func (s *Service) Delete(ctx context.Context, agent store.PersonalAgent) error {
+	if agent.IsDefault {
+		return &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrAssistantIsDefault}
+	}
+	if _, err := s.Stop(ctx, agent); err != nil {
+		return err
+	}
+	if err := s.store.DeleteAssistant(ctx, agent.ID); err != nil {
+		if errors.Is(err, store.ErrAssistantIsDefault) {
+			return &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+		}
+		return err
+	}
+	if workspace, err := s.store.GetWorkspace(ctx, agent.WorkspaceID); err == nil {
+		s.retireWorkspace(ctx, workspace)
+	}
+	return nil
 }
 
 // assistantFolderName is the display name of the assistant's workspace.
@@ -562,7 +619,8 @@ func (s *Service) freeFolder(ctx context.Context, deviceID string) (string, erro
 	return folder, nil
 }
 
-// Overview answers GET /api/personal-agent.
+// Overview answers GET /api/personal-agent: the person's default
+// assistant, or the device setup would suggest before they have one.
 func (s *Service) Overview(ctx context.Context, userID string) (store.PersonalAgentOverview, error) {
 	agent, err := s.store.GetPersonalAgent(ctx, userID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -572,6 +630,11 @@ func (s *Service) Overview(ctx context.Context, userID string) (store.PersonalAg
 	if err != nil {
 		return store.PersonalAgentOverview{}, err
 	}
+	return s.OverviewOf(ctx, agent)
+}
+
+// OverviewOf answers GET /api/assistants/{id}.
+func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgentOverview, error) {
 	usage, err := s.usage(ctx, agent)
 	if err != nil {
 		return store.PersonalAgentOverview{}, err
@@ -580,11 +643,8 @@ func (s *Service) Overview(ctx context.Context, userID string) (store.PersonalAg
 }
 
 // SaveSettings checks and stores what the panel saved.
-func (s *Service) SaveSettings(ctx context.Context, userID string, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
-	agent, err := s.store.GetPersonalAgent(ctx, userID)
-	if err != nil {
-		return agent, err
-	}
+func (s *Service) SaveSettings(ctx context.Context, agent store.PersonalAgent, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
+	userID := agent.UserID
 	owned, err := s.store.DevicesOwnedBy(ctx, userID)
 	if err != nil {
 		return agent, err
@@ -603,7 +663,12 @@ func (s *Service) SaveSettings(ctx context.Context, userID string, settings stor
 			entry.AllowWork, entry.AllowCreate = false, false
 		}
 	}
-	return s.store.SavePersonalAgentSettings(ctx, userID, normalized)
+	saved, err := s.store.SavePersonalAgentSettings(ctx, agent.ID, normalized)
+	var inUse *store.PersonalAgentFeishuAppInUse
+	if errors.As(err, &inUse) {
+		return agent, &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+	}
+	return saved, err
 }
 
 // ErrNoAssistant answers the person who has not set one up.

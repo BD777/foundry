@@ -1,4 +1,5 @@
 import type { AgentSession, DeviceProjection } from "@bd777/foundry-protocol";
+import { deviceConnection } from "./device-connection";
 
 /**
  * The device, when it is listed and not connected. Work sent to it waits on
@@ -10,7 +11,7 @@ export function offlineDevice(
 ): DeviceProjection | undefined {
   if (!deviceId) return undefined;
   const device = devices.find((candidate) => candidate.id === deviceId);
-  return device && device.status !== "connected" ? device : undefined;
+  return device && deviceConnection(device) !== "online" ? device : undefined;
 }
 
 /**

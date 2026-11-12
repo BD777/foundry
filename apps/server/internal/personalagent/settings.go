@@ -43,6 +43,11 @@ func NormalizeSettings(in store.PersonalAgentSettings, ownedDevices []string, ho
 			return in, fmt.Errorf("role execution computer must belong to the person")
 		}
 	}
+	if in.ExecutionModels != nil {
+		if err := normalizeExecutionModels(in.ExecutionModels); err != nil {
+			return in, err
+		}
+	}
 	out.AssistantName = strings.TrimSpace(in.AssistantName)
 	if utf8.RuneCountInString(out.AssistantName) > AssistantNameMaxChars || strings.ContainsAny(out.AssistantName, "\r\n\t") {
 		return in, fmt.Errorf("the assistant's name is at most %d characters on one line", AssistantNameMaxChars)
@@ -106,6 +111,43 @@ func NormalizeSettings(in store.PersonalAgentSettings, ownedDevices []string, ho
 		return in, err
 	}
 	return out, nil
+}
+
+func normalizeExecutionModels(models *store.PersonalAgentExecutionModels) error {
+	check := func(choice *store.ExecutionModelChoice) error {
+		choice.ProviderID = strings.TrimSpace(choice.ProviderID)
+		choice.Model = strings.TrimSpace(choice.Model)
+		choice.WorkerGroupID = strings.TrimSpace(choice.WorkerGroupID)
+		choice.Effort = strings.TrimSpace(choice.Effort)
+		if choice.WorkerGroupID != "" {
+			if choice.ProviderID != "" || choice.Runtime != "" || choice.Model != "" || choice.Effort != "" || choice.ProviderKind != "" {
+				return errors.New("an execution model is either a worker group or a provider with a model, not both")
+			}
+			return nil
+		}
+		if choice.ProviderID == "" || choice.Model == "" || (choice.Runtime != "claude" && choice.Runtime != "codex") {
+			return errors.New("an execution model needs workerGroupId, or providerId, runtime and model")
+		}
+		return nil
+	}
+	selected := store.ExecutionModelChoice{
+		ProviderKind: models.ProviderKind, ProviderID: models.ProviderID, Runtime: models.Runtime,
+		Model: models.Model, WorkerGroupID: models.WorkerGroupID, Effort: models.Effort,
+	}
+	if err := check(&selected); err != nil {
+		return err
+	}
+	models.ProviderID, models.Model = selected.ProviderID, selected.Model
+	models.WorkerGroupID, models.Effort = selected.WorkerGroupID, selected.Effort
+	if models.Alternatives == nil {
+		models.Alternatives = []store.ExecutionModelChoice{}
+	}
+	for index := range models.Alternatives {
+		if err := check(&models.Alternatives[index]); err != nil {
+			return fmt.Errorf("execution alternative %d: %w", index+1, err)
+		}
+	}
+	return nil
 }
 
 func oneOf(name string, value *string, allowed ...string) error {

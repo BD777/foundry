@@ -1,4 +1,4 @@
-// Package modelpool chooses equivalent model ids and plans rate-limit retries.
+// Package modelpool chooses a worker group member and plans rate-limit retries.
 // It has no storage, transport or inference dependencies; callers provide the
 // recent usage and persist the returned decisions.
 package modelpool
@@ -15,14 +15,17 @@ const (
 	MaxRetryDelay  = 30 * time.Second
 )
 
-// Member is one model id in an equivalent-model group.
+// Member is one model of a worker group. Key names the member in the usage
+// map given to Choose; it defaults to Model, so callers whose members come
+// from several providers set it to something provider-specific.
 type Member struct {
+	Key             string
 	Model           string
 	TokensPerMinute int64
 	Weight          int
 }
 
-// Pool is the pure form of an equivalent-model group.
+// Pool is the pure form of a worker group (or the part of it a caller keeps).
 type Pool struct {
 	Members []Member
 }
@@ -38,22 +41,12 @@ type Decision struct {
 // member declares a budget, it uses weighted round-robin. Cursor is the next
 // weighted slot to consider, supplied by the caller's durable allocation row.
 func Choose(pool Pool, used map[string]int64, cursor int) (Decision, bool) {
-	return choose(pool, used, cursor, "")
-}
-
-// Next chooses another member when possible. It is used after a rate limit so
-// the retry does not immediately hit the same id.
-func Next(pool Pool, current string, used map[string]int64, cursor int) (Decision, bool) {
-	return choose(pool, used, cursor, strings.TrimSpace(current))
-}
-
-func choose(pool Pool, used map[string]int64, cursor int, exclude string) (Decision, bool) {
 	if len(pool.Members) == 0 {
 		return Decision{}, false
 	}
 	quota := make([]int, 0, len(pool.Members))
 	for index, member := range pool.Members {
-		if strings.TrimSpace(member.Model) == "" || member.Model == exclude {
+		if strings.TrimSpace(member.Model) == "" {
 			continue
 		}
 		if member.TokensPerMinute > 0 {
@@ -71,32 +64,35 @@ func choose(pool Pool, used map[string]int64, cursor int, exclude string) (Decis
 		}
 		return Decision{Index: best, Model: pool.Members[best].Model}, true
 	}
-	index, nextCursor := weightedIndex(pool.Members, cursor, exclude)
-	if index < 0 && exclude != "" {
-		// A one-member pool still has to retry that member.
-		index, nextCursor = weightedIndex(pool.Members, cursor, "")
-	}
+	index, nextCursor := weightedIndex(pool.Members, cursor)
 	if index < 0 {
 		return Decision{}, false
 	}
 	return Decision{Index: index, Model: pool.Members[index].Model, Cursor: nextCursor}, true
 }
 
+func (m Member) usageKey() string {
+	if m.Key != "" {
+		return m.Key
+	}
+	return m.Model
+}
+
 func remaining(member Member, used map[string]int64) int64 {
 	if member.TokensPerMinute <= 0 {
 		return math.MinInt64
 	}
-	spent := used[member.Model]
+	spent := used[member.usageKey()]
 	if spent < 0 {
 		spent = 0
 	}
 	return member.TokensPerMinute - spent
 }
 
-func weightedIndex(members []Member, cursor int, exclude string) (int, int) {
+func weightedIndex(members []Member, cursor int) (int, int) {
 	total := 0
 	for _, member := range members {
-		if strings.TrimSpace(member.Model) != "" && member.Model != exclude {
+		if strings.TrimSpace(member.Model) != "" {
 			total += memberWeight(member)
 		}
 	}
@@ -108,7 +104,7 @@ func weightedIndex(members []Member, cursor int, exclude string) (int, int) {
 		slot += total
 	}
 	for index, member := range members {
-		if strings.TrimSpace(member.Model) == "" || member.Model == exclude {
+		if strings.TrimSpace(member.Model) == "" {
 			continue
 		}
 		weight := memberWeight(member)

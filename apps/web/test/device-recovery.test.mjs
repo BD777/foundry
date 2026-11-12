@@ -73,6 +73,10 @@ test("offline since prefers the recorded drop, then the row's last write", () =>
     offlineSince({ status: "connected", lastSeenAt: "x" }),
     undefined,
   );
+  assert.equal(
+    offlineSince({ status: "reconnecting", lastSeenAt: "x" }),
+    undefined,
+  );
 });
 
 test("linger off is a readiness problem with its one-line fix", () => {

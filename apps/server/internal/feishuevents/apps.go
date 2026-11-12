@@ -17,6 +17,9 @@ type ConnectedApp struct {
 	// ConnectorAppID is the Connectors record (xapp_…).
 	ConnectorAppID string
 	Label          string
+	// AccountIDs are the person's live Connectors accounts (xacc_…)
+	// through this app.
+	AccountIDs []string
 }
 
 func (a ConnectedApp) String() string {
@@ -68,18 +71,31 @@ func (a ServerApps) ConnectedApps(ctx context.Context, userID string) ([]Connect
 		return nil, err
 	}
 	apps := []ConnectedApp{}
-	seen := map[string]bool{}
+	byClient := map[string]int{}
+	clientOf := map[string]string{}
 	for _, account := range accounts {
-		if account.Provider != feishuProvider || account.Status == store.ExternalAccountRevoked || seen[account.AppID] {
+		if account.Provider != feishuProvider || account.Status == store.ExternalAccountRevoked {
 			continue
 		}
-		seen[account.AppID] = true
-		app, err := a.Store.GetExternalProviderApp(ctx, account.AppID)
-		if err != nil || seen[app.ClientID] {
+		clientID, known := clientOf[account.AppID]
+		if !known {
+			app, err := a.Store.GetExternalProviderApp(ctx, account.AppID)
+			if err != nil {
+				clientOf[account.AppID] = ""
+				continue
+			}
+			clientID = app.ClientID
+			clientOf[account.AppID] = clientID
+			if _, listed := byClient[clientID]; !listed {
+				byClient[clientID] = len(apps)
+				apps = append(apps, ConnectedApp{AppID: app.ClientID, ConnectorAppID: app.ID, Label: app.Label})
+			}
+		}
+		if clientID == "" {
 			continue
 		}
-		seen[app.ClientID] = true
-		apps = append(apps, ConnectedApp{AppID: app.ClientID, ConnectorAppID: app.ID, Label: app.Label})
+		index := byClient[clientID]
+		apps[index].AccountIDs = append(apps[index].AccountIDs, account.ID)
 	}
 	return apps, nil
 }

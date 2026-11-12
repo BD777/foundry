@@ -1,6 +1,10 @@
 /** Location and control metadata; knowledge bodies remain in their owner files. */
 export interface KnowledgeVault {
   id: string;
+  /** The assistant whose memory layer this is (scope "assistant"). */
+  assistantId?: string;
+  /** A memory vault's layer (DEV-191 P2); absent for domain knowledge. */
+  scope?: "person" | "assistant";
   kind: string;
   workspaceId: string;
   deviceId: string;

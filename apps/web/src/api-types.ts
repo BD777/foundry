@@ -25,6 +25,8 @@ export interface WorkspaceSkillSummary {
   id: string;
   name: string;
   description?: string;
+  /** The connector package the skill comes with, when not the workspace's own choice. */
+  package?: string;
 }
 
 export type FoundryData = FoundryDataProjection & {

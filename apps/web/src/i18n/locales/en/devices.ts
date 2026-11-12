@@ -150,6 +150,7 @@ export const devices = {
   },
   status: {
     online: "Online",
+    reconnecting: "Reconnecting…",
     offline: "Offline",
   },
   detail: {
@@ -164,6 +165,8 @@ export const devices = {
       "Shared device · Viewing this device does not switch your workspace.",
     offline:
       "This device is offline. Saved workspaces and history remain available; sign-in and execution require reconnection.",
+    reconnecting:
+      "The device is reconnecting. It usually recovers within seconds; sign-in and execution are unavailable until it does.",
     sections: "Device sections",
     workspacesLink_one: "{{count}} workspace",
     workspacesLink_other: "{{count}} workspaces",

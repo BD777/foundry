@@ -181,6 +181,21 @@ test("an offline read stays retryable in a quiet status row", async () => {
   );
 });
 
+test("a path outside the attachments is a refusal, not a deleted image", async () => {
+  await mounted(
+    () => Promise.resolve(new Response("outside", { status: 403 })),
+    async ({ container }) => {
+      await wait();
+      assert.match(container.textContent, /outside the workspace attachments/);
+      assert.doesNotMatch(container.textContent, /Original image deleted/);
+      assert.equal(
+        container.firstElementChild.getAttribute("data-image-state"),
+        "error",
+      );
+    },
+  );
+});
+
 test("an export fallback never renders the loading placeholder", async () => {
   await mounted(
     () => Promise.resolve(new Response("missing", { status: 404 })),

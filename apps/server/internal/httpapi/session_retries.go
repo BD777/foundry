@@ -16,8 +16,7 @@ import (
 const (
 	sessionRetryPumpInterval = time.Second
 	sessionRetryLease        = 2 * time.Minute
-	maxPoolModelRetries      = 3
-	maxSameModelRetries      = 1
+	maxSameModelRetries      = 5
 )
 
 type sessionRetryService struct {
@@ -37,9 +36,7 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 	}
 	code := r.server.sessionAlertFailureCode(ctx, session)
 	if modelpool.QuotaExhausted(code, failure) {
-		// An equivalent model id behind the same provider profile can still
-		// share the exhausted upstream account. Without account identity in
-		// the pool, retrying is not safe.
+		// Waiting does not bring an exhausted account's quota back.
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, failure, time.Now().UTC())
 		return false, nil
@@ -57,42 +54,24 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 	if found && current.Status != store.SessionRetryResolved && current.Status != store.SessionRetryCanceled {
 		attempt = current.Attempt + 1
 	}
-	pool, isPool, err := r.poolForRetry(ctx, session)
-	if err != nil {
-		return false, err
-	}
-	maxAttempts := maxSameModelRetries
-	if isPool {
-		maxAttempts = maxPoolModelRetries
-	}
-	if attempt > maxAttempts {
+	if attempt > maxSameModelRetries {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, failure, time.Now().UTC())
 		return false, nil
 	}
-	nextModel := session.Model
-	if isPool {
-		nextModel, err = r.server.chooseModelPoolMember(ctx, pool, session.Model)
-		if err != nil {
-			return false, err
-		}
-	}
-	if isPool && strings.TrimSpace(nextModel) == "" {
-		return false, errors.New("automatic retry has no model")
-	}
 	delay := modelpool.Backoff(attempt, retryJitter(attempt))
 	retry := store.SessionRetry{
 		SessionID: session.ID, InputID: session.Input.ID, Attempt: attempt,
-		MaxAttempts: maxAttempts, PreviousModel: session.Model, NextModel: nextModel,
+		MaxAttempts: maxSameModelRetries, PreviousModel: session.Model, NextModel: session.Model,
 		NextAttemptAt: time.Now().UTC().Add(delay), LastError: failure,
 	}
 	blocked, err := r.server.store.ScheduleAgentSessionRetry(ctx, retry,
-		fmt.Sprintf("Model rate limit; automatic retry %d/%d in %s", attempt, maxAttempts, delay.Round(time.Second)))
+		fmt.Sprintf("Model rate limit; automatic retry %d/%d in %s", attempt, maxSameModelRetries, delay.Round(time.Second)))
 	if err != nil {
 		return false, err
 	}
 	r.server.hub.sessions.Changed(ctx, sessions.Blocked, blocked)
-	event := retryEvent(session, attempt, maxAttempts, session.Model, nextModel, "Automatic model retry")
+	event := retryEvent(session, attempt, maxSameModelRetries, session.Model, "Automatic model retry")
 	if err := r.server.store.AppendAgentSessionEvent(ctx, event); err != nil {
 		return false, err
 	}
@@ -162,7 +141,7 @@ func (r *sessionRetryService) Pump(ctx context.Context, now time.Time) {
 		}
 		claimed.Input.Prompt = prompt
 		event := retryEvent(claimed, retry.Attempt, retry.MaxAttempts,
-			retry.PreviousModel, retry.NextModel, "Automatic model retry started")
+			claimed.Model, "Automatic model retry started")
 		if err := r.server.store.AppendAgentSessionEvent(ctx, event); err == nil {
 			r.server.hub.sessions.Recorded(ctx, claimed.WorkspaceID, event)
 		}
@@ -280,32 +259,11 @@ func retryContinuationPrompt(locale string) string {
 	return "The previous attempt was interrupted by a model rate limit. Continue from where it stopped and do not repeat steps that already completed."
 }
 
-func (r *sessionRetryService) poolForRetry(ctx context.Context, session store.AgentSession) (store.StoredModelPool, bool, error) {
-	if strings.TrimSpace(session.ModelPoolID) == "" {
-		return store.StoredModelPool{}, false, nil
+func retryEvent(session store.AgentSession, attempt, maxAttempts int, model, label string) store.AgentSessionEvent {
+	if model == "" {
+		model = "the same model"
 	}
-	pool, err := r.server.store.GetModelPool(ctx, session.ModelPoolID)
-	if errors.Is(err, store.ErrModelPoolNotFound) {
-		return store.StoredModelPool{}, false, nil
-	}
-	if err != nil {
-		return store.StoredModelPool{}, false, err
-	}
-	if pool.ProviderID != session.ProfileID || pool.Runtime != session.Provider {
-		return store.StoredModelPool{}, false, nil
-	}
-	return pool, true, nil
-}
-
-func retryEvent(session store.AgentSession, attempt, maxAttempts int, from, to, label string) store.AgentSessionEvent {
-	target := to
-	if target == "" {
-		target = "the same model"
-	}
-	detail := fmt.Sprintf("Model rate limit. Retrying with %s (attempt %d of %d).", target, attempt, maxAttempts)
-	if from != "" && from != to {
-		detail = fmt.Sprintf("Model rate limit. Switching from %s to %s (attempt %d of %d).", from, to, attempt, maxAttempts)
-	}
+	detail := fmt.Sprintf("Model rate limit. Retrying with %s (attempt %d of %d).", model, attempt, maxAttempts)
 	phase := "scheduled"
 	if strings.Contains(strings.ToLower(label), "started") {
 		phase = "started"

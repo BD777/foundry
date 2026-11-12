@@ -136,6 +136,38 @@ func takesConnectors(session store.AgentSession) bool {
 	return session.Source != store.SessionSourceVerification && !store.IsUtilitySessionSource(session.Source)
 }
 
+// BoundKinds are the connector kinds a new session in the request's workspace
+// would hold, decided before the session exists: the bindings that make a
+// session hold a connector, without the per-session grant and credential
+// that SessionConnectors then resolves. It lets the composer list what the
+// session will have.
+func (m *Module) BoundKinds(ctx context.Context, request SessionRequest) (map[string]bool, error) {
+	kinds := map[string]bool{}
+	session := request.Session
+	if !takesConnectors(session) {
+		return kinds, nil
+	}
+	accounts, err := m.ServerHeld.SessionAccounts(ctx, session.WorkspaceID, session.ID, session.CreatedByUserID, session.DeviceID, request.DeviceOwner)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		if account.Provider != "" {
+			kinds[account.Provider] = true
+		}
+	}
+	uses, err := m.Devices.SessionUses(ctx, session, request.DeviceOwner)
+	if err != nil {
+		return nil, err
+	}
+	for _, use := range uses {
+		if use.Kind != "" && use.Access == "device_login" {
+			kinds[use.Kind] = true
+		}
+	}
+	return kinds, nil
+}
+
 // SessionConnectors decides, for both kinds, what a session gets. It is
 // the one call session dispatch makes into the module.
 func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) SessionConnectors {

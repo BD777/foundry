@@ -735,6 +735,31 @@ test("Install cua-driver shows only when it is not installed and reports how it 
   await page.unmount();
 });
 
+test("a reconnecting resource stays neutral, keeps actions visible, and disables them", async () => {
+  const reconnecting = instance({
+    ...notInstalled,
+    id: "res_reconnecting",
+    key: "computer_use/reconnecting",
+    name: "Reconnecting screen",
+    state: "reconnecting",
+  });
+  window.history.replaceState(null, "", "/resources?workspace=ws_1");
+  extraInstances = [reconnecting];
+  const page = await render(ResourcesFeature, { ownedDeviceIds: ["dev_a"] });
+  const reconnectingRow = row(page.container, "Reconnecting screen");
+  assert.match(
+    reconnectingRow.querySelector(".fdy-badge").textContent,
+    /Reconnecting…/,
+  );
+  assert.doesNotMatch(reconnectingRow.textContent, /Device offline/);
+  assert.equal(buttonIn(reconnectingRow, "Install cua-driver").disabled, true);
+  assert.match(
+    reconnectingRow.textContent,
+    /device is reconnecting and usually recovers within seconds/i,
+  );
+  await page.unmount();
+});
+
 test("Request access asks the Mac for cua-driver's grants", async () => {
   const page = await renderOwned();
   const third = row(page.container, "Third screen");

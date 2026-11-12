@@ -18,7 +18,15 @@ import {
   fsyncSync,
   chmodSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { isInside, within } from "../platform/paths.js";
 
 /** A refusal the server maps to an HTTP status; `code` is part of the wire. */
@@ -73,6 +81,28 @@ const imageSignatures: {
       h.subarray(8, 12).toString("latin1") === "WEBP",
   },
 ];
+
+/**
+ * `realpathSync` of a path that may not exist: the nearest existing
+ * ancestor resolved, the missing steps appended. Other failures (no
+ * permission) propagate.
+ */
+export function realpathThroughMissing(path: string): string {
+  const missing: string[] = [];
+  let current = resolve(path);
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...missing.reverse());
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const parent = dirname(current);
+      if ((code !== "ENOENT" && code !== "ENOTDIR") || parent === current)
+        throw error;
+      missing.push(basename(current));
+      current = parent;
+    }
+  }
+}
 
 function attachmentsRoot(workspacePath: string): string {
   return resolve(workspacePath, ".foundry", "attachments");
@@ -173,11 +203,25 @@ export function readAttachmentImageChunk(input: {
   revision: string;
 } {
   const root = attachmentsRoot(input.workspacePath);
-  if (!isAbsolute(input.path) || !existsSync(root) || !existsSync(input.path)) {
+  if (!isAbsolute(input.path)) {
+    throw new AttachmentError("invalid_path", "image path must be absolute");
+  }
+  // Both sides resolve links (a home that is a link, a link inside the
+  // attachments) before comparing; a missing file resolves through its
+  // nearest existing folder, so "outside" and "deleted" stay apart.
+  if (
+    !isInside(realpathThroughMissing(root), realpathThroughMissing(input.path))
+  ) {
+    throw new AttachmentError(
+      "invalid_path",
+      "image is outside the workspace's attachments",
+    );
+  }
+  if (!existsSync(input.path)) {
     throw new AttachmentError("not_found", "image not found");
   }
   const target = realpathSync(input.path);
-  if (!isInside(realpathSync(root), target) || !statSync(target).isFile()) {
+  if (!statSync(target).isFile()) {
     throw new AttachmentError("not_found", "image not found");
   }
   const chunk = readFileChunk(

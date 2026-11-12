@@ -181,6 +181,33 @@ test("each device group adds folders on that device and opens the device itself"
   await view.cleanup();
 });
 
+test("a reconnecting device is not shown as offline and cannot add folders", async () => {
+  const view = await setup({
+    devices: [
+      {
+        id: "dev",
+        label: "mac",
+        status: "reconnecting",
+        owned: true,
+      },
+    ],
+  });
+  const group = view.container.querySelector(
+    '.fdy-location-group[aria-label="mac"]',
+  );
+  const add = [...group.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Add workspace"),
+  );
+  assert.equal(add.disabled, true);
+  assert.match(group.textContent, /Reconnecting…/);
+  assert.doesNotMatch(group.textContent, /Offline/);
+  assert.match(
+    group.querySelector(`#${add.getAttribute("aria-describedby")}`).textContent,
+    /usually recovers within seconds/,
+  );
+  await view.cleanup();
+});
+
 test("resting on a workspace reads what a switch to it needs, once; passing over reads nothing", async (t) => {
   const reads = [];
   t.mock.method(globalThis, "fetch", async (input) => {

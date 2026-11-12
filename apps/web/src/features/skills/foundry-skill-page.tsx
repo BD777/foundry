@@ -173,7 +173,7 @@ function SectionHeading({
           <span className="text-xs font-normal text-ink-muted">{count}</span>
         ) : null}
       </h2>
-      <p className="mt-1.5 max-w-[76ch] text-sm leading-[1.6] text-ink-muted">
+      <p className="mt-1.5 text-sm leading-[1.6] text-ink-muted">
         {description}
       </p>
     </header>

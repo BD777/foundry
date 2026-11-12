@@ -257,9 +257,10 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
       codexSessionSecretsConfig(),
       {
         shell_environment_policy: { exclude: ["FOUNDRY_SESSION_TOKEN"] },
+        allow_login_shell: false,
         features: { shell_snapshot: false },
       },
-      "Codex keeps the token out of the commands it runs",
+      "Codex keeps the token out of the commands it runs, and runs them without a login shell that would reset the tool folder on PATH",
     );
     assert.equal(
       codexFoundryTools({

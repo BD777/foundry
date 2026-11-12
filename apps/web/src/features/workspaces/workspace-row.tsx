@@ -29,6 +29,7 @@ import {
   migrationFrozen,
 } from "../../components/workspace/workspace-migration";
 import { WorkspaceMoveSummary } from "../../components/workspace/workspace-move-progress";
+import { deviceConnection } from "../../lib/device-connection";
 
 /** The id of a device group's note saying why folders cannot be added. */
 export const addReasonId = (deviceId: string) =>
@@ -82,7 +83,7 @@ export function WorkspaceRow({
 }) {
   const { t } = useTranslation("workspaces");
   const [servicesOpen, setServicesOpen] = useState(false);
-  const online = device.status === "connected";
+  const online = deviceConnection(device) === "online";
   const manageable =
     device.owned && (!workspace.accessRole || workspace.accessRole === "owner");
   // The device is connected but no longer serves the folder, or still has

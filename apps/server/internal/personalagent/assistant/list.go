@@ -63,7 +63,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	id := strings.TrimSpace(spec.Item.ID)
 	write := Write{ArgsSummary: strings.TrimSpace(spec.Op + " " + id),
 		Spec: map[string]any{"op": spec.Op, "item": map[string]string{"id": id}}}
-	userID := scope.Agent.UserID
+	userID, assistantID := scope.Agent.UserID, scope.Agent.ID
 	var item store.PersonalAgentListItem
 	switch spec.Op {
 	case "add":
@@ -73,12 +73,12 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		if spec.Item.Text == nil {
 			return write, invalid("item.text is required to add")
 		}
-		item = store.PersonalAgentListItem{UserID: userID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID, Status: store.PersonalAgentItemOpen}
-		if source, err := s.store.PersonalAgentInboxByInput(ctx, userID, scope.Turn.ID); err == nil {
+		item = store.PersonalAgentListItem{UserID: userID, AssistantID: assistantID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID, Status: store.PersonalAgentItemOpen}
+		if source, err := s.store.PersonalAgentInboxByInput(ctx, assistantID, scope.Turn.ID); err == nil {
 			item.SourceInboxID = source.RootID
 		}
 	case "update":
-		existing, err := s.store.GetPersonalAgentItem(ctx, userID, id)
+		existing, err := s.store.GetPersonalAgentItem(ctx, assistantID, id)
 		if err != nil {
 			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", id)
 		}
@@ -92,7 +92,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	location := s.PersonLocation(ctx, scope.Agent)
 	personal := false
 	if spec.Item.Plan != nil {
-		if err := s.validateItemPlan(ctx, userID, item.ID, spec.Item.Plan); err != nil {
+		if err := s.validateItemPlan(ctx, scope.Agent, item.ID, spec.Item.Plan); err != nil {
 			return write, err
 		}
 		item.Plan, personal = spec.Item.Plan, true
@@ -131,7 +131,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	}
 	if spec.Item.TaskID != nil {
 		taskID := strings.TrimSpace(*spec.Item.TaskID)
-		if taskID != "" && !s.hasTask(ctx, userID, taskID) {
+		if taskID != "" && !s.hasTask(ctx, assistantID, taskID) {
 			return write, invalid("no task %q of yours: item.taskId is the id list_tasks or the turn's context shows", taskID)
 		}
 		item.TaskID = taskID
@@ -231,8 +231,8 @@ func reminderNote(item store.PersonalAgentListItem, location *time.Location) str
 		at.In(location).Format("2006-01-02 15:04"), location.String())
 }
 
-func (s *Service) hasTask(ctx context.Context, userID, taskID string) bool {
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, userID, nil)
+func (s *Service) hasTask(ctx context.Context, assistantID, taskID string) bool {
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, assistantID, nil)
 	if err != nil {
 		return false
 	}
@@ -260,15 +260,15 @@ func (s *Service) ReadList(ctx context.Context, scope Scope, closedSince string)
 			return nil, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("closedSince is a date (2026-10-15) or a time (RFC 3339)")}
 		}
 	}
-	items, err := s.store.ListPersonalAgentItems(ctx, scope.Agent.UserID, formatPATime(since))
+	items, err := s.store.ListPersonalAgentItems(ctx, scope.Agent.ID, formatPATime(since))
 	if err != nil {
 		return nil, err
 	}
-	items, err = s.includeItemDependencies(ctx, scope.Agent.UserID, items)
+	items, err = s.includeItemDependencies(ctx, scope.Agent.ID, items)
 	if err != nil {
 		return nil, err
 	}
-	operations, err := s.store.ListPersonalAgentOperations(ctx, scope.Agent.UserID)
+	operations, err := s.store.ListPersonalAgentOperations(ctx, scope.Agent.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,10 +277,10 @@ func (s *Service) ReadList(ctx context.Context, scope Scope, closedSince string)
 
 // Items are the person's open items and those closed since (an RFC 3339
 // time; none closed when empty), with the items they depend on.
-func (s *Service) Items(ctx context.Context, userID, since string) ([]store.PersonalAgentListItem, error) {
-	items, err := s.store.ListPersonalAgentItems(ctx, userID, since)
+func (s *Service) Items(ctx context.Context, assistantID, since string) ([]store.PersonalAgentListItem, error) {
+	items, err := s.store.ListPersonalAgentItems(ctx, assistantID, since)
 	if err == nil {
-		items, err = s.includeItemDependencies(ctx, userID, items)
+		items, err = s.includeItemDependencies(ctx, assistantID, items)
 	}
 	return items, err
 }
@@ -289,7 +289,7 @@ func (s *Service) Items(ctx context.Context, userID, since string) ([]store.Pers
 // quote. Changing when clears the time and the reminder, which no longer
 // match it.
 func (s *Service) EditItem(ctx context.Context, agent store.PersonalAgent, itemID string, input store.PersonalAgentListItemInput) (store.PersonalAgentListItem, error) {
-	item, err := s.store.GetPersonalAgentItem(ctx, agent.UserID, itemID)
+	item, err := s.store.GetPersonalAgentItem(ctx, agent.ID, itemID)
 	if err != nil {
 		return store.PersonalAgentListItem{}, err
 	}
@@ -300,7 +300,7 @@ func (s *Service) EditItem(ctx context.Context, agent store.PersonalAgent, itemI
 		return store.PersonalAgentListItem{}, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentRevision}
 	}
 	if input.Plan != nil {
-		if err := s.validateItemPlan(ctx, agent.UserID, item.ID, input.Plan); err != nil {
+		if err := s.validateItemPlan(ctx, agent, item.ID, input.Plan); err != nil {
 			return store.PersonalAgentListItem{}, err
 		}
 		item.Plan = input.Plan
@@ -410,7 +410,7 @@ func (s *Service) SendReminders(ctx context.Context, now time.Time) error {
 		return err
 	}
 	for _, item := range due {
-		agent, err := s.store.GetPersonalAgent(ctx, item.UserID)
+		agent, err := s.store.GetAssistant(ctx, item.AssistantID)
 		if err != nil || agent.State != store.PersonalAgentActive {
 			continue
 		}
@@ -418,7 +418,7 @@ func (s *Service) SendReminders(ctx context.Context, now time.Time) error {
 		if conversation == "" {
 			continue
 		}
-		if claimed, err := s.store.ClaimPersonalAgentReminder(ctx, item.UserID, item.ID, item.At); err != nil || !claimed {
+		if claimed, err := s.store.ClaimPersonalAgentReminder(ctx, item.AssistantID, item.ID, item.At); err != nil || !claimed {
 			continue
 		}
 		location := s.PersonLocation(ctx, agent)
@@ -462,7 +462,7 @@ func (s *Service) SendDigests(ctx context.Context, now time.Time) error {
 			log.Printf("personal agent %s: digest facts: %v", agent.UserID, err)
 			continue
 		}
-		if claimed, err := s.store.ClaimPersonalAgentDigest(ctx, agent.UserID, local.Format(time.DateOnly)); err != nil || !claimed || facts == "" {
+		if claimed, err := s.store.ClaimPersonalAgentDigest(ctx, agent.ID, local.Format(time.DateOnly)); err != nil || !claimed || facts == "" {
 			continue
 		}
 		conversation := s.latestConversation(ctx, agent)
@@ -479,12 +479,12 @@ func (s *Service) SendDigests(ctx context.Context, now time.Time) error {
 // is none.
 func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, now time.Time) (string, error) {
 	dayAgo := formatPATime(now.Add(-24 * time.Hour))
-	items, err := s.store.ListPersonalAgentItems(ctx, agent.UserID, dayAgo)
+	items, err := s.store.ListPersonalAgentItems(ctx, agent.ID, dayAgo)
 	if err != nil {
 		return "", err
 	}
-	s.RefreshTasks(ctx, agent.UserID)
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.UserID, nil)
+	s.RefreshTasks(ctx, agent)
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.ID, nil)
 	if err != nil {
 		return "", err
 	}
@@ -530,7 +530,7 @@ func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, no
 
 // Closed prerequisites may predate today's list. Return their current state as
 // well so the UI and router never mistake a missing display row for unfinished work.
-func (s *Service) includeItemDependencies(ctx context.Context, user string, items []store.PersonalAgentListItem) ([]store.PersonalAgentListItem, error) {
+func (s *Service) includeItemDependencies(ctx context.Context, assistantID string, items []store.PersonalAgentListItem) ([]store.PersonalAgentListItem, error) {
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.ID] = true
@@ -547,7 +547,7 @@ func (s *Service) includeItemDependencies(ctx context.Context, user string, item
 			if added >= 256 {
 				return nil, invalid("dependency view exceeds the supported graph size")
 			}
-			item, e := s.store.GetPersonalAgentItem(ctx, user, id)
+			item, e := s.store.GetPersonalAgentItem(ctx, assistantID, id)
 			if e != nil {
 				return nil, e
 			}

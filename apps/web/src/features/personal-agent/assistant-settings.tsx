@@ -1,15 +1,17 @@
 import { DeviceReferences } from "./settings-device-references";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight } from "lucide-react";
 import type {
   AgentProfileProjection,
+  AssistantSummary,
   ConnectorAccessLevel,
   DeviceProjection,
   PersonalAgent,
   PersonalAgentConnector,
   PersonalAgentOverview,
   PersonalAgentSettings,
+  ProfileDefinition,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import {
@@ -42,7 +44,6 @@ import { ConnectorsSection, connectorLevels } from "./settings-connectors";
 import { EntrySection } from "./settings-entry";
 import { LimitsSection } from "./settings-limits";
 import { KnowledgeSection } from "./settings-knowledge";
-import { MemorySection } from "./settings-memory";
 import { MaintenanceSection } from "./settings-maintenance";
 import { RoleRuns } from "./settings-runs";
 import { ModelsSection } from "./settings-models";
@@ -56,19 +57,24 @@ import { useAssistant, type AssistantController } from "./use-assistant";
 import { AssistantSettingsNav } from "./assistant-settings-nav";
 
 export interface AssistantSettingsProps {
+  /** The assistant this route belongs to; absent only while bootstrapping. */
+  assistantId?: string;
+  /** Every assistant, for the switch link and workspace copy source. */
+  assistants?: AssistantSummary[];
   /** Omitted by /assistant/settings: the narrow index, or Status when wide. */
   section?: AssistantSettingsSection;
   onSectionChange: (section: AssistantSettingsSection) => void;
   devices: DeviceProjection[];
   agentProfiles: AgentProfileProjection[];
+  profiles?: ProfileDefinition[];
   /** For the names of the projects its activity concerns. */
   workspaces: WorkspaceProjection[];
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
-/** The assistant's settings (/assistant/settings/<section>), §11. */
+/** One assistant's settings (/assistants/{id}/settings/<section>), §11. */
 export function AssistantSettings(props: AssistantSettingsProps) {
-  const assistant = useAssistant();
+  const assistant = useAssistant(props.assistantId);
   return (
     <PageSurface variant="settings">
       <AssistantGate
@@ -96,6 +102,8 @@ function problemText(
 ): string {
   if (problem.kind === "extraInstructions")
     return t("settings.problems.extraInstructions");
+  if (problem.kind === "executionModels")
+    return t("settings.problems.executionModels");
   if (problem.kind === "time") return t(`settings.problems.${problem.field}`);
   const label = t(`settings.limits.labels.${problem.key}`);
   return problem.max === undefined
@@ -110,11 +118,14 @@ function problemText(
 function SettingsPanel({
   agent,
   assistant,
+  assistantId,
+  assistants = [],
   overview,
   section,
   onSectionChange,
   devices,
   agentProfiles,
+  profiles = [],
   workspaces,
   onEvent,
 }: AssistantSettingsProps & {
@@ -123,6 +134,10 @@ function SettingsPanel({
   overview: PersonalAgentOverview;
 }) {
   const { t } = useTranslation("personalAgent");
+  const displayName =
+    agent.name?.trim() ||
+    agent.settings.assistantName?.trim() ||
+    t("defaultName");
   const activeSection = section ?? "status";
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
   const [connectors, setConnectors] = useState<PersonalAgentConnector[]>();
@@ -130,7 +145,6 @@ function SettingsPanel({
     useState<PersonalAgentConnector[]>();
   const [connectorLoadError, setConnectorLoadError] = useState("");
   const [connectorReadVersion, setConnectorReadVersion] = useState(0);
-  const [hasWorkspaceMemory, setHasWorkspaceMemory] = useState(false);
   const [catalog, setCatalog] = useState<AgentProfileProjection[]>();
   const [catalogError, setCatalogError] = useState("");
   const [catalogRefresh, setCatalogRefresh] = useState(0);
@@ -200,7 +214,7 @@ function SettingsPanel({
     if (activeSection !== "connectors" || connectors !== undefined) return;
     let active = true;
     setConnectorLoadError("");
-    getPersonalAgentConnectors().then(
+    getPersonalAgentConnectors(assistantId).then(
       (view) => {
         if (!active) return;
         setConnectors(view.connectors);
@@ -214,7 +228,7 @@ function SettingsPanel({
     return () => {
       active = false;
     };
-  }, [activeSection, connectorReadVersion]);
+  }, [activeSection, assistantId, connectorReadVersion]);
 
   const change = (patch: Partial<PersonalAgentSettings>) => {
     setConfirmLoosen(false);
@@ -233,7 +247,7 @@ function SettingsPanel({
     let failure = "";
     if (settingsDirty) {
       try {
-        const next = await updatePersonalAgentSettings(draft);
+        const next = await updatePersonalAgentSettings(assistantId, draft);
         assistant.replaceAgent(next);
         setDraft(next.settings);
       } catch (reason) {
@@ -243,6 +257,7 @@ function SettingsPanel({
     if (connectorsDirty && connectors) {
       try {
         const next = await setPersonalAgentConnectors(
+          assistantId,
           connectorLevels(connectors),
         );
         setConnectors(next.connectors);
@@ -270,8 +285,23 @@ function SettingsPanel({
   return (
     <div className="grid min-w-0 gap-6">
       <PageHeader
-        title={t("settings.title")}
+        title={
+          assistants.length > 1
+            ? t("settings.titleFor", { name: displayName })
+            : t("settings.title")
+        }
         description={t("settings.description")}
+        actions={
+          assistants.length > 1 ? (
+            <Button
+              onClick={() => onEvent({ type: "assistants.open" })}
+              variant="ghost"
+            >
+              <ArrowLeftRight aria-hidden="true" size={15} />
+              {t("assistants.switch")}
+            </Button>
+          ) : undefined
+        }
       />
       <div className="grid min-w-0 gap-6 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
         <div className="grid min-w-0 gap-4.5 xl:col-start-2 xl:row-start-1">
@@ -282,7 +312,12 @@ function SettingsPanel({
               size="sm"
               variant="ghost"
             >
-              <AppLink href={pathForAppRoute({ view: "assistantSettings" })}>
+              <AppLink
+                href={pathForAppRoute({
+                  view: "assistantSettings",
+                  assistantId,
+                })}
+              >
                 <ArrowLeft aria-hidden="true" size={14} />
                 {t("settings.allSections")}
               </AppLink>
@@ -324,31 +359,33 @@ function SettingsPanel({
             ) : activeSection === "style" ? (
               <StyleSection change={change} draft={draft} />
             ) : activeSection === "memory" ? (
-              <>
-                <KnowledgeSection
-                  devices={devices}
-                  workspaces={workspaces}
-                  profiles={allProfiles}
-                  onLocation={setHasWorkspaceMemory}
-                />
-                <MemorySection hasWorkspaceMemory={hasWorkspaceMemory} />
-              </>
+              <KnowledgeSection
+                assistantId={assistantId}
+                devices={devices}
+                workspaces={workspaces}
+                profiles={allProfiles}
+              />
             ) : activeSection === "rules" ? (
               <RulesSection change={change} draft={draft} />
             ) : activeSection === "places" ? (
               <PlacesSection
+                assistantId={assistantId}
+                assistants={assistants}
                 change={change}
+                devices={devices}
                 draft={draft}
                 homeDeviceId={agent.homeDeviceId}
+                onNotice={notice}
                 onOpenComputer={(deviceId) =>
                   onEvent({ type: "devices.open", deviceId })
                 }
-                owned={owned}
+                workspaces={workspaces}
               />
             ) : activeSection === "models" ? (
               <ModelsSection
                 agentProfiles={allProfiles}
                 devices={owned}
+                serverProfiles={profiles}
                 workspaces={workspaces}
                 change={change}
                 draft={draft}
@@ -376,7 +413,11 @@ function SettingsPanel({
                 }}
               />
             ) : activeSection === "entry" ? (
-              <EntrySection change={change} draft={draft} />
+              <EntrySection
+                assistantId={assistantId}
+                change={change}
+                draft={draft}
+              />
             ) : activeSection === "limits" ? (
               <LimitsSection
                 change={change}
@@ -385,9 +426,17 @@ function SettingsPanel({
               />
             ) : (
               <>
-                <RoleRuns devices={devices} workspaces={workspaces} />
-                <MaintenanceSection workspaces={workspaces} />
+                <RoleRuns
+                  assistantId={assistantId}
+                  devices={devices}
+                  workspaces={workspaces}
+                />
+                <MaintenanceSection
+                  assistantId={assistantId}
+                  workspaces={workspaces}
+                />
                 <ActivitySection
+                  assistantId={assistantId}
                   projectName={(id) =>
                     workspaces.find((workspace) => workspace.id === id)?.name
                   }
@@ -465,6 +514,7 @@ function SettingsPanel({
           )}
         >
           <AssistantSettingsNav
+            assistantId={assistantId}
             onSelect={onSectionChange}
             selected={activeSection}
             showIndex={section === undefined}

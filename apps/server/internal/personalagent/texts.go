@@ -56,11 +56,12 @@ func ResumeReply(language string, stopped []string) string {
 }
 
 // HomeOfflineReply answers a message while the home device is offline (§2).
-func HomeOfflineReply(language, deviceLabel string) string {
+func HomeOfflineReply(language, deviceLabel, assistantID string) string {
+	settings := AssistantSettingsPath(assistantID)
 	if language == "en" {
-		return fmt.Sprintf("The computer I live on (%s) is offline right now. You can move me to another computer in my settings (%s).", deviceLabel, SettingsPath)
+		return fmt.Sprintf("The computer I live on (%s) is offline right now. You can move me to another computer in my settings (%s).", deviceLabel, settings)
 	}
-	return fmt.Sprintf("助理所在的电脑（%s）现在不在线。可以在助理设置里换一台（%s）。", deviceLabel, SettingsPath)
+	return fmt.Sprintf("助理所在的电脑（%s）现在不在线。可以在助理设置里换一台（%s）。", deviceLabel, settings)
 }
 
 // actionPhrases describe each managed action for a proposal card; %s is
