@@ -69,6 +69,7 @@ var inboundHandlers = map[string]inboundHandler{
 
 	// Answers to the server's requests.
 	wsFileReadType:                     answer[wsFileReadPayload],
+	wsFileWrittenType:                  answer[wsFileWrittenPayload],
 	wsDeviceFileReadType:               answer[wsDeviceFileRead],
 	wsContextPatchedType:               answer[wsContextPatchReply],
 	wsKnowledgeResultType:              answer[wsKnowledgeReply],
@@ -80,6 +81,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsWorkerUpdateStartedType:          answer[wsWorkerUpdateStarted],
 	wsExecutionRunnerReadType:          answer[wsExecutionRunnerRead],
 	wsExecutionRunnerSwitchedType:      answer[wsExecutionRunnerSwitched],
+	wsWorkerProxySetType:               answer[wsWorkerProxySet],
 	wsToolInstalledType:                answer[wsToolInstalled],
 	wsToolCheckedType:                  answer[wsToolChecked],
 	wsConnectorReplyType:               answer[store.ConnectorReplyPayload],

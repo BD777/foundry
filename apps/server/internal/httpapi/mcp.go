@@ -264,14 +264,14 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// A failed tool call is a result the agent can read and act on.
-			content := boundMCPResultContent(params.Name, params.Arguments, append([]any{map[string]any{"type": "text", "text": message}}, notices...))
+			content := s.boundMCPResult(r.Context(), params.Name, params.Arguments, append([]any{map[string]any{"type": "text", "text": message}}, notices...))
 			s.writeMCPResult(w, request.ID, map[string]any{
 				"content": content,
 				"isError": true,
 			})
 			return
 		}
-		s.writeMCPResult(w, request.ID, map[string]any{"content": boundMCPResultContent(params.Name, params.Arguments, append(content, notices...))})
+		s.writeMCPResult(w, request.ID, map[string]any{"content": s.boundMCPResult(r.Context(), params.Name, params.Arguments, append(content, notices...))})
 	default:
 		s.writeMCPError(w, request.ID, -32601, "method not found: "+request.Method)
 	}
@@ -286,6 +286,17 @@ func mcpResultBudget(name string) int {
 		}
 	}
 	return min(max(budget, minMCPResultBytes), maxMCPResultBytes)
+}
+
+// boundMCPResult bounds a tool result for a model's context. A lease's
+// command token is a command (scripts/remote-check.sh, remote-build.sh), not
+// a model: it gets the whole result, within the operation's own limits
+// (get_file 25 MB, run tails 128 KB per stream).
+func (s *Server) boundMCPResult(ctx context.Context, name string, args map[string]json.RawMessage, content []any) []any {
+	if actorFromContext(ctx).CommandLease() != "" {
+		return content
+	}
+	return boundMCPResultContent(name, args, content)
 }
 
 // boundMCPResultContent keeps textual tool content within its declared

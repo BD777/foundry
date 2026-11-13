@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "protocol": 1,
   "connectors": [
     {
@@ -226,7 +226,26 @@
                   "p2p": "direct",
                   "group": "group"
                 },
-                "otherwise": "other"
+                "otherwise": "other",
+                "cases": [
+                  {
+                    "when": [
+                      {
+                        "pointer": "/item/where/kind",
+                        "equals": "p2p"
+                      },
+                      {
+                        "pointer": "/item/signals/mine",
+                        "equals": "true"
+                      },
+                      {
+                        "pointer": "/item/where/name",
+                        "equalsPointer": "/item/author/name"
+                      }
+                    ],
+                    "value": "self"
+                  }
+                ]
               },
               "thread.id": {
                 "pointer": "/item/thread/id"

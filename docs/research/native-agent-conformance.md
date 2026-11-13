@@ -21,6 +21,7 @@
 - 托管多个 Agent 的工具复用原生配置：Conductor 在 git worktree 里跑真实的 Claude Code / Codex，用户的 MCP、skill、登录照常生效，服务端点通过环境变量设置（[Conductor providers](https://www.conductor.build/docs/guides/providers)、[Conductor MCP](https://www.conductor.build/docs/reference/mcp)）。
 - 跨 Agent 共享 skill：skill 只放一份，用 symlink 链进各家的原生目录（[skills-sync](https://github.com/AtAFork/skills-sync)、[share-skill-with-codex](https://github.com/superchaospc/share-skill-with-codex/releases)、[SSW 规则](https://www.ssw.com.au/rules/symlink-agents-to-claude)、[vercel-labs/skills #851](https://github.com/vercel-labs/skills/issues/851)）。
 - 规则文件同理：Claude Code 2.1.277 起在没有 `CLAUDE.md` 时原生读取 `AGENTS.md`（含子目录，按需加载），不再需要 `CLAUDE.md` 或 symlink（2026-11-12 起仓库已删除）。
+  - 「没有 `CLAUDE.md`」指工作目录及**各级父目录**都没有 `CLAUDE.md`、`.claude/CLAUDE.md`、`CLAUDE.local.md`；只有当前配置目录下的 `~/.claude/CLAUDE.md` 不算（[memory 文档「When Claude Code reads AGENTS.md」](https://code.claude.com/docs/en/memory#when-claude-code-reads-agents-md)）。Foundry 的执行配置目录不是 `~/.claude`，于是本人的 `~/.claude/CLAUDE.md` 变成家目录下每个工作区的祖先 `.claude/CLAUDE.md`，AGENTS.md 被跳过（DEV-213）。
 
 ## Foundry 现状（与原生的差异）
 
@@ -40,7 +41,7 @@
 1. **配置与账号：** Claude 不再传 `settingSources: []`，用 `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` 加命令行层设置钉住所选账号与模型；Codex 用 `-c` 覆盖，不隔离 config.toml。默认账号直接用用户自己的 `~/.claude`、`~/.codex`；其他账号按官方多账号方式各用一个配置目录，把用户的 skills、agents、commands、规则、settings 以 symlink 链入，凭据与历史不链。必须先复现 10-16 的窗口污染，证明新方式不再受影响。
 2. **Skill：** 不禁用用户自己的 skill，不再在提示里列目录。Foundry 提供的 skill（内置 foundry skill、工作区选中的库 skill、草稿）放到原生能发现的位置：Claude 保留插件方式（原生、带命名空间、不写进仓库），Codex 在工作区 `.agents/skills/` 下建 symlink 并写入 `.git/info/exclude`。工作区要排除某个 skill 时，用各自的原生禁用开关。
 3. **子代理：** 不再因草稿或排除项禁用。只有 Skill 试用会话（带 `skillSelection` 创建的）需要干净环境，限制只作用于这类会话。
-4. **规则文件：** 不再由 Foundry 把 AGENTS.md 拼进 Claude 的提示；两家都原生读取 `AGENTS.md`（Claude Code ≥ 2.1.277，见 code.claude.com/docs/en/memory#agents-md），仓库只保留 `AGENTS.md`。
+4. **规则文件：** 不再由 Foundry 把 AGENTS.md 拼进 Claude 的提示；两家都原生读取 `AGENTS.md`（Claude Code ≥ 2.1.277，见 code.claude.com/docs/en/memory#agents-md），仓库只保留 `AGENTS.md`。因为执行配置目录让本人的 `~/.claude/CLAUDE.md` 被当成祖先项目文件，当它是工作区路径上唯一的 CLAUDE.md 时，Foundry 在命令行层设置里写文档化的 `pluginConfigs["cc-plugin-agents-md@builtin"].options.instructionFiles = "claude-md-and-agents-md"`，加载结果与原生一致；项目自带 CLAUDE.md 或本人自己设过该选项时不动（[DEV-213](../devlog/DEV-213-claude-agents-md-under-home.md)）。
 5. **设备说明：** 只留 Agent 自己查不到的事实（附件目录、浏览器启动器），或移入 foundry skill。
 
 ## 风险与需要验证的

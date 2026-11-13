@@ -72,6 +72,22 @@ interface NativeChatCacheEntry {
 
 const codexNativeChatCache = new Map<string, NativeChatCacheEntry>();
 const claudeNativeChatCache = new Map<string, NativeChatCacheEntry>();
+/**
+ * The folder each log was started in, read from its first lines alone. Most
+ * logs on a device belong to other folders (or to none Foundry knows); they
+ * are skipped without parsing their transcript, which keeps the full-chat
+ * cache for this device's workspaces: a sync round walks every log, and a
+ * byte-bounded cache over all of them is evicted before it is ever reused.
+ */
+interface LogFolderEntry {
+  mtimeMs: number;
+  size: number;
+  /** Its header is complete, so the folder no longer changes as it grows. */
+  settled: boolean;
+  folder: string;
+}
+const logFolders = new Map<string, LogFolderEntry>();
+const logFolderEntryLimit = 50_000;
 const nativeChatFingerprints = new WeakMap<
   NativeChatCandidate,
   { key: string; value: string }
@@ -80,7 +96,10 @@ const nativeChatCacheBytes = new WeakMap<
   Map<string, NativeChatCacheEntry>,
   number
 >();
-const nativeChatCacheByteLimit = 64 * 1024 * 1024;
+// Charged by what an entry keeps (its transcript part), not its log's size:
+// charging the log size held a fraction of one workspace's chats, so every
+// round parsed them all again (DEV-222).
+const nativeChatCacheByteLimit = 160 * 1024 * 1024;
 const nativeChatCacheEntryLimit = 1000;
 const nativeSessionHeaderByteLimit = 256 * 1024;
 // A chat carries its log's latest part of about this size; older parts are
@@ -289,6 +308,7 @@ export async function nativeChatLogPath(
       .flat()
       .filter((path) => basename(path).includes(id));
     for (const path of paths) {
+      if ((await logFolder(path, provider)) !== workspacePath) continue;
       const candidate = await cachedNativeChatCandidate(cache, path, parse);
       if (candidate?.id === id && candidate.workspacePath === workspacePath)
         return path;
@@ -344,6 +364,10 @@ async function codexNativeChatThreadsForWorkspace(
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
+        continue;
+      }
+      if ((await logFolder(sessionPath, "codex")) !== workspacePath) {
+        if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
       const parsed = await cachedNativeChatCandidate(
@@ -406,6 +430,10 @@ async function claudeNativeChatThreadsForWorkspace(
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
+        continue;
+      }
+      if ((await logFolder(sessionPath, "claude")) !== workspacePath) {
+        if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
       const candidate = await cachedNativeChatCandidate(
@@ -602,15 +630,27 @@ async function cachedNativeChatCandidate(
   const entry = {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
-    estimatedBytes: Math.min(stat.size, nativeLogReachLimit),
+    estimatedBytes: Math.min(stat.size, nativeSessionTranscriptByteLimit),
     value,
   };
   setCachedNativeChat(cache, sessionPath, entry);
-  void value.catch(() => {
-    if (cache.get(sessionPath) === entry) {
-      deleteCachedNativeChat(cache, sessionPath);
-    }
-  });
+  void value.then(
+    (candidate) => {
+      if (cache.get(sessionPath) !== entry) return;
+      const kept = retainedBytes(candidate);
+      nativeChatCacheBytes.set(
+        cache,
+        (nativeChatCacheBytes.get(cache) ?? 0) - entry.estimatedBytes + kept,
+      );
+      entry.estimatedBytes = kept;
+      evictNativeChats(cache);
+    },
+    () => {
+      if (cache.get(sessionPath) === entry) {
+        deleteCachedNativeChat(cache, sessionPath);
+      }
+    },
+  );
   return value;
 }
 
@@ -625,6 +665,21 @@ function setCachedNativeChat(
     cache,
     (nativeChatCacheBytes.get(cache) ?? 0) + entry.estimatedBytes,
   );
+  evictNativeChats(cache);
+}
+
+/** What a parsed log keeps in memory, roughly; a log that is no chat, little. */
+function retainedBytes(candidate: NativeChatCandidate | undefined): number {
+  if (!candidate) return 256;
+  return (
+    1024 +
+    JSON.stringify(candidate.transcript ?? []).length +
+    (candidate.handoffContext?.length ?? 0) +
+    JSON.stringify(candidate.recentMessages ?? []).length
+  );
+}
+
+function evictNativeChats(cache: Map<string, NativeChatCacheEntry>): void {
   while (
     cache.size > nativeChatCacheEntryLimit ||
     (nativeChatCacheBytes.get(cache) ?? 0) > nativeChatCacheByteLimit
@@ -759,6 +814,77 @@ async function lineStartBefore(file: FileHandle, end: number): Promise<number> {
   return 0;
 }
 
+function codexHeaderFolder(lines: readonly string[]): string {
+  const meta = lines[0] ? parseJSONRecord(lines[0]) : undefined;
+  if (
+    meta?.type !== "session_meta" ||
+    !meta.payload ||
+    typeof meta.payload !== "object"
+  ) {
+    return "";
+  }
+  const cwd = (meta.payload as Record<string, unknown>).cwd;
+  return typeof cwd === "string" && cwd ? resolve(cwd) : "";
+}
+
+const claudeHeaderLineLimit = 200;
+
+function claudeHeaderFolder(lines: readonly string[]): string {
+  let folder = "";
+  for (const line of lines.slice(0, claudeHeaderLineLimit)) {
+    const cwd = parseJSONRecord(line)?.cwd;
+    if (typeof cwd === "string" && cwd) folder = resolve(cwd);
+  }
+  return folder;
+}
+
+/** The folder a log belongs to ("" when its header names none yet). */
+async function logFolder(
+  sessionPath: string,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+): Promise<string> {
+  let stat: Stats;
+  try {
+    stat = statSync(sessionPath);
+  } catch {
+    logFolders.delete(sessionPath);
+    return "";
+  }
+  const known = logFolders.get(sessionPath);
+  if (
+    known &&
+    (known.settled ||
+      (known.mtimeMs === stat.mtimeMs && known.size === stat.size))
+  ) {
+    return known.folder;
+  }
+  const lines = await readSessionPrefixLines(
+    sessionPath,
+    stat.size,
+    nativeSessionHeaderByteLimit,
+  );
+  const folder =
+    provider === "codex" ? codexHeaderFolder(lines) : claudeHeaderFolder(lines);
+  const settled =
+    provider === "codex"
+      ? Boolean(folder)
+      : lines.length >= claudeHeaderLineLimit ||
+        stat.size >= nativeSessionHeaderByteLimit;
+  logFolders.delete(sessionPath);
+  logFolders.set(sessionPath, {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    settled,
+    folder,
+  });
+  while (logFolders.size > logFolderEntryLimit) {
+    const oldest = logFolders.keys().next().value;
+    if (oldest === undefined) break;
+    logFolders.delete(oldest);
+  }
+  return folder;
+}
+
 async function parseCodexSessionCandidate(
   sessionPath: string,
   stat: Stats,
@@ -772,23 +898,14 @@ async function parseCodexSessionCandidate(
     return undefined;
   }
 
-  const firstLine = lines[0];
-  if (!firstLine) {
-    return undefined;
-  }
-  const meta = parseJSONRecord(firstLine);
-  if (
-    meta?.type !== "session_meta" ||
-    !meta.payload ||
-    typeof meta.payload !== "object"
-  ) {
-    return undefined;
-  }
-  const payload = meta.payload as Record<string, unknown>;
-  const cwd = typeof payload.cwd === "string" ? resolve(payload.cwd) : "";
+  const cwd = codexHeaderFolder(lines);
   if (!cwd) {
     return undefined;
   }
+  const payload = parseJSONRecord(lines[0]!)?.payload as Record<
+    string,
+    unknown
+  >;
 
   const id =
     typeof payload.session_id === "string"
@@ -838,21 +955,12 @@ async function parseClaudeSessionCandidate(
     nativeSessionHeaderByteLimit,
   );
   let id = "";
-  let workspacePath = "";
+  const workspacePath = claudeHeaderFolder(headerLines);
 
-  for (const line of headerLines.slice(0, 200)) {
-    const record = parseJSONRecord(line);
-    if (!record) {
-      continue;
-    }
-    const sessionID =
-      typeof record.sessionId === "string" ? record.sessionId : "";
-    if (sessionID) {
+  for (const line of headerLines.slice(0, claudeHeaderLineLimit)) {
+    const sessionID = parseJSONRecord(line)?.sessionId;
+    if (typeof sessionID === "string" && sessionID) {
       id = sessionID;
-    }
-    const cwd = typeof record.cwd === "string" ? resolve(record.cwd) : "";
-    if (cwd) {
-      workspacePath = cwd;
     }
   }
 

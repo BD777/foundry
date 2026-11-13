@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,7 +170,11 @@ func TestLeaseCommandTokenActsOnItsLeaseOnly(t *testing.T) {
 			_ = json.Unmarshal(payload, &request)
 			results := []store.ResourceActionResult{}
 			for _, action := range request.Actions {
-				results = append(results, store.ResourceActionResult{Op: action.Op, OK: true, Text: `{"exitCode":0,"stdout":"ok"}`})
+				text := `{"exitCode":0,"stdout":"ok"}`
+				if action.Op == "get_file" {
+					text = `{"data":"` + strings.Repeat("QUJD", 10_000) + `","length":30000}`
+				}
+				results = append(results, store.ResourceActionResult{Op: action.Op, OK: true, Text: text})
 			}
 			return wsResourceOperatedType, store.ResourceOperateResult{Results: results}
 		},
@@ -235,6 +240,15 @@ func TestLeaseCommandTokenActsOnItsLeaseOnly(t *testing.T) {
 		"leaseId": acquired.Lease.ID, "op": "run", "args": map[string]any{"command": "true"},
 	}); isError {
 		t.Fatalf("run through the command token = %v", content)
+	}
+	// A command gets a file piece whole; a model's context gets it cut to the budget.
+	getFile := map[string]any{"leaseId": acquired.Lease.ID, "op": "get_file", "args": map[string]any{"path": "out.tgz", "length": 30000}}
+	if content, isError := mcpContentCall(t, f.handler, command, "operate_resource", getFile); isError ||
+		!strings.Contains(content[0]["text"].(string), strings.Repeat("QUJD", 10_000)) {
+		t.Fatalf("get_file through the command token was cut: %d bytes", len(fmt.Sprint(content)))
+	}
+	if content, _ := mcpContentCall(t, f.handler, session, "operate_resource", getFile); strings.Contains(fmt.Sprint(content), strings.Repeat("QUJD", 10_000)) {
+		t.Fatal("get_file through the session token was not bounded")
 	}
 	if content, isError := mcpContentCall(t, f.handler, command, "resource_status", map[string]any{"leaseId": acquired.Lease.ID}); isError {
 		t.Fatalf("status through the command token = %v", content)

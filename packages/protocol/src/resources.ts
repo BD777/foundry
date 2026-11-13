@@ -149,8 +149,12 @@ export interface ResourceInstance {
   discoveredAt: string;
   lastSeenAt: string;
   goneAt?: string;
-  /** The live lease on it, when a session holds one. */
+  /** The first live lease on it (the exclusive one, when there is one). */
   holder?: ResourceHolder;
+  /** Every live lease on it: one exclusive, or any number of shared. */
+  holders?: ResourceHolder[];
+  /** For a type with shared leases (compute): its slots and their use. */
+  slots?: ResourceSlots;
   /** Sessions waiting for it. */
   queue?: number;
   /**
@@ -177,12 +181,31 @@ export type ResourceLeaseState =
   | "preempted"
   | "revoked";
 
+/**
+ * A lease's mode. shared: beside other shared leases, up to the instance's
+ * slots (compute's default); exclusive: alone on the instance (computer_use
+ * always).
+ */
+export type ResourceLeaseMode = "shared" | "exclusive";
+
+/**
+ * How many shared leases an instance runs at once (capacity) and how many
+ * active ones it has (inUse); parked leases take no slot. auto: capacity
+ * follows the device's CPUs and memory, not a number its owner chose.
+ */
+export interface ResourceSlots {
+  capacity: number;
+  inUse: number;
+  auto: boolean;
+}
+
 /** Who holds an instance now, as the inventory lists it. */
 export interface ResourceHolder {
   leaseId: string;
   sessionId: string;
   /** The holder session's workspace (to link to it). */
   workspaceId?: string;
+  mode?: ResourceLeaseMode;
   state: ResourceLeaseState;
   since: string;
   parkUntil?: string;
@@ -191,7 +214,7 @@ export interface ResourceHolder {
   preemptAt?: string;
 }
 
-/** One session's exclusive use of one instance. */
+/** One session's use of one instance, alone or shared. */
 export interface ResourceLease {
   id: string;
   resourceId: string;
@@ -199,6 +222,7 @@ export interface ResourceLease {
   sourceId: string;
   /** Raised for every new lease on the instance; stale ones are refused. */
   generation: number;
+  mode?: ResourceLeaseMode;
   holderSessionId: string;
   holderUserId?: string;
   /** The device the holder session runs on. */
@@ -256,6 +280,11 @@ export interface ResourceOperateRequest {
   backend: string;
   leaseId: string;
   generation: number;
+  /**
+   * The lease runs beside other shared leases: its generation does not
+   * fence older live ones (only resets do).
+   */
+  shared?: boolean;
   actions: ResourceAction[];
   /** How long the device may take, in milliseconds. */
   deadlineMs: number;
@@ -320,6 +349,11 @@ export interface ResourceResetRequest {
   key: string;
   type: ResourceTypeId;
   generation: number;
+  /**
+   * End only the lease at generation (a shared lease that ended while
+   * others stay); otherwise every generation below it is fenced.
+   */
+  leaseOnly?: boolean;
   reason: string;
   notify?: string;
 }
@@ -405,6 +439,11 @@ export interface ResourceSourceStatus {
   detectorErrors: ResourceDetectorError[];
   /** The device owner allows remote commands (ResourceSourceSettings). */
   allowRemoteCommands: boolean;
+  /** ResourceSourceSettings.computeSlots, when the owner chose a number. */
+  computeSlots?: number;
+  /** ResourceSourceSettings.allowWorkspaces and denyWorkspaces. */
+  allowWorkspaces?: string[];
+  denyWorkspaces?: string[];
 }
 
 /**
@@ -419,6 +458,18 @@ export interface ResourceSourceSettings {
    * device the session may work in). Off unless the owner turns it on.
    */
   allowRemoteCommands: boolean;
+  /**
+   * How many shared compute leases run at once on the device; 0 or absent
+   * derives it from its CPUs and memory.
+   */
+  computeSlots?: number;
+  /**
+   * The device's lease policy: when not empty, only sessions working in
+   * these workspaces lease its resources (allowWorkspaces); sessions
+   * working in denyWorkspaces never do.
+   */
+  allowWorkspaces?: string[];
+  denyWorkspaces?: string[];
 }
 
 /**

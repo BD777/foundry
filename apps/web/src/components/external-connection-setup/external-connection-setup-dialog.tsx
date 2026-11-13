@@ -25,6 +25,7 @@ import { dateTime } from "../../lib/time-format";
 import { useCopied } from "../../lib/use-copied";
 import { useSharedNow } from "../../lib/use-shared-now";
 import { i18n } from "../../i18n";
+import { ConnectorSetupSection } from "./connector-setup-section";
 import {
   readyAgent,
   type SetupStep,
@@ -238,7 +239,13 @@ export function ExternalConnectionSetupDialog({
   return (
     <Dialog
       title={title}
-      description={t("dialog.description")}
+      description={
+        detail?.offer.connector
+          ? t("dialog.connectorDescription", {
+              name: detail.offer.connector.label,
+            })
+          : t("dialog.description")
+      }
       onClose={onClose}
       size="wide"
       footer={
@@ -457,6 +464,16 @@ function SetupBody({
             </ButtonRow>
           )}
         </section>
+      ) : offer.connector ? (
+        stage === "ready" ||
+        stage === "unchecked" ||
+        stage === "check_failed" ? null : (
+          <ConnectorSetupSection
+            connector={offer.connector}
+            deviceId={device.id}
+            deviceName={deviceName}
+          />
+        )
       ) : stage === "ready" ? null : (
         <Alert
           tone="info"
@@ -472,7 +489,12 @@ function SetupBody({
             <SetupChecklistItem
               key={step.key}
               state={step.state}
-              title={stepTitle(step.key, step.state, checking)}
+              title={stepTitle(
+                step.key,
+                step.state,
+                checking,
+                offer.connector?.label,
+              )}
               detail={
                 step.key === "signIn" && stage === "waiting_sign_in" ? (
                   <>
@@ -584,8 +606,13 @@ function stepTitle(
   key: SetupStep["key"],
   state: SetupStep["state"],
   checking: boolean,
+  connector = "",
 ): string {
   switch (key) {
+    case "connector":
+      return state === "done"
+        ? i18n.t("connectionSetup:steps.connectorDone", { name: connector })
+        : i18n.t("connectionSetup:steps.connector", { name: connector });
     case "run":
       return state === "done"
         ? i18n.t("connectionSetup:steps.runDone")

@@ -58,42 +58,48 @@ func Resolve(ctx context.Context, st Store, session store.AgentSession) (Access,
 	if err != nil || !access.Applicable {
 		return access, err
 	}
-	channel, err := channelOf(ctx, st, session)
+	channel, own, err := channelOf(ctx, st, session)
 	if err != nil {
 		return Access{}, err
 	}
 	access.Channel = channel
+	// A channel's own session runs outside the assistant's home but is its
+	// conversation: it reaches the accounts the package (and the channel)
+	// allow, as the home conversation does (DEV-203).
+	if own {
+		access.Home = true
+	}
 	return access, nil
 }
 
 // channelOf is the message channel whose session started session's
 // lineage, nil for any other.
-func channelOf(ctx context.Context, st Store, session store.AgentSession) (*store.MessageChannel, error) {
+func channelOf(ctx context.Context, st Store, session store.AgentSession) (*store.MessageChannel, bool, error) {
 	channels, ok := st.(channelSessions)
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 	current := session
-	for range maxLineage {
+	for depth := range maxLineage {
 		record, err := channels.MessageChannelOfSession(ctx, current.ID)
 		if err == nil {
-			return &record.MessageChannel, nil
+			return &record.MessageChannel, depth == 0, nil
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			return nil, err
+			return nil, false, err
 		}
 		if current.ParentSessionID == "" {
-			return nil, nil
+			return nil, false, nil
 		}
 		current, err = st.GetAgentSessionSummary(ctx, current.ParentSessionID)
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil
+			return nil, false, nil
 		}
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 func resolvePackage(ctx context.Context, st Store, session store.AgentSession) (Access, error) {

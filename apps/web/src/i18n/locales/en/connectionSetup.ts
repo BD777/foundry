@@ -37,6 +37,8 @@ export const connectionSetup = {
     otherSetups: "Other devices registered a different setup command.",
     showOtherSetups: "Show the other commands",
     otherSetupFrom: "{{device}} · {{time}}",
+    connectorDescription:
+      "{{name}} gives this connection once it is set up and signed in on that device. Its progress shows here.",
     noCommand:
       "No setup command is registered for this connection. Run its gateway's installer on {{device}} again.",
     loadFailed: "The setup state could not be read: {{error}}",
@@ -44,6 +46,20 @@ export const connectionSetup = {
     done: "Done",
     success: "Ready, selected for this chat.",
     successNotSelected: "Ready. Choose it in the picker to use it.",
+  },
+  connector: {
+    reading: "Reading {{name}} on this device…",
+    offline: "{{device}} is offline. Once it is back, set up {{name}} there.",
+    notInstalled: "{{extension}} is not installed on {{device}}.",
+    notSignedIn: "{{name}} is not signed in on {{device}}.",
+    notReady: "{{name}} on {{device}} does not give this connection yet.",
+    install: "Install {{extension}} on {{device}}",
+    installHint:
+      "It comes with Foundry; installing it runs as you on that device. Signing in comes next.",
+    signIn: "Sign in to {{name}}",
+    open: "Set up {{name}} in Connectors",
+    openHint:
+      "Opens {{name}} in Connectors at {{device}}'s row; continue there with one click.",
   },
   remote: {
     run: "Set it up for me",
@@ -66,6 +82,8 @@ export const connectionSetup = {
     installed: "Installed",
     signIn: "Waiting for sign-in",
     signedIn: "Signed in",
+    connector: "{{name}} set up and signed in on this device",
+    connectorDone: "{{name}} signed in",
     registered: "Registered with Foundry",
     checked: "Check passed",
     checking: "Checking with one short conversation…",

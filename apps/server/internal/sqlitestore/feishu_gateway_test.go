@@ -86,10 +86,10 @@ func TestFeishuGatewayGrantsAndAudit(t *testing.T) {
 	}
 }
 
-// A completed session's grants outlive its turn: whether its agent still
-// works on its device is asked per request (gateway.SessionLive). Prune
-// drops only the grants that can never be live again.
-func TestPruneFeishuGatewayGrantsKeepsRecentlyCompletedSessions(t *testing.T) {
+// DEV-215: a session's grants stand whatever its turns do; prune drops
+// those of sessions archived or deleted, and grants a newer one of the same
+// session and account superseded long enough ago.
+func TestPruneFeishuGatewayGrantsKeepsEverySessionNotArchived(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	now := time.Now().UTC()
@@ -104,23 +104,33 @@ func TestPruneFeishuGatewayGrantsKeepsRecentlyCompletedSessions(t *testing.T) {
 	insert("sess_failed", "failed", recent)
 	insert("sess_canceled", "canceled", recent)
 	insert("sess_archived", "completed", recent)
-	execAll(t, db, `INSERT INTO chat_archives (workspace_id, archive_key, archived_at, batch_id) VALUES ('ws_p', 'id:sess_archived', '`+recent+`', 'b1')`)
-	ids := []string{"sess_running", "sess_recent", "sess_old", "sess_failed", "sess_canceled", "sess_archived", "sess_gone"}
+	insert("sess_deleted", "completed", recent)
+	execAll(t, db,
+		`INSERT INTO chat_archives (workspace_id, archive_key, archived_at, batch_id) VALUES ('ws_p', 'id:sess_archived', '`+recent+`', 'b1')`,
+		`INSERT INTO chat_deletions (workspace_id, deletion_key) VALUES ('ws_p', 'id:sess_deleted')`)
+	ids := []string{"sess_running", "sess_recent", "sess_old", "sess_failed", "sess_canceled", "sess_archived", "sess_deleted", "sess_gone",
+		"sess_old", "sess_old"}
 	for i, id := range ids {
 		hash := fmt.Sprint(i)
 		if err := db.CreateFeishuGatewayGrant(ctx, store.FeishuGatewayGrant{SessionID: id, AccountID: "xacc_1", AppID: "xapp_1", DeviceID: "dev_p", WorkspaceID: "ws_p", UserID: "u", AppHash: "a" + hash, UserHash: "u" + hash, TenantHash: "t" + hash}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// sess_old's first grant (u2) was superseded two days ago by u8, which a
+	// renewal superseded an hour ago by u9: u2 goes, u8 stays for now.
+	execAll(t, db,
+		`UPDATE feishu_gateway_grants SET created_at = '`+formatTime(now.Add(-72*time.Hour))+`' WHERE user_hash = 'u2'`,
+		`UPDATE feishu_gateway_grants SET created_at = '`+formatTime(now.Add(-48*time.Hour))+`' WHERE user_hash = 'u8'`,
+		`UPDATE feishu_gateway_grants SET created_at = '`+formatTime(now.Add(-time.Hour))+`' WHERE user_hash = 'u9'`)
 	removed, err := db.PruneFeishuGatewayGrants(ctx, now.Add(-24*time.Hour))
-	if err != nil || removed != 5 {
-		t.Fatalf("prune: removed %d, %v; want 5", removed, err)
+	if err != nil || removed != 4 {
+		t.Fatalf("prune: removed %d, %v; want 4", removed, err)
 	}
 	for i, id := range ids {
 		_, err := db.FindFeishuGatewayGrant(ctx, store.FeishuHandleUser, "u"+fmt.Sprint(i))
-		kept := id == "sess_running" || id == "sess_recent"
+		kept := id != "sess_archived" && id != "sess_deleted" && id != "sess_gone" && i != 2
 		if kept != (err == nil) {
-			t.Fatalf("%s: kept = %v (%v), want %v", id, err == nil, err, kept)
+			t.Fatalf("%s (u%d): kept = %v (%v), want %v", id, i, err == nil, err, kept)
 		}
 	}
 }

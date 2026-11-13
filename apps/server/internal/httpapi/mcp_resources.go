@@ -230,7 +230,7 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 		return "", err
 	}
 	request := resources.AcquireRequest{
-		SessionID: holder.sessionID, ResourceIDs: ids, Reason: mcpArgString(args, "reason"),
+		SessionID: holder.sessionID, ResourceIDs: ids, Reason: mcpArgString(args, "reason"), Mode: mcpArgString(args, "mode"),
 		Wait: time.Duration(min(mcpArgNumber(args, "waitMs", 0), maxMCPWaitMs)) * time.Millisecond,
 	}
 	if _, set := args["holdFor"]; set {
@@ -256,7 +256,7 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 	}
 	next := "Call operate_resource with this leaseId: take a screenshot first (with pid and window_id from list_windows to get one window and its coordinate space), then act. Call release_resource as soon as you are done."
 	if instances[0].Type == "compute" {
-		next = "Call operate_resource with this leaseId: put_files or git_sync what you need into a scratch folder, then run commands there (a run blocks up to its timeoutSec; start long jobs in the background and collect their output with a later run). Call release_resource as soon as you are done."
+		next = "Call operate_resource with this leaseId: put_files or git_sync what you need into a scratch folder (this session's own unless you name scratch), then run commands there (a run blocks up to its timeoutSec; start long jobs in the background and collect their output with a later run). Call release_resource as soon as you are done."
 	}
 	result := map[string]any{
 		"lease":     views[0],
@@ -375,10 +375,20 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 	if err != nil {
 		return store.ResourceInstance{}, err
 	}
+	// A device whose lease policy refuses the session's workspace is
+	// skipped; naming its resource answers why.
+	policies := map[string]store.ResourceSourceSettings{}
+	for _, source := range list.Sources {
+		policies[source.ID] = store.ResourceSourceSettings{AllowWorkspaces: source.AllowWorkspaces, DenyWorkspaces: source.DenyWorkspaces}
+	}
+	workspaceID := ""
+	if session, err := s.store.GetAgentSessionSummary(ctx, holder.sessionID); err == nil {
+		workspaceID = session.WorkspaceID
+	}
 	var busy *store.ResourceInstance
 	var startable *store.ResourceInstance
 	for index, instance := range list.Instances {
-		if !holder.leasable(instance) {
+		if !holder.leasable(instance) || !policies[instance.Source.ID].LeasesWorkspace(workspaceID) {
 			continue
 		}
 		if _, err := resources.OperableBackend(instance); err != nil {
@@ -446,8 +456,11 @@ func (s *Server) resourceStatusForMCP(r *http.Request, actor Actor, args map[str
 	if err != nil {
 		return "", err
 	}
-	if own == nil && instance.Holder != nil && instance.Holder.SessionID == holder.sessionID {
-		if lease, err := s.leases.Lease(ctx, instance.Holder.LeaseID); err == nil {
+	for _, held := range instance.Holders {
+		if own != nil || held.SessionID != holder.sessionID {
+			continue
+		}
+		if lease, err := s.leases.Lease(ctx, held.LeaseID); err == nil {
 			view := s.leases.ViewOf(ctx, lease)
 			own = &view
 		}
@@ -480,6 +493,12 @@ func (s *Server) resourceStatusForMCP(r *http.Request, actor Actor, args map[str
 	}
 	if instance.Holder != nil {
 		status["holder"] = instance.Holder
+	}
+	if len(instance.Holders) > 1 {
+		status["holders"] = instance.Holders
+	}
+	if instance.Slots != nil {
+		status["slots"] = instance.Slots
 	}
 	if own != nil {
 		status["yourLease"] = own
@@ -526,7 +545,8 @@ func (s *Server) operateResourceForMCP(r *http.Request, actor Actor, args map[st
 	deadline := operateDeadline(ticket.Spec, actions)
 	request := store.ResourceOperateRequest{
 		ResourceID: ticket.Instance.ID, Key: ticket.Instance.Key, Type: ticket.Instance.Type, Backend: ticket.Backend.ID,
-		LeaseID: ticket.Lease.ID, Generation: ticket.Lease.Generation, Actions: actions, DeadlineMs: deadline.Milliseconds(),
+		LeaseID: ticket.Lease.ID, Generation: ticket.Lease.Generation, Shared: ticket.Lease.Mode == store.LeaseShared,
+		Actions: actions, DeadlineMs: deadline.Milliseconds(),
 	}
 	started := time.Now()
 	operateCtx, cancel := context.WithTimeout(ctx, deadline+10*time.Second)
@@ -608,16 +628,22 @@ func operateDeadline(spec resources.TypeSpec, actions []store.ResourceAction) ti
 // computeWorkspaces lets a compute action work in a workspace only when
 // the workspace is on the resource's device and the session may work in
 // it (Member); the server, not the caller, names its folder to the
-// worker (workspacePath), which checks it serves that folder.
+// worker (workspacePath), which checks it serves that folder. An action
+// that names neither a workspace nor a scratch folder works in the
+// session's own scratch folder (named after it), so sessions sharing the
+// device do not share files unless they name a folder.
 func (s *Server) computeWorkspaces(ctx context.Context, holder resourceToolHolder, instance store.ResourceInstance, actions []store.ResourceAction) error {
 	for index := range actions {
 		action := &actions[index]
 		if action.Args == nil {
-			continue
+			action.Args = map[string]any{}
 		}
 		delete(action.Args, "workspacePath")
 		raw, named := action.Args["workspaceId"]
 		if !named {
+			if scratch, set := action.Args["scratch"]; !set || scratch == nil || scratch == "" {
+				action.Args["scratch"] = holder.sessionID
+			}
 			continue
 		}
 		workspaceID, _ := raw.(string)

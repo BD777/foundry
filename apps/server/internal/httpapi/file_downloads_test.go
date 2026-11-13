@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,45 @@ func TestFileDownloadsStreamCompleteBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestFileDownloadHeadReportsSafeImageMetadataWithoutStreaming(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("image bytes", 16*1024))
+	f, device, _ := downloadTestFixture(t, []string{}, func(path string, request wsFileDownloadRequest) any {
+		return downloadAnswer(png, path, request)
+	})
+	target := "/api/workspace-files/download?workspaceId=ws_alice&path=" + url.QueryEscape("/tmp/w/funnel-snapshot.png")
+	before := len(device.received(wsReadFileType))
+	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodHead, target, ""))
+	expectStatus(t, response, http.StatusOK, "image metadata")
+	if got := response.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("content type = %q", got)
+	}
+	if got := response.Header().Get("Content-Length"); got != strconv.Itoa(len(png)) {
+		t.Fatalf("content length = %q, want %d", got, len(png))
+	}
+	if got := response.Header().Get("X-Foundry-File-Size"); got != strconv.Itoa(len(png)) {
+		t.Fatalf("file size = %q, want %d", got, len(png))
+	}
+	if got := response.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("nosniff = %q", got)
+	}
+	if got := response.Header().Get("Content-Security-Policy"); got != "sandbox; default-src 'none'" {
+		t.Fatalf("CSP = %q", got)
+	}
+	if got := response.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Fatalf("resource policy = %q", got)
+	}
+	if _, params, err := mime.ParseMediaType(response.Header().Get("Content-Disposition")); err != nil || params["filename"] != "funnel-snapshot.png" {
+		t.Fatalf("disposition: %v %v", params, err)
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("HEAD body = %d bytes", response.Body.Len())
+	}
+	if got := len(device.received(wsReadFileType)) - before; got != 1 {
+		t.Fatalf("HEAD read %d chunks, want 1", got)
+	}
+}
+
 func TestSessionFileDownloadsPreserveViewerPolicy(t *testing.T) {
 	secret := []byte("download-content-must-not-leak")
 	f, _, session := downloadTestFixture(t, []string{}, func(path string, request wsFileDownloadRequest) any { return downloadAnswer(secret, path, request) })

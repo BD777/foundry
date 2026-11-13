@@ -1,5 +1,5 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type {
@@ -19,9 +19,12 @@ import { navigateToChat } from "../../lib/in-app-navigation";
 import { clockTime, fullWhen } from "../../lib/time-format";
 import { ItemPlan } from "./person-list-plan";
 import { helpingTask, personListView, reminderAt } from "./person-list-model";
-import { PaMuted } from "./pa-muted";
 import { Subheading } from "../../components/ui/subheading";
-import { DividedList } from "../../components/ui/divided-list";
+import {
+  ContextEmpty,
+  ContextHeading,
+  ContextSection,
+} from "../../components/ui/context-card";
 import { ButtonRow } from "../../components/ui/button-row";
 import { FieldLabel } from "../../components/ui/form-field";
 
@@ -54,39 +57,50 @@ export interface PersonListProps {
 export function PersonList({ items, error, ...actions }: PersonListProps) {
   const { t } = useTranslation("personalAgent");
   const { open, doneToday } = personListView(items);
+  if (!open.length && !doneToday.length && !error)
+    return (
+      <ContextSection aria-label={t("list.title")} className="py-3.5">
+        <ContextHeading
+          action={<ContextEmpty>{t("list.empty")}</ContextEmpty>}
+          className="mb-0"
+        >
+          {t("list.title")}
+        </ContextHeading>
+      </ContextSection>
+    );
   return (
-    <section aria-labelledby="fdy-pa-list-title" className="grid gap-2.5">
-      <Subheading as="h2" id="fdy-pa-list-title">
-        {t("list.title")}
-      </Subheading>
+    <ContextSection aria-labelledby="fdy-pa-list-title">
+      <ContextHeading count={open.length}>
+        <span id="fdy-pa-list-title">{t("list.title")}</span>
+      </ContextHeading>
       {error ? (
-        <Alert tone="error" title={t("list.loadFailed")}>
+        <Alert
+          className="mb-2.5"
+          size="compact"
+          title={t("list.loadFailed")}
+          tone="error"
+        >
           {error}
         </Alert>
       ) : null}
       {open.length ? (
-        <>
-          <Subheading className="mt-2" size="caption">
-            {t("list.open")}
-          </Subheading>
-          <DividedList density="compact">
-            {open.map((item) => (
-              <PersonListRow
-                item={item}
-                allItems={items}
-                key={item.id}
-                {...actions}
-              />
-            ))}
-          </DividedList>
-        </>
+        <ul aria-label={t("list.open")} className="grid gap-2">
+          {open.map((item) => (
+            <PersonListRow
+              item={item}
+              allItems={items}
+              key={item.id}
+              {...actions}
+            />
+          ))}
+        </ul>
       ) : null}
       {doneToday.length ? (
         <>
-          <Subheading className="mt-2" size="caption">
+          <Subheading className="mt-3 mb-1.5" size="caption">
             {t("list.doneToday")}
           </Subheading>
-          <DividedList density="compact">
+          <ul className="grid gap-2">
             {doneToday.map((item) => (
               <PersonListRow
                 item={item}
@@ -95,13 +109,10 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
                 {...actions}
               />
             ))}
-          </DividedList>
+          </ul>
         </>
       ) : null}
-      {!open.length && !doneToday.length && !error ? (
-        <PaMuted>{t("list.empty")}</PaMuted>
-      ) : null}
-    </section>
+    </ContextSection>
   );
 }
 
@@ -126,6 +137,8 @@ function PersonListRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ItemDraft>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
   const checkbox = useRef<HTMLInputElement>(null);
   const refocus = useRef(false);
   const done = item.status === "done";
@@ -245,10 +258,26 @@ function PersonListRow({
             }}
             ref={checkbox}
           />
-          <span className="min-w-0 text-sm leading-[1.45] wrap-anywhere text-ink group-data-[status=done]:text-ink-muted group-data-[status=done]:line-through">
-            {item.text}
+          <span className="min-w-0 text-sm leading-[1.45] wrap-anywhere">
+            <span className="text-ink group-data-[status=done]:text-ink-muted group-data-[status=done]:line-through">
+              {item.text}
+            </span>
+            {item.when ? (
+              <span className="ms-1.5 text-xs text-ink-faint">{item.when}</span>
+            ) : null}
           </span>
         </label>
+        {remindAt ? (
+          <Badge
+            className="mt-1 flex-none"
+            title={fullWhen(remindAt)}
+            tone="brass"
+          >
+            {t("list.reminder", {
+              time: clockTime(remindAt, { date: "short" }),
+            })}
+          </Badge>
+        ) : null}
         <RowMenu
           disabled={busy}
           items={[
@@ -259,6 +288,22 @@ function PersonListRow({
                 setError("");
                 setDraft({ text: item.text, when: item.when ?? "" });
               },
+            },
+            ...(onContinue && item.status === "open"
+              ? [
+                  {
+                    key: "continue",
+                    label: t("planning.continueLabel"),
+                    onSelect: () => void run(() => onContinue(item)),
+                  },
+                ]
+              : []),
+            {
+              key: "details",
+              label: t(
+                detailsOpen ? "planning.hideDetails" : "planning.details",
+              ),
+              onSelect: () => setDetailsOpen(!detailsOpen),
             },
             {
               key: "delete",
@@ -275,20 +320,18 @@ function PersonListRow({
           label={t("list.actionsFor", { text: item.text })}
         />
       </div>
-      {item.when || remindAt || task ? (
-        <PaMuted
-          as="span"
-          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5"
-        >
-          {item.when ? <span>{item.when}</span> : null}
-          {remindAt ? (
-            <Badge title={fullWhen(remindAt)} tone="brass">
-              {t("list.reminder", {
-                time: clockTime(remindAt, { date: "short" }),
-              })}
-            </Badge>
-          ) : null}
-          {task ? (
+      <ItemPlan
+        assistantId={assistantId}
+        item={item}
+        items={allItems}
+        operations={operations}
+        workspaces={workspaces}
+        onSave={onPlan}
+        onRefresh={onRefresh}
+        detailsOpen={detailsOpen}
+        detailsId={detailsId}
+        meta={
+          task ? (
             <Button
               onClick={() => navigateToChat(task.sessionId, task.workspaceId)}
               size="inline"
@@ -297,18 +340,8 @@ function PersonListRow({
               {t("list.helping")}
               <ArrowRight aria-hidden="true" size={13} />
             </Button>
-          ) : null}
-        </PaMuted>
-      ) : null}
-      <ItemPlan
-        assistantId={assistantId}
-        item={item}
-        items={allItems}
-        operations={operations}
-        workspaces={workspaces}
-        onSave={onPlan}
-        onContinue={onContinue}
-        onRefresh={onRefresh}
+          ) : undefined
+        }
       />
       {failed}
     </li>

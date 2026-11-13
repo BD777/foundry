@@ -49,6 +49,17 @@ export function isVerificationSession(
 }
 
 /**
+ * A session whose workspace is read-only (`workspaceAccess: "read"`, a
+ * message channel's session): an ordinary chat of its role, run inside the
+ * verifier's sandbox (read-only-workspace-session.ts).
+ */
+export function isReadOnlyWorkspaceSession(
+  session: Pick<AgentSession, "workspaceAccess">,
+): boolean {
+  return session.workspaceAccess === "read";
+}
+
+/**
  * A verifier's tools: Claude Code's own, which its sandbox keeps from
  * changing the workspace (writes land only in its scratch directory), its
  * skills, and the Foundry tools, of which the server lists it only those
@@ -143,7 +154,13 @@ export function codexRoleOptions(session: AgentSession):
         webSearchMode: "disabled",
       },
     };
-  if (!isClarificationSession(session)) return undefined;
+  if (!isClarificationSession(session))
+    // A read-only workspace session's sandbox keeps the workspace read-only;
+    // Codex's own cannot nest inside it (see the verifier above), so Codex
+    // runs its commands unsandboxed there. Everything else is its role's.
+    return isReadOnlyWorkspaceSession(session)
+      ? { config: {}, thread: { sandboxMode: "danger-full-access" } }
+      : undefined;
   return {
     // Its read-only shell stays: Codex reads files through it, inside a
     // read-only sandbox without network.

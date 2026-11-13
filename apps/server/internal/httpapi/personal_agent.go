@@ -349,7 +349,48 @@ func (s *Server) handleListPersonalAgentInbox(w http.ResponseWriter, r *http.Req
 		return
 	}
 	items, err := s.store.ListPersonalAgentInbox(r.Context(), agent.ID, 200)
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, items, err)
+		return
+	}
+	views := make([]personalAgentInboxView, len(items))
+	for index, entry := range items {
+		views[index] = inboxViewOf(entry)
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+// personalAgentInboxView is an inbox entry as the assistant's home reads
+// it: a failed attempt's error classified the way a failed turn's
+// needs-you item is, so the home says why in one plain line.
+type personalAgentInboxView struct {
+	store.PersonalAgentInboxEntry
+	ResultFailure *inboxFailureView `json:"resultFailure,omitempty"`
+}
+
+type inboxFailureView struct {
+	// Category is a store.PendingFailure* value.
+	Category string `json:"category"`
+	// ResetAt is when the provider said it takes requests again.
+	ResetAt string `json:"resetAt,omitempty"`
+}
+
+func inboxViewOf(entry store.PersonalAgentInboxEntry) personalAgentInboxView {
+	view := personalAgentInboxView{PersonalAgentInboxEntry: entry}
+	if strings.TrimSpace(entry.ResultError) == "" {
+		return view
+	}
+	// A duration ("in 12h34m") counts from when the attempt ended.
+	at, err := time.Parse(time.RFC3339Nano, entry.UpdatedAt)
+	if err != nil {
+		at = time.Now()
+	}
+	failure := classifyTurnFailure("", entry.ResultError, at.UTC())
+	view.ResultFailure = &inboxFailureView{Category: failure.category}
+	if !failure.resetAt.IsZero() {
+		view.ResultFailure.ResetAt = formatPendingTime(failure.resetAt)
+	}
+	return view
 }
 
 func (s *Server) handlePersonalAgentInboxAction(w http.ResponseWriter, r *http.Request) {

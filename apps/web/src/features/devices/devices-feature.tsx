@@ -18,6 +18,7 @@ import { SegmentedControl } from "../../components/ui/segmented-control";
 import { DeviceAccess } from "./device-access";
 import { DeviceDiagnostics } from "./device-diagnostics";
 import { DeviceResources } from "./device-resources";
+import { ProxyFallbackNote } from "./device-proxy-fallback";
 import {
   DeviceWorker,
   UpdateAllWorkersButton,
@@ -244,6 +245,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             device={device}
             readiness={readinessOf(device)}
           />
+          <ProxyFallbackNote device={device} onRefresh={onRefresh} />
           <AccountShareExplanation device={device} onRefresh={onRefresh} />
           <DeviceDetails device={device} />
           {device.owned ? (

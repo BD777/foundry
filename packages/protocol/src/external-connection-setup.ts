@@ -134,6 +134,11 @@ export interface ExternalConnectionOffer {
   }[];
   /** Other devices of the account that have it. */
   sourceDevices: { id: string; label: string }[];
+  /**
+   * The connector extension whose login gives this connection. Setting it
+   * up is that connector's on the device (Connectors), never a command.
+   */
+  connector?: { kind: string; label: string };
   stage: ExternalConnectionSetupStage;
   /** The failure, verbatim, for check_failed / setup_failed. */
   detail?: string;

@@ -20,6 +20,13 @@ export interface PermissionScope {
   area?: string;
 }
 
+export interface PermissionPreset {
+  id: string;
+  label: string;
+  hint: string;
+  excludeScopes: string[];
+}
+
 /** A server-held provider's catalog (Cloudflare, Feishu) as a permission list. */
 export function catalogScopes(
   catalog: {
@@ -41,7 +48,8 @@ export function catalogScopes(
   }));
 }
 
-export type PermissionMode = "recommended" | "all" | "custom";
+export type PermissionMode =
+  "recommended" | "all" | "custom" | `preset:${string}`;
 
 export interface PermissionPlan {
   /** Exactly what the provider is asked for (always-scopes first). */
@@ -91,11 +99,23 @@ export function normalizeSelection(
 export function selectionFor(
   mode: Exclude<PermissionMode, "custom">,
   scopes: PermissionScope[],
+  presets: PermissionPreset[] = [],
 ): string[] {
+  const preset = mode.startsWith("preset:")
+    ? presets.find((entry) => `preset:${entry.id}` === mode)
+    : undefined;
   return normalizeSelection(
     mode === "all"
       ? ids(scopes, (s) => !s.unavailable)
-      : ids(scopes, (s) => !!s.recommended || !!s.required),
+      : preset
+        ? ids(
+            scopes,
+            (scope) =>
+              !scope.unavailable && !preset.excludeScopes.includes(scope.id),
+          )
+        : mode === "recommended"
+          ? ids(scopes, (s) => !!s.recommended || !!s.required)
+          : [],
     scopes,
   );
 }

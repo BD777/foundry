@@ -1,10 +1,12 @@
 // Operations on leased resources (resource_operate, resource_reset): the
-// device side of fencing. Each instance (key) keeps the newest lease
-// generation it has seen; requests of older generations are refused
-// (stale_lease) even when they arrive late. One provider session serves the
-// lease operating an instance, its requests run one at a time, and it is
-// reset and closed when a newer generation fences the instance or after it
-// idles.
+// device side of fencing. Each instance (key) keeps a fence: the generation
+// below which requests are refused (stale_lease) even when they arrive
+// late, raised by resets and by an exclusive lease's newer generation.
+// Shared leases (request.shared) run side by side and do not raise it; one
+// that ends alone is reset by generation (leaseOnly) and its generation is
+// refused from then on. Each lease has its own provider session, its
+// requests run one at a time (different leases at once), and the session
+// is reset and closed when its lease is fenced or ended, or after it idles.
 
 import type {
   ResourceActionResult,
@@ -21,7 +23,7 @@ import {
 } from "./provider.js";
 import { createCuaDriverProvider } from "./providers/cua-driver.js";
 import { errorMessage } from "../platform/utils.js";
-import { SerialQueue } from "../platform/serial-queue.js";
+import { KeyedSerialQueue } from "../platform/serial-queue.js";
 
 export const defaultDeadlineMs = 30_000;
 export const maxDeadlineMs = 120_000;
@@ -51,9 +53,12 @@ interface InFlight {
 
 interface InstanceState {
   fence: number;
-  /** This instance's requests, one at a time. */
-  requests: SerialQueue;
-  current?: OpenSession;
+  /** Generations of shared leases ended one by one (leaseOnly resets). */
+  ended: Set<number>;
+  /** Each lease's requests, one at a time; different leases at once. */
+  requests: KeyedSerialQueue;
+  /** The open provider session of each lease, by lease id. */
+  sessions: Map<string, OpenSession>;
   inFlight: Set<InFlight>;
 }
 
@@ -95,9 +100,9 @@ export class ResourceOperations {
     const refused = this.refuse(request);
     if (refused) return refused;
     const state = this.state(request.key);
-    if (request.generation < state.fence)
+    if (refusedGeneration(state, request.generation))
       return stale(request.generation, state.fence);
-    if (request.generation > state.fence)
+    if (!request.shared && request.generation > state.fence)
       this.raiseFence(state, request.generation);
     const deadlineMs = Math.min(
       request.deadlineMs > 0 ? request.deadlineMs : defaultDeadlineMs,
@@ -118,7 +123,7 @@ export class ResourceOperations {
     );
     timer.unref();
     try {
-      return await state.requests.run(() =>
+      return await state.requests.run(request.leaseId, () =>
         this.run(state, request, controller.signal),
       );
     } catch (error) {
@@ -136,7 +141,8 @@ export class ResourceOperations {
 
   /**
    * Fences an instance at generation: older requests are aborted and
-   * refused, the older lease's session is reset and closed.
+   * refused, the older leases' sessions are reset and closed. leaseOnly
+   * ends the one lease at generation instead, leaving the others.
    */
   async reset(request: ResourceResetRequest): Promise<ResourceResetResult> {
     const result: ResourceResetResult = {
@@ -145,13 +151,16 @@ export class ResourceOperations {
     };
     try {
       const state = this.state(request.key);
-      if (request.generation > state.fence)
+      if (request.leaseOnly) {
+        state.ended.add(request.generation);
+        this.abortFlights(
+          state,
+          (generation) => generation === request.generation,
+          "ended",
+        );
+      } else if (request.generation > state.fence)
         this.raiseFence(state, request.generation);
-      const current = state.current;
-      if (current && current.generation < request.generation) {
-        state.current = undefined;
-        await this.end(current);
-      }
+      await this.endRefused(state);
     } catch (error) {
       result.error = errorMessage(error);
     }
@@ -177,8 +186,8 @@ export class ResourceOperations {
       open.graceTimer ??= setTimeout(() => {
         open.graceTimer = undefined;
         const state = this.instances.get(open.key);
-        if (state?.current !== open) return;
-        state.current = undefined;
+        if (state?.sessions.get(open.leaseId) !== open) return;
+        state.sessions.delete(open.leaseId);
         void this.end(open);
       }, this.graceMs);
       open.graceTimer.unref();
@@ -196,11 +205,23 @@ export class ResourceOperations {
             "the worker disconnected from the server",
           ),
         );
-      if (state.current && ends(state.current)) {
-        ending.push(this.end(state.current));
-        state.current = undefined;
-      }
+      for (const [leaseId, open] of state.sessions)
+        if (ends(open)) {
+          state.sessions.delete(leaseId);
+          ending.push(this.end(open));
+        }
     }
+    await Promise.all(ending);
+  }
+
+  /** Ends the sessions of leases the instance now refuses. */
+  private async endRefused(state: InstanceState): Promise<void> {
+    const ending: Promise<void>[] = [];
+    for (const [leaseId, open] of state.sessions)
+      if (refusedGeneration(state, open.generation)) {
+        state.sessions.delete(leaseId);
+        ending.push(this.end(open));
+      }
     await Promise.all(ending);
   }
 
@@ -241,20 +262,20 @@ export class ResourceOperations {
     signal: AbortSignal,
   ): Promise<ResourceOperateResult> {
     // A reset or a newer lease may have come while this one waited.
-    if (request.generation < state.fence)
+    if (refusedGeneration(state, request.generation))
       return stale(request.generation, state.fence);
     if (signal.aborted) return aborted(signal);
+    await this.endRefused(state);
     let opened = false;
-    let current = state.current;
+    let current = state.sessions.get(request.leaseId);
     if (
       !current ||
       !current.session.alive ||
       current.backend !== request.backend ||
-      current.leaseId !== request.leaseId ||
       current.generation !== request.generation
     ) {
       if (current) {
-        state.current = undefined;
+        state.sessions.delete(request.leaseId);
         await this.end(current);
       }
       const provider = this.providers.get(request.backend)!;
@@ -269,13 +290,13 @@ export class ResourceOperations {
         generation: request.generation,
         session,
       };
-      if (request.generation < state.fence || signal.aborted) {
+      if (refusedGeneration(state, request.generation) || signal.aborted) {
         await this.end(current);
         return signal.aborted
           ? aborted(signal)
           : stale(request.generation, state.fence);
       }
-      state.current = current;
+      state.sessions.set(request.leaseId, current);
       opened = true;
     }
     if (current.idleTimer) clearTimeout(current.idleTimer);
@@ -297,7 +318,8 @@ export class ResourceOperations {
       results.push(result);
       if (!result.ok) break;
     }
-    if (state.current === current) this.idle(state, current);
+    if (state.sessions.get(request.leaseId) === current)
+      this.idle(state, current);
     return { results, ...(opened ? { opened } : {}) };
   }
 
@@ -305,8 +327,8 @@ export class ResourceOperations {
     const idleMs = this.providers.get(open.backend)?.idleCloseMs ?? this.idleMs;
     if (idleMs === 0) return;
     open.idleTimer = setTimeout(() => {
-      if (state.current !== open) return;
-      state.current = undefined;
+      if (state.sessions.get(open.leaseId) !== open) return;
+      state.sessions.delete(open.leaseId);
       void this.end(open);
     }, idleMs);
     open.idleTimer.unref();
@@ -321,12 +343,26 @@ export class ResourceOperations {
 
   private raiseFence(state: InstanceState, generation: number): void {
     state.fence = generation;
+    for (const ended of state.ended)
+      if (ended < generation) state.ended.delete(ended);
+    this.abortFlights(
+      state,
+      (flight) => flight < generation,
+      `superseded by ${generation}`,
+    );
+  }
+
+  private abortFlights(
+    state: InstanceState,
+    matches: (generation: number) => boolean,
+    why: string,
+  ): void {
     for (const flight of state.inFlight)
-      if (flight.generation < generation)
+      if (matches(flight.generation))
         flight.controller.abort(
           new ProviderError(
             "stale_lease",
-            `lease generation ${flight.generation} was superseded by ${generation}`,
+            `lease generation ${flight.generation} was ${why}`,
           ),
         );
   }
@@ -334,11 +370,22 @@ export class ResourceOperations {
   private state(key: string): InstanceState {
     let state = this.instances.get(key);
     if (!state) {
-      state = { fence: 0, requests: new SerialQueue(), inFlight: new Set() };
+      state = {
+        fence: 0,
+        ended: new Set(),
+        requests: new KeyedSerialQueue(),
+        sessions: new Map(),
+        inFlight: new Set(),
+      };
       this.instances.set(key, state);
     }
     return state;
   }
+}
+
+/** The instance refuses generation: fenced, or a shared lease that ended. */
+function refusedGeneration(state: InstanceState, generation: number): boolean {
+  return generation < state.fence || state.ended.has(generation);
 }
 
 function stale(generation: number, fence: number): ResourceOperateResult {

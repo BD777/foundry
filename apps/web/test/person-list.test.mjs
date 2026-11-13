@@ -180,10 +180,7 @@ test("an empty list invites the person to say what they plan", async () => {
     onEdit: noop,
     onDelete: noop,
   });
-  assert.match(
-    page.container.textContent,
-    /Tell me what you plan to do and I'll keep it here\./,
-  );
+  assert.match(page.container.textContent, /Your list\s*Nothing yet/);
   await page.unmount();
 });
 
@@ -198,7 +195,7 @@ test("a failed read says so instead of looking empty", async () => {
   });
   const text = page.container.textContent;
   assert.match(text, /Couldn't load your list/);
-  assert.doesNotMatch(text, /Tell me what you plan/);
+  assert.doesNotMatch(text, /Nothing yet/);
   await page.unmount();
 });
 
@@ -234,11 +231,20 @@ test("rows tick done, show their reminder and the task helping", async () => {
     onDelete: noop,
   });
   const text = page.container.textContent;
-  assert.match(text, /To do/);
+  assert.match(text, /Your list1/);
+  assert.ok(page.container.querySelector('ul[aria-label="To do"]'));
   assert.match(text, /after work/);
   assert.match(text, /Reminder 06:30\sPM|Reminder 18:30/);
   assert.match(text, /I'm helping/);
   assert.match(text, /Done today/);
+  // A row is one line: no "Record only" line, no visible details or
+  // continue button; those sit in the row's menu.
+  assert.doesNotMatch(text, /Record only/);
+  assert.ok(
+    [...page.container.querySelectorAll("[data-plan-details]")].every(
+      (node) => node.hidden,
+    ),
+  );
   const boxes = [...page.container.querySelectorAll("input[type=checkbox]")];
   assert.deepEqual(
     boxes.map((box) => box.checked),

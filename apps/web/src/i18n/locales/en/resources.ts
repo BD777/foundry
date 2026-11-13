@@ -88,6 +88,13 @@ export const resources = {
     preempt: "Will be given to the waiting session at {{time}}",
     resetting:
       "Resetting after the last session; available once the device confirms.",
+    modes: {
+      shared: "Shared",
+      exclusive: "Exclusive",
+    },
+    slots_one: "{{inUse}} of {{count}} slot in use",
+    slots_other: "{{inUse}} of {{count}} slots in use",
+    slotsAuto: "automatic",
   },
   lease: {
     release: "Release",
@@ -203,6 +210,25 @@ export const resources = {
       later: "No session can run commands here until you turn this on again.",
     },
     offConfirm: "Turn off",
+    slots: "Concurrent shared leases",
+    slotsAuto: "Automatic",
+    slotsSave: "Save",
+    slotsHint:
+      "Leave empty to follow this device's CPUs and memory, or choose 1–64.",
+    slotsInvalid:
+      "Enter a whole number from 1 to 64, or leave it empty for automatic.",
+  },
+  workspacePolicy: {
+    title: "Workspaces that may lease this device",
+    modes: {
+      every: "Every workspace",
+      only: "Only these",
+      except: "Every workspace except",
+    },
+    unknownWorkspace: "A workspace not in your list",
+    noWorkspaces: "You have no workspaces to choose from.",
+    pickOne: "Pick at least one workspace.",
+    save: "Save",
   },
   activity: {
     action: "Activity",

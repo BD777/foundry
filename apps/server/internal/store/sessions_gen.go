@@ -174,6 +174,9 @@ type AgentSession struct {
 	// Role `role` is the job the session does for Foundry; empty for a chat. AgentSessionRoleIssueExecution implements an Issue's confirmed contract in its candidate workspace; AgentSessionRoleIssueClarification talks the Issue through with the person, read-only.
 	Role string `json:"role,omitempty"`
 
+	// WorkspaceAccess `workspaceAccess` read: the session's workspace is read-only for its agent and every command it runs, kept so by the worker's sandbox (a message channel's session, DEV-203); its temporary files go to a scratch directory outside the workspace. Absent: the session writes its workspace as usual.
+	WorkspaceAccess string `json:"workspaceAccess,omitempty"`
+
 	// ParentSessionID `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 

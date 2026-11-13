@@ -167,9 +167,6 @@ type Pipeline struct {
 	// Checks are the tool version checks in progress whose grants act
 	// for no session; nil allows none.
 	Checks *Checks
-	// Work says which completed sessions' agents still work on their own
-	// on their devices (SessionLive); nil: none do.
-	Work NativeWork
 	// Unavailable, if set, says why nothing may be sent upstream now.
 	Unavailable func() error
 	Now         func() time.Time
@@ -209,7 +206,7 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 	var denial *Denial
 	var refused Refused
 	defer func() {
-		record := Record{Request: r, Device: device, Lease: x.Lease, Need: x.Need, Denial: denial, Outcome: x.Outcome, Detail: x.Need.Detail, Status: x.Status, Started: started, Duration: p.now().Sub(started)}
+		record := Record{Request: r, Device: device, Lease: x.Lease, Grant: x.Grant, Need: x.Need, Denial: denial, Outcome: x.Outcome, Detail: x.Need.Detail, Status: x.Status, Started: started, Duration: p.now().Sub(started)}
 		if x.Detail != nil {
 			record.Detail = x.Detail
 		}
@@ -235,7 +232,8 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 		fail(entry.Denial)
 		return
 	}
-	lease, d := p.authenticate(r.Context(), entry, device)
+	lease, presented, d := p.authenticate(r.Context(), entry, device)
+	x.Grant = presented
 	if d != nil {
 		fail(d)
 		return
@@ -351,8 +349,10 @@ func (p *Pipeline) confirmationRequest(r *http.Request, lease *Lease, need Need)
 
 // authenticate is step 1 and 2: the stand-in (or the grant it was already
 // resolved to) on the device that runs its session, and the session and
-// account rechecked.
-func (p *Pipeline) authenticate(ctx context.Context, entry Entry, device Device) (*Lease, *Denial) {
+// account rechecked. A refused call whose stand-in names a grant of the
+// calling device also answers that grant, so its audit line names the
+// session and account it was refused for.
+func (p *Pipeline) authenticate(ctx context.Context, entry Entry, device Device) (*Lease, *store.FeishuGatewayGrant, *Denial) {
 	var grant store.FeishuGatewayGrant
 	var kind string
 	if entry.Grant != nil {
@@ -360,108 +360,75 @@ func (p *Pipeline) authenticate(ctx context.Context, entry Entry, device Device)
 	} else {
 		kind = p.Scheme.Kind(entry.Handle)
 		if kind == "" || !slices.Contains(entry.Kinds, kind) {
-			return nil, &Denial{Reason: ReasonNoCredential}
+			return nil, nil, &Denial{Reason: ReasonNoCredential}
 		}
 		found, err := p.Grants.FindFeishuGatewayGrant(ctx, kind, p.Scheme.Hash(entry.Handle))
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, &Denial{Reason: ReasonAccessEnded}
+			return nil, nil, &Denial{Reason: ReasonAccessEnded}
 		}
 		if err != nil {
-			return nil, &Denial{Reason: ReasonInternal, Err: err}
+			return nil, nil, &Denial{Reason: ReasonInternal, Err: err}
 		}
 		grant = found
 	}
 	if device.ID == "" || grant.DeviceID != device.ID || grant.UserID != device.OwnerUserID {
-		return nil, &Denial{Reason: ReasonAccessEnded}
+		return nil, nil, &Denial{Reason: ReasonAccessEnded}
 	}
+	presented := &grant
 	lease, err := p.Live(ctx, Subject{SessionID: grant.SessionID, WorkspaceID: grant.WorkspaceID, DeviceID: grant.DeviceID, UserID: grant.UserID, AccountID: grant.AccountID, AppID: grant.AppID}, device.OwnerUserID)
 	if errors.Is(err, ErrSessionEnded) {
 		if deleteErr := p.Grants.DeleteFeishuGatewayGrant(ctx, grant.ID); deleteErr != nil {
 			p.logf("gateway: drop the grant of ended session %s: %v", grant.SessionID, deleteErr)
 		}
-		return nil, &Denial{Reason: ReasonAccessEnded}
+		return nil, presented, &Denial{Reason: ReasonAccessEnded}
 	}
-	// A completed session whose agent has stopped working is refused, but
-	// its grant stays: a claim that lapsed for a moment (a reconnect, a
-	// restarted server) comes back with the next heartbeat. Prune drops it
-	// once it can never be live again.
-	if errors.Is(err, ErrAccessEnded) || errors.Is(err, ErrSessionIdle) {
-		return nil, &Denial{Reason: ReasonAccessEnded}
+	if errors.Is(err, ErrAccessEnded) {
+		return nil, presented, &Denial{Reason: ReasonAccessEnded}
 	}
 	if err != nil {
-		return nil, &Denial{Reason: ReasonInternal, Err: err}
+		return nil, presented, &Denial{Reason: ReasonInternal, Err: err}
 	}
 	lease.Grant, lease.Kind, lease.Device = grant, kind, device
 	if p.Scheme.Lifetime > 0 {
 		created, err := time.Parse(time.RFC3339Nano, grant.CreatedAt)
 		if err != nil || p.now().After(created.Add(p.Scheme.Lifetime)) {
-			return nil, &Denial{Reason: ReasonHandleExpired}
+			return nil, presented, &Denial{Reason: ReasonHandleExpired}
 		}
 	}
-	return lease, nil
+	return lease, presented, nil
 }
 
-// ErrSessionEnded: the session is gone, ended for good (failed, canceled,
-// archived, past HeldSessionMaxIdle), or not the grant's.
+// ErrSessionEnded: the session is gone (deleted), archived, or not the
+// grant's (another device or person). Its grants are spent.
 var ErrSessionEnded = errors.New("session ended")
 
-// ErrSessionIdle: the session's turn completed and nothing of its agent
-// works on its device now; a new turn or the agent's own work (claimed
-// again) makes it live.
-var ErrSessionIdle = errors.New("session idle")
-
-// NativeWork is what devices claim about the sessions whose agents still
-// work on their own past a Foundry turn: background tasks, timers, a turn
-// the agent continues by itself, a kept Codex app-server (DEV-155).
-type NativeWork interface {
-	// NativeWorkClaimedAt is when the device last claimed that the
-	// session's agent still works there; zero if it never did, or not
-	// since this server started.
-	NativeWorkClaimedAt(deviceID, sessionID string) time.Time
-}
-
-// NativeWorkClaimWindow is how long a device's claim of a session's native
-// work stands: a worker repeats it in every heartbeat (25 s), so a claim
-// older than this means the work ended, or the worker stopped or lost the
-// connection.
-const NativeWorkClaimWindow = 2 * time.Minute
-
-// HeldSessionMaxIdle is the longest a completed session's grants stay live
-// after its last Foundry turn ended, however long its agent works on its
-// own (a recurring timer can keep a process for days). The person's next
-// message starts a turn with fresh grants.
-const HeldSessionMaxIdle = 24 * time.Hour
-
-// SessionLive says whether a session may act through a connector now: one
-// in an active status (a Foundry turn is queued, running or blocked), or
-// one whose turn completed while its agent still works on its own on the
-// session's device: the device claimed it within NativeWorkClaimWindow,
-// the session is not archived and its turn ended less than
-// HeldSessionMaxIdle ago. Otherwise it answers ErrSessionIdle (completed,
-// may come back) or ErrSessionEnded (for good). Device, owner and
-// workspace are checked by the caller.
-func SessionLive(session store.AgentSession, work NativeWork, now time.Time) error {
-	if store.IsActiveSessionStatus(session.Status) {
-		return nil
-	}
-	if session.Status != "completed" || session.ArchivedAt != "" {
+// SessionLive says whether a session may still act through the connectors
+// its workspace grants (DEV-215): for as long as it exists and is not
+// archived. A connector grant is a standing one (an account bound to the
+// session's workspace, allowed by its permission package); a session holds
+// it whatever its turns do: between turns, while its agent works on its own
+// (background commands, Monitor, timers, subagents), after a failed or
+// canceled turn it may be continued from, across Worker and Server restarts.
+// What ends it is the grant (unbound, stopped, removed, the permission
+// package: checked per call by the caller) or the session (archived,
+// deleted: ErrSessionEnded). Device, owner and workspace are checked by the
+// caller.
+func SessionLive(session store.AgentSession) error {
+	if session.ID == "" || session.ArchivedAt != "" {
 		return ErrSessionEnded
-	}
-	if ended, err := time.Parse(time.RFC3339Nano, session.CompletedAt); err == nil && now.Sub(ended) > HeldSessionMaxIdle {
-		return ErrSessionEnded
-	}
-	if work == nil {
-		return ErrSessionIdle
-	}
-	claimed := work.NativeWorkClaimedAt(session.DeviceID, session.ID)
-	if claimed.IsZero() || now.Sub(claimed) > NativeWorkClaimWindow {
-		return ErrSessionIdle
 	}
 	return nil
 }
 
+// SupersededGrantKeep is how long a grant stays after a newer one of the
+// same session and account was issued. The older one's holder (a kept
+// agent process started with an earlier turn's environment) moves to the
+// newer one with its next renewal or profile read; a day is far past any
+// handle's Lifetime.
+const SupersededGrantKeep = 24 * time.Hour
+
 // ErrAccessEnded: the account may no longer be used by that session.
-var ErrAccessEnded = errors.New("this session's access through Foundry has ended (the session finished, or the account was stopped, removed or unbound); start a new session, or ask the person to check Connectors in Foundry")
+var ErrAccessEnded = errors.New("this session's access through Foundry has ended: the session was archived or deleted, or the account was stopped, removed or unbound from its workspace, or the assistant's permission package no longer allows it; ask the person to check Connectors in Foundry")
 
 // Subject names the session and account a grant (or a connection a gateway
 // handed over) acts for.
@@ -478,8 +445,8 @@ type Subject struct {
 
 // Live is step 2: the session live (SessionLive) on the subject's device,
 // the account Permitted for it (externalaccounts.Eligible: also usable now)
-// by a device owned by deviceOwner. It answers ErrSessionEnded,
-// ErrSessionIdle or ErrAccessEnded, or a store error.
+// by a device owned by deviceOwner. It answers ErrSessionEnded or
+// ErrAccessEnded, or a store error.
 func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Lease, error) {
 	if IsCheck(s.SessionID) {
 		return p.liveCheck(ctx, s, deviceOwner)
@@ -494,7 +461,7 @@ func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Le
 	if session.DeviceID != s.DeviceID || session.CreatedByUserID != s.UserID {
 		return nil, ErrSessionEnded
 	}
-	if err := SessionLive(session, p.Work, p.now()); err != nil {
+	if err := SessionLive(session); err != nil {
 		return nil, err
 	}
 	// A grant follows its session's workspace; the grant is not spent by a

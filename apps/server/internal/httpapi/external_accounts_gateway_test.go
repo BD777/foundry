@@ -351,12 +351,15 @@ func TestFeishuGatewayAccessEndsImmediately(t *testing.T) {
 	if status := userInfo(f.material); status != http.StatusOK {
 		t.Fatalf("live session: %d", status)
 	}
-	// The session ends: its handles stop at once.
+	// The session is archived: its handles stop at once.
 	if _, err := f.db.CompleteAgentSession(ctx, f.session.ID, "done", "native_1"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: "ws_alice", ChatIDs: []string{f.session.ID}, ArchivedByUser: f.aliceID}, false); err != nil {
+		t.Fatal(err)
+	}
 	if status := userInfo(f.material); status != http.StatusUnauthorized {
-		t.Fatalf("after the session ended: %d", status)
+		t.Fatalf("after the session was archived: %d", status)
 	}
 	if response, _ := f.gw(http.MethodPost, "/open-apis/auth/v3/tenant_access_token/internal", f.aliceDevice,
 		strings.NewReader(fmt.Sprintf(`{"app_id":"cli_fake","app_secret":%q}`, f.material.Gateway.AppHandle)), nil); response.StatusCode != http.StatusUnauthorized {
@@ -400,68 +403,69 @@ func feishuHandleHash(handle string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// DEV-155: a background command, or a turn the agent's own wake-up starts,
-// uses the session's handles after its turn completed. They work while the
-// session's device claims that its agent still works on its own, stop when
-// the claim ages out (and work again when it is renewed), and end at once
-// on archive or when the account is stopped, whatever the device claims.
-func TestFeishuGatewayServesACompletedSessionWhileItsAgentWorks(t *testing.T) {
+// DEV-215: the session holds its workspace's Feishu grant whatever its
+// turns do. The first turn's handles (what a kept agent process, its
+// background commands, Monitor, timers and subagents hold) keep working
+// after the turn completed, after a later turn failed or was canceled, and
+// next to a later turn's handles; nothing the device claims is asked. The
+// account stopped, or the session archived, end them at once.
+func TestFeishuGatewayServesASessionWhateverItsTurnsDo(t *testing.T) {
 	f := newGatewayFixture(t)
 	ctx := context.Background()
-	userInfo := func() int {
-		response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(f.material.Gateway.UserHandle))
+	userInfo := func(material store.ExternalAccountMaterial) int {
+		response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(material.Gateway.UserHandle))
 		return response.StatusCode
 	}
 	if _, err := f.db.CompleteAgentSession(ctx, f.session.ID, "started a background loop", "native_1"); err != nil {
 		t.Fatal(err)
 	}
-	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
-	if status := userInfo(); status != http.StatusOK {
-		t.Fatalf("completed session whose agent works on: %d", status)
-	}
-	// Another device's claim does not count.
-	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now().Add(-gateway.NativeWorkClaimWindow-time.Second))
-	f.server.hub.claims.confirmNative("dev_other", []string{f.session.ID}, time.Now())
-	if status := userInfo(); status != http.StatusUnauthorized {
-		t.Fatalf("after its device's claim aged out: %d", status)
-	}
-	// The grant survives the lapse: the next heartbeat's claim restores it.
-	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
-	if status := userInfo(); status != http.StatusOK {
-		t.Fatalf("claimed again: %d", status)
-	}
-	// A new process (a timer Foundry delivers after the worker restarted, the
-	// person's next message) is a new turn with grants of its own; the old
-	// grant stays tied to the old claim.
-	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now().Add(-gateway.NativeWorkClaimWindow-time.Second))
-	if _, err := f.db.SendAgentSessionInput(ctx, f.session.ID, store.SendAgentSessionInput{Prompt: "timer fired"}); err != nil {
-		t.Fatal(err)
-	}
-	next, err := f.db.StartAgentSession(ctx, f.session.ID)
-	if err != nil {
-		t.Fatal(err)
+	if status := userInfo(f.material); status != http.StatusOK {
+		t.Fatalf("between turns: %d", status)
 	}
 	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
-	materials := f.server.hub.sessionConnectors(ctx, next, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}).ExternalAccounts
-	if len(materials) != 1 || materials[0].Gateway.UserHandle == f.material.Gateway.UserHandle {
-		t.Fatalf("the new turn's material: %+v", materials)
+	nextTurn := func(end func(id string) error) store.ExternalAccountMaterial {
+		t.Helper()
+		if _, err := f.db.SendAgentSessionInput(ctx, f.session.ID, store.SendAgentSessionInput{Prompt: "next"}); err != nil {
+			t.Fatal(err)
+		}
+		next, err := f.db.StartAgentSession(ctx, f.session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		materials := f.server.hub.sessionConnectors(ctx, next, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}).ExternalAccounts
+		if len(materials) != 1 || materials[0].Gateway.UserHandle == f.material.Gateway.UserHandle {
+			t.Fatalf("the new turn's material: %+v", materials)
+		}
+		if err := end(f.session.ID); err != nil {
+			t.Fatal(err)
+		}
+		return materials[0]
 	}
-	if response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(materials[0].Gateway.UserHandle)); response.StatusCode != http.StatusOK {
-		t.Fatalf("the new turn's handle: %d", response.StatusCode)
+	failed := nextTurn(func(id string) error { _, err := f.db.FailAgentSession(ctx, id, "model error"); return err })
+	canceled := nextTurn(func(id string) error { _, err := f.db.CancelAgentSession(ctx, id, "stopped by the person"); return err })
+	for name, material := range map[string]store.ExternalAccountMaterial{"first turn": f.material, "failed turn": failed, "canceled turn": canceled} {
+		if status := userInfo(material); status != http.StatusOK {
+			t.Fatalf("%s's handle after a canceled turn: %d", name, status)
+		}
 	}
-	// Stopping the account ends it while the device still claims the work.
-	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
+	// Pruning keeps every grant of a session that is not archived.
+	if _, err := f.db.PruneFeishuGatewayGrants(ctx, time.Now().Add(-gateway.SupersededGrantKeep)); err != nil {
+		t.Fatal(err)
+	}
+	if status := userInfo(f.material); status != http.StatusOK {
+		t.Fatalf("after pruning: %d", status)
+	}
+	// Stopping the account ends every handle at once.
 	f.call(f.alice, http.MethodPost, "/api/external-accounts/"+f.account.ID+"/revoke", "{}", http.StatusOK, "revoke", nil)
-	if status := userInfo(); status != http.StatusUnauthorized {
+	if status := userInfo(f.material); status != http.StatusUnauthorized {
 		t.Fatalf("after stop using now: %d", status)
 	}
 
-	// Archiving ends it too, for good.
+	// Archiving ends it too, for good, and spends the grant.
 	g := newGatewayFixture(t)
 	if _, err := g.db.CompleteAgentSession(ctx, g.session.ID, "started a background loop", "native_1"); err != nil {
 		t.Fatal(err)
 	}
-	g.server.hub.claims.confirmNative("dev_alice", []string{g.session.ID}, time.Now())
 	if _, err := g.db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: "ws_alice", ChatIDs: []string{g.session.ID}, ArchivedByUser: g.aliceID}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -604,18 +608,25 @@ func TestFeishuGatewayDelegatesEventConnections(t *testing.T) {
 	if response, _ = f.gw(http.MethodGet, socketPath, f.aliceDevice, nil, nil); response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("ticket reused: %d", response.StatusCode)
 	}
-	// From another device, or after the session ended: refused.
+	// From another device, or after the session was archived: refused.
 	_, data = endpoint(forwarder)
 	_ = json.Unmarshal(data, &answer)
 	socketPath = strings.TrimPrefix(answer.Data.URL, "ws://127.0.0.1:43210")
 	if response, _ = f.gw(http.MethodGet, socketPath, f.bobDevice, nil, nil); response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("socket from bob's device: %d", response.StatusCode)
 	}
+	// A completed turn is not an ended session (DEV-215).
 	if _, err := f.db.CompleteAgentSession(context.Background(), f.session.ID, "done", "native_1"); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.server.feishuGateway.Authorized(context.Background(), events.callers[0]); err != nil {
+		t.Fatalf("a caller between its session's turns: %v", err)
+	}
+	if _, err := f.db.ArchiveChats(context.Background(), store.ArchiveChatsInput{WorkspaceID: "ws_alice", ChatIDs: []string{f.session.ID}, ArchivedByUser: f.aliceID}, false); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.server.feishuGateway.Authorized(context.Background(), events.callers[0]); err == nil {
-		t.Fatal("a caller whose session ended is still authorized")
+		t.Fatal("a caller whose session was archived is still authorized")
 	}
 }
 
@@ -637,7 +648,8 @@ func TestExternalAppSecretReplacement(t *testing.T) {
 // feishu-cli refreshes its user token (POST /open-apis/authen/v2/oauth/token,
 // a form with grant_type, refresh_token, client_id, client_secret) when
 // token.json says it expired: the gateway answers with the session's
-// stand-ins, never a real token, and refuses once the session ends.
+// stand-ins, never a real token, between turns too, and refuses once the
+// session is archived.
 func TestFeishuGatewayAnswersUserRefreshWithStandIns(t *testing.T) {
 	f := newGatewayFixture(t)
 	gateway := f.material.Gateway
@@ -678,11 +690,18 @@ func TestFeishuGatewayAnswersUserRefreshWithStandIns(t *testing.T) {
 	if response, _ := f.gw(http.MethodPost, "/open-apis/authen/v2/oauth/token", f.bobDevice, strings.NewReader(form.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded"}); response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("refresh from another device: %d", response.StatusCode)
 	}
+	// Between turns the session refreshes its login (DEV-215); archived, not.
 	if _, err := f.db.CompleteAgentSession(context.Background(), f.session.ID, "done", "native_1"); err != nil {
+		t.Fatal(err)
+	}
+	if response, answer := refresh(gateway.RefreshHandle, f.material.ClientID); response.StatusCode != http.StatusOK {
+		t.Fatalf("refresh between turns: %d %v", response.StatusCode, answer)
+	}
+	if _, err := f.db.ArchiveChats(context.Background(), store.ArchiveChatsInput{WorkspaceID: "ws_alice", ChatIDs: []string{f.session.ID}, ArchivedByUser: f.aliceID}, false); err != nil {
 		t.Fatal(err)
 	}
 	if response, answer := refresh(gateway.RefreshHandle, f.material.ClientID); response.StatusCode != http.StatusBadRequest || answer["error"] != "invalid_grant" ||
 		!strings.Contains(answer["error_description"].(string), "has ended") {
-		t.Fatalf("refresh after the session ended: %d %v", response.StatusCode, answer)
+		t.Fatalf("refresh after the session was archived: %d %v", response.StatusCode, answer)
 	}
 }

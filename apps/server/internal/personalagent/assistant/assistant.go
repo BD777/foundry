@@ -38,6 +38,13 @@ func (s *Service) Conversation(ctx context.Context, session store.AgentSession) 
 		return store.PersonalAgent{}, false
 	}
 	agent, err := s.store.AssistantForWorkspace(ctx, session.WorkspaceID)
+	if errors.Is(err, store.ErrNotFound) && s.channelOf != nil {
+		// A message channel's session (DEV-203) runs in the channel's
+		// workspace but is the assistant's own conversation.
+		if id, ok := s.channelOf(ctx, session.ID); ok {
+			agent, err = s.store.GetAssistant(ctx, id)
+		}
+	}
 	if err != nil || agent.UserID != session.CreatedByUserID {
 		return store.PersonalAgent{}, false
 	}
@@ -656,24 +663,7 @@ func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (st
 		Items: make([]store.PersonalAgentNeedsYouItem, 0, shown),
 	}
 	for _, item := range persons[:shown] {
-		where := item.WorkspaceID
-		if item.SessionID != "" {
-			if session, err := s.store.GetAgentSessionSummary(ctx, item.SessionID); err == nil && session.Title != "" {
-				where = session.Title
-			}
-		}
-		if item.WorkspaceID != "" {
-			if workspace, err := s.store.GetWorkspace(ctx, item.WorkspaceID); err == nil && workspace.Name != "" {
-				if where == item.WorkspaceID || where == "" {
-					where = workspace.Name
-				} else if workspace.Name != where {
-					where += " · " + workspace.Name
-				}
-			}
-		}
-		needsYou.Items = append(needsYou.Items, store.PersonalAgentNeedsYouItem{
-			ID: item.ID, Title: item.Title, Where: where,
-		})
+		needsYou.Items = append(needsYou.Items, s.needsYouRow(ctx, item))
 	}
 	return store.PersonalAgentOverview{
 		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage, NeedsYou: needsYou,

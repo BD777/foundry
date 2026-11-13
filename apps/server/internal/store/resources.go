@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -99,11 +100,35 @@ type ResourceInstance struct {
 	DiscoveredAt string            `json:"discoveredAt"`
 	LastSeenAt   string            `json:"lastSeenAt"`
 	GoneAt       string            `json:"goneAt,omitempty"`
-	// Holder, Queue and Resetting come from the leases when listing.
-	Holder    *ResourceHolder `json:"holder,omitempty"`
-	Queue     int             `json:"queue,omitempty"`
-	Resetting bool            `json:"resetting,omitempty"`
+	// Holder, Holders, Slots, Queue and Resetting come from the leases
+	// when listing. Holder is the first of Holders (the exclusive one when
+	// a lease is exclusive).
+	Holder    *ResourceHolder  `json:"holder,omitempty"`
+	Holders   []ResourceHolder `json:"holders,omitempty"`
+	Slots     *ResourceSlots   `json:"slots,omitempty"`
+	Queue     int              `json:"queue,omitempty"`
+	Resetting bool             `json:"resetting,omitempty"`
 }
+
+// ResourceSlots is how many shared leases of an instance may run at once
+// (Capacity) and how many active ones it has (InUse). Parked leases do not
+// count.
+type ResourceSlots struct {
+	Capacity int `json:"capacity"`
+	InUse    int `json:"inUse"`
+	// Auto: Capacity follows the device's CPUs and memory, not a number
+	// its owner chose.
+	Auto bool `json:"auto"`
+}
+
+// Lease modes (ResourceLease.Mode, ResourceWait.Mode).
+const (
+	// LeaseShared runs beside other shared leases, up to the instance's
+	// slots.
+	LeaseShared = "shared"
+	// LeaseExclusive is the only lease on its instance.
+	LeaseExclusive = "exclusive"
+)
 
 // ResourceSourceStatus is a source of instances and how its last report
 // went.
@@ -118,6 +143,11 @@ type ResourceSourceStatus struct {
 	// AllowRemoteCommands is the source's ResourceSourceSettings, read
 	// with it; reports never write it.
 	AllowRemoteCommands bool `json:"allowRemoteCommands"`
+	// ComputeSlots, AllowWorkspaces and DenyWorkspaces are the source's
+	// ResourceSourceSettings.
+	ComputeSlots    int      `json:"computeSlots,omitempty"`
+	AllowWorkspaces []string `json:"allowWorkspaces,omitempty"`
+	DenyWorkspaces  []string `json:"denyWorkspaces,omitempty"`
 }
 
 // ResourceSourceSettings is what a device's owner allows sessions to do
@@ -128,6 +158,23 @@ type ResourceSourceSettings struct {
 	// device's compute instance and run commands with it. On by default:
 	// a device whose owner never chose allows them; an explicit off stays.
 	AllowRemoteCommands bool `json:"allowRemoteCommands"`
+	// ComputeSlots: how many shared compute leases run at once on the
+	// device; 0 derives it from its CPUs and memory.
+	ComputeSlots int `json:"computeSlots,omitempty"`
+	// AllowWorkspaces: when not empty, only sessions working in these
+	// workspaces lease the device's resources. DenyWorkspaces: sessions
+	// working in these never do.
+	AllowWorkspaces []string `json:"allowWorkspaces,omitempty"`
+	DenyWorkspaces  []string `json:"denyWorkspaces,omitempty"`
+}
+
+// LeasesWorkspace reports whether sessions working in workspaceID may
+// lease the source's resources.
+func (s ResourceSourceSettings) LeasesWorkspace(workspaceID string) bool {
+	if slices.Contains(s.DenyWorkspaces, workspaceID) {
+		return false
+	}
+	return len(s.AllowWorkspaces) == 0 || slices.Contains(s.AllowWorkspaces, workspaceID)
 }
 
 // ResourceList is GET /api/resources.
@@ -192,6 +239,7 @@ type ResourceHolder struct {
 	LeaseID     string `json:"leaseId"`
 	SessionID   string `json:"sessionId"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 	State       string `json:"state"`
 	Since       string `json:"since"`
 	ParkUntil   string `json:"parkUntil,omitempty"`
@@ -199,13 +247,14 @@ type ResourceHolder struct {
 	PreemptAt   string `json:"preemptAt,omitempty"`
 }
 
-// ResourceLease is one session's exclusive use of one instance. Times are
-// RFC 3339; an empty one is unset.
+// ResourceLease is one session's use of one instance, alone (exclusive) or
+// beside other shared leases. Times are RFC 3339; an empty one is unset.
 type ResourceLease struct {
 	ID              string `json:"id"`
 	ResourceID      string `json:"resourceId"`
 	SourceID        string `json:"sourceId"`
 	Generation      int64  `json:"generation"`
+	Mode            string `json:"mode"`
 	HolderSessionID string `json:"holderSessionId"`
 	HolderUserID    string `json:"holderUserId,omitempty"`
 	HolderDeviceID  string `json:"holderDeviceId,omitempty"`
@@ -224,6 +273,10 @@ type ResourceLease struct {
 	Extended           bool   `json:"-"`
 	HolderOfflineSince string `json:"-"`
 	UpdatedAt          string `json:"-"`
+	// ResetSince: an ended shared lease whose own reset (it ended beside
+	// other leases) the device has not confirmed yet, since then; empty
+	// otherwise.
+	ResetSince string `json:"-"`
 }
 
 // ResourceFence is an instance's fencing generation and reset state: the
@@ -247,9 +300,11 @@ type ResourceWait struct {
 	UserID      string
 	DeviceID    string
 	ResourceIDs []string
-	Reason      string
-	HoldUntil   string
-	EnqueuedAt  string
+	// Mode: shared or exclusive, for every instance of the wait.
+	Mode       string
+	Reason     string
+	HoldUntil  string
+	EnqueuedAt string
 	// RetainUntil: the wait keeps its place until then (the call's deadline
 	// and a short retention after it).
 	RetainUntil string
@@ -297,6 +352,9 @@ type ResourceLeaseFilter struct {
 	SourceID   string
 	// Live: only active and parked leases.
 	Live bool
+	// ResetPending: only ended leases whose own reset is unconfirmed
+	// (ResetSince set).
+	ResetPending bool
 }
 
 // ResourceLeaseChanges is one decision of package resources, written in
@@ -327,12 +385,15 @@ type ResourceLeaseStore interface {
 
 // ResourceOperateRequest is resource_operate.
 type ResourceOperateRequest struct {
-	ResourceID string           `json:"resourceId"`
-	Key        string           `json:"key"`
-	Type       string           `json:"type"`
-	Backend    string           `json:"backend"`
-	LeaseID    string           `json:"leaseId"`
-	Generation int64            `json:"generation"`
+	ResourceID string `json:"resourceId"`
+	Key        string `json:"key"`
+	Type       string `json:"type"`
+	Backend    string `json:"backend"`
+	LeaseID    string `json:"leaseId"`
+	Generation int64  `json:"generation"`
+	// Shared: the lease runs beside others; its generation does not fence
+	// older live leases (only resets do).
+	Shared     bool             `json:"shared,omitempty"`
 	Actions    []ResourceAction `json:"actions"`
 	DeadlineMs int64            `json:"deadlineMs"`
 }
@@ -379,8 +440,12 @@ type ResourceResetRequest struct {
 	Key        string `json:"key"`
 	Type       string `json:"type"`
 	Generation int64  `json:"generation"`
-	Reason     string `json:"reason"`
-	Notify     string `json:"notify,omitempty"`
+	// LeaseOnly ends the one lease at Generation (a shared lease that
+	// ended while others stay); otherwise every generation below it is
+	// fenced.
+	LeaseOnly bool   `json:"leaseOnly,omitempty"`
+	Reason    string `json:"reason"`
+	Notify    string `json:"notify,omitempty"`
 }
 
 // ResourceResetResult is resource_reset_done.

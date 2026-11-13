@@ -66,10 +66,23 @@ func (l *Leases) tryAcquire(ctx context.Context, req AcquireRequest, ids []strin
 		if err := l.usable(state, id, now); err != nil {
 			return acquireAttempt{}, err
 		}
+		if err := checkMode(state.instances[id], req.Mode); err != nil {
+			return acquireAttempt{}, err
+		}
+		if err := workspaceRefused(state, state.instances[id], session.WorkspaceID); err != nil {
+			return acquireAttempt{}, err
+		}
 	}
 	held := heldBy(state, req.SessionID)
 	if mine := ownLeases(held, ids); len(mine) == len(ids) {
-		// Asking again for what it holds: the leases, with a new hold.
+		// Asking again for what it holds: the leases, with a new hold. A
+		// shared lease does not become exclusive in place: two sessions
+		// doing so would wait for each other.
+		for _, lease := range mine {
+			if req.Mode == store.LeaseExclusive && lease.Mode == store.LeaseShared {
+				return acquireAttempt{}, leaseError(CodeInvalid, "this session holds %s shared; release it, then acquire it with mode exclusive", lease.ID)
+			}
+		}
 		for _, lease := range mine {
 			l.applyHold(state, lease, req.HoldFor, now)
 		}
@@ -135,6 +148,7 @@ func (l *Leases) queue(state *leaseState, req AcquireRequest, ids []string, sess
 		}
 		state.waits = append(state.waits, wait)
 	}
+	wait.Mode = req.Mode
 	if req.HoldFor != nil && *req.HoldFor > 0 {
 		wait.HoldUntil = formatTime(now.Add(l.holdFor(ids, state, *req.HoldFor)))
 	}
@@ -293,12 +307,11 @@ func (l *Leases) waitForHosts(ctx context.Context, ids []string) error {
 
 func heldBy(state *leaseState, sessionID string) []*store.ResourceLease {
 	var held []*store.ResourceLease
-	for _, lease := range state.live {
+	for _, lease := range sortedLive(state) {
 		if lease.HolderSessionID == sessionID {
 			held = append(held, lease)
 		}
 	}
-	sort.Slice(held, func(i, j int) bool { return held[i].ResourceID < held[j].ResourceID })
 	return held
 }
 
@@ -315,7 +328,7 @@ func ownLeases(held []*store.ResourceLease, ids []string) []*store.ResourceLease
 func leasesFor(state *leaseState, sessionID string, ids []string) []store.ResourceLease {
 	result := []store.ResourceLease{}
 	for _, id := range ids {
-		if lease := state.live[id]; lease != nil && lease.HolderSessionID == sessionID {
+		if lease := state.leaseOf(id, sessionID); lease != nil {
 			result = append(result, *lease)
 		}
 	}
@@ -373,8 +386,8 @@ type blocker struct {
 // (busy), else only resets or earlier waits.
 func (l *Leases) blockers(state *leaseState, wait *store.ResourceWait, now time.Time) blocker {
 	for _, id := range wait.ResourceIDs {
-		if lease := state.live[id]; lease != nil && lease.HolderSessionID != wait.SessionID {
-			return blocker{name: state.instances[id].Name, busy: holderOf(lease, "")}
+		if blocking, _ := l.conflicts(state, wait, id); len(blocking) > 0 {
+			return blocker{name: state.instances[id].Name, busy: holderOf(blocking[0], "")}
 		}
 	}
 	for _, earlier := range state.waits {
@@ -409,14 +422,17 @@ func (l *Leases) position(state *leaseState, wait *store.ResourceWait) int {
 
 func holderOf(lease *store.ResourceLease, workspaceID string) *store.ResourceHolder {
 	return &store.ResourceHolder{
-		LeaseID: lease.ID, SessionID: lease.HolderSessionID, WorkspaceID: workspaceID, State: lease.State,
+		LeaseID: lease.ID, SessionID: lease.HolderSessionID, WorkspaceID: workspaceID, Mode: lease.Mode, State: lease.State,
 		Since: lease.AcquiredAt, ParkUntil: lease.ParkUntil, HoldUntil: lease.HoldUntil, PreemptAt: lease.PreemptAt,
 	}
 }
 
 // grantWaiting hands free instances to the waits, first come first served:
-// a wait that cannot be granted keeps later waits off its instances. A
-// parked lease without a hold that a wait at the front needs is yielded.
+// a wait that cannot be granted keeps later waits off its instances, so a
+// queued exclusive request is not overtaken by shared ones. Parked leases
+// without a hold that keep a wait at the front off are yielded, but only
+// when nothing else keeps it off, so a wait never empties an instance it
+// cannot take.
 func (l *Leases) grantWaiting(ctx context.Context, state *leaseState, now time.Time) {
 	blocked := map[string]bool{}
 	for _, wait := range state.waits {
@@ -433,31 +449,36 @@ func (l *Leases) grantWaiting(ctx context.Context, state *leaseState, now time.T
 			}
 			continue
 		}
-		ready := true
+		ready, hard := true, false
 		var yieldable []*store.ResourceLease
 		for _, id := range wait.ResourceIDs {
 			if l.usable(state, id, now) != nil {
-				ready = false
-				continue
-			}
-			if lease := state.live[id]; lease != nil {
-				if lease.HolderSessionID == wait.SessionID {
-					continue
-				}
-				if lease.State == store.LeaseParked && !held(lease, now) {
-					yieldable = append(yieldable, lease)
-				}
-				ready = false
+				ready, hard = false, true
 				continue
 			}
 			if fence := state.fences[id]; fence != nil && (fence.Resetting || fence.Unconfirmed) {
 				ready = false
 			}
+			if modeOf(state, wait, id) == store.LeaseExclusive && len(state.pending[id]) > 0 {
+				// An exclusive lease starts once every shared lease's
+				// commands were stopped.
+				ready = false
+			}
+			blocking, full := l.conflicts(state, wait, id)
+			if full {
+				ready, hard = false, true
+			}
+			for _, lease := range blocking {
+				ready = false
+				if lease.State == store.LeaseParked && !held(lease, now) {
+					yieldable = append(yieldable, lease)
+				} else {
+					hard = true
+				}
+			}
 		}
 		if !ready {
-			// The parked leases in the way go only when nothing else is in
-			// the way, so a wait never empties a screen it cannot take.
-			if len(yieldable) > 0 && l.onlyYieldable(state, wait, now) {
+			if !hard {
 				for _, lease := range yieldable {
 					l.end(state, lease, store.LeaseYielded, "another session asked for it while its holder's turn was over", "foundry", now)
 				}
@@ -471,19 +492,42 @@ func (l *Leases) grantWaiting(ctx context.Context, state *leaseState, now time.T
 	}
 }
 
-// onlyYieldable: every instance of wait is free, resetting, or held by a
-// parked lease without a hold.
-func (l *Leases) onlyYieldable(state *leaseState, wait *store.ResourceWait, now time.Time) bool {
-	for _, id := range wait.ResourceIDs {
-		if l.usable(state, id, now) != nil {
-			return false
-		}
-		if lease := state.live[id]; lease != nil && lease.HolderSessionID != wait.SessionID &&
-			(lease.State != store.LeaseParked || held(lease, now)) {
-			return false
+// conflicts are the live leases of other sessions that keep wait off
+// resourceID: for an exclusive wait all of them; for a shared one the
+// exclusive ones and, when the instance's active shared leases fill its
+// slots (full), the oldest of those.
+func (l *Leases) conflicts(state *leaseState, wait *store.ResourceWait, resourceID string) (blocking []*store.ResourceLease, full bool) {
+	others := state.others(resourceID, wait.SessionID)
+	if modeOf(state, wait, resourceID) == store.LeaseExclusive {
+		return others, false
+	}
+	var oldest *store.ResourceLease
+	for _, lease := range others {
+		switch {
+		case lease.Mode != store.LeaseShared:
+			blocking = append(blocking, lease)
+		case lease.State == store.LeaseActive && oldest == nil:
+			oldest = lease
 		}
 	}
-	return true
+	if activeShared(others) >= l.capacity(state, resourceID) && oldest != nil {
+		blocking, full = append(blocking, oldest), true
+	}
+	return blocking, full
+}
+
+// checkMode refuses a mode the instance's type does not offer.
+func checkMode(instance store.ResourceInstance, mode string) error {
+	switch mode {
+	case "", store.LeaseExclusive:
+		return nil
+	case store.LeaseShared:
+		if spec, ok := Spec(instance.Type); ok && !spec.Shared {
+			return leaseError(CodeInvalid, "%s leases are exclusive: one session at a time; acquire without mode, or with mode exclusive", instance.Type)
+		}
+		return nil
+	}
+	return leaseError(CodeInvalid, "mode is shared or exclusive, not %q", mode)
 }
 
 func held(lease *store.ResourceLease, now time.Time) bool {
@@ -501,14 +545,17 @@ func (l *Leases) grant(ctx context.Context, state *leaseState, wait *store.Resou
 	}
 	turn := l.inTurn(wait.SessionID, info.Status)
 	for _, id := range wait.ResourceIDs {
-		if lease := state.live[id]; lease != nil && lease.HolderSessionID == wait.SessionID {
+		if state.leaseOf(id, wait.SessionID) != nil {
 			continue
 		}
 		instance := state.instances[id]
 		fence := state.fence(id, instance.Source.ID)
 		fence.Generation++
+		// The first lease on an instance fences everything before it; a
+		// shared lease joining others must not fence them.
+		alone := len(state.live[id]) == 0
 		lease := &store.ResourceLease{
-			ID: newID("lease"), ResourceID: id, SourceID: instance.Source.ID, Generation: fence.Generation,
+			ID: newID("lease"), ResourceID: id, SourceID: instance.Source.ID, Generation: fence.Generation, Mode: modeOf(state, wait, id),
 			HolderSessionID: wait.SessionID, HolderUserID: wait.UserID, HolderDeviceID: wait.DeviceID,
 			Reason: wait.Reason, State: store.LeaseActive, AcquiredAt: formatTime(now), HoldUntil: wait.HoldUntil,
 		}
@@ -516,8 +563,11 @@ func (l *Leases) grant(ctx context.Context, state *leaseState, wait *store.Resou
 			lease.State = store.LeaseParked
 			lease.ParkUntil = l.parkUntil(state, lease, now)
 		}
-		state.live[id] = lease
+		state.addLive(lease)
 		state.touch(lease)
+		if !alone {
+			continue
+		}
 		notify := "A Foundry session is now using " + instance.Name + "."
 		if wait.Reason != "" {
 			notify = "A Foundry session is now using " + instance.Name + ": " + textcut.Excerpt(wait.Reason, 80)
@@ -539,17 +589,23 @@ func remoteCommandsOff(instance store.ResourceInstance) *LeaseError {
 		instance.Name, nameOr(instance.Source.Label, "the device"))
 }
 
-// contention marks the live leases someone waits for, and clears it from
-// those no one waits for any more.
+// contention marks the live leases that keep a waiting session off, and
+// clears it from those that keep no one off any more.
 func (l *Leases) contention(state *leaseState, now time.Time) {
-	for _, lease := range state.live {
-		waiting := false
-		for _, wait := range state.waits {
-			if wait.State == store.WaitWaiting && wait.SessionID != lease.HolderSessionID && slices.Contains(wait.ResourceIDs, lease.ResourceID) {
-				waiting = true
-				break
+	contended := map[string]bool{}
+	for _, wait := range state.waits {
+		if wait.State != store.WaitWaiting {
+			continue
+		}
+		for _, id := range wait.ResourceIDs {
+			blocking, _ := l.conflicts(state, wait, id)
+			for _, lease := range blocking {
+				contended[lease.ID] = true
 			}
 		}
+	}
+	for _, lease := range sortedLive(state) {
+		waiting := contended[lease.ID]
 		switch {
 		case waiting && lease.ContendedSince == "":
 			spec := l.specIn(state, lease)

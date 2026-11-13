@@ -31,6 +31,8 @@ type Source interface {
 // stored (at least once, Kafka-offset style).
 type Batch struct {
 	Envelopes []store.MessageEnvelope
+	// Raw holds each envelope's source item as JSON, by index.
+	Raw []string
 	// Skipped counts items the mapping ignored on purpose; Invalid those it
 	// could not read.
 	Skipped, Invalid int
@@ -150,6 +152,8 @@ func (p LongPoll) Poll(ctx context.Context, cursor string) (Batch, error) {
 			batch.Skipped++
 		default:
 			batch.Envelopes = append(batch.Envelopes, envelope)
+			raw, _ := json.Marshal(item)
+			batch.Raw = append(batch.Raw, string(raw))
 		}
 	}
 	return batch, nil

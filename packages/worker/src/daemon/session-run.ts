@@ -11,17 +11,10 @@ import {
   isVerificationSession,
 } from "../session/session-roles.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
-import {
-  executeAgentSession,
-  sessionExecution,
-  type AgentRunOutcome,
-} from "./session-execution.js";
+import { executeAgentSession, sessionExecution } from "./session-execution.js";
 import { attachSessionWork } from "../session-work/supervisor.js";
 import { trackScheduledWork } from "./session-work-runtime.js";
-import {
-  holdWhileAgentRuns,
-  releaseAgentEnvironment,
-} from "../session/runner/active-runtimes.js";
+import { holdWhileAgentRuns } from "../session/runner/active-runtimes.js";
 /** One agent turn of the session. */
 export async function runAgentSession(
   serverURL: string,
@@ -47,9 +40,8 @@ export async function runAgentSession(
       !isVerificationSession(session) &&
       !isUtilitySession(session),
   };
-  let outcome: AgentRunOutcome | undefined;
   const execute = async (role: SessionRole) => {
-    outcome = await executeAgentSession(
+    await executeAgentSession(
       transport,
       session,
       role,
@@ -59,11 +51,13 @@ export async function runAgentSession(
     );
   };
   // Its connectors' launchers and tool profiles live while this run does,
-  // and after it while the session's agent process lives
-  // (holdWhileAgentRuns); a failed or canceled session gives them up at
-  // once, with what its earlier runs kept. A run that never returns (a
-  // killed worker) leaves them to the next start's reap. The server sends
-  // an Issue's sessions none.
+  // and after it for as long as the agent process started with them lives,
+  // whatever the run's outcome (holdWhileAgentRuns, DEV-215): a kept
+  // process, its background work, timers and subagents use them between
+  // turns, also after a failed one. A closed process (a canceled turn)
+  // gives them up at once. A run that never returns (a killed worker)
+  // leaves them to the next start's reap. The server sends an Issue's
+  // sessions none.
   const accounts = await prepareSessionConnectors(
     session,
     {
@@ -108,10 +102,6 @@ export async function runAgentSession(
       accounts.release();
       tools.release();
     };
-    if (outcome === "completed") holdWhileAgentRuns(session.id, release);
-    else {
-      release();
-      releaseAgentEnvironment(session.id);
-    }
+    holdWhileAgentRuns(session.id, release);
   }
 }

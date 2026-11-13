@@ -98,8 +98,11 @@ type externalConnectionOffer struct {
 	SetupSource   *externalConnectionSetupSource     `json:"setupSource,omitempty"`
 	OtherSetups   []externalConnectionOtherSetup     `json:"otherSetups,omitempty"`
 	SourceDevices []externalConnectionSourceDevice   `json:"sourceDevices"`
-	Stage         string                             `json:"stage"`
-	Detail        string                             `json:"detail,omitempty"`
+	// Connector is the connector extension whose login gives this
+	// connection; setting it up is that connector's on the device.
+	Connector *store.ProfileConnector `json:"connector,omitempty"`
+	Stage     string                  `json:"stage"`
+	Detail    string                  `json:"detail,omitempty"`
 }
 
 type externalConnectionSetupSource struct {
@@ -402,17 +405,25 @@ func (s *Server) externalConnectionOffers(r *http.Request, deviceID string) ([]o
 			entry := offer(profile)
 			entry.target = &profile
 			entry.Label, entry.Model, entry.Models = profile.Label, profile.Model, profile.Models
+			if profile.Connector != nil {
+				entry.Connector = profile.Connector
+			}
 			if profile.ExternalSetup != nil {
 				setups[profile.ID] = append(setups[profile.ID], profile)
 			}
 			continue
 		}
-		if profile.ExternalSetup == nil || !scope.ownsDevice(profile.DeviceID) {
+		if (profile.ExternalSetup == nil && profile.Connector == nil) || !scope.ownsDevice(profile.DeviceID) {
 			continue
 		}
 		entry := offer(profile)
 		entry.SourceDevices = append(entry.SourceDevices, externalConnectionSourceDevice{ID: profile.DeviceID, Label: labels[profile.DeviceID]})
-		setups[profile.ID] = append(setups[profile.ID], profile)
+		if profile.Connector != nil && entry.Connector == nil {
+			entry.Connector = profile.Connector
+		}
+		if profile.ExternalSetup != nil {
+			setups[profile.ID] = append(setups[profile.ID], profile)
+		}
 	}
 	offers := make([]offerWithTarget, 0, len(order))
 	for _, id := range order {

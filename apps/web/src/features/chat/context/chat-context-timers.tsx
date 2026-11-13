@@ -5,7 +5,7 @@ import {
   ContextRow,
   ContextRowCopy,
   ContextRowIcon,
-} from "./chat-context-parts";
+} from "../../../components/ui/context-card";
 import { timerNextRun } from "./chat-schedule-model";
 import type { ChatContextSelection, ChatTimerItem } from "../chat-types";
 

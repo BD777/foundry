@@ -47,6 +47,7 @@ import {
   emptySessionSetup,
   findOnPath,
   linkTool,
+  mergeEnvironment,
   mergeSessionSetups,
   type ConnectorSessionSetup,
 } from "./session-environment.js";
@@ -1117,7 +1118,10 @@ export class DeviceHeldConnectors {
       for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
         if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name))
           setup.environment[name] = value;
-      Object.assign(setup.environment, adapter?.isolationEnvironment?.());
+      setup.environment = mergeEnvironment(
+        setup.environment,
+        adapter?.isolationEnvironment?.() ?? {},
+      );
       return setup;
     }
     if (use.access !== "device_login") return setup;

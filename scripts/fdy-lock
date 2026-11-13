@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# Serialize one-shot work on the two shared sg-chaos lanes, with visible queue state.
+#
+# Usage:
+#   scripts/fdy-lock heavy [--wait <seconds>] -- <command> [args...]
+#   scripts/fdy-lock deploy [--wait <seconds>] -- <command> [args...]
+#   scripts/fdy-lock status [heavy|deploy|all]
+#
+# The queue is FIFO. A sidecar records the current holder, waiters print their
+# position and elapsed time every 30 seconds, and both waits and runs append to
+# ~/.foundry/server/lock-log.jsonl. The wrapped command runs with the lock file
+# descriptor closed, so a long-lived child cannot keep the lane locked.
+#
+# Environment:
+#   FOUNDRY_SESSION_ID     recorded in the holder, queue and log
+#   FOUNDRY_HEAVY_LOCK     default /tmp/fdy-heavy.lock
+#   FOUNDRY_DEPLOY_LOCK    default /tmp/fdy-deploy.lock
+#   FOUNDRY_LOCK_LOG       default ~/.foundry/server/lock-log.jsonl
+#   FOUNDRY_LOCK_POLL      queue poll seconds, default 2
+set -euo pipefail
+
+usage() {
+  sed -n '2,18p' "$0"
+  exit 2
+}
+
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+now_epoch() { date +%s; }
+session_id="${FOUNDRY_SESSION_ID:-unknown}"
+log_file="${FOUNDRY_LOCK_LOG:-$HOME/.foundry/server/lock-log.jsonl}"
+poll="${FOUNDRY_LOCK_POLL:-2}"
+
+lock_for() {
+  case "$1" in
+    heavy) echo "${FOUNDRY_HEAVY_LOCK:-/tmp/fdy-heavy.lock}" ;;
+    deploy) echo "${FOUNDRY_DEPLOY_LOCK:-/tmp/fdy-deploy.lock}" ;;
+    *) return 1 ;;
+  esac
+}
+
+append_log() {
+  local event="$1" lock="$2" ticket="$3" wait_ms="$4" run_ms="$5" status="$6"
+  local guard="${log_file}.guard" line tmp
+  mkdir -p "$(dirname "$log_file")"
+  line="$(EVENT="$event" LOCK="$lock" TICKET="$ticket" WAIT_MS="$wait_ms" RUN_MS="$run_ms" \
+    STATUS="$status" SESSION="$session_id" PID=$$ COMMAND="${lock_command:-}" \
+    STARTED_AT="${started_at:-}" FINISHED_AT="$(now_iso)" node -e '
+      process.stdout.write(JSON.stringify({
+        event: process.env.EVENT,
+        lock: process.env.LOCK,
+        ticket: process.env.TICKET || undefined,
+        sessionId: process.env.SESSION,
+        pid: Number(process.env.PID),
+        command: process.env.COMMAND || undefined,
+        startedAt: process.env.STARTED_AT || undefined,
+        finishedAt: process.env.FINISHED_AT,
+        waitMs: process.env.WAIT_MS === "" ? undefined : Number(process.env.WAIT_MS),
+        runMs: process.env.RUN_MS === "" ? undefined : Number(process.env.RUN_MS),
+        exitStatus: process.env.STATUS === "" ? undefined : Number(process.env.STATUS),
+      }) + "\n");
+    ')"
+  exec 8>"$guard"
+  flock 8
+  printf '%s\n' "$line" >>"$log_file"
+  flock -u 8
+  exec 8>&-
+}
+
+holder_summary() {
+  local holder="$1"
+  local lock="${holder%.holder}" external
+  [ -f "$holder" ] || {
+    if command -v lslocks >/dev/null 2>&1; then
+      external="$(lslocks -n -o PID,PATH 2>/dev/null | awk -v lock="$lock" '$NF == lock { print $1; exit }')"
+      if [ -n "$external" ]; then
+        echo "holder external pid=$external command=$(ps -o args= -p "$external" 2>/dev/null | tr '\n' ' ')"
+        return
+      fi
+    fi
+    echo "holder=none"
+    return
+  }
+  node - "$holder" <<'NODE' || echo "holder=unreadable sidecar=$holder"
+const fs = require("node:fs");
+const h = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+let alive = false;
+try {
+  process.kill(Number(h.pid), 0);
+  alive = true;
+} catch {}
+const started = h.startedAt ? ` since ${h.startedAt}` : "";
+console.log(
+  `holder pid=${h.pid} session=${h.sessionId || "unknown"}${started}${alive ? "" : " STALE (pid is gone)"} command=${JSON.stringify(h.command || "")}`,
+);
+NODE
+}
+
+prune_queue() {
+  local ticket_file="$1" ticket pid since session line tmp="${1}.tmp.$$"
+  : >"$tmp"
+  while IFS=' ' read -r ticket pid since session; do
+    [ -n "${pid:-}" ] || continue
+    line="$ticket $pid $since ${session:-unknown}"
+    kill -0 "$pid" 2>/dev/null && printf '%s\n' "$line" >>"$tmp"
+  done <"$ticket_file"
+  mv -f "$tmp" "$ticket_file"
+}
+
+queue_position() {
+  local ticket_file="$1" ticket="$2"
+  awk -v ticket="$ticket" '$1 == ticket { print NR; exit }' "$ticket_file"
+}
+
+show_status_one() {
+  local lane="$1" lock holder queue holder_line
+  lock="$(lock_for "$lane")"
+  holder="${lock}.holder"
+  queue="${lock}.queue"
+  printf '%s: lock=%s\n' "$lane" "$lock"
+  holder_line="$(holder_summary "$holder")"
+  printf '  %s\n' "$holder_line"
+  if [ -s "$queue" ]; then
+    printf '  queue:\n'
+    while IFS=' ' read -r ticket pid since session; do
+      [ -n "${ticket:-}" ] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        printf '    #%s pid=%s session=%s since=%s\n' \
+          "$(queue_position "$queue" "$ticket")" "$pid" "${session:-unknown}" \
+          "$(date -u -d "@${since:-0}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "${since:-?}")"
+      else
+        printf '    stale pid=%s session=%s\n' "$pid" "${session:-unknown}"
+      fi
+    done <"$queue"
+  else
+    printf '  queue: empty\n'
+  fi
+  # The guard is deliberately not taken for status: a reader must never delay work.
+}
+
+if [ "${1:-}" = status ]; then
+  shift
+  lane="${1:-all}"
+  case "$lane" in
+    heavy | deploy) show_status_one "$lane" ;;
+    all) show_status_one heavy; show_status_one deploy ;;
+    *) usage ;;
+  esac
+  exit 0
+fi
+
+lane="${1:-}"
+lock_for "$lane" >/dev/null || usage
+shift
+wait_limit=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --wait) wait_limit="${2:?--wait needs seconds}"; shift 2 ;;
+    --) shift; break ;;
+    -h | --help) usage ;;
+    *) usage ;;
+  esac
+done
+[ $# -gt 0 ] || usage
+
+lock="$(lock_for "$lane")"
+holder="${lock}.holder"
+queue="${lock}.queue"
+queue_guard="${queue}.lock"
+mkdir -p "$(dirname "$lock")"
+touch "$queue"
+
+started_at="$(now_iso)"
+started_epoch="$(now_epoch)"
+lock_command="$(printf '%q ' "$@")"
+lock_command="${lock_command% }"
+ticket="$(now_epoch)-$$-$(printf '%04x' "$RANDOM")"
+
+exec 8>"$queue_guard"
+flock 8
+printf '%s %s %s %s\n' "$ticket" "$$" "$started_epoch" "$session_id" >>"$queue"
+prune_queue "$queue"
+exec 8>&-
+
+acquired=0
+last_report=-30
+wait_started="$(now_epoch)"
+cleanup_wait() {
+  local status=$?
+  exec 8>"$queue_guard"
+  flock 8
+  grep -v "^$ticket " "$queue" >"${queue}.tmp.$$" || true
+  mv -f "${queue}.tmp.$$" "$queue"
+  flock -u 8
+  exec 8>&-
+  if [ -f "$holder" ]; then
+    holder_pid="$(node -e 'try{process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).pid))}catch{}' "$holder")"
+    [ "$holder_pid" != "$$" ] || rm -f "$holder"
+  fi
+  exit "$status"
+}
+trap cleanup_wait EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+exec 9>"$lock"
+while :; do
+  exec 8>"$queue_guard"
+  flock 8
+  prune_queue "$queue"
+  position="$(queue_position "$queue" "$ticket")"
+  exec 8>&-
+  if [ -z "$position" ]; then
+    # A cleanup race removed our ticket; put it back at the front-ish by appending.
+    exec 8>"$queue_guard"
+    flock 8
+    printf '%s %s %s %s\n' "$ticket" "$$" "$started_epoch" "$session_id" >>"$queue"
+    exec 8>&-
+    position="$(queue_position "$queue" "$ticket")"
+  fi
+  if [ "$position" = 1 ] && flock -n 9; then
+    acquired=1
+    break
+  fi
+  elapsed=$(( $(now_epoch) - wait_started ))
+  if [ $((elapsed - last_report)) -ge 30 ]; then
+    printf '%s: waiting %ss for %s, position %s; %s\n' \
+      "$(basename "$0")" "$elapsed" "$lane" "$position" "$(holder_summary "$holder")" >&2
+    last_report="$elapsed"
+  fi
+  if [ "$wait_limit" -gt 0 ] && [ "$elapsed" -ge "$wait_limit" ]; then
+    append_log timeout "$lock" "$ticket" "$((elapsed * 1000))" "" 124
+    printf '%s: %s lock still busy after %ss\n' "$(basename "$0")" "$lane" "$elapsed" >&2
+    exit 124
+  fi
+  sleep "$poll"
+done
+
+waited_ms=$(( ($(now_epoch) - wait_started) * 1000 ))
+holder_started="$(now_iso)"
+tmp_holder="${holder}.$$"
+LOCK_SESSION="$session_id" LOCK_PID=$$ LOCK_COMMAND="$lock_command" LOCK_STARTED="$holder_started" \
+  node -e '
+    process.stdout.write(JSON.stringify({
+      pid: Number(process.env.LOCK_PID),
+      sessionId: process.env.LOCK_SESSION,
+      command: process.env.LOCK_COMMAND,
+      startedAt: process.env.LOCK_STARTED,
+    }) + "\n");
+  ' >"$tmp_holder"
+mv -f "$tmp_holder" "$holder"
+append_log acquired "$lock" "$ticket" "$waited_ms" "" ""
+printf '%s: holding %s after %ss\n' "$(basename "$0")" "$lane" "$((waited_ms / 1000))" >&2
+
+run_started="$(now_epoch)"
+set +e
+(exec 9>&-; "$@")
+status=$?
+set -e
+run_ms=$(( ($(now_epoch) - run_started) * 1000 ))
+
+exec 8>"$queue_guard"
+flock 8
+grep -v "^$ticket " "$queue" >"${queue}.tmp.$$" || true
+mv -f "${queue}.tmp.$$" "$queue"
+prune_queue "$queue"
+exec 8>&-
+
+if [ -f "$holder" ]; then
+  holder_pid="$(node -e 'try{process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).pid))}catch{}' "$holder")"
+  [ "$holder_pid" != "$$" ] || rm -f "$holder"
+fi
+flock -u 9
+exec 9>&-
+append_log finished "$lock" "$ticket" "$waited_ms" "$run_ms" "$status"
+trap - EXIT
+exit "$status"

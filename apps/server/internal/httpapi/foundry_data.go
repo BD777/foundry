@@ -531,7 +531,15 @@ func (s *Server) withPackageSkills(ctx context.Context, workspace store.Workspac
 		ref.Bundle = nil
 		plain[i] = ref
 	}
-	merged, _, err := workspacePackageSkills(ctx, s.store, deviceOwner, workspace.ID, deviceID, kinds, plain)
+	toolBundles, err := connectorToolBundles(ctx, s.store, s.connectors.Devices, deviceID, kinds)
+	if err != nil {
+		return nil, err
+	}
+	deviceOwn, err := deviceOwnSkillNames(ctx, s.store, deviceID, workspace.LocalPath, "")
+	if err != nil {
+		return nil, err
+	}
+	merged, _, err := workspacePackageSkills(ctx, s.store, deviceOwner, workspace.ID, deviceID, kinds, toolBundles, deviceOwn, plain)
 	if err != nil {
 		return nil, err
 	}

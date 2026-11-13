@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -61,25 +62,46 @@ func Decide(stages []Stage, envelope store.MessageEnvelope) Decision {
 
 // RuleMatches reports whether every condition of rule holds for envelope.
 func RuleMatches(rule store.MessageChannelRule, envelope store.MessageEnvelope) bool {
-	if len(rule.ConversationKinds) > 0 && !slices.Contains(rule.ConversationKinds, envelope.Conversation.Kind) {
-		return false
+	return RuleMiss(rule, envelope) == ""
+}
+
+// Why a rule does not match a message, the first condition that fails.
+const (
+	MissPlace        = "place"
+	MissMention      = "mention"
+	MissSelf         = "self"
+	MissConversation = "conversation"
+	MissSender       = "sender"
+	MissTrigger      = "trigger"
+)
+
+// RuleMiss is the first of rule's conditions that envelope fails, "" when
+// it matches.
+func RuleMiss(rule store.MessageChannelRule, envelope store.MessageEnvelope) string {
+	switch {
+	case len(rule.ConversationKinds) > 0 && !kindListed(rule.ConversationKinds, envelope.Conversation.Kind):
+		return MissPlace
+	case !triState(rule.MentionsMe, envelope.MentionsMe):
+		return MissMention
+	case !triState(rule.FromSelf, envelope.Sender.IsSelf):
+		return MissSelf
+	case len(rule.ConversationIDs) > 0 && !slices.Contains(rule.ConversationIDs, envelope.Conversation.ID),
+		slices.Contains(rule.ExcludeConversationIDs, envelope.Conversation.ID):
+		return MissConversation
+	case len(rule.SenderIDs) > 0 && !slices.Contains(rule.SenderIDs, envelope.Sender.ID),
+		slices.Contains(rule.ExcludeSenderIDs, envelope.Sender.ID):
+		return MissSender
+	case !StartsWithTrigger(envelope.Text, rule.TextPrefixes, rule.CaseSensitive):
+		return MissTrigger
 	}
-	if !triState(rule.MentionsMe, envelope.MentionsMe) || !triState(rule.FromSelf, envelope.Sender.IsSelf) {
-		return false
-	}
-	if len(rule.ConversationIDs) > 0 && !slices.Contains(rule.ConversationIDs, envelope.Conversation.ID) {
-		return false
-	}
-	if slices.Contains(rule.ExcludeConversationIDs, envelope.Conversation.ID) {
-		return false
-	}
-	if len(rule.SenderIDs) > 0 && !slices.Contains(rule.SenderIDs, envelope.Sender.ID) {
-		return false
-	}
-	if slices.Contains(rule.ExcludeSenderIDs, envelope.Sender.ID) {
-		return false
-	}
-	return hasPrefix(envelope.Text, rule.TextPrefixes, rule.CaseSensitive)
+	return ""
+}
+
+// kindListed reports whether kinds takes a conversation of kind; a chat
+// with oneself is also a direct chat, so rules written for direct chats
+// keep taking it.
+func kindListed(kinds []string, kind string) bool {
+	return slices.Contains(kinds, kind) || kind == "self" && slices.Contains(kinds, "direct")
 }
 
 func triState(condition string, value bool) bool {
@@ -93,77 +115,100 @@ func triState(condition string, value bool) bool {
 	}
 }
 
-// mentionWords is how many words after an "@" may still belong to the name
-// it mentions ("@Ada Lovelace /ask …").
-const mentionWords = 3
-
-// hasPrefix reports whether text starts with one of prefixes, once leading
-// mentions are set aside. A mention is "@" and a name of up to mentionWords
-// words, so the prefix may also start at any of those words. Without
-// prefixes any text matches.
-func hasPrefix(text string, prefixes []string, caseSensitive bool) bool {
-	wanted := make([]string, 0, len(prefixes))
-	for _, prefix := range prefixes {
-		if prefix = strings.TrimSpace(prefix); prefix != "" {
-			if !caseSensitive {
-				prefix = strings.ToLower(prefix)
-			}
-			wanted = append(wanted, prefix)
+// StartsWithTrigger is the trigger match the channel settings describe to
+// the person: leading mentions ("@name", one word each) and spaces are
+// skipped, then the text must begin with one of the triggers, ignoring case
+// unless caseSensitive. A trigger that ends in an ASCII letter or digit must
+// not run on into another one: "/ai" matches "/ai help", "/ai，帮我" and
+// "/ai帮我", not "/aix". Without triggers any text matches.
+func StartsWithTrigger(text string, triggers []string, caseSensitive bool) bool {
+	fold := func(s string) string {
+		if caseSensitive {
+			return s
 		}
+		return strings.ToLower(s)
 	}
-	if len(wanted) == 0 {
-		return true
-	}
-	if !caseSensitive {
-		text = strings.ToLower(text)
-	}
-	for _, start := range prefixStarts(text) {
-		for _, prefix := range wanted {
-			if strings.HasPrefix(text[start:], prefix) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// prefixStarts are where a prefix may begin in text: its first word, and
-// while the text opens with mentions, each of the mentionWords words after
-// a mention.
-func prefixStarts(text string) []int {
-	words := wordStarts(text)
-	if len(words) == 0 {
-		return nil
-	}
-	starts := []int{words[0]}
-	sinceMention := -1
-	for _, at := range words {
-		if text[at] == '@' {
-			sinceMention = 0
-		} else if sinceMention < 0 || sinceMention >= mentionWords {
-			break
-		} else {
-			sinceMention++
-		}
-		if at != starts[len(starts)-1] {
-			starts = append(starts, at)
-		}
-	}
-	return starts
-}
-
-func wordStarts(text string) []int {
-	var starts []int
-	inWord := false
-	for i, r := range text {
-		if unicode.IsSpace(r) {
-			inWord = false
+	text = fold(withoutLeadingMentions(text))
+	any := false
+	for _, trigger := range triggers {
+		trigger = fold(strings.TrimSpace(trigger))
+		if trigger == "" {
 			continue
 		}
-		if !inWord {
-			starts = append(starts, i)
-			inWord = true
+		any = true
+		rest, ok := strings.CutPrefix(text, trigger)
+		if !ok {
+			continue
+		}
+		last, _ := utf8.DecodeLastRuneInString(trigger)
+		next, _ := utf8.DecodeRuneInString(rest)
+		if rest == "" || !asciiWord(last) || !asciiWord(next) {
+			return true
 		}
 	}
-	return starts
+	return !any
+}
+
+func asciiWord(r rune) bool {
+	return r < utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+}
+
+// withoutLeadingMentions drops leading "@name" words and the spaces around
+// them.
+func withoutLeadingMentions(text string) string {
+	text = strings.TrimLeftFunc(text, unicode.IsSpace)
+	for strings.HasPrefix(text, "@") {
+		end := strings.IndexFunc(text, unicode.IsSpace)
+		if end < 0 {
+			return ""
+		}
+		text = strings.TrimLeftFunc(text[end:], unicode.IsSpace)
+	}
+	return text
+}
+
+// RuleCheck is one enabled rule's verdict on a message: Miss is "" when it
+// matches, else the first condition it fails.
+type RuleCheck struct {
+	RuleID string
+	Miss   string
+}
+
+// Explain is Rules.Decide with every enabled rule's verdict, for showing
+// the person why a message would or would not come through.
+func Explain(rules []store.MessageChannelRule, envelope store.MessageEnvelope) (Decision, []RuleCheck) {
+	checks := []RuleCheck{}
+	for _, rule := range rules {
+		if rule.Enabled {
+			checks = append(checks, RuleCheck{RuleID: rule.ID, Miss: RuleMiss(rule, envelope)})
+		}
+	}
+	return Rules(rules).Decide(envelope), checks
+}
+
+// Capabilities are what a feed's envelope mapping can tell apart: the
+// conversation kinds it produces (nil: it does not say), and whether it
+// marks mentions of the person and the person's own messages.
+func Capabilities(spec store.ConnectorEventsEnvelope) store.MessageChannelCapabilities {
+	capabilities := store.MessageChannelCapabilities{ConversationKinds: []string{}}
+	if field, ok := spec.Fields["conversation.kind"]; ok {
+		seen := map[string]bool{}
+		values := []string{field.Otherwise}
+		for _, value := range field.Map {
+			values = append(values, value)
+		}
+		for _, next := range field.Cases {
+			values = append(values, next.Value)
+		}
+		for _, value := range values {
+			if conversationKinds[value] && value != "other" && !seen[value] {
+				seen[value] = true
+				capabilities.ConversationKinds = append(capabilities.ConversationKinds, value)
+			}
+		}
+		slices.Sort(capabilities.ConversationKinds)
+	}
+	_, capabilities.MentionsMe = spec.Fields["mentionsMe"]
+	_, capabilities.FromSelf = spec.Fields["sender.isSelf"]
+	return capabilities
 }

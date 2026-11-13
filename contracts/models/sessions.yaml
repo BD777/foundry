@@ -1223,6 +1223,15 @@ components:
                 - issue_clarification
                 - personal_agent
               x-go-type: string
+            workspaceAccess:
+              description:
+                "`workspaceAccess` read: the session's workspace is read-only for its agent and every
+                command it runs, kept so by the worker's sandbox (a message channel's session,
+                DEV-203); its temporary files go to a scratch directory outside the workspace.
+                Absent: the session writes its workspace as usual."
+              type: string
+              enum: [read]
+              x-go-type: string
             parentSessionId:
               description:
                 "`parentSessionId` records orchestration lineage: the agent session that created this

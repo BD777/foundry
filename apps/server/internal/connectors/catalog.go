@@ -68,6 +68,9 @@ func ParseCatalog(data []byte) (*Catalog, error) {
 	return catalog, nil
 }
 
+// skillNamePattern is a Skill's name as SKILL.md declares it.
+var skillNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}$`)
+
 func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	if !kindPattern.MatchString(descriptor.Kind) {
 		return fmt.Errorf("kind must match %s", kindPattern)
@@ -99,6 +102,21 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	}
 	if err := checkVersionCheck(descriptor.Tool.VersionCheck); err != nil {
 		return err
+	}
+	if skills := descriptor.Tool.Skills; skills != nil {
+		if descriptor.Tool.Source != "npm" || descriptor.Tool.Package == "" {
+			return fmt.Errorf("tool.skills belongs to a tool installed from an npm package")
+		}
+		if err := checkPackagePath("tool.skills.path", skills.Path); err != nil {
+			return err
+		}
+		seen := map[string]bool{}
+		for _, name := range skills.Default {
+			if !skillNamePattern.MatchString(name) || seen[name] {
+				return fmt.Errorf("tool.skills.default lists distinct Skill names")
+			}
+			seen[name] = true
+		}
 	}
 	if descriptor.Package != nil {
 		if descriptor.Extension == nil {

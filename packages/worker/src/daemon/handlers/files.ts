@@ -33,6 +33,7 @@ import {
   type ReadSessionFilePayload,
   type ReadSubagentTranscriptPayload,
   type ReadNativeHistoryPayload,
+  type WriteFilePayload,
 } from "@bd777/foundry-protocol";
 import { nativeChatHistory } from "../../session/chat/native-chat.js";
 import {
@@ -67,6 +68,10 @@ import {
   readWorkspaceFileDownload,
   safeWorkspaceTreeListing,
 } from "../../session/files/workspace-files.js";
+import {
+  WorkspaceFileWriteError,
+  writeWorkspaceFile,
+} from "../../session/files/workspace-file-write.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 
@@ -103,6 +108,7 @@ export function registerFileHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.attachmentWrite, onAttachmentWrite)
     .on(daemonMessageTypes.attachmentRead, onAttachmentRead)
     .on(daemonMessageTypes.readFile, onReadFile)
+    .on(daemonMessageTypes.writeFile, onWriteFile)
     .on(daemonMessageTypes.readDeviceFile, onReadDeviceFile)
     .on(daemonMessageTypes.readSessionFile, onReadSessionFile)
     .on(daemonMessageTypes.readSessionFileDiff, onReadSessionFileDiff)
@@ -218,6 +224,36 @@ function onReadFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       truncated: false,
       error: message,
       code: payload.download ? fileDownloadErrorCode(error) : undefined,
+    }),
+  );
+}
+
+/**
+ * One text file of a workspace replaced whole (workspace-file-write.ts says
+ * what is refused); answered file_written.
+ */
+function onWriteFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = (envelope.payload ?? {}) as Partial<WriteFilePayload>;
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.fileWritten,
+    () =>
+      writeWorkspaceFile(ctx.roster.folderFor(payload.workspaceId ?? ""), {
+        workspaceId: payload.workspaceId ?? "",
+        path: payload.path ?? "",
+        content: payload.content as string,
+        ...(payload.expectedSha256 !== undefined
+          ? { expectedSha256: payload.expectedSha256 }
+          : {}),
+      }),
+    (message, error) => ({
+      workspaceId: payload.workspaceId ?? "",
+      path: payload.path ?? "",
+      sha256: "",
+      bytes: 0,
+      error: message,
+      ...(error instanceof WorkspaceFileWriteError ? { code: error.code } : {}),
     }),
   );
 }

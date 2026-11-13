@@ -1,7 +1,8 @@
 #!/bin/sh
 # Foundry daemon watchdog — checks if the daemon's heartbeat file is stale.
 # If the heartbeat hasn't been updated in 5 minutes, the daemon's event loop
-# is likely blocked. Kill it so launchd restarts it.
+# is likely blocked; if it says the server was last heard 15 minutes ago, the
+# daemon is cut off. Kill it so launchd restarts it.
 #
 # Installed as a launchd agent (<service label>-watchdog) that runs every 60
 # seconds. Arguments: the stack's state root and its daemon's launchd label.
@@ -51,8 +52,20 @@ fi
 # Check file age in seconds
 AGE=$(( $(date +%s) - $(stat -f %m "$HB") ))
 
-# 5 minutes = 300 seconds
-if [ "$AGE" -gt 300 ]; then
+# A live worker that has heard nothing from the server for 15 minutes is cut
+# off (DEV-217); the worker restarts itself after 5, this is the backstop.
+STALE=""
+[ "$AGE" -gt 300 ] && STALE="worker heartbeat stale (${AGE}s)"
+if [ -z "$STALE" ]; then
+  CONTACT=$(/usr/bin/plutil -extract serverContactEpoch raw -o - "$HB" 2>/dev/null) || CONTACT=""
+  case "$CONTACT" in ''|*[!0-9]*) CONTACT="" ;; esac
+  if [ -n "$CONTACT" ]; then
+    SILENT=$(( $(date +%s) - CONTACT ))
+    [ "$SILENT" -gt 900 ] && STALE="nothing from the server for ${SILENT}s"
+  fi
+fi
+
+if [ -n "$STALE" ]; then
   # A new worker may have replaced the one whose heartbeat we read. Verify
   # the Node owner before terminating it; the app wrapper has a different PID.
   PID=$(/usr/bin/plutil -extract pid raw -o - "$HB" 2>/dev/null) || PID=""
@@ -67,9 +80,9 @@ if [ "$AGE" -gt 300 ]; then
     if [ -n "$CURRENT" ] && [ "$CURRENT" = "$START" ]; then
       kill -KILL "$PID" 2>/dev/null
     fi
-    echo "$(date): worker heartbeat stale (${AGE}s), stopped pid $PID" >> "$STATE_ROOT/logs/watchdog.log"
+    echo "$(date): $STALE, stopped pid $PID" >> "$STATE_ROOT/logs/watchdog.log"
     exit 0
   fi
-  echo "$(date): daemon heartbeat stale (${AGE}s), killing" >> "$STATE_ROOT/logs/watchdog.log"
+  echo "$(date): $STALE, killing" >> "$STATE_ROOT/logs/watchdog.log"
   launchctl kill TERM "gui/$(id -u)/$LABEL" 2>/dev/null
 fi

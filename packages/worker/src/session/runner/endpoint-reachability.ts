@@ -7,7 +7,7 @@
  * once. Nothing is probed when a proxy is configured, because the agent then
  * reaches the endpoint through it rather than directly.
  */
-import { connect } from "node:net";
+import { connectTcp } from "../../platform/tcp-connect.js";
 
 export const endpointConnectTimeoutMs = 10_000;
 
@@ -27,26 +27,6 @@ export type EndpointConnector = (
   port: number,
   timeoutMs: number,
 ) => Promise<void>;
-
-export function connectTcp(
-  host: string,
-  port: number,
-  timeoutMs: number,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = connect({ host, port });
-    const finish = (error?: Error) => {
-      socket.destroy();
-      if (error) reject(error);
-      else resolve();
-    };
-    socket.setTimeout(timeoutMs, () =>
-      finish(new Error(`no answer within ${Math.round(timeoutMs / 1000)}s`)),
-    );
-    socket.once("connect", () => finish());
-    socket.once("error", (error) => finish(error));
-  });
-}
 
 /** The host and port Claude Code would connect to directly, if any. */
 export function directEndpoint(

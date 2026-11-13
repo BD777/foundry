@@ -14,7 +14,10 @@ import { Button } from "../../../components/ui/button";
 import { Alert } from "../../../components/ui/alert";
 import type { SessionWorkController } from "./use-session-work";
 import { FinishedFold, useRevealedRow } from "./chat-context-folds";
-import { ContextHeading, ContextSection } from "./chat-context-parts";
+import {
+  ContextHeading,
+  ContextSection,
+} from "../../../components/ui/context-card";
 import { cn } from "../../../lib/cn";
 import {
   needsConfirmation,

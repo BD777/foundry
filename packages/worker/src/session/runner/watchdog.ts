@@ -28,6 +28,8 @@ export interface TurnOperation {
   name: string;
   /** The tool call as it was shown when it started. */
   detail?: string;
+  /** The tool call's input, as the runtime sent it. */
+  input?: unknown;
   startedAt: number;
   /** Last sign of progress (stream events, for a model request). */
   activeAt: number;
@@ -359,6 +361,9 @@ export interface FinishedClaudeTool {
   name: string;
   detail: string;
   failed: boolean;
+  input?: unknown;
+  /** The tool result's content. */
+  content?: unknown;
 }
 
 const claudeModelOperation = "model";
@@ -426,6 +431,7 @@ export class ClaudeTurnLiveness extends TurnLiveness {
             kind: "tool",
             name,
             detail: claudeToolUseDetail(block),
+            input: block.input,
             ...claudeToolBound(name, block.input, this.bounds),
           });
         }
@@ -447,6 +453,8 @@ export class ClaudeTurnLiveness extends TurnLiveness {
               name: operation.name,
               detail: operation.detail,
               failed: block.is_error === true,
+              input: operation.input,
+              content: block.content,
             });
         }
         return finished;

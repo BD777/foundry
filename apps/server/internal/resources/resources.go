@@ -186,7 +186,7 @@ func (s *Service) List(ctx context.Context, filter store.ResourceFilter) (store.
 	if err != nil || s.leases == nil {
 		return list, err
 	}
-	return list, s.leases.overlay(ctx, list.Instances)
+	return list, s.leases.overlay(ctx, list.Instances, list.Sources)
 }
 
 // list lists instances as List does, without leases.
@@ -506,6 +506,9 @@ func sameSource(left, right store.ResourceSourceStatus) bool {
 	left.LastReportAt, right.LastReportAt = "", ""
 	// Settings are the owner's, never a report's.
 	left.AllowRemoteCommands, right.AllowRemoteCommands = false, false
+	left.ComputeSlots, right.ComputeSlots = 0, 0
+	left.AllowWorkspaces, right.AllowWorkspaces = nil, nil
+	left.DenyWorkspaces, right.DenyWorkspaces = nil, nil
 	if len(left.DetectorErrors) == 0 {
 		left.DetectorErrors = nil
 	}

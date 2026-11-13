@@ -45,6 +45,12 @@ import { DividedList } from "../../components/ui/divided-list";
 import { Identity } from "../../components/ui/identity";
 import { MutedText } from "../../components/ui/text";
 import { ConnectorPermissionsNote } from "./connector-permissions-note";
+import { takeConnectorSetup } from "../../lib/in-app-navigation";
+import {
+  SetupTargetHint,
+  setupTargetClass,
+  useSetupTarget,
+} from "./connector-setup-target";
 import { SectionHead, SectionPanel } from "../../components/ui/section-panel";
 import { CommandLine } from "../../components/ui/command-line";
 import {
@@ -272,6 +278,37 @@ export function DeviceHeldConnector({
     }
   }
 
+  function signIn(device: DeviceConnectorDevice) {
+    if (!view || !connector) return;
+    setSigningIn({
+      deviceId: device.deviceId,
+      deviceName:
+        view.devices.filter((d) => d.name === device.name).length > 1
+          ? `${device.name} (${device.deviceId})`
+          : device.name,
+      kind,
+      label: connectorName(connector),
+      connector,
+    });
+  }
+
+  function install(device: DeviceConnectorDevice) {
+    const extension = connector?.extension;
+    if (!extension) return;
+    if (extension.source)
+      setInstalling({
+        name: extension.name,
+        source: extension.source,
+        deviceId: device.deviceId,
+      });
+    else
+      void changeExtension(device, () =>
+        installDeviceExtension(device.deviceId, {
+          bundledExtensionId: extension.id,
+        }),
+      );
+  }
+
   async function checkAll() {
     if (!view) return;
     setChecking(true);
@@ -286,6 +323,14 @@ export function DeviceHeldConnector({
     );
     setChecking(false);
   }
+
+  // A link from a chat's setup panel (navigateToConnectorSetup) marks one
+  // device's row; acting on it still takes the person's click.
+  const [setupTarget, setSetupTarget] = useState<string>();
+  useEffect(() => {
+    const deviceId = takeConnectorSetup();
+    if (deviceId) setSetupTarget(deviceId);
+  }, []);
 
   if (loadError)
     return (
@@ -326,17 +371,6 @@ export function DeviceHeldConnector({
   const requirement = connector.requires
     ?.map((entry) => entry.label)
     .join(", ");
-  const signIn = (device: DeviceConnectorDevice) =>
-    setSigningIn({
-      deviceId: device.deviceId,
-      deviceName:
-        view.devices.filter((d) => d.name === device.name).length > 1
-          ? `${device.name} (${device.deviceId})`
-          : device.name,
-      kind,
-      label: name,
-      connector,
-    });
   const installBlocked = (
     device: DeviceConnectorDevice,
   ): string | undefined => {
@@ -354,19 +388,6 @@ export function DeviceHeldConnector({
       : t("deviceHeld.installExtension", {
           extension: connector.extension?.name ?? name,
         });
-  const install = (device: DeviceConnectorDevice) =>
-    connector.extension?.source
-      ? setInstalling({
-          name: connector.extension.name,
-          source: connector.extension.source,
-          deviceId: device.deviceId,
-        })
-      : void changeExtension(device, () =>
-          installDeviceExtension(device.deviceId, {
-            bundledExtensionId: connector.extension!.id,
-          }),
-        );
-
   return (
     <div className={connectorTabClass}>
       <div className={connectorIntroClass}>
@@ -444,27 +465,17 @@ export function DeviceHeldConnector({
               })}
             />
             <DividedList density="cozy">
-              {without.map((device) => {
-                const blocked = installBlocked(device);
-                return (
-                  <li
-                    className="fdy-xacc-binding-row flex min-w-0 items-center justify-between gap-3 max-[520px]:flex-wrap max-[520px]:items-start"
-                    key={device.deviceId}
-                  >
-                    <Identity as="span">
-                      <strong>{device.name}</strong>
-                      {blocked ? <small>{blocked}</small> : null}
-                    </Identity>
-                    <Button
-                      disabled={Boolean(blocked) || Boolean(busy)}
-                      onClick={() => install(device)}
-                      size="sm"
-                    >
-                      {installLabel()}
-                    </Button>
-                  </li>
-                );
-              })}
+              {without.map((device) => (
+                <ExtensionInstallRow
+                  blocked={installBlocked(device)}
+                  busy={Boolean(busy)}
+                  deviceName={device.name}
+                  key={device.deviceId}
+                  label={installLabel()}
+                  onInstall={() => install(device)}
+                  setupTarget={setupTarget === device.deviceId}
+                />
+              ))}
             </DividedList>
           </SectionPanel>
         ) : (
@@ -487,6 +498,7 @@ export function DeviceHeldConnector({
           <DividedList density="cozy">
             {offered.map((device) => (
               <DeviceConnectorRow
+                setupTarget={setupTarget === device.deviceId}
                 busy={busy === device.deviceId}
                 connector={connector}
                 distinguishDevice={
@@ -589,27 +601,17 @@ export function DeviceHeldConnector({
           </MutedText>
           {connector.extension?.source || connector.extension?.bundled ? (
             <DividedList>
-              {without.map((device) => {
-                const blocked = installBlocked(device);
-                return (
-                  <li
-                    className="fdy-xacc-binding-row flex min-w-0 items-center justify-between gap-3 max-[520px]:flex-wrap max-[520px]:items-start"
-                    key={device.deviceId}
-                  >
-                    <Identity as="span">
-                      <strong>{device.name}</strong>
-                      {blocked ? <small>{blocked}</small> : null}
-                    </Identity>
-                    <Button
-                      disabled={Boolean(blocked) || Boolean(busy)}
-                      onClick={() => install(device)}
-                      size="sm"
-                    >
-                      {installLabel()}
-                    </Button>
-                  </li>
-                );
-              })}
+              {without.map((device) => (
+                <ExtensionInstallRow
+                  blocked={installBlocked(device)}
+                  busy={Boolean(busy)}
+                  deviceName={device.name}
+                  key={device.deviceId}
+                  label={installLabel()}
+                  onInstall={() => install(device)}
+                  setupTarget={setupTarget === device.deviceId}
+                />
+              ))}
             </DividedList>
           ) : connector.setup?.command ? (
             <CommandLine>
@@ -671,4 +673,45 @@ function repositoryLabel(source: ConnectorExtensionRepository): string {
     .replace(/^[^@/]+@/, "")
     .replace(/\.git$/, "");
   return source.path ? `${repository}/${source.path}` : repository;
+}
+
+/** A device without the extension, with its one install button. */
+function ExtensionInstallRow({
+  deviceName,
+  blocked,
+  busy,
+  label,
+  onInstall,
+  setupTarget,
+}: {
+  deviceName: string;
+  blocked?: string;
+  busy: boolean;
+  label: string;
+  onInstall: () => void;
+  setupTarget: boolean;
+}) {
+  const ref = useSetupTarget<HTMLLIElement>(setupTarget);
+  return (
+    <li
+      className={`fdy-xacc-binding-row flex min-w-0 items-center justify-between gap-3 max-[520px]:flex-wrap max-[520px]:items-start ${setupTargetClass}`}
+      data-setup-target={setupTarget || undefined}
+      ref={ref}
+    >
+      <Identity as="span">
+        <strong>{deviceName}</strong>
+        {setupTarget ? <SetupTargetHint /> : null}
+        {blocked ? <small>{blocked}</small> : null}
+      </Identity>
+      <span data-row-actions>
+        <Button
+          disabled={Boolean(blocked) || busy}
+          onClick={onInstall}
+          size="sm"
+        >
+          {label}
+        </Button>
+      </span>
+    </li>
+  );
 }

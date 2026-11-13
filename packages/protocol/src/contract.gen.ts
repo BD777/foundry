@@ -203,6 +203,14 @@ interface components {
       /** @description Older copies work worse or not at all ("2.0.0" for AWS CLI v2). */
       minimumVersion?: string;
       versionCheck?: components["schemas"]["ConnectorVersionCheck"];
+      skills?: components["schemas"]["ConnectorToolSkills"];
+    };
+    /** @description Skills the tool's own npm package ships. Sessions that receive the connector get them from the Skill library bundle that follows this package, at the version paired with the device's copy of the tool. */
+    ConnectorToolSkills: {
+      /** @description The folder in the package holding the Skill folders. */
+      path: string;
+      /** @description Skill names sessions get by default. Absent gives every Skill of the bundle; a workspace turns on others by selecting them on its Skills page. */
+      default?: string[];
     };
     /** @description ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0. */
     ConnectorVersionCheck: {
@@ -230,6 +238,8 @@ interface components {
         [key: string]: string;
       };
       scopes?: components["schemas"]["ConnectorAuthorizationScope"][];
+      /** @description Named selections over this group's listed scopes. */
+      presets?: components["schemas"]["ConnectorAuthorizationPreset"][];
       /** @description Where the scope list comes from; "All" is offered only when it is complete. */
       scopeSource?: components["schemas"]["ConnectorScopeSource"];
       /** @description Unchecking a granted scope removes it (the tool can drop scopes); otherwise authorizing only adds. */
@@ -249,6 +259,21 @@ interface components {
       required?: boolean;
       /** @description Broader scopes that include this one; granted when any of them is. */
       impliedBy?: string[];
+    };
+    /** @description A named selection of every available listed scope except explicit exclusions. */
+    ConnectorAuthorizationPreset: {
+      id: string;
+      label: string;
+      labels?: {
+        [key: string]: string;
+      };
+      /** @description One sentence describing what the exclusions do and do not guarantee. */
+      hint: string;
+      hints?: {
+        [key: string]: string;
+      };
+      /** @description Listed scopes this preset leaves out. */
+      excludeScopes: string[];
     };
     /** @description The list a set of scopes was taken from. */
     ConnectorScopeSource: {
@@ -609,11 +634,18 @@ interface components {
       otherwise?: string;
       /** @enum {string} */
       unit?: "ms" | "s" | "rfc3339";
+      /** @description Checked first, in order; the first case whose conditions all hold gives the value. */
+      cases?: components["schemas"]["ConnectorEventsCase"][];
     };
-    /** @description True when the value at pointer, as text, equals equals. */
+    ConnectorEventsCase: {
+      when: components["schemas"]["ConnectorEventsCondition"][];
+      value: string;
+    };
+    /** @description True when the value at pointer, as text, equals equals, or equals the value at equalsPointer. */
     ConnectorEventsCondition: {
       pointer: string;
-      equals: string;
+      equals?: string;
+      equalsPointer?: string;
     };
     /** @description How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`. */
     ConnectorEventsContext: {
@@ -1184,6 +1216,24 @@ interface components {
       version: string;
       /** @description The command that checks and updates the worker on that machine, as typed there (`~/.foundry/bin/foundry-worker`); absent for a worker run from a source checkout, which updates with git. */
       command?: string;
+      /** @description `proxyFallback` is set while the worker reaches the server around its configured proxy, which kept failing (DEV-217); absent when it uses the proxy as configured. */
+      proxyFallback?: components["schemas"]["DeviceProxyFallback"];
+    };
+    /** @description DeviceProxyFallback is how a worker reaches the server while its configured proxy is unreachable. */
+    DeviceProxyFallback: {
+      /** @description The configured proxy, scheme, host and port only (never credentials). */
+      configured: string;
+      /**
+       * @description What the worker uses instead: "environment" for the proxy its environment names, "direct" for no proxy.
+       * @enum {string}
+       */
+      route: "environment" | "direct";
+      /** @description With route environment, that proxy's scheme, host and port. */
+      environmentProxy?: string;
+      /** @description When the worker switched. */
+      since: string;
+      /** @description Why, in words, e.g. the attempts that failed and for how long. */
+      reason?: string;
     };
     AgentRuntimeSettings: {
       activeRuntimeTtlMs: number;
@@ -2412,7 +2462,8 @@ interface components {
       name?: string;
     };
     /** @enum {string} */
-    MessageConversationKind: "direct" | "group" | "channel" | "feed" | "other";
+    MessageConversationKind:
+      "direct" | "self" | "group" | "channel" | "feed" | "other";
     MessageEnvelopeThread: {
       id?: string;
       isReply?: boolean;
@@ -2462,6 +2513,11 @@ interface components {
       workspaces: components["schemas"]["PermissionListRule"];
       identityResources: string[];
     };
+    /** @description When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command. */
+    MessageChannelSessionRule: {
+      idleMinutes: number;
+      resetCommands: string[];
+    };
     MessageChannelLimits: {
       perHour: number;
       perDay: number;
@@ -2473,6 +2529,59 @@ interface components {
       accountId: string;
       instanceId?: string;
       label?: string;
+      capabilities?: components["schemas"]["MessageChannelCapabilities"];
+    };
+    /** @description What the source's messages can tell apart, from its descriptor's envelope mapping. An empty conversationKinds means the source does not say. */
+    MessageChannelCapabilities: {
+      conversationKinds: components["schemas"]["MessageConversationKind"][];
+      mentionsMe: boolean;
+      fromSelf: boolean;
+    };
+    /** @description A message the person makes up to try the rules on. */
+    MessageChannelSample: {
+      text: string;
+      conversationKind: components["schemas"]["MessageConversationKind"];
+      mentionsMe: boolean;
+      fromSelf: boolean;
+      conversationId?: string;
+      senderId?: string;
+    };
+    /** @description Rules to try before saving, on made-up samples and, with sourceAccountId and recent, on the source's recent messages that the person's channels saw. */
+    MessageChannelTestInput: {
+      filters: components["schemas"]["MessageChannelFilters"];
+      samples?: components["schemas"]["MessageChannelSample"][];
+      sourceAccountId?: string;
+      recent?: boolean;
+    };
+    MessageChannelRuleCheck: {
+      ruleId: string;
+      /** @description "" when the rule matches; else place, mention, self, conversation, sender or trigger. */
+      miss: string;
+    };
+    MessageChannelVerdict: {
+      /** @description Index of the sample; absent for a recent message. */
+      sample?: number;
+      envelope: components["schemas"]["MessageEnvelope"];
+      keep: boolean;
+      /** @description A recent message that no rule took keeps no text, so the trigger words could not be checked; keep and rule then say what holds if its text starts with a trigger word. */
+      textUnknown?: boolean;
+      rule?: string;
+      checks: components["schemas"]["MessageChannelRuleCheck"][];
+    };
+    MessageChannelTestResult: {
+      verdicts: components["schemas"]["MessageChannelVerdict"][];
+    };
+    /** @description A conversation or sender the person's channels saw recently from a source. */
+    MessageChannelPeer: {
+      id: string;
+      name: string;
+      conversationKind?: components["schemas"]["MessageConversationKind"];
+      count: number;
+      lastSeenAt: string;
+    };
+    MessageChannelPeers: {
+      conversations: components["schemas"]["MessageChannelPeer"][];
+      senders: components["schemas"]["MessageChannelPeer"][];
     };
     /** @description What the person sets on a channel. */
     MessageChannelInput: {
@@ -2491,6 +2600,9 @@ interface components {
       limits: components["schemas"]["MessageChannelLimits"];
       /** @description On enabling a paused channel, start from now instead of where it stopped. */
       resumeFromNow?: boolean;
+      /** @description The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home. */
+      workspaceId?: string;
+      session?: components["schemas"]["MessageChannelSessionRule"];
     };
     MessageChannel: {
       id: string;
@@ -2504,6 +2616,9 @@ interface components {
       sessionKey: "conversation" | "thread";
       scope: components["schemas"]["MessageChannelScope"];
       limits: components["schemas"]["MessageChannelLimits"];
+      /** @description The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home. */
+      workspaceId?: string;
+      session?: components["schemas"]["MessageChannelSessionRule"];
       skillName?: string;
       createdAt: string;
       updatedAt: string;
@@ -2545,11 +2660,54 @@ interface components {
       channel: components["schemas"]["MessageChannel"];
       status: components["schemas"]["MessageChannelStatus"];
       prerequisites: components["schemas"]["MessageChannelPrerequisites"];
-      /** @description The channel's sessions in the assistant's home. */
+      workspace?: components["schemas"]["MessageChannelWorkspace"];
+      /** @description The channel's sessions. */
       sessionIds: string[];
+    };
+    /** @description Where the channel's sessions run, read-only for them. */
+    MessageChannelWorkspace: {
+      id: string;
+      name: string;
+      deviceId: string;
+      deviceName?: string;
+      path: string;
+      /** @description The skills bound to the workspace, which its sessions load. */
+      skills: string[];
+    };
+    MessageChannelInstructionsRevision: {
+      id: string;
+      at: string;
+      sha256: string;
+      bytes: number;
+      /** @description seed, web, revert, or outside (changed on the device, found when read). */
+      source: string;
+    };
+    /** @description The AGENTS.md of the channel's workspace as it is on the device now, and its saved revisions. */
+    MessageChannelInstructions: {
+      workspaceId: string;
+      path: string;
+      content: string;
+      sha256: string;
+      missing: boolean;
+      revisions: components["schemas"]["MessageChannelInstructionsRevision"][];
+    };
+    /** @description New content; baseSha256 is the sha256 the editor started from (refused when the file changed since). */
+    MessageChannelInstructionsInput: {
+      content: string;
+      baseSha256: string;
+    };
+    MessageChannelInstructionsRevert: {
+      revisionId: string;
+      baseSha256: string;
+    };
+    /** @description The conversation (sessionKey of a delivery) whose next message starts a new session. */
+    MessageChannelRolloverInput: {
+      sessionKey: string;
     };
     MessageChannelList: {
       channels: components["schemas"]["MessageChannelView"][];
+      /** @description Every session the assistant's channels started, including those of deleted channels; they are not the person's conversation with the assistant. */
+      channelSessionIds?: string[];
       /** @description Connector instances whose descriptor declares an event feed. */
       sources: components["schemas"]["MessageChannelSource"][];
     };
@@ -2560,7 +2718,11 @@ interface components {
     MessageChannelAction: {
       at: string;
       /** @enum {string} */
-      kind: "connector_write" | "connector_refused" | "needs_you";
+      kind:
+        | "connector_write"
+        | "connector_refused"
+        | "needs_you"
+        | "workspace_write_refused";
       summary: string;
     };
     MessageChannelDelivery: {
@@ -2572,6 +2734,14 @@ interface components {
       reason?: string;
       rule?: string;
       sessionId?: string;
+      /** @description The source conversation (and thread) the message belongs to. */
+      sessionKey?: string;
+      /** @description Which of the conversation's sessions, from 0. */
+      segment?: number;
+      /** @description This message started the session. */
+      sessionNew?: boolean;
+      /** @description Why a new session started: first, idle, command, button, restarted. */
+      newReason?: string;
       createdAt: string;
       deliveredAt?: string;
       actions?: components["schemas"]["MessageChannelAction"][];
@@ -3987,6 +4157,11 @@ interface components {
        * @enum {string}
        */
       role?: "issue_execution" | "issue_clarification" | "personal_agent";
+      /**
+       * @description `workspaceAccess` read: the session's workspace is read-only for its agent and every command it runs, kept so by the worker's sandbox (a message channel's session, DEV-203); its temporary files go to a scratch directory outside the workspace. Absent: the session writes its workspace as usual.
+       * @enum {string}
+       */
+      workspaceAccess?: "read";
       /** @description `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission. */
       parentSessionId?: string;
       /** @description `waitingChildCount` is how many direct sub-sessions this session is waiting on: active turns whose current input it started, or ended children that are themselves waiting on such descendants up to four levels deep. Absent or 0 when none. */
@@ -4509,6 +4684,7 @@ export type ModelRequestUsage = components["schemas"]["ModelRequestUsage"];
 export type ConnectorRequirement =
   components["schemas"]["ConnectorRequirement"];
 export type ConnectorTool = components["schemas"]["ConnectorTool"];
+export type ConnectorToolSkills = components["schemas"]["ConnectorToolSkills"];
 export type ConnectorVersionCheck =
   components["schemas"]["ConnectorVersionCheck"];
 export type ConnectorVersionCheckCommand =
@@ -4517,6 +4693,8 @@ export type ConnectorAuthorizationGroup =
   components["schemas"]["ConnectorAuthorizationGroup"];
 export type ConnectorAuthorizationScope =
   components["schemas"]["ConnectorAuthorizationScope"];
+export type ConnectorAuthorizationPreset =
+  components["schemas"]["ConnectorAuthorizationPreset"];
 export type ConnectorScopeSource =
   components["schemas"]["ConnectorScopeSource"];
 export type ConnectorScopeChange =
@@ -4579,6 +4757,7 @@ export type ConnectorEventsEnvelope =
   components["schemas"]["ConnectorEventsEnvelope"];
 export type ConnectorEventsValue =
   components["schemas"]["ConnectorEventsValue"];
+export type ConnectorEventsCase = components["schemas"]["ConnectorEventsCase"];
 export type ConnectorEventsCondition =
   components["schemas"]["ConnectorEventsCondition"];
 export type ConnectorEventsContext =
@@ -4663,6 +4842,7 @@ export type DeviceSystem = components["schemas"]["DeviceSystem"];
 export type DeviceServiceState = components["schemas"]["DeviceServiceState"];
 export type DeviceOOMKills = components["schemas"]["DeviceOOMKills"];
 export type DeviceWorker = components["schemas"]["DeviceWorker"];
+export type DeviceProxyFallback = components["schemas"]["DeviceProxyFallback"];
 export type AgentRuntimeSettings =
   components["schemas"]["AgentRuntimeSettings"];
 export type DeviceHardware = components["schemas"]["DeviceHardware"];
@@ -4821,10 +5001,26 @@ export type MessageChannelFilters =
 export type MessageChannelConnectorScope =
   components["schemas"]["MessageChannelConnectorScope"];
 export type MessageChannelScope = components["schemas"]["MessageChannelScope"];
+export type MessageChannelSessionRule =
+  components["schemas"]["MessageChannelSessionRule"];
 export type MessageChannelLimits =
   components["schemas"]["MessageChannelLimits"];
 export type MessageChannelSource =
   components["schemas"]["MessageChannelSource"];
+export type MessageChannelCapabilities =
+  components["schemas"]["MessageChannelCapabilities"];
+export type MessageChannelSample =
+  components["schemas"]["MessageChannelSample"];
+export type MessageChannelTestInput =
+  components["schemas"]["MessageChannelTestInput"];
+export type MessageChannelRuleCheck =
+  components["schemas"]["MessageChannelRuleCheck"];
+export type MessageChannelVerdict =
+  components["schemas"]["MessageChannelVerdict"];
+export type MessageChannelTestResult =
+  components["schemas"]["MessageChannelTestResult"];
+export type MessageChannelPeer = components["schemas"]["MessageChannelPeer"];
+export type MessageChannelPeers = components["schemas"]["MessageChannelPeers"];
 export type MessageChannelInput = components["schemas"]["MessageChannelInput"];
 export type MessageChannel = components["schemas"]["MessageChannel"];
 export type MessageChannelState = components["schemas"]["MessageChannelState"];
@@ -4835,6 +5031,18 @@ export type MessageChannelStatus =
 export type MessageChannelPrerequisites =
   components["schemas"]["MessageChannelPrerequisites"];
 export type MessageChannelView = components["schemas"]["MessageChannelView"];
+export type MessageChannelWorkspace =
+  components["schemas"]["MessageChannelWorkspace"];
+export type MessageChannelInstructionsRevision =
+  components["schemas"]["MessageChannelInstructionsRevision"];
+export type MessageChannelInstructions =
+  components["schemas"]["MessageChannelInstructions"];
+export type MessageChannelInstructionsInput =
+  components["schemas"]["MessageChannelInstructionsInput"];
+export type MessageChannelInstructionsRevert =
+  components["schemas"]["MessageChannelInstructionsRevert"];
+export type MessageChannelRolloverInput =
+  components["schemas"]["MessageChannelRolloverInput"];
 export type MessageChannelList = components["schemas"]["MessageChannelList"];
 export type MessageChannelDeliveryStatus =
   components["schemas"]["MessageChannelDeliveryStatus"];

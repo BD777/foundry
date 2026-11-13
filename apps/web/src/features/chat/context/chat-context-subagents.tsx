@@ -11,7 +11,7 @@ import {
   ContextSection,
   ContextStatus,
   statusToneOf,
-} from "./chat-context-parts";
+} from "../../../components/ui/context-card";
 import { subagentUsageSummary } from "../../../components/conversation/turn-usage";
 import {
   FinishedFold,

@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { History } from "lucide-react";
-import type { ResourceInstance } from "@bd777/foundry-protocol";
+import type {
+  ResourceInstance,
+  ResourceSourceStatus,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
@@ -20,6 +23,10 @@ import {
   stateTone,
 } from "./resource-groups";
 import { ResourceLease } from "./resource-lease";
+import {
+  ResourceWorkspacePolicy,
+  type ResourceWorkspaceChoice,
+} from "./resource-workspace-policy";
 
 /**
  * One instance: what it is, whether a session could use it, who holds it,
@@ -30,13 +37,16 @@ import { ResourceLease } from "./resource-lease";
 export function ResourceRow({
   instance,
   manageable = false,
-  remoteCommands = false,
+  status,
+  workspaces = [],
   onChanged = () => {},
 }: {
   instance: ResourceInstance;
   manageable?: boolean;
-  /** Its device allows remote commands (ResourceSourceStatus). */
-  remoteCommands?: boolean;
+  /** Its device's report and settings (remote commands, slots, workspaces). */
+  status?: ResourceSourceStatus;
+  /** The person's workspaces, to name them in the workspace policy. */
+  workspaces?: readonly ResourceWorkspaceChoice[];
   /** After an action changed it: read the inventory again. */
   onChanged?: () => void;
 }) {
@@ -141,12 +151,23 @@ export function ResourceRow({
         </MutedText>
       ) : null}
       {compute && manageable ? (
-        <ResourceComputeAccess
-          allowed={remoteCommands}
-          disabled={reconnecting}
-          instance={instance}
-          onChanged={onChanged}
-        />
+        <>
+          <ResourceComputeAccess
+            allowed={status?.allowRemoteCommands ?? false}
+            computeSlots={status?.computeSlots ?? 0}
+            disabled={reconnecting}
+            instance={instance}
+            onChanged={onChanged}
+          />
+          <ResourceWorkspacePolicy
+            allow={status?.allowWorkspaces ?? []}
+            deny={status?.denyWorkspaces ?? []}
+            disabled={reconnecting}
+            instance={instance}
+            workspaces={workspaces}
+            onChanged={onChanged}
+          />
+        </>
       ) : null}
       {details.length ? (
         <dl className="fdy-res-details m-0 flex flex-wrap gap-x-3.5 gap-y-0.5 text-xs leading-normal text-ink-muted">

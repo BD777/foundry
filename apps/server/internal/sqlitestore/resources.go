@@ -62,6 +62,25 @@ func (s *Store) setupResources(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite resources: %w", err)
 		}
 	}
+	// compute_slots (DEV-219): 0 derives the slots from the device.
+	exists, err := s.tableHasColumn(ctx, "resource_source_settings", "compute_slots")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE resource_source_settings ADD COLUMN compute_slots INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("migrate sqlite resources: %w", err)
+		}
+	}
+	// lease_workspaces_json (DEV-219): {"allow": [...], "deny": [...]}.
+	if exists, err = s.tableHasColumn(ctx, "resource_source_settings", "lease_workspaces_json"); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE resource_source_settings ADD COLUMN lease_workspaces_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return fmt.Errorf("migrate sqlite resources: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -135,19 +154,25 @@ func scanResourceInstance(rows *sql.Rows) (store.ResourceInstance, error) {
 func (s *Store) ListResourceSources(ctx context.Context) ([]store.ResourceSourceStatus, error) {
 	sources := []store.ResourceSourceStatus{}
 	err := scanRows(ctx, s.reader(), `SELECT s.id, s.kind, `+resourceSourceLabel+`, s.online, s.scanner_version, s.detector_errors_json,
-		s.last_report_at, COALESCE(t.allow_remote_commands, 1)
+		s.last_report_at, COALESCE(t.allow_remote_commands, 1), COALESCE(t.compute_slots, 0), COALESCE(t.lease_workspaces_json, '{}')
 		FROM resource_sources s LEFT JOIN resource_source_settings t ON t.source_id = s.id
 		LEFT JOIN devices d ON d.id = s.id
 		ORDER BY `+resourceSourceLabel+`, s.id`, func(rows *sql.Rows) error {
 		var (
-			source         store.ResourceSourceStatus
-			online, remote int
-			detectorErrors string
+			source          store.ResourceSourceStatus
+			online, remote  int
+			detectorErrors  string
+			leaseWorkspaces string
 		)
 		if err := rows.Scan(&source.ID, &source.Kind, &source.Label, &online, &source.ScannerVersion,
-			&detectorErrors, &source.LastReportAt, &remote); err != nil {
+			&detectorErrors, &source.LastReportAt, &remote, &source.ComputeSlots, &leaseWorkspaces); err != nil {
 			return err
 		}
+		policy, err := decodeLeaseWorkspaces(leaseWorkspaces)
+		if err != nil {
+			return fmt.Errorf("resource source %s lease workspaces: %w", source.ID, err)
+		}
+		source.AllowWorkspaces, source.DenyWorkspaces = policy.Allow, policy.Deny
 		source.Online = online != 0
 		source.AllowRemoteCommands = remote != 0
 		if err := json.Unmarshal([]byte(detectorErrors), &source.DetectorErrors); err != nil {
@@ -225,16 +250,24 @@ func (s *Store) DeleteGoneResources(ctx context.Context, before time.Time) (int6
 }
 
 func (s *Store) ResourceSourceSettings(ctx context.Context, sourceID string) (store.ResourceSourceSettings, error) {
-	var remote int
-	err := s.reader().QueryRowContext(ctx, `SELECT allow_remote_commands FROM resource_source_settings WHERE source_id = ?`,
-		sourceID).Scan(&remote)
+	var (
+		remote, slots   int
+		leaseWorkspaces string
+	)
+	err := s.reader().QueryRowContext(ctx, `SELECT allow_remote_commands, compute_slots, lease_workspaces_json FROM resource_source_settings WHERE source_id = ?`,
+		sourceID).Scan(&remote, &slots, &leaseWorkspaces)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.ResourceSourceSettings{AllowRemoteCommands: true}, nil
 	}
 	if err != nil {
 		return store.ResourceSourceSettings{}, fmt.Errorf("read resource settings: %w", err)
 	}
-	return store.ResourceSourceSettings{AllowRemoteCommands: remote != 0}, nil
+	policy, err := decodeLeaseWorkspaces(leaseWorkspaces)
+	if err != nil {
+		return store.ResourceSourceSettings{}, fmt.Errorf("read resource settings: %w", err)
+	}
+	return store.ResourceSourceSettings{AllowRemoteCommands: remote != 0, ComputeSlots: slots,
+		AllowWorkspaces: policy.Allow, DenyWorkspaces: policy.Deny}, nil
 }
 
 func (s *Store) SetResourceSourceSettings(ctx context.Context, sourceID string, settings store.ResourceSourceSettings, byUserID string) error {
@@ -246,11 +279,16 @@ func (s *Store) SetResourceSourceSettings(ctx context.Context, sourceID string, 
 	})
 }
 func (s *Store) setResourceSourceSettings(ctx context.Context, sourceID string, settings store.ResourceSourceSettings, byUserID string) error {
+	policy, err := json.Marshal(leaseWorkspaces{Allow: settings.AllowWorkspaces, Deny: settings.DenyWorkspaces})
+	if err != nil {
+		return err
+	}
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO resource_source_settings
-		(source_id, allow_remote_commands, updated_by, updated_at) VALUES (?, ?, ?, ?)
+		(source_id, allow_remote_commands, compute_slots, lease_workspaces_json, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source_id) DO UPDATE SET allow_remote_commands = excluded.allow_remote_commands,
+			compute_slots = excluded.compute_slots, lease_workspaces_json = excluded.lease_workspaces_json,
 			updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-		sourceID, boolInt(settings.AllowRemoteCommands), byUserID, formatTime(time.Now())); err != nil {
+		sourceID, boolInt(settings.AllowRemoteCommands), max(settings.ComputeSlots, 0), string(policy), byUserID, formatTime(time.Now())); err != nil {
 		return fmt.Errorf("save resource settings: %w", err)
 	}
 	return nil
@@ -261,4 +299,20 @@ func nonNil[T any](values []T) []T {
 		return []T{}
 	}
 	return values
+}
+
+// leaseWorkspaces is lease_workspaces_json: which workspaces' sessions may
+// lease a source's resources.
+type leaseWorkspaces struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+func decodeLeaseWorkspaces(raw string) (leaseWorkspaces, error) {
+	var policy leaseWorkspaces
+	if raw == "" {
+		return policy, nil
+	}
+	err := json.Unmarshal([]byte(raw), &policy)
+	return policy, err
 }

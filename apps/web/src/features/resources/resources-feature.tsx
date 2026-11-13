@@ -29,6 +29,7 @@ import {
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 import { ResourceRow } from "./resource-row";
+import type { ResourceWorkspaceChoice } from "./resource-workspace-policy";
 import { Skeleton } from "../../components/ui/loading";
 import { PageHeader } from "../../components/ui/page-header";
 
@@ -41,8 +42,11 @@ import { PageHeader } from "../../components/ui/page-header";
  */
 export function ResourcesFeature({
   ownedDeviceIds = [],
+  workspaces = [],
 }: {
   ownedDeviceIds?: readonly string[];
+  /** The person's workspaces, to name them in a device's workspace policy. */
+  workspaces?: readonly ResourceWorkspaceChoice[];
 }) {
   const { t } = useTranslation("resources");
   const [filter, setFilter] = useState<ResourceFilter>(() => ({
@@ -204,6 +208,7 @@ export function ResourcesFeature({
                 device.source.kind === "device" && owned.has(device.source.id)
               }
               typeLabel={resourceTypeLabel(group.type)}
+              workspaces={workspaces}
               onChanged={inventory.reload}
             />
           ))}
@@ -217,11 +222,13 @@ function DeviceGroup({
   group,
   manageable,
   typeLabel,
+  workspaces,
   onChanged,
 }: {
   group: ResourceDeviceGroup;
   manageable: boolean;
   typeLabel: string;
+  workspaces: readonly ResourceWorkspaceChoice[];
   onChanged: () => void;
 }) {
   const { t } = useTranslation("resources");
@@ -304,7 +311,8 @@ function DeviceGroup({
             instance={instance}
             key={instance.id}
             manageable={manageable}
-            remoteCommands={status?.allowRemoteCommands ?? false}
+            status={status}
+            workspaces={workspaces}
             onChanged={onChanged}
           />
         ))}

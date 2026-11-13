@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink } from "lucide-react";
 import type {
   ConnectorAuthorizationGroup,
   ConnectorScopeChange,
@@ -9,6 +9,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ButtonRow } from "../../components/ui/button-row";
 import { CheckLabel } from "../../components/ui/check-label";
+import { Chip } from "../../components/ui/chip";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import {
   Checkbox,
@@ -19,6 +20,7 @@ import {
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { MutedText } from "../../components/ui/text";
+import { cn } from "../../lib/cn";
 import { relativeWhen } from "./account-format";
 import { localized } from "./connector-text";
 import {
@@ -30,6 +32,7 @@ import {
   permissionPlan,
   selectionFor,
   type PermissionMode,
+  type PermissionPreset,
   type PermissionScope,
 } from "./permission-selection";
 
@@ -54,6 +57,8 @@ export interface PermissionPickerProps {
   lastChange?: ConnectorScopeChange;
   /** Preselected on top of the starting set (a deep link naming a scope). */
   preselect?: string[];
+  /** Named selections over this list. */
+  presets?: PermissionPreset[];
   submitLabel: string;
   busy?: boolean;
   onSubmit: (request: string[], selected: string[]) => void;
@@ -79,6 +84,7 @@ export function PermissionPicker({
   removal = "drops",
   lastChange,
   preselect = [],
+  presets = [],
   submitLabel,
   busy,
   onSubmit,
@@ -104,12 +110,19 @@ export function PermissionPicker({
   const heldBySelection = (scope: PermissionScope) =>
     (scope.impliedBy ?? []).find((parent) => chosen.includes(parent));
   const shown = filterScopes(scopes, filter);
+  const activePreset = mode.startsWith("preset:")
+    ? presets.find((preset) => `preset:${preset.id}` === mode)
+    : undefined;
   const choose = (next: string[]) => {
     setMode("custom");
     setSelected(normalizeSelection(next, scopes));
   };
   const modes: { value: PermissionMode; label: string }[] = [
     { value: "recommended", label: t("authorization.recommended") },
+    ...presets.map((preset) => ({
+      value: `preset:${preset.id}` as const,
+      label: preset.label,
+    })),
     ...(source?.complete
       ? [{ value: "all" as const, label: t("authorization.all") }]
       : []),
@@ -124,7 +137,8 @@ export function PermissionPicker({
           fill
           onValueChange={(value) => {
             setMode(value);
-            if (value !== "custom") setSelected(selectionFor(value, scopes));
+            if (value !== "custom")
+              setSelected(selectionFor(value, scopes, presets));
           }}
           options={modes}
           value={mode}
@@ -146,6 +160,17 @@ export function PermissionPicker({
               </a>
             ) : null}
           </MutedText>
+        ) : null}
+        {activePreset ? (
+          <>
+            <MutedText>{activePreset.hint}</MutedText>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+              <span>{t("authorization.presetExcludes")}</span>
+              {activePreset.excludeScopes.map((scope) => (
+                <Chip key={scope}>{scope}</Chip>
+              ))}
+            </div>
+          </>
         ) : null}
         {lastChange ? <ScopeChangeNote change={lastChange} /> : null}
       </div>
@@ -314,26 +339,76 @@ export function PermissionPicker({
   );
 }
 
-/** "Changed outside Foundry 2 hours ago: +workflow". */
+/** "Changed outside Foundry 2 hours ago: 1 scope added", with the scopes in details. */
 export function ScopeChangeNote({ change }: { change: ConnectorScopeChange }) {
   const { t } = useTranslation("externalAccounts");
-  const parts = [
-    ...change.added.map((scope) => `+${scope}`),
-    ...change.removed.map((scope) => `−${scope}`),
-  ].join(" ");
+  const groups = [
+    ...(change.added.length
+      ? [
+          {
+            key: "added",
+            label: t("authorization.changedScopeAdded", {
+              count: change.added.length,
+            }),
+            scopes: change.added,
+            sign: "+",
+          },
+        ]
+      : []),
+    ...(change.removed.length
+      ? [
+          {
+            key: "removed",
+            label: t("authorization.changedScopeRemoved", {
+              count: change.removed.length,
+            }),
+            scopes: change.removed,
+            sign: "−",
+          },
+        ]
+      : []),
+  ];
+  const summary = groups.length
+    ? groups.map((group) => group.label).join(" · ")
+    : t("authorization.changedScopeNone");
   return (
-    <MutedText
-      as="small"
-      className="block"
-      tone={change.source === "outside" ? "warning" : undefined}
-    >
-      {t(
-        change.source === "outside"
-          ? "authorization.changedOutside"
-          : "authorization.changedInFoundry",
-        { when: relativeWhen(change.at), scopes: parts },
-      )}
-    </MutedText>
+    <Disclosure className="group text-xs leading-normal">
+      <DisclosureSummary
+        className={cn(
+          "inline-flex max-w-full items-start gap-1.5 text-start text-ink-muted hover:text-ink",
+          change.source === "outside" && "text-(--fdy-warning-text)",
+        )}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 transition-transform duration-100 group-open:rotate-90"
+          size={12}
+        />
+        <span className="min-w-0">
+          {t(
+            change.source === "outside"
+              ? "authorization.changedOutside"
+              : "authorization.changedInFoundry",
+            { when: relativeWhen(change.at), summary },
+          )}
+        </span>
+      </DisclosureSummary>
+      <div className="grid min-w-0 gap-2">
+        {groups.map((group) => (
+          <section className="grid min-w-0 gap-1" key={group.key}>
+            <span>{group.label}</span>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {group.scopes.map((scope) => (
+                <Chip key={scope} title={`${group.sign}${scope}`}>
+                  {group.sign}
+                  {scope}
+                </Chip>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </Disclosure>
   );
 }
 
@@ -374,6 +449,12 @@ export function AuthorizationScopePicker({
       lastChange={lastChange}
       onSubmit={(_request, selected) => onStart({ scopes: selected.join(",") })}
       preselect={preselect}
+      presets={group.presets?.map((preset) => ({
+        id: preset.id,
+        label: localized(preset.label, preset.labels),
+        hint: localized(preset.hint, preset.hints),
+        excludeScopes: preset.excludeScopes,
+      }))}
       removes={!!group.scopesRemovable}
       scopes={groupScopes(group)}
       source={

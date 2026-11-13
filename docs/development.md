@@ -138,6 +138,9 @@ The dev Server runs under pm2 as `foundry-server`, from
 handoff mode (`FOUNDRY_RESTART_HANDOFF=1`, since DEV-062). The pm2 process is
 a supervisor that owns the port; the server is its child. To deploy:
 
+`scripts/deploy-dev.sh --prebuilt <dir> --label <item> --server` runs these steps
+(and rolls back on a kept handoff) for a binary built by `scripts/remote-build.sh`; by hand:
+
 ```bash
 D=~/.foundry/server/releases/dev023-candidate
 cp -p "$D/foundry-server" "$D/foundry-server.pre-<item>"         # rollback copy

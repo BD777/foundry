@@ -15,7 +15,7 @@ import {
   ContextHeading,
   ContextRowIcon,
   ContextSection,
-} from "./chat-context-parts";
+} from "../../../components/ui/context-card";
 
 type GoalAction = "pause" | "resume" | "clear";
 

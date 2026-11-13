@@ -240,3 +240,30 @@ func TestExternalConnectionAnswersAreKnownMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalConnectionOffersIncludeConnectorGivenConnections(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	given := store.AgentProfileProjection{
+		ID: "gateway_default", Runtime: "claude", ConnectionType: "external", Label: "Gateway · default", Status: "healthy",
+		Model: "sonnet", Check: &store.AgentProfileCheck{Status: "passed"},
+		Connector: &store.ProfileConnector{Kind: "gateway", Label: "Gateway"},
+	}
+	registerSetupDevice(t, backing, "dev_1", "laptop", given)
+	registerSetupDevice(t, backing, "dev_2", "server")
+	server := NewServer(backing)
+	response := requestForTest(t, server, http.MethodGet, "/api/devices/dev_2/external-connection-setups", "", http.StatusOK)
+	var list struct {
+		Offers []externalConnectionOffer `json:"offers"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Offers) != 1 {
+		t.Fatalf("offers = %+v", list.Offers)
+	}
+	offer := list.Offers[0]
+	if offer.ProfileID != "gateway_default" || offer.Stage != "not_set_up" || offer.Setup != nil ||
+		offer.Connector == nil || offer.Connector.Kind != "gateway" || offer.Connector.Label != "Gateway" {
+		t.Fatalf("offer = %+v", offer)
+	}
+}

@@ -1,13 +1,30 @@
 import { forwardRef, useId, type HTMLAttributes, type ReactNode } from "react";
-import { Button, type ButtonProps } from "../../../components/ui/button";
-import { IconBox } from "../../../components/ui/icon-box";
-import { cn } from "../../../lib/cn";
+import { Button, type ButtonProps } from "./button";
+import { IconBox, type IconBoxProps } from "./icon-box";
+import { cn } from "../../lib/cn";
 
 /*
- * The parts of the chat context card: sections of rows. Every row, icon,
- * heading and status of the card is one of these, so a section reads as its
- * neighbours do. The `fdy-chat-context-*` classes are hooks for tests only.
+ * A side panel's context card (the chat's, the assistant home's): one
+ * floating card of sections of rows. Every row, icon, heading and status of
+ * such a card is one of these, so a section reads as its neighbours do. The
+ * `fdy-chat-context-*` classes are hooks for tests only.
  */
+
+/** The card: one floating surface; neighbouring sections share one hairline. */
+export function ContextCard({
+  className,
+  ...props
+}: HTMLAttributes<HTMLElement>) {
+  return (
+    <aside
+      className={cn(
+        "relative overflow-hidden rounded-xl bg-panel shadow-floating [&>section+section]:border-t [&>section+section]:border-line",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 /** One titled block of the card; neighbouring blocks share one hairline. */
 export function ContextSection({
@@ -55,21 +72,27 @@ export function ContextGroup({
   );
 }
 
-/** A section's title, with the count of what it holds. */
+/**
+ * A section's title, with the count of what it holds; `action` sits at the
+ * title's end (a link to the whole list, or an empty section's quiet word).
+ */
 export function ContextHeading({
+  action,
   children,
   className,
   count,
 }: {
+  action?: ReactNode;
   children: ReactNode;
   className?: string;
   count?: number;
 }) {
-  return (
+  const heading = (
     <h3
       className={cn(
-        "mb-3.25 text-sm leading-[1.2] font-bold text-ink-faint",
-        className,
+        "text-sm leading-[1.2] font-bold text-ink-faint",
+        action ? "min-w-0" : "mb-3.25",
+        action ? undefined : className,
       )}
     >
       {children}
@@ -77,6 +100,18 @@ export function ContextHeading({
         <span className="ml-1.5 font-medium text-ink-faint">{count}</span>
       ) : null}
     </h3>
+  );
+  if (!action) return heading;
+  return (
+    <div
+      className={cn(
+        "mb-3.25 flex min-h-6 min-w-0 items-center justify-between gap-2",
+        className,
+      )}
+    >
+      {heading}
+      {action}
+    </div>
   );
 }
 
@@ -140,19 +175,24 @@ const iconTone = {
   background: "bg-panel-soft text-ink-muted",
 } as const;
 
-/** The 28px mark that starts a row. */
+/**
+ * The 28px mark that starts a row; `tone` gives it the meaning of what the
+ * row holds (a question, a failure), beside its shape.
+ */
 export function ContextRowIcon({
   children,
   kind = "muted",
+  tone,
 }: {
   children: ReactNode;
   kind?: keyof typeof iconTone;
+  tone?: IconBoxProps["tone"];
 }) {
   return (
     <IconBox
-      className={cn("size-7 rounded-md", iconTone[kind])}
+      className={cn("size-7 rounded-md", tone ? undefined : iconTone[kind])}
       size="row"
-      tone={kind === "preview" ? "brass" : "muted"}
+      tone={tone ?? (kind === "preview" ? "brass" : "muted")}
     >
       {children}
     </IconBox>

@@ -13,6 +13,8 @@ import { SegmentedControl } from "../../../components/ui/segmented-control";
 import { MarkdownContent } from "../../../components/conversation/markdown-content";
 import { formatBytes } from "../../../lib/format";
 import type { ChatSessionFileItem } from "../chat-types";
+import { WorkspaceImagePreview } from "./chat-image-file-preview";
+import { isInlineImageCandidate } from "./chat-image-preview-model";
 
 export const markdownExtensions = new Set(["md", "markdown", "mdx"]);
 export const htmlExtensions = new Set(["html", "htm"]);
@@ -122,6 +124,13 @@ export function TextFileView({
 /** A file browsed in the workspace folder. */
 export function FileDetail({ file }: { file: WorkspaceFileRead }) {
   const { t } = useTranslation("chat");
+  if (isInlineImageCandidate(file.path)) {
+    return (
+      <article className={detailDocument}>
+        <WorkspaceImagePreview file={file} />
+      </article>
+    );
+  }
   // As the device judges a session file: a NUL in the first 8 KB.
   if (file.content.slice(0, 8192).includes("\u0000"))
     return (

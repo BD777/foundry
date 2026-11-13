@@ -695,3 +695,101 @@ test("without the server's release, a current worker is not offered an update bu
     globalThis.fetch = originalFetch;
   }
 });
+
+// DEV-217: a Worker that went around a proxy it could not use says so on
+// every section of its page, and its owner fixes it from there, never by
+// typing a command on the device.
+test("a proxy the Worker could not use is fixed from the device page", async () => {
+  const { validProxyAddress } =
+    await import("../src/features/devices/device-proxy-fallback.tsx");
+  assert.equal(validProxyAddress("http://user:pw@proxy:3128"), true);
+  assert.equal(validProxyAddress("socks5h://127.0.0.1:1080"), true);
+  assert.equal(validProxyAddress("proxy:3128"), false);
+  assert.equal(validProxyAddress("http://proxy:3128/path"), false);
+  assert.equal(validProxyAddress("ftp://proxy:21"), false);
+
+  const sent = [];
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("/worker/proxy")) {
+      sent.push({
+        url: new URL(String(url), "http://127.0.0.1").pathname,
+        method: init.method,
+        body: init.body,
+      });
+      return new Response(JSON.stringify({ proxy: "http://proxy:3128" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response("[]", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const view = await setup({
+    selectedDeviceId: "a",
+    devices: [
+      {
+        ...devices[0],
+        worker: {
+          version: "0.5.7",
+          proxyFallback: {
+            configured: "http://127.0.0.1:1",
+            route: "direct",
+            since: "2026-11-13T13:32:57.369Z",
+            reason: "4 connection attempts failed",
+          },
+        },
+      },
+      devices[1],
+    ],
+  });
+  assert.match(
+    view.container.textContent,
+    /Can't reach Foundry through the proxy http:\/\/127\.0\.0\.1:1, so this device connected directly instead\./,
+  );
+  assert.doesNotMatch(view.container.textContent, /foundry-worker proxy/);
+
+  await view.click("Stop using this proxy");
+  assert.deepEqual(sent.shift(), {
+    url: "/api/devices/a/worker/proxy",
+    method: "PUT",
+    body: JSON.stringify({ clear: true }),
+  });
+
+  await view.click("Use another proxy");
+  const input = document.querySelector('input[placeholder="http://host:port"]');
+  assert.ok(input, "the address form opens");
+  const type = async (value) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set.call(input, value);
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+  const save = async () => {
+    const button = [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Save",
+    );
+    await act(async () => button.click());
+  };
+  await type("proxy:3128");
+  await save();
+  assert.equal(sent.length, 0, "an invalid address is not sent");
+  for (
+    let i = 0;
+    i < 100 && !/This isn't a proxy address/.test(document.body.textContent);
+    i++
+  )
+    await act(() => new Promise((settle) => setTimeout(settle, 25)));
+  assert.match(document.body.textContent, /This isn't a proxy address/);
+  await type("http://user:pw@proxy:3128");
+  await save();
+  assert.deepEqual(sent.shift(), {
+    url: "/api/devices/a/worker/proxy",
+    method: "PUT",
+    body: JSON.stringify({ url: "http://user:pw@proxy:3128" }),
+  });
+  await view.cleanup();
+});

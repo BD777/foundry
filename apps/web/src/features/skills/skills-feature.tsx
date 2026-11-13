@@ -29,6 +29,8 @@ import { MissingToolsBadge } from "./missing-tools-badge";
 import { OfficialSkillsSection } from "./official-skills-section";
 import { SkillVersionPin } from "./skill-version-pin";
 import { useWorkspaceSkillSelection } from "./use-workspace-skill-selection";
+import { SkillListingNote, claudeListedSkills } from "./skill-listing-note";
+import type { WorkspaceSkillSummary } from "../../api-types";
 
 export type SkillsFeatureEvent =
   | { type: "manage-devices.requested" }
@@ -45,6 +47,8 @@ export interface SkillsFeatureProps {
   providerHealth?: ProviderHealth[];
   /** Skills Foundry itself gives each agent. */
   builtinSkills?: BuiltinSkill[];
+  /** The Skills a new session here gets from Foundry, connector bundles included. */
+  workspaceSkills?: WorkspaceSkillSummary[];
   /** Which programs skills need the devices have. */
   deviceTools?: DeviceTool[];
   /** Owner's default skills this workspace gets besides its selection. */
@@ -82,6 +86,7 @@ export function SkillsFeature({
   devices,
   providerHealth,
   builtinSkills,
+  workspaceSkills,
   defaultSkillIds,
   deviceTools,
   skillBundles,
@@ -142,6 +147,19 @@ export function SkillsFeature({
       {error ? <ToastFeedback tone="error" title={error} /> : null}
 
       {notice ? <ToastFeedback tone="success" title={notice} /> : null}
+
+      {workspaceSkills ? (
+        <SkillListingNote
+          skills={claudeListedSkills({
+            workspaceSkills,
+            builtinSkills: builtinSkills ?? [],
+            providerHealth: providerHealth ?? [],
+            deviceSkills,
+            workspacePath: workspaces?.find((w) => w.id === workspaceId)
+              ?.localPath,
+          })}
+        />
+      ) : null}
 
       <OfficialSkillsSection
         builtinSkills={builtinSkills ?? []}

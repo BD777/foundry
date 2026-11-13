@@ -9,7 +9,7 @@ import { Button } from "./button";
 export type DialogLayout = "sectioned" | "compact";
 export type DialogSize =
   "default" | "wide" | "large" | "editor" | "viewport" | "preview";
-export type DialogSide = "center" | "left";
+export type DialogSide = "center" | "left" | "right";
 
 /*
  * shadcn/ui's Dialog on Radix: an overlay and a centred surface or side
@@ -33,6 +33,7 @@ const contentVariants = cva(
       side: {
         center: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl",
         left: "inset-y-0 left-0 h-dvh rounded-r-xl",
+        right: "inset-y-0 right-0 h-dvh rounded-l-xl",
       },
       layout: {
         /** A divided header above a padded body that scrolls. */
@@ -74,6 +75,10 @@ const contentVariants = cva(
       {
         side: "left",
         class: "max-h-none w-[min(340px,calc(100vw-32px))]",
+      },
+      {
+        side: "right",
+        class: "max-h-none w-[min(380px,calc(100vw-32px))]",
       },
     ],
     defaultVariants: {

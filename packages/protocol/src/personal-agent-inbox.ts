@@ -17,6 +17,18 @@ export interface PersonalAgentInboxEntry {
   resultText?: string;
   resultError?: string;
   resultTruncated?: boolean;
+  /** A failed attempt's error, classified as a failed turn's is. */
+  resultFailure?: PersonalAgentInboxFailure;
+}
+
+export interface PersonalAgentInboxFailure {
+  /**
+   * quota_exhausted, rate_limited, provider_unavailable,
+   * provider_mismatch, host_stopped or other.
+   */
+  category: string;
+  /** When the provider said it takes requests again. */
+  resetAt?: string;
 }
 
 export interface PersonalAgentInboxAction {

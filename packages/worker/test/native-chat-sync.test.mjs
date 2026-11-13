@@ -562,6 +562,56 @@ test("an unchanged native chat scan reuses its parse and fingerprint", async () 
   }
 });
 
+test("logs of other folders are read once by header, never parsed in full", async () => {
+  const { invalidateNativeChatListings, nativeChatSnapshotForWorkspace } =
+    await import("../dist/session/chat/native-chat.js");
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, "claude-many-folders");
+  const mine = join(root, "ws-many-folders");
+  mkdirSync(mine);
+  const own = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  session(mine, own, "mine");
+  // Far more foreign logs than the full-chat cache would hold if each were
+  // parsed: they used to evict this folder's chats every round.
+  for (let index = 0; index < 1200; index += 1)
+    session(
+      join(root, `elsewhere-${index}`),
+      `eeeeeeee-eeee-4eee-8eee-${String(index).padStart(12, "0")}`,
+      "not mine",
+    );
+  const workspace = { id: "ws_many_folders", localPath: mine };
+  try {
+    const first = await nativeChatSnapshotForWorkspace(workspace, []);
+    assert.deepEqual(
+      first.chats.map((chat) => chat.nativeSessionId),
+      [own],
+    );
+    assert.equal(first.stats.parsedFiles, 1, "a foreign log was parsed");
+    const second = await nativeChatSnapshotForWorkspace(workspace, []);
+    assert.equal(second.stats.parsedFiles, 0);
+    assert.equal(second.stats.reusedFiles, 1);
+
+    // A log that later names this folder in its header is picked up.
+    const late = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const latePath = session(join(root, "elsewhere-late"), late, "moved");
+    // A round lists the logs afresh; within one round the listing is reused.
+    invalidateNativeChatListings();
+    await nativeChatSnapshotForWorkspace(workspace, []);
+    appendFileSync(
+      latePath,
+      `${JSON.stringify({ sessionId: late, cwd: mine, type: "user", timestamp: "2026-10-01T00:01:00Z", message: { role: "user", content: "here now" } })}\n`,
+    );
+    invalidateNativeChatListings();
+    const third = await nativeChatSnapshotForWorkspace(workspace, []);
+    assert.deepEqual(
+      third.chats.map((chat) => chat.nativeSessionId).sort(),
+      [own, late].sort(),
+    );
+  } finally {
+    process.env.CLAUDE_CONFIG_DIR = previousHome;
+  }
+});
+
 // Like a real Worker, a referenced fake keeps the event loop alive until it
 // is unreferenced or terminated.
 class FakeNativeChatWorker extends EventEmitter {
@@ -620,6 +670,66 @@ test("native chat worker errors and timeouts reject without killing the daemon",
   });
   await assert.rejects(refusing.scan(input), /request was not cloneable/);
   refusing.stop();
+});
+
+/** Answers pings at once but takes several timeouts to finish a scan. */
+class BusyNativeChatWorker extends FakeNativeChatWorker {
+  terminated = false;
+  postMessage(message) {
+    if (message.type === "ping") {
+      queueMicrotask(() =>
+        this.emit("message", { id: message.id, ok: true, result: [] }),
+      );
+      return;
+    }
+    setTimeout(
+      () =>
+        this.emit("message", {
+          id: message.id,
+          ok: true,
+          result: {
+            scanId: "native_scan_busy",
+            chats: [],
+            fingerprints: [],
+            transcriptMessages: [],
+            parsedFiles: 0,
+            reusedFiles: 0,
+          },
+        }),
+      120,
+    );
+  }
+  terminate() {
+    this.terminated = true;
+    return super.terminate();
+  }
+}
+
+test("a scan worker that is busy but answers is kept, with its cache", async () => {
+  const { NativeChatScanClient } =
+    await import("../dist/session/chat/native-chat-scan-thread.js");
+  const workers = [];
+  const client = new NativeChatScanClient({
+    timeoutMs: 20,
+    createWorker: () => {
+      const worker = new BusyNativeChatWorker();
+      workers.push(worker);
+      return worker;
+    },
+  });
+  const input = {
+    workspace: { id: "ws_busy", localPath: root },
+    profiles: [],
+  };
+  try {
+    const results = await Promise.all([client.scan(input), client.scan(input)]);
+    assert.ok(results.every((result) => result.scanId === "native_scan_busy"));
+    await client.scan(input);
+    assert.equal(workers.length, 1, "the busy worker was replaced");
+    assert.equal(workers[0].terminated, false);
+  } finally {
+    client.stop();
+  }
 });
 
 test("a worker failure degrades to a daemon-thread scan and logs it", async () => {

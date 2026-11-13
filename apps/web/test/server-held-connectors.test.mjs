@@ -569,6 +569,10 @@ test("a device-network instance chooses an online validation device", async () =
   await page.click(page.button("Via a device (internal)"));
   const choose = page.button("Alice's Mac");
   assert.ok(choose, window.document.body.textContent);
+  assert.match(
+    window.document.body.textContent,
+    /If the connector extension is missing there, validation installs it first/,
+  );
   await page.click(page.button("Continue"));
   await page.fill("Acme HTTPS address", "http://10.37.93.185/openlark");
   await page.fill("Read token", "intranet-secret");

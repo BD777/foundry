@@ -53,6 +53,11 @@ writeFileSync(
 const fs = require("node:fs");
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
 if (state.describeFails) process.exit(3);
+if (state.describeFailures > 0) {
+  state.describeFailures -= 1;
+  fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));
+  process.exit(3);
+}
 if (process.argv.includes("--describe")) process.stdout.write(JSON.stringify({ identity: "id-" + process.argv[2] }));
 `,
 );
@@ -269,6 +274,13 @@ test("a declarative extension reads, signs in and out, and lists model providers
   assert.equal(down[0].problem, "Its service is not running.");
   patchState({ running: true });
 
+  // A transient helper exit is retried; the provider is usable again.
+  patchState({ describeFailures: 1 });
+  const recovered = await listed();
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].identity, "id-default");
+  assert.equal(recovered[0].problem, undefined);
+
   // A helper that cannot confirm the identity keeps the profile listed too.
   patchState({ describeFails: true });
   const unconfirmed = await listed();
@@ -276,7 +288,7 @@ test("a declarative extension reads, signs in and out, and lists model providers
   assert.equal(unconfirmed[0].identity, "");
   assert.match(
     unconfirmed[0].problem,
-    /Gateway · default could not confirm its identity \(the helper exited with code 3\)\./,
+    /Gateway · default could not confirm its identity \(the helper exited with code 3\) after 3 attempts\./,
   );
   patchState({ describeFails: false });
   assert.equal((await listed())[0].problem, undefined);

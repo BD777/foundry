@@ -62,3 +62,35 @@ func TestExtensionDescriptorsPassServerChecks(t *testing.T) {
 		})
 	}
 }
+
+// tool.skills names Skills inside the tool's npm package: a tool installed
+// any other way, or a folder outside the package, is refused.
+func TestToolSkillsBelongToAnNPMPackage(t *testing.T) {
+	descriptor := store.ConnectorDescriptor{
+		Kind: "corpcli", Label: "corpcli", Adapter: "extension:corp",
+		Extension: &store.ConnectorExtensionSource{ID: "corp", Name: "Corp", Version: "1.0.0"},
+		Holding:   store.ConnectorDeviceHeld,
+		Tool: store.ConnectorTool{
+			Command: "corpcli", Source: "npm", Package: "@corp/cli", Registry: "device",
+			Skills: &store.ConnectorToolSkills{Path: "skills"},
+		},
+	}
+	if err := checkDescriptor(descriptor); err != nil {
+		t.Fatalf("npm tool with skills: %v", err)
+	}
+	outside := descriptor
+	outside.Tool.Skills = &store.ConnectorToolSkills{Path: "../skills"}
+	if err := checkDescriptor(outside); err == nil || !strings.Contains(err.Error(), "tool.skills.path") {
+		t.Fatalf("a folder outside the package: %v", err)
+	}
+	repeated := descriptor
+	repeated.Tool.Skills = &store.ConnectorToolSkills{Path: "skills", Default: []string{"corp-search", "corp-search"}}
+	if err := checkDescriptor(repeated); err == nil || !strings.Contains(err.Error(), "tool.skills.default") {
+		t.Fatalf("a repeated default Skill: %v", err)
+	}
+	device := descriptor
+	device.Tool = store.ConnectorTool{Command: "corpcli", Source: "device", Skills: &store.ConnectorToolSkills{Path: "skills"}}
+	if err := checkDescriptor(device); err == nil || !strings.Contains(err.Error(), "npm package") {
+		t.Fatalf("a device-installed tool with skills: %v", err)
+	}
+}

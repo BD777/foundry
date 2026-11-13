@@ -82,10 +82,10 @@ export function DeviceAuthorizationGroups({
           const blocked = disabled || !!target || !available;
           return (
             <li
-              className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
+              className="fdy-xacc-binding-row flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2"
               key={group.id}
             >
-              <Identity as="span">
+              <Identity className="flex-1 basis-72">
                 <strong>{label}</strong>
                 <small>
                   {!device.online
@@ -113,7 +113,7 @@ export function DeviceAuthorizationGroups({
                   </small>
                 ) : null}
               </Identity>
-              <ButtonRow as="span" className="ml-auto">
+              <ButtonRow className="ml-auto max-w-full flex-none">
                 <Badge tone={status === "ready" ? "online" : "warn"}>
                   {t(`authorization.status.${status}`)}
                 </Badge>

@@ -358,6 +358,26 @@ export function listExternalConnections(): ExternalConnectionSummary[] {
     .map(summary);
 }
 
+/**
+ * Where the external connection with this id stands on this device, whether
+ * an installer registered it or a connector extension gives it
+ * (profiles.ts configuredAgentProfiles); undefined when the device has none.
+ * A connector-given one its connector reports a problem for is not usable.
+ */
+export function externalConnectionState(
+  id: string,
+): Pick<ExternalConnectionSummary, "helperAvailable" | "check"> | undefined {
+  const profile = configuredAgentProfiles("").find(
+    (item) => profileID(item) === id && item.connectionType === "external",
+  );
+  if (!profile) return undefined;
+  const { helperAvailable, check } = summary(profile);
+  return {
+    helperAvailable: helperAvailable && !profile.connectorProblem,
+    check,
+  };
+}
+
 /** The registered external connection with this id, for an explicit check. */
 export function registeredExternalConnection(
   id: string,

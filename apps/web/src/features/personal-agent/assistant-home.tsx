@@ -1,5 +1,4 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { FieldHint } from "../../components/ui/field";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -25,7 +24,6 @@ import type { ChatMessageItem } from "../../components/conversation/conversation
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { DividedList } from "../../components/ui/divided-list";
 import {
   DropdownMenu,
   DropdownMenuPortal,
@@ -38,21 +36,28 @@ import {
   DropdownMenuLabel,
   DropdownMenuSurface,
 } from "../../components/ui/row-menu-parts";
-import { Subheading } from "../../components/ui/subheading";
-import { PaMuted } from "./pa-muted";
 import { serverErrorText } from "../../lib/errors";
-import { navigateToChat } from "../../lib/in-app-navigation";
 import {
   answerableProposal,
   assistantActivity,
   channelCommand,
   placeProposals,
+  sideSummary,
+  visibleTasks,
 } from "./assistant-model";
 import { AssistantGate } from "./assistant-gate";
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantCreateDialog } from "./assistant-list";
 import { PersonList } from "./person-list";
 import { ProposalCard } from "./proposal-card";
+import {
+  NeedsYouSection,
+  UnprocessedSection,
+  waitingReasonKey,
+} from "./assistant-side-card";
+import { ContextCard } from "../../components/ui/context-card";
+import { Dialog } from "../../components/ui/dialog";
+import { personListView } from "./person-list-model";
 import { TaskList } from "./task-list";
 import { useAssistant, type AssistantController } from "./use-assistant";
 import { useAssistantConversation } from "./use-assistant-conversation";
@@ -69,6 +74,8 @@ export interface AssistantHomeProps {
   agentProfiles: AgentProfileProjection[];
   /** For the names of the projects work goes to. */
   workspaces: WorkspaceProjection[];
+  /** Everything that needs the person, as the sidebar counts it. */
+  needsYouTotal?: number;
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
@@ -82,6 +89,7 @@ export function AssistantHome({
   assistants = [],
   devices,
   workspaces,
+  needsYouTotal,
   onEvent,
 }: AssistantHomeProps) {
   const assistant = useAssistant(assistantId);
@@ -104,6 +112,7 @@ export function AssistantHome({
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
             needsYou={overview.needsYou}
+            needsYouTotal={needsYouTotal}
             onEvent={onEvent}
             workspaces={workspaces}
           />
@@ -121,6 +130,7 @@ function AssistantHomeReady({
   home,
   homeOnline,
   needsYou,
+  needsYouTotal,
   onEvent,
   workspaces,
 }: {
@@ -131,6 +141,7 @@ function AssistantHomeReady({
   home: DeviceProjection | undefined;
   homeOnline: boolean;
   needsYou: PersonalAgentOverview["needsYou"];
+  needsYouTotal: number | undefined;
   onEvent: (event: AssistantFeatureEvent) => void;
   workspaces: WorkspaceProjection[];
 }) {
@@ -143,6 +154,7 @@ function AssistantHomeReady({
   const [switching, setSwitching] = useState<"stop" | "resume">();
   const [switchError, setSwitchError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const stopped = agent.state === "stopped";
   const name = agent.settings.assistantName.trim() || t("defaultName");
   const canCreate = devices.some((device) => device.owned);
@@ -262,17 +274,7 @@ function AssistantHomeReady({
         role: "bot",
         kind: "waiting",
         text: t("inbox.received", { count: conversation.waitingInbox.length }),
-        title: t(
-          reason === "device_offline"
-            ? "inbox.deviceOffline"
-            : reason === "worker_update_required"
-              ? "inbox.workerUpdateRequired"
-              : reason === "account_unavailable"
-                ? "inbox.accountUnavailable"
-                : reason === "assistant_paused"
-                  ? "inbox.paused"
-                  : "inbox.pending",
-        ),
+        title: t(waitingReasonKey(reason)),
       });
     }
     const activity = assistantActivity(
@@ -333,6 +335,67 @@ function AssistantHomeReady({
       {historyNotice}
     </div>
   ) : undefined;
+
+  // What the assistant has for the person, at a glance: a rail beside the
+  // conversation when there is room, a sheet behind a one-line summary when
+  // there is not.
+  const sideSections = (
+    <>
+      {needsYou ? (
+        <NeedsYouSection
+          needsYou={needsYou}
+          onOpenAll={() => onEvent({ type: "pending.open" })}
+          total={needsYouTotal}
+        />
+      ) : null}
+      <UnprocessedSection
+        error={conversation.inboxError}
+        failed={conversation.failedInbox}
+        onRetry={(entry) => void conversation.retryInbox(entry)}
+        retrying={Boolean(conversation.retryingInboxId)}
+        waiting={conversation.waitingInbox.filter(
+          (entry) => entry.status === "waiting" && !entry.sessionId,
+        )}
+      />
+      <PersonList
+        assistantId={agent.id}
+        error={assistant.listItemsError}
+        items={assistant.listItems}
+        onDelete={assistant.deleteItem}
+        onEdit={assistant.editItem}
+        onTick={assistant.tickItem}
+        tasks={namedTasks}
+        operations={assistant.operations}
+        workspaces={workspaces}
+        onPlan={assistant.planItem}
+        onRefresh={assistant.reload}
+        onContinue={async (item) => {
+          await send(
+            t("planning.continuePrompt", { id: item.id, text: item.text }),
+            [],
+          );
+        }}
+      />
+      <TaskList
+        error={assistant.listsError}
+        onStop={assistant.stopTask}
+        projectName={(id) =>
+          workspaces.find((workspace) => workspace.id === id)?.name
+        }
+        tasks={namedTasks}
+      />
+    </>
+  );
+  const summary = sideSummary({
+    needsYou: needsYou?.open ?? 0,
+    unprocessed:
+      conversation.failedInbox.length +
+      conversation.waitingInbox.filter(
+        (entry) => entry.status === "waiting" && !entry.sessionId,
+      ).length,
+    list: personListView(assistant.listItems).open.length,
+    tasks: visibleTasks(namedTasks).active.length,
+  });
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] max-[1100px]:grid-cols-[minmax(0,1fr)] max-[1100px]:grid-rows-[auto_auto_minmax(0,1fr)]">
@@ -438,135 +501,49 @@ function AssistantHomeReady({
           threadKey={`assistant:${agent.workspaceId}`}
         />
       </section>
-      <aside className="grid min-h-0 min-w-0 content-start gap-5.5 overflow-y-auto border-l border-line px-4.5 py-4 max-[1100px]:row-start-2 max-[1100px]:max-h-[32dvh] max-[1100px]:border-b max-[1100px]:border-l-0 max-[860px]:max-h-[22dvh] max-[860px]:px-4 max-[860px]:py-3">
-        {needsYou ? (
-          <section
-            aria-label={t("home.needsYou.label")}
-            className="grid gap-1.5"
-          >
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <Subheading as="h2">
-                {t("home.needsYou.title", { count: needsYou.open })}
-              </Subheading>
-              <Button
-                onClick={() => onEvent({ type: "pending.open" })}
-                size="sm"
-                variant="ghost"
-              >
-                {t("home.needsYou.open")}
-                <ChevronRight aria-hidden="true" size={14} />
-              </Button>
-            </div>
-            {needsYou.items.length ? (
-              <DividedList density="compact">
-                {needsYou.items.map((item) => (
-                  <li className="grid min-w-0 gap-0.5" key={item.id}>
-                    <span className="min-w-0 truncate text-sm text-ink">
-                      {item.title}
-                    </span>
-                    {item.where ? (
-                      <span className="min-w-0 truncate text-2xs text-ink-faint">
-                        {item.where}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </DividedList>
+      <div className="min-h-0 min-w-0 overflow-y-auto pt-4.5 pr-4.5 pb-5 pl-1 max-[1100px]:hidden">
+        <ContextCard aria-label={t("home.side")}>{sideSections}</ContextCard>
+      </div>
+      <div className="hidden border-b border-line max-[1100px]:row-start-2 max-[1100px]:block">
+        <Button
+          aria-haspopup="dialog"
+          aria-label={`${t("home.summary.open")}: ${summary.map((part) => t(part.key, { count: part.count })).join(" · ") || t("home.summary.nothing")}`}
+          className="h-auto w-full justify-between gap-2 rounded-none px-5.5 py-2.5 text-left text-sm font-normal text-ink active:scale-100 max-[860px]:px-4"
+          onClick={() => setSheetOpen(true)}
+          variant="ghost"
+        >
+          <span className="min-w-0 truncate">
+            {summary.length ? (
+              summary.map((part, index) => (
+                <span key={part.key}>
+                  {index ? <span className="text-ink-faint"> · </span> : null}
+                  {t(part.key, { count: part.count })}
+                </span>
+              ))
             ) : (
-              <FieldHint>{t("home.needsYou.empty")}</FieldHint>
+              <span className="text-ink-muted">
+                {t("home.summary.nothing")}
+              </span>
             )}
-          </section>
-        ) : null}
-        {conversation.inboxError ? (
-          <Alert tone="error" title={t("inbox.readFailed")}>
-            {conversation.inboxError}
-          </Alert>
-        ) : null}
-        {conversation.waitingInbox.some(
-          (entry) => entry.status === "waiting" && !entry.sessionId,
-        ) ? (
-          <section aria-label={t("inbox.savedWaiting")}>
-            <Subheading as="h2">{t("inbox.savedWaiting")}</Subheading>
-            <FieldHint>{t("inbox.retrySettingsHint")}</FieldHint>
-            <DividedList density="compact">
-              {conversation.waitingInbox
-                .filter(
-                  (entry) => entry.status === "waiting" && !entry.sessionId,
-                )
-                .map((entry) => (
-                  <li className="grid gap-1" key={entry.id}>
-                    <p>{entry.text}</p>
-                    <Button
-                      size="sm"
-                      disabled={!!conversation.retryingInboxId}
-                      onClick={() => void conversation.retryInbox(entry)}
-                    >
-                      {t("inbox.retryWithSettings")}
-                    </Button>
-                  </li>
-                ))}
-            </DividedList>
-          </section>
-        ) : null}
-        {conversation.failedInbox.length ? (
-          <section aria-label={t("inbox.failedTitle")}>
-            <Subheading as="h2">{t("inbox.failedTitle")}</Subheading>
-            <DividedList density="compact">
-              {conversation.failedInbox.map((entry) => (
-                <li className="grid gap-1" key={entry.id}>
-                  <p>{entry.text}</p>
-                  <PaMuted>
-                    {entry.resultError || t("inbox.failedTitle")}
-                  </PaMuted>
-                  <Button
-                    size="sm"
-                    disabled={Boolean(conversation.retryingInboxId)}
-                    onClick={() => void conversation.retryInbox(entry)}
-                  >
-                    {t("inbox.retrySaved")}
-                  </Button>
-                  {entry.sessionId ? (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => navigateToChat(entry.sessionId!)}
-                    >
-                      {t("inbox.openResult")}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </DividedList>
-          </section>
-        ) : null}
-        <PersonList
-          assistantId={agent.id}
-          error={assistant.listItemsError}
-          items={assistant.listItems}
-          onDelete={assistant.deleteItem}
-          onEdit={assistant.editItem}
-          onTick={assistant.tickItem}
-          tasks={namedTasks}
-          operations={assistant.operations}
-          workspaces={workspaces}
-          onPlan={assistant.planItem}
-          onRefresh={assistant.reload}
-          onContinue={async (item) => {
-            await send(
-              t("planning.continuePrompt", { id: item.id, text: item.text }),
-              [],
-            );
-          }}
-        />
-        <TaskList
-          error={assistant.listsError}
-          onStop={assistant.stopTask}
-          projectName={(id) =>
-            workspaces.find((workspace) => workspace.id === id)?.name
-          }
-          tasks={namedTasks}
-        />
-      </aside>
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            className="flex-none text-ink-muted"
+            size={16}
+          />
+        </Button>
+      </div>
+      <Dialog
+        bodyClassName="p-0 max-[700px]:p-0"
+        onClose={() => setSheetOpen(false)}
+        open={sheetOpen}
+        side="right"
+        title={t("home.side")}
+      >
+        <ContextCard className="rounded-none shadow-none">
+          {sideSections}
+        </ContextCard>
+      </Dialog>
       <AssistantCreateDialog
         devices={devices}
         onClose={() => setCreating(false)}

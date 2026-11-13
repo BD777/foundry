@@ -174,6 +174,43 @@ func TestDaemonSilentDeviceIsDroppedWithTimeoutReason(t *testing.T) {
 	}
 }
 
+// A device that closes its socket normally, as a Worker does when its proxy
+// configuration changes, has the code and its reason recorded as the last
+// drop (DEV-217: such a close left no trace on the server). A replaced
+// connection's normal close answers the server's own and records nothing.
+func TestDaemonDeviceNormalCloseRecordsCodeAndReason(t *testing.T) {
+	server, url := deadlineTestServer(t, daemonReadTimeout)
+	conn := connectDeviceForTest(t, websocket.DefaultDialer, url, "dev_closes")
+	if err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Worker proxy configuration changed"), time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("write close: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		last, ok := server.hub.disconnects.lookup("dev_closes")
+		if ok {
+			if !strings.Contains(last.ServerReason, "device closed the connection") ||
+				!strings.Contains(last.ServerReason, "close 1000") ||
+				!strings.Contains(last.ServerReason, "Worker proxy configuration changed") {
+				t.Fatalf("recorded drop = %q, want the device's code and reason", last.ServerReason)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the device's normal close was not recorded")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	older := connectDeviceForTest(t, websocket.DefaultDialer, url, "dev_replaced_quietly")
+	connectDeviceForTest(t, websocket.DefaultDialer, url, "dev_replaced_quietly")
+	readCloseForTest(t, older)
+	_ = older.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Now().Add(time.Second))
+	time.Sleep(200 * time.Millisecond)
+	if last, ok := server.hub.disconnects.lookup("dev_replaced_quietly"); ok {
+		t.Fatalf("a replaced connection recorded a drop: %+v", last)
+	}
+}
+
 // A connection replaced by a newer one from the same device is told so, not
 // that the server is shutting down.
 func TestDaemonReplacedConnectionIsToldWhy(t *testing.T) {

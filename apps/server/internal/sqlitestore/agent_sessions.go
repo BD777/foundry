@@ -503,6 +503,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		Source:               start.source,
 		ParentSessionID:      start.parent.ID,
 		IssueID:              start.issueID,
+		WorkspaceAccess:      input.WorkspaceAccess,
 		Model:                strings.TrimSpace(input.Model),
 		WorkerGroupID:        strings.TrimSpace(input.WorkerGroupID),
 		DispatchID:           inputID,

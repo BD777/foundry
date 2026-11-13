@@ -61,7 +61,7 @@ components:
           type: string
     MessageConversationKind:
       type: string
-      enum: [direct, group, channel, feed, other]
+      enum: [direct, self, group, channel, feed, other]
       x-go-type: string
     MessageEnvelopeThread:
       type: object
@@ -185,6 +185,22 @@ components:
           type: array
           items:
             type: string
+    MessageChannelSessionRule:
+      description:
+        When a conversation's messages go to a new assistant session. idleMinutes, the time since the
+        conversation's last message after which the next one starts a new session (0 never); never
+        while the session is working. resetCommands, words that start a new session the way trigger
+        words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
+      type: object
+      required: [idleMinutes, resetCommands]
+      additionalProperties: false
+      properties:
+        idleMinutes:
+          type: integer
+        resetCommands:
+          type: array
+          items:
+            type: string
     MessageChannelLimits:
       type: object
       required: [perHour, perDay, concurrency]
@@ -210,6 +226,133 @@ components:
           type: string
         label:
           type: string
+        capabilities:
+          $ref: "#/components/schemas/MessageChannelCapabilities"
+          x-go-type-skip-optional-pointer: false
+    MessageChannelCapabilities:
+      description:
+        What the source's messages can tell apart, from its descriptor's envelope mapping. An
+        empty conversationKinds means the source does not say.
+      type: object
+      required: [conversationKinds, mentionsMe, fromSelf]
+      additionalProperties: false
+      properties:
+        conversationKinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageConversationKind"
+        mentionsMe:
+          type: boolean
+        fromSelf:
+          type: boolean
+    MessageChannelSample:
+      description: A message the person makes up to try the rules on.
+      type: object
+      required: [text, conversationKind, mentionsMe, fromSelf]
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+        conversationKind:
+          $ref: "#/components/schemas/MessageConversationKind"
+        mentionsMe:
+          type: boolean
+        fromSelf:
+          type: boolean
+        conversationId:
+          type: string
+        senderId:
+          type: string
+    MessageChannelTestInput:
+      description:
+        Rules to try before saving, on made-up samples and, with sourceAccountId and recent, on
+        the source's recent messages that the person's channels saw.
+      type: object
+      required: [filters]
+      additionalProperties: false
+      properties:
+        filters:
+          $ref: "#/components/schemas/MessageChannelFilters"
+        samples:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelSample"
+        sourceAccountId:
+          type: string
+        recent:
+          type: boolean
+    MessageChannelRuleCheck:
+      type: object
+      required: [ruleId, miss]
+      additionalProperties: false
+      properties:
+        ruleId:
+          type: string
+        miss:
+          description: '"" when the rule matches; else place, mention, self, conversation, sender or trigger.'
+          type: string
+    MessageChannelVerdict:
+      type: object
+      required: [envelope, keep, checks]
+      additionalProperties: false
+      properties:
+        sample:
+          description: Index of the sample; absent for a recent message.
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        envelope:
+          $ref: "#/components/schemas/MessageEnvelope"
+        keep:
+          type: boolean
+        textUnknown:
+          description:
+            A recent message that no rule took keeps no text, so the trigger words could not be
+            checked; keep and rule then say what holds if its text starts with a trigger word.
+          type: boolean
+        rule:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelRuleCheck"
+    MessageChannelTestResult:
+      type: object
+      required: [verdicts]
+      additionalProperties: false
+      properties:
+        verdicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelVerdict"
+    MessageChannelPeer:
+      description: A conversation or sender the person's channels saw recently from a source.
+      type: object
+      required: [id, name, count, lastSeenAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        conversationKind:
+          $ref: "#/components/schemas/MessageConversationKind"
+        count:
+          type: integer
+        lastSeenAt:
+          type: string
+    MessageChannelPeers:
+      type: object
+      required: [conversations, senders]
+      additionalProperties: false
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelPeer"
+        senders:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelPeer"
     MessageChannelInput:
       description: What the person sets on a channel.
       type: object
@@ -240,6 +383,14 @@ components:
         resumeFromNow:
           description: On enabling a paused channel, start from now instead of where it stopped.
           type: boolean
+        workspaceId:
+          description:
+            The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the
+            person's instructions for the channel. Empty on input creates one beside the assistant's home.
+          type: string
+        session:
+          $ref: "#/components/schemas/MessageChannelSessionRule"
+          x-go-type-skip-optional-pointer: false
     MessageChannel:
       type: object
       required:
@@ -281,6 +432,14 @@ components:
           $ref: "#/components/schemas/MessageChannelScope"
         limits:
           $ref: "#/components/schemas/MessageChannelLimits"
+        workspaceId:
+          description:
+            The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the
+            person's instructions for the channel. Empty on input creates one beside the assistant's home.
+          type: string
+        session:
+          $ref: "#/components/schemas/MessageChannelSessionRule"
+          x-go-type-skip-optional-pointer: false
         skillName:
           type: string
         createdAt:
@@ -359,11 +518,98 @@ components:
           $ref: "#/components/schemas/MessageChannelStatus"
         prerequisites:
           $ref: "#/components/schemas/MessageChannelPrerequisites"
+        workspace:
+          $ref: "#/components/schemas/MessageChannelWorkspace"
+          x-go-type-skip-optional-pointer: false
         sessionIds:
-          description: The channel's sessions in the assistant's home.
+          description: The channel's sessions.
           type: array
           items:
             type: string
+    MessageChannelWorkspace:
+      description: Where the channel's sessions run, read-only for them.
+      type: object
+      required: [id, name, deviceId, path, skills]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+        path:
+          type: string
+        skills:
+          description: The skills bound to the workspace, which its sessions load.
+          type: array
+          items:
+            type: string
+    MessageChannelInstructionsRevision:
+      type: object
+      required: [id, at, sha256, bytes, source]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+        sha256:
+          type: string
+        bytes:
+          type: integer
+        source:
+          description: "seed, web, revert, or outside (changed on the device, found when read)."
+          type: string
+    MessageChannelInstructions:
+      description: The AGENTS.md of the channel's workspace as it is on the device now, and its saved revisions.
+      type: object
+      required: [workspaceId, path, content, sha256, missing, revisions]
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        sha256:
+          type: string
+        missing:
+          type: boolean
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelInstructionsRevision"
+    MessageChannelInstructionsInput:
+      description: New content; baseSha256 is the sha256 the editor started from (refused when the file changed since).
+      type: object
+      required: [content, baseSha256]
+      additionalProperties: false
+      properties:
+        content:
+          type: string
+        baseSha256:
+          type: string
+    MessageChannelInstructionsRevert:
+      type: object
+      required: [revisionId, baseSha256]
+      additionalProperties: false
+      properties:
+        revisionId:
+          type: string
+        baseSha256:
+          type: string
+    MessageChannelRolloverInput:
+      description: The conversation (sessionKey of a delivery) whose next message starts a new session.
+      type: object
+      required: [sessionKey]
+      additionalProperties: false
+      properties:
+        sessionKey:
+          type: string
     MessageChannelList:
       type: object
       required: [channels, sources]
@@ -373,6 +619,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MessageChannelView"
+        channelSessionIds:
+          description:
+            Every session the assistant's channels started, including those of deleted channels;
+            they are not the person's conversation with the assistant.
+          type: array
+          items:
+            type: string
         sources:
           description: Connector instances whose descriptor declares an event feed.
           type: array
@@ -392,7 +645,13 @@ components:
           type: string
         kind:
           type: string
-          enum: [connector_write, connector_refused, needs_you]
+          enum:
+            [
+              connector_write,
+              connector_refused,
+              needs_you,
+              workspace_write_refused,
+            ]
           x-go-type: string
         summary:
           type: string
@@ -415,6 +674,18 @@ components:
         rule:
           type: string
         sessionId:
+          type: string
+        sessionKey:
+          description: The source conversation (and thread) the message belongs to.
+          type: string
+        segment:
+          description: Which of the conversation's sessions, from 0.
+          type: integer
+        sessionNew:
+          description: This message started the session.
+          type: boolean
+        newReason:
+          description: "Why a new session started: first, idle, command, button, restarted."
           type: string
         createdAt:
           type: string

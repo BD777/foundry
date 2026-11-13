@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +32,10 @@ const installResourceBackendTimeout = 10 * time.Minute
 func newResourceLeases(st Backend, inventory *resources.Service, hub *DaemonHub) *resources.Leases {
 	leases := resources.NewLeases(inventory, st)
 	leases.HostOnline = hub.HasConnection
+	leases.SharedLeases = func(sourceID string) bool {
+		connection := hub.connectionFor(sourceID)
+		return connection != nil && connection.hasCapability(store.DaemonCapabilitySharedLeases)
+	}
 	leases.WaitHostReconnect = func(ctx context.Context, sourceID string) error {
 		_, err := hub.waitForConnection(ctx, sourceID)
 		if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
@@ -176,7 +182,9 @@ func (s *Server) sendResourceSettings(ctx context.Context, deviceID string, sett
 		log.Printf("resource settings not applied on %s: %v", deviceID, err)
 		return false
 	}
-	if applied != settings {
+	// The worker enforces remote commands; slots and the lease policy are
+	// the server's alone.
+	if applied.AllowRemoteCommands != settings.AllowRemoteCommands {
 		log.Printf("resource settings on %s: sent %+v, worker applied %+v", deviceID, settings, applied)
 		return false
 	}
@@ -224,25 +232,39 @@ func writeLeaseResult(w http.ResponseWriter, payload any, err error) {
 	writeResult(w, payload, err)
 }
 
-// handleReleaseResource: the person ends the lease on an instance.
+// handleReleaseResource: the person ends the leases on an instance, or
+// only the one ?leaseId names.
 func (s *Server) handleReleaseResource(w http.ResponseWriter, r *http.Request) {
 	instance, ok := s.resourceForOwner(w, r)
 	if !ok {
 		return
 	}
-	lease, err := s.leases.Revoke(r.Context(), instance.ID, actorFromContext(r.Context()).AccountID())
-	writeLeaseResult(w, map[string]any{"lease": lease}, err)
+	leases, err := s.leases.Revoke(r.Context(), instance.ID, strings.TrimSpace(r.URL.Query().Get("leaseId")), actorFromContext(r.Context()).AccountID())
+	writeLeaseResult(w, leasesPayload(leases), err)
 }
 
-// handleLetResourceFinish: the person lets the holder keep an instance
-// another session waits for, once more.
+// handleLetResourceFinish: the person lets the holders about to lose an
+// instance another session waits for keep it once more (only the one
+// ?leaseId names, when given).
 func (s *Server) handleLetResourceFinish(w http.ResponseWriter, r *http.Request) {
 	instance, ok := s.resourceForOwner(w, r)
 	if !ok {
 		return
 	}
-	lease, err := s.leases.LetFinish(r.Context(), instance.ID)
-	writeLeaseResult(w, map[string]any{"lease": lease}, err)
+	leases, err := s.leases.LetFinish(r.Context(), instance.ID, strings.TrimSpace(r.URL.Query().Get("leaseId")))
+	writeLeaseResult(w, leasesPayload(leases), err)
+}
+
+// leasesPayload answers leases the person ended or extended: every one,
+// and the first as lease (as before several sessions could hold one).
+func leasesPayload(leases []store.ResourceLease) map[string]any {
+	payload := map[string]any{"leases": leases}
+	if len(leases) > 0 {
+		payload["lease"] = leases[0]
+	} else {
+		payload["lease"] = store.ResourceLease{}
+	}
+	return payload
 }
 
 // handleResourceOperations lists an instance's audited operations.
@@ -283,16 +305,58 @@ func (s *Server) handleResourceSettings(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusForbidden, "only the device's owner, signed in, changes what sessions may do on it")
 		return
 	}
-	var input store.ResourceSourceSettings
-	if !decodeJSONRequest(w, r, &input) {
+	// Each setting changes only when named, so one switch does not reset
+	// the other.
+	var change struct {
+		AllowRemoteCommands *bool     `json:"allowRemoteCommands"`
+		ComputeSlots        *int      `json:"computeSlots"`
+		AllowWorkspaces     *[]string `json:"allowWorkspaces"`
+		DenyWorkspaces      *[]string `json:"denyWorkspaces"`
+	}
+	if !decodeJSONRequest(w, r, &change) {
 		return
+	}
+	input, err := s.resources.Settings(r.Context(), deviceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if change.AllowRemoteCommands != nil {
+		input.AllowRemoteCommands = *change.AllowRemoteCommands
+	}
+	if change.ComputeSlots != nil {
+		if *change.ComputeSlots < 0 || *change.ComputeSlots > resources.MaxComputeSlots {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("computeSlots is 0 (from the device's CPUs and memory) to %d", resources.MaxComputeSlots))
+			return
+		}
+		input.ComputeSlots = *change.ComputeSlots
+	}
+	for _, list := range []struct {
+		change *[]string
+		into   *[]string
+	}{{change.AllowWorkspaces, &input.AllowWorkspaces}, {change.DenyWorkspaces, &input.DenyWorkspaces}} {
+		if list.change == nil {
+			continue
+		}
+		ids := []string{}
+		for _, id := range *list.change {
+			if id = strings.TrimSpace(id); id != "" && !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 200 {
+			writeError(w, http.StatusBadRequest, "at most 200 workspaces in a lease policy list")
+			return
+		}
+		*list.into = ids
 	}
 	if err := s.resources.SetSettings(r.Context(), deviceID, input, actor.AccountID()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	applied := s.sendResourceSettings(r.Context(), deviceID, input)
-	writeJSON(w, http.StatusOK, map[string]any{"allowRemoteCommands": input.AllowRemoteCommands, "applied": applied})
+	writeJSON(w, http.StatusOK, map[string]any{"allowRemoteCommands": input.AllowRemoteCommands, "computeSlots": input.ComputeSlots,
+		"allowWorkspaces": nonNilStrings(input.AllowWorkspaces), "denyWorkspaces": nonNilStrings(input.DenyWorkspaces), "applied": applied})
 }
 
 // handleInstallResourceBackend runs a backend's official installer on the
@@ -320,4 +384,11 @@ func (s *Server) handleInstallResourceBackend(w http.ResponseWriter, r *http.Req
 	defer cancel()
 	result, err := daemonRequest[store.ResourceBackendInstallResult](ctx, connection, wsInstallResourceBackendType, payload)
 	writeResult(w, result, err)
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }

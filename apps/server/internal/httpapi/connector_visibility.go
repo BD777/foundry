@@ -155,7 +155,7 @@ func waitConnectorVisibility(done <-chan struct{}, wait time.Duration) {
 	}
 }
 
-func (s *Server) connectorCatalogView(ctx context.Context, devices []store.DeviceProjection) (store.ConnectorCatalogView, error) {
+func (s *Server) connectorCatalogView(ctx context.Context, ownerUserID string, devices []store.DeviceProjection) (store.ConnectorCatalogView, error) {
 	ids := make([]string, 0, len(devices))
 	for _, device := range devices {
 		ids = append(ids, device.ID)
@@ -183,7 +183,11 @@ func (s *Server) connectorCatalogView(ctx context.Context, devices []store.Devic
 			}
 		}
 	}
-	return store.ConnectorCatalogView{Connectors: listed, RestrictedConnectors: restricted}, nil
+	bundles, err := s.connectorSkillBundles(ctx, ownerUserID, "", listed)
+	if err != nil {
+		return store.ConnectorCatalogView{}, err
+	}
+	return store.ConnectorCatalogView{Connectors: listed, RestrictedConnectors: restricted, SkillBundles: bundles}, nil
 }
 
 func (s *Server) handleRecheckConnectorVisibility(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +201,7 @@ func (s *Server) handleRecheckConnectorVisibility(w http.ResponseWriter, r *http
 		return
 	}
 	waitConnectorVisibility(s.refreshConnectorVisibility(r.Context(), devices, true), connectorVisibilityCheck)
-	view, err := s.connectorCatalogView(r.Context(), devices)
+	view, err := s.connectorCatalogView(r.Context(), actor.AccountID(), devices)
 	if err != nil {
 		writeResult(w, nil, err)
 		return

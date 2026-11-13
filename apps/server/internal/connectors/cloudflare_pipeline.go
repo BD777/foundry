@@ -399,16 +399,20 @@ func writeCloudflareGatewayError(w http.ResponseWriter, err error, reason string
 
 // cloudflareAudit is the pipeline's audit (gateway.Sink): a read is a line
 // of the account's activity, a change a line with the record it concerned.
-// A call that never authenticated names no account and has no line.
+// A call whose stand-in named no grant of its device names no account and
+// has no line.
 type cloudflareAudit struct{ g *CloudflareGateway }
 
 func (a cloudflareAudit) Record(ctx context.Context, record gateway.Record) {
-	lease := record.Lease
-	if lease == nil {
+	grant := record.Grant
+	if record.Lease != nil {
+		grant = &record.Lease.Grant
+	}
+	if grant == nil {
 		return
 	}
 	r := record.Request
-	event := store.ExternalAccountEvent{SessionID: lease.Grant.SessionID, DeviceID: lease.Grant.DeviceID, ActorID: record.Device.OwnerUserID}
+	event := store.ExternalAccountEvent{SessionID: grant.SessionID, DeviceID: grant.DeviceID, ActorID: record.Device.OwnerUserID}
 	if detail, ok := record.Detail.(*CloudflareWriteDetail); ok {
 		if record.Denial != nil && detail.Error == "" {
 			detail.Error = shortError(errors.New(cmp.Or(record.Message, record.Denial.Message)))
@@ -425,5 +429,5 @@ func (a cloudflareAudit) Record(ctx context.Context, record gateway.Record) {
 		}
 		event.Kind, event.Detail = "cloudflare_request", "GET "+cloudflareAuditPath(cloudflarePath(r))+" "+outcome
 	}
-	a.g.audit(ctx, lease.Account.ID, event)
+	a.g.audit(ctx, grant.AccountID, event)
 }

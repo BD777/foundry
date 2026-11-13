@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -222,6 +223,165 @@ func TestConnectorInstancesMCPCreateProbeAndListWithoutSecrets(t *testing.T) {
 	}
 	if len(upstreamCalls) < 5 {
 		t.Fatalf("upstream probe calls = %v", upstreamCalls)
+	}
+}
+
+type extensionInstallFixture struct {
+	f           *externalAccountsFixture
+	upstreamURL string
+	targetID    string
+	source      *fakeConnectorWorker
+	target      *fakeConnectorWorker
+	mcpToken    string
+}
+
+func waitForExtensionInstallDevice(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !done() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func newExtensionInstallFixture(t *testing.T) extensionInstallFixture {
+	t.Helper()
+	const sourceDeviceID = "dev_alice"
+	f := newExternalAccountsFixture(t)
+	f.server.connectors.ServerHeld.ExtensionDeviceRequest = f.server.extensionDeviceRequest
+	f.server.connectors.ServerHeld.ExtensionDevices = f.server.extensionDevices
+	const secret = "extension-install-secret"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+secret {
+			http.Error(w, "wrong credential", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/connector/agent/v1/accounts":
+			_, _ = w.Write([]byte(`{"accounts":[{"id":"42","name":"Ada"}]}`))
+		case "/connector/agent/v1/":
+			_, _ = w.Write([]byte(`{"routes":[{"method":"GET","path":"/agent/v1/read","access":"read"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	httpServer := httptest.NewServer(f.handler)
+	t.Cleanup(httpServer.Close)
+
+	session, err := f.server.store.CreateAgentSession(context.Background(), store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_alice", AgentID: "agent_alice",
+		Provider: "claude", Prompt: "configure the connector", Source: store.SessionSourceChat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcpToken, err := f.server.store.MintAgentSessionToken(context.Background(), session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &fakeConnectorWorker{t: t, reportedConnectors: []any{acmeServerHeldExtension()}}
+	source.connect(httpServer.URL, f.aliceDevice)
+	t.Cleanup(source.disconnect)
+	targetID, targetCredential := pairOverHTTP(t, f.handler, f.alice, "machine-alice-target", "dev_alice_target")
+	target := &fakeConnectorWorker{
+		t: t, deviceID: targetID, deviceLabel: "alice-target",
+		workspaceID: "ws_alice_target", reportedConnectors: []any{},
+		installedConnectors: []any{acmeServerHeldExtension()},
+	}
+	target.connect(httpServer.URL, targetCredential)
+	t.Cleanup(target.disconnect)
+	waitForExtensionInstallDevice(t, "both extension-install devices to connect", func() bool {
+		return f.server.hub.HasConnection(sourceDeviceID) && f.server.hub.HasConnection(targetID)
+	})
+	waitForExtensionInstallDevice(t, "the source device to report the extension", func() bool {
+		_, err := f.server.connectors.Devices.ServerHeldDescriptorOn(context.Background(), sourceDeviceID, "acme-api")
+		return err == nil
+	})
+	if _, err := f.server.connectors.Devices.ServerHeldDescriptorOn(context.Background(), targetID, "acme-api"); err == nil {
+		t.Fatal("the target device reported the extension before the probe")
+	}
+	return extensionInstallFixture{
+		f: f, upstreamURL: upstream.URL, targetID: targetID, source: source, target: target, mcpToken: mcpToken,
+	}
+}
+
+func extensionInstallProbeBody(upstreamURL, targetID string) map[string]any {
+	return map[string]any{
+		"label": "Acme on the target", "network": "device", "deviceId": targetID,
+		"fields": map[string]string{
+			"baseUrl": upstreamURL + "/connector", "account": "42", "readToken": "extension-install-secret",
+		},
+	}
+}
+
+func TestConnectorInstanceWebFlowInstallsMissingExtensionBeforeProbe(t *testing.T) {
+	fixture := newExtensionInstallFixture(t)
+	probeBody := extensionInstallProbeBody(fixture.upstreamURL, fixture.targetID)
+	encoded, err := json.Marshal(probeBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := doAuthCall(t, fixture.f.handler, fixture.f.as(fixture.f.alice, http.MethodPost, "/api/connectors/extensions/acme-api/instances/probe", string(encoded)))
+	expectStatus(t, probe, http.StatusOK, "probe through a device without the extension")
+	if strings.Contains(probe.Body.String(), "extension-install-secret") {
+		t.Fatal("the probe response contains the secret")
+	}
+	fixture.target.mu.Lock()
+	installRequests := append([]store.ExtensionRequestPayload(nil), fixture.target.extensionRequests...)
+	extensionCalls := len(fixture.target.extensionHTTP)
+	fixture.target.mu.Unlock()
+	if len(installRequests) != 1 || installRequests[0].BundledExtensionID != "acme" {
+		t.Fatalf("extension installs = %+v", installRequests)
+	}
+	if extensionCalls < 2 {
+		t.Fatalf("probe exchanges on target = %d", extensionCalls)
+	}
+	if _, err := fixture.f.server.connectors.Devices.ServerHeldDescriptorOn(context.Background(), fixture.targetID, "acme-api"); err != nil {
+		t.Fatalf("target did not report the installed extension: %v", err)
+	}
+
+	create := doAuthCall(t, fixture.f.handler, fixture.f.as(fixture.f.alice, http.MethodPost, "/api/connectors/extensions/acme-api/instances", string(encoded)))
+	expectStatus(t, create, http.StatusCreated, "create through the Web endpoint")
+	var created store.ConnectorServerHeldInstance
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil || created.ID == "" {
+		t.Fatalf("created instance = %+v (%v), %s", created, err, create.Body.String())
+	}
+}
+
+func TestDeviceNetworkCreateInstallsMissingExtensionOnTargetDevice(t *testing.T) {
+	fixture := newExtensionInstallFixture(t)
+	f := fixture.f
+
+	ctx := context.Background()
+	createdText, failed := connectorMCPCall(t, f.handler, fixture.mcpToken, map[string]any{
+		"action": "create", "kind": "acme-api", "network": "device", "probeDeviceId": fixture.targetID,
+		"label":        "Acme through the target",
+		"fields":       map[string]string{"baseUrl": fixture.upstreamURL + "/connector", "account": "42"},
+		"secretValues": map[string]string{"readToken": "extension-install-secret"},
+	}, true)
+	if failed || strings.Contains(createdText, "extension-install-secret") {
+		t.Fatalf("create = %q (error %v)", createdText, failed)
+	}
+	var created connectorInstanceSummary
+	if err := json.Unmarshal([]byte(createdText), &created); err != nil || created.ID == "" {
+		t.Fatalf("created instance = %+v (%v), %s", created, err, createdText)
+	}
+	fixture.target.mu.Lock()
+	installRequests := append([]store.ExtensionRequestPayload(nil), fixture.target.extensionRequests...)
+	extensionCalls := len(fixture.target.extensionHTTP)
+	fixture.target.mu.Unlock()
+	if len(installRequests) != 1 || installRequests[0].BundledExtensionID != "acme" {
+		t.Fatalf("extension installs = %+v", installRequests)
+	}
+	if extensionCalls < 2 {
+		t.Fatalf("probe exchanges on target = %d", extensionCalls)
+	}
+	if _, err := f.server.connectors.Devices.ServerHeldDescriptorOn(ctx, fixture.targetID, "acme-api"); err != nil {
+		t.Fatalf("target did not report the installed extension: %v", err)
 	}
 }
 

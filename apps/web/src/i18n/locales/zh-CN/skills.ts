@@ -70,6 +70,10 @@ export const skills: Translation<typeof en> = {
     requiredBlocked: "{{requirers}} 依赖 {{name}}，无法停用。",
   },
   workspace: {
+    listingBudget_one:
+      "这里的 Claude Code 会话要列出 {{count}} 个 Skill，清单只有 {{budget}} 个字符；其中至少 {{without}} 个只显示名字、没有描述。关掉这个工作区用不到的 Skill，其余的才能保留描述。",
+    listingBudget_other:
+      "这里的 Claude Code 会话要列出 {{count}} 个 Skill，清单只有 {{budget}} 个字符；其中至少 {{without}} 个只显示名字、没有描述。关掉这个工作区用不到的 Skill，其余的才能保留描述。",
     filterAll: "全部 Skill",
     filterSelected: "工作区已选",
     filterUnselected: "未选",

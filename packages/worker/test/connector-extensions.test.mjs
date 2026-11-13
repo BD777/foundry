@@ -707,23 +707,34 @@ test("a provider that cannot be used now stays, unavailable with the reason", as
     const verified = profileFingerprint(profile());
     assert.equal(modelAccessHasProblems(), false);
 
-    // Joined, but its gateway did not answer this time: kept, with the
-    // identity last verified, so its fingerprint (check, chats) is the same.
+    // Joined, but its gateway did not answer this time: the last verified
+    // provider stays usable while consecutive failures are still below the
+    // limit, and its fingerprint (check, chats) is unchanged.
     setState({
       installed: true,
       signedIn: true,
       modelProblem: "The gateway did not answer in 5s.",
     });
-    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.equal(await refreshExtensionModelProviders(host), false);
     assert.deepEqual(
       extensionModelProviders().map((p) => p.id),
       ["corp_default"],
     );
     assert.equal(profile().externalConnection.identity, "namespace-1");
     assert.equal(profileFingerprint(profile()), verified);
-    assert.equal(row().status, "unavailable");
-    assert.equal(row().statusDetail, "The gateway did not answer in 5s.");
+    assert.doesNotMatch(row().statusDetail, /gateway did not answer/i);
     assert.equal(modelAccessHasProblems(), true, "asked again soon");
+
+    // A second failure still keeps the last good state; the third flips it.
+    assert.equal(await refreshExtensionModelProviders(host), false);
+    assert.doesNotMatch(row().statusDetail, /gateway did not answer/i);
+    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.equal(row().status, "unavailable");
+    assert.match(
+      row().statusDetail,
+      /^The gateway did not answer in 5s\. \(last confirmed \d+s ago\)$/,
+    );
+    assert.equal(profileFingerprint(profile()), verified);
 
     // It answers again: usable, nothing else changed.
     setState({ installed: true, signedIn: true });

@@ -122,10 +122,21 @@ func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, devi
 		return
 	}
 	size, revision := chunk.Size, chunk.Revision
-	w.Header().Set("Content-Type", "application/octet-stream")
+	// HEAD answers the same size and safe type from the first chunk, then stops.
+	contentType := downloadImageContentType(path, data)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(path)}))
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("X-Foundry-File-Size", strconv.FormatInt(size, 10))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	if r.Method == http.MethodHead {
+		return
+	}
 	if _, err = w.Write(data); err != nil {
 		return
 	}

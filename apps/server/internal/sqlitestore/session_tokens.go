@@ -19,16 +19,16 @@ import (
 // run_session payload, and never persisted or logged; the store only keeps a
 // SHA-256 hash. Deleting the session revokes every token it was given.
 //
-// A token is valid while its session is queued, running or blocked (a turn
-// may run for hours without calling a tool), and otherwise until it has gone
-// unused for agentSessionTokenIdle: a settled session's agent process (a
-// Claude process kept alive by a timer or background work) keeps its tools
-// while it uses them, and a token copied out of a finished session dies
-// soon. No token outlives agentSessionTokenTTL.
+// A token is valid for as long as its session exists and is not archived,
+// whatever its turns do (DEV-215): the agent process it was given to (a
+// Claude process kept between turns, its background work, timers and
+// subagents, a kept Codex app-server) acts for the session until then.
+// Archiving or deleting the session revokes it; no token outlives
+// agentSessionTokenTTL (a reused process is handed a newer one well before:
+// foundry-tools.ts heldTokenTrustMs).
 
 const (
-	agentSessionTokenTTL  = 30 * 24 * time.Hour
-	agentSessionTokenIdle = 24 * time.Hour
+	agentSessionTokenTTL = 30 * 24 * time.Hour
 	// A lease's command token is bounded by its lease (checked per call);
 	// this only caps a token whose lease record is gone.
 	leaseCommandTokenTTL = 24 * time.Hour
@@ -103,25 +103,29 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 	hash := hashSessionToken(plaintext)
 	var identity store.SessionTokenIdentity
 	var workspaceID, deviceID sql.NullString
-	var expiresAt, lastUsedAt, status string
+	var expiresAt string
+	var archived bool
 	err := s.conn().QueryRowContext(ctx, `SELECT token.session_id, token.lease_id,
 			COALESCE(NULLIF(session.workspace_id, ''), ''),
 			COALESCE(NULLIF(session.device_id, ''), ''),
-			token.expires_at, token.last_used_at, session.status
+			token.expires_at, `+strings.ReplaceAll(archivedSessionSQL, "agent_sessions.", "session.")+`
 		FROM session_tokens AS token
 		JOIN agent_sessions AS session ON session.id = token.session_id
 		WHERE token.token_hash = ? AND NOT EXISTS (SELECT 1 FROM chat_deletions d
 			WHERE d.workspace_id = session.workspace_id AND d.deletion_key IN (
 				'id:' || session.id,
 				'native:' || session.provider || ':' || json_extract(session.payload_json, '$.nativeSessionId')))`,
-		hash).Scan(&identity.SessionID, &identity.LeaseID, &workspaceID, &deviceID, &expiresAt, &lastUsedAt, &status)
+		hash).Scan(&identity.SessionID, &identity.LeaseID, &workspaceID, &deviceID, &expiresAt, &archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
 	}
 	if err != nil {
 		return store.SessionTokenIdentity{}, err
 	}
-	if !sessionTokenLive(time.Now().UTC(), expiresAt, lastUsedAt, status) {
+	if archived {
+		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
+	}
+	if expiry, err := time.Parse(time.RFC3339Nano, expiresAt); err != nil || time.Now().After(expiry) {
 		_, _ = s.conn().ExecContext(ctx, `DELETE FROM session_tokens WHERE token_hash = ?`, hash)
 		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
 	}
@@ -130,19 +134,6 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 	_, _ = s.conn().ExecContext(ctx, `UPDATE session_tokens SET last_used_at = ? WHERE token_hash = ?`,
 		formatTime(time.Now().UTC()), hash)
 	return identity, nil
-}
-
-// sessionTokenLive applies the token lifetime described above.
-func sessionTokenLive(now time.Time, expiresAt, lastUsedAt, status string) bool {
-	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
-	if err != nil || now.After(expiry) {
-		return false
-	}
-	if store.IsActiveSessionStatus(status) {
-		return true
-	}
-	lastUsed, err := time.Parse(time.RFC3339Nano, lastUsedAt)
-	return err == nil && !now.After(lastUsed.Add(agentSessionTokenIdle))
 }
 
 func trimToken(value string) string {

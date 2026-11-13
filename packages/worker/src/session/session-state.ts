@@ -211,6 +211,8 @@ export interface ActiveClaudeRuntime {
   messagesPath?: string;
   /** The workspace the process works in; work between turns is recorded there. */
   workspacePath?: string;
+  /** Set when that workspace is read-only for the session: refused writes are shown. */
+  readOnlyWorkspace?: boolean;
   /** The input whose turn ended last: work between turns follows from it. */
   lastInputId?: string;
   /** Files Claude writes between turns, until its answer there is published. */

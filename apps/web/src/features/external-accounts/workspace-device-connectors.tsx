@@ -28,6 +28,7 @@ import { Skeleton } from "../../components/ui/loading";
 import { DeviceConnectorRow } from "./device-connector-row";
 import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
+import { ConnectorSkills } from "./connector-skills";
 import { connectorName, signsInHere } from "./connector-text";
 import { CheckLabel } from "../../components/ui/check-label";
 import { DividedList } from "../../components/ui/divided-list";
@@ -286,11 +287,19 @@ export function WorkspaceDeviceConnectors({
               device: target?.name ?? "…",
             })}
             holding={
-              <CredentialHolding
-                holding={descriptor.holding}
-                name={label}
-                signOutLocal={descriptor.signIn?.signOut === false}
-              />
+              <>
+                <CredentialHolding
+                  holding={descriptor.holding}
+                  name={label}
+                  signOutLocal={descriptor.signIn?.signOut === false}
+                />
+                <ConnectorSkills
+                  inWorkspace
+                  bundle={view?.skillBundles?.find(
+                    (bundle) => bundle.kind === kind,
+                  )}
+                />
+              </>
             }
             key={kind}
             name={label}

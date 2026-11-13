@@ -6,7 +6,7 @@ import {
   ContextEmpty,
   ContextHeading,
   ContextSection,
-} from "./chat-context-parts";
+} from "../../../components/ui/context-card";
 import {
   FileTree,
   type FileTreeItem,

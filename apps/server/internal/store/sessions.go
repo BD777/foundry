@@ -73,6 +73,10 @@ type SendAgentSessionInput struct {
 	SentBySessionID string `json:"-"`
 }
 
+// SessionWorkspaceAccessRead: the session's workspace is read-only for it,
+// kept so by its worker's sandbox (a message channel's session, DEV-203).
+const SessionWorkspaceAccessRead = "read"
+
 type CreateAgentSessionInput struct {
 	ExecutionBudget                *SessionExecutionBudget `json:"-"`
 	PersonalAgentOperationID       string                  `json:"-"`
@@ -105,8 +109,11 @@ type CreateAgentSessionInput struct {
 	// ChatID continues a device's native chat: the session adopts it.
 	ChatID string `json:"chatId,omitempty"`
 	// Verification requests a read-only utility verifier session.
-	Verification bool   `json:"verification,omitempty"`
-	Source       string `json:"source"`
+	Verification bool `json:"verification,omitempty"`
+	// WorkspaceAccess read keeps the workspace read-only for the session
+	// (SessionWorkspaceAccessRead).
+	WorkspaceAccess string `json:"-"`
+	Source          string `json:"source"`
 	// InputID names the first input, as SendAgentSessionInput.InputID does.
 	InputID string `json:"inputId,omitempty"`
 	// ReportBack false keeps an agent's child from reporting its ended

@@ -51,18 +51,37 @@ export function listResources(
   return request("GET", `/api/resources${search ? `?${search}` : ""}`, options);
 }
 
-/** Ends the lease a session holds on an instance; its screen is reset. */
+const leaseQuery = (leaseId?: string) =>
+  leaseId ? `?leaseId=${encodeURIComponent(leaseId)}` : "";
+
+/**
+ * Ends one lease on an instance (leaseId), or every lease on it; the
+ * instance is reset once none is left.
+ */
 export function releaseResource(
   resourceId: string,
-): Promise<{ lease: ResourceLease }> {
-  return request("POST", `${resourcePath(resourceId)}/release`, { body: {} });
+  leaseId?: string,
+): Promise<{ lease: ResourceLease; leases?: ResourceLease[] }> {
+  return request(
+    "POST",
+    `${resourcePath(resourceId)}/release${leaseQuery(leaseId)}`,
+    { body: {} },
+  );
 }
 
-/** "Let it finish": postpones once the preemption a waiting session caused. */
+/**
+ * "Let it finish": postpones once the preemption a waiting session caused,
+ * for one lease (leaseId) or every lease on the instance.
+ */
 export function extendResourceLease(
   resourceId: string,
-): Promise<{ lease: ResourceLease }> {
-  return request("POST", `${resourcePath(resourceId)}/extend`, { body: {} });
+  leaseId?: string,
+): Promise<{ lease: ResourceLease; leases?: ResourceLease[] }> {
+  return request(
+    "POST",
+    `${resourcePath(resourceId)}/extend${leaseQuery(leaseId)}`,
+    { body: {} },
+  );
 }
 
 /** Ends every lease on a device's resources and resets them. */
@@ -83,12 +102,13 @@ export interface SavedResourceSourceSettings extends ResourceSourceSettings {
 }
 
 /**
- * Saves what a device's owner allows sessions to do with its resources.
- * Turning remote commands off ends any lease on its compute resource.
+ * Saves what a device's owner allows sessions to do with its resources;
+ * a field left out stays as it is. Turning remote commands off ends any
+ * lease on its compute resource.
  */
 export function saveDeviceResourceSettings(
   deviceId: string,
-  settings: ResourceSourceSettings,
+  settings: Partial<ResourceSourceSettings>,
 ): Promise<SavedResourceSourceSettings> {
   return request("PUT", `${devicePath(deviceId)}/resources/settings`, {
     body: settings,

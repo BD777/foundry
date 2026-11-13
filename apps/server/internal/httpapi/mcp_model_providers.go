@@ -452,6 +452,29 @@ func (s *Server) saveModelProviderForMCP(call mcpCall) (string, error) {
 		return "", &statusError{http.StatusBadRequest, errors.New("give apiKey or clearApiKey, not both")}
 	}
 	input.APIKey = apiKey
+	copyKeyFrom := strings.TrimSpace(mcpArgString(args, "copyApiKeyFromProviderId"))
+	if copyKeyFrom != "" && (apiKey != "" || clearKey) {
+		return "", &statusError{http.StatusBadRequest, errors.New("give copyApiKeyFromProviderId without apiKey or clearApiKey")}
+	}
+	if copyKeyFrom != "" {
+		source, owns, err := s.ownedProfile(ctx, m, copyKeyFrom)
+		if err != nil {
+			return "", err
+		}
+		if !owns {
+			return "", &statusError{http.StatusNotFound, errors.New("source API endpoint not found: " + copyKeyFrom)}
+		}
+		credential, err := s.hub.serverProfileCredential(ctx, source.ID)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(credential) == "" {
+			return "", &statusError{http.StatusBadRequest, errors.New("source API endpoint has no stored key: " + copyKeyFrom)}
+		}
+		// Keep the credential server-side. saveProfile seals this copy under
+		// the destination profile and never writes it to a response or event.
+		input.APIKey = credential
+	}
 	var deviceIDs []string
 	if present("deviceIds") {
 		deviceIDs = mcpArgList(args, "deviceIds")

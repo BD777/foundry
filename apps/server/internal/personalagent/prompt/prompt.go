@@ -45,7 +45,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-13.2"
+const Version = "2026-11-13.3"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker

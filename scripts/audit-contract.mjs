@@ -464,8 +464,19 @@ function goSources(dir, include) {
 
 // --- Compare -------------------------------------------------------------
 
+/**
+ * TS DTOs that declare only the fields their reader uses of a larger Go
+ * struct: each TS field must still exist in Go. The assistant home card's
+ * needs-you rows read the headline fields of the full store.PendingItem.
+ */
+export const dtoTsSubsets = new Set(["PersonalAgentNeedsYouItem"]);
+
 /** @returns {string[]} failure descriptions, empty when both guards pass */
-export function compareDtoFields(tsInterfaces, goStructs) {
+export function compareDtoFields(
+  tsInterfaces,
+  goStructs,
+  tsSubsets = dtoTsSubsets,
+) {
   const problems = [];
   for (const [name, tsFields] of tsInterfaces) {
     const goFields = goStructs.get(name);
@@ -482,7 +493,7 @@ export function compareDtoFields(tsInterfaces, goStructs) {
         `"${name}": TS has fields missing in Go: ${missingInGo.join(", ")}`,
       );
     }
-    if (missingInTs.length > 0) {
+    if (missingInTs.length > 0 && !tsSubsets.has(name)) {
       problems.push(
         `"${name}": Go has fields missing in TS: ${missingInTs.join(", ")}`,
       );
@@ -990,6 +1001,45 @@ export function sessionClassFailures() {
   return { failures, values: ts.sources.size + ts.active.size };
 }
 
+/**
+ * TS DTOs whose Go wire type is an httpapi view, not the store struct of the
+ * same name: the inbox list adds each entry's classified failure (DEV-214).
+ */
+export const dtoGoNames = {
+  PersonalAgentInboxEntry: "personalAgentInboxView",
+  PersonalAgentInboxFailure: "inboxFailureView",
+};
+
+/**
+ * The Go side of the DTO comparison: each goDtoPaths struct (and each
+ * dtoGoNames view) by its TS name, embedded structs folded in. Embeds
+ * resolve against the store and httpapi packages, store names first.
+ * @returns {Map<string, string[]>}
+ */
+export function readGoDtoStructs() {
+  const pool = new Map();
+  for (const dir of [goWireDir, goStoreDir])
+    for (const { source } of goSources(dir, () => true))
+      for (const [name, struct] of parseGoStructsWithEmbeds(source))
+        pool.set(name, struct);
+  const structs = new Map();
+  for (const path of goDtoPaths)
+    for (const [name, struct] of parseGoStructsWithEmbeds(
+      readFileSync(path, "utf8"),
+    ))
+      structs.set(name, [
+        ...struct.fields,
+        ...struct.embeds.flatMap((embed) => goStructFields(pool, embed) ?? []),
+      ]);
+  for (const [tsName, goName] of Object.entries(dtoGoNames)) {
+    const fields = goStructFields(pool, goName);
+    if (!fields)
+      throw new Error(`audit-contract.mjs maps ${tsName} to unknown ${goName}`);
+    structs.set(tsName, fields);
+  }
+  return structs;
+}
+
 export function readMerged(paths, parse) {
   const merged = new Map();
   for (const path of paths)
@@ -1030,7 +1080,7 @@ export function browserEventFailures() {
 
 function main() {
   const tsInterfaces = readMerged(tsDtoPaths, parseTsInterfaces);
-  const goStructs = readMerged(goDtoPaths, parseGoStructs);
+  const goStructs = readGoDtoStructs();
   const tsMessageTypes = parseTsMessageTypes(
     readFileSync(tsMessagesPath, "utf8"),
   );

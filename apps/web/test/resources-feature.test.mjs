@@ -564,7 +564,12 @@ async function renderOwned(owned = ["dev_a"]) {
 test.afterEach(() => {
   extraInstances = [];
   routes = {};
-  for (const source of sources) source.allowRemoteCommands = false;
+  for (const source of sources) {
+    source.allowRemoteCommands = false;
+    delete source.computeSlots;
+    delete source.allowWorkspaces;
+    delete source.denyWorkspaces;
+  }
 });
 
 test("a held instance says who holds it; the owner releases it or lets it finish", async () => {
@@ -574,10 +579,8 @@ test("a held instance says who holds it; the owner releases it or lets it finish
   assert.match(mac.querySelector(".fdy-badge").textContent, /In use/);
   assert.match(mac.textContent, /In use by a session/);
   assert.match(mac.textContent, /since 5 minutes ago/);
-  assert.match(
-    mac.textContent,
-    /1 session waiting · Will be given to the waiting session at/,
-  );
+  assert.match(mac.textContent, /Will be given to the waiting session at/);
+  assert.match(mac.textContent, /1 session waiting/);
   assert.match(
     mac.textContent,
     /Used through cua-driver 0\.2\.0 \(operated through Foundry\) — Ready · permitted/,
@@ -590,8 +593,8 @@ test("a held instance says who holds it; the owner releases it or lets it finish
   ];
   await click(buttonIn(mac, "Let it finish"));
   assert.deepEqual(
-    calls.map((call) => [call.method, call.path, call.body]),
-    [["POST", "/api/resources/res_mac/extend", {}]],
+    calls.map((call) => [call.method, call.path, call.search, call.body]),
+    [["POST", "/api/resources/res_mac/extend", "?leaseId=lease_1", {}]],
   );
   await toastShown(act, ".fdy-toast");
   assert.match(
@@ -610,6 +613,7 @@ test("a held instance says who holds it; the owner releases it or lets it finish
   await click(buttonIn(dialog(), "Release now"));
   assert.equal(dialog(), null);
   assert.deepEqual(calls.at(-1).path, "/api/resources/res_mac/release");
+  assert.equal(calls.at(-1).search, "?leaseId=lease_1");
   const busy = buttonIn(mac, "Releasing…");
   assert.ok(busy, "the button says it is releasing");
   assert.equal(busy.disabled, true);
@@ -1078,12 +1082,16 @@ const allowSwitch = (node) =>
     .find((label) => label.textContent.includes(allowLabel))
     ?.querySelector('input[type="checkbox"]');
 
-async function renderCompute(owned, compute = [studioCompute, laptopCompute]) {
+async function renderCompute(
+  owned,
+  compute = [studioCompute, laptopCompute],
+  workspaces = [],
+) {
   window.history.replaceState(null, "", "/resources?workspace=ws_1");
   extraInstances = compute;
   calls.length = 0;
   routes = {};
-  return render(ResourcesFeature, { ownedDeviceIds: owned });
+  return render(ResourcesFeature, { ownedDeviceIds: owned, workspaces });
 }
 
 test("a compute instance's details read as one line", async () => {
@@ -1203,5 +1211,187 @@ test("turning remote commands off while a session holds compute asks first", asy
   await click(buttonIn(dialog(), "Turn off"));
   assert.equal(dialog(), null);
   assert.deepEqual(calls.at(-1).body, { allowRemoteCommands: false });
+  await page.unmount();
+});
+
+test("shared compute leases each show, with the slots; Release ends just one", async () => {
+  const page = await renderCompute(
+    ["dev_a"],
+    [
+      {
+        ...studioCompute,
+        state: "available",
+        holder: {
+          leaseId: "lease_s1",
+          sessionId: "sess_s1",
+          mode: "shared",
+          state: "active",
+          since: iso(-3 * minute),
+        },
+        holders: [
+          {
+            leaseId: "lease_s1",
+            sessionId: "sess_s1",
+            mode: "shared",
+            state: "active",
+            since: iso(-3 * minute),
+          },
+          {
+            leaseId: "lease_s2",
+            sessionId: "sess_s2",
+            workspaceId: "ws_3",
+            mode: "shared",
+            state: "parked",
+            since: iso(-1 * minute),
+          },
+        ],
+        slots: { capacity: 8, inUse: 1, auto: true },
+        queue: 0,
+      },
+    ],
+  );
+  const studioRow = row(page.container, "Studio compute");
+  const holders = [...studioRow.querySelectorAll(".fdy-res-holder")];
+  assert.deepEqual(
+    holders.map((node) => node.dataset.lease),
+    ["lease_s1", "lease_s2"],
+  );
+  assert.match(holders[0].textContent, /Shared.*In use by a session/);
+  assert.match(holders[1].textContent, /Shared.*Kept for the session/);
+  assert.match(studioRow.textContent, /1 of 8 slots in use · automatic/);
+  assert.doesNotMatch(studioRow.textContent, /waiting/);
+
+  routes["POST /api/resources/res_compute_a/release"] = () => [
+    200,
+    { lease: { id: "lease_s2", state: "revoked" }, leases: [] },
+  ];
+  await click(buttonIn(holders[1], "Release"));
+  await click(buttonIn(dialog(), "Release now"));
+  assert.deepEqual(
+    calls.map((call) => [call.method, call.path, call.search]),
+    [["POST", "/api/resources/res_compute_a/release", "?leaseId=lease_s2"]],
+  );
+
+  await click(buttonIn(holders[1], "Open session"));
+  assert.match(window.location.pathname, /sess_s2/);
+  assert.equal(
+    new URLSearchParams(window.location.search).get("workspace"),
+    "ws_3",
+  );
+  await page.unmount();
+});
+
+test("the owner sets concurrent shared leases: automatic or 1–64", async () => {
+  const page = await renderCompute(["dev_a"]);
+  const studioRow = () => row(page.container, "Studio compute");
+  const slotsInput = () => studioRow().querySelector('input[type="number"]');
+  const type = async (value) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set.call(slotsInput(), value);
+      slotsInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+  assert.equal(slotsInput().value, "", "automatic by default");
+  assert.equal(slotsInput().placeholder, "Automatic");
+  assert.match(studioRow().textContent, /Concurrent shared leases/);
+  assert.equal(buttonIn(studioRow(), "Save"), undefined);
+  assert.equal(
+    row(page.container, "Laptop compute").querySelector('input[type="number"]'),
+    null,
+    "only the owner's device has it",
+  );
+
+  await type("65");
+  assert.equal(buttonIn(studioRow(), "Save").disabled, true);
+  assert.match(studioRow().textContent, /Enter a whole number from 1 to 64/);
+
+  routes["PUT /api/devices/dev_a/resources/settings"] = ({ body }) => [
+    200,
+    {
+      allowRemoteCommands: false,
+      computeSlots: body.computeSlots,
+      applied: true,
+    },
+  ];
+  await type("6");
+  sources[0].computeSlots = 6;
+  await click(buttonIn(studioRow(), "Save"));
+  assert.deepEqual(calls.at(-1).body, { computeSlots: 6 });
+  assert.equal(slotsInput().value, "6");
+  assert.equal(buttonIn(studioRow(), "Save"), undefined);
+
+  // Emptied, it goes back to automatic.
+  await type("");
+  sources[0].computeSlots = undefined;
+  await click(buttonIn(studioRow(), "Save"));
+  assert.deepEqual(calls.at(-1).body, { computeSlots: 0 });
+  assert.equal(slotsInput().value, "");
+  await page.unmount();
+});
+
+test("the owner picks which workspaces may lease the device, by name", async () => {
+  const workspaces = [
+    { id: "ws_1", name: "Foundry" },
+    { id: "ws_2", name: "Limen" },
+  ];
+  let page = await renderCompute(["dev_a"], undefined, workspaces);
+  const policy = () =>
+    row(page.container, "Studio compute").querySelector(".fdy-res-policy");
+  const choice = (text) =>
+    [...policy().querySelectorAll("label")]
+      .find((label) => label.textContent === text)
+      ?.querySelector("input");
+  assert.match(policy().textContent, /Workspaces that may lease this device/);
+  assert.equal(choice("Every workspace").checked, true, "every by default");
+  assert.equal(choice("Limen"), undefined, "no workspaces to pick yet");
+  assert.equal(buttonIn(policy(), "Save"), undefined);
+  assert.equal(
+    row(page.container, "Laptop compute").querySelector(".fdy-res-policy"),
+    null,
+    "only the owner's device has it",
+  );
+
+  // Only these needs at least one workspace.
+  await click(choice("Only these"));
+  assert.ok(choice("Foundry") && choice("Limen"));
+  assert.equal(buttonIn(policy(), "Save").disabled, true);
+  assert.match(policy().textContent, /Pick at least one workspace/);
+
+  routes["PUT /api/devices/dev_a/resources/settings"] = () => [
+    200,
+    { allowRemoteCommands: false, applied: true },
+  ];
+  await click(choice("Limen"));
+  sources[0].allowWorkspaces = ["ws_2"];
+  await click(buttonIn(policy(), "Save"));
+  assert.deepEqual(calls.at(-1).body, {
+    allowWorkspaces: ["ws_2"],
+    denyWorkspaces: [],
+  });
+  assert.equal(choice("Only these").checked, true);
+  assert.equal(choice("Limen").checked, true);
+  assert.equal(buttonIn(policy(), "Save"), undefined);
+
+  // Every workspace clears both lists.
+  await click(choice("Every workspace"));
+  await click(buttonIn(policy(), "Save"));
+  assert.deepEqual(calls.at(-1).body, {
+    allowWorkspaces: [],
+    denyWorkspaces: [],
+  });
+  await page.unmount();
+
+  // A deny list reads as "except"; a workspace the person cannot see is
+  // named as such, never by its id.
+  sources[0].allowWorkspaces = [];
+  sources[0].denyWorkspaces = ["ws_1", "ws_hidden"];
+  page = await renderCompute(["dev_a"], undefined, workspaces);
+  assert.equal(choice("Every workspace except").checked, true);
+  assert.equal(choice("Foundry").checked, true);
+  assert.equal(choice("Limen").checked, false);
+  assert.equal(choice("A workspace not in your list").checked, true);
+  assert.doesNotMatch(policy().textContent, /ws_hidden/);
   await page.unmount();
 });

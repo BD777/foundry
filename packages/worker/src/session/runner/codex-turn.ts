@@ -16,7 +16,10 @@ import { executionSessionsRoot } from "../session-artifacts.js";
 import { isAgentSessionCanceledError } from "../session-control.js";
 import { SessionTurnFiles } from "../files/session-files.js";
 import { currentInput, sessionPrompt } from "../session-prompt.js";
-import { isUtilitySession } from "../session-roles.js";
+import {
+  isReadOnlyWorkspaceSession,
+  isUtilitySession,
+} from "../session-roles.js";
 import type {
   AgentSessionRunResult,
   SessionEventEmitter,
@@ -140,6 +143,9 @@ async function runCodexTurn(
       emit,
       reportNativeSessionId,
       files,
+      ...(isReadOnlyWorkspaceSession(session)
+        ? { readOnlyWorkspace: workspacePath }
+        : {}),
       eventsPath,
       thread,
       context: new CodexContextFollower(

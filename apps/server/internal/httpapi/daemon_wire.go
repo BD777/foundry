@@ -24,6 +24,8 @@ const (
 	wsHelloType                    = "hello"
 	wsHeartbeatType                = "heartbeat"
 	wsReadFileType                 = "read_file"
+	wsWriteFileType                = "write_file"
+	wsFileWrittenType              = "file_written"
 	wsFileReadType                 = "file_read"
 	wsReadDeviceFileType           = "read_device_file"
 	wsDeviceFileReadType           = "device_file_read"
@@ -68,6 +70,8 @@ const (
 	wsExecutionRunnerReadType          = "execution_runner_read"
 	wsSwitchExecutionRunnerType        = "switch_execution_runner"
 	wsExecutionRunnerSwitchedType      = "execution_runner_switched"
+	wsSetWorkerProxyType               = "set_worker_proxy"
+	wsWorkerProxySetType               = "worker_proxy_set"
 	wsInstallToolType                  = "install_tool"
 	wsRunDiagnosticsType               = "run_diagnostics"
 	wsDiagnosticsReadyType             = "diagnostics_ready"
@@ -541,11 +545,6 @@ type wsSessionCompletedPayload struct {
 	IssueResult *store.CompleteIssueInput `json:"issueResult,omitempty"`
 	// ClarificationResult is an issue_clarification session's reply.
 	ClarificationResult *store.ClarificationResponse `json:"clarificationResult,omitempty"`
-	// NativeWork: the session's agent goes on working on its own past this
-	// turn (background tasks, timers…), as the next heartbeats will claim.
-	// Claimed here too, so a background command never meets the moment
-	// between the turn's end and the next heartbeat.
-	NativeWork bool `json:"nativeWork,omitempty"`
 }
 
 // wsRecoverSessionPayload asks a device about an input it no longer runs. The

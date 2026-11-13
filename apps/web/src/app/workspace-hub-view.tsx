@@ -204,6 +204,7 @@ function WorkspaceSkills({
         (row) => row.deviceId === data.workspace.deviceId,
       )}
       builtinSkills={data.builtinSkills}
+      workspaceSkills={data.workspaceSkills ?? []}
       defaultSkillIds={data.defaultSkillIds}
       deviceTools={data.deviceTools}
       skillBundles={data.skillBundles}

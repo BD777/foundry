@@ -75,6 +75,8 @@ func (s *Server) backgroundJobs() []backgroundJob {
 	if s.messageChannels != nil {
 		jobs = append(jobs, backgroundJob{"message-channel-dispatch", func(ctx context.Context) {
 			everyFromNow(ctx, 2*time.Second, nil, s.messageChannels.Dispatch)
+		}}, backgroundJob{"message-channel-workspaces", func(ctx context.Context) {
+			everyFromNow(ctx, time.Minute, nil, s.ensureMessageChannelWorkspaces)
 		}}, backgroundJob{"message-channel-prune", func(ctx context.Context) {
 			everyFromNow(ctx, time.Hour, nil, s.pruneMessageChannels)
 		}})

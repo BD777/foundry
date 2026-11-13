@@ -1,5 +1,17 @@
 /** Connectors: external services sessions use as the person (Feishu first). */
 export const externalAccounts = {
+  connectorSkills: {
+    label: "Skills:",
+    count_one: "· {{count}} skill",
+    count_other: "· {{count}} skills",
+    onOf_one: "· {{on}} of {{count}} on",
+    onOf_other: "· {{on}} of {{count}} on",
+    sessionsGet: "— sessions that use this connector get them.",
+    turnOnMore: "Turn on more",
+    notFollowed:
+      "Skills ship with {{package}}, but the Skill library does not follow it yet.",
+    openLibrary: "Open the Skill library",
+  },
   connectorPackage: {
     title: "Where to enable",
     description:
@@ -442,7 +454,7 @@ export const externalAccounts = {
     networkServerHelp:
       "The Foundry server connects directly. Use a public HTTPS address.",
     networkDeviceHelp:
-      "One of your devices validates the address and forwards requests. HTTP, private addresses and path prefixes are allowed.",
+      "One of your devices validates the address and forwards requests. HTTP, private addresses and path prefixes are allowed. If the connector extension is missing there, validation installs it first.",
     probeDevice: "Device used for validation",
     chooseDevice: "Choose one of your online devices",
     deviceOffline: "{{device}} is offline; bring it online to validate here.",
@@ -854,6 +866,7 @@ export const externalAccounts = {
     update: "Update {{name}}",
     signIn: "Sign in",
     signInAgain: "Sign in again",
+    setupTarget: "From the setup panel: continue with the button on this row.",
     signOut: "Sign out",
     signOutTitle: "Sign {{name}} out on {{device}}?",
     signOutBody:
@@ -881,6 +894,7 @@ export const externalAccounts = {
     dialogDescription:
       "Set up this capability on {{device}}. Approve any additional permissions on the provider’s page.",
     permissions: "Permissions to request",
+    presetExcludes: "Excludes:",
     recommended: "Recommended",
     custom: "Custom",
     all: "All",
@@ -912,8 +926,13 @@ export const externalAccounts = {
     removesNote: "Unchecking a granted scope removes it from this login.",
     replacesNote:
       "A new authorization replaces the current one: scopes left out are no longer held. The provider's page may still change the final set; Connectors shows what it granted.",
-    changedOutside: "Changed outside Foundry {{when}}: {{scopes}}",
-    changedInFoundry: "Changed in Foundry {{when}}: {{scopes}}",
+    changedOutside: "Changed outside Foundry {{when}}: {{summary}}",
+    changedInFoundry: "Changed in Foundry {{when}}: {{summary}}",
+    changedScopeAdded_one: "{{count}} scope added",
+    changedScopeAdded_other: "{{count}} scopes added",
+    changedScopeRemoved_one: "{{count}} scope removed",
+    changedScopeRemoved_other: "{{count}} scopes removed",
+    changedScopeNone: "no scope changes",
     authorizeSelected: "Authorize selected permissions",
     choosePermissions: "Choose permissions",
     changePermissions: "Change permissions",

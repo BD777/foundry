@@ -7,6 +7,7 @@ import (
 	"log"
 	"slices"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -98,11 +99,20 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	// A bundle that ships a CLI gives the skills of the version the device's
 	// CLI is (docs/skills.md, Bundle 版本), and the session runs that CLI.
 	var toolPins []store.SessionToolPin
+	kinds := connectorKinds(connectorUses.ExternalAccounts, connectorUses.DeviceConnectors)
+	var deviceConnectors *connectors.DeviceHeld
+	if c.hub.connectors != nil {
+		deviceConnectors = c.hub.connectors.Devices
+	}
 	if sources, err := resolveWorkspaceSkills(ctx, c.hub.store, session.WorkspaceID); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve workspace skills: %w", err)
+	} else if toolBundles, err := connectorToolBundles(ctx, c.hub.store, deviceConnectors, session.DeviceID, kinds); err != nil {
+		return wsRunSessionPayload{}, fmt.Errorf("resolve connector tool skills: %w", err)
+	} else if deviceOwn, err := workspaceDeviceOwnSkills(ctx, c.hub.store, session.WorkspaceID, session.DeviceID, session.Provider); err != nil {
+		return wsRunSessionPayload{}, fmt.Errorf("read the device's own skills: %w", err)
 	} else if refs, packagePins, err := workspacePackageSkills(
 		ctx, c.hub.store, c.actor.AccountID(), session.WorkspaceID, session.DeviceID,
-		connectorKinds(connectorUses.ExternalAccounts, connectorUses.DeviceConnectors),
+		kinds, toolBundles, deviceOwn,
 		withBuiltinSkills(sources.Refs, session.Provider),
 	); err != nil {
 		return wsRunSessionPayload{}, err

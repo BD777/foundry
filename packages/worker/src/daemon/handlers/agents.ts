@@ -22,7 +22,7 @@ import {
 import { inspectNativeAccount } from "../../harness/native/native-inspection.js";
 import {
   ExternalConnectionError,
-  listExternalConnections,
+  externalConnectionState,
   removeExternalConnection,
 } from "../../harness/external-connection-registry.js";
 import {
@@ -415,18 +415,13 @@ export function externalConnectionSetupState(
   runId?: string,
   after?: number,
 ): ExternalConnectionSetupReadReply {
-  const connection = listExternalConnections().find(
-    (item) => item.id === profileId,
-  );
+  const connection = externalConnectionState(profileId);
   const progress = currentSetupProgress(profileId);
   const run = readSetupRun(profileId, runId, after ?? 0);
   return {
     ...(connection
       ? {
-          connection: {
-            helperAvailable: connection.helperAvailable,
-            check: connection.check,
-          },
+          connection,
         }
       : {}),
     ...(progress ? { progress } : {}),

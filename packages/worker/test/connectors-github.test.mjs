@@ -22,8 +22,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ghDeviceCodeTimeout,
   githubAdapter,
   grantedScopes,
+  isolatedGhToken,
   parseGhAuthStatus,
   parseGhDeviceCode,
   parseGhTokenScopes,
@@ -86,11 +88,60 @@ test("the sign-in relays gh's one-time code and page", () => {
   );
 });
 
+test("the sign-in reads gh 2.103.3's clipboard wording", () => {
+  // Captured from gh 2.103.3 on macOS with Foundry's non-TTY environment.
+  assert.deepEqual(
+    parseGhDeviceCode(
+      "! One-time code (E4BE-3E9B) copied to clipboard\nOpen this URL to continue in your web browser: https://github.com/login/device\n",
+    ),
+    { code: "E4BE-3E9B", url: "https://github.com/login/device" },
+  );
+});
+
+test("the sign-in falls back to one unambiguous code shape", () => {
+  assert.deepEqual(
+    parseGhDeviceCode(
+      "Open https://github.com/login/device and enter code AB12-CD34 there.",
+    ),
+    { code: "AB12-CD34", url: "https://github.com/login/device" },
+  );
+  assert.equal(
+    parseGhDeviceCode(
+      "Build 2026-1113\nOpen https://github.com/login/device to continue.",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseGhDeviceCode(
+      "Codes AB12-CD34 and EF56-GH78\nOpen https://github.com/login/device",
+    ),
+    undefined,
+  );
+});
+
+test("a code timeout shows the sanitized tail of gh's output", () => {
+  const message = ghDeviceCodeTimeout(
+    "Checking github.com\n! One-time code: AB12-CD34\nNetwork retry scheduled\nghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+  );
+  assert.match(message, /Network retry scheduled/);
+  assert.doesNotMatch(message, /AB12-CD34|ghp_/);
+});
+
 test("a session that may not use the login gets an empty gh configuration", () => {
   const environment = githubAdapter.isolationEnvironment();
   assert.ok(environment.GH_CONFIG_DIR && existsSync(environment.GH_CONFIG_DIR));
-  for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"])
+  // gh falls back to the keychain without a token of its own: the
+  // placeholder keeps it out.
+  assert.equal(environment.GH_TOKEN, isolatedGhToken);
+  for (const name of ["GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"])
     assert.equal(environment[name], "");
+  // git's helpers for github.com are emptied, global ones included.
+  assert.equal(environment.GIT_CONFIG_COUNT, "1");
+  assert.equal(
+    environment.GIT_CONFIG_KEY_0,
+    "credential.https://github.com.helper",
+  );
+  assert.equal(environment.GIT_CONFIG_VALUE_0, "");
   // Foundry's own runs never open a browser on the device.
   assert.equal(githubAdapter.runEnvironment.GH_BROWSER, "true");
   // gh cannot leave a login there for the next such session, and what one

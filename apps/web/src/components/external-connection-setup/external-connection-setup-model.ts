@@ -1,5 +1,6 @@
 import type {
   AgentProjection,
+  DeviceConnectorsView,
   ExternalConnectionOffer,
   ExternalConnectionSetupDetail,
   ExternalConnectionSetupStage,
@@ -111,7 +112,7 @@ export function readyAgent(
 export type SetupStepState = "done" | "needed" | "running" | "failed";
 
 export interface SetupStep {
-  key: "run" | "installed" | "signIn" | "registered" | "checked";
+  key: "run" | "installed" | "signIn" | "registered" | "checked" | "connector";
   state: SetupStepState;
 }
 
@@ -125,6 +126,7 @@ export function setupSteps(
   checking: boolean,
 ): SetupStep[] {
   const { offer, progress, run } = detail;
+  if (offer.connector) return connectorSteps(offer.stage, checking);
   const signIn = offer.setup?.signIn !== "none";
   const keys: SetupStep["key"][] = [
     "run",
@@ -210,4 +212,77 @@ export function setupWaiting(stage: ExternalConnectionSetupStage): boolean {
     stage === "in_progress" ||
     stage === "waiting_sign_in"
   );
+}
+
+/**
+ * A connector extension's connection appears once that connector is set up
+ * and signed in on the device; then Foundry checks it once.
+ */
+function connectorSteps(
+  stage: ExternalConnectionSetupStage,
+  checking: boolean,
+): SetupStep[] {
+  const usable =
+    stage === "unchecked" || stage === "check_failed" || stage === "ready";
+  return [
+    { key: "connector", state: usable ? "done" : "needed" },
+    {
+      key: "checked",
+      state:
+        stage === "ready"
+          ? "done"
+          : !usable
+            ? "needed"
+            : checking
+              ? "running"
+              : stage === "check_failed"
+                ? "failed"
+                : "needed",
+    },
+  ];
+}
+
+/**
+ * What the device still needs before a connector extension gives it the
+ * connection, read from the Connectors view, and the one action for it:
+ * install a bundled extension right here, or open that connector on the
+ * Connectors page for this device (install from its source, sign in, or
+ * whatever its own row asks for).
+ */
+export type ConnectorSetupNeed =
+  | { kind: "offline" }
+  | { kind: "install"; extensionId: string; extension: string }
+  | {
+      kind: "connectors";
+      step: "install" | "sign_in" | "fix";
+      detail?: string;
+    };
+
+export function connectorSetupNeed(
+  view: DeviceConnectorsView,
+  kind: string,
+  deviceId: string,
+): ConnectorSetupNeed {
+  const device = view.devices.find((entry) => entry.deviceId === deviceId);
+  const connector = view.connectors.find((entry) => entry.kind === kind);
+  if (!device || !connector) return { kind: "connectors", step: "fix" };
+  if (!device.online) return { kind: "offline" };
+  const extension = connector.extension;
+  if (extension && !(device.extensionKinds ?? []).includes(kind))
+    return extension.bundled
+      ? {
+          kind: "install",
+          extensionId: extension.id,
+          extension: extension.name,
+        }
+      : { kind: "connectors", step: "install" };
+  const state = device.states.find((entry) => entry.kind === kind);
+  if (state?.status === "not_installed")
+    return { kind: "connectors", step: "install" };
+  if (!state?.signedIn) return { kind: "connectors", step: "sign_in" };
+  return {
+    kind: "connectors",
+    step: "fix",
+    ...(state.statusDetail ? { detail: state.statusDetail } : {}),
+  };
 }

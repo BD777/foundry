@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
 import type {
   MessageChannelList,
+  MessageChannelSource,
   MessageChannelState,
   MessageChannelView,
+  WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import {
   deleteMessageChannel,
@@ -24,9 +27,15 @@ import { Switch } from "../../components/ui/switch";
 import { ToastFeedback } from "../../components/ui/toast";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
-import { inputFromChannel } from "./channel-model";
+import {
+  capabilitiesOf,
+  inputFromChannel,
+  ruleSentence,
+  sourceOf,
+} from "./channel-model";
 import { ChannelDeliveries } from "./settings-channel-deliveries";
 import { ChannelEditor } from "./settings-channel-editor";
+import { ChannelEnvironment } from "./settings-channel-environment";
 import { PaMuted } from "./pa-muted";
 import { PrerequisiteNotice } from "./settings-channel-prerequisites";
 
@@ -41,15 +50,26 @@ const stateTone: Record<MessageChannelState, BadgeProps["tone"]> = {
   held: "warn",
 };
 
+/** A row lists this many of its rules as sentences, then a count. */
+const shownRules = 3;
+
+const channelRefreshMs = 15_000;
+
 /** The assistant's message channels (DEV-203): list, status, edit. */
 export function ChannelsSection({
   assistantId,
+  homeDeviceId,
   homeWorkspaceId,
+  workspaces,
   onNotice,
 }: {
   assistantId?: string;
-  /** Where the channels' sessions live. */
+  /** The assistant's computer, where a channel's workspace must be. */
+  homeDeviceId?: string;
+  /** The assistant's home, which no channel may run in. */
   homeWorkspaceId?: string;
+  /** The person's workspaces, for a new channel's workspace choice. */
+  workspaces: WorkspaceProjection[];
   onNotice: (message: string) => void;
 }) {
   const { t } = useTranslation("personalAgent");
@@ -69,6 +89,20 @@ export function ChannelsSection({
   useEffect(() => {
     setList(undefined);
     void load();
+  }, [load]);
+
+  // Status and counts change on the server (a new channel leaves "starting"
+  // within seconds), so keep the list current while the page is visible.
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const poll = window.setInterval(refreshIfVisible, channelRefreshMs);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(poll);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, [load]);
 
   const replace = (view: MessageChannelView) =>
@@ -162,7 +196,9 @@ export function ChannelsSection({
                   onNotice(t("settings.channels.deleted"));
                 }}
                 onEdit={() => setEditing(view)}
+                onNotice={onNotice}
                 onReload={() => void load()}
+                sources={list.sources}
                 view={view}
               />
             ))}
@@ -172,6 +208,9 @@ export function ChannelsSection({
       {editing ? (
         <ChannelEditor
           assistantId={assistantId}
+          homeDeviceId={homeDeviceId}
+          homeWorkspaceId={homeWorkspaceId}
+          workspaces={workspaces}
           onClose={() => {
             setEditing(undefined);
             void load();
@@ -195,14 +234,18 @@ function ChannelRow({
   onChanged,
   onDeleted,
   onEdit,
+  onNotice,
   onReload,
+  sources,
 }: {
   assistantId?: string;
   homeWorkspaceId?: string;
+  sources: MessageChannelSource[];
   view: MessageChannelView;
   onChanged: (view: MessageChannelView) => void;
   onDeleted: () => void;
   onEdit: () => void;
+  onNotice: (message: string) => void;
   onReload: () => void;
 }) {
   const { t } = useTranslation("personalAgent");
@@ -210,9 +253,15 @@ function ChannelRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<"deliveries" | "environment">();
+  const toggle = (panel: "deliveries" | "environment") =>
+    setOpen((current) => (current === panel ? undefined : panel));
   const source = channel.source.label || channel.source.kind;
   const counts = status.counts;
+  const capabilities = capabilitiesOf(
+    sourceOf(channel.source.accountId, sources, channel),
+  );
+  const rules = channel.filters.rules.filter((rule) => rule.enabled);
 
   async function setEnabled(
     enabled: boolean,
@@ -286,6 +335,22 @@ function ChannelRow({
             )}
           </PaMuted>
           {status.detail ? <PaMuted size="xs">{status.detail}</PaMuted> : null}
+          {rules.length ? (
+            <ul className="grid gap-0.5 text-xs leading-normal text-ink-2">
+              {rules.slice(0, shownRules).map((rule) => (
+                <li className="wrap-anywhere" key={rule.id}>
+                  {ruleSentence(rule, capabilities, t)}
+                </li>
+              ))}
+              {rules.length > shownRules ? (
+                <li className="text-ink-muted">
+                  {t("settings.channels.moreRules", {
+                    count: rules.length - shownRules,
+                  })}
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
           <PaMuted size="xs">
             {t("settings.channels.counts", {
               received: counts.received,
@@ -314,21 +379,22 @@ function ChannelRow({
       />
       {error ? <ToastFeedback title={error} tone="error" /> : null}
       <ButtonRow>
-        <Button
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-          size="sm"
-          variant="ghost"
+        <PanelToggle
+          onToggle={() => toggle("deliveries")}
+          open={open === "deliveries"}
         >
-          {open ? (
-            <ChevronDown aria-hidden="true" size={14} />
-          ) : (
-            <ChevronRight aria-hidden="true" size={14} />
-          )}
-          {open
+          {open === "deliveries"
             ? t("settings.channels.deliveries.hide")
             : t("settings.channels.deliveries.show")}
-        </Button>
+        </PanelToggle>
+        <PanelToggle
+          onToggle={() => toggle("environment")}
+          open={open === "environment"}
+        >
+          {open === "environment"
+            ? t("settings.channels.environment.hide")
+            : t("settings.channels.environment.show")}
+        </PanelToggle>
         <Button disabled={busy} onClick={onEdit} size="sm" variant="ghost">
           <Pencil aria-hidden="true" size={14} />
           {t("settings.channels.edit")}
@@ -354,13 +420,21 @@ function ChannelRow({
           label={t("settings.channels.actionsFor", { name: channel.name })}
         />
       </ButtonRow>
-      {open ? (
+      {open === "deliveries" ? (
         <ChannelDeliveries
           assistantId={assistantId}
           channelId={channel.id}
           held={counts.held}
-          homeWorkspaceId={homeWorkspaceId}
+          onNotice={onNotice}
           onReleased={onReload}
+          workspaceId={view.workspace?.id || homeWorkspaceId}
+        />
+      ) : open === "environment" ? (
+        <ChannelEnvironment
+          assistantId={assistantId}
+          channelId={channel.id}
+          onNotice={onNotice}
+          workspace={view.workspace}
         />
       ) : null}
       <Dialog
@@ -397,5 +471,27 @@ function ChannelRow({
         title={t("settings.channels.resume.title", { name: channel.name })}
       />
     </li>
+  );
+}
+
+/** Opens or closes one of a row's panels. */
+function PanelToggle({
+  open,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button aria-expanded={open} onClick={onToggle} size="sm" variant="ghost">
+      {open ? (
+        <ChevronDown aria-hidden="true" size={14} />
+      ) : (
+        <ChevronRight aria-hidden="true" size={14} />
+      )}
+      {children}
+    </Button>
   );
 }

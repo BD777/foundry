@@ -13,6 +13,7 @@ import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { Skeleton } from "../../components/ui/loading";
+import { instanceHolders } from "./resource-lease";
 
 /** "x: 120, y: 48, text: 12": the server's summary of an operation's arguments. */
 function argsText(args: ResourceOperationRecord["args"]): string {
@@ -56,9 +57,8 @@ export function ResourceActivityDialog({
   }, [instance.id, attempt]);
 
   const holderWorkspace = (sessionId: string) =>
-    instance.holder?.sessionId === sessionId
-      ? instance.holder.workspaceId
-      : undefined;
+    instanceHolders(instance).find((holder) => holder.sessionId === sessionId)
+      ?.workspaceId;
 
   return (
     <WorkspaceDialog

@@ -197,7 +197,9 @@ The helper replies with one JSON line on stdout, then stays alive:
 }
 ```
 
-The reply and credentials stay in memory, are never logged, and cannot be used to overwrite Foundry configuration or executable-loading variables. Known invocation credentials are registered with transcript redaction. Helper stderr is not forwarded because arbitrary provider diagnostics may contain credentials. Response size is bounded to 256 KiB and preparation defaults to 15 seconds.
+The reply and credentials stay in memory, are never logged, and cannot be used to overwrite Foundry configuration or executable-loading variables. Known invocation credentials are registered with transcript redaction. Helper stderr is not forwarded because arbitrary provider diagnostics may contain credentials. Response size is bounded to 256 KiB. Preparation allows 45 seconds per attempt; a timed-out attempt is retried once on a fresh helper.
+
+Protocol v1 has no structured retryability field. If the helper exits before replying, Foundry reads the optional lowercase error code from its last stderr line. It retries up to three times total with 1-second and 4-second pauses unless the code names a terminal cause: authentication or permission, identity, invalid input, quota or rate limiting, or configuration. The final error keeps only the code and attempt count, never the rest of stderr.
 
 Foundry applies only the helper's explicit environment assignments to the cleaned base and starts the original CLI through the SDK. It appends its control-plane hostname to both NO_PROXY and no_proxy so its MCP bearer traffic bypasses the model proxy. The helper's stdin remains open for the native process lifetime, including multiple conversation turns. EOF means release. The helper must remove its temporary resources and exit; Foundry force-stops an unresponsive helper and closes its pipes after two seconds, bounding cleanup even if an escaped descendant retained stdio. If the helper exits unexpectedly, Foundry cancels the native query. Cancellation lets the native CLI finish its normal shutdown before releasing the helper. A failed preparation never falls back to another account.
 

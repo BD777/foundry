@@ -3,8 +3,10 @@
 // forwarders) lives as long as the session's agent process does, idle or
 // not: a turn the agent starts by itself after it was idle (a background
 // task's notification, a timer) still finds its commands. It goes when the
-// process exits, or at once when the session fails or is canceled. Each call
-// through it is still authorized by the server (gateway.SessionLive).
+// process exits, whatever the outcome of the run that set it up (DEV-215):
+// a failed or canceled turn whose process lives on (a kept Codex app-server,
+// a Claude process with background work) keeps it. Each call through it is
+// still authorized by the server (gateway.SessionLive).
 import "./fixtures/native-test-homes.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -176,7 +178,7 @@ test("a kept Codex app-server holds its session's commands while it lives", asyn
   assert.equal(existsSync(launchers), false);
 });
 
-test("a session that fails or is canceled gives up what its agent process kept", async (t) => {
+test("a canceled turn keeps what its live agent process holds until the process exits", async (t) => {
   const sessionId = "sess_canceled";
   const runtime = claudeRuntime(sessionId);
   t.after(runtime.exit);
@@ -191,8 +193,8 @@ test("a session that fails or is canceled gives up what its agent process kept",
   const tools = sessionToolsFolder(sessionId);
   assert.equal(existsSync(launchers), true);
 
-  // The next input is canceled: the run's end releases its own environment
-  // and the earlier run's, though the process still lives.
+  // The next input is canceled while the process lives on: the run's end
+  // keeps its own environment and the earlier run's for that process.
   const workspace = mkdtempSync(join(tmpdir(), "fdy-agent-env-"));
   const inputId = "input_canceled";
   await cancelActiveSession(sessionId, inputId);
@@ -212,10 +214,42 @@ test("a session that fails or is canceled gives up what its agent process kept",
       toolPins: [],
     },
   );
+  assert.equal(existsSync(launchers), true, "the session-bin folder stays");
+  assert.ok(sessionToolsFolder(sessionId), "the tool folder stays");
+  assert.equal(earlierReleased, false, "the earlier run's hold stays");
+  assert.equal(runs(sessionCommand(sessionId).env), "ok");
+
+  // The process exits: everything goes.
+  runtime.exit();
+  sweepAgentEnvironmentHolds();
   assert.equal(existsSync(launchers), false, "the session-bin folder goes");
   assert.equal(existsSync(tools), false, "the tool folder goes");
   assert.equal(sessionToolsFolder(sessionId), undefined);
   assert.equal(earlierReleased, true, "the earlier run's hold ended");
+});
+
+test("a canceled turn whose process closed gives up its environment at once", async () => {
+  const sessionId = "sess_canceled_closed";
+  const workspace = mkdtempSync(join(tmpdir(), "fdy-agent-env-"));
+  const inputId = "input_canceled_closed";
+  await cancelActiveSession(sessionId, inputId);
+  await runAgentSession(
+    "http://127.0.0.1:9",
+    workspace,
+    new ReliableSessionTransport(),
+    {
+      session: {
+        id: sessionId,
+        workspaceId: "ws_agent_env",
+        role: "chat",
+        provider: "claude",
+        input: { id: inputId },
+      },
+      deviceConnectors: [use],
+      toolPins: [],
+    },
+  );
+  assert.equal(sessionToolsFolder(sessionId), undefined);
 });
 
 test("releasing a session's environment ends only that session's holds", async (t) => {

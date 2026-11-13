@@ -225,34 +225,100 @@ interface ExternalConnectionPreparation {
   signal?: AbortSignal;
   /** Per attempt. */
   timeoutMs?: number;
+  /** Quiet period between transient helper failures; mainly for tests. */
+  retryBackoffMs?: readonly number[];
 }
 
 // A helper may first reach its gateway through a cold proxy and renew a key
 // (Limen: a 5 s check, up to 30 s for a new key), so one attempt gets more
-// than that, and a timed-out attempt is retried once on a fresh helper.
+// than that. A timed-out attempt is retried once on a fresh helper. Other
+// helper exits are retried unless their code names a terminal cause, because
+// a gateway connection can reset after the helper has already started.
 const preparationTimeoutMs = 45_000;
-const preparationAttempts = 2;
+const preparationTimeoutAttempts = 2;
+const preparationRetryAttempts = 3;
+const preparationRetryBackoffMs = [1_000, 4_000] as const;
 
 class PreparationTimeout extends Error {}
+class HelperFailure extends Error {
+  constructor(
+    readonly code: string | undefined,
+    message = `External connection preparation failed${code ? ` (${code})` : ""}. Check the helper on the device.`,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Helpers do not return structured retryability in protocol v1. Their stable
+ * error code is the only signal, so retry anything that does not name a
+ * terminal authentication, identity, input, quota or configuration failure.
+ */
+export function helperFailureRetryable(code: string | undefined): boolean {
+  if (!code) return true;
+  return !/(?:^|_)(?:auth|permission|forbidden|unauthori[sz]ed|identity|invalid|malformed|unsupported|not_found|quota|exhausted|rate_limit(?:ed)?|config(?:uration)?|denied)(?:_|$)/i.test(
+    code,
+  );
+}
+
+async function preparationRetryPause(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+    if (signal?.aborted) done();
+  });
+}
 
 export async function prepareExternalConnection(
   config: ExternalConnectionConfig,
   input: ExternalConnectionPreparation,
 ): Promise<PreparedExternalConnection> {
   const timeoutMs = input.timeoutMs ?? preparationTimeoutMs;
-  for (let attempt = 1; ; attempt++) {
+  let timedOutAttempts = 0;
+  let failedAttempts = 0;
+  for (;;) {
     try {
       return await prepareExternalConnectionOnce(config, {
         ...input,
         timeoutMs,
       });
     } catch (error) {
-      if (!(error instanceof PreparationTimeout)) throw error;
       input.signal?.throwIfAborted();
-      if (attempt < preparationAttempts) continue;
-      throw new Error(
-        `External connection preparation timed out: the helper did not answer within ${Math.ceil(timeoutMs / 1000)} seconds in ${attempt} attempts.`,
-      );
+      if (error instanceof PreparationTimeout) {
+        timedOutAttempts++;
+        if (timedOutAttempts < preparationTimeoutAttempts) continue;
+        throw new Error(
+          `External connection preparation timed out: the helper did not answer within ${Math.ceil(timeoutMs / 1000)} seconds in ${timedOutAttempts} attempts.`,
+        );
+      }
+      if (
+        error instanceof HelperFailure &&
+        helperFailureRetryable(error.code)
+      ) {
+        failedAttempts++;
+        if (failedAttempts < preparationRetryAttempts) {
+          const delays = input.retryBackoffMs ?? preparationRetryBackoffMs;
+          const delay =
+            delays[Math.min(failedAttempts - 1, delays.length - 1)] ?? 0;
+          await preparationRetryPause(delay, input.signal);
+          input.signal?.throwIfAborted();
+          continue;
+        }
+        throw new HelperFailure(
+          error.code,
+          `External connection preparation failed${error.code ? ` (${error.code})` : ""} after ${failedAttempts} attempts. The helper closed before the connection was ready.`,
+        );
+      }
+      throw error;
     }
   }
 }
@@ -351,11 +417,7 @@ async function prepareExternalConnectionOnce(
         let received = false;
         const fail = () => {
           const code = helperErrorCode(stderrTail);
-          reject(
-            new Error(
-              `External connection preparation failed${code ? ` (${code})` : ""}. Check the helper on the device.`,
-            ),
-          );
+          reject(new HelperFailure(code));
         };
         const timer = setTimeout(
           () => reject(new PreparationTimeout()),

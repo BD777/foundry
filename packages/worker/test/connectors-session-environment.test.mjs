@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { githubAdapter } from "../dist/connectors/github.js";
+import { githubAdapter, isolatedGhToken } from "../dist/connectors/github.js";
 import { DeviceHeldConnectors } from "../dist/connectors/device-held.js";
 import {
   applySessionSetup,
@@ -44,24 +44,42 @@ const use = {
   access: "device_login",
 };
 
-// gh signed in as octo-cat when its configuration folder has hosts.yml; its
-// credential helper hands out a (fake) token only then.
+// gh signed in as octo-cat when its configuration folder has hosts.yml.
+// Like the real gh (2.40+): a token in GH_TOKEN is used instead of any
+// login; without one and without hosts.yml it still falls back to the
+// keychain, which holds the token while the person is signed in
+// (FAKE_GH_DEFAULT has hosts.yml); status then reads as signed out, but
+// `auth token` and the credential helper hand the token out.
+// FAKE_GH_IGNORE_ENV_TOKEN models a gh that reads the keychain regardless.
 const fakeGh = `#!/bin/sh
 dir="\${GH_CONFIG_DIR:-$FAKE_GH_DEFAULT}"
 [ -n "$FAKE_GH_IGNORE_ISOLATION" ] && dir="$FAKE_GH_DEFAULT"
 login=0
 [ -f "$dir/hosts.yml" ] && login=1
+env_token="$GH_TOKEN"
+[ -n "$FAKE_GH_IGNORE_ENV_TOKEN$FAKE_GH_IGNORE_ISOLATION" ] && env_token=""
+token=""
+if [ -n "$env_token" ]; then token="$env_token"
+elif [ $login = 1 ]; then token=gho_FAKETOKEN
+elif [ -f "$FAKE_GH_DEFAULT/hosts.yml" ]; then token=gho_FAKETOKEN
+fi
 case "$1" in
   --version) echo "gh version 2.67.0 (2025-02-11)"; echo "https://github.com/cli/cli/releases/tag/v2.67.0" ;;
   auth)
     case "$2" in
       status)
+        if [ -n "$env_token" ]; then
+          echo "github.com"; echo "  X Failed to log in to github.com using token (GH_TOKEN)"; echo "  - The token in GH_TOKEN is invalid."; exit 1
+        fi
         if [ $login = 1 ]; then echo "github.com"; echo "  ✓ Logged in to github.com account octo-cat (keyring)"; exit 0; fi
         echo "You are not logged into any GitHub hosts." >&2; exit 1 ;;
+      token)
+        [ -n "$token" ] && { echo "$token"; exit 0; }
+        echo "no oauth token found for github.com" >&2; exit 1 ;;
       git-credential)
         [ -n "$FAKE_GH_NO_HELPER" ] && exit 1
         cat > /dev/null
-        if [ $login = 1 ]; then printf 'username=octo-cat\\npassword=gho_FAKETOKEN\\n'; exit 0; fi
+        if [ -n "$token" ]; then printf 'username=octo-cat\\npassword=%s\\n' "$token"; exit 0; fi
         exit 1 ;;
     esac ;;
 esac
@@ -96,6 +114,7 @@ function world(t) {
   for (const name of [
     "FAKE_GH_NO_HELPER",
     "FAKE_GH_IGNORE_ISOLATION",
+    "FAKE_GH_IGNORE_ENV_TOKEN",
     "GH_CONFIG_DIR",
   ])
     delete process.env[name];
@@ -121,14 +140,18 @@ function inSession(env, line) {
   }).trim();
 }
 
-/** What `git clone` asks first: the credential for github.com. */
-function gitCredential(env) {
+/**
+ * What `git clone` asks first: the credential for github.com. By default
+ * only the session's configuration answers; `withGlobal` also reads the
+ * person's global configuration (HOME/.gitconfig), as a session's git does.
+ * Nothing is asked either way.
+ */
+function gitCredential(env, { withGlobal = false } = {}) {
   try {
     const answer = execFileSync("git", ["credential", "fill"], {
       env: {
         ...env,
-        // Only the session's configuration answers, nothing is asked.
-        GIT_CONFIG_GLOBAL: "/dev/null",
+        ...(withGlobal ? {} : { GIT_CONFIG_GLOBAL: "/dev/null" }),
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_TERMINAL_PROMPT: "0",
         GIT_ASKPASS: "true",
@@ -206,27 +229,32 @@ test("a session that may not use the login gets neither gh nor a credential", (t
   );
   assert.deepEqual(setup.pathDirs, []);
   assert.ok(setup.environment.GH_CONFIG_DIR);
-  assert.equal(setup.environment.GH_TOKEN, "");
+  assert.equal(setup.environment.GH_TOKEN, isolatedGhToken);
   assert.deepEqual(readdirSync(setup.environment.GH_CONFIG_DIR), []);
-  const env = applySessionSetup(
-    {
-      PATH: systemBin,
-      HOME: home,
-      FAKE_GH_DEFAULT: process.env.FAKE_GH_DEFAULT,
-    },
-    setup,
+  const gh = join(root, "outside", "gh");
+  // The person's global git configuration hands out github.com credentials
+  // two ways: gh's helper (`gh auth setup-git`) and a keychain-like helper.
+  writeFileSync(
+    join(home, ".gitconfig"),
+    `[credential "https://github.com"]\n\thelper = !"${gh}" auth git-credential\n` +
+      `[credential]\n\thelper = "!f() { cat >/dev/null; echo username=x; echo password=gho_KEYCHAIN; }; f"\n`,
   );
+  const base = {
+    PATH: systemBin,
+    HOME: home,
+    FAKE_GH_DEFAULT: process.env.FAKE_GH_DEFAULT,
+  };
+  // Without the isolation both routes hand out the login.
+  assert.match(gitCredential(base, { withGlobal: true }), /password=gho_/);
+  const env = applySessionSetup(base, setup);
   assert.throws(() => inSession(env, "command -v gh"));
-  // Even handed gh's credential helper (a git configuration the person's
-  // own `gh auth setup-git` might have left), it finds no login there.
-  const withHelper = mergeEnvironment(
-    env,
-    githubAdapter.sessionEnvironment({
-      path: join(root, "outside", "gh"),
-      source: "device",
-    }),
-  );
-  assert.equal(gitCredential(withHelper), "");
+  // gh run by its path finds no configuration, and the keychain stays shut:
+  // all it has is the placeholder GitHub refuses.
+  assert.equal(inSession(env, `"${gh}" auth token`), isolatedGhToken);
+  assert.throws(() => inSession(env, `"${gh}" auth status`));
+  // git reads the global configuration, but the isolation empties the
+  // helpers it collected for github.com.
+  assert.equal(gitCredential(env, { withGlobal: true }), "");
 });
 
 test("git settings of the session and of its connectors add up", () => {
@@ -336,6 +364,29 @@ test("status separates signed in from usable in a session, and checks the isolat
   // What the check ran in held no token: nothing of the credential is in the
   // state.
   assert.doesNotMatch(JSON.stringify(leaking), /gho_/);
+  delete process.env.FAKE_GH_IGNORE_ISOLATION;
+
+  // A gh that reads as signed out under the isolation but still takes the
+  // token from the keychain (the macOS leak): reported, nothing of it kept.
+  process.env.FAKE_GH_IGNORE_ENV_TOKEN = "1";
+  const keychain = await read();
+  assert.equal(keychain.sessionCheck.usable, true);
+  assert.equal(keychain.sessionCheck.isolationHolds, false);
+  assert.match(
+    keychain.sessionCheck.isolationReason,
+    /gh still hands out a github\.com token/,
+  );
+  assert.doesNotMatch(JSON.stringify(keychain), /gho_/);
+  delete process.env.FAKE_GH_IGNORE_ENV_TOKEN;
+
+  // A global helper that hands out a github.com credential on its own is
+  // emptied by the isolation, so the check holds.
+  writeFileSync(
+    join(process.env.HOME, ".gitconfig"),
+    `[credential]\n\thelper = "!f() { cat >/dev/null; echo username=x; echo password=gho_KEYCHAIN; }; f"\n`,
+  );
+  const withKeychainHelper = await read();
+  assert.equal(withKeychainHelper.sessionCheck.isolationHolds, true);
 });
 
 test("signed-out connectors report no session check", async (t) => {

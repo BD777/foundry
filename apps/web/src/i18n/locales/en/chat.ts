@@ -777,6 +777,7 @@ export const chat = {
       progress: "{{received}} / {{total}} received",
       progressUnknown: "{{received}} received",
       downloading: "Downloading file…",
+      loadingImage: "Loading image…",
     },
     label: "Context detail",
     close: "Close context detail",
@@ -821,6 +822,13 @@ export const chat = {
     fileChanged: "Changed on {{device}} since this turn.",
     fileBinary: "{{size}}, not previewable.",
     fileBinaryDownload: "Binary file, not previewable. Download it to open.",
+    fileImageTooLarge:
+      "This image is {{size}}, over the {{limit}} inline preview limit. Download it to view.",
+    fileImageDimensions: "{{width}} × {{height}} · {{size}}",
+    fileImageActualSize: "View {{name}} at 100%",
+    fileImageFit: "Fit {{name}} to the panel",
+    fileImageRenderFailed:
+      "The browser could not display this image. Try reading it again.",
     deviceFile: {
       where:
         "On {{device}}, outside the workspace; only you, its owner, can open it:",

@@ -146,6 +146,24 @@ type WorkspaceDeviceConnectors struct {
 	Connectors       []ConnectorDescriptor      `json:"connectors"`
 	Bindings         []DeviceConnectorBinding   `json:"bindings"`
 	Devices          []DeviceConnectorDevice    `json:"devices"`
+	SkillBundles     []ConnectorSkillBundle     `json:"skillBundles,omitempty"`
+}
+
+// ConnectorSkillBundle is the Skill library bundle whose Skills sessions get
+// with a connector: the person's enabled connector package ("package"), or
+// the bundle that follows the npm package of the connector's own tool when
+// the descriptor declares tool.skills ("tool"). RepositoryID is empty when
+// no Skill library bundle follows that package yet. OnCount is how many of
+// SkillCount sessions get (tool.skills.default, plus a workspace's own picks).
+type ConnectorSkillBundle struct {
+	Kind         string `json:"kind"`
+	Source       string `json:"source"`
+	Package      string `json:"package,omitempty"`
+	RepositoryID string `json:"repositoryId,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Version      string `json:"version,omitempty"`
+	SkillCount   int    `json:"skillCount"`
+	OnCount      int    `json:"onCount"`
 }
 
 // DeviceConnectorBindingInput is one binding the caller wants.
@@ -290,6 +308,7 @@ type DeviceConnectorStore interface {
 // ConnectorCatalogView is GET /api/connectors: the built-in connectors and
 // those extensions on the caller's own devices provide.
 type ConnectorCatalogView struct {
-	Connectors           []ConnectorDescriptor `json:"connectors"`
-	RestrictedConnectors []ConnectorRestricted `json:"restrictedConnectors,omitempty"`
+	Connectors           []ConnectorDescriptor  `json:"connectors"`
+	RestrictedConnectors []ConnectorRestricted  `json:"restrictedConnectors,omitempty"`
+	SkillBundles         []ConnectorSkillBundle `json:"skillBundles,omitempty"`
 }

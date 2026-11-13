@@ -50,6 +50,17 @@ foundry-worker extension remove my-company
 - `source`：扩展发布所在的 git 文件夹（见“来源”）。有了它，其他设备在页面上一键安装、更新。
 - `setup`：没有 `source` 时，在其他设备上安装它的一行命令（或说明页），连接器页面对没装它的设备显示并可复制。
 
+### 连接器带来的 Skill
+
+会话收到某个连接器时（Server 持有型的材料，或设备持有型以 `device_login` 可用），同时拿到这个连接器的 Skill bundle，版本按设备上那份 CLI 配对（[Bundle 版本](skills.md)），Workspace 自己选的同名 Skill 和关掉的 Skill 优先（`httpapi/session_packages.go`）。bundle 有两种来路，都只写在描述符里，代码不认具体产品：
+
+- **集成包** `package`（manifestVersion 2，例：OpenLark）：上游 GitHub 仓库里的 Skill 文件夹和仓库工具是一个版本；本人在 Connectors 页（或 `connector_packages` MCP）选设备启用后，Server 跟随这个 bundle，并在这些设备上安装工具与扩展（`connectors_packages.go`）。
+- **工具自带的 Skill** `tool.skills: { "path": "skills", "default": [...] }`（DEV-218，例：bytedcli）：只用于 `tool.source: "npm"`，表示 npm 包里这个文件夹带着 Skill。连接器自己装 CLI，不另设启用步骤；关联的是 Skill 库里跟随 `npm:<tool.package>` 的 bundle（文件夹相同的优先，其次读整个包的那个，`connector_skills.go`）。`default` 列出会话默认拿到的几个 Skill（不写则整个 bundle）；其余的由 Workspace（含 Assistant 的工作区）在 Skills 页单独勾选。Skill 库还没跟随这个包时，页面写明包名并链到 Skill 库。
+
+**设备上已有同名 Skill 时用设备的。** 连接器带来的 Skill 如果和设备自己文件夹里的 Skill 同名（设备级的 `~/.claude/skills`、`~/.codex/skills` 等，以及这个 Workspace 自己的 `.claude/skills`、`.agents/skills`，按设备最近一次扫描），就不再加 Foundry 那一份；只看这个会话的 Agent 会读的文件夹：Claude Code 读 `.claude/skills`，Codex 读 `.codex/skills` 和 `.agents/skills`。理由：那一份是本人自己装、自己维护的；Skill 没有可比较的版本号；两份同名只会在 Agent 的清单里重复占位。Workspace 显式勾选的 Skill 不受影响。
+
+Connectors 页和 Workspace 的连接器卡片在“凭据在哪”下面列出这一行：Skill：bundle 名（链到 Skill 库）· 开启个数/总数 · 版本，Workspace 卡片上另有“开启更多”链到这个 Workspace 的 Skills 页（`GET /api/connectors` 与 Workspace 连接器视图的 `skillBundles`）。集成包的 Skill 逐个列在它的面板里。
+
 ## 来源
 
 `source` 是 `{ "git": 远程地址, "path": 仓库里的文件夹, "ref": 分支或标签 }`，`path` 缺省为仓库根，`ref` 缺省为默认分支。远程地址只接受 https（地址里不能带用户名或令牌）、`ssh://` 和 `host:path` 形式；Server 与 Worker 都检查（`descriptor_checks.go` `CheckExtensionRepository`、`manifest.ts` `parseExtensionRepository`）。
@@ -58,6 +69,7 @@ foundry-worker extension remove my-company
 
 - **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，这次拉取的 git 命令行里带上 gh 的凭据助手（`sources.ts` 的 `gitConfigFor`），用这份登录；Foundry 不改本人的全局 git 配置（DEV-128 起登录不再运行 `gh auth setup-git`）。没有权限时报 git 自己的话（例如 repository not found）。
 - **装了什么。** 只复制 `path` 那个文件夹（不含 `.git` 和仓库其他文件），之后和本地文件夹一样校验、记录摘要；注册表额外记 `source`、安装的 `commit`。
+- **第一次经某台设备连接。** 人（或其 Agent）创建 `network: "device"` 的连接器实例并明确选中自己的一台在线设备时，不必先手动装扩展。probe/create 会从 `extension.bundled` 或 `extension.source` 在这台设备上安装扩展，等 Worker 回报后，再用它探测上游。设备离线时直接说明；这只适用于设备所有者明确选中的设备，不会放宽其他成员设备的安装或启用规则。
 - **更新。** 从 git 安装的扩展默认自动更新。Worker 每 6 小时用 `git ls-remote` 看一次 `ref` 现在的提交；变了就直接从同一来源原子更新。人可以关掉“自动更新”，此时保留 `latestCommit` 和手动 Update。bundled 扩展随 Worker 更新。
 - **页面上。** 没装 bundled 扩展的设备显示“安装到这台设备”，直接安装，不填仓库、不跑 git；从 git 安装仍先确认要拉的仓库。已安装的 git 扩展有自动更新开关，设备行菜单里有“从这台设备移除”。接口：`POST /api/devices/{deviceId}/extensions`（`{bundledExtensionId}` 或 `{source}`）、`PATCH /api/devices/{deviceId}/extensions/{extensionId}`（自动更新）、`DELETE /api/devices/{deviceId}/extensions/{extensionId}`，只有设备所有者能调用，经守护连接的 `extension_request` 交给设备。
 

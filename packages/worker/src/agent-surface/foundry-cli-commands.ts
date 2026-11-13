@@ -481,6 +481,7 @@ export const foundryCommands: Record<
         "--reason": flag("reason"),
         "--wait-ms": flag("waitMs", "number"),
         "--hold-for": flag("holdFor", "number"),
+        "--mode": flag("mode"),
       },
     },
     operate: {

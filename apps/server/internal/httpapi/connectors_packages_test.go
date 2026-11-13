@@ -101,7 +101,7 @@ func TestConnectorPackageSelectsDevicesAndLinksSessionSkillsAndPins(t *testing.T
 
 	refs, pins, err := sessionPackageSkills(
 		context.Background(), f.server.store, f.aliceID, "dev_alice",
-		map[string]bool{"openlark": true},
+		map[string]bool{"openlark": true}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestConnectorPackageSelectsDevicesAndLinksSessionSkillsAndPins(t *testing.T
 		t.Fatal(err)
 	}
 	bound := connectorKinds(nil, []store.DeviceConnectorUse{{Kind: "openlark", Access: "device_login"}})
-	merged, _, err := workspacePackageSkills(context.Background(), f.server.store, f.aliceID, "ws_picker", "dev_alice", bound, nil)
+	merged, _, err := workspacePackageSkills(context.Background(), f.server.store, f.aliceID, "ws_picker", "dev_alice", bound, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,14 +129,14 @@ func TestConnectorPackageSelectsDevicesAndLinksSessionSkillsAndPins(t *testing.T
 	if len(listed) != 2 || listed[0].Package == "" || listed[1].Package != listed[0].Package {
 		t.Fatalf("picker list for a workspace with the connector: %+v", listed)
 	}
-	none, _, err := workspacePackageSkills(context.Background(), f.server.store, f.aliceID, "ws_picker", "dev_alice", nil, nil)
+	none, _, err := workspacePackageSkills(context.Background(), f.server.store, f.aliceID, "ws_picker", "dev_alice", nil, nil, nil, nil)
 	if err != nil || len(none) != 0 {
 		t.Fatalf("picker list without the connector: %+v %v", none, err)
 	}
 
 	withConnector, _, err := sessionPackageSkills(
 		context.Background(), f.server.store, f.aliceID, "dev_alice",
-		map[string]bool{"github": true},
+		map[string]bool{"github": true}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

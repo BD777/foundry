@@ -37,11 +37,6 @@ type wsHeartbeatPayload struct {
 	// ActiveSessionIDs are the sessions the daemon process runs now, as in
 	// its registration; nil from a worker that does not send them.
 	ActiveSessionIDs *[]string `json:"activeSessionIds,omitempty"`
-	// NativeWorkSessionIDs are the sessions whose agents still work on
-	// their own in this daemon's processes past a Foundry turn (background
-	// tasks, timers, a turn the agent continues, a kept Codex app-server);
-	// they keep the sessions' connector grants live (gateway.SessionLive).
-	NativeWorkSessionIDs []string `json:"nativeWorkSessionIds,omitempty"`
 	// RuntimeState is the worker's latest admission decision and resource
 	// sample. The server stores it as reported.
 	RuntimeState *store.DeviceRuntimeState `json:"runtimeState,omitempty"`
@@ -73,7 +68,6 @@ func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
 		heartbeat = wsHeartbeatPayload{}
 	}
 	c.noteHeartbeatClaims(heartbeat.ActiveSessionIDs)
-	c.confirmNativeWork(heartbeat.NativeWorkSessionIDs)
 	if heartbeat.RuntimeState != nil {
 		deviceID, _ := c.registrationSnapshot()
 		if deviceID != "" {

@@ -14,8 +14,12 @@ import type {
   MemorySortRecord,
   MessageChannelDeliveryList,
   MessageChannelInput,
+  MessageChannelInstructions,
   MessageChannelList,
+  MessageChannelPeers,
   MessageChannelPrerequisites,
+  MessageChannelTestInput,
+  MessageChannelTestResult,
   MessageChannelView,
   MoveMemoryEntryInput,
   PermissionPackage,
@@ -403,8 +407,12 @@ export function cancelPendingPersonalAgentOperation(
 export type {
   MessageChannelDeliveryList,
   MessageChannelInput,
+  MessageChannelInstructions,
   MessageChannelList,
+  MessageChannelPeers,
   MessageChannelPrerequisites,
+  MessageChannelTestInput,
+  MessageChannelTestResult,
   MessageChannelView,
 };
 
@@ -440,6 +448,28 @@ export function deleteMessageChannel(
   return request("DELETE", channelPath(assistantId, channelId));
 }
 
+/**
+ * Tries unsaved rules: on made-up samples and, with `recent` and a source,
+ * on up to 30 recent messages the person's channels on it saw.
+ */
+export function testMessageChannelRules(
+  assistantId: string | undefined,
+  input: MessageChannelTestInput,
+): Promise<MessageChannelTestResult> {
+  return request("POST", `${channelPath(assistantId)}/test`, { body: input });
+}
+
+/** Conversations and senders the person's channels saw recently on a source. */
+export function listMessageChannelPeers(
+  assistantId: string | undefined,
+  accountId: string,
+): Promise<MessageChannelPeers> {
+  return request(
+    "GET",
+    `${channelPath(assistantId)}/peers?accountId=${encodeURIComponent(accountId)}`,
+  );
+}
+
 /** The channel's latest 50 messages, newest first; `dropped` adds filtered-out ones. */
 export function listMessageChannelDeliveries(
   assistantId: string | undefined,
@@ -470,5 +500,53 @@ export function grantMessageChannelSource(
 ): Promise<MessageChannelPrerequisites> {
   return request("POST", `${channelPath(assistantId)}/grant-source`, {
     body: { accountId },
+  });
+}
+
+/**
+ * The AGENTS.md of the channel's workspace and its saved versions, newest
+ * first. 409 while the channel has no workspace yet.
+ */
+export function getMessageChannelInstructions(
+  assistantId: string | undefined,
+  channelId: string,
+): Promise<MessageChannelInstructions> {
+  return request("GET", `${channelPath(assistantId, channelId)}/instructions`);
+}
+
+/** Saves AGENTS.md; 409 when it changed since `baseSha256` was read. */
+export function saveMessageChannelInstructions(
+  assistantId: string | undefined,
+  channelId: string,
+  content: string,
+  baseSha256: string,
+): Promise<MessageChannelInstructions> {
+  return request("PUT", `${channelPath(assistantId, channelId)}/instructions`, {
+    body: { content, baseSha256 },
+  });
+}
+
+/** Puts a saved version of AGENTS.md back, as a new version. */
+export function revertMessageChannelInstructions(
+  assistantId: string | undefined,
+  channelId: string,
+  revisionId: string,
+  baseSha256: string,
+): Promise<MessageChannelInstructions> {
+  return request(
+    "POST",
+    `${channelPath(assistantId, channelId)}/instructions/revert`,
+    { body: { revisionId, baseSha256 } },
+  );
+}
+
+/** The conversation's next message starts a new session. */
+export function startMessageChannelNewSession(
+  assistantId: string | undefined,
+  channelId: string,
+  sessionKey: string,
+): Promise<{ sessionKey: string; next: string }> {
+  return request("POST", `${channelPath(assistantId, channelId)}/new-session`, {
+    body: { sessionKey },
   });
 }

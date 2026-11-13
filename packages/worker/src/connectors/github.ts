@@ -28,6 +28,7 @@ import { ForeignToolError } from "./device-held.js";
 import { findOnPath, mergeEnvironment } from "./session-environment.js";
 import { installGitHubCli } from "./gh-install.js";
 import { foundryStatePath } from "../platform/state-root.js";
+import { redactSecrets } from "../platform/secret-redaction.js";
 
 /**
  * GitHub CLI (`gh`), device-held: the login is gh's own, kept on the device
@@ -42,6 +43,14 @@ import { foundryStatePath } from "../platform/state-root.js";
  */
 
 const host = "github.com";
+
+/**
+ * GH_TOKEN of a session that may not use the login. gh reads the keychain
+ * whenever it has no token from the environment or its configuration, even
+ * with an empty GH_CONFIG_DIR (gh 2.40+ falls back to the unkeyed
+ * `gh:<host>` item), so an empty value would not keep it out.
+ */
+export const isolatedGhToken = "foundry-no-access";
 
 /**
  * GitHub permissions are the classic OAuth scopes of gh's token. The list
@@ -162,13 +171,48 @@ export function parseGhAuthStatus(result: ToolResult): LoginReading {
 export function parseGhDeviceCode(
   output: string,
 ): { code: string; url: string } | undefined {
-  const code = /one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(output)?.[1];
+  // gh 2.103.3 put the code in parentheses and says it copied it to the
+  // clipboard; older versions asked the person to copy it after a colon.
+  const code = /one-time code(?::|\s*\()\s*([A-Z0-9]{4}-[A-Z0-9]{4})\b/i
+    .exec(output)?.[1]
+    ?.toUpperCase();
   const url = /(https:\/\/github\.com\/login\/device)\b/.exec(output)?.[1];
-  return code && url ? { code, url } : undefined;
+  if (code && url) return { code, url };
+  if (!url) return undefined;
+
+  // Keep sign-in working through future wording changes, but only when the
+  // output has one unmistakable device code. Numeric date/version shapes are
+  // excluded, and a second candidate makes the guess ambiguous.
+  const candidates = [
+    ...output.matchAll(/(?<![A-Z0-9])[A-Z0-9]{4}-[A-Z0-9]{4}(?![A-Z0-9])/gi),
+  ]
+    .map((match) => match[0].toUpperCase())
+    .filter((candidate) => !/^\d{4}-\d{4}$/.test(candidate));
+  const [candidate] = candidates;
+  return candidates.length === 1 && candidate
+    ? { code: candidate, url }
+    : undefined;
 }
 
 const waitForCodeMs = 30_000;
 const signInLifetimeMs = 15 * 60_000;
+
+/** A timeout error with the useful, sanitized tail of gh's output. */
+export function ghDeviceCodeTimeout(output: string): string {
+  const tail = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-4)
+    .map((line) => redactSecrets(line))
+    .join(" | ")
+    .replace(/(?<![A-Z0-9])[A-Z0-9]{4}-[A-Z0-9]{4}(?![A-Z0-9])/gi, "[REDACTED]")
+    .slice(-230);
+  return `GitHub CLI did not show a sign-in code in time.${tail ? ` Last output: ${tail}` : ""}`.slice(
+    0,
+    300,
+  );
+}
 
 /** The one GitHub sign-in running on this device, if any. */
 class GhSignIn {
@@ -253,7 +297,7 @@ class GhSignIn {
         this.cancel();
         return {
           status: "failed",
-          error: "GitHub CLI did not show a sign-in code in time.",
+          error: ghDeviceCodeTimeout(this.output),
         };
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -302,9 +346,7 @@ function failure(output: string): string {
       .map((entry) => entry.trim())
       .filter((entry) => entry && !/one-time code|Open this URL/i.test(entry))
       .at(-1) ?? "";
-  return (line || "GitHub CLI could not sign in.")
-    .replace(/gh[opsu]_[A-Za-z0-9]{20,}/g, "…")
-    .slice(0, 300);
+  return redactSecrets(line || "GitHub CLI could not sign in.").slice(0, 300);
 }
 
 const signIn = new GhSignIn();
@@ -587,36 +629,49 @@ export const githubAdapter: DeviceHeldAdapter = {
       return shape === "usable"
         ? "git is not on the PATH a session gets"
         : undefined;
-    // Only the configuration of the session's environment answers: not the
-    // person's global git configuration, and nothing is asked on a terminal.
-    // An isolated session has no helper of its own, so what gh would hand
-    // over there is tested by giving it the helper a session with the login
-    // gets.
-    const checkEnvironment = mergeEnvironment(
-      {
+    if (shape === "usable") {
+      // Only the configuration of the session's environment answers: not
+      // the person's global git configuration, and nothing is asked on a
+      // terminal.
+      const obtained = await gitYieldsCredential(git, {
         ...environment,
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_TERMINAL_PROMPT: "0",
         GIT_ASKPASS: "true",
-      },
-      shape === "isolated" ? githubAdapter.sessionEnvironment!(located) : {},
-    );
-    const obtained = await gitYieldsCredential(git, checkEnvironment);
-    if (shape === "usable")
+      });
       return obtained
         ? undefined
         : `git gets no ${host} credential from the gh login in a session's environment`;
+    }
+    // gh itself first: without a configuration of its own it still falls
+    // back to the token in the keychain.
+    if (await ghHandsOutToken(located.path, environment))
+      return `gh still hands out a ${host} token under the isolation environment`;
+    // Then git as the session runs it: the person's global and system
+    // configuration included (osxkeychain, a `gh auth setup-git` helper),
+    // and gh's helper set ahead of the isolation as if it were global.
+    // Nothing is asked on a terminal.
+    const obtained = await gitYieldsCredential(
+      git,
+      mergeEnvironment(
+        githubAdapter.sessionEnvironment!(located),
+        mergeEnvironment(environment, {
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_ASKPASS: "true",
+          SSH_ASKPASS: "true",
+        }),
+      ),
+    );
     return obtained
-      ? `gh's git credential helper still hands out a ${host} credential under the isolation environment`
+      ? `git's credential helpers still hand out a ${host} credential under the isolation environment`
       : undefined;
   },
   isolationEnvironment() {
     // An empty configuration folder gh cannot write: gh, and git through
-    // gh's credential helper, find no login, and a `gh auth login` in one
-    // such session cannot leave one for the others. Whatever a session
-    // left there anyway is removed before the next one starts. Tokens from
-    // the environment are masked too.
+    // gh's credential helper, find no login in it, and a `gh auth login`
+    // in one such session cannot leave one for the others. Whatever a
+    // session left there anyway is removed before the next one starts.
     const empty = foundryStatePath("isolation", "gh");
     mkdirSync(empty, { recursive: true, mode: 0o700 });
     chmodSync(empty, 0o700);
@@ -626,13 +681,55 @@ export const githubAdapter: DeviceHeldAdapter = {
     return {
       DOCKER_CONFIG: join(empty),
       GH_CONFIG_DIR: join(empty),
-      GH_TOKEN: "",
+      // gh has no switch to leave the keychain alone: a token in GH_TOKEN
+      // is the one it uses instead, and this one GitHub refuses.
+      GH_TOKEN: isolatedGhToken,
       GITHUB_TOKEN: "",
       GH_ENTERPRISE_TOKEN: "",
       GITHUB_ENTERPRISE_TOKEN: "",
+      // An empty helper empties the list git collected for github.com so
+      // far (system osxkeychain, a global `gh auth setup-git`); the
+      // session's environment is read last.
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `credential.https://${host}.helper`,
+      GIT_CONFIG_VALUE_0: "",
     };
   },
 };
+
+/**
+ * Whether `gh auth token` hands out a token other than the isolation's
+ * placeholder. Only that fact leaves this function.
+ */
+function ghHandsOutToken(
+  gh: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(gh, ["auth", "token", "--hostname", host], {
+      env: {
+        ...environment,
+        GH_PROMPT_DISABLED: "1",
+        GH_NO_UPDATE_NOTIFIER: "1",
+      },
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let answer = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (answer.length < 16 * 1024) answer += chunk.toString();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const token = answer.trim();
+      resolve(code === 0 && token !== "" && token !== isolatedGhToken);
+    });
+  });
+}
 
 /**
  * Whether `git credential fill` for github.com yields a password. Only that

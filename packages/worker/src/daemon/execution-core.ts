@@ -29,6 +29,7 @@ import {
 } from "../platform/task-scheduler.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationDirectory } from "../session/verification-session.js";
+import { readOnlySessionDirectory } from "../session/read-only-workspace-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
 import { runAgentSession } from "./session-run.js";
 
@@ -130,16 +131,30 @@ export function recordedCompletion(
   }
   // The stateRoot session-execution.ts gives the session: an Issue's other
   // sessions keep their records beside its candidate, a verifier in its own
-  // directory.
-  const stateRoot = session.issueId
-    ? new ExecutionStore().environment(session.workspaceId, session.issueId)
-        ?.directory
+  // directory, a read-only workspace session in its own (looked for first:
+  // a recovery request does not say the session is one).
+  const stateRoots: Array<() => string | undefined> = session.issueId
+    ? [
+        () =>
+          new ExecutionStore().environment(
+            session.workspaceId,
+            session.issueId!,
+          )?.directory,
+      ]
     : isVerificationSession(session)
-      ? verificationDirectory(session.workspaceId, session.id)
-      : workspacePath();
-  const marker = stateRoot
-    ? readAgentSessionCompletionMarker(stateRoot, session.id, dispatchId ?? "")
-    : undefined;
+      ? [() => verificationDirectory(session.workspaceId, session.id)]
+      : [
+          () => readOnlySessionDirectory(session.workspaceId, session.id),
+          workspacePath,
+        ];
+  let marker: ReturnType<typeof readAgentSessionCompletionMarker>;
+  for (const stateRoot of stateRoots) {
+    const root = stateRoot();
+    marker = root
+      ? readAgentSessionCompletionMarker(root, session.id, dispatchId ?? "")
+      : undefined;
+    if (marker) break;
+  }
   return (
     marker && {
       sessionId: session.id,

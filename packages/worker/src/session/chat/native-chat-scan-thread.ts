@@ -51,6 +51,12 @@ interface WorkerRequest {
   ids?: string[];
 }
 
+/** Answered between scan steps: a worker that answers is busy, not stuck. */
+interface WorkerPing {
+  id: number;
+  type: "ping";
+}
+
 type WorkerResponse =
   | { id: number; ok: true; result: NativeChatScanResult | ChatThread[] }
   | { id: number; ok: false; error: string };
@@ -62,6 +68,14 @@ interface PendingRequest {
 }
 
 const defaultTimeoutMs = 60_000;
+/**
+ * A scan that runs this long is given up even while the worker answers. A
+ * cold scan of a large history on a loaded machine takes minutes; killing
+ * the worker at the first timeout threw its warm cache away, so every later
+ * scan started cold again and timed out again, and each fell back to the
+ * daemon thread (DEV-222).
+ */
+const longestScanMs = 15 * 60_000;
 const keptSnapshots = 64;
 const workerSnapshots = new Map<string, ChatThread[]>();
 let workerListingRevision = -1;
@@ -163,6 +177,7 @@ export class NativeChatScanClient {
   #worker: Worker | undefined;
   #nextRequest = 0;
   #pending = new Map<number, PendingRequest>();
+  #pings = new Map<number, () => void>();
 
   constructor(
     options: {
@@ -220,22 +235,13 @@ export class NativeChatScanClient {
   ): Promise<NativeChatScanResult | ChatThread[]> {
     const worker = this.#worker ?? this.#startWorker();
     const id = ++this.#nextRequest;
+    const startedAt = Date.now();
     worker.ref();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const error = new Error(
-          `native chat scan worker timed out after ${this.#timeoutMs} ms`,
-        );
-        this.#failAll(error);
-        const stuck = this.#worker;
-        this.#worker = undefined;
-        if (stuck) void stuck.terminate();
-      }, this.#timeoutMs);
-      timer.unref();
       this.#pending.set(id, {
         resolve,
         reject,
-        timer,
+        timer: this.#watch(id, worker, startedAt),
       });
       try {
         worker.postMessage({ ...request, id } satisfies WorkerRequest);
@@ -253,10 +259,66 @@ export class NativeChatScanClient {
     });
   }
 
+  /** At each timeout the worker must still answer, or it is stopped. */
+  #watch(id: number, worker: Worker, startedAt: number): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      void this.#answers(worker).then((alive) => {
+        const pending = this.#pending.get(id);
+        if (!pending || this.#worker !== worker) return;
+        if (alive && Date.now() - startedAt < longestScanMs) {
+          pending.timer = this.#watch(id, worker, startedAt);
+          return;
+        }
+        this.#failAll(
+          new Error(
+            alive
+              ? `native chat scan ran longer than ${longestScanMs} ms`
+              : `native chat scan worker timed out after ${this.#timeoutMs} ms`,
+          ),
+        );
+        this.#worker = undefined;
+        void worker.terminate();
+      });
+    }, this.#timeoutMs);
+    timer.unref();
+    return timer;
+  }
+
+  #answers(worker: Worker): Promise<boolean> {
+    const id = ++this.#nextRequest;
+    return new Promise((resolve) => {
+      const timer = setTimeout(
+        () => {
+          this.#pings.delete(id);
+          resolve(false);
+        },
+        Math.min(this.#timeoutMs, 10_000),
+      );
+      timer.unref();
+      this.#pings.set(id, () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+      try {
+        worker.postMessage({ id, type: "ping" } satisfies WorkerPing);
+      } catch {
+        this.#pings.delete(id);
+        clearTimeout(timer);
+        resolve(false);
+      }
+    });
+  }
+
   #startWorker(): Worker {
     const worker = this.#createWorker();
     this.#worker = worker;
     worker.on("message", (message: WorkerResponse) => {
+      const pong = this.#pings.get(message.id);
+      if (pong) {
+        this.#pings.delete(message.id);
+        pong();
+        return;
+      }
       const pending = this.#pending.get(message.id);
       if (!pending) return;
       this.#pending.delete(message.id);
@@ -340,7 +402,15 @@ export async function scanNativeChatsForDaemon(
 
 const workerPort = parentPort;
 if (!isMainThread && workerPort && workerData?.nativeChatScanner === true) {
-  workerPort.on("message", (request: WorkerRequest) => {
+  workerPort.on("message", (request: WorkerRequest | WorkerPing) => {
+    if (request.type === "ping") {
+      workerPort.postMessage({
+        id: request.id,
+        ok: true,
+        result: [],
+      } satisfies WorkerResponse);
+      return;
+    }
     void runWorkerRequest(request)
       .then((result) =>
         workerPort.postMessage({
