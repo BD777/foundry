@@ -211,6 +211,31 @@ func TestModelProviderToolsManageAnEndpointLikeThePage(t *testing.T) {
 	}
 }
 
+func TestModelProviderToolsCopyAServerHeldKey(t *testing.T) {
+	f := newExternalAccountsFixture(t)
+	alice := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.aliceID})
+
+	var codexProvider mcpProvider
+	alice.ok("save_model_provider", `{"runtime":"codex","label":"TokenHub Codex","baseUrl":"https://tokenhub.example/v1","apiKey":"`+providerTestKey+`","model":"deepseek-v4.1-flash-1017"}`, &codexProvider)
+
+	var claudeProvider mcpProvider
+	alice.ok("save_model_provider", `{"runtime":"claude","label":"TokenHub Claude","baseUrl":"https://tokenhub.example/v1","copyApiKeyFromProviderId":"`+codexProvider.ID+`","model":"deepseek-v4.1-flash-1017","deviceIds":["dev_alice"]}`, &claudeProvider)
+	if claudeProvider.BaseURL != "https://tokenhub.example" || claudeProvider.KeySet == nil || !*claudeProvider.KeySet ||
+		len(claudeProvider.Devices) != 1 {
+		t.Fatalf("copied provider = %+v", claudeProvider)
+	}
+	if key, err := f.server.hub.serverProfileCredential(context.Background(), claudeProvider.ID); err != nil || key != providerTestKey {
+		t.Fatalf("copied key is not sealed on the destination: %v", err)
+	}
+
+	if text, failed, _ := alice.call("save_model_provider", `{"runtime":"claude","label":"Missing","baseUrl":"https://missing.example","copyApiKeyFromProviderId":"prof_missing"}`); !failed || !strings.Contains(text, "source API endpoint not found") {
+		t.Fatalf("missing source: %q", text)
+	}
+	if text, failed, _ := alice.call("save_model_provider", `{"providerId":"`+claudeProvider.ID+`","apiKey":"replacement","copyApiKeyFromProviderId":"`+codexProvider.ID+`"}`); !failed || !strings.Contains(text, "without apiKey") {
+		t.Fatalf("conflicting key inputs: %q", text)
+	}
+}
+
 // Only the person's own chats and assistant manage their providers: another
 // member's session reaches neither the provider nor the device, and an
 // Issue's sessions, verifiers and utility sessions get no provider tool.
@@ -226,6 +251,7 @@ func TestModelProviderToolsRefuseOthers(t *testing.T) {
 	bob := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.bobID, AgentID: "agent_bob", WorkspaceID: "ws_bob"})
 	for _, call := range []struct{ tool, args string }{
 		{"save_model_provider", `{"providerId":"` + created.ID + `","label":"Mine now"}`},
+		{"save_model_provider", `{"runtime":"claude","label":"Stolen","baseUrl":"https://stolen.example","copyApiKeyFromProviderId":"` + created.ID + `"}`},
 		{"delete_model_provider", `{"providerId":"` + created.ID + `"}`},
 		{"check_model_provider", `{"providerId":"` + created.ID + `","deviceId":"dev_alice"}`},
 		{"save_model_provider", `{"runtime":"claude","label":"X","baseUrl":"https://x.example","deviceIds":["dev_alice"]}`},

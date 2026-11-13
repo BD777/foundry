@@ -163,13 +163,6 @@ func (g *Gateway) UseChecks(checks *gateway.Checks) {
 	g.pipeline.Checks = checks
 }
 
-// UseNativeWork lets a completed session's grants act while its device
-// claims that the session's agent still works on its own
-// (gateway.SessionLive).
-func (g *Gateway) UseNativeWork(work gateway.NativeWork) {
-	g.pipeline.Work = work
-}
-
 // UsePermission makes every gateway call re-read the assistant package and
 // route risk writes through confirmation.
 func (g *Gateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
@@ -237,7 +230,7 @@ func (g *Gateway) IssueHandles(ctx context.Context, request externalaccounts.Han
 
 // errAccessEnded: the handle names no live access (unknown, or the session
 // ended, the account was stopped, disconnected or unbound).
-var errAccessEnded = errors.New("this session's Feishu access through Foundry has ended (the session finished, or the account was stopped, removed or unbound); start a new session, or ask the person to check Connectors → Feishu in Foundry")
+var errAccessEnded = errors.New("this session's Feishu access through Foundry has ended: the session was archived or deleted, or the account was stopped, removed or unbound from its workspace; ask the person to check Connectors → Feishu in Foundry")
 
 func handleKind(handle string) string {
 	switch {
@@ -262,7 +255,7 @@ func callerOf(lease *gateway.Lease) Caller {
 // usable there.
 func (g *Gateway) Authorized(ctx context.Context, caller Caller) error {
 	_, err := g.pipeline.Live(ctx, gateway.Subject{SessionID: caller.SessionID, WorkspaceID: caller.WorkspaceID, DeviceID: caller.DeviceID, UserID: caller.UserID, AccountID: caller.AccountID, AppID: caller.AppID}, caller.UserID)
-	if errors.Is(err, gateway.ErrSessionEnded) || errors.Is(err, gateway.ErrSessionIdle) || errors.Is(err, gateway.ErrAccessEnded) {
+	if errors.Is(err, gateway.ErrSessionEnded) || errors.Is(err, gateway.ErrAccessEnded) {
 		return errAccessEnded
 	}
 	return err
@@ -314,10 +307,10 @@ func (g *Gateway) Run(ctx context.Context) {
 	}
 }
 
-// Prune removes the grants of sessions that ended for good (and of
-// completed ones past gateway.HeldSessionMaxIdle) and old audit lines.
+// Prune removes the grants of sessions archived or deleted, grants
+// superseded for over gateway.SupersededGrantKeep, and old audit lines.
 func (g *Gateway) Prune(ctx context.Context) {
-	if _, err := g.store.PruneFeishuGatewayGrants(ctx, g.Now().Add(-gateway.HeldSessionMaxIdle)); err != nil {
+	if _, err := g.store.PruneFeishuGatewayGrants(ctx, g.Now().Add(-gateway.SupersededGrantKeep)); err != nil {
 		g.logf("feishu gateway: %v", err)
 	}
 	if _, err := g.store.PruneFeishuGatewayRequests(ctx, g.Now().Add(-g.AuditRetention)); err != nil {

@@ -22,6 +22,22 @@ const DaemonCapabilityProfileCheck = "profile_check"
 // its durable completion marker suppressing the retry.
 const DaemonCapabilityDispatchRetry = "dispatch_retry"
 
+// DaemonCapabilityReadOnlyWorkspaceSessions: the worker runs a session whose
+// workspaceAccess is read inside the same sandbox as a verifier, keeping its
+// workspace read-only (DEV-203 message channel sessions). Declared only while
+// that sandbox is ready.
+const DaemonCapabilityReadOnlyWorkspaceSessions = "read_only_workspace_sessions"
+
+// DaemonCapabilityWorkspaceFileWrite: the worker writes one text file in a
+// workspace on the server's request (write_file).
+const DaemonCapabilityWorkspaceFileWrite = "workspace_file_write"
+
+// DaemonCapabilitySharedLeases: the worker runs shared leases of one
+// resource side by side (a provider session per lease, resetLeaseOnly
+// resets, operate requests marked shared). Without it the server gives
+// the device's resources one lease at a time.
+const DaemonCapabilitySharedLeases = "shared_leases"
+
 type UpsertAgentRuntimeSettingsInput struct {
 	DeviceID string               `json:"deviceId,omitempty"`
 	Settings AgentRuntimeSettings `json:"settings"`

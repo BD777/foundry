@@ -3,8 +3,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import { readFileSync } from "node:fs";
 register("./bundler-resolve.mjs", import.meta.url);
 const {
+  effectiveScopes,
   initialSelection,
   normalizeSelection,
   parseScopeList,
@@ -43,6 +45,36 @@ test("recommended and all; all leaves out what the app cannot grant", () => {
     "workflow",
     "delete_repo",
   ]);
+});
+
+test("GitHub's all-except-delete preset covers every listed scope except the documented delete scopes", () => {
+  const github = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../apps/server/internal/connectors/catalog.json",
+        import.meta.url,
+      ),
+    ),
+  )
+    .find((connector) => connector.kind === "github")
+    .authorizationGroups.find((group) => group.id === "permissions");
+  const [preset] = github.presets;
+  assert.equal(preset.label, "All 34 listed except deletion");
+  assert.deepEqual(preset.excludeScopes, ["delete_repo", "delete:packages"]);
+  const selected = selectionFor(
+    `preset:${preset.id}`,
+    github.scopes,
+    github.presets,
+  );
+  const covered = effectiveScopes(selected, github.scopes);
+  assert.equal(github.scopes.length, 34);
+  for (const scope of github.scopes) {
+    assert.equal(
+      covered.has(scope.id),
+      !preset.excludeScopes.includes(scope.id),
+      scope.id,
+    );
+  }
 });
 
 test("a selection keeps required scopes and drops what a broader one includes", () => {

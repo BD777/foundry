@@ -87,6 +87,13 @@ export const resources: Translation<typeof en> = {
     queue_other: "{{count}} 个会话在等待",
     preempt: "将于 {{time}} 交给等待中的会话",
     resetting: "上一个会话结束后正在重置；设备确认后即可使用。",
+    modes: {
+      shared: "共享",
+      exclusive: "独占",
+    },
+    slots_one: "已用 {{inUse}}/{{count}} 个槽位",
+    slots_other: "已用 {{inUse}}/{{count}} 个槽位",
+    slotsAuto: "自动",
   },
   lease: {
     release: "释放",
@@ -194,6 +201,23 @@ export const resources: Translation<typeof en> = {
       later: "在你重新开启前，任何会话都不能在这里运行命令。",
     },
     offConfirm: "关闭",
+    slots: "同时运行的共享租用数",
+    slotsAuto: "自动",
+    slotsSave: "保存",
+    slotsHint: "留空则按此设备的 CPU 和内存自动决定，也可以填 1–64。",
+    slotsInvalid: "请输入 1 到 64 的整数，或留空表示自动。",
+  },
+  workspacePolicy: {
+    title: "可以租用此设备的工作区",
+    modes: {
+      every: "所有工作区",
+      only: "仅这些",
+      except: "除这些以外的所有工作区",
+    },
+    unknownWorkspace: "不在你列表中的工作区",
+    noWorkspaces: "你没有可选的工作区。",
+    pickOne: "请至少选择一个工作区。",
+    save: "保存",
   },
   activity: {
     action: "操作记录",

@@ -21,9 +21,10 @@ import {
   ContextRow,
   ContextRowCopy,
   ContextRowIcon,
+  ContextCard,
   ContextSection,
   ContextStaticRow,
-} from "./chat-context-parts";
+} from "../../../components/ui/context-card";
 import { ChatSessionStatusLine } from "./chat-session-status";
 import { BackgroundSection } from "./chat-context-background";
 import { SessionFileSections } from "./chat-context-files";
@@ -210,8 +211,8 @@ export const ChatContextCard = memo(function ChatContextCard({
     showSubagents ||
     data.background.length > 0;
   return (
-    <aside
-      className="relative overflow-hidden rounded-xl bg-panel shadow-floating max-[1360px]:max-h-full max-[1360px]:overflow-y-auto [&>section+section]:border-t [&>section+section]:border-line max-[1360px]:[&>section:first-of-type]:pr-13.5"
+    <ContextCard
+      className="max-[1360px]:max-h-full max-[1360px]:overflow-y-auto max-[1360px]:[&>section:first-of-type]:pr-13.5"
       aria-label={t("contextCard.label")}
     >
       {onClose ? (
@@ -353,6 +354,6 @@ export const ChatContextCard = memo(function ChatContextCard({
           </ContextSection>
         ) : null}
       </ContextGroup>
-    </aside>
+    </ContextCard>
   );
 });

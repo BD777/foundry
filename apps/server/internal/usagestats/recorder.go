@@ -130,6 +130,17 @@ func (r *Recorder) applyCost(ctx context.Context, turn *store.UsageTurn) {
 					return
 				}
 			}
+			if r.prices != nil {
+				if price, ok := r.prices.lookupForProvider(
+					turn.Model, profile.Label+" "+profile.BaseURL,
+				); ok {
+					if cost, ok := costForTokens(price, tokens); ok {
+						turn.CostUSD = cost
+						turn.CostSource = store.UsageCostEstimated
+						return
+					}
+				}
+			}
 		}
 	}
 	if r.prices != nil {

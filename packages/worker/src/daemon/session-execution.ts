@@ -43,6 +43,7 @@ import {
   writeAgentSessionCompletionMarker,
 } from "../session/session-helpers.js";
 import {
+  isReadOnlyWorkspaceSession,
   isVerificationSession,
   isUtilitySession,
 } from "../session/session-roles.js";
@@ -59,11 +60,12 @@ import {
 } from "../skills/skill-materializer.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationExecution } from "../session/verification-session.js";
+import { readOnlySessionExecution } from "../session/read-only-workspace-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
 
 // Chats run unsandboxed in the workspace itself; Issue-backed sessions run
-// where and how the Issue decides; a verifier runs in the workspace inside a
-// sandbox that keeps it read-only.
+// where and how the Issue decides; a verifier, and a session whose workspace
+// is read-only, run in the workspace inside a sandbox that keeps it so.
 export function sessionExecution(
   rootPath: string,
   session: AgentSession,
@@ -79,6 +81,8 @@ export function sessionExecution(
     );
   if (isVerificationSession(session))
     return verificationExecution(session, rootPath, ambient);
+  if (isReadOnlyWorkspaceSession(session))
+    return readOnlySessionExecution(session, rootPath, ambient);
   return { cwd: rootPath, stateRoot: rootPath };
 }
 

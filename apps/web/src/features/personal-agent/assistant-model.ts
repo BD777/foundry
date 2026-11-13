@@ -6,6 +6,7 @@ import {
   type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
+  type PersonalAgentInboxEntry,
   type PersonalAgentLimits,
   type PersonalAgentPolicy,
   type PersonalAgentPolicyPreset,
@@ -513,4 +514,95 @@ export function assistantRuntime(
       ? { model: settings.assistantModel }
       : {}),
   };
+}
+
+/** Why a saved message was not processed, as the home says it. */
+export type InboxReasonKind =
+  | "quota_exhausted"
+  | "rate_limited"
+  | "provider_unavailable"
+  | "provider_mismatch"
+  | "host_stopped"
+  | "other"
+  | "canceled";
+
+export interface InboxReason {
+  kind: InboxReasonKind;
+  /** When the model quota comes back, and whether that has passed. */
+  resetAt?: string;
+  resetPassed?: boolean;
+}
+
+const failureKinds: readonly InboxReasonKind[] = [
+  "quota_exhausted",
+  "rate_limited",
+  "provider_unavailable",
+  "provider_mismatch",
+  "host_stopped",
+];
+
+/** A failed attempt's reason, from the server's classification of its error. */
+export function inboxReason(
+  entry: PersonalAgentInboxEntry,
+  now: Date,
+): InboxReason {
+  // A stopped attempt was stopped on purpose; its error only says so.
+  if (entry.resultStatus === "canceled") return { kind: "canceled" };
+  const failure = entry.resultFailure;
+  if (!failure) return { kind: "other" };
+  const kind =
+    failureKinds.find((known) => known === failure.category) ?? "other";
+  const reset = failure.resetAt ? Date.parse(failure.resetAt) : NaN;
+  if (kind !== "quota_exhausted" || Number.isNaN(reset)) return { kind };
+  return {
+    kind,
+    resetAt: failure.resetAt,
+    resetPassed: reset <= now.getTime(),
+  };
+}
+
+/**
+ * The one reason every failed message shares, for the card's summary line
+ * (the latest reset when they name several); none when they differ.
+ */
+export function inboxSummaryReason(
+  failed: readonly PersonalAgentInboxEntry[],
+  now: Date,
+): InboxReason | undefined {
+  const reasons = failed.map((entry) => inboxReason(entry, now));
+  const first = reasons[0];
+  if (!first || reasons.some((reason) => reason.kind !== first.kind))
+    return undefined;
+  return reasons.reduce((latest, reason) =>
+    (reason.resetAt ?? "") > (latest.resetAt ?? "") ? reason : latest,
+  );
+}
+
+/** One part of the narrow home's summary line, by its copy key. */
+export interface SideSummaryPart {
+  key:
+    | "home.summary.needsYou"
+    | "home.summary.unprocessed"
+    | "home.summary.list"
+    | "home.summary.tasks";
+  count: number;
+}
+
+/**
+ * The narrow home's one-line summary of the side card: only the sections
+ * that hold something, in the card's order.
+ */
+export function sideSummary(counts: {
+  needsYou: number;
+  unprocessed: number;
+  list: number;
+  tasks: number;
+}): SideSummaryPart[] {
+  const parts: SideSummaryPart[] = [
+    { key: "home.summary.needsYou", count: counts.needsYou },
+    { key: "home.summary.unprocessed", count: counts.unprocessed },
+    { key: "home.summary.list", count: counts.list },
+    { key: "home.summary.tasks", count: counts.tasks },
+  ];
+  return parts.filter((part) => part.count > 0);
 }

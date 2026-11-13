@@ -44,6 +44,7 @@ type priceBook struct {
 	// canonical Claude entry.
 	exact      map[string]tokenPrices
 	normalized map[string]tokenPrices
+	providers  map[string]map[string]tokenPrices
 }
 
 // PriceCatalog is a process-local LiteLLM price view. A refresh parses a
@@ -59,6 +60,7 @@ type litellmPrice struct {
 	CacheReadInputTokenCost     *float64 `json:"cache_read_input_token_cost"`
 	CacheCreationInputTokenCost *float64 `json:"cache_creation_input_token_cost"`
 	OutputCostPerToken          *float64 `json:"output_cost_per_token"`
+	LiteLLMProvider             string   `json:"litellm_provider"`
 }
 
 func NewPriceCatalog(snapshot []byte) (*PriceCatalog, error) {
@@ -115,6 +117,13 @@ func (c *PriceCatalog) Refresh(ctx context.Context, source string) error {
 }
 
 func (c *PriceCatalog) lookup(model string) (tokenPrices, bool) {
+	return c.lookupForProvider(model, "")
+}
+
+// lookupForProvider resolves ambiguous public model ids with a provider hint
+// from the serving profile. A checkpoint suffix may name the same catalog model
+// without that suffix, as Tencent's deepseek-v4.1-flash does.
+func (c *PriceCatalog) lookupForProvider(model, providerHint string) (tokenPrices, bool) {
 	if c == nil {
 		return tokenPrices{}, false
 	}
@@ -125,6 +134,17 @@ func (c *PriceCatalog) lookup(model string) (tokenPrices, bool) {
 	model = strings.TrimSpace(model)
 	if price, ok := book.exact[modelKey(model)]; ok {
 		return price, true
+	}
+	if provider := matchingProvider(book.providers, providerHint); provider != "" {
+		normalized := normalizeModelID(model)
+		if price, ok := book.providers[provider][normalized]; ok {
+			return price, true
+		}
+		if base := checkpointBaseModelID(normalized); base != normalized {
+			if price, ok := book.providers[provider][base]; ok {
+				return price, true
+			}
+		}
 	}
 	price, ok := book.normalized[normalizeModelID(model)]
 	return price, ok
@@ -138,6 +158,7 @@ func parsePriceBook(snapshot []byte) (*priceBook, error) {
 	book := &priceBook{
 		exact:      map[string]tokenPrices{},
 		normalized: map[string]tokenPrices{},
+		providers:  map[string]map[string]tokenPrices{},
 	}
 	keys := make([]string, 0, len(raw))
 	for key := range raw {
@@ -168,6 +189,26 @@ func parsePriceBook(snapshot []byte) (*priceBook, error) {
 		normalized := normalizeModelID(key)
 		if _, present := book.normalized[normalized]; normalized != "" && !present {
 			book.normalized[normalized] = price
+		}
+		provider := strings.ToLower(strings.TrimSpace(entry.LiteLLMProvider))
+		if provider == "" {
+			if slash := strings.IndexByte(key, '/'); slash > 0 {
+				provider = strings.ToLower(strings.TrimSpace(key[:slash]))
+			}
+		}
+		if provider != "" && normalized != "" {
+			if book.providers[provider] == nil {
+				book.providers[provider] = map[string]tokenPrices{}
+			}
+			if _, present := book.providers[provider][normalized]; !present {
+				book.providers[provider][normalized] = price
+			}
+			base := checkpointBaseModelID(normalized)
+			if base != normalized {
+				if _, present := book.providers[provider][base]; !present {
+					book.providers[provider][base] = price
+				}
+			}
 		}
 	}
 	if len(book.normalized) == 0 {
@@ -217,6 +258,33 @@ func stripContextSuffix(model string) string {
 	}
 }
 
+func checkpointBaseModelID(model string) string {
+	dash := strings.LastIndexByte(model, '-')
+	if dash < 0 || len(model)-dash-1 < 4 || len(model)-dash-1 > 8 {
+		return model
+	}
+	for _, char := range model[dash+1:] {
+		if char < '0' || char > '9' {
+			return model
+		}
+	}
+	return model[:dash]
+}
+
+func matchingProvider(providers map[string]map[string]tokenPrices, hint string) string {
+	hint = strings.ToLower(hint)
+	if hint == "" {
+		return ""
+	}
+	best := ""
+	for provider := range providers {
+		if strings.Contains(hint, provider) && len(provider) > len(best) {
+			best = provider
+		}
+	}
+	return best
+}
+
 func customModelPrice(prices map[string]store.ProfileModelPrice, model string) (tokenPrices, bool) {
 	if len(prices) == 0 {
 		return tokenPrices{}, false
@@ -255,6 +323,8 @@ func profilePriceToTokens(price store.ProfileModelPrice) tokenPrices {
 }
 
 type usageTokens struct {
+	// input is the whole prompt. cacheRead and cacheWrite are subsets of it,
+	// never additional tokens.
 	input      int64
 	cacheRead  int64
 	cacheWrite int64
@@ -269,14 +339,26 @@ func costForTokens(price tokenPrices, tokens usageTokens) (float64, bool) {
 	if tokens.empty() {
 		return 0, false
 	}
+	uncached := tokens.input - tokens.cacheRead - tokens.cacheWrite
+	if uncached < 0 {
+		uncached = 0
+	}
+	cacheReadPrice := price.cacheRead
+	if cacheReadPrice == nil {
+		cacheReadPrice = price.input
+	}
+	cacheWritePrice := price.cacheWrite
+	if cacheWritePrice == nil {
+		cacheWritePrice = price.input
+	}
 	total := 0.0
 	for _, line := range []struct {
 		tokens int64
 		price  *float64
 	}{
-		{tokens.input, price.input},
-		{tokens.cacheRead, price.cacheRead},
-		{tokens.cacheWrite, price.cacheWrite},
+		{uncached, price.input},
+		{tokens.cacheRead, cacheReadPrice},
+		{tokens.cacheWrite, cacheWritePrice},
 		{tokens.output, price.output},
 	} {
 		if line.tokens == 0 {

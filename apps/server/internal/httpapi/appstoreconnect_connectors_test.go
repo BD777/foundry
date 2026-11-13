@@ -44,7 +44,6 @@ func TestAppStoreConnectHTTPKeyBindingHandleAndGateway(t *testing.T) {
 	service := externalaccounts.NewService(f.db, f.db, externalaccounts.NewRegistry(provider))
 	f.server.connectors.ServerHeld = service
 	f.server.connectors.AppStoreConnect = connectors.NewAppStoreConnectGateway(f.db, service)
-	f.server.connectors.AppStoreConnect.UseNativeWork(f.server.hub)
 	f.server.connectors.SetGatewayIssuer(f.server.feishuGateway)
 
 	privateKey := appStoreConnectHTTPKey(t)

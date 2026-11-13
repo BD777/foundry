@@ -131,6 +131,9 @@ type ConnectorAuthorizationGroup struct {
 	Labels   map[string]string             `json:"labels,omitempty"`
 	Scopes   []ConnectorAuthorizationScope `json:"scopes,omitempty"`
 
+	// Presets Named selections over this group's listed scopes.
+	Presets []ConnectorAuthorizationPreset `json:"presets,omitempty"`
+
 	// ScopeSource Where the scope list comes from; "All" is offered only when it is complete.
 	ScopeSource *ConnectorScopeSource `json:"scopeSource,omitempty"`
 
@@ -138,6 +141,20 @@ type ConnectorAuthorizationGroup struct {
 	ScopesRemovable bool                   `json:"scopesRemovable,omitempty"`
 	Capabilities    jsonempty.List[string] `json:"capabilities"`
 	Credential      string                 `json:"credential"`
+}
+
+// ConnectorAuthorizationPreset A named selection of every available listed scope except explicit exclusions.
+type ConnectorAuthorizationPreset struct {
+	ID     string            `json:"id"`
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Hint One sentence describing what the exclusions do and do not guarantee.
+	Hint  string            `json:"hint"`
+	Hints map[string]string `json:"hints,omitempty"`
+
+	// ExcludeScopes Listed scopes this preset leaves out.
+	ExcludeScopes jsonempty.List[string] `json:"excludeScopes"`
 }
 
 // ConnectorAuthorizationScope defines model for ConnectorAuthorizationScope.
@@ -237,10 +254,17 @@ type ConnectorDescriptor struct {
 	ServerHeld *ConnectorServerHeldSpec `json:"serverHeld,omitempty"`
 }
 
-// ConnectorEventsCondition True when the value at pointer, as text, equals equals.
+// ConnectorEventsCase defines model for ConnectorEventsCase.
+type ConnectorEventsCase struct {
+	When  jsonempty.List[ConnectorEventsCondition] `json:"when"`
+	Value string                                   `json:"value"`
+}
+
+// ConnectorEventsCondition True when the value at pointer, as text, equals equals, or equals the value at equalsPointer.
 type ConnectorEventsCondition struct {
-	Pointer string `json:"pointer"`
-	Equals  string `json:"equals"`
+	Pointer       string `json:"pointer"`
+	Equals        string `json:"equals,omitempty"`
+	EqualsPointer string `json:"equalsPointer,omitempty"`
 }
 
 // ConnectorEventsContext How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`.
@@ -296,6 +320,9 @@ type ConnectorEventsValue struct {
 	Map       map[string]string `json:"map,omitempty"`
 	Otherwise string            `json:"otherwise,omitempty"`
 	Unit      string            `json:"unit,omitempty"`
+
+	// Cases Checked first, in order; the first case whose conditions all hold gives the value.
+	Cases []ConnectorEventsCase `json:"cases,omitempty"`
 }
 
 // ConnectorExtensionRepository A folder of a git repository holding an extension (docs/connector-extensions.md). The device fetches it with its own git credentials (SSH keys, credential helpers such as GitHub CLI's).
@@ -882,6 +909,18 @@ type ConnectorTool struct {
 
 	// VersionCheck ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0.
 	VersionCheck *ConnectorVersionCheck `json:"versionCheck,omitempty"`
+
+	// Skills Skills the tool's own npm package ships. Sessions that receive the connector get them from the Skill library bundle that follows this package, at the version paired with the device's copy of the tool.
+	Skills *ConnectorToolSkills `json:"skills,omitempty"`
+}
+
+// ConnectorToolSkills Skills the tool's own npm package ships. Sessions that receive the connector get them from the Skill library bundle that follows this package, at the version paired with the device's copy of the tool.
+type ConnectorToolSkills struct {
+	// Path The folder in the package holding the Skill folders.
+	Path string `json:"path"`
+
+	// Default Skill names sessions get by default. Absent gives every Skill of the bundle; a workspace turns on others by selecting them on its Skills page.
+	Default []string `json:"default,omitempty"`
 }
 
 // ConnectorVersionCheck ConnectorVersionCheck is what checking a new version of the connector's tool runs on a bundle rollout's canary device, after `--version`, in the session environment the connector gives a session (docs/skills.md, Bundle 版本). Every command must exit 0.

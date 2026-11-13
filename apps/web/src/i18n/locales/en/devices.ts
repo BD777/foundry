@@ -240,6 +240,25 @@ export const devices = {
     helpSwitchNow:
       "Switch now does not wait: it stops the running turns (their sessions stay) and switches at once.",
     running: "Runs worker {{version}}.",
+    proxyFallbackDirect:
+      "Can't reach Foundry through the proxy {{proxy}}, so this device connected directly instead.",
+    proxyFallbackEnvironment:
+      "Can't reach Foundry through the proxy {{proxy}}, so this device connected through the proxy {{environmentProxy}} from its environment instead.",
+    proxyFallbackBody:
+      "Since {{since}}. It switches back by itself once {{proxy}} works again.",
+    proxyStopUsing: "Stop using this proxy",
+    proxyUseAnother: "Use another proxy…",
+    proxyUseAnotherTitle: "Use another proxy",
+    proxyUseAnotherDescription:
+      "From now on this device connects to Foundry through this address.",
+    proxyAddress: "Proxy address",
+    proxyAddressPlaceholder: "http://host:port",
+    proxyAddressHint:
+      "http://, https://, socks5:// or socks5h://, then the host and port. A user name and password may go before the host (user:password@).",
+    proxyAddressInvalid:
+      "This isn't a proxy address: start with http://, https://, socks5:// or socks5h://, then the host and port, with nothing after it.",
+    proxyChanged: "Saved. The device reconnects in a few seconds.",
+    proxyChangeFailed: "Couldn't change the proxy: {{error}}",
     unknownVersion: "older than 0.5.7",
     serverBuild: "This server serves {{version}}.",
     serverNpm: "This server uses the npm release.",

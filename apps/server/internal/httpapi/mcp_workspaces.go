@@ -71,9 +71,13 @@ type mcpResourceInstance struct {
 	Backends    []string                 `json:"backends,omitempty"`
 	Details     map[string]string        `json:"details,omitempty"`
 	LastSeenAt  string                   `json:"lastSeenAt,omitempty"`
-	// Holder and Queue: who leases it and how many sessions wait for it.
-	Holder *store.ResourceHolder `json:"holder,omitempty"`
-	Queue  int                   `json:"queue,omitempty"`
+	// Holder, Holders and Queue: who leases it (holders when several
+	// shared leases do) and how many sessions wait for it; Slots: how many
+	// shared leases run at once and how many are active.
+	Holder  *store.ResourceHolder  `json:"holder,omitempty"`
+	Holders []store.ResourceHolder `json:"holders,omitempty"`
+	Slots   *store.ResourceSlots   `json:"slots,omitempty"`
+	Queue   int                    `json:"queue,omitempty"`
 	// Operations: what operate_resource runs on it once leased.
 	Operations []string `json:"operations,omitempty"`
 }
@@ -127,7 +131,10 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		entry := mcpResourceInstance{
 			ID: instance.ID, Type: instance.Type, Platform: instance.Platform, Name: instance.Name,
 			State: instance.State, StateReason: instance.StateReason, Stale: instance.Stale,
-			Holder: holder, Queue: instance.Queue,
+			Holder: holder, Slots: instance.Slots, Queue: instance.Queue,
+		}
+		if len(instance.Holders) > 1 {
+			entry.Holders = instance.Holders
 		}
 		if readiness := instance.Readiness; detailed || !readiness.Ready {
 			entry.Readiness = &readiness

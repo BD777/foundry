@@ -2,6 +2,17 @@ import type { externalAccounts as en } from "../en/externalAccounts";
 import type { Translation } from "../../translation";
 
 export const externalAccounts: Translation<typeof en> = {
+  connectorSkills: {
+    label: "Skill：",
+    count_one: "· {{count}} 个",
+    count_other: "· {{count}} 个",
+    onOf_one: "· {{count}} 个中开启 {{on}} 个",
+    onOf_other: "· {{count}} 个中开启 {{on}} 个",
+    sessionsGet: "——用这个连接器的会话会拿到它们。",
+    turnOnMore: "开启更多",
+    notFollowed: "{{package}} 自带 Skill，但 Skill 库还没有跟随它。",
+    openLibrary: "打开 Skill 库",
+  },
   connectorPackage: {
     title: "在哪些设备上启用",
     description:
@@ -417,7 +428,7 @@ export const externalAccounts: Translation<typeof en> = {
     networkServerHelp:
       "由 Foundry 服务器直接连接。请填写公网可访问的 HTTPS 地址。",
     networkDeviceHelp:
-      "由你的一台设备校验地址并转发请求。允许 HTTP、内网地址和路径前缀。",
+      "由你的一台设备校验地址并转发请求。允许 HTTP、内网地址和路径前缀；如果这台设备还没装连接器扩展，会先安装再校验。",
     probeDevice: "用于校验的设备",
     chooseDevice: "选择一台在线设备",
     deviceOffline: "{{device}} 当前离线；请将它上线后再校验。",
@@ -805,6 +816,7 @@ export const externalAccounts: Translation<typeof en> = {
     update: "更新 {{name}}",
     signIn: "登录",
     signInAgain: "重新登录",
+    setupTarget: "从设置窗口过来：点这一行的按钮继续。",
     signOut: "退出登录",
     signOutTitle: "在 {{device}} 上退出 {{name}}？",
     signOutBody:
@@ -830,6 +842,7 @@ export const externalAccounts: Translation<typeof en> = {
     dialogTitle: "授权：{{name}}",
     dialogDescription: "为 {{device}} 配置此能力；新增权限需在服务商页面确认。",
     permissions: "申请的权限",
+    presetExcludes: "排除：",
     recommended: "推荐",
     custom: "自定义",
     all: "全部",
@@ -859,8 +872,13 @@ export const externalAccounts: Translation<typeof en> = {
     removesNote: "取消勾选已授权的 scope，会从这份登录中移除它。",
     replacesNote:
       "新授权会替换当前授权：未选的 scope 将不再持有。服务商页面仍可能调整最终结果；Connectors 显示它实际授予的权限。",
-    changedOutside: "{{when}}在 Foundry 之外发生变更：{{scopes}}",
-    changedInFoundry: "{{when}}在 Foundry 中变更：{{scopes}}",
+    changedOutside: "{{when}}在 Foundry 之外发生更改：{{summary}}",
+    changedInFoundry: "{{when}}在 Foundry 中更改：{{summary}}",
+    changedScopeAdded_one: "新增 {{count}} 项",
+    changedScopeAdded_other: "新增 {{count}} 项",
+    changedScopeRemoved_one: "移除 {{count}} 项",
+    changedScopeRemoved_other: "移除 {{count}} 项",
+    changedScopeNone: "无 scope 变更",
     authorizeSelected: "授权所选权限",
     choosePermissions: "选择权限",
     changePermissions: "更改权限",

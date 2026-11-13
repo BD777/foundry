@@ -93,6 +93,20 @@ export function switchDeviceRunner(
   });
 }
 
+/**
+ * The owner's answer to a proxy the Worker could not use (DEV-217): stop
+ * using it, or save another address. The Worker validates it and
+ * reconnects; the answer names the proxy without its credentials.
+ */
+export function setDeviceWorkerProxy(
+  deviceId: string,
+  change: { clear: true } | { url: string },
+): Promise<{ proxy?: string }> {
+  return request("PUT", `${devicePath(deviceId)}/worker/proxy`, {
+    body: change,
+  });
+}
+
 /** Run the official installer for Claude Code or Codex on a device. */
 export function installDeviceCli(
   deviceId: string,

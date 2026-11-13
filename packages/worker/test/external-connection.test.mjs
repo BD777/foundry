@@ -12,6 +12,7 @@ import test from "node:test";
 import { once } from "node:events";
 import {
   connectionEnvironment,
+  helperFailureRetryable,
   helperErrorCode,
   prepareExternalConnection,
 } from "../dist/harness/external-connection.js";
@@ -123,40 +124,88 @@ test("a cold helper that misses one deadline is retried on a fresh helper", asyn
   );
   const prepared = await prepareExternalConnection(
     { executable: process.execPath, args: [script], identity: "person-a" },
-    { env: {}, cwd: root, timeoutMs: 300 },
+    { env: {}, cwd: root, timeoutMs: 1000 },
+  );
+  assert.equal(readFileSync(launches, "utf8"), "xx");
+  await prepared.release();
+});
+
+test("a transient helper connection failure is retried on a fresh helper", async () => {
+  const script = join(root, "transient.mjs");
+  const launches = join(root, "transient.launches");
+  rmSync(launches, { force: true });
+  writeFileSync(
+    script,
+    `import{createInterface}from'node:readline';import{appendFileSync,readFileSync}from'node:fs';
+    appendFileSync(${JSON.stringify(launches)},'x');
+    const first=readFileSync(${JSON.stringify(launches)},'utf8').length===1;
+    const r=createInterface({input:process.stdin});
+    r.once('line',line=>{
+      if(first){process.stderr.write('Gateway connection reset (client_connection_failed).\\n');process.exit(4);}
+      const q=JSON.parse(line);
+      console.log(JSON.stringify({protocol:q.protocol,identity:q.identity,environment:{set:{},unset:[]}}));
+    });
+    r.once('close',()=>process.exit(0));`,
+  );
+  const prepared = await prepareExternalConnection(
+    { executable: process.execPath, args: [script], identity: "person-a" },
+    { env: {}, cwd: root, timeoutMs: 1000, retryBackoffMs: [0, 0] },
   );
   assert.equal(readFileSync(launches, "utf8"), "xx");
   await prepared.release();
 });
 
 test("a failed helper reports only its error code", async () => {
+  let failures = 0;
   async function failure(stderr) {
-    const script = join(root, "failing.mjs");
+    const script = join(root, `failing-${failures++}.mjs`);
+    const launches = `${script}.launches`;
     writeFileSync(
       script,
-      `import{createInterface}from'node:readline';createInterface({input:process.stdin}).once('line',()=>{process.stderr.write(${JSON.stringify(stderr)});process.exit(4);});`,
+      `import{createInterface}from'node:readline';import{appendFileSync}from'node:fs';appendFileSync(${JSON.stringify(launches)},'x');createInterface({input:process.stdin}).once('line',()=>{process.stderr.write(${JSON.stringify(stderr)});process.exit(4);});`,
     );
     const error = await prepareExternalConnection(
       { executable: process.execPath, args: [script], identity: "person-a" },
-      { env: {}, cwd: root, timeoutMs: 5000 },
+      { env: {}, cwd: root, timeoutMs: 5000, retryBackoffMs: [0, 0] },
     ).catch((error) => error);
-    return error.message;
+    return { message: error.message, launches: readFileSync(launches, "utf8") };
   }
+  const auth = await failure(
+    "debug sk-ant-secret-1234\nLimen connection failed (client_auth_failed).\n",
+  );
   assert.equal(
-    await failure(
-      "debug sk-ant-secret-1234\nLimen connection failed (client_auth_failed).\n",
-    ),
+    auth.message,
     "External connection preparation failed (client_auth_failed). Check the helper on the device.",
   );
-  assert.equal(
-    await failure("Limen connection failed (sk_ant_api03_abc123).\n"),
-    "External connection preparation failed. Check the helper on the device.",
+  assert.equal(auth.launches, "x");
+  const unknown = await failure(
+    "Limen connection failed (sk_ant_api03_abc123).\n",
   );
+  assert.equal(
+    unknown.message,
+    "External connection preparation failed after 3 attempts. The helper closed before the connection was ready.",
+  );
+  assert.equal(unknown.launches, "xxx");
+  const transient = await failure(
+    "Limen connection failed (client_connection_failed).\n",
+  );
+  assert.equal(
+    transient.message,
+    "External connection preparation failed (client_connection_failed) after 3 attempts. The helper closed before the connection was ready.",
+  );
+  assert.equal(transient.launches, "xxx");
   assert.equal(helperErrorCode("refused (/Users/someone/key)"), undefined);
   assert.equal(
     helperErrorCode("refused (invalid_host_request)"),
     "invalid_host_request",
   );
+  assert.equal(helperFailureRetryable("client_connection_failed"), true);
+  assert.equal(helperFailureRetryable("client_preflight_timeout"), true);
+  assert.equal(helperFailureRetryable("client_gateway_busy"), true);
+  assert.equal(helperFailureRetryable(undefined), true);
+  assert.equal(helperFailureRetryable("client_auth_failed"), false);
+  assert.equal(helperFailureRetryable("client_quota_exhausted"), false);
+  assert.equal(helperFailureRetryable("invalid_host_request"), false);
 });
 
 test("helper cannot replace execution config, executable loader or tool credentials", () => {

@@ -134,3 +134,74 @@ test(
     );
   },
 );
+
+// DEV-217: a Worker whose event loop is fine but that hears nothing from the
+// server (its socket closed and never replaced) is restarted too.
+test(
+  "Mac watchdog stops a live worker cut off from the server for 15 minutes",
+  { skip: process.platform !== "darwin" },
+  async (t) => {
+    const { spawn } = await import("node:child_process");
+    const { once } = await import("node:events");
+    const { processIdentity } =
+      await import("../dist/platform/process/agent-processes.js");
+    const root = mkdtempSync(join(tmpdir(), "watchdog-contact-"));
+    mkdirSync(join(root, "logs"));
+    mkdirSync(join(root, "bin"));
+    const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+      stdio: "ignore",
+    });
+    t.after(() => {
+      child.kill("SIGKILL");
+      rmSync(root, { recursive: true, force: true });
+    });
+    await once(child, "spawn");
+    const identity = processIdentity(child.pid);
+    assert.ok(identity);
+    const hb = join(root, "daemon-heartbeat");
+    const run = () =>
+      execFileSync(
+        "/bin/sh",
+        [
+          fileURLToPath(new URL("../scripts/watchdog.sh", import.meta.url)),
+          root,
+          "dev.foundry.test-worker",
+        ],
+        {
+          env: {
+            ...process.env,
+            PATH: join(root, "bin") + ":" + process.env.PATH,
+          },
+        },
+      );
+    const heartbeat = (contactAgoSeconds) =>
+      writeFileSync(
+        hb,
+        JSON.stringify({
+          pid: child.pid,
+          startTime: identity.startTime,
+          at: new Date().toISOString(),
+          serverContactEpoch: Math.floor(Date.now() / 1000) - contactAgoSeconds,
+        }),
+      );
+    // A fresh heartbeat without the field (a parked Worker) or with recent
+    // contact is left alone.
+    writeFileSync(
+      hb,
+      JSON.stringify({ pid: child.pid, startTime: identity.startTime }),
+    );
+    run();
+    heartbeat(120);
+    run();
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    heartbeat(1000);
+    run();
+    if (child.exitCode === null && child.signalCode === null)
+      await once(child, "exit");
+    assert.match(
+      readFileSync(join(root, "logs/watchdog.log"), "utf8"),
+      /nothing from the server for 10\d\ds, stopped pid/,
+    );
+  },
+);

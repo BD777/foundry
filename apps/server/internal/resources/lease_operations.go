@@ -47,7 +47,10 @@ func (l *Leases) Begin(ctx context.Context, leaseID, sessionID string) (Ticket, 
 		refusal.Lease = &lease
 		return Ticket{}, refusal
 	}
-	live := state.live[lease.ResourceID]
+	live := state.liveByID(lease.ResourceID, lease.ID)
+	if live == nil {
+		return Ticket{}, leaseError(CodeLeaseEnded, "lease %s on %s ended; acquire the resource again%s", lease.ID, nameOr(instance.Name, lease.ResourceID), specOrDefault(instance.Type).ResumeHint)
+	}
 	now := l.Now().UTC()
 	if live.PreemptAt != "" && !parseTime(live.PreemptAt).After(now) {
 		if l.inflight[live.ID] == 0 {
@@ -61,7 +64,7 @@ func (l *Leases) Begin(ctx context.Context, leaseID, sessionID string) (Ticket, 
 		refusal.Lease = live
 		return Ticket{}, refusal
 	}
-	if fence := state.fences[lease.ResourceID]; fence != nil && fence.Generation != live.Generation {
+	if fence := state.fences[lease.ResourceID]; fence != nil && live.Mode != store.LeaseShared && fence.Generation != live.Generation {
 		return Ticket{}, leaseError(CodeLeaseEnded, "lease %s is stale (generation %d, now %d); acquire again", lease.ID, live.Generation, fence.Generation)
 	}
 	if !l.hostOnline(live.SourceID) || instance.State == store.ResourceOffline {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
@@ -39,6 +41,18 @@ type TypeSpec struct {
 	// RemoteCommands: leasing it needs the device owner's
 	// AllowRemoteCommands (store.ResourceSourceSettings).
 	RemoteCommands bool
+	// Shared: its leases are shared by default, several at once up to the
+	// instance's slots; exclusive on request. Without it every lease is
+	// exclusive (a screen has one pointer and one keyboard focus).
+	Shared bool
+}
+
+// DefaultMode is the mode of a lease that names none.
+func (t TypeSpec) DefaultMode() string {
+	if t.Shared {
+		return store.LeaseShared
+	}
+	return store.LeaseExclusive
 }
 
 // OperationSpec is one operation of a type.
@@ -131,6 +145,7 @@ var typeSpecs = map[string]TypeSpec{
 		// get_file answers up to 25 MB as base64; the worker bounds it.
 		MaxResultText:  40 << 20,
 		RemoteCommands: true,
+		Shared:         true,
 		ResumeHint:     "; commands it started were stopped, its scratch folder stays",
 	},
 }
@@ -264,4 +279,24 @@ func shortStrings(values []any) bool {
 		}
 	}
 	return true
+}
+
+// Bounds of automatic compute slots: a device runs at least MinAutoSlots
+// shared leases at once and at most MaxAutoSlots unless its owner sets a
+// number (at most MaxComputeSlots).
+const (
+	MinAutoSlots    = 1
+	MaxAutoSlots    = 16
+	MaxComputeSlots = 64
+)
+
+// AutoSlots is how many shared leases a device's compute runs at once
+// when its owner chose no number: one per 2 CPUs, at most one per 4 GiB of
+// memory (a build or test suite uses about that much), between
+// MinAutoSlots and MaxAutoSlots. Details missing: the minimum.
+func AutoSlots(details map[string]string) int {
+	cpus, _ := strconv.Atoi(details["cpus"])
+	memory, _ := strconv.Atoi(details["memoryGiB"])
+	slots := min(cpus/2, memory/4)
+	return min(max(slots, MinAutoSlots), MaxAutoSlots)
 }

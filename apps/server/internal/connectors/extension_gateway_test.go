@@ -189,6 +189,51 @@ func TestExtensionGatewayInjectsFieldsAndEnforcesRouteDirectory(t *testing.T) {
 		t.Fatalf("unknown route: %d %s", unknown.Code, unknown.Body.String())
 	}
 
+	// DEV-215 (the OpenLark incidents): the session's turn completes while
+	// its agent goes on (a background loop, the turn it starts on the
+	// loop's notification) and nothing claims that work. The handle still
+	// works and renews, minutes or days later, after a failed turn too.
+	for _, status := range []string{"completed", "failed", "canceled"} {
+		fake.session.Status, fake.session.CompletedAt = status, time.Now().Add(-26*time.Hour).UTC().Format(time.RFC3339Nano)
+		if response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/search", []byte(`{"q":"later"}`)); response.Code != http.StatusOK {
+			t.Fatalf("%s session's call: %d %s", status, response.Code, response.Body.String())
+		}
+		if _, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+			SessionID: session.ID, DeviceID: session.DeviceID, WorkspaceID: session.WorkspaceID, UserID: "alice", Account: account,
+		}); err != nil {
+			t.Fatalf("%s session cannot renew its handle: %v", status, err)
+		}
+	}
+	// The grant itself ends: unbound from the workspace. Refused at once,
+	// and the refusal is audited for the session and account it names.
+	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{readInstance.AccountID}); err != nil {
+		t.Fatal(err)
+	}
+	unbound := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/search", []byte(`{}`))
+	if unbound.Code != http.StatusUnauthorized || !strings.Contains(unbound.Body.String(), "FOUNDRY_ACCESS_ENDED") {
+		t.Fatalf("unbound: %d %s", unbound.Code, unbound.Body.String())
+	}
+	refusals, err := st.ListExternalAccountEvents(ctx, instance.AccountID, 1)
+	if err != nil || len(refusals) != 1 || refusals[0].SessionID != session.ID ||
+		!strings.Contains(refusals[0].Detail, `"outcome":"refused"`) || !strings.Contains(refusals[0].Detail, "access_ended") ||
+		!strings.Contains(refusals[0].Detail, `"kind":"acme-api"`) {
+		t.Fatalf("the refusal's audit: %+v %v", refusals, err)
+	}
+	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{instance.AccountID, readInstance.AccountID}); err != nil {
+		t.Fatal(err)
+	}
+	// Archived: refused, and no handle is issued any more.
+	fake.session.ArchivedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/search", []byte(`{}`)); response.Code != http.StatusUnauthorized {
+		t.Fatalf("archived: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: session.ID, DeviceID: session.DeviceID, WorkspaceID: session.WorkspaceID, UserID: "alice", Account: account,
+	}); err == nil {
+		t.Fatal("an archived session renewed its handle")
+	}
+	fake.session.ArchivedAt, fake.session.Status = "", "running"
+
 	for _, accountID := range []string{instance.AccountID, readInstance.AccountID} {
 		events, err := st.ListExternalAccountEvents(ctx, accountID, 20)
 		if err != nil {

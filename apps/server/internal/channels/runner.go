@@ -53,8 +53,32 @@ func (e ErrWaitingDevice) Error() string { return e.Detail }
 // Inbox carries a channel's messages to the assistant: one entry per
 // conversation turn (assistant.CaptureInbox), and what became of it.
 type Inbox interface {
-	Deliver(ctx context.Context, channel store.MessageChannelRecord, key, messageID, text string) (inboxID string, err error)
+	Deliver(ctx context.Context, channel store.MessageChannelRecord, turn Turn) (inboxID string, err error)
 	Status(ctx context.Context, assistantID, inboxID string) (InboxStatus, error)
+}
+
+// Turn is one hand-over to the assistant: the notice for a batch of one
+// conversation's messages, the inbox channel of the conversation's current
+// session, and the source's raw items (a JSON array) to attach.
+type Turn struct {
+	InboxChannel string
+	SessionKey   string
+	Segment      int
+	MessageID    string
+	Text         string
+	Raw          []byte
+}
+
+// SessionState is what the dispatcher needs of an earlier session to decide
+// whether a conversation goes on in it.
+type SessionState struct {
+	Running  bool
+	OpenWork bool
+	// Replaced: the assistant does not go on with it but starts the
+	// conversation's next session: it ended without completing (failed,
+	// canceled), or it is from before the channel had its own workspace.
+	Replaced   bool
+	LastActive time.Time
 }
 
 // InboxStatus is an inbox entry as the channel follows it.
@@ -79,7 +103,14 @@ type Ports struct {
 	Tell func(ctx context.Context, channel store.MessageChannelRecord, key, title, detail string)
 	// SourceLabel names the source in notices ("" falls back to its kind).
 	SourceLabel func(ctx context.Context, channel store.MessageChannelRecord) string
-	Now         func() time.Time
+	// ContextHint is the source's command for reading what surrounds a
+	// message, a template over {message.id}, {conversation.id} and
+	// {thread.id}; "" without one.
+	ContextHint func(ctx context.Context, channel store.MessageChannelRecord) string
+	// Session reads an earlier session of a conversation; ok false when it
+	// is gone.
+	Session func(ctx context.Context, sessionID string) (state SessionState, ok bool)
+	Now     func() time.Time
 }
 
 // Runner keeps one poll loop per enabled channel and delivers what they keep.
@@ -260,7 +291,7 @@ func (r *Runner) pollOnce(ctx context.Context, channel store.MessageChannelRecor
 		}
 		return 0
 	}
-	records, held := r.decide(ctx, channel, batch.Envelopes)
+	records, held := r.decide(ctx, channel, batch.Envelopes, batch.Raw)
 	stored, err := r.ports.Store.RecordMessageChannelBatch(ctx, channel.ID, records, batch.Cursor)
 	if err != nil {
 		setState(StateBackingOff, "could not record the batch: "+err.Error())
@@ -303,9 +334,13 @@ func nextBackoff(backoff *time.Duration) time.Duration {
 	return *backoff
 }
 
+// OpNew is the envelope op of a message that was just posted; adapters
+// map their own name for it to this.
+const OpNew = "new"
+
 // decide filters a batch and applies the channel's limits: records to
 // store, and how many matched messages were held.
-func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord, envelopes []store.MessageEnvelope) ([]store.MessageChannelDeliveryRecord, int) {
+func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord, envelopes []store.MessageEnvelope, raw []string) ([]store.MessageChannelDeliveryRecord, int) {
 	if len(envelopes) == 0 {
 		return nil, 0
 	}
@@ -317,19 +352,28 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 	held := 0
 	records := make([]store.MessageChannelDeliveryRecord, 0, len(envelopes))
 	for i, envelope := range envelopes {
-		record := store.MessageChannelDeliveryRecord{
-			UserID: channel.UserID, AssistantID: channel.AssistantID, SessionKey: SessionKey(channel.MessageChannel, envelope),
+		if envelope.Op != OpNew {
+			// v1 hands over new messages only; an edit or a thread change
+			// of one already seen would otherwise start another turn.
+			continue
 		}
+		record := store.MessageChannelDeliveryRecord{UserID: channel.UserID, AssistantID: channel.AssistantID}
+		record.SessionKey = SessionKey(channel.MessageChannel, envelope)
 		record.ID = DeliveryID(channel.ID, envelope.ID)
 		record.ChannelID = channel.ID
 		record.CreatedAt = now.Add(time.Duration(i) * time.Microsecond).Format(time.RFC3339Nano)
 		record.Envelope = envelope
 		decision := Decide(stages, envelope)
+		if decision.Keep && i < len(raw) && len(raw[i]) <= 64*1024 {
+			record.RawJSON = raw[i]
+		}
 		switch {
 		case !decision.Keep:
 			record.Status, record.Reason = store.MessageDeliveryDropped, decision.Reason
-			record.Envelope.Text = "" // dropped messages keep no text
-			record.Envelope.Conversation.Name = ""
+			// A filtered-out message keeps no text: other people's words
+			// stay only where they were meant to go. Its metadata goes
+			// after a day.
+			record.Envelope.Text, record.Envelope.TextTruncated = "", false
 		case limitReached(channel.Limits.PerHour, inHour) || limitReached(channel.Limits.PerDay, inDay):
 			record.Status, record.Rule, record.Reason = store.MessageDeliveryHeld, decision.Rule, "limit"
 			held++
@@ -355,7 +399,7 @@ func DeliveryID(channelID, envelopeID string) string {
 // session per key.
 func SessionKey(channel store.MessageChannel, envelope store.MessageEnvelope) string {
 	key := "c:" + envelope.Conversation.ID
-	if channel.SessionKey == "thread" && envelope.Thread.ID != "" {
+	if channel.SessionKey != "conversation" && envelope.Thread.ID != "" {
 		key += "|t:" + envelope.Thread.ID
 	}
 	return key

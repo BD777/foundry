@@ -34,6 +34,7 @@ import {
   parseTsMessageTypes,
   parseTsSessionClasses,
   parseTsSessionEventLabels,
+  readGoDtoStructs,
   readMerged,
   sessionClassFailures,
   sessionEventLabelFailures,
@@ -94,6 +95,23 @@ test("compareDtoFields reports missing structs and field drift", () => {
     ).join(" | "),
     /missing in Go: tsOnly.*missing in TS: goOnly/,
   );
+  const subset = new Set(["Widget"]);
+  assert.deepEqual(
+    compareDtoFields(
+      new Map([["Widget", ["id"]]]),
+      new Map([["Widget", ["id", "goOnly"]]]),
+      subset,
+    ),
+    [],
+  );
+  assert.match(
+    compareDtoFields(
+      new Map([["Widget", ["id", "tsOnly"]]]),
+      new Map([["Widget", ["id"]]]),
+      subset,
+    ).join(" | "),
+    /missing in Go: tsOnly/,
+  );
 });
 
 test("checked-in daemon vocabularies are in set parity", () => {
@@ -121,7 +139,7 @@ test("checked-in daemon vocabularies are in set parity", () => {
 
 test("checked-in DTOs are in field parity", () => {
   const tsInterfaces = readMerged(tsDtoPaths, parseTsInterfaces);
-  const goStructs = readMerged(goDtoPaths, parseGoStructs);
+  const goStructs = readGoDtoStructs();
   assert.ok(tsInterfaces.size > 0, "expected TS interfaces to parse");
   for (const name of ["ChatTitle", "WorkspaceFeishuBot", "ResyncPayload"])
     assert.ok(tsInterfaces.has(name), `expected ${name} among the DTOs`);

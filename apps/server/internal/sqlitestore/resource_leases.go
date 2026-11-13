@@ -12,7 +12,9 @@ import (
 
 // Leases, waits, fences and the operation audit (store.ResourceLeaseStore).
 // Package resources decides; one partial unique index still refuses a
-// second live lease on an instance, whatever a bug decides.
+// second live lease of one session on an instance, whatever a bug decides.
+// (Shared leases put several sessions on one instance; until DEV-219 the
+// index refused any second live lease, idx_resource_leases_live.)
 func (s *Store) setupResourceLeases(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS resource_leases (
@@ -38,7 +40,7 @@ func (s *Store) setupResourceLeases(ctx context.Context) error {
 			ended_by TEXT NOT NULL DEFAULT '',
 			updated_at TEXT NOT NULL DEFAULT ''
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_leases_live ON resource_leases (resource_id) WHERE state IN ('active', 'parked')`,
+		`DROP INDEX IF EXISTS idx_resource_leases_live`,
 		`CREATE INDEX IF NOT EXISTS idx_resource_leases_session ON resource_leases (holder_session_id, state)`,
 		`CREATE TABLE IF NOT EXISTS resource_fences (
 			resource_id TEXT PRIMARY KEY,
@@ -85,12 +87,53 @@ func (s *Store) setupResourceLeases(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite resource leases: %w", err)
 		}
 	}
+	// Lease modes (DEV-219): leases and waits from before were exclusive.
+	added := []struct{ table, column, definition string }{
+		{"resource_leases", "mode", `TEXT NOT NULL DEFAULT 'exclusive'`},
+		{"resource_leases", "reset_since", `TEXT NOT NULL DEFAULT ''`},
+		{"resource_waits", "mode", `TEXT NOT NULL DEFAULT 'exclusive'`},
+	}
+	for _, column := range added {
+		exists, err := s.tableHasColumn(ctx, column.table, column.column)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := s.conn().ExecContext(ctx, `ALTER TABLE `+column.table+` ADD COLUMN `+column.column+` `+column.definition); err != nil {
+				return fmt.Errorf("migrate sqlite resource leases: %w", err)
+			}
+		}
+	}
+	_, err := s.conn().ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_leases_live_session
+		ON resource_leases (resource_id, holder_session_id) WHERE state IN ('active', 'parked')`)
+	if err != nil {
+		return fmt.Errorf("migrate sqlite resource leases: %w", err)
+	}
+	_, err = s.conn().ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_resource_leases_reset_pending
+		ON resource_leases (resource_id) WHERE reset_since <> ''`)
+	if err != nil {
+		return fmt.Errorf("migrate sqlite resource leases: %w", err)
+	}
 	return nil
+}
+
+// tableHasColumn reports whether table has column.
+func (s *Store) tableHasColumn(ctx context.Context, table, column string) (bool, error) {
+	found := false
+	err := scanRows(ctx, s.conn(), `SELECT name FROM pragma_table_info(?)`, func(rows *sql.Rows) error {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		found = found || name == column
+		return nil
+	}, table)
+	return found, err
 }
 
 const resourceLeaseColumns = `id, resource_id, source_id, generation, holder_session_id, holder_user_id, holder_device_id,
 	reason, state, acquired_at, park_until, hold_until, contended_since, preempt_at, warned_at, extended,
-	holder_offline_since, ended_at, end_reason, ended_by, updated_at`
+	holder_offline_since, ended_at, end_reason, ended_by, updated_at, mode, reset_since`
 
 func (s *Store) ListResourceLeases(ctx context.Context, filter store.ResourceLeaseFilter) ([]store.ResourceLease, error) {
 	query := `SELECT ` + resourceLeaseColumns + ` FROM resource_leases WHERE 1 = 1`
@@ -114,6 +157,9 @@ func (s *Store) ListResourceLeases(ctx context.Context, filter store.ResourceLea
 	if filter.Live {
 		query += ` AND state IN ('active', 'parked')`
 	}
+	if filter.ResetPending {
+		query += ` AND reset_since <> ''`
+	}
 	query += ` ORDER BY acquired_at, id`
 	leases := []store.ResourceLease{}
 	err := scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
@@ -124,7 +170,7 @@ func (s *Store) ListResourceLeases(ctx context.Context, filter store.ResourceLea
 		if err := rows.Scan(&lease.ID, &lease.ResourceID, &lease.SourceID, &lease.Generation, &lease.HolderSessionID,
 			&lease.HolderUserID, &lease.HolderDeviceID, &lease.Reason, &lease.State, &lease.AcquiredAt, &lease.ParkUntil,
 			&lease.HoldUntil, &lease.ContendedSince, &lease.PreemptAt, &lease.WarnedAt, &extended, &lease.HolderOfflineSince,
-			&lease.EndedAt, &lease.EndReason, &lease.EndedBy, &lease.UpdatedAt); err != nil {
+			&lease.EndedAt, &lease.EndReason, &lease.EndedBy, &lease.UpdatedAt, &lease.Mode, &lease.ResetSince); err != nil {
 			return err
 		}
 		lease.Extended = extended != 0
@@ -156,13 +202,13 @@ func (s *Store) ListResourceFences(ctx context.Context) ([]store.ResourceFence, 
 func (s *Store) ListResourceWaits(ctx context.Context) ([]store.ResourceWait, error) {
 	waits := []store.ResourceWait{}
 	err := scanRows(ctx, s.reader(), `SELECT id, session_id, user_id, device_id, resource_ids_json, reason, hold_until,
-		enqueued_at, retain_until, state FROM resource_waits WHERE state = 'waiting' ORDER BY rowid`, func(rows *sql.Rows) error {
+		enqueued_at, retain_until, state, mode FROM resource_waits WHERE state = 'waiting' ORDER BY rowid`, func(rows *sql.Rows) error {
 		var (
 			wait store.ResourceWait
 			ids  string
 		)
 		if err := rows.Scan(&wait.ID, &wait.SessionID, &wait.UserID, &wait.DeviceID, &ids, &wait.Reason, &wait.HoldUntil,
-			&wait.EnqueuedAt, &wait.RetainUntil, &wait.State); err != nil {
+			&wait.EnqueuedAt, &wait.RetainUntil, &wait.State, &wait.Mode); err != nil {
 			return err
 		}
 		if err := json.Unmarshal([]byte(ids), &wait.ResourceIDs); err != nil {
@@ -199,8 +245,9 @@ func (s *Store) SaveResourceLeaseChanges(ctx context.Context, changes store.Reso
 				}
 			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO resource_leases (`+resourceLeaseColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET state = excluded.state, park_until = excluded.park_until,
+					reset_since = excluded.reset_since,
 					hold_until = excluded.hold_until, contended_since = excluded.contended_since,
 					preempt_at = excluded.preempt_at, warned_at = excluded.warned_at, extended = excluded.extended,
 					holder_offline_since = excluded.holder_offline_since, ended_at = excluded.ended_at,
@@ -208,7 +255,7 @@ func (s *Store) SaveResourceLeaseChanges(ctx context.Context, changes store.Reso
 				lease.ID, lease.ResourceID, lease.SourceID, lease.Generation, lease.HolderSessionID, lease.HolderUserID,
 				lease.HolderDeviceID, lease.Reason, lease.State, lease.AcquiredAt, lease.ParkUntil, lease.HoldUntil,
 				lease.ContendedSince, lease.PreemptAt, lease.WarnedAt, boolInt(lease.Extended), lease.HolderOfflineSince,
-				lease.EndedAt, lease.EndReason, lease.EndedBy, lease.UpdatedAt); err != nil {
+				lease.EndedAt, lease.EndReason, lease.EndedBy, lease.UpdatedAt, leaseMode(lease.Mode), lease.ResetSince); err != nil {
 				return fmt.Errorf("save resource lease %s: %w", lease.ID, err)
 			}
 		}
@@ -230,12 +277,12 @@ func (s *Store) SaveResourceLeaseChanges(ctx context.Context, changes store.Reso
 				return err
 			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO resource_waits
-				(id, session_id, user_id, device_id, resource_ids_json, reason, hold_until, enqueued_at, retain_until, state)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				(id, session_id, user_id, device_id, resource_ids_json, reason, hold_until, enqueued_at, retain_until, state, mode)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET retain_until = excluded.retain_until, state = excluded.state,
-					hold_until = excluded.hold_until`,
+					hold_until = excluded.hold_until, mode = excluded.mode`,
 				wait.ID, wait.SessionID, wait.UserID, wait.DeviceID, string(ids), wait.Reason, wait.HoldUntil,
-				wait.EnqueuedAt, wait.RetainUntil, wait.State); err != nil {
+				wait.EnqueuedAt, wait.RetainUntil, wait.State, wait.Mode); err != nil {
 				return fmt.Errorf("save resource wait %s: %w", wait.ID, err)
 			}
 		}
@@ -330,4 +377,12 @@ func jsonObject(values map[string]any) (string, error) {
 	}
 	encoded, err := json.Marshal(values)
 	return string(encoded), err
+}
+
+// leaseMode is a lease's or wait's mode as stored: exclusive unless shared.
+func leaseMode(mode string) string {
+	if mode == store.LeaseShared {
+		return store.LeaseShared
+	}
+	return store.LeaseExclusive
 }

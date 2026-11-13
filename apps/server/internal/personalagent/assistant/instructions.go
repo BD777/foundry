@@ -68,11 +68,12 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 		}
 		turnContext = strings.Replace(turnContext, prompt.TurnContextEnd, receipt+prompt.TurnContextEnd, 1)
 	}
-	files := prompt.RunFiles(input)
-	if s.channelSkills != nil {
-		files = append(files, s.channelSkills(ctx, agent)...)
+	// A message channel's session runs in the channel's workspace, whose
+	// instructions are the person's (DEV-203): Foundry writes nothing there.
+	if session.WorkspaceID != agent.WorkspaceID {
+		return Run{TurnContext: turnContext}, true, nil
 	}
-	return Run{Files: files, TurnContext: turnContext}, true, nil
+	return Run{Files: prompt.RunFiles(input), TurnContext: turnContext}, true, nil
 }
 
 // WithTurnContext is the turn's input as the assistant reads it: the

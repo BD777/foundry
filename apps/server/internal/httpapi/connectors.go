@@ -372,7 +372,7 @@ func (s *Server) handleConnectorCatalog(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	waitConnectorVisibility(s.refreshConnectorVisibility(r.Context(), devices, false), connectorVisibilityWait)
-	view, err := s.connectorCatalogView(r.Context(), devices)
+	view, err := s.connectorCatalogView(r.Context(), actor.AccountID(), devices)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -785,6 +785,9 @@ func (s *Server) workspaceDeviceConnectors(ctx context.Context, workspaceID, vie
 			binding.State = &state
 		}
 		view.Bindings = append(view.Bindings, binding)
+	}
+	if view.SkillBundles, err = s.connectorSkillBundles(ctx, viewerID, workspaceID, view.Connectors); err != nil {
+		return view, err
 	}
 	return view, nil
 }

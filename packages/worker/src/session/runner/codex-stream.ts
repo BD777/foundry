@@ -1,4 +1,8 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
+import {
+  codexWriteRefusal,
+  workspaceWriteRefusedLabel,
+} from "../workspace-write-refusals.js";
 import { codexCitationsAsLinks } from "./codex-citations.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
@@ -58,6 +62,8 @@ export interface CodexTurnState {
   emit: SessionEventEmitter;
   reportNativeSessionId: (nativeSessionId: string) => void;
   files: SessionTurnFiles;
+  /** The workspace, when it is read-only for the session: refused writes are shown. */
+  readOnlyWorkspace?: string;
   eventsPath: string;
   /**
    * This turn's thread: what the turn learns updates it, never a newer
@@ -430,6 +436,11 @@ async function handleCodexEvent(
   }
   for (const write of codexFileWrites(event))
     await state.files.recordToolWrite(write);
+  if (state.readOnlyWorkspace) {
+    const refused = codexWriteRefusal(event, state.readOnlyWorkspace);
+    if (refused)
+      await state.emit(workspaceWriteRefusedLabel, refused, "warning");
+  }
   await emitCodexToolFrames(state, event);
   if (eventType === "item.completed") await reportCodexContext(state);
   await emitCodexText(state, event);

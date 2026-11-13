@@ -33,8 +33,40 @@ type MessageChannelDeliveryRecord struct {
 	MessageChannelDelivery
 	UserID      string
 	AssistantID string
-	SessionKey  string
 	InboxID     string
+	// InboxChannel is the assistant inbox channel of the record's segment
+	// (its session); RawJSON the source's own item, for a matched message.
+	InboxChannel string
+	RawJSON      string
+}
+
+// MessageChannelKeyState is where one source conversation of a channel is:
+// its current segment (one assistant session each) and a requested new
+// session (ResetPending names why: command or button).
+type MessageChannelKeyState struct {
+	ChannelID    string
+	SessionKey   string
+	Segment      int
+	ResetPending string
+	UpdatedAt    string
+}
+
+// MessageChannelSessionEvent is one event of a channel's session.
+type MessageChannelSessionEvent struct {
+	SessionID string
+	At        string
+	Detail    string
+}
+
+// MessageChannelSession ties an assistant session to the channel
+// conversation segment it was started for.
+type MessageChannelSession struct {
+	SessionID   string
+	ChannelID   string
+	AssistantID string
+	SessionKey  string
+	Segment     int
+	CreatedAt   string
 }
 
 // The states of a delivery record (MessageChannelDeliveryStatus).
@@ -78,6 +110,19 @@ type MessageChannelStore interface {
 	// MessageChannelSessions lists the sessions a channel's messages went
 	// to; channelID "" means every channel of the assistant.
 	MessageChannelSessions(ctx context.Context, assistantID, channelID string) ([]string, error)
+	// MessageChannelSessionEvents are the events of the sessions with this
+	// label, newest first.
+	MessageChannelSessionEvents(ctx context.Context, sessionIDs []string, label string, limit int) ([]MessageChannelSessionEvent, error)
+	GetMessageChannelKey(ctx context.Context, channelID, sessionKey string) (MessageChannelKeyState, error)
+	SaveMessageChannelKey(ctx context.Context, state MessageChannelKeyState) error
+	// RecordMessageChannelSession ties a session to its channel segment
+	// (once; later calls for the same session change nothing).
+	RecordMessageChannelSession(ctx context.Context, session MessageChannelSession) error
+	GetMessageChannelSession(ctx context.Context, sessionID string) (MessageChannelSession, error)
+	// The saved revisions of a channel workspace's AGENTS.md, newest first.
+	ListMessageChannelInstructionRevisions(ctx context.Context, channelID string, limit int) ([]MessageChannelInstructionsRevision, error)
+	GetMessageChannelInstructionRevision(ctx context.Context, channelID, id string) (MessageChannelInstructionsRevision, string, error)
+	AddMessageChannelInstructionRevision(ctx context.Context, channelID string, revision MessageChannelInstructionsRevision, content string) error
 	// PruneMessageChannelDeliveries removes dropped records created before
 	// droppedBefore and clears the text of the others created before
 	// keptBefore.

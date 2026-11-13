@@ -423,8 +423,10 @@ function SettingsPanel({
             ) : activeSection === "channels" ? (
               <ChannelsSection
                 assistantId={assistantId}
+                homeDeviceId={agent.homeDeviceId}
                 homeWorkspaceId={agent.workspaceId}
                 onNotice={notice}
+                workspaces={workspaces}
               />
             ) : activeSection === "limits" ? (
               <LimitsSection

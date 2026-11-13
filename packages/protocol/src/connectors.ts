@@ -18,6 +18,7 @@ import type {
   ConnectorExtensionError,
 } from "./contract.gen.js";
 export type {
+  ConnectorAuthorizationPreset,
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationScope,
   ConnectorAuthorizationState,
@@ -199,6 +200,26 @@ export interface WorkspaceDeviceConnectors {
   connectors: ConnectorDescriptor[];
   bindings: DeviceConnectorBinding[];
   devices: DeviceConnectorDevice[];
+  skillBundles?: ConnectorSkillBundle[];
+}
+
+/**
+ * The Skill library bundle whose Skills sessions get with a connector: the
+ * person's enabled connector package ("package"), or the bundle following
+ * the npm package of the connector's own tool when its descriptor declares
+ * tool.skills ("tool"). repositoryId is absent when no Skill library bundle
+ * follows that package yet.
+ */
+export interface ConnectorSkillBundle {
+  kind: string;
+  source: "package" | "tool";
+  package?: string;
+  repositoryId?: string;
+  name?: string;
+  version?: string;
+  skillCount: number;
+  /** How many of skillCount sessions get: tool.skills.default, plus a workspace's own picks. */
+  onCount: number;
 }
 
 export interface DeviceConnectorBindingInput {
@@ -302,4 +323,5 @@ export interface ConnectorProgressPayload {
 export interface ConnectorCatalogView {
   connectors: ConnectorDescriptor[];
   restrictedConnectors?: ConnectorRestricted[];
+  skillBundles?: ConnectorSkillBundle[];
 }

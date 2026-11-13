@@ -20,11 +20,17 @@ type MessageChannel struct {
 	SessionKey string                `json:"sessionKey"`
 
 	// Scope What the channel's sessions and their helpers may use, intersected with the assistant's permission package. connectorDefault inherit keeps the package's level for accounts not listed; off turns them off. workspaces listed keeps only the included ones.
-	Scope     MessageChannelScope  `json:"scope"`
-	Limits    MessageChannelLimits `json:"limits"`
-	SkillName string               `json:"skillName,omitempty"`
-	CreatedAt string               `json:"createdAt"`
-	UpdatedAt string               `json:"updatedAt"`
+	Scope  MessageChannelScope  `json:"scope"`
+	Limits MessageChannelLimits `json:"limits"`
+
+	// WorkspaceID The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home.
+	WorkspaceID string `json:"workspaceId,omitempty"`
+
+	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
+	Session   *MessageChannelSessionRule `json:"session,omitempty"`
+	SkillName string                     `json:"skillName,omitempty"`
+	CreatedAt string                     `json:"createdAt"`
+	UpdatedAt string                     `json:"updatedAt"`
 }
 
 // MessageChannelAction Something the channel's session did after the message arrived.
@@ -32,6 +38,13 @@ type MessageChannelAction struct {
 	At      string `json:"at"`
 	Kind    string `json:"kind"`
 	Summary string `json:"summary"`
+}
+
+// MessageChannelCapabilities What the source's messages can tell apart, from its descriptor's envelope mapping. An empty conversationKinds means the source does not say.
+type MessageChannelCapabilities struct {
+	ConversationKinds jsonempty.List[MessageConversationKind] `json:"conversationKinds"`
+	MentionsMe        bool                                    `json:"mentionsMe"`
+	FromSelf          bool                                    `json:"fromSelf"`
 }
 
 // MessageChannelConnectorScope One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card.
@@ -60,9 +73,21 @@ type MessageChannelDelivery struct {
 	Status   MessageChannelDeliveryStatus `json:"status"`
 
 	// Reason For dropped, why; for queued, what it waits for.
-	Reason      string                 `json:"reason,omitempty"`
-	Rule        string                 `json:"rule,omitempty"`
-	SessionID   string                 `json:"sessionId,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Rule      string `json:"rule,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+
+	// SessionKey The source conversation (and thread) the message belongs to.
+	SessionKey string `json:"sessionKey,omitempty"`
+
+	// Segment Which of the conversation's sessions, from 0.
+	Segment int `json:"segment,omitempty"`
+
+	// SessionNew This message started the session.
+	SessionNew bool `json:"sessionNew,omitempty"`
+
+	// NewReason Why a new session started: first, idle, command, button, restarted.
+	NewReason   string                 `json:"newReason,omitempty"`
 	CreatedAt   string                 `json:"createdAt"`
 	DeliveredAt string                 `json:"deliveredAt,omitempty"`
 	Actions     []MessageChannelAction `json:"actions,omitempty"`
@@ -102,6 +127,45 @@ type MessageChannelInput struct {
 
 	// ResumeFromNow On enabling a paused channel, start from now instead of where it stopped.
 	ResumeFromNow bool `json:"resumeFromNow,omitempty"`
+
+	// WorkspaceID The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home.
+	WorkspaceID string `json:"workspaceId,omitempty"`
+
+	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
+	Session *MessageChannelSessionRule `json:"session,omitempty"`
+}
+
+// MessageChannelInstructions The AGENTS.md of the channel's workspace as it is on the device now, and its saved revisions.
+type MessageChannelInstructions struct {
+	WorkspaceID string                                             `json:"workspaceId"`
+	Path        string                                             `json:"path"`
+	Content     string                                             `json:"content"`
+	Sha256      string                                             `json:"sha256"`
+	Missing     bool                                               `json:"missing"`
+	Revisions   jsonempty.List[MessageChannelInstructionsRevision] `json:"revisions"`
+}
+
+// MessageChannelInstructionsInput New content; baseSha256 is the sha256 the editor started from (refused when the file changed since).
+type MessageChannelInstructionsInput struct {
+	Content    string `json:"content"`
+	BaseSha256 string `json:"baseSha256"`
+}
+
+// MessageChannelInstructionsRevert defines model for MessageChannelInstructionsRevert.
+type MessageChannelInstructionsRevert struct {
+	RevisionID string `json:"revisionId"`
+	BaseSha256 string `json:"baseSha256"`
+}
+
+// MessageChannelInstructionsRevision defines model for MessageChannelInstructionsRevision.
+type MessageChannelInstructionsRevision struct {
+	ID     string `json:"id"`
+	At     string `json:"at"`
+	Sha256 string `json:"sha256"`
+	Bytes  int    `json:"bytes"`
+
+	// Source seed, web, revert, or outside (changed on the device, found when read).
+	Source string `json:"source"`
 }
 
 // MessageChannelLimits defines model for MessageChannelLimits.
@@ -115,8 +179,26 @@ type MessageChannelLimits struct {
 type MessageChannelList struct {
 	Channels jsonempty.List[MessageChannelView] `json:"channels"`
 
+	// ChannelSessionIDs Every session the assistant's channels started, including those of deleted channels; they are not the person's conversation with the assistant.
+	ChannelSessionIDs []string `json:"channelSessionIds,omitempty"`
+
 	// Sources Connector instances whose descriptor declares an event feed.
 	Sources jsonempty.List[MessageChannelSource] `json:"sources"`
+}
+
+// MessageChannelPeer A conversation or sender the person's channels saw recently from a source.
+type MessageChannelPeer struct {
+	ID               string                  `json:"id"`
+	Name             string                  `json:"name"`
+	ConversationKind MessageConversationKind `json:"conversationKind,omitempty"`
+	Count            int                     `json:"count"`
+	LastSeenAt       string                  `json:"lastSeenAt"`
+}
+
+// MessageChannelPeers defines model for MessageChannelPeers.
+type MessageChannelPeers struct {
+	Conversations jsonempty.List[MessageChannelPeer] `json:"conversations"`
+	Senders       jsonempty.List[MessageChannelPeer] `json:"senders"`
 }
 
 // MessageChannelPrerequisites Whether the assistant may read the source and its home workspace has it bound.
@@ -124,6 +206,11 @@ type MessageChannelPrerequisites struct {
 	Allowed bool   `json:"allowed"`
 	Bound   bool   `json:"bound"`
 	Level   string `json:"level"`
+}
+
+// MessageChannelRolloverInput The conversation (sessionKey of a delivery) whose next message starts a new session.
+type MessageChannelRolloverInput struct {
+	SessionKey string `json:"sessionKey"`
 }
 
 // MessageChannelRule One filter rule; a message is kept when any enabled rule matches it. Every condition of a rule must hold. textPrefixes are compared after leading mentions and spaces are removed; an empty list accepts any text.
@@ -146,6 +233,24 @@ type MessageChannelRule struct {
 	ExcludeSenderIDs       []string               `json:"excludeSenderIds,omitempty"`
 }
 
+// MessageChannelRuleCheck defines model for MessageChannelRuleCheck.
+type MessageChannelRuleCheck struct {
+	RuleID string `json:"ruleId"`
+
+	// Miss "" when the rule matches; else place, mention, self, conversation, sender or trigger.
+	Miss string `json:"miss"`
+}
+
+// MessageChannelSample A message the person makes up to try the rules on.
+type MessageChannelSample struct {
+	Text             string                  `json:"text"`
+	ConversationKind MessageConversationKind `json:"conversationKind"`
+	MentionsMe       bool                    `json:"mentionsMe"`
+	FromSelf         bool                    `json:"fromSelf"`
+	ConversationID   string                  `json:"conversationId,omitempty"`
+	SenderID         string                  `json:"senderId,omitempty"`
+}
+
 // MessageChannelScope What the channel's sessions and their helpers may use, intersected with the assistant's permission package. connectorDefault inherit keeps the package's level for accounts not listed; off turns them off. workspaces listed keeps only the included ones.
 type MessageChannelScope struct {
 	ConnectorDefault string                                       `json:"connectorDefault"`
@@ -156,12 +261,21 @@ type MessageChannelScope struct {
 	IdentityResources jsonempty.List[string] `json:"identityResources"`
 }
 
+// MessageChannelSessionRule When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
+type MessageChannelSessionRule struct {
+	IdleMinutes   int                    `json:"idleMinutes"`
+	ResetCommands jsonempty.List[string] `json:"resetCommands"`
+}
+
 // MessageChannelSource The connector instance whose event feed the channel reads.
 type MessageChannelSource struct {
 	Kind       string `json:"kind"`
 	AccountID  string `json:"accountId"`
 	InstanceID string `json:"instanceId,omitempty"`
 	Label      string `json:"label,omitempty"`
+
+	// Capabilities What the source's messages can tell apart, from its descriptor's envelope mapping. An empty conversationKinds means the source does not say.
+	Capabilities *MessageChannelCapabilities `json:"capabilities,omitempty"`
 }
 
 // MessageChannelState defines model for MessageChannelState.
@@ -180,8 +294,36 @@ type MessageChannelStatus struct {
 	Counts MessageChannelCounts `json:"counts"`
 }
 
+// MessageChannelTestInput Rules to try before saving, on made-up samples and, with sourceAccountId and recent, on the source's recent messages that the person's channels saw.
+type MessageChannelTestInput struct {
+	Filters         MessageChannelFilters  `json:"filters"`
+	Samples         []MessageChannelSample `json:"samples,omitempty"`
+	SourceAccountID string                 `json:"sourceAccountId,omitempty"`
+	Recent          bool                   `json:"recent,omitempty"`
+}
+
+// MessageChannelTestResult defines model for MessageChannelTestResult.
+type MessageChannelTestResult struct {
+	Verdicts jsonempty.List[MessageChannelVerdict] `json:"verdicts"`
+}
+
 // MessageChannelTriState A condition on a yes/no envelope field; any ignores it.
 type MessageChannelTriState = string
+
+// MessageChannelVerdict defines model for MessageChannelVerdict.
+type MessageChannelVerdict struct {
+	// Sample Index of the sample; absent for a recent message.
+	Sample *int `json:"sample,omitempty"`
+
+	// Envelope One message as a channel sees it, whatever the source. IM sources fill conversation, thread, sender and mentionsMe; other sources use the same fields for their own notions (a mail thread, an alert group). attributes holds a few source-specific values.
+	Envelope MessageEnvelope `json:"envelope"`
+	Keep     bool            `json:"keep"`
+
+	// TextUnknown A recent message that no rule took keeps no text, so the trigger words could not be checked; keep and rule then say what holds if its text starts with a trigger word.
+	TextUnknown bool                                    `json:"textUnknown,omitempty"`
+	Rule        string                                  `json:"rule,omitempty"`
+	Checks      jsonempty.List[MessageChannelRuleCheck] `json:"checks"`
+}
 
 // MessageChannelView defines model for MessageChannelView.
 type MessageChannelView struct {
@@ -191,8 +333,23 @@ type MessageChannelView struct {
 	// Prerequisites Whether the assistant may read the source and its home workspace has it bound.
 	Prerequisites MessageChannelPrerequisites `json:"prerequisites"`
 
-	// SessionIDs The channel's sessions in the assistant's home.
+	// Workspace Where the channel's sessions run, read-only for them.
+	Workspace *MessageChannelWorkspace `json:"workspace,omitempty"`
+
+	// SessionIDs The channel's sessions.
 	SessionIDs jsonempty.List[string] `json:"sessionIds"`
+}
+
+// MessageChannelWorkspace Where the channel's sessions run, read-only for them.
+type MessageChannelWorkspace struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DeviceID   string `json:"deviceId"`
+	DeviceName string `json:"deviceName,omitempty"`
+	Path       string `json:"path"`
+
+	// Skills The skills bound to the workspace, which its sessions load.
+	Skills jsonempty.List[string] `json:"skills"`
 }
 
 // MessageConversationKind defines model for MessageConversationKind.

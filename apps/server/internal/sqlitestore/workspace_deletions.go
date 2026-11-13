@@ -181,6 +181,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"native_account_dispatches", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},
 	{"feishu_gateway_grants", "session_id", ownerSession},
+	{"message_channel_sessions", "session_id", ownerSession},
 	{"resource_waits", "session_id", ownerSession},
 	{"resource_operations", "session_id", ownerSession},
 	{"evidence_requests", sessionRequestOwner, ownerSession},

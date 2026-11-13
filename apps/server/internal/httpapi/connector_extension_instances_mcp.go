@@ -344,7 +344,7 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 		text, err := encodeJSON(value)
 		return text, redactConnectorInstanceError(err, secrets)
 	case "probe":
-		if err := s.validateExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
+		if err := s.prepareExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
 			return "", redactConnectorInstanceError(err, secrets)
 		}
 		probed, err := s.connectors.ServerHeld.ProbeExtensionInstance(call.r.Context(), caller.ownerID, descriptor, input, nil)
@@ -354,7 +354,7 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 		text, err := encodeJSON(probed)
 		return redactConnectorInstanceText(text, secrets), redactConnectorInstanceError(err, secrets)
 	case "create":
-		if err := s.validateExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
+		if err := s.prepareExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
 			return "", redactConnectorInstanceError(err, secrets)
 		}
 		instance, err := s.connectors.ServerHeld.CreateExtensionInstance(call.r.Context(), caller.ownerID, descriptor, input)
@@ -378,7 +378,7 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 
 	switch action {
 	case "update":
-		if err := s.validateExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
+		if err := s.prepareExtensionProbeDevice(call.r.Context(), caller.ownerID, descriptor, input); err != nil {
 			return "", redactConnectorInstanceError(err, secrets)
 		}
 		updated, err := s.connectors.ServerHeld.ReplaceExtensionInstance(

@@ -33,7 +33,7 @@ const (
 )
 
 // conversationKinds are the generic kinds an envelope's conversation has.
-var conversationKinds = map[string]bool{"direct": true, "group": true, "channel": true, "feed": true, "other": true}
+var conversationKinds = map[string]bool{"direct": true, "self": true, "group": true, "channel": true, "feed": true, "other": true}
 
 // EnvelopeFields are the keys a descriptor's envelope mapping may set;
 // attributes.<name> is also allowed.
@@ -61,11 +61,11 @@ func ValidEnvelopeField(key string) bool {
 // an id is an error: the channel could not tell it from the next one.
 func MapItem(spec store.ConnectorEventsEnvelope, item any) (envelope store.MessageEnvelope, skip bool, err error) {
 	for _, condition := range spec.SkipWhen {
-		if value, ok := Pointer(item, condition.Pointer); ok && scalar(value) == condition.Equals {
+		if conditionHolds(item, condition) {
 			return envelope, true, nil
 		}
 	}
-	envelope.Kind, envelope.Op = "message", "new"
+	envelope.Kind, envelope.Op = "message", OpNew
 	envelope.Conversation.Kind = "other"
 	for key, field := range spec.Fields {
 		value, present := fieldValue(field, item)
@@ -85,7 +85,31 @@ func MapItem(spec store.ConnectorEventsEnvelope, item any) (envelope store.Messa
 	return envelope, false, nil
 }
 
+// conditionHolds reports whether the value at the condition's pointer is
+// present and equals its text or the (non-empty) value at equalsPointer.
+func conditionHolds(item any, condition store.ConnectorEventsCondition) bool {
+	raw, ok := Pointer(item, condition.Pointer)
+	if !ok {
+		return false
+	}
+	value := scalar(raw)
+	if condition.EqualsPointer != "" {
+		other, ok := Pointer(item, condition.EqualsPointer)
+		return ok && value != "" && value == scalar(other)
+	}
+	return value == condition.Equals
+}
+
 func fieldValue(field store.ConnectorEventsValue, item any) (string, bool) {
+	for _, next := range field.Cases {
+		holds := len(next.When) > 0
+		for _, condition := range next.When {
+			holds = holds && conditionHolds(item, condition)
+		}
+		if holds {
+			return next.Value, true
+		}
+	}
 	var value string
 	switch {
 	case field.Template != "":

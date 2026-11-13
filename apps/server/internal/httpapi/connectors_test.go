@@ -41,12 +41,16 @@ type fakeConnectorWorker struct {
 	awsConfiguration *store.ConnectorConfiguration
 	// Extension requests the device received, and the error it answers
 	// installs with when set.
-	extensionRequests  []store.ExtensionRequestPayload
-	extensionHTTP      []store.ConnectorExtensionHTTPRequest
-	extensionError     string
-	deviceID           string
-	deviceLabel        string
-	reportedConnectors []any
+	extensionRequests   []store.ExtensionRequestPayload
+	extensionHTTP       []store.ConnectorExtensionHTTPRequest
+	extensionError      string
+	deviceID            string
+	deviceLabel         string
+	workspaceID         string
+	reportedConnectors  []any
+	installedConnectors []any
+	// workerVersion, when set, is the Worker build the hello reports.
+	workerVersion string
 }
 
 func (w *fakeConnectorWorker) connect(serverURL, credential string) {
@@ -58,6 +62,10 @@ func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	deviceLabel := w.deviceLabel
 	if deviceLabel == "" {
 		deviceLabel = "alice-mac"
+	}
+	workspaceID := w.workspaceID
+	if workspaceID == "" {
+		workspaceID = "ws_alice"
 	}
 	connectors := w.reportedConnectors
 	if connectors == nil {
@@ -71,9 +79,13 @@ func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	}
 	w.conn = conn
 	w.done = make(chan struct{})
+	device := map[string]any{"id": deviceID, "label": deviceLabel, "status": "connected", "lastSeenLabel": "online", "connectors": connectors}
+	if w.workerVersion != "" {
+		device["worker"] = map[string]any{"version": w.workerVersion}
+	}
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"device":    map[string]any{"id": deviceID, "label": deviceLabel, "status": "connected", "lastSeenLabel": "online", "connectors": connectors},
-		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"device":    device,
+		"workspace": map[string]any{"id": workspaceID, "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
 }
@@ -94,7 +106,7 @@ func corpcliExtension() map[string]any {
 func acmeServerHeldExtension() map[string]any {
 	return map[string]any{
 		"kind": "acme-api", "label": "Acme API", "holding": "server_held", "adapter": "extension:acme",
-		"extension": map[string]any{"id": "acme", "name": "Acme tools", "version": "1.0.0"},
+		"extension": map[string]any{"id": "acme", "name": "Acme tools", "version": "1.0.0", "bundled": true},
 		"tool":      map[string]any{"command": "acme"},
 		"serverHeld": map[string]any{
 			"instances": "many",
@@ -147,21 +159,52 @@ func (w *fakeConnectorWorker) serve() {
 		if err := w.conn.ReadJSON(&envelope); err != nil {
 			return
 		}
+		if envelope.Type == wsResourceSettingsType {
+			var settings store.ResourceSourceSettings
+			_ = json.Unmarshal(envelope.Payload, &settings)
+			w.writeMu.Lock()
+			_ = w.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsResourceSettingsAppliedType, "payload": settings})
+			w.writeMu.Unlock()
+			continue
+		}
 		if envelope.Type == wsExtensionRequestType {
 			var request store.ExtensionRequestPayload
 			_ = json.Unmarshal(envelope.Payload, &request)
 			w.mu.Lock()
 			w.extensionRequests = append(w.extensionRequests, request)
 			reply := store.ExtensionReplyPayload{Action: "removed"}
+			var installedConnectors []any
 			if request.Action == "install" {
-				reply = store.ExtensionReplyPayload{Action: "created", Extension: &store.InstalledExtension{ID: "corp", Name: "Corp tools", Version: "1.1.0", Connectors: []string{"corpcli"}, Source: request.Source, Commit: strings.Repeat("a", 40)}}
+				extensionID, extensionName, connectorKind := "corp", "Corp tools", "corpcli"
+				if request.BundledExtensionID != "" {
+					extensionID, extensionName, connectorKind = request.BundledExtensionID, request.BundledExtensionID, request.BundledExtensionID
+				}
+				reply = store.ExtensionReplyPayload{Action: "created", Extension: &store.InstalledExtension{ID: extensionID, Name: extensionName, Version: "1.1.0", Connectors: []string{connectorKind}, Source: request.Source, Commit: strings.Repeat("a", 40)}}
 				if w.extensionError != "" {
 					reply = store.ExtensionReplyPayload{Error: w.extensionError}
+				} else if w.installedConnectors != nil {
+					w.reportedConnectors = append([]any(nil), w.installedConnectors...)
+					installedConnectors = append([]any(nil), w.installedConnectors...)
 				}
 			}
 			w.mu.Unlock()
 			w.writeMu.Lock()
 			_ = w.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsExtensionReplyType, "payload": reply})
+			if installedConnectors != nil {
+				deviceID := w.deviceID
+				if deviceID == "" {
+					deviceID = "dev_alice"
+				}
+				deviceLabel := w.deviceLabel
+				if deviceLabel == "" {
+					deviceLabel = "alice-mac"
+				}
+				writeWSIDForTest(w.t, w.conn, "registration_device_after_extension", wsWorkspaceReadyType, map[string]any{
+					"registration": map[string]any{
+						"device": map[string]any{"id": deviceID, "label": deviceLabel, "status": "connected", "lastSeenLabel": "online", "connectors": installedConnectors},
+					},
+				})
+			}
 			w.writeMu.Unlock()
 			continue
 		}

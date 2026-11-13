@@ -16,6 +16,38 @@ import { RunnerTurnsChangedError } from "../../execution-host/client.js";
 import { executionHostClient } from "../../execution-host/fleet.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../platform/utils.js";
+import {
+  clearWorkerProxy,
+  describeProxy,
+  readWorkerProxy,
+  setWorkerProxy,
+} from "../../platform/server-link/server-proxy.js";
+
+/**
+ * The owner's choice from the device page: stop using the saved proxy, or
+ * use another one. The proxy watcher then reconnects the control socket on
+ * the new route, after this answer has gone out. Credentials never come back.
+ */
+export function applyWorkerProxySetting(payload: unknown): {
+  proxy?: string;
+} {
+  const { url, clear } = (payload ?? {}) as { url?: unknown; clear?: unknown };
+  if (clear === true && url === undefined) {
+    clearWorkerProxy();
+    return {};
+  }
+  if (typeof url !== "string" || clear !== undefined)
+    throw new Error("Name a proxy address, or ask to stop using the proxy.");
+  // A saved no-proxy list stays with the new address.
+  let noProxy: string | undefined;
+  try {
+    noProxy = readWorkerProxy()?.noProxy;
+  } catch {
+    noProxy = undefined;
+  }
+  setWorkerProxy(url.trim(), noProxy);
+  return { proxy: describeProxy(url.trim()) };
+}
 
 /** Round trip of one ping over a control socket, in milliseconds. */
 function socketRoundTrip(socket: WebSocket): Promise<number> {
@@ -109,6 +141,11 @@ export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
         }),
       );
     })
+    .on(daemonMessageTypes.setWorkerProxy, (envelope, ctx) =>
+      reply(ctx, envelope, daemonMessageTypes.workerProxySet, () =>
+        applyWorkerProxySetting(envelope.payload),
+      ),
+    )
     .on(daemonMessageTypes.runDiagnostics, (envelope, ctx) =>
       reply(ctx, envelope, daemonMessageTypes.diagnosticsReady, async () => ({
         report: await runDiagnostics({

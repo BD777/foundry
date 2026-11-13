@@ -1,5 +1,6 @@
 import {
   describeProxy,
+  onServerRouteChange,
   resolveServerProxy,
   serverWebSocketAgent,
   watchWorkerProxy,
@@ -22,6 +23,7 @@ import {
   watchServerSilence,
   withConnectionReports,
 } from "../platform/server-link/connection-reports.js";
+import { noteServerContact } from "../platform/server-link/server-contact.js";
 import { readAgentRuntimeSettings } from "../device/device.js";
 import { adaptiveConcurrencyFloor } from "../device/device.js";
 import { executionHostClient } from "../execution-host/fleet.js";
@@ -280,18 +282,29 @@ class ControlConnection {
       perMessageDeflate,
     });
     this.socket = socket;
-    const stopProxyWatch = watchWorkerProxy(() => {
+    const reconnect = (reason: string): void => {
       this.connection.workerGaveUp();
       if (socket.readyState !== WebSocket.OPEN) {
         socket.terminate();
         return;
       }
-      socket.close(1000, "Worker proxy configuration changed");
+      socket.close(1000, reason);
       const timeout = setTimeout(() => socket.terminate(), 1000);
       timeout.unref();
       socket.once("close", () => clearTimeout(timeout));
+    };
+    const stopProxyWatch = watchWorkerProxy((change) => {
+      console.error(
+        `${logTime()} Worker proxy configuration changed (${change}); reconnecting.`,
+      );
+      reconnect("Worker proxy configuration changed");
     });
     socket.once("close", stopProxyWatch);
+    // Back to the configured proxy once it works again (server-route.ts).
+    const stopRouteWatch = onServerRouteChange(() =>
+      reconnect("Worker route to the server changed"),
+    );
+    socket.once("close", stopRouteWatch);
     socketOpened(socket);
     socket.on("upgrade", (response) =>
       this.connection.countBytes(response.socket),
@@ -308,6 +321,7 @@ class ControlConnection {
     });
     meterSocket(socket, this.connection.sends);
     socket.on("open", () => {
+      noteServerContact();
       this.connection.sends.opened();
       if (socket.extensions.includes("permessage-deflate"))
         this.connection.compressing();
@@ -322,8 +336,15 @@ class ControlConnection {
       );
       this.sendSampleTimer.unref();
     });
-    socket.on("ping", () => this.connection.serverPing());
-    socket.on("message", () => this.connection.serverData());
+    socket.on("ping", () => {
+      noteServerContact();
+      this.connection.serverPing();
+    });
+    socket.on("pong", () => noteServerContact());
+    socket.on("message", () => {
+      noteServerContact();
+      this.connection.serverData();
+    });
     this.roster = new WorkspaceRoster(
       socket,
       options.workspacePath,

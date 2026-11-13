@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,8 +16,9 @@ const root = mkdtempSync(join(tmpdir(), "foundry-claude-launch-"));
 process.env.FOUNDRY_STATE_ROOT = root;
 test.after(() => rmSync(root, { recursive: true, force: true }));
 
-const { claudeSettingsFile, clearClaudeSettingsFiles } =
+const settingsModule =
   await import("../dist/session/session-launch-options.js");
+const { claudeSettingsFile, clearClaudeSettingsFiles } = settingsModule;
 const { reconnectFailedClaudeFoundryTools, startClaudeFoundryTools } =
   await import("../dist/session/runner/foundry-tools.js");
 const { claudeFoundryToolsConnection, FoundryToolsSupervisor } =
@@ -23,18 +26,116 @@ const { claudeFoundryToolsConnection, FoundryToolsSupervisor } =
 const { withoutSessionToken } =
   await import("../dist/session/session-ambient.js");
 
-test("Claude's settings, key included, go to an owner-only file, not an argument", () => {
+test("Claude's settings go to an owner-only file without the connection's key", () => {
   const path = claudeSettingsFile("sess_1", {
-    env: { ANTHROPIC_AUTH_TOKEN: "sk-secret" },
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-secret-tokenhub-0001",
+      ANTHROPIC_MODEL: "deepseek-v4.1-flash-1017",
+    },
+    autoCompactEnabled: true,
   });
   assert.equal(statSync(path).mode & 0o777, 0o600);
-  assert.equal(
-    JSON.parse(readFileSync(path, "utf8")).env.ANTHROPIC_AUTH_TOKEN,
-    "sk-secret",
-  );
+  const text = readFileSync(path, "utf8");
+  assert.doesNotMatch(text, /sk-secret-tokenhub-0001|ANTHROPIC_AUTH_TOKEN/);
+  assert.deepEqual(JSON.parse(text), {
+    env: { ANTHROPIC_MODEL: "deepseek-v4.1-flash-1017" },
+    autoCompactEnabled: true,
+  });
   assert.doesNotMatch(path, /sess_1/);
   clearClaudeSettingsFiles();
   assert.equal(existsSync(path), false);
+});
+
+test("a settings file holds no credential, by name or inside another value; counts and models stay", () => {
+  const { claudeSettingsEnvironment } = settingsModule;
+  assert.deepEqual(
+    claudeSettingsEnvironment({
+      ANTHROPIC_AUTH_TOKEN: "tok-0123456789abcdef",
+      ANTHROPIC_API_KEY: "",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-0123456789",
+      ANTHROPIC_CUSTOM_HEADERS: "X-Route: r1",
+      OPENAI_API_KEY: "sk-openai-0123456789",
+      GATEWAY_PASSWORD: "hunter2hunter2",
+      ANTHROPIC_BASE_URL: "https://gateway.example/tok-0123456789abcdef",
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
+      MAX_THINKING_TOKENS: "32000",
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "800000",
+      ANTHROPIC_MODEL: "claude-opus-5-5",
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+      DISABLE_AUTOUPDATER: "1",
+      UNSET: undefined,
+    }),
+    {
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
+      MAX_THINKING_TOKENS: "32000",
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "800000",
+      ANTHROPIC_MODEL: "claude-opus-5-5",
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+      DISABLE_AUTOUPDATER: "1",
+    },
+  );
+});
+
+test("two sessions' settings files hold neither session's key", () => {
+  const { acquireClaudeSettings } = settingsModule;
+  const a = acquireClaudeSettings("sess_a", {
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "key-of-session-a-0001",
+      ANTHROPIC_MODEL: "a",
+    },
+  });
+  const b = acquireClaudeSettings("sess_b", {
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "key-of-session-b-0002",
+      ANTHROPIC_MODEL: "b",
+    },
+  });
+  for (const lease of [a, b])
+    assert.doesNotMatch(
+      readFileSync(lease.path, "utf8"),
+      /key-of-session-[ab]/,
+    );
+  a.release();
+  b.release();
+});
+
+test("startup takes the key out of settings files an earlier Worker wrote, leaving the file in place", () => {
+  const { removeCredentialsFromSettingsFiles } = settingsModule;
+  const owner = join(root, "claude-settings", "999999-legacy");
+  mkdirSync(owner, { recursive: true, mode: 0o700 });
+  const legacy = join(owner, `${"a".repeat(64)}.json`);
+  writeFileSync(
+    legacy,
+    JSON.stringify({
+      env: {
+        ANTHROPIC_AUTH_TOKEN: "legacy-key-0123456789",
+        ANTHROPIC_MODEL: "m",
+      },
+      autoCompactEnabled: true,
+    }),
+    { mode: 0o600 },
+  );
+  const clean = join(owner, `${"b".repeat(64)}.json`);
+  writeFileSync(clean, JSON.stringify({ env: { ANTHROPIC_MODEL: "m" } }), {
+    mode: 0o600,
+  });
+  const other = join(owner, "notes.json");
+  writeFileSync(
+    other,
+    JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "x".repeat(20) } }),
+  );
+  assert.equal(
+    removeCredentialsFromSettingsFiles(join(root, "claude-settings")),
+    1,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(legacy, "utf8")), {
+    env: { ANTHROPIC_MODEL: "m" },
+    autoCompactEnabled: true,
+  });
+  assert.equal(statSync(legacy).mode & 0o777, 0o600);
+  // Only Foundry's own settings files are touched.
+  assert.match(readFileSync(other, "utf8"), /ANTHROPIC_AUTH_TOKEN/);
+  rmSync(owner, { recursive: true, force: true });
 });
 
 test("a new Claude process gets its Foundry tools over its input stream before its first turn", async () => {
@@ -209,13 +310,13 @@ test("immutable settings remain until the last owner releases them, and startup 
   const { acquireClaudeSettings } =
     await import("../dist/session/session-launch-options.js");
   const first = acquireClaudeSettings("same-session", {
-    env: { ANTHROPIC_AUTH_TOKEN: "first" },
+    env: { ANTHROPIC_MODEL: "first" },
   });
   const held = acquireClaudeSettings("same-session", {
-    env: { ANTHROPIC_AUTH_TOKEN: "first" },
+    env: { ANTHROPIC_MODEL: "first" },
   });
   const changed = acquireClaudeSettings("same-session", {
-    env: { ANTHROPIC_AUTH_TOKEN: "second" },
+    env: { ANTHROPIC_MODEL: "second" },
   });
   assert.equal(first.path, held.path);
   assert.notEqual(first.path, changed.path);

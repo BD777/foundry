@@ -22,6 +22,8 @@ export interface ConnectorModelProvider {
   /** Key order is the check fingerprint's (profiles.ts profileFingerprint). */
   externalConnection: { executable: string; args: string[]; identity: string };
   connector: { kind: string; label: string; extensionId: string };
+  /** When the connector last confirmed this provider's identity. */
+  lastConfirmedAt?: string;
   /** Listed but not usable now: the connector's reason. */
   problem?: string;
 }

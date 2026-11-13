@@ -14,7 +14,7 @@ import { Spinner } from "./loading";
 const filledShadow = "shadow-(--fdy-shadow-accent)";
 
 export const buttonVariants = cva(
-  `fdy-button relative inline-flex min-w-0 max-w-full items-center justify-center
+  `fdy-button relative inline-flex max-w-full shrink-0 items-center justify-center
    gap-2 select-none whitespace-nowrap rounded-full font-medium leading-none
    transition-[transform,background-color,color,opacity,box-shadow]
    duration-150 ease-out-strong active:scale-[0.96] focus-visible:outline-2
@@ -50,6 +50,8 @@ export const buttonVariants = cva(
         md: "fdy-button-md px-4 py-2 text-sm",
         lg: "fdy-button-lg px-5 py-2.5 text-md",
         icon: "fdy-button-icon-size size-8 p-0",
+        /** A remove control inside a chip. */
+        iconXs: "size-5 rounded-sm p-0",
         /**
          * Flows with the surrounding text: its font, line height, alignment,
          * wrapping and selection. A <button> lays out as inline-block, so a

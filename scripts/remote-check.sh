@@ -1,305 +1,115 @@
 #!/usr/bin/env bash
-# Run scripts/check-changed.sh on another of the person's devices (its Foundry
-# compute resource) against this worktree's changes, and print its summary.
+# Run checks for a working tree on another of the person's devices (its Foundry compute,
+# with fallback CanWendeMac-mini → byte-dev → byte-dev-sg) and print a short result; the
+# full output goes to a log.
 #
-# Usage: scripts/remote-check.sh <lease|device> [check-changed.sh arguments, e.g. --files <path>...]
-#   <lease>   a compute lease (lease_…) the session handed over: with acquire_resource
-#             {resourceId or type: compute + deviceId, holdFor: 3600, forCommands: true},
-#             run FOUNDRY_LEASE_TOKEN=<its commandToken> scripts/remote-check.sh <its leaseId> …
-#             in the background. The script releases the lease when it ends.
-#   <device>  the device's label (e.g. mac-desktop) or id (dev_…): the script leases its
-#             compute itself, which needs FOUNDRY_SESSION_TOKEN. Claude Code and Codex
-#             sessions never give it to their commands, so they pass a lease instead.
+# Usage: scripts/remote-check.sh [<lease|device>] [--device mac|byte-dev|byte-dev-sg]
+#                               [--resource <res_…>] [--tree <dir>] [--base <commit>] [check]
+#   check (one of):
+#     --files <path>… | --list | --since <t>   scripts/check-changed.sh with these arguments (default)
+#     --go <go test arguments…>                e.g. --go ./internal/httpapi -run 'TestFoo|TestBar'
+#     --web typecheck | --web test <file>…     apps/web tsc --noEmit, or these test files
+#     --worker test <file>… | --worker build   Worker tests (builds protocol + Worker first), or tsc
+#     --sh '<shell line>'                      any line, run in the checkout's root
+#   --tree <dir>    the tree to check (default: this script's checkout). A worktree or a
+#                   plain copy: everything differing from <base> is sent, untracked included.
+#   --base <commit> a commit on GitHub (default: the tree's HEAD when pushed, else its
+#                   merge-base with origin/main; origin/main for a plain folder).
+#   <lease>  acquire_resource {resourceId, forCommands: true, holdFor: 3600} answers leaseId and
+#            commandToken: FOUNDRY_LEASE_TOKEN=<commandToken> scripts/remote-check.sh <leaseId> …
+#   <device> a label or dev_… id; the script leases it itself (needs FOUNDRY_SESSION_TOKEN).
+#            A preferred alias falls forward when it is offline. An explicit res_… id or
+#            lease never falls back.
+# The lease is released when the script ends unless REMOTE_KEEP_LEASE=1. Each invocation
+# uses its own job checkout under the removable scratch root "foundry-remote"; shared
+# toolchains and caches make concurrent jobs fast. Run scripts/remote-clean.sh at the end
+# of a work batch.
 #
-# It drives the compute resource through the `foundry` CLI (FOUNDRY_SERVER_URL as a
-# session has it), keeps a checkout of the GitHub remote in a scratch folder there at
-# this worktree's base commit (dependencies installed once, again only when the
-# lockfiles change), applies the uncommitted diff and untracked files, and runs
-# check-changed.sh there with the arguments given. The device's owner must not have
-# turned remote commands off on it (on by default; Resources page).
-#
-# Environment: FOUNDRY_CLI (default: foundry on PATH, else this repo's built
-# packages/worker/dist/foundry-cli.js), REMOTE_CHECK_SCRATCH (default foundry),
-# REMOTE_CHECK_REMOTE (default: origin's URL as https).
+# Environment: REMOTE_LOG (default /tmp/remote-check-<time>.log), REMOTE_CHECK_TIMEOUT
+# (seconds, default 1800), REMOTE_CHECK_SCRATCH (default foundry-remote),
+# REMOTE_KEEP_LEASE=1 for concurrent jobs on one lease, REMOTE_LEASE_MODE=exclusive
+# to opt out of shared leases, REMOTE_HTTPS_PROXY for a runner-local relay, FOUNDRY_CLI.
 set -euo pipefail
 
-# Git must not inherit the person's insteadOf or proxy configuration. The
-# remote compute's git_sync applies the same isolation in its own process.
-export GIT_CONFIG_GLOBAL=/dev/null
-export GIT_CONFIG_NOSYSTEM=1
-
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-target="${1:-}"
-[ -n "$target" ] && [[ "$target" != -* ]] || { sed -n '2,23p' "$0"; exit 2; }
-shift
-check_args=("$@")
-scratch="${REMOTE_CHECK_SCRATCH:-foundry}"
-piece_bytes=$((512 * 1024))
-work="$(mktemp -d)"
-lease=""
-exec 3>&1
-
-die() { echo "remote-check: $*" >&2; exit 1; }
-log() { echo "remote-check: $*" >&2; }
-
-if [ -n "${FOUNDRY_CLI:-}" ]; then
-  read -r -a cli <<<"$FOUNDRY_CLI"
-elif command -v foundry >/dev/null 2>&1; then
-  cli=(foundry)
-elif [ -f "$root/packages/worker/dist/foundry-cli.js" ]; then
-  cli=(node "$root/packages/worker/dist/foundry-cli.js")
-else
-  die "no foundry CLI: install the worker, build packages/worker, or set FOUNDRY_CLI"
-fi
-if [[ "$target" == lease_* ]]; then
-  [ -n "${FOUNDRY_LEASE_TOKEN:-}${FOUNDRY_SESSION_TOKEN:-}" ] ||
-    die "FOUNDRY_LEASE_TOKEN is not set: pass the commandToken acquire_resource answered with forCommands for $target"
-else
-  [ -n "${FOUNDRY_SESSION_TOKEN:-}" ] ||
-    die "FOUNDRY_SESSION_TOKEN is not set, as in every Claude Code or Codex session's commands: lease the device's compute with acquire_resource (forCommands: true) and pass the lease, FOUNDRY_LEASE_TOKEN=<commandToken> $0 <leaseId> …"
+scratch="${REMOTE_CHECK_SCRATCH:-foundry-remote}"
+rc_name=remote-check
+usage() { sed -n '2,25p' "$0"; exit 2; }
+target=""
+if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
+  target="$1"
+  shift
 fi
 
-# json <expression>: evaluates a JavaScript expression over the first JSON value on
-# stdin (as v), ignoring notices the CLI prints after it.
-json() { node -e '
-  let s="";
-  process.stdin.on("data",c=>s+=c).on("end",()=>{
-    const start=s.search(/[\[{]/);
-    let depth=0, quoted=false, escaped=false, end=-1;
-    for(let i=start;i>=0&&i<s.length;i++){
-      const ch=s[i];
-      if(quoted){
-        if(escaped) escaped=false;
-        else if(ch==="\\") escaped=true;
-        else if(ch==="\"") quoted=false;
-        continue;
-      }
-      if(ch==="\"") quoted=true;
-      else if(ch==="{"||ch==="[") depth++;
-      else if((ch==="}"||ch==="]")&&--depth===0){end=i+1;break}
-    }
-    if(start<0||end<0) throw new Error("no JSON value in CLI output");
-    const v=JSON.parse(s.slice(start,end));
-    const r=eval(process.argv[1]);
-    process.stdout.write(r===undefined||r===null?"":typeof r==="string"?r:JSON.stringify(r))
-  })' "$1"; }
+tree="$root"
+base=""
+mode=check
+rest=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --device) target="${2:?--device needs mac, byte-dev or byte-dev-sg}"; shift 2 ;;
+    --resource) target="${2:?--resource needs a res_… id or lease}"; shift 2 ;;
+    --tree) tree="${2:?--tree needs a folder}"; shift 2 ;;
+    --base) base="${2:?--base needs a commit}"; shift 2 ;;
+    --go) mode=go; shift; rest=("$@"); break ;;
+    --web) mode="web-${2:?--web needs typecheck or test}"; shift 2; rest=("$@"); break ;;
+    --worker) mode="worker-${2:?--worker needs test or build}"; shift 2; rest=("$@"); break ;;
+    --sh) mode=sh; rest=("${2:?--sh needs a line}"); shift 2 ;;
+    -h | --help) usage ;;
+    *) rest+=("$1"); shift ;;
+  esac
+done
+target="${target:-mac}"
+log_file="${REMOTE_LOG:-/tmp/remote-check-$(date +%Y%m%dT%H%M%S)-$$.log}"
+: >"$log_file"
 
-# operate <args JSON file> <op>: one compute operation; prints its result's text.
-operate() {
-  local answer
-  answer="$("${cli[@]}" resource operate "$lease" --op "$2" --args-file "$1")" || return 1
-  if [ "$(json 'String(v.results[0].ok)' <<<"$answer")" != true ]; then
-    echo "$2 failed: $(json 'v.results[0].errorCode+": "+v.results[0].error' <<<"$answer")" >&2
-    return 1
-  fi
-  json 'v.results[0].text' <<<"$answer"
-}
+# shellcheck source=lib/remote-compute.sh
+source "$root/scripts/lib/remote-compute.sh"
 
-# args <node expression of an object>: writes the arguments of one operation (scratch added) to a file.
-args() {
-  local file="$work/args.json"
-  SCRATCH="$scratch" node -e 'const o=eval("("+process.argv[1]+")");o.scratch??=process.env.SCRATCH;require("node:fs").writeFileSync(process.argv[2],JSON.stringify(o))' "$1" "$file"
-  echo "$file"
-}
-
-# run_shell <timeout seconds> <shell line>: runs a line in the scratch folder; prints stdout, fails on non-zero.
-run_shell() {
-  local result code file
-  file="$(LINE="$2" args "{command: process.env.LINE, timeoutSec: $1}")"
-  result="$(operate "$file" run)" || return 1
-  code="$(json 'v.exitCode' <<<"$result")"
-  json 'v.stdout' <<<"$result"
-  if [ "$code" != 0 ]; then
-    json 'v.stderr' <<<"$result" >&2
-    return 1
-  fi
-}
-
-# sync_checkout <url> <ref> <dir>: the git_sync layout through a run action,
-# whose env can suppress the device's global Git configuration immediately
-# (including on workers older than the git_sync isolation).
-sync_checkout() {
-  local result code file head
-  file="$(
-    RC_GIT_URL="$1" RC_GIT_REF="$2" RC_GIT_DIR="$3" args \
-      '{command: `set -eu
-if git -C "$RC_GIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  git -C "$RC_GIT_DIR" remote set-url origin "$RC_GIT_URL"
-else
-  rm -rf -- "$RC_GIT_DIR"
-  git clone --no-checkout -- "$RC_GIT_URL" "$RC_GIT_DIR"
-fi
-if git -C "$RC_GIT_DIR" fetch --prune --tags origin "$RC_GIT_REF"; then
-  target=FETCH_HEAD
-else
-  git -C "$RC_GIT_DIR" fetch --prune --tags origin
-  target=$(git -C "$RC_GIT_DIR" rev-parse --verify "$RC_GIT_REF^{commit}" 2>/dev/null ||
-    git -C "$RC_GIT_DIR" rev-parse --verify "origin/$RC_GIT_REF^{commit}")
-fi
-git -C "$RC_GIT_DIR" checkout --force --detach "$target"
-git -C "$RC_GIT_DIR" clean -fdq
-git -C "$RC_GIT_DIR" rev-parse HEAD`, timeoutSec: 900, env: {
-        RC_GIT_URL: process.env.RC_GIT_URL,
-        RC_GIT_REF: process.env.RC_GIT_REF,
-        RC_GIT_DIR: process.env.RC_GIT_DIR,
-        GIT_CONFIG_GLOBAL: "/dev/null",
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_TERMINAL_PROMPT: "0",
-      }}'
-  )"
-  result="$(operate "$file" run)" || return 1
-  code="$(json 'v.exitCode' <<<"$result")"
-  if [ "$code" != 0 ]; then
-    json 'v.stderr' <<<"$result" >&2
-    return 1
-  fi
-  head="$(json 'v.stdout.trim().split("\n").filter(Boolean).at(-1)' <<<"$result")"
-  log "checkout at $head"
-}
-
-# upload <local file> <format> <dest>: sends a file in pieces.
-upload() {
-  local size offset=0 name="rc$$"
-  size=$(wc -c <"$1" | tr -d ' ')
-  while :; do
-    FILE="$1" OFFSET=$offset PIECE=$piece_bytes SIZE=$size NAME=$name FORMAT="$2" DEST="$3" SCRATCH="$scratch" node -e '
-      const fs = require("node:fs"), e = process.env, offset = +e.OFFSET, size = +e.SIZE;
-      const fd = fs.openSync(e.FILE, "r"), piece = Buffer.alloc(Math.min(+e.PIECE, size - offset));
-      fs.readSync(fd, piece, 0, piece.length, offset);
-      fs.writeFileSync(process.argv[1], JSON.stringify({ scratch: e.SCRATCH, upload: e.NAME, offset,
-        data: piece.toString("base64"), done: offset + piece.length >= size, format: e.FORMAT, dest: e.DEST }));' \
-      "$work/piece.json"
-    operate "$work/piece.json" put_files >/dev/null
-    offset=$((offset + piece_bytes))
-    [ "$offset" -lt "$size" ] || break
-  done
-}
-
-# more_output <file on the device> <offset>: prints what it has past offset (to the
-# script's stdout); answers how many bytes that was.
-more_output() {
-  local got
-  got="$(operate "$(args "{path: '$1', offset: $2, length: 1048576}")" get_file 2>/dev/null)" || { echo 0; return; }
-  json 'Buffer.from(v.data, "base64").toString("utf8")' <<<"$got" >&3
-  json 'v.length' <<<"$got"
-}
-
-# The device user's login PATH, where it has one (job runs it before each line).
-login_path='if command -v bash >/dev/null 2>&1; then p=$(bash -lc '"'"'printf %s "$PATH"'"'"' </dev/null 2>/dev/null); [ -n "$p" ] && PATH=$p && export PATH; fi'
-
-# job <name> <timeout seconds> <shell line>: runs a line in the background on the device
-# (stopped if the lease ends), printing its output as it comes; answers its exit status.
-job() {
-  local out="remote-check/$1.log" status="remote-check/$1.status" pidfile="remote-check/$1.pid" offset=0 count exit_code file alive
-  # The line runs in a subshell, so its own exit still records the status. It
-  # gets the login shell's PATH first: compute runs commands with a minimal PATH,
-  # and a device's pnpm and go often live only on its login PATH (~/.local/bin).
-  file="$(LINE="$3" OUT="$out" STATUS="$status" PIDFILE="$pidfile" SETUP="$login_path" args '{command: `rm -f "$JOB_OUT" "$JOB_STATUS" "$JOB_PID"; nohup sh -c '"'"'(eval "$JOB_SETUP"; eval "$JOB_LINE"); echo $? > "$JOB_STATUS"'"'"' > "$JOB_OUT" 2>&1 < /dev/null & echo $! > "$JOB_PID"`, env: {JOB_SETUP: process.env.SETUP, JOB_LINE: process.env.LINE, JOB_OUT: process.env.OUT, JOB_STATUS: process.env.STATUS, JOB_PID: process.env.PIDFILE}, timeoutSec: 60}')"
-  operate "$file" run >/dev/null
-  local deadline=$(($(date +%s) + $2))
-  while :; do
-    count="$(more_output "$out" "$offset")"
-    offset=$((offset + count))
-    [ "$count" -eq 0 ] || continue
-    exit_code="$(run_shell 30 "cat $status 2>/dev/null || true")"
-    if [ -n "$exit_code" ]; then
-      more_output "$out" "$offset" >/dev/null # written since the last read
-      return "$exit_code"
-    fi
-    # No status and no process: the device killed the job (its worker restarted,
-    # or its lease ended) rather than the job finishing. Say so, do not wait out the deadline.
-    alive="$(run_shell 30 "kill -0 \$(cat $pidfile 2>/dev/null) 2>/dev/null && echo yes || echo no" 2>/dev/null || echo unknown)"
-    if [ "$alive" = no ] && [ -z "$(run_shell 30 "cat $status 2>/dev/null || true" 2>/dev/null)" ]; then
-      more_output "$out" "$offset" >/dev/null
-      log "$1 was stopped on the device before it finished (its worker restarted, or the lease ended)"
-      return 125
-    fi
-    [ "$(date +%s)" -lt "$deadline" ] || { log "$1 ran past ${2}s"; return 124; }
-    sleep 5
-  done
-}
-
-cleanup() {
-  [ -z "$lease" ] || "${cli[@]}" resource release "$lease" >/dev/null 2>&1 || true
-  rm -rf "$work"
-}
-trap cleanup EXIT
-
-# ---- what to send -------------------------------------------------------------
-cd "$root"
-remote="${REMOTE_CHECK_REMOTE:-$(git remote get-url origin)}"
-case "$remote" in
-  git@*:*) remote="${remote#git@}"; remote="https://${remote/://}" ;;
-  ssh://git@*) remote="https://${remote#ssh://git@}" ;;
-esac
-remote="${remote%.git}.git"
-# The base must be on the remote: HEAD when pushed, else where it left origin/main.
-if [ -n "$(git branch -r --contains HEAD 2>/dev/null)" ]; then
-  base="$(git rev-parse HEAD)"
-else
-  base="$(git merge-base HEAD origin/main)" || die "HEAD shares no commit with origin/main"
-fi
-git diff --binary "$base" >"$work/changes.diff"
-# Worktrees share dependencies through untracked node_modules symlinks; they are not source.
-git ls-files --others --exclude-standard -z |
-  while IFS= read -r -d '' path; do
-    case "$path" in node_modules | */node_modules) ;; *) printf '%s\0' "$path" ;; esac
-  done >"$work/untracked.list"
-tar -czf "$work/untracked.tar.gz" --null -T "$work/untracked.list"
-log "base $base; diff $(wc -c <"$work/changes.diff" | tr -d ' ') bytes, $(tr -cd '\0' <"$work/untracked.list" | wc -c | tr -d ' ') untracked files"
-
-# ---- lease ------------------------------------------------------------------
-if [[ "$target" == lease_* ]]; then
-  lease="$target"
-  "${cli[@]}" resource status --lease "$lease" >/dev/null || die "cannot use lease $lease with this token (ended, or not a lease the session handed over?)"
-  log "using the session's lease $lease"
-else
-  device="$target"
-  listing="$("${cli[@]}" device list --type compute)"
-  resource="$(DEVICE="$device" json '(v.find(d=>d.deviceId===process.env.DEVICE||d.deviceLabel.toLowerCase()===process.env.DEVICE.toLowerCase())?.instances??[]).find(i=>i.type==="compute")?.id' <<<"$listing")"
-  [ -n "$resource" ] || die "no compute resource on $device (foundry device list --type compute; its worker may need an update)"
-  acquired="$("${cli[@]}" resource acquire --resource "$resource" --reason "remote-check of $(basename "$root")" --wait-ms 600000)" ||
-    die "could not lease $device's compute (is it online, and are remote commands on in its Resources page?)"
-  lease="$(json 'v.lease.id' <<<"$acquired")"
-  log "leased $device's compute ($lease)"
-fi
-
-# ---- checkout at base, with the changes ---------------------------------------
-sync_checkout "$remote" "$base" repo
-run_shell 60 "mkdir -p remote-check" >/dev/null
-upload "$work/changes.diff" file remote-check/changes.diff
-upload "$work/untracked.tar.gz" tar.gz repo
-run_shell 120 'cd repo && if [ -s ../remote-check/changes.diff ]; then git apply --binary --whitespace=nowarn ../remote-check/changes.diff; fi' >/dev/null ||
-  die "the diff did not apply at $base"
-log "checkout at $base with the changes"
-
-# ---- dependencies (again only when the lockfiles change), then the check ------
-deps='cd repo && want="$(cat pnpm-lock.yaml apps/server/go.sum 2>/dev/null | (shasum -a 256 2>/dev/null || sha256sum) | cut -c1-64)" &&
-if [ "$(cat .git/remote-check-deps 2>/dev/null)" != "$want" ]; then
-  pnpm install --frozen-lockfile && (cd apps/server && go mod download) && echo "$want" > .git/remote-check-deps
-fi && pnpm --filter @bd777/foundry-protocol build'
-job deps 1800 "$deps" && deps_status=0 || deps_status=$?
-if [ "$deps_status" -eq 125 ]; then
-  log "starting deps again"
-  job deps 1800 "$deps" && deps_status=0 || deps_status=$?
-fi
-[ "$deps_status" -eq 0 ] || die "installing dependencies failed (output above)"
-
-# Prefer Homebrew bash, but use the device's own bash (3.2 on macOS) as the fallback.
 quoted=""
-[ ${#check_args[@]} -eq 0 ] || quoted="$(printf '%q ' "${check_args[@]}")"
-check_line="cd repo && for b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
-  if [ -x \"\$b\" ]; then
-    \"\$b\" scripts/check-changed.sh $quoted; exit \$?
-  fi
-done; bash scripts/check-changed.sh $quoted"
+[ ${#rest[@]} -eq 0 ] || quoted="$(printf '%q ' "${rest[@]}")"
+worker_build='(cd "$RC_REPO/packages/worker" && rm -rf dist && ../../node_modules/.bin/tsc -p tsconfig.json)'
+case "$mode" in
+  check) line="cd \"\$RC_REPO\" && for b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+  if [ -x \"\$b\" ]; then \"\$b\" scripts/check-changed.sh $quoted; exit \$?; fi
+done; bash scripts/check-changed.sh $quoted" ;;
+  go) line="$worker_build && cd \"\$RC_REPO/apps/server\" && go test -p \"\$RC_JOB_CPUS\" $quoted" ;;
+  web-typecheck) line="cd \"\$RC_REPO/apps/web\" && ../../node_modules/.bin/tsc -p tsconfig.json --noEmit" ;;
+  web-test) [ -n "$quoted" ] || die "--web test needs test files"
+    line="cd \"\$RC_REPO/apps/web\" && node --import ./test/register-bundler-resolve.mjs --test-timeout=120000 --test $quoted" ;;
+  worker-test) [ -n "$quoted" ] || die "--worker test needs test files"
+    line="$worker_build && cd \"\$RC_REPO/packages/worker\" && node scripts/run-worker-tests.mjs -- $quoted" ;;
+  worker-build) line="$worker_build" ;;
+  sh) line="cd \"\$RC_REPO\" && ${rest[0]}" ;;
+  *) die "unknown check $mode" ;;
+esac
+
+started=$(date +%s)
+rc_init "$target"
+rc_detect_proxy
+[ -n "$base" ] || base="$(rc_default_base "$tree")" || die "no base commit for $tree (pass --base)"
+base="$(git -C "$root" rev-parse --verify "$base^{commit}")"
+rc_slot_acquire
+rc_sync "$tree" "$base"
+synced=$(date +%s)
+rc_bootstrap "$log_file"
+rc_deps "$log_file"
+prepared=$(date +%s)
+log "synced in $((synced - started))s, toolchain and dependencies ready in $((prepared - synced))s; running $mode"
+
 set +e
-job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$check_line"
+job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$line" "$log_file" quiet
 status=$?
-if [ "$status" -eq 125 ]; then
-  log "starting the check again"
-  job check "${REMOTE_CHECK_TIMEOUT:-1800}" "$check_line"
-  status=$?
-fi
 set -e
-exit $status
+ended=$(date +%s)
+
+# A short answer: failures first, then the end of the output.
+if [ "$status" -ne 0 ]; then
+  grep -E -- '^(--- FAIL|FAIL|not ok|panic:)|error TS[0-9]+|✗|✖' "$log_file" | head -30 >&2 || true
+  echo "----" >&2
+fi
+tail -n "${REMOTE_TAIL:-25}" "$log_file" >&2
+result=PASS
+[ "$status" -eq 0 ] || result="FAIL (exit $status)"
+echo "remote-check: $result — $mode in $((ended - prepared))s on the device, $((ended - started))s total; log $log_file"
+exit "$status"

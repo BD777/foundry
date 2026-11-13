@@ -34,6 +34,8 @@ export const connectionSetup: Translation<typeof en> = {
     otherSetups: "其他设备登记了不同的设置命令。",
     showOtherSetups: "查看其他命令",
     otherSetupFrom: "{{device}} · {{time}}",
+    connectorDescription:
+      "{{name}} 在该设备上安装并登录后即提供这个连接，进度会显示在这里。",
     noCommand:
       "这个连接没有登记设置命令。请在 {{device}} 上重新运行其网关的安装程序。",
     loadFailed: "无法读取设置状态：{{error}}",
@@ -41,6 +43,19 @@ export const connectionSetup: Translation<typeof en> = {
     done: "完成",
     success: "已就绪，并已为本聊天选中。",
     successNotSelected: "已就绪。请在选择器中选中它。",
+  },
+  connector: {
+    reading: "正在读取这台设备上的 {{name}}…",
+    offline: "{{device}} 离线。它上线后再在上面设置 {{name}}。",
+    notInstalled: "{{device}} 上还没有安装 {{extension}}。",
+    notSignedIn: "{{device}} 上的 {{name}} 还没有登录。",
+    notReady: "{{device}} 上的 {{name}} 还没有提供这个连接。",
+    install: "在 {{device}} 上安装 {{extension}}",
+    installHint: "它随 Foundry 提供，在该设备上以你的身份安装。之后再登录。",
+    signIn: "登录 {{name}}",
+    open: "在连接器页设置 {{name}}",
+    openHint:
+      "打开连接器页中 {{name}} 的 {{device}} 这一行，在那里点一下继续。",
   },
   remote: {
     run: "替我设置",
@@ -63,6 +78,8 @@ export const connectionSetup: Translation<typeof en> = {
     installed: "已安装",
     signIn: "等待登录",
     signedIn: "已登录",
+    connector: "在这台设备上安装并登录 {{name}}",
+    connectorDone: "{{name}} 已登录",
     registered: "已登记到 Foundry",
     checked: "验证通过",
     checking: "正在用一轮简短对话验证…",

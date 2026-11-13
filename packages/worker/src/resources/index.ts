@@ -45,6 +45,7 @@ export {
 export { McpStdioClient } from "./providers/mcp-stdio.js";
 export {
   createComputeProvider,
+  removeIdleSessionScratches,
   type ComputeProvider,
   type ComputeProviderOptions,
 } from "./providers/compute.js";

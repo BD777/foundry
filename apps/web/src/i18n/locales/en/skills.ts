@@ -71,6 +71,10 @@ export const skills = {
       "{{name}} is required by {{requirers}} and cannot be disabled.",
   },
   workspace: {
+    listingBudget_one:
+      "Claude Code sessions here list {{count}} Skills in a listing of {{budget}} characters; at least {{without}} of them will show by name only, without a description. Turn off Skills this workspace does not need so the rest keep theirs.",
+    listingBudget_other:
+      "Claude Code sessions here list {{count}} Skills in a listing of {{budget}} characters; at least {{without}} of them will show by name only, without a description. Turn off Skills this workspace does not need so the rest keep theirs.",
     filterAll: "All skills",
     filterSelected: "Selected in workspace",
     filterUnselected: "Not selected",

@@ -170,8 +170,11 @@ type Server struct {
 	// Work dispatch and control serialize so a completed stop cannot race a new fire.
 	workMu        sync.Mutex
 	workerUpdates workerUpdates
-	deviceRunners deviceRunners
-	setupCode     string
+	// connectorsOnConnect rate-limits reading device-held connectors again
+	// when a device connects (device_connector_refresh.go).
+	connectorsOnConnect deviceConnectorRefreshes
+	deviceRunners       deviceRunners
+	setupCode           string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
 	stream      *eventstream.Hub
@@ -315,12 +318,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.resources = server.resources
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
-	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations, server.hub)
+	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
 	server.feishuGateway.UsePermission(store, server.connectors.Confirmations)
 	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
-	server.connectors.Cloudflare.UseNativeWork(server.hub)
-	server.connectors.AppStoreConnect.UseNativeWork(server.hub)
-	server.connectors.Extensions.UseNativeWork(server.hub)
 	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
@@ -343,6 +343,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.hub.work.Go(func() { server.bundleRolloutsOnConnect(ctx, deviceID) })
 		// Device-network connector instances are probed from the new device.
 		server.hub.work.Go(func() { server.probeExtensionsOnDevice(ctx, deviceID) })
+		// What the device's previous Worker reported about its device-held
+		// connectors is read again.
+		server.hub.work.Go(func() { server.refreshDeviceConnectorsOnConnect(ctx, deviceID) })
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.

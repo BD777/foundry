@@ -731,6 +731,7 @@ export const chat: Translation<typeof en> = {
       progress: "已接收 {{received}} / {{total}}",
       progressUnknown: "已接收 {{received}}",
       downloading: "正在下载文件…",
+      loadingImage: "正在加载图片…",
     },
     label: "上下文详情",
     close: "关闭上下文详情",
@@ -774,6 +775,12 @@ export const chat: Translation<typeof en> = {
     fileChanged: "本轮之后，{{device}}上的这个文件又被修改过。",
     fileBinary: "{{size}}，无法预览。",
     fileBinaryDownload: "二进制文件，无法预览，请下载后打开。",
+    fileImageTooLarge:
+      "图片为 {{size}}，超过 {{limit}} 的在线预览上限。请下载后查看。",
+    fileImageDimensions: "{{width}} × {{height}} · {{size}}",
+    fileImageActualSize: "以 100% 查看 {{name}}",
+    fileImageFit: "让 {{name}} 适应面板宽度",
+    fileImageRenderFailed: "浏览器无法显示这张图片，请重新读取。",
     deviceFile: {
       where: "位于 {{device}}，在工作区之外；仅你作为设备所有者可以打开：",
       secret: "看起来是密钥（{{size}}）：在你点击显示前保持隐藏。",

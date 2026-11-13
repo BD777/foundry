@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"log"
+	"slices"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -27,7 +28,7 @@ func (l *Leases) DeviceDisconnected(ctx context.Context, deviceID string) error 
 	if err != nil {
 		return err
 	}
-	for _, lease := range state.live {
+	for _, lease := range sortedLive(state) {
 		if lease.HolderDeviceID == deviceID && lease.State == store.LeaseActive && lease.HolderOfflineSince == "" {
 			lease.HolderOfflineSince = formatTime(now)
 			state.touch(lease)
@@ -48,7 +49,7 @@ func (l *Leases) DeviceConnected(ctx context.Context, deviceID string) error {
 		return err
 	}
 	now := l.Now().UTC()
-	for _, lease := range state.live {
+	for _, lease := range sortedLive(state) {
 		if lease.HolderDeviceID == deviceID && lease.HolderOfflineSince != "" {
 			lease.HolderOfflineSince = ""
 			state.touch(lease)
@@ -62,17 +63,39 @@ func (l *Leases) DeviceConnected(ctx context.Context, deviceID string) error {
 			l.resendReset(state, fence, now)
 			continue
 		}
+		// Fence below the oldest live lease, not past it: shared leases
+		// on the instance keep running.
 		instance := state.instances[fence.ResourceID]
+		generation := fence.Generation
+		for _, lease := range state.live[fence.ResourceID] {
+			generation = min(generation, lease.Generation)
+		}
 		state.resets = append(state.resets, resetJob{sourceID: deviceID, request: store.ResourceResetRequest{
-			ResourceID: fence.ResourceID, Key: instance.Key, Type: instance.Type, Generation: fence.Generation,
+			ResourceID: fence.ResourceID, Key: instance.Key, Type: instance.Type, Generation: generation,
 			Reason: "device reconnected",
 		}})
+	}
+	for _, leases := range state.pending {
+		for _, lease := range leases {
+			if lease.SourceID == deviceID {
+				l.resendLeaseReset(state, lease, now)
+			}
+		}
 	}
 	l.settle(ctx, state, now)
 	return l.save(ctx, state)
 }
 
+// resendReset asks again for a reset of the whole instance. With live
+// leases on it there is nothing to reset: fencing them would end them on
+// the device while the server still holds them live.
 func (l *Leases) resendReset(state *leaseState, fence *store.ResourceFence, now time.Time) {
+	if len(state.live[fence.ResourceID]) > 0 {
+		fence = state.fence(fence.ResourceID, fence.SourceID)
+		fence.Resetting, fence.Unconfirmed, fence.ResetSince = false, false, ""
+		state.sources[fence.SourceID] = true
+		return
+	}
 	instance := state.instances[fence.ResourceID]
 	fence = state.fence(fence.ResourceID, fence.SourceID)
 	fence.Resetting, fence.Unconfirmed, fence.ResetSince = true, false, formatTime(now)
@@ -83,14 +106,42 @@ func (l *Leases) resendReset(state *leaseState, fence *store.ResourceFence, now 
 	state.sources[fence.SourceID] = true
 }
 
+// resendLeaseReset asks again to stop an ended shared lease's commands.
+func (l *Leases) resendLeaseReset(state *leaseState, lease *store.ResourceLease, now time.Time) {
+	instance := state.instances[lease.ResourceID]
+	lease.ResetSince = formatTime(now)
+	state.touch(lease)
+	state.resets = append(state.resets, resetJob{sourceID: lease.SourceID, request: store.ResourceResetRequest{
+		ResourceID: lease.ResourceID, Key: instance.Key, Type: instance.Type, Generation: lease.Generation,
+		LeaseOnly: true, Reason: nameOr(lease.EndReason, "reset"),
+	}})
+}
+
 // ResetDone: the hosting device fenced and reset an instance at
-// generation. An error leaves it unready until a reset succeeds.
+// generation, or stopped the one ended shared lease at generation. An
+// error leaves the instance unready until a reset succeeds.
 func (l *Leases) ResetDone(ctx context.Context, resourceID string, generation int64, resetErr string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	state, err := l.load(ctx)
 	if err != nil {
 		return err
+	}
+	for _, lease := range state.pending[resourceID] {
+		if lease.Generation != generation {
+			continue
+		}
+		if resetErr != "" {
+			// Kept pending: Sweep asks again after ResetAckTimeout.
+			log.Printf("resource %s: stopping lease %s failed: %s", resourceID, lease.ID, textcut.Excerpt(resetErr, 200))
+			return nil
+		}
+		lease.ResetSince = ""
+		state.removePending(lease)
+		state.touch(lease)
+		now := l.Now().UTC()
+		l.settle(ctx, state, now)
+		return l.save(ctx, state)
 	}
 	fence := state.fences[resourceID]
 	if fence == nil || fence.Generation != generation || !(fence.Resetting || fence.Unconfirmed) {
@@ -160,6 +211,15 @@ func (l *Leases) Sweep(ctx context.Context) error {
 			if spec := l.specIn(state, lease); !parseTime(lease.PreemptAt).Add(-spec.PreemptWarning).After(now) {
 				lease.WarnedAt = formatTime(now)
 				state.touch(lease)
+			}
+		}
+	}
+	for _, leases := range state.pending {
+		for _, lease := range slices.Clone(leases) {
+			// Unconfirmed in time: ask again. Only an exclusive request
+			// waits for it; the instance's other leases keep running.
+			if l.hostOnline(lease.SourceID) && !parseTime(lease.ResetSince).Add(l.Config.ResetAckTimeout).After(now) {
+				l.resendLeaseReset(state, lease, now)
 			}
 		}
 	}
@@ -266,6 +326,12 @@ func (l *Leases) Recover(ctx context.Context) error {
 			lease.HolderOfflineSince = formatTime(now)
 		}
 		state.touch(lease)
+	}
+	for _, leases := range state.pending {
+		for _, lease := range leases {
+			lease.ResetSince = formatTime(now)
+			state.touch(lease)
+		}
 	}
 	for _, wait := range state.waits {
 		if wait.RetainUntil < grace {

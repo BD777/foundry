@@ -8,14 +8,14 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/channels"
+	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -50,6 +50,7 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 	return channels.NewRunner(channels.Ports{
 		Store: st, Open: s.openMessageChannelSource, Inbox: messageChannelInbox{s},
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
+		ContextHint: s.messageChannelContextHint, Session: s.messageChannelSessionState,
 	})
 }
 
@@ -78,6 +79,10 @@ func (s *Server) handleListMessageChannels(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		list.Channels = append(list.Channels, view)
+	}
+	if list.ChannelSessionIDs, err = st.MessageChannelSessions(r.Context(), agent.ID, ""); err != nil {
+		writeResult(w, nil, err)
+		return
 	}
 	list.Sources, err = s.messageChannelSources(r.Context(), agent.UserID)
 	writeResult(w, list, err)
@@ -135,7 +140,27 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	}
 	record.Name, record.Enabled, record.Source, record.Filters = channel.Name, channel.Enabled, channel.Source, channel.Filters
 	record.Guide, record.SessionKey, record.Scope, record.Limits = channel.Guide, channel.SessionKey, channel.Scope, channel.Limits
+	record.Session = channel.Session
 	record.SkillName, record.UpdatedAt = channels.SkillName(record.MessageChannel), now
+	if channel.WorkspaceID != "" && channel.WorkspaceID != record.WorkspaceID {
+		if err := s.checkMessageChannelWorkspace(ctx, r, agent, channel.WorkspaceID); err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		record.WorkspaceID = channel.WorkspaceID
+		if err := s.seedMessageChannelInstructions(ctx, record, true); err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+	}
+	if record.WorkspaceID == "" {
+		workspaceID, err := s.createMessageChannelWorkspace(ctx, agent, record)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		record.WorkspaceID = workspaceID
+	}
 	if err := st.SaveMessageChannel(ctx, record); err != nil {
 		writeResult(w, nil, err)
 		return
@@ -305,6 +330,7 @@ func (s *Server) messageChannelView(ctx context.Context, agent store.PersonalAge
 	if err != nil {
 		return view, err
 	}
+	view.Workspace = s.messageChannelWorkspaceView(ctx, record)
 	view.SessionIDs, err = st.MessageChannelSessions(ctx, agent.ID, record.ID)
 	return view, err
 }
@@ -350,10 +376,12 @@ func (s *Server) messageChannelSources(ctx context.Context, userID string) ([]st
 		if err != nil {
 			continue
 		}
-		if spec, _ := s.messageChannelFeed(ctx, userID, app, data); spec == nil {
+		spec, _ := s.messageChannelFeed(ctx, userID, app, data)
+		if spec == nil {
 			continue
 		}
-		sources = append(sources, store.MessageChannelSource{Kind: account.Provider, AccountID: account.ID, InstanceID: app.ID, Label: app.Label})
+		capabilities := channels.Capabilities(spec.Envelope)
+		sources = append(sources, store.MessageChannelSource{Kind: account.Provider, AccountID: account.ID, InstanceID: app.ID, Label: app.Label, Capabilities: &capabilities})
 	}
 	return sources, nil
 }
@@ -482,11 +510,29 @@ func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, 
 	}
 	channel.SessionKey = input.SessionKey
 	if channel.SessionKey == "" {
-		channel.SessionKey = "conversation"
+		channel.SessionKey = "thread"
 	}
 	if channel.SessionKey != "conversation" && channel.SessionKey != "thread" {
 		return channel, bad("sessionKey is conversation or thread")
 	}
+	rule := channels.SessionRule(store.MessageChannel{Session: input.Session})
+	if !slices.Contains([]int{0, 30, 60, 240, 720, 1440, 4320, 10080}, rule.IdleMinutes) {
+		return channel, bad("session.idleMinutes is 0 (never), 30, 60, 240, 720, 1440, 4320 or 10080")
+	}
+	commands := []string{}
+	for _, command := range rule.ResetCommands {
+		if command = strings.TrimSpace(command); command != "" && !slices.Contains(commands, command) {
+			if utf8.RuneCountInString(command) > 40 || strings.ContainsFunc(command, unicode.IsSpace) {
+				return channel, bad("a new-session command is one word of at most 40 characters")
+			}
+			commands = append(commands, command)
+		}
+	}
+	if len(commands) > 5 {
+		return channel, bad("at most 5 new-session commands")
+	}
+	channel.Session = &store.MessageChannelSessionRule{IdleMinutes: rule.IdleMinutes, ResetCommands: commands}
+	channel.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	scope := input.Scope
 	if scope.ConnectorDefault == "" {
 		scope.ConnectorDefault = "inherit"
@@ -604,6 +650,18 @@ func (s *Server) messageChannelActions(ctx context.Context, agent store.Personal
 		}
 		out[id] = append(out[id], store.MessageChannelAction{At: event.CreatedAt, Kind: kind, Summary: detail.text})
 	}
+	sessionIDs := make([]string, 0, len(bySession))
+	for id := range bySession {
+		sessionIDs = append(sessionIDs, id)
+	}
+	if st, ok := s.store.(store.MessageChannelStore); ok {
+		refused, _ := st.MessageChannelSessionEvents(ctx, sessionIDs, "Workspace write refused", 200)
+		for _, event := range refused {
+			if id := owner(event.SessionID, event.At); id != "" {
+				out[id] = append(out[id], store.MessageChannelAction{At: event.At, Kind: "workspace_write_refused", Summary: event.Detail})
+			}
+		}
+	}
 	items, _ := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen, store.PendingReplied, store.PendingDone, store.PendingDismissed, store.PendingSuperseded}, "", 300)
 	for _, item := range items {
 		if bySession[item.SessionID] == nil {
@@ -675,13 +733,13 @@ func (s *Server) tellAboutMessageChannel(ctx context.Context, channel store.Mess
 // messageChannelInbox carries a channel's turns through the assistant inbox.
 type messageChannelInbox struct{ s *Server }
 
-func (i messageChannelInbox) Deliver(ctx context.Context, channel store.MessageChannelRecord, key, messageID, text string) (string, error) {
+func (i messageChannelInbox) Deliver(ctx context.Context, channel store.MessageChannelRecord, turn channels.Turn) (string, error) {
 	agent, err := i.s.store.GetAssistant(ctx, channel.AssistantID)
 	if err != nil {
 		return "", err
 	}
-	entry, err := i.s.assistant.CaptureInbox(ctx, agent, channels.InboxChannel(channel.ID, key),
-		store.PersonalAgentInboxCapture{MessageID: messageID, Text: text})
+	entry, err := i.s.assistant.CaptureInbox(ctx, agent, turn.InboxChannel,
+		store.PersonalAgentInboxCapture{MessageID: turn.MessageID, Text: turn.Text})
 	return entry.ID, err
 }
 
@@ -691,78 +749,6 @@ func (i messageChannelInbox) Status(ctx context.Context, assistantID, inboxID st
 		return channels.InboxStatus{}, err
 	}
 	return channels.InboxStatus{Status: entry.Status, WaitingReason: entry.WaitingReason, SessionID: entry.SessionID, ResultStatus: entry.ResultStatus}, nil
-}
-
-// channelSessionTitle names a channel conversation's new session.
-func (s *Server) channelSessionTitle(ctx context.Context, entry store.PersonalAgentInboxEntry) string {
-	st, ok := s.store.(store.MessageChannelStore)
-	if !ok {
-		return ""
-	}
-	parts := strings.SplitN(entry.Channel, ":", 3)
-	if len(parts) != 3 {
-		return ""
-	}
-	channel, err := st.GetMessageChannel(ctx, parts[1])
-	if err != nil {
-		return ""
-	}
-	title := channel.Name
-	records, _ := st.ListMessageChannelDeliveries(ctx, channel.ID, []string{store.MessageDeliveryQueued}, 200)
-	for _, record := range records {
-		if record.InboxID == entry.ID {
-			conversation := record.Envelope.Conversation
-			name := conversation.Name
-			if name == "" {
-				name = record.Envelope.Sender.Name
-			}
-			if name != "" {
-				title += " · " + name
-			}
-			break
-		}
-	}
-	return clipRunes(title, 120)
-}
-
-func clipRunes(s string, limit int) string {
-	if utf8.RuneCountInString(s) <= limit {
-		return s
-	}
-	return string([]rune(s)[:limit])
-}
-
-// channelSkillFiles are the skills of the assistant's channels, written
-// into its home before each run.
-func (s *Server) channelSkillFiles(ctx context.Context, agent store.PersonalAgent) []personalagent.WorkspaceFile {
-	st, ok := s.store.(store.MessageChannelStore)
-	if !ok {
-		return nil
-	}
-	records, err := st.ListMessageChannels(ctx, agent.UserID, agent.ID)
-	if err != nil {
-		return nil
-	}
-	language := ""
-	if person, err := s.store.GetUser(ctx, agent.UserID); err == nil {
-		language = person.Locale
-	}
-	var files []personalagent.WorkspaceFile
-	for _, record := range records {
-		hint := ""
-		if account, err := s.messageChannelAccount(ctx, agent.UserID, record.Source.AccountID); err == nil {
-			if app, data, err := s.messageChannelInstance(ctx, agent.UserID, account); err == nil {
-				if spec, _ := s.messageChannelFeed(ctx, agent.UserID, app, data); spec != nil {
-					hint = channels.LongPoll{Spec: *spec}.ContextHint(language)
-				}
-			}
-		}
-		files = append(files, personalagent.WorkspaceFile{
-			Path:    prompt.AssistantSkillPath(channels.SkillName(record.MessageChannel)),
-			Content: channels.SkillFile(record.MessageChannel, s.messageChannelSourceLabel(ctx, record), hint),
-		})
-	}
-	return files
 }
 
 // channelSessionOfAssistant reports whether sessionID is a message channel
@@ -787,4 +773,139 @@ func (s *Server) pruneMessageChannels(ctx context.Context) {
 	if err := st.PruneMessageChannelDeliveries(ctx, now.Add(-24*time.Hour).Format(time.RFC3339Nano), now.Add(-30*24*time.Hour).Format(time.RFC3339Nano)); err != nil && ctx.Err() == nil {
 		s.connectors.ServerHeld.Logf("message channels: prune: %v", err)
 	}
+}
+
+// handleTestMessageChannelRules tries rules before they are saved, with the
+// channel's own matcher: on samples the person makes up, and on the
+// source's recent messages the person's channels saw (filtered-out ones
+// keep only their opening).
+func (s *Server) handleTestMessageChannelRules(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var input store.MessageChannelTestInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if len(input.Filters.Rules) > 20 || len(input.Samples) > 20 {
+		writeError(w, http.StatusBadRequest, "at most 20 rules and 20 samples")
+		return
+	}
+	result := store.MessageChannelTestResult{Verdicts: []store.MessageChannelVerdict{}}
+	verdict := func(envelope store.MessageEnvelope) store.MessageChannelVerdict {
+		decision, checks := channels.Explain(input.Filters.Rules, envelope)
+		out := store.MessageChannelVerdict{Envelope: envelope, Keep: decision.Keep, Rule: decision.Rule, Checks: []store.MessageChannelRuleCheck{}}
+		for _, check := range checks {
+			out.Checks = append(out.Checks, store.MessageChannelRuleCheck{RuleID: check.RuleID, Miss: check.Miss})
+		}
+		return out
+	}
+	for i, sample := range input.Samples {
+		envelope := store.MessageEnvelope{ID: fmt.Sprintf("sample-%d", i), Kind: "message", Op: "new", Text: sample.Text,
+			Conversation: store.MessageEnvelopeConversation{ID: sample.ConversationID, Kind: sample.ConversationKind},
+			Sender:       store.MessageEnvelopeSender{ID: sample.SenderID, IsSelf: sample.FromSelf}, MentionsMe: sample.MentionsMe}
+		item := verdict(envelope)
+		index := i
+		item.Sample = &index
+		result.Verdicts = append(result.Verdicts, item)
+	}
+	if input.Recent && input.SourceAccountID != "" {
+		recent, err := s.recentMessageChannelEnvelopes(r.Context(), agent.UserID, input.SourceAccountID, 30)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		for _, envelope := range recent {
+			if envelope.Text != "" {
+				result.Verdicts = append(result.Verdicts, verdict(envelope))
+				continue
+			}
+			// A filtered-out message keeps no text: check everything but
+			// the trigger words, and say so.
+			rules := make([]store.MessageChannelRule, len(input.Filters.Rules))
+			for i, rule := range input.Filters.Rules {
+				rule.TextPrefixes = nil
+				rules[i] = rule
+			}
+			decision, checks := channels.Explain(rules, envelope)
+			item := store.MessageChannelVerdict{Envelope: envelope, Keep: decision.Keep, Rule: decision.Rule, TextUnknown: true, Checks: []store.MessageChannelRuleCheck{}}
+			for _, check := range checks {
+				item.Checks = append(item.Checks, store.MessageChannelRuleCheck{RuleID: check.RuleID, Miss: check.Miss})
+			}
+			result.Verdicts = append(result.Verdicts, item)
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleMessageChannelPeers lists the conversations and senders the
+// person's channels saw recently from a source, for picking them by name.
+func (s *Server) handleMessageChannelPeers(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	recent, err := s.recentMessageChannelEnvelopes(r.Context(), agent.UserID, r.URL.Query().Get("accountId"), 500)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	peers := store.MessageChannelPeers{Conversations: []store.MessageChannelPeer{}, Senders: []store.MessageChannelPeer{}}
+	conversations, senders := map[string]int{}, map[string]int{}
+	add := func(list *jsonempty.List[store.MessageChannelPeer], index map[string]int, peer store.MessageChannelPeer) {
+		if peer.ID == "" {
+			return
+		}
+		if i, ok := index[peer.ID]; ok {
+			(*list)[i].Count++
+			if (*list)[i].Name == "" {
+				(*list)[i].Name = peer.Name
+			}
+			return
+		}
+		index[peer.ID] = len(*list)
+		*list = append(*list, peer)
+	}
+	for _, envelope := range recent {
+		add(&peers.Conversations, conversations, store.MessageChannelPeer{ID: envelope.Conversation.ID, Name: envelope.Conversation.Name,
+			ConversationKind: envelope.Conversation.Kind, Count: 1, LastSeenAt: envelope.OccurredAt})
+		add(&peers.Senders, senders, store.MessageChannelPeer{ID: envelope.Sender.ID, Name: envelope.Sender.Name, Count: 1, LastSeenAt: envelope.OccurredAt})
+	}
+	writeJSON(w, http.StatusOK, peers)
+}
+
+// recentMessageChannelEnvelopes are the newest messages, at most limit and
+// each once, that any of the person's channels on this source account saw.
+func (s *Server) recentMessageChannelEnvelopes(ctx context.Context, userID, accountID string, limit int) ([]store.MessageEnvelope, error) {
+	st, err := s.messageChannelStore()
+	if err != nil {
+		return nil, err
+	}
+	records, err := st.ListMessageChannels(ctx, userID, "")
+	if err != nil {
+		return nil, err
+	}
+	var all []store.MessageChannelDeliveryRecord
+	for _, record := range records {
+		if record.Source.AccountID != accountID {
+			continue
+		}
+		deliveries, err := st.ListMessageChannelDeliveries(ctx, record.ID, nil, limit)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, deliveries...)
+	}
+	slices.SortFunc(all, func(a, b store.MessageChannelDeliveryRecord) int { return strings.Compare(b.CreatedAt, a.CreatedAt) })
+	seen := map[string]bool{}
+	out := []store.MessageEnvelope{}
+	for _, record := range all {
+		if seen[record.Envelope.ID] || len(out) >= limit {
+			continue
+		}
+		seen[record.Envelope.ID] = true
+		out = append(out, record.Envelope)
+	}
+	return out, nil
 }

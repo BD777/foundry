@@ -10,7 +10,12 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { SocksClient } from "socks";
 import { foundryStatePath } from "../state-root.js";
-import { hardenPrivateFile, readJSONFile, writeJSON } from "../storage.js";
+import {
+  hardenPrivateFile,
+  readJSONFile,
+  tryReadJSONFile,
+  writeJSON,
+} from "../storage.js";
 
 export interface WorkerProxyConfig {
   url: string;
@@ -54,12 +59,57 @@ export function readWorkerProxy(): WorkerProxyConfig | undefined {
       validateProxyURL(config.url);
       hardenPrivateFile(path);
     }
+    lastReadProxy = { config };
     return config;
-  } catch {
+  } catch (error) {
+    // Only the classification leaves: a JSON error quotes the file.
     throw new Error(
-      "Worker proxy configuration is unreadable or invalid. Use foundry-worker proxy set <url> or proxy clear to repair it.",
+      `Worker proxy configuration is unreadable or invalid${readFailureCode(error)}. Use foundry-worker proxy set <url> or proxy clear to repair it.`,
     );
   }
+}
+
+/** The last configuration this process read whole; unset before the first. */
+let lastReadProxy: { config: WorkerProxyConfig | undefined } | undefined;
+
+function readFailureCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  if (typeof code === "string" && /^[A-Z_0-9]+$/.test(code))
+    return ` (${code})`;
+  return error instanceof SyntaxError ? " (malformed JSON)" : "";
+}
+
+/**
+ * The saved configuration the daemon goes by. A read that fails after one
+ * succeeded (a file being rewritten, a transient I/O error) keeps the last
+ * configuration read whole: a failed read is not a change, and must not
+ * leave the control socket unable to reconnect until the file reads again
+ * (DEV-217). Before any read succeeded there is nothing to keep: it throws.
+ */
+export function savedWorkerProxy(
+  log: (message: string) => void = console.error,
+): WorkerProxyConfig | undefined {
+  const known = lastReadProxy;
+  try {
+    const config = readWorkerProxy();
+    loggedFallback = "";
+    return config;
+  } catch (error) {
+    if (!known) throw error;
+    // Every request resolves the proxy: one line per failure, not per request.
+    const message = errorText(error);
+    if (message !== loggedFallback)
+      log(
+        `${new Date().toISOString()} ${message} Keeping the configuration read last.`,
+      );
+    loggedFallback = message;
+    return known.config;
+  }
+}
+let loggedFallback = "";
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 export function setWorkerProxy(url: string, noProxy?: string): void {
   writeJSON(workerProxyPath(), {
@@ -77,11 +127,143 @@ export function describeProxy(raw: string): string {
   return `${url.protocol}//${url.hostname}:${url.port || (url.protocol === "https:" ? "443" : url.protocol === "http:" ? "80" : "1080")}`;
 }
 
+/**
+ * How the Worker reaches the server while the proxy it is configured with
+ * keeps failing (DEV-217: a dead proxy in worker-proxy.json kept a device
+ * offline for hours). Set and cleared by ServerRouteSupervisor; applies only
+ * while the configuration still names that proxy.
+ */
+export interface ServerRouteFallback {
+  /** The configured proxy URL this replaces. */
+  configured: string;
+  route: "environment" | "direct";
+  /** With route environment, the proxy URL the environment names. */
+  environmentProxy?: string;
+  since: string;
+  reason: string;
+}
+
+/**
+ * Kept in the state root, so the execution host's requests and a restarted
+ * Worker take the same route; read per request like worker-proxy.json.
+ */
+export const serverRoutePath = (): string =>
+  foundryStatePath("server-route-fallback.json");
+const routeListeners = new Set<() => void>();
+
+export function serverRouteFallback(): ServerRouteFallback | undefined {
+  const saved = tryReadJSONFile<ServerRouteFallback>(serverRoutePath());
+  return saved &&
+    typeof saved.configured === "string" &&
+    (saved.route === "direct" ||
+      (saved.route === "environment" &&
+        typeof saved.environmentProxy === "string"))
+    ? saved
+    : undefined;
+}
+
+/** Switches the route; the control socket reconnects on the new one. */
+export function setServerRouteFallback(
+  fallback: ServerRouteFallback | undefined,
+): void {
+  if (fallback) writeJSON(serverRoutePath(), fallback);
+  else rmSync(serverRoutePath(), { force: true });
+  for (const listener of routeListeners) listener();
+}
+
+export function onServerRouteChange(listener: () => void): () => void {
+  routeListeners.add(listener);
+  return () => routeListeners.delete(listener);
+}
+
+/** The fallback for the device's registration, without credentials. */
+export function reportedRouteFallback():
+  | {
+      configured: string;
+      route: "environment" | "direct";
+      environmentProxy?: string;
+      since: string;
+      reason: string;
+    }
+  | undefined {
+  const fallback = serverRouteFallback();
+  if (!fallback) return undefined;
+  return {
+    configured: describeProxy(fallback.configured),
+    route: fallback.route,
+    ...(fallback.environmentProxy
+      ? { environmentProxy: describeProxy(fallback.environmentProxy) }
+      : {}),
+    since: fallback.since,
+    reason: fallback.reason,
+  };
+}
+
+/** The proxy the environment names, the saved setting aside. */
+function environmentProxy(env: NodeJS.ProcessEnv): string | undefined {
+  return (
+    env.FOUNDRY_PROXY ||
+    env.HTTPS_PROXY ||
+    env.https_proxy ||
+    env.ALL_PROXY ||
+    env.all_proxy ||
+    env.HTTP_PROXY ||
+    env.http_proxy ||
+    undefined
+  );
+}
+
+/**
+ * The routes to try, in order, when the configured proxy keeps failing:
+ * the environment's proxy when the saved setting overrode a different one,
+ * then direct.
+ */
+export function serverRouteAlternatives(
+  target: string | URL,
+  env: NodeJS.ProcessEnv = process.env,
+): Array<Pick<ServerRouteFallback, "route" | "environmentProxy">> {
+  const configured = configuredServerProxy(target, env);
+  if (!configured.url) return [];
+  const alternatives: Array<
+    Pick<ServerRouteFallback, "route" | "environmentProxy">
+  > = [];
+  const fromEnvironment = environmentProxy(env);
+  if (configured.source === "setting" && fromEnvironment) {
+    try {
+      const proxy = validateProxyURL(fromEnvironment);
+      if (proxy !== configured.url)
+        alternatives.push({ route: "environment", environmentProxy: proxy });
+    } catch {
+      // An invalid environment proxy is no alternative.
+    }
+  }
+  alternatives.push({ route: "direct" });
+  return alternatives;
+}
+
 export function resolveServerProxy(
   target: string | URL,
   env: NodeJS.ProcessEnv = process.env,
 ): { url?: string; source: string; noProxy: string } {
-  const saved = readWorkerProxy();
+  const configured = configuredServerProxy(target, env);
+  const fallback = configured.url ? serverRouteFallback() : undefined;
+  if (!fallback || !configured.url || configured.url !== fallback.configured)
+    return configured;
+  return {
+    ...(fallback.route === "environment" && fallback.environmentProxy
+      ? { url: fallback.environmentProxy }
+      : {}),
+    source: `fallback ${fallback.route}`,
+    noProxy: configured.noProxy,
+  };
+}
+
+/** The route the configuration names, whatever the fallback. */
+export function configuredServerProxy(
+  target: string | URL,
+  env: NodeJS.ProcessEnv = process.env,
+): { url?: string; source: string; noProxy: string } {
+  const saved = savedWorkerProxy();
   const url = new URL(target);
   // WS uses exactly the same bypass semantics as its HTTP handshake.
   url.protocol =
@@ -272,7 +454,7 @@ export function workerProxyEnvironment(
   env: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   const next = { ...env };
-  const saved = readWorkerProxy();
+  const saved = savedWorkerProxy();
   const resolved = target
     ? resolveServerProxy(target, env)
     : {
@@ -377,23 +559,52 @@ export function serverTransportError(
   }
 }
 
-/** Changes reconnect only the control socket; execution-host HTTP reads config per request. */
-export function watchWorkerProxy(onChange: () => void): () => void {
+/** The configuration in words, without credentials. */
+function describeSaved(config: WorkerProxyConfig | undefined): string {
+  if (!config) return "none saved";
+  return `${describeProxy(config.url)}${config.noProxy !== undefined ? ` no-proxy "${config.noProxy}"` : ""}`;
+}
+
+/**
+ * Changes reconnect only the control socket; execution-host HTTP reads config
+ * per request. Only a configuration read whole that differs from the one the
+ * connection started with is a change; a read that fails is logged and
+ * waited out (DEV-217: one failed read used to end the connection).
+ * onChange gets the change in words, without credentials.
+ */
+export function watchWorkerProxy(
+  onChange: (change: string) => void,
+  log: (message: string) => void = console.error,
+): () => void {
   const path = workerProxyPath();
-  const fingerprint = () => {
-    try {
-      return JSON.stringify(readWorkerProxy());
-    } catch {
-      return "invalid";
-    }
-  };
-  let previous = fingerprint();
+  let previous: WorkerProxyConfig | undefined;
+  try {
+    previous = savedWorkerProxy(() => {});
+  } catch {
+    previous = undefined;
+  }
+  let previousFingerprint = JSON.stringify(previous ?? null);
+  let failing = "";
   const listener = () => {
-    const current = fingerprint();
-    if (current !== previous) {
-      previous = current;
-      onChange();
+    let current: WorkerProxyConfig | undefined;
+    try {
+      current = readWorkerProxy();
+    } catch (error) {
+      const message = errorText(error);
+      if (message !== failing)
+        log(
+          `${new Date().toISOString()} ${message} Not a change: the connection keeps its configuration.`,
+        );
+      failing = message;
+      return;
     }
+    failing = "";
+    const fingerprint = JSON.stringify(current ?? null);
+    if (fingerprint === previousFingerprint) return;
+    const change = `${describeSaved(previous)} -> ${describeSaved(current)}`;
+    previous = current;
+    previousFingerprint = fingerprint;
+    onChange(change);
   };
   watchFile(path, { persistent: false, interval: 1000 }, listener);
   return () => unwatchFile(path, listener);

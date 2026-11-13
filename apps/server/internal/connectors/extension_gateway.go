@@ -59,7 +59,6 @@ type ExtensionGateway struct {
 	accounts    *externalaccounts.Service
 	descriptors func(context.Context, string, string) (store.ConnectorDescriptor, error)
 	Now         func() time.Time
-	nativeWork  gateway.NativeWork
 	permission  permission.Store
 	confirm     gateway.Confirmer
 }
@@ -110,7 +109,6 @@ func (g *ExtensionGateway) pipeline(kind string) *gateway.Pipeline {
 		},
 		Limits:      []gateway.Limit{extensionSessionRate.PerKey(func(l *gateway.Lease) string { return l.Grant.SessionID })},
 		Unavailable: func() error { return g.accounts.Integrations.Err() },
-		Work:        g.nativeWork,
 		Permission:  g.permission,
 		Confirm:     g.confirm,
 		Now:         func() time.Time { return g.Now() },
@@ -120,11 +118,6 @@ func (g *ExtensionGateway) pipeline(kind string) *gateway.Pipeline {
 
 func (g *ExtensionGateway) Serve(w http.ResponseWriter, r *http.Request, device gateway.Device, kind string) {
 	g.pipeline(kind).Serve(w, r, device)
-}
-
-func (g *ExtensionGateway) UseNativeWork(work gateway.NativeWork) {
-	// Each request gets its own pipeline; hold the value on the gateway.
-	g.nativeWork = work
 }
 
 func (g *ExtensionGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
@@ -146,7 +139,7 @@ func extensionHandleHash(handle string) string {
 
 func (g *ExtensionGateway) sessionAccount(ctx context.Context, sessionID, deviceID, owner, accountID, kind string) (store.AgentSession, store.ExternalAccount, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session, g.nativeWork, g.Now()) != nil {
+	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session) != nil {
 		return store.AgentSession{}, store.ExternalAccount{}, ErrExtensionAccess
 	}
 	if !takesConnectors(session) {
@@ -500,13 +493,23 @@ func writeExtensionEdgeAccessRequired(w http.ResponseWriter, status int, require
 type extensionAudit struct{ gateway *ExtensionGateway }
 
 func (a extensionAudit) Record(ctx context.Context, record gateway.Record) {
-	if record.Lease == nil {
+	grant := record.Grant
+	if record.Lease != nil {
+		grant = &record.Lease.Grant
+	}
+	if grant == nil {
 		return
 	}
 	call, _ := record.Need.Payload.(*extensionCall)
 	detail := &extensionAuditDetail{
-		Kind: record.Lease.Account.Provider, WorkspaceID: record.Lease.Session.WorkspaceID,
+		Kind: kindOfExtensionGatewayPath(record.Request.URL.Path), WorkspaceID: grant.WorkspaceID,
 		Method: record.Request.Method, Status: record.Status, Outcome: record.Outcome,
+	}
+	if record.Lease != nil {
+		detail.Kind, detail.WorkspaceID = record.Lease.Account.Provider, record.Lease.Session.WorkspaceID
+	}
+	if call == nil {
+		detail.Route = extensionGatewayRest(record.Request.URL.Path)
 	}
 	if call != nil {
 		detail.Route, detail.Domain, detail.Access = call.Route, call.Domain, call.Access
@@ -516,20 +519,42 @@ func (a extensionAudit) Record(ctx context.Context, record gateway.Record) {
 		}
 	}
 	if record.Denial != nil {
-		detail.Error = truncateExtensionAudit(record.Message)
+		detail.Error = truncateExtensionAudit(record.Denial.Reason + ": " + record.Message)
 	}
 	if len(detail.Route) > 300 {
 		detail.Route = detail.Route[:300]
 	}
 	line, _ := json.Marshal(detail)
 	event := store.ExternalAccountEvent{
-		AccountID: record.Lease.Account.ID, Kind: "extension_connector_request",
-		SessionID: record.Lease.Grant.SessionID, DeviceID: record.Lease.Grant.DeviceID,
+		AccountID: grant.AccountID, Kind: "extension_connector_request",
+		SessionID: grant.SessionID, DeviceID: grant.DeviceID,
 		ActorID: record.Device.OwnerUserID, Detail: string(line),
 	}
 	audit, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer done()
 	_ = a.gateway.store.AppendExternalAccountEvent(audit, event)
+}
+
+// kindOfExtensionGatewayPath is the connector kind in a gateway path
+// (/api/connectors/extensions/<kind>/gateway/…).
+func kindOfExtensionGatewayPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/api/connectors/extensions/")
+	if !ok {
+		return ""
+	}
+	kind, _, _ := strings.Cut(rest, "/")
+	if unescaped, err := url.PathUnescape(kind); err == nil {
+		return unescaped
+	}
+	return kind
+}
+
+// extensionGatewayRest is the upstream path of a gateway path.
+func extensionGatewayRest(path string) string {
+	if _, rest, ok := strings.Cut(path, "/gateway"); ok && strings.HasPrefix(path, "/api/connectors/extensions/") {
+		return rest
+	}
+	return path
 }
 
 func truncateExtensionAudit(message string) string {

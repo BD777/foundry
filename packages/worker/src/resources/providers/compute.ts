@@ -13,7 +13,11 @@
 //
 // A lease's commands, background ones included, are stopped when the lease
 // ends (reset); a session left idle is not closed, so a background job
-// outlives the gap between two calls.
+// outlives the gap between two calls. Each lease's commands get their own
+// temporary folder (TMPDIR), removed when the lease ends, so leases running
+// side by side do not share one. The server names a session's own scratch
+// folder after the session (sess_…) when the caller names none; those are
+// removed once unused for the session scratch idle time (three days).
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
@@ -23,12 +27,14 @@ import {
   copyFile,
   mkdir,
   open,
+  readdir,
   readFile,
   realpath,
   rename,
   rm,
   stat,
   unlink,
+  utimes,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -41,6 +47,7 @@ import { signalChildGroup } from "../../platform/process/process-group.js";
 import { foundryStatePath } from "../../platform/state-root.js";
 import { ArchiveError, unpackArchive, type ArchiveFormat } from "../archive.js";
 import { resourceSettings } from "../compute-settings.js";
+import { sessionScratchIdleMs } from "../resource-pool.js";
 import { execBounded, findOnPath } from "../exec.js";
 import {
   ProviderError,
@@ -78,6 +85,9 @@ export interface ComputeProviderOptions {
   /** The environment commands start from. */
   env?: () => NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
+  /** How long a session's own scratch folder outlives its last use. */
+  sessionScratchIdleMs?: number;
+  now?: () => number;
 }
 
 export interface ComputeProvider extends ResourceProvider {
@@ -104,6 +114,17 @@ export function createComputeProvider(
     workspacePaths: options.workspacePaths ?? (() => []),
     env: options.env ?? (() => process.env),
   };
+  const now = options.now ?? Date.now;
+  let lastSweep = 0;
+  const sweep = async (): Promise<void> => {
+    if (now() - lastSweep < sweepIntervalMs) return;
+    lastSweep = now();
+    const used = new Set(
+      [...sessions].flatMap((session) => session.scratches()),
+    );
+    const idleMs = options.sessionScratchIdleMs ?? sessionScratchIdleMs();
+    await removeIdleSessionScratches(root, idleMs, now(), used);
+  };
   return {
     id: computeBackend,
     type: "compute",
@@ -113,6 +134,7 @@ export function createComputeProvider(
     survivesDisconnect: true,
     async open(_key, lease) {
       if (!settings().allowRemoteCommands) throw remoteCommandsOff();
+      await sweep().catch(() => undefined);
       const session = new ComputeSession(context, lease, settings, () =>
         sessions.delete(session),
       );
@@ -139,11 +161,44 @@ function remoteCommandsOff(): ProviderError {
   );
 }
 
+/** How often idle session scratch folders are looked for at most. */
+const sweepIntervalMs = 60 * 60_000;
+/** The scratch folder the server names after a session. */
+const sessionScratchName = /^sess_[A-Za-z0-9_-]+$/;
+
+/**
+ * Removes session scratch folders (sess_…) not used for idleMs, except
+ * those a live lease used.
+ */
+export async function removeIdleSessionScratches(
+  root: string,
+  idleMs: number,
+  now: number,
+  used: Set<string>,
+): Promise<string[]> {
+  const removed: string[] = [];
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !sessionScratchName.test(entry.name)) continue;
+    if (used.has(entry.name)) continue;
+    const path = join(root, entry.name);
+    const info = await stat(path).catch(() => undefined);
+    if (!info || now - info.mtimeMs < idleMs) continue;
+    await rm(path, { recursive: true, force: true });
+    removed.push(entry.name);
+  }
+  return removed;
+}
+
 class ComputeSession implements ProviderSession {
   alive = true;
   /** Process groups (or processes on Windows) this lease started. */
   private readonly started = new Set<ChildProcess>();
   private readonly uploads = new Set<string>();
+  /** Scratch folders this lease used, by name. */
+  private readonly used = new Set<string>();
+  /** This lease's temporary folder, once a command needed it. */
+  private tmp?: string;
 
   constructor(
     private readonly context: ComputeContext,
@@ -191,7 +246,10 @@ class ComputeSession implements ProviderSession {
     this.closed();
   }
 
-  /** Stops this lease's commands and drops its unfinished uploads. */
+  /**
+   * Stops this lease's commands, drops its unfinished uploads and removes
+   * its temporary folder.
+   */
   async stop(): Promise<void> {
     for (const child of this.started) signalChildGroup(child, "SIGKILL");
     this.started.clear();
@@ -199,6 +257,25 @@ class ComputeSession implements ProviderSession {
       [...this.uploads].map((path) => rm(path, { force: true })),
     );
     this.uploads.clear();
+    // Its processes are stopped above; the folder may be large (a build's
+    // temporary files), so the reset answers without waiting for it.
+    if (this.tmp)
+      void rm(this.tmp, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    this.tmp = undefined;
+  }
+
+  /** The scratch folders this lease used. */
+  scratches(): string[] {
+    return [...this.used];
+  }
+
+  /** This lease's temporary folder (TMPDIR of its commands). */
+  private async tmpFolder(): Promise<string> {
+    this.tmp ??= join(this.context.root, ".tmp", this.lease.id);
+    await mkdir(this.tmp, { recursive: true, mode: 0o700 });
+    return this.tmp;
   }
 
   // --- run --------------------------------------------------------------
@@ -229,8 +306,12 @@ class ComputeSession implements ProviderSession {
       maxTailBytes,
       "tailBytes",
     );
+    const tmp = await this.tmpFolder();
     const env = {
       ...this.context.env(),
+      TMPDIR: tmp,
+      TMP: tmp,
+      TEMP: tmp,
       ...extraEnv(args.env),
       FOUNDRY_COMPUTE_FOLDER: folder.base,
       FOUNDRY_COMPUTE_LEASE: this.lease.id,
@@ -665,6 +746,9 @@ class ComputeSession implements ProviderSession {
     const scratch = name(args.scratch ?? "default", "scratch");
     const base = join(this.context.root, scratch);
     await mkdir(base, { recursive: true, mode: 0o700 });
+    this.used.add(scratch);
+    const at = new Date();
+    await utimes(base, at, at).catch(() => undefined);
     return { base: await realpath(base), label: `scratch ${scratch}` };
   }
 }

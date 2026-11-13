@@ -70,6 +70,30 @@ components:
         versionCheck:
           $ref: "#/components/schemas/ConnectorVersionCheck"
           x-go-type-skip-optional-pointer: false
+        skills:
+          $ref: "#/components/schemas/ConnectorToolSkills"
+          x-go-type-skip-optional-pointer: false
+    ConnectorToolSkills:
+      description:
+        Skills the tool's own npm package ships. Sessions that receive the connector get them
+        from the Skill library bundle that follows this package, at the version paired with the
+        device's copy of the tool.
+      type: object
+      required:
+        - path
+      additionalProperties: false
+      properties:
+        path:
+          description: The folder in the package holding the Skill folders.
+          type: string
+        default:
+          description:
+            Skill names sessions get by default. Absent gives every Skill of the bundle; a
+            workspace turns on others by selecting them on its Skills page.
+          type: array
+          maxItems: 32
+          items:
+            type: string
     ConnectorVersionCheck:
       description:
         ConnectorVersionCheck is what checking a new version of the connector's tool runs on a
@@ -135,6 +159,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConnectorAuthorizationScope"
+        presets:
+          description: Named selections over this group's listed scopes.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAuthorizationPreset"
         scopeSource:
           description: Where the scope list comes from; "All" is offered only when it is complete.
           $ref: "#/components/schemas/ConnectorScopeSource"
@@ -172,6 +201,32 @@ components:
           type: boolean
         impliedBy:
           description: Broader scopes that include this one; granted when any of them is.
+          type: array
+          items:
+            type: string
+    ConnectorAuthorizationPreset:
+      description: A named selection of every available listed scope except explicit exclusions.
+      type: object
+      required: [id, label, hint, excludeScopes]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        hint:
+          description: One sentence describing what the exclusions do and do not guarantee.
+          type: string
+        hints:
+          type: object
+          additionalProperties:
+            type: string
+        excludeScopes:
+          description: Listed scopes this preset leaves out.
           type: array
           items:
             type: string
@@ -998,15 +1053,33 @@ components:
           type: string
           enum: [ms, s, rfc3339]
           x-go-type: string
-    ConnectorEventsCondition:
-      description: True when the value at pointer, as text, equals equals.
+        cases:
+          description: Checked first, in order; the first case whose conditions all hold gives the value.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorEventsCase"
+    ConnectorEventsCase:
       type: object
-      required: [pointer, equals]
+      required: [when, value]
+      additionalProperties: false
+      properties:
+        when:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorEventsCondition"
+        value:
+          type: string
+    ConnectorEventsCondition:
+      description: True when the value at pointer, as text, equals equals, or equals the value at equalsPointer.
+      type: object
+      required: [pointer]
       additionalProperties: false
       properties:
         pointer:
           type: string
         equals:
+          type: string
+        equalsPointer:
           type: string
     ConnectorEventsContext:
       description:

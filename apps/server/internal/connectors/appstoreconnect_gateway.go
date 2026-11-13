@@ -119,10 +119,6 @@ func (g *AppStoreConnectGateway) Serve(w http.ResponseWriter, r *http.Request, d
 	g.pipeline.Serve(w, r, device)
 }
 
-func (g *AppStoreConnectGateway) UseNativeWork(work gateway.NativeWork) {
-	g.pipeline.Work = work
-}
-
 // UsePermission makes every gateway call re-read the assistant package and
 // route risk writes through confirmation.
 func (g *AppStoreConnectGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
@@ -150,7 +146,7 @@ func appStoreConnectAccess(binding store.ExternalAccountBinding) string {
 // resolves the one external account its handle names.
 func (g *AppStoreConnectGateway) sessionBinding(ctx context.Context, sessionID, deviceID, owner, accountID string) (store.AgentSession, appStoreConnectBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session, g.pipeline.Work, g.Now()) != nil {
+	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session) != nil {
 		return store.AgentSession{}, appStoreConnectBinding{}, ErrAppStoreConnectAccess
 	}
 	binding, err := g.bindingFor(ctx, session, deviceID, owner, accountID)
@@ -714,12 +710,16 @@ func appStoreConnectAuditPath(path string) string {
 type appStoreConnectAudit struct{ g *AppStoreConnectGateway }
 
 func (a appStoreConnectAudit) Record(ctx context.Context, record gateway.Record) {
-	if record.Lease == nil {
+	grant := record.Grant
+	if record.Lease != nil {
+		grant = &record.Lease.Grant
+	}
+	if grant == nil {
 		return
 	}
 	call, _ := record.Need.Payload.(*appStoreConnectCall)
 	detail := &AppStoreConnectAuditDetail{
-		WorkspaceID: record.Lease.Session.WorkspaceID,
+		WorkspaceID: grant.WorkspaceID,
 		Method:      record.Request.Method,
 		Path:        appStoreConnectAuditPath(record.Request.URL.Path),
 		Status:      record.Status,
@@ -734,8 +734,8 @@ func (a appStoreConnectAudit) Record(ctx context.Context, record gateway.Record)
 	}
 	line, _ := json.Marshal(detail)
 	event := store.ExternalAccountEvent{
-		AccountID: record.Lease.Account.ID, Kind: "appstoreconnect_request",
-		SessionID: record.Lease.Grant.SessionID, DeviceID: record.Lease.Grant.DeviceID,
+		AccountID: grant.AccountID, Kind: "appstoreconnect_request",
+		SessionID: grant.SessionID, DeviceID: grant.DeviceID,
 		ActorID: record.Device.OwnerUserID, Detail: string(line),
 	}
 	audit, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

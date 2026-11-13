@@ -108,13 +108,6 @@ func accessOf(binding store.ExternalAccountBinding) string {
 	return cmp.Or(binding.Access, externalaccounts.CloudflareAccessRead)
 }
 
-// UseNativeWork lets a completed session act, and renew its handle, while
-// its device claims that the session's agent still works on its own
-// (gateway.SessionLive).
-func (g *CloudflareGateway) UseNativeWork(work gateway.NativeWork) {
-	g.pipeline.Work = work
-}
-
 // UsePermission makes every gateway call re-read the assistant package and
 // route risk writes through confirmation.
 func (g *CloudflareGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
@@ -132,7 +125,7 @@ func (g *CloudflareGateway) UsePermission(st permission.Store, confirm gateway.C
 // removed has immediate effect.
 func (g *CloudflareGateway) sessionBinding(ctx context.Context, sessionID, deviceID, owner string, accountID ...string) (store.AgentSession, cloudflareBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session, g.pipeline.Work, g.Now()) != nil {
+	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session) != nil {
 		return store.AgentSession{}, cloudflareBinding{}, ErrCloudflareAccess
 	}
 	requestedAccountID := ""

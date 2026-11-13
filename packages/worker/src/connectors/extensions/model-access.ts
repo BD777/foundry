@@ -24,6 +24,31 @@ import { extensionDataDir, loadedExtensions } from "./registry.js";
 const profileIdPattern = /^[a-z0-9]+(_[a-z0-9]+)*$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 const listTimeoutMs = 60_000;
+const probeFailureLimit = 3;
+const probeFailureWindowMs = 5 * 60_000;
+
+/**
+ * A connector's identity probe is a helper process. A single exit is often
+ * a transient package-manager or gateway hiccup; keep the last confirmed
+ * provider while a few consecutive probes fail, and ask again soon.
+ */
+const probeFailures = new Map<string, { count: number; firstAt: number }>();
+
+function probeKey(extensionId: string, kind: string, id: string): string {
+  return `${extensionId}\u0000${kind}\u0000${id}`;
+}
+
+function lastConfirmedProblem(
+  problem: string,
+  provider?: ConnectorModelProvider,
+): string {
+  const at = provider?.lastConfirmedAt
+    ? Date.parse(provider.lastConfirmedAt)
+    : NaN;
+  if (!Number.isFinite(at)) return problem;
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  return `${problem} (last confirmed ${seconds}s ago)`;
+}
 
 /**
  * A listed provider, checked. One the extension says is not usable now keeps
@@ -65,13 +90,30 @@ function checkedProvider(
     typeof value.problem === "string" && value.problem.trim()
       ? value.problem.trim().slice(0, 300)
       : undefined;
+  const key = probeKey(extensionId, connector.kind, value.id);
+  const before = previous.find(
+    (provider) =>
+      provider.id === value.id &&
+      provider.connector.extensionId === extensionId &&
+      provider.connector.kind === connector.kind,
+  );
   if (problem) {
-    const before = previous.find(
-      (provider) =>
-        provider.id === value.id &&
-        provider.connector.extensionId === extensionId &&
-        provider.connector.kind === connector.kind,
-    );
+    const prior = probeFailures.get(key);
+    const now = Date.now();
+    const count =
+      prior && now - prior.firstAt <= probeFailureWindowMs
+        ? prior.count + 1
+        : 1;
+    probeFailures.set(key, {
+      count,
+      firstAt:
+        prior && now - prior.firstAt <= probeFailureWindowMs
+          ? prior.firstAt
+          : now,
+    });
+    // A provider that was working before this probe keeps its last verified
+    // identity and connection until consecutive failures cross the limit.
+    if (before && !before.problem && count < probeFailureLimit) return before;
     // Never verified here: listed, but it cannot start a session.
     const externalConnection = before?.externalConnection ?? {
       executable: "",
@@ -86,7 +128,8 @@ function checkedProvider(
       models: models.includes(model) ? models : [model, ...models],
       externalConnection,
       connector: connectorRef,
-      problem,
+      lastConfirmedAt: before?.lastConfirmedAt,
+      problem: before ? lastConfirmedProblem(problem, before) : problem,
     };
   }
   if (
@@ -111,6 +154,20 @@ function checkedProvider(
     args.some((arg) => arg.length > 4096)
   )
     return undefined;
+  probeFailures.delete(key);
+  const unchanged =
+    before &&
+    !before.problem &&
+    before.label === value.label.trim() &&
+    before.model === model &&
+    JSON.stringify(before.models) === JSON.stringify(models) &&
+    before.externalConnection.executable === executable &&
+    JSON.stringify(before.externalConnection.args) === JSON.stringify(args) &&
+    before.externalConnection.identity === value.identity &&
+    before.connector.kind === connector.kind &&
+    before.connector.label === connector.label &&
+    before.connector.extensionId === extensionId;
+  if (unchanged) return before;
   return {
     id: value.id,
     label: value.label.trim(),
@@ -120,12 +177,16 @@ function checkedProvider(
     // Key order is the check fingerprint's (harness/profiles.ts).
     externalConnection: { executable, args, identity: value.identity },
     connector: connectorRef,
+    lastConfirmedAt: new Date().toISOString(),
   };
 }
 
 /** Whether a listed provider is not usable now, so it is asked again soon. */
 export function modelAccessHasProblems(): boolean {
-  return connectorModelProviders().some((provider) => provider.problem);
+  return (
+    probeFailures.size > 0 ||
+    connectorModelProviders().some((provider) => provider.problem)
+  );
 }
 
 /**
@@ -183,5 +244,16 @@ export async function refreshExtensionModelProviders(
       }
     }
   }
+  const live = new Set(
+    next.map((provider) =>
+      probeKey(
+        provider.connector.extensionId,
+        provider.connector.kind,
+        provider.id,
+      ),
+    ),
+  );
+  for (const key of probeFailures.keys())
+    if (!live.has(key)) probeFailures.delete(key);
   return saveConnectorModelProviders(next);
 }

@@ -1,24 +1,20 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2 } from "lucide-react";
 import type {
+  MessageChannelPeers,
   MessageChannelSource,
-  MessageChannelTriState,
   MessageChannelView,
-  MessageConversationKind,
+  WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { createMessageChannel, updateMessageChannel } from "../../api";
-import { Alert } from "../../components/ui/alert";
+import {
+  createMessageChannel,
+  listMessageChannelPeers,
+  updateMessageChannel,
+} from "../../api";
 import { Button } from "../../components/ui/button";
 import { CheckLabel } from "../../components/ui/check-label";
 import { Dialog } from "../../components/ui/dialog";
-import {
-  Checkbox,
-  FieldHint,
-  Radio,
-  TextInput,
-  Textarea,
-} from "../../components/ui/field";
+import { FieldHint, Radio, TextInput } from "../../components/ui/field";
 import {
   FieldLabel,
   FormField,
@@ -30,58 +26,59 @@ import { Switch } from "../../components/ui/switch";
 import { ToastFeedback } from "../../components/ui/toast";
 import { serverErrorText } from "../../lib/errors";
 import {
-  blankRule,
+  capabilitiesOf,
   channelBounds,
   channelInput,
   channelLimitKeys,
   channelProblems,
-  conversationKinds,
   draftFromChannel,
+  filterRules,
   newChannelDraft,
-  parsePrefixes,
+  peerNames,
+  problemText,
   sourceAccesses,
-  triStates,
+  sourceOf,
   type ChannelDraft,
   type ChannelProblem,
-  type RuleDraft,
+  type PlaceId,
 } from "./channel-model";
+import { channelWorkspaceChoices } from "./channel-session-model";
+import { ChannelFilterEditor, ProblemHint } from "./settings-channel-filter";
 import {
   PrerequisiteNotice,
   prerequisitesMissing,
 } from "./settings-channel-prerequisites";
+import {
+  ChannelSessionFields,
+  ChannelWorkspaceChoice,
+} from "./settings-channel-session";
+import { ChannelRuleTrial } from "./settings-channel-trial";
 import { SettingsGroup } from "./settings-field";
 
-type T = ReturnType<typeof useTranslation<"personalAgent">>["t"];
-
-function problemText(problem: ChannelProblem, t: T): string {
-  if (problem.kind === "limit")
-    return t("settings.channels.editor.problems.limit", {
-      label: t(`settings.channels.editor.limits.${problem.key}`),
-      min: problem.min,
-      max: problem.max,
-    });
-  if ("rule" in problem)
-    return t(`settings.channels.editor.problems.${problem.kind}`, {
-      number: problem.rule + 1,
-    });
-  return t(`settings.channels.editor.problems.${problem.kind}`);
-}
-
 /**
- * Creates or edits one message channel. A new channel starts from the
- * three-rule template; once saved, it stays open when its source still
- * needs the person's grant, so the notice can say what is missing.
+ * Creates or edits one message channel: trigger words and the places they
+ * apply in, custom rules under Advanced, a try-out on a made-up message and
+ * on recent real ones, when its sessions start fresh and, on create, its
+ * workspace. Once saved, it stays open when its source still needs the
+ * person's grant, so the notice can say what is missing.
  */
 export function ChannelEditor({
   assistantId,
   sources,
   view: initialView,
+  workspaces = [],
+  homeDeviceId,
+  homeWorkspaceId,
   onClose,
   onSaved,
 }: {
   assistantId?: string;
   sources: MessageChannelSource[];
   view?: MessageChannelView;
+  /** The person's workspaces, for a new channel's workspace choice. */
+  workspaces?: WorkspaceProjection[];
+  homeDeviceId?: string;
+  homeWorkspaceId?: string;
   onClose: () => void;
   onSaved: (view: MessageChannelView) => void;
 }) {
@@ -89,32 +86,74 @@ export function ChannelEditor({
   const [view, setView] = useState(initialView);
   const [draft, setDraft] = useState<ChannelDraft>(() =>
     initialView
-      ? draftFromChannel(initialView.channel)
-      : newChannelDraft(
-          {
-            direct: t("settings.channels.editor.template.direct"),
-            groupMention: t("settings.channels.editor.template.groupMention"),
-            selfTest: t("settings.channels.editor.template.selfTest"),
-          },
-          sources.length === 1 ? sources[0]!.accountId : "",
-        ),
+      ? draftFromChannel(initialView.channel, sources)
+      : newChannelDraft(sources.length === 1 ? sources[0]!.accountId : ""),
   );
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () => draft.filter.custom.length > 0,
+  );
+  const [peers, setPeers] = useState<MessageChannelPeers>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [attempted, setAttempted] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
   const ids = useId();
-  const problems = channelProblems(draft);
+  const source = sourceOf(draft.sourceAccountId, sources, view?.channel);
+  const capabilities = capabilitiesOf(source);
+  const problems = channelProblems(draft, capabilities);
+  // Problems of the filter show as they arise; the rest once Save was tried.
+  const shown: ChannelProblem[] = problems.filter(
+    (problem) =>
+      attempted ||
+      problem.kind === "noTriggers" ||
+      problem.kind === "noPlace" ||
+      problem.kind === "customNoTrigger" ||
+      problem.kind === "customNoPlace" ||
+      problem.kind === "resetCommands",
+  );
+  const problemOf = (kind: ChannelProblem["kind"]) => {
+    const found = shown.find((problem) => problem.kind === kind);
+    return found ? problemText(found, t) : undefined;
+  };
+  const placeLabel = (place: PlaceId) =>
+    t(`settings.channels.editor.places.${place}`);
   const change = (patch: Partial<ChannelDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
-  const changeRule = (index: number, next: RuleDraft) =>
-    setDraft((current) => ({
-      ...current,
-      rules: current.rules.map((entry, at) => (at === index ? next : entry)),
-    }));
 
-  const sourceOptions = sources.map((source) => ({
-    value: source.accountId,
-    label: source.label || source.kind,
+  useEffect(() => {
+    let cancelled = false;
+    setPeers(undefined);
+    if (!draft.sourceAccountId) return;
+    listMessageChannelPeers(assistantId, draft.sourceAccountId)
+      .then((result) => {
+        if (!cancelled) setPeers(result);
+      })
+      .catch(() => {
+        // Without peers the pickers still keep and show saved ids.
+        if (!cancelled) setPeers({ conversations: [], senders: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assistantId, draft.sourceAccountId]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    const form = document.getElementById(`${ids}-form`);
+    const hint = form?.querySelector<HTMLElement>("[data-channel-problem]");
+    if (!hint) return;
+    const field = hint.closest<HTMLElement>("[data-channel-field]") ?? hint;
+    field.scrollIntoView({ block: "center", behavior: "smooth" });
+    field
+      .querySelector<HTMLElement>(
+        "input:not([type=hidden]), textarea, button, [tabindex]",
+      )
+      ?.focus({ preventScroll: true });
+  }, [focusRequest, ids]);
+
+  const sourceOptions = sources.map((entry) => ({
+    value: entry.accountId,
+    label: entry.label || entry.kind,
   }));
   if (
     draft.sourceAccountId &&
@@ -131,19 +170,21 @@ export function ChannelEditor({
   async function save(): Promise<void> {
     if (problems.length) {
       setAttempted(true);
+      if (problems[0]!.kind.startsWith("custom")) setAdvancedOpen(true);
+      setFocusRequest((value) => value + 1);
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const input = channelInput(draft, sources, view?.channel);
+      const input = channelInput(draft, sources, view?.channel, placeLabel);
       const saved = view
         ? await updateMessageChannel(assistantId, view.channel.id, input)
         : await createMessageChannel(assistantId, input);
       onSaved(saved);
       if (prerequisitesMissing(saved.prerequisites)) {
         setView(saved);
-        setDraft(draftFromChannel(saved.channel));
+        setDraft(draftFromChannel(saved.channel, sources));
         setAttempted(false);
       } else onClose();
     } catch (reason) {
@@ -152,6 +193,12 @@ export function ChannelEditor({
       setSaving(false);
     }
   }
+
+  const workspaceChoices = channelWorkspaceChoices(
+    workspaces,
+    homeDeviceId,
+    homeWorkspaceId,
+  );
 
   const sourceChanged =
     view !== undefined &&
@@ -192,6 +239,7 @@ export function ChannelEditor({
       <FormLayout
         as="form"
         className="gap-5"
+        id={`${ids}-form`}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -211,7 +259,7 @@ export function ChannelEditor({
           />
         ) : null}
         <SettingsGroup>
-          <FormField htmlFor={`${ids}-name`}>
+          <FormField data-channel-field="" htmlFor={`${ids}-name`}>
             <span>{t("settings.channels.editor.name")}</span>
             <TextInput
               id={`${ids}-name`}
@@ -221,8 +269,9 @@ export function ChannelEditor({
               tone="boxed"
               value={draft.name}
             />
+            <ProblemHint>{problemOf("name")}</ProblemHint>
           </FormField>
-          <FormFieldGroup>
+          <FormFieldGroup data-channel-field="">
             <span>{t("settings.channels.editor.source")}</span>
             <SelectMenu
               ariaLabel={t("settings.channels.editor.source")}
@@ -232,81 +281,57 @@ export function ChannelEditor({
               placeholder={t("settings.channels.editor.sourcePlaceholder")}
               value={draft.sourceAccountId}
             />
+            <ProblemHint>{problemOf("source")}</ProblemHint>
           </FormFieldGroup>
-        </SettingsGroup>
-
-        <SettingsGroup title={t("settings.channels.editor.rulesTitle")}>
-          <FieldHint>{t("settings.channels.editor.rulesHint")}</FieldHint>
-          <ol className="grid min-w-0 list-none gap-3 p-0">
-            {draft.rules.map((entry, index) => (
-              <RuleEditor
-                entry={entry}
-                index={index}
-                key={entry.rule.id}
-                onChange={(next) => changeRule(index, next)}
-                onRemove={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    rules: current.rules.filter((_, at) => at !== index),
-                  }))
-                }
-              />
-            ))}
-          </ol>
-          <Button
-            className="justify-self-start"
-            disabled={draft.rules.length >= channelBounds.rules}
-            onClick={() =>
-              setDraft((current) => ({
-                ...current,
-                rules: [...current.rules, blankRule()],
-              }))
-            }
-            size="sm"
-            variant="secondary"
-          >
-            <Plus aria-hidden="true" size={14} />
-            {t("settings.channels.editor.addRule")}
-          </Button>
-        </SettingsGroup>
-
-        <SettingsGroup title={t("settings.channels.editor.guide")}>
-          <FormField htmlFor={`${ids}-guide`}>
-            <Textarea
-              aria-describedby={`${ids}-guide-hint`}
-              aria-label={t("settings.channels.editor.guide")}
-              id={`${ids}-guide`}
-              maxLength={channelBounds.guide}
-              onChange={(event) => change({ guide: event.target.value })}
-              resize="vertical"
-              rows={6}
-              tone="boxed"
-              value={draft.guide}
-            />
-            <FieldHint id={`${ids}-guide-hint`}>
-              {t("settings.channels.editor.guideHint")}
-            </FieldHint>
-          </FormField>
         </SettingsGroup>
 
         <SettingsGroup>
-          <FormFieldGroup className="max-w-sm">
-            <span>{t("settings.channels.editor.sessionKey")}</span>
-            <SelectMenu
-              ariaLabel={t("settings.channels.editor.sessionKey")}
-              insideDialog
-              onChange={(value) =>
-                change({
-                  sessionKey: value === "thread" ? "thread" : "conversation",
-                })
-              }
-              options={(["conversation", "thread"] as const).map((value) => ({
-                value,
-                label: t(`settings.channels.editor.sessionKeys.${value}`),
-              }))}
-              value={draft.sessionKey}
+          <ChannelFilterEditor
+            advancedOpen={advancedOpen}
+            capabilities={capabilities}
+            filter={draft.filter}
+            onAdvancedOpenChange={setAdvancedOpen}
+            onChange={(filter) => change({ filter })}
+            peers={peers}
+            problems={shown}
+          />
+          <ProblemHint>{problemOf("tooManyRules")}</ProblemHint>
+        </SettingsGroup>
+
+        <ChannelRuleTrial
+          assistantId={assistantId}
+          capabilities={capabilities}
+          names={peerNames(peers)}
+          rules={filterRules(draft.filter, capabilities, placeLabel)}
+          sourceAccountId={draft.sourceAccountId}
+        />
+
+        <SettingsGroup title={t("settings.channels.editor.sessionTitle")}>
+          <ChannelSessionFields
+            commandsProblem={problemOf("resetCommands")}
+            idleProblem={problemOf("idle")}
+            onSessionChange={(session) => change({ session })}
+            onSessionKeyChange={(sessionKey) => change({ sessionKey })}
+            session={draft.session}
+            sessionKey={draft.sessionKey}
+          />
+        </SettingsGroup>
+
+        {view ? null : (
+          <SettingsGroup title={t("settings.channels.editor.workspaceTitle")}>
+            <ChannelWorkspaceChoice
+              choices={workspaceChoices}
+              onChange={(workspace) => change({ workspace })}
+              problem={problemOf("workspace")}
+              value={draft.workspace}
             />
-          </FormFieldGroup>
+          </SettingsGroup>
+        )}
+        <FieldHint className="mt-0">
+          {t("settings.channels.editor.instructionsNote")}
+        </FieldHint>
+
+        <SettingsGroup>
           <fieldset className="grid min-w-0 gap-2 border-0 p-0">
             <FieldLabel as="span">
               {t("settings.channels.editor.accessTitle")}
@@ -341,7 +366,11 @@ export function ChannelEditor({
         <SettingsGroup title={t("settings.channels.editor.limitsTitle")}>
           <div className="grid min-w-0 gap-3 sm:grid-cols-3">
             {channelLimitKeys.map((key) => (
-              <FormField htmlFor={`${ids}-${key}`} key={key}>
+              <FormField
+                data-channel-field=""
+                htmlFor={`${ids}-${key}`}
+                key={key}
+              >
                 <span>{t(`settings.channels.editor.limits.${key}`)}</span>
                 <TextInput
                   id={`${ids}-${key}`}
@@ -368,22 +397,14 @@ export function ChannelEditor({
               </FormField>
             ))}
           </div>
+          {shown
+            .filter((problem) => problem.kind === "limit")
+            .map((problem) => {
+              const text = problemText(problem, t);
+              return <ProblemHint key={text}>{text}</ProblemHint>;
+            })}
         </SettingsGroup>
 
-        {attempted && problems.length ? (
-          <Alert
-            size="compact"
-            title={t("settings.channels.editor.problemsTitle")}
-            tone="warning"
-          >
-            <ul className="grid gap-0.5">
-              {problems.map((problem) => {
-                const text = problemText(problem, t);
-                return <li key={text}>{text}</li>;
-              })}
-            </ul>
-          </Alert>
-        ) : null}
         {error ? (
           <ToastFeedback
             title={t("settings.channels.editor.saveFailed")}
@@ -394,144 +415,5 @@ export function ChannelEditor({
         ) : null}
       </FormLayout>
     </Dialog>
-  );
-}
-
-function RuleEditor({
-  entry,
-  index,
-  onChange,
-  onRemove,
-}: {
-  entry: RuleDraft;
-  index: number;
-  onChange: (next: RuleDraft) => void;
-  onRemove: () => void;
-}) {
-  const { t } = useTranslation("personalAgent");
-  const ids = useId();
-  const { rule } = entry;
-  const setRule = (patch: Partial<RuleDraft["rule"]>) =>
-    onChange({ ...entry, rule: { ...rule, ...patch } });
-  const toggleKind = (kind: MessageConversationKind, on: boolean) =>
-    setRule({
-      conversationKinds: on
-        ? [...rule.conversationKinds.filter((value) => value !== kind), kind]
-        : rule.conversationKinds.filter((value) => value !== kind),
-    });
-  const missingPrefix =
-    rule.enabled && parsePrefixes(entry.prefixes).length === 0;
-  const number = index + 1;
-  const triOptions = (group: "mentions" | "fromSelfOptions") =>
-    triStates.map((value) => ({
-      value,
-      label: t(`settings.channels.editor.${group}.${value}`),
-    }));
-
-  return (
-    <li className="grid min-w-0 gap-3 rounded-lg bg-inset p-3.5">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <Switch
-          aria-label={`${t("settings.channels.editor.rule", { number })} · ${t("settings.channels.editor.ruleEnabled")}`}
-          checked={rule.enabled}
-          onCheckedChange={(enabled) => setRule({ enabled })}
-        />
-        <TextInput
-          aria-label={`${t("settings.channels.editor.rule", { number })} · ${t("settings.channels.editor.ruleLabel")}`}
-          className="flex-1"
-          onChange={(event) => setRule({ label: event.target.value })}
-          placeholder={t("settings.channels.editor.rule", { number })}
-          tone="boxed"
-          value={rule.label ?? ""}
-        />
-        <Button
-          aria-label={`${t("settings.channels.editor.rule", { number })} · ${t("settings.channels.editor.removeRule")}`}
-          onClick={onRemove}
-          size="icon"
-          variant="icon"
-        >
-          <Trash2 aria-hidden="true" size={15} />
-        </Button>
-      </div>
-      <fieldset className="grid min-w-0 gap-1.5 border-0 p-0">
-        <FieldLabel as="span">{t("settings.channels.editor.kinds")}</FieldLabel>
-        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1.5">
-          {conversationKinds.map((kind) => (
-            <CheckLabel key={kind}>
-              <Checkbox
-                checked={rule.conversationKinds.includes(kind)}
-                onChange={(event) => toggleKind(kind, event.target.checked)}
-              />
-              <span>{t(`settings.channels.editor.kind.${kind}`)}</span>
-            </CheckLabel>
-          ))}
-        </div>
-      </fieldset>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-        <FormFieldGroup>
-          <span>{t("settings.channels.editor.mentionsMe")}</span>
-          <SelectMenu
-            ariaLabel={`${t("settings.channels.editor.rule", { number })} · ${t("settings.channels.editor.mentionsMe")}`}
-            insideDialog
-            onChange={(value) =>
-              setRule({ mentionsMe: value as MessageChannelTriState })
-            }
-            options={triOptions("mentions")}
-            value={rule.mentionsMe}
-          />
-        </FormFieldGroup>
-        <FormFieldGroup>
-          <span>{t("settings.channels.editor.fromSelf")}</span>
-          <SelectMenu
-            ariaLabel={`${t("settings.channels.editor.rule", { number })} · ${t("settings.channels.editor.fromSelf")}`}
-            insideDialog
-            onChange={(value) =>
-              setRule({ fromSelf: value as MessageChannelTriState })
-            }
-            options={triOptions("fromSelfOptions")}
-            value={rule.fromSelf}
-          />
-        </FormFieldGroup>
-      </div>
-      <FormField htmlFor={`${ids}-prefixes`}>
-        <span>{t("settings.channels.editor.prefixes")}</span>
-        <TextInput
-          aria-describedby={`${ids}-prefixes-hint`}
-          aria-invalid={missingPrefix || undefined}
-          id={`${ids}-prefixes`}
-          onChange={(event) =>
-            onChange({ ...entry, prefixes: event.target.value })
-          }
-          placeholder={t("settings.channels.editor.prefixesPlaceholder")}
-          tone="boxed"
-          value={entry.prefixes}
-        />
-        <FieldHint
-          id={`${ids}-prefixes-hint`}
-          tone={missingPrefix ? "warning" : "muted"}
-        >
-          {missingPrefix
-            ? t("settings.channels.editor.prefixRequired")
-            : t("settings.channels.editor.prefixesHint")}
-        </FieldHint>
-      </FormField>
-      <FormField htmlFor={`${ids}-conversations`}>
-        <span>{t("settings.channels.editor.conversationIds")}</span>
-        <Textarea
-          aria-describedby={`${ids}-conversations-hint`}
-          id={`${ids}-conversations`}
-          onChange={(event) =>
-            onChange({ ...entry, conversationIds: event.target.value })
-          }
-          resize="vertical"
-          rows={2}
-          tone="boxed"
-          value={entry.conversationIds}
-        />
-        <FieldHint id={`${ids}-conversations-hint`}>
-          {t("settings.channels.editor.conversationIdsHint")}
-        </FieldHint>
-      </FormField>
-    </li>
   );
 }

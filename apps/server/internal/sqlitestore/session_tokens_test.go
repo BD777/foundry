@@ -6,33 +6,11 @@ import (
 	"time"
 )
 
-func TestSessionTokenLifetime(t *testing.T) {
-	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	future := formatTime(now.Add(time.Hour))
-	recent := formatTime(now.Add(-23 * time.Hour))
-	stale := formatTime(now.Add(-25 * time.Hour))
-	cases := []struct {
-		name              string
-		expires, lastUsed string
-		status            string
-		want              bool
-	}{
-		{"settled, used within a day", future, recent, "completed", true},
-		{"settled, unused for a day", future, stale, "completed", false},
-		{"running, unused for a day", future, stale, "running", true},
-		{"blocked, unused for a day", future, stale, "blocked", true},
-		{"past its hard expiry while running", formatTime(now.Add(-time.Second)), recent, "running", false},
-		{"unreadable expiry", "", recent, "running", false},
-		{"unreadable last use", future, "", "failed", false},
-	}
-	for _, c := range cases {
-		if got := sessionTokenLive(now, c.expires, c.lastUsed, c.status); got != c.want {
-			t.Errorf("%s: live = %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
-func TestSessionTokenExpiresAfterIdleSettledSession(t *testing.T) {
+// DEV-215: a session's token works for as long as the session exists and
+// is not archived, whatever its turns do: a kept agent process, its
+// background work and timers use it days after the last turn, and after a
+// failed or canceled one. Archiving revokes it; so does its hard expiry.
+func TestSessionTokenFollowsTheSessionNotItsTurns(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	execAll(t, db,
@@ -42,16 +20,26 @@ func TestSessionTokenExpiresAfterIdleSettledSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := formatTime(time.Now().UTC().Add(-agentSessionTokenIdle - time.Minute))
-	execAll(t, db, `UPDATE session_tokens SET last_used_at = '`+stale+`'`)
-	if _, err := db.ResolveSessionToken(ctx, token); err != nil {
-		t.Fatalf("a running session's idle token: %v; want it valid", err)
+	unused := formatTime(time.Now().UTC().Add(-7 * 24 * time.Hour))
+	for _, status := range []string{"running", "completed", "failed", "canceled"} {
+		execAll(t, db,
+			`UPDATE session_tokens SET last_used_at = '`+unused+`'`,
+			`UPDATE agent_sessions SET status = '`+status+`'`)
+		if identity, err := db.ResolveSessionToken(ctx, token); err != nil || identity.SessionID != "sess_tok" {
+			t.Fatalf("%s session, token unused for a week: %+v, %v; want valid", status, identity, err)
+		}
 	}
-	execAll(t, db,
-		`UPDATE session_tokens SET last_used_at = '`+stale+`'`,
-		`UPDATE agent_sessions SET status = 'completed'`)
+	execAll(t, db, `INSERT INTO chat_archives (workspace_id, archive_key, archived_at, batch_id) VALUES ('ws_tok', 'id:sess_tok', '`+formatTime(time.Now())+`', 'b1')`)
 	if _, err := db.ResolveSessionToken(ctx, token); err != ErrSessionTokenInvalid {
-		t.Fatalf("a settled session's idle token: %v; want ErrSessionTokenInvalid", err)
+		t.Fatalf("archived session's token: %v; want ErrSessionTokenInvalid", err)
+	}
+	execAll(t, db, `DELETE FROM chat_archives`)
+	if _, err := db.ResolveSessionToken(ctx, token); err != nil {
+		t.Fatalf("restored session's token: %v; want valid", err)
+	}
+	execAll(t, db, `UPDATE session_tokens SET expires_at = '`+formatTime(time.Now().Add(-time.Second))+`'`)
+	if _, err := db.ResolveSessionToken(ctx, token); err != ErrSessionTokenInvalid {
+		t.Fatalf("expired token: %v; want ErrSessionTokenInvalid", err)
 	}
 	var left int
 	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM session_tokens`).Scan(&left); err != nil || left != 0 {

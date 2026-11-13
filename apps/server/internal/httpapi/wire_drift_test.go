@@ -62,6 +62,8 @@ var wireDecls = []wireDecl{
 	{dir: "in", kind: wsReplyChunkType, goType: goShape[wsReplyChunkPayload]()},
 	// From the device: answers.
 	{dir: "in", kind: wsFileReadType, goType: goShape[wsFileReadPayload]()},
+	{dir: "in", kind: wsFileWrittenType, goType: goShape[wsFileWrittenPayload]()},
+	{dir: "in", kind: wsWorkerProxySetType, goType: goShape[wsWorkerProxySet]()},
 	{dir: "in", kind: wsDeviceFileReadType, goType: goShape[wsDeviceFileRead]()},
 	{dir: "in", kind: wsContextPatchedType, goType: goShape[wsContextPatchReply]()},
 	{dir: "in", kind: wsKnowledgeResultType, goType: goShape[wsKnowledgeReply]()},
@@ -146,6 +148,8 @@ var wireDecls = []wireDecl{
 	{dir: "out", kind: wsSteerSessionType, goType: goShape[wsSteerSessionPayload]()},
 	{dir: "out", kind: wsCancelSessionType, goType: goShape[wsCancelSessionPayload]()},
 	{dir: "out", kind: wsReadFileType, goType: goShape[wsReadFilePayload]()},
+	{dir: "out", kind: wsWriteFileType, goType: goShape[wsWriteFilePayload]()},
+	{dir: "out", kind: wsSetWorkerProxyType, unchecked: fromMap},
 	{dir: "out", kind: wsReadDeviceFileType, goType: goShape[wsReadDeviceFilePayload]()},
 	{dir: "out", kind: wsReadSubagentTranscriptType, goType: goShape[wsReadSubagentTranscriptPayload]()},
 	{dir: "out", kind: wsReadNativeHistoryType, goType: goShape[wsReadNativeHistoryPayload]()},

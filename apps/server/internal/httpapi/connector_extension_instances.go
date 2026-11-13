@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -19,6 +20,8 @@ import (
 )
 
 var serverHeldExtensionKind = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+
+const extensionProbeReportTimeout = 15 * time.Second
 
 func (s *Server) serverHeldExtensionDescriptor(w http.ResponseWriter, r *http.Request, actorAccountID string) (store.ConnectorDescriptor, bool) {
 	kind := strings.TrimSpace(r.PathValue("kind"))
@@ -72,7 +75,7 @@ func (s *Server) handleProbeServerHeldExtensionInstance(w http.ResponseWriter, r
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.validExtensionProbeDevice(w, r, actor.AccountID(), descriptor, input) {
+	if !s.prepareExtensionProbeDeviceRequest(w, r, actor.AccountID(), descriptor, input) {
 		return
 	}
 	result, err := s.connectors.ServerHeld.ProbeExtensionInstance(r.Context(), actor.AccountID(), descriptor, input, nil)
@@ -97,7 +100,7 @@ func (s *Server) handleCreateServerHeldExtensionInstance(w http.ResponseWriter, 
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.validExtensionProbeDevice(w, r, actor.AccountID(), descriptor, input) {
+	if !s.prepareExtensionProbeDeviceRequest(w, r, actor.AccountID(), descriptor, input) {
 		return
 	}
 	instance, err := s.connectors.ServerHeld.CreateExtensionInstance(r.Context(), actor.AccountID(), descriptor, input)
@@ -122,7 +125,7 @@ func (s *Server) handleReplaceServerHeldExtensionInstance(w http.ResponseWriter,
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.validExtensionProbeDevice(w, r, actor.AccountID(), descriptor, input) {
+	if !s.prepareExtensionProbeDeviceRequest(w, r, actor.AccountID(), descriptor, input) {
 		return
 	}
 	instance, err := s.connectors.ServerHeld.ReplaceExtensionInstance(
@@ -278,8 +281,8 @@ func (s *Server) extensionInstanceDevices(ctx context.Context, userID string) ([
 	return result, nil
 }
 
-func (s *Server) validExtensionProbeDevice(w http.ResponseWriter, r *http.Request, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) bool {
-	err := s.validateExtensionProbeDevice(r.Context(), userID, descriptor, input)
+func (s *Server) prepareExtensionProbeDeviceRequest(w http.ResponseWriter, r *http.Request, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) bool {
+	err := s.prepareExtensionProbeDevice(r.Context(), userID, descriptor, input)
 	if err == nil {
 		return true
 	}
@@ -290,6 +293,63 @@ func (s *Server) validExtensionProbeDevice(w http.ResponseWriter, r *http.Reques
 	}
 	writeServerHeldExtensionError(w, err)
 	return false
+}
+
+// prepareExtensionProbeDevice makes an explicitly selected owner device ready
+// for a device-network probe. The person or their agent chose this device, so
+// an extension already published to the package can be installed there before
+// the probe; adding members' devices and enabling packages elsewhere keep the
+// existing checks.
+func (s *Server) prepareExtensionProbeDevice(ctx context.Context, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) error {
+	if err := s.validateExtensionProbeDevice(ctx, userID, descriptor, input); err != nil {
+		return err
+	}
+	if input.Network != externalaccounts.ExtensionNetworkDevice {
+		return nil
+	}
+	if _, err := s.connectors.Devices.ServerHeldDescriptorOn(ctx, input.DeviceID, descriptor.Kind); err == nil {
+		return nil
+	}
+	request, err := connectorExtensionInstallRequest(descriptor)
+	if err != nil {
+		return &statusError{http.StatusBadRequest, err}
+	}
+	if _, err := s.askDeviceExtension(ctx, input.DeviceID, request); err != nil {
+		return &statusError{http.StatusBadGateway, fmt.Errorf("install %s on the selected device: %w", descriptor.Label, err)}
+	}
+	deadline := time.NewTimer(extensionProbeReportTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := s.connectors.Devices.ServerHeldDescriptorOn(ctx, input.DeviceID, descriptor.Kind); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return &statusError{
+				http.StatusBadGateway,
+				fmt.Errorf("%s was installed on the selected device, but the device has not reported it yet; try again in a moment", descriptor.Label),
+			}
+		case <-ticker.C:
+		}
+	}
+}
+
+func connectorExtensionInstallRequest(descriptor store.ConnectorDescriptor) (store.ExtensionRequestPayload, error) {
+	if descriptor.Extension == nil {
+		return store.ExtensionRequestPayload{}, errors.New("the selected device does not have this connector extension and no install source is available")
+	}
+	if descriptor.Extension.Source != nil {
+		source := *descriptor.Extension.Source
+		return store.ExtensionRequestPayload{Action: "install", Source: &source}, nil
+	}
+	if descriptor.Extension.Bundled != nil && *descriptor.Extension.Bundled {
+		return store.ExtensionRequestPayload{Action: "install", BundledExtensionID: descriptor.Extension.ID}, nil
+	}
+	return store.ExtensionRequestPayload{}, errors.New("the selected device does not have this connector extension and it was installed from a local folder; install it on the selected device and try again")
 }
 
 func (s *Server) validateExtensionProbeDevice(ctx context.Context, userID string, descriptor store.ConnectorDescriptor, input store.ConnectorServerHeldInstanceInput) error {
@@ -309,9 +369,6 @@ func (s *Server) validateExtensionProbeDevice(ctx context.Context, userID string
 	}
 	if s.hub.connectionFor(input.DeviceID) == nil {
 		return &statusError{http.StatusBadRequest, errors.New("the selected device is offline; bring it online and try again")}
-	}
-	if _, err := s.connectors.Devices.ServerHeldDescriptorOn(ctx, input.DeviceID, descriptor.Kind); err != nil {
-		return &statusError{http.StatusBadRequest, errors.New("install this connector extension on the selected device before using it there")}
 	}
 	return nil
 }

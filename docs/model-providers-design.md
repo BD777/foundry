@@ -133,7 +133,7 @@ Model providers                                        [+ Add provider ▾]
 | `sign_in_subscription`  | 设备行的 Sign in：设备 CLI 登录，Agent 只转交链接与码             |
 
 - **谁能用**：本人自己的对话和助理（会话创建者即本人；Issue 的执行与澄清、它们派出的会话、verifier、命名等工具会话都不行），只作用于本人拥有的 API 端点和设备。另一个成员的会话以那个成员的身份行事，看不到也改不了。
-- **密钥**：只经 `save_model_provider` 的 `apiKey` 传入，封存在页面使用的同一处（`agent-profile:<id>`），回答只有 `keySet`。Worker 记录工具调用的各处（会话事件及其 metadata、审批卡、Foundry 自己的 SDK 日志、子代理与原生对话的读取）按字段名脱敏。
+- **密钥**：`save_model_provider` 的 `apiKey` 会封存在页面使用的同一处（`agent-profile:<id>`），回答只有 `keySet`。同一人需要让两个协议端点共用一把已有的 key 时，可以传 `copyApiKeyFromProviderId`；Server 在内部重封一份，不把 key 交给调用者。Worker 记录工具调用的各处（会话事件及其 metadata、审批卡、Foundry 自己的 SDK 日志、子代理与原生对话的读取）按字段名脱敏。
 - **API 端点的检查**：Server 把定义和解封的密钥像 `run_session` 一样交给设备（`check_agent_profile`，Worker 声明 `profile_check` 才发），设备用 Claude Agent SDK / Codex 跑一回合；结果按“端点 × 设备”存在 Server（表 `profile_checks`），出现在投影行的 `check` 上，改端点、模型、密钥或取消分配即清除。Web 在端点编辑器的设备行上显示并提供 Verify（`POST /api/profiles/{id}/check`）。
 - **范围**：模型来源只按设备分配，没有按 Workspace 生效的设置（Workspace 选用哪个账号由“默认智能体”决定）。提升、登出、移除启动环境仍只在页面上做。
 

@@ -2,6 +2,7 @@ import type { ToastTone } from "../../components/ui/toast";
 import type {
   ConnectorDescriptor,
   ConnectorRestricted,
+  ConnectorSkillBundle,
   DeviceConnectorDevice,
   DeviceConnectorsView,
 } from "@bd777/foundry-protocol";
@@ -31,6 +32,7 @@ import {
   RestrictedConnectorDetails,
 } from "./connector-picker";
 import { CredentialHolding } from "./credential-holding";
+import { ConnectorSkills } from "./connector-skills";
 import { DeviceHeldConnector } from "./device-held-connector";
 import { ConnectorPackagePanel } from "./connector-package-panel";
 import { useConnectorPackage } from "./use-connector-package";
@@ -64,6 +66,7 @@ export function ConnectorsFeature({
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [catalog, setCatalog] = useState<ConnectorDescriptor[]>();
   const [restricted, setRestricted] = useState<ConnectorRestricted[]>([]);
+  const [skillBundles, setSkillBundles] = useState<ConnectorSkillBundle[]>([]);
   const [restrictedSelection, setRestrictedSelection] =
     useState<ConnectorRestricted>();
   const [loadError, setLoadError] = useState("");
@@ -84,6 +87,7 @@ export function ConnectorsFeature({
       const next = await getConnectorCatalog();
       setCatalog(next.connectors);
       setRestricted(next.restrictedConnectors ?? []);
+      setSkillBundles(next.skillBundles ?? []);
       setLoadError("");
     } catch (cause) {
       setLoadError(errorText(cause));
@@ -138,6 +142,7 @@ export function ConnectorsFeature({
     const next = await recheckConnectorAccess();
     setCatalog(next.connectors);
     setRestricted(next.restrictedConnectors ?? []);
+    setSkillBundles(next.skillBundles ?? []);
     const kind = restrictedSelection?.connector.kind;
     const stillRestricted = next.restrictedConnectors?.find(
       (item) => item.connector.kind === kind,
@@ -231,6 +236,13 @@ export function ConnectorsFeature({
                 holding={connector!.holding}
                 name={connectorName(connector!)}
                 signOutLocal={connector!.signIn?.signOut === false}
+              />
+              {/* A package's Skills are listed in its panel. */}
+              <ConnectorSkills
+                bundle={skillBundles.find(
+                  (bundle) =>
+                    bundle.kind === connector!.kind && bundle.source === "tool",
+                )}
               />
               {connector!.package ? (
                 <ConnectorPackagePanel

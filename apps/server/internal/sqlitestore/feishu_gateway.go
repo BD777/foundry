@@ -122,14 +122,16 @@ func (s *Store) DeleteFeishuGatewayGrant(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) PruneFeishuGatewayGrants(ctx context.Context, heldSince time.Time) (int, error) {
+func (s *Store) PruneFeishuGatewayGrants(ctx context.Context, supersededBefore time.Time) (int, error) {
 	// A tool version check's grant (session id chk_…) has no session; it
 	// lasts minutes, so one older than an hour is left over.
 	result, err := s.conn().ExecContext(ctx, `DELETE FROM feishu_gateway_grants WHERE
-		(session_id NOT LIKE 'chk\_%' ESCAPE '\' AND session_id NOT IN (
-			SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`
-				OR (status = 'completed' AND COALESCE(json_extract(payload_json, '$.completedAt'), '') >= ? AND NOT `+archivedSessionSQL+`)))
-		OR (session_id LIKE 'chk\_%' ESCAPE '\' AND created_at < ?)`, formatTime(heldSince), formatTime(time.Now().Add(-time.Hour)))
+		(session_id NOT LIKE 'chk\_%' ESCAPE '\' AND (session_id NOT IN (
+			SELECT id FROM agent_sessions WHERE `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+`)
+			OR EXISTS (SELECT 1 FROM feishu_gateway_grants AS newer
+				WHERE newer.session_id = feishu_gateway_grants.session_id AND newer.account_id = feishu_gateway_grants.account_id
+					AND newer.created_at > feishu_gateway_grants.created_at AND newer.created_at < ?)))
+		OR (session_id LIKE 'chk\_%' ESCAPE '\' AND created_at < ?)`, formatTime(supersededBefore), formatTime(time.Now().Add(-time.Hour)))
 	if err != nil {
 		return 0, fmt.Errorf("prune feishu gateway grants: %w", err)
 	}

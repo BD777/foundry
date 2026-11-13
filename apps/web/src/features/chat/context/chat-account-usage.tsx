@@ -7,7 +7,10 @@ import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import { AccountUsageWindows } from "../../../components/account-usage-windows";
 import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
-import { ContextHeading, ContextSection } from "./chat-context-parts";
+import {
+  ContextHeading,
+  ContextSection,
+} from "../../../components/ui/context-card";
 import {
   accountUsageKey,
   type AccountUsageTarget,

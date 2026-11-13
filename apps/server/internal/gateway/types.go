@@ -67,7 +67,10 @@ type Need struct {
 type Exchange struct {
 	Device Device
 	Lease  *Lease
-	Need   Need
+	// Grant is the grant the call's stand-in named on its own device, also
+	// when the call was refused before it had a Lease.
+	Grant *store.FeishuGatewayGrant
+	Need  Need
 	// Outcome is how the call ended, if not OutcomeForwarded: the connector
 	// sets it (upstream_error, local).
 	Outcome string
@@ -200,7 +203,11 @@ type Record struct {
 	Request *http.Request
 	Device  Device
 	// Lease is nil when the call was never authenticated.
-	Lease  *Lease
+	Lease *Lease
+	// Grant is the grant the stand-in named on the calling device, set also
+	// when authentication refused it (the session archived, the account
+	// unbound…): a refusal is audited for that session and account.
+	Grant  *store.FeishuGatewayGrant
 	Need   Need
 	Denial *Denial
 	// Message is what a denied caller was told.

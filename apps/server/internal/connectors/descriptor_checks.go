@@ -450,19 +450,44 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 		if field.Unit != "" && field.Unit != "ms" && field.Unit != "s" && field.Unit != "rfc3339" {
 			return fmt.Errorf("serverHeld.events.envelope field %q has an unknown unit", key)
 		}
+		if len(field.Cases) > 10 {
+			return fmt.Errorf("serverHeld.events.envelope field %q has at most 10 cases", key)
+		}
+		for _, next := range field.Cases {
+			if len(next.When) == 0 || len(next.When) > 10 || len(next.Value) > 200 {
+				return fmt.Errorf("serverHeld.events.envelope field %q: a case has 1 to 10 conditions and a bounded value", key)
+			}
+			for _, condition := range next.When {
+				if err := checkEventsCondition(condition); err != nil {
+					return fmt.Errorf("serverHeld.events.envelope field %q: %w", key, err)
+				}
+			}
+		}
 	}
 	if len(events.Envelope.SkipWhen) > 20 {
 		return fmt.Errorf("serverHeld.events.envelope.skipWhen has at most 20 conditions")
 	}
 	for _, condition := range events.Envelope.SkipWhen {
-		if condition.Pointer == "" || !jsonPointer(condition.Pointer) || len(condition.Equals) > 200 {
-			return fmt.Errorf("serverHeld.events.envelope.skipWhen conditions are a JSON pointer and a value")
+		if err := checkEventsCondition(condition); err != nil {
+			return fmt.Errorf("serverHeld.events.envelope.skipWhen: %w", err)
 		}
 	}
 	if err := checkText("serverHeld.events.context.hint", events.Context.Hint, 300, false); err != nil {
 		return err
 	}
 	return checkLocalized("serverHeld.events.context.hints", events.Context.Hints, 300)
+}
+
+// checkEventsCondition: a JSON pointer, and a bounded value or a second
+// pointer to compare with.
+func checkEventsCondition(condition store.ConnectorEventsCondition) error {
+	if condition.Pointer == "" || !jsonPointer(condition.Pointer) || len(condition.Equals) > 200 || !jsonPointer(condition.EqualsPointer) {
+		return fmt.Errorf("a condition is a JSON pointer and a value or a second JSON pointer")
+	}
+	if condition.Equals != "" && condition.EqualsPointer != "" {
+		return fmt.Errorf("a condition compares with a value or a pointer, not both")
+	}
+	return nil
 }
 
 func checkExtensionPath(what, path string) error {
@@ -658,6 +683,42 @@ func checkPermissionSets(descriptor store.ConnectorDescriptor) error {
 				}
 			}
 		}
+		presetIDs := map[string]bool{}
+		for _, preset := range group.Presets {
+			if !signInIDPattern.MatchString(preset.ID) || presetIDs[preset.ID] {
+				return fmt.Errorf("authorization %s: preset %q is not a unique plain name", group.ID, preset.ID)
+			}
+			presetIDs[preset.ID] = true
+			if err := checkText("authorization preset label", preset.Label, maxLabel, true); err != nil {
+				return err
+			}
+			if err := checkLocalized("authorization preset labels", preset.Labels, maxLabel); err != nil {
+				return err
+			}
+			if err := checkText("authorization preset hint", preset.Hint, maxDescription, true); err != nil {
+				return err
+			}
+			if err := checkLocalized("authorization preset hints", preset.Hints, maxDescription); err != nil {
+				return err
+			}
+			if len(preset.ExcludeScopes) == 0 || len(preset.ExcludeScopes) > maxScopes {
+				return fmt.Errorf("authorization %s: preset %s names 1 to %d excluded scopes", group.ID, preset.ID, maxScopes)
+			}
+			excluded := map[string]bool{}
+			for _, id := range preset.ExcludeScopes {
+				if excluded[id] {
+					return fmt.Errorf("authorization %s: preset %s excludes %s twice", group.ID, preset.ID, id)
+				}
+				excluded[id] = true
+				scope := findScope(group.Scopes, id)
+				if scope == nil {
+					return fmt.Errorf("authorization %s: preset %s excludes an unlisted scope", group.ID, preset.ID)
+				}
+				if scope.Required {
+					return fmt.Errorf("authorization %s: preset %s cannot exclude required scope %s", group.ID, preset.ID, id)
+				}
+			}
+		}
 		if source := group.ScopeSource; source != nil {
 			if len(group.Scopes) == 0 {
 				return fmt.Errorf("authorization %s cites a scope source but lists no scopes", group.ID)
@@ -695,6 +756,15 @@ func checkPermissionSets(descriptor store.ConnectorDescriptor) error {
 		}
 		if permissions.URL != "" && !httpsURL(permissions.URL) {
 			return fmt.Errorf("a permissions page is an https address")
+		}
+	}
+	return nil
+}
+
+func findScope(scopes []store.ConnectorAuthorizationScope, id string) *store.ConnectorAuthorizationScope {
+	for index := range scopes {
+		if scopes[index].ID == id {
+			return &scopes[index]
 		}
 	}
 	return nil

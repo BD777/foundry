@@ -34,6 +34,7 @@ import {
 import { resourceSettings } from "../dist/resources/compute-settings.js";
 import { workerShimPath } from "../dist/install/worker-identity.js";
 import { foundryStatePath } from "../dist/platform/state-root.js";
+import { saveConnectorModelProviders } from "../dist/harness/connector-model-providers.js";
 import { DaemonDispatch } from "../dist/daemon/dispatch.js";
 import { registerAgentHandlers } from "../dist/daemon/handlers/agents.js";
 
@@ -332,4 +333,55 @@ test("the daemon reads, starts and cancels setup on the server's request", async
     command: "true",
   });
   assert.equal(sent.at(-1).payload.errorCode, "remote_commands_off");
+});
+
+test("the daemon reads a connection a connector extension gives the device", async () => {
+  reset();
+  const dispatch = new DaemonDispatch();
+  registerAgentHandlers(dispatch);
+  const sent = [];
+  const ctx = {
+    socket: { readyState: 1, send: (data) => sent.push(JSON.parse(data)) },
+    roster: {
+      currentRegistration: () => ({ device: { id: "dev" } }),
+      reportDevice: () => {},
+    },
+  };
+  const provider = {
+    id: "gateway_default",
+    label: "Gateway · default",
+    runtime: "claude",
+    model: "sonnet",
+    models: ["sonnet"],
+    externalConnection: { executable: helper, args: [], identity: "acct-1" },
+    connector: { kind: "gateway", label: "Gateway", extensionId: "gateway" },
+  };
+  try {
+    saveConnectorModelProviders([provider]);
+    await dispatch.dispatch(
+      {
+        id: "c1",
+        type: "read_external_connection_setup",
+        payload: { profileId: "gateway_default" },
+      },
+      ctx,
+    );
+    assert.deepEqual(sent.at(-1).payload.connection, {
+      helperAvailable: true,
+      check: { status: "unchecked" },
+    });
+
+    saveConnectorModelProviders([{ ...provider, problem: "Signed out." }]);
+    await dispatch.dispatch(
+      {
+        id: "c2",
+        type: "read_external_connection_setup",
+        payload: { profileId: "gateway_default" },
+      },
+      ctx,
+    );
+    assert.equal(sent.at(-1).payload.connection.helperAvailable, false);
+  } finally {
+    saveConnectorModelProviders([]);
+  }
 });

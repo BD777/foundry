@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  connectorSetupNeed,
   pickerSetupRows,
   readyAgent,
   setupSteps,
@@ -109,5 +110,99 @@ test("reported progress places the current step", () => {
   assert.deepEqual(
     setupSteps(quiet, false).map((step) => step.key),
     ["run", "installed", "registered", "checked"],
+  );
+});
+
+test("a connector's connection is set up by that connector, then checked once", () => {
+  const given = (stage) => ({
+    ...detail(stage),
+    offer: offer(stage, {
+      setup: undefined,
+      connector: { kind: "gateway", label: "Gateway" },
+    }),
+  });
+  assert.deepEqual(states(setupSteps(given("not_set_up"), false)), [
+    "connector:needed",
+    "checked:needed",
+  ]);
+  assert.deepEqual(states(setupSteps(given("unchecked"), true)), [
+    "connector:done",
+    "checked:running",
+  ]);
+  assert.deepEqual(states(setupSteps(given("ready"), false)), [
+    "connector:done",
+    "checked:done",
+  ]);
+});
+
+test("what the device needs for a connector's connection, and its one action", () => {
+  const view = (
+    device,
+    extension = { id: "gw", name: "Gateway ext", bundled: true },
+  ) => ({
+    connectors: [{ kind: "gateway", extension }],
+    devices: [
+      {
+        deviceId: "dev_1",
+        name: "server",
+        online: true,
+        states: [],
+        ...device,
+      },
+    ],
+  });
+  assert.deepEqual(connectorSetupNeed(view({}), "gateway", "dev_1"), {
+    kind: "install",
+    extensionId: "gw",
+    extension: "Gateway ext",
+  });
+  assert.deepEqual(
+    connectorSetupNeed(
+      view(
+        {},
+        {
+          id: "gw",
+          name: "Gateway ext",
+          source: { git: "https://example.com/x.git" },
+        },
+      ),
+      "gateway",
+      "dev_1",
+    ),
+    { kind: "connectors", step: "install" },
+  );
+  assert.deepEqual(
+    connectorSetupNeed(view({ online: false }), "gateway", "dev_1"),
+    { kind: "offline" },
+  );
+  const installed = { extensionKinds: ["gateway"] };
+  assert.deepEqual(
+    connectorSetupNeed(
+      view({
+        ...installed,
+        states: [{ kind: "gateway", status: "signed_out", signedIn: false }],
+      }),
+      "gateway",
+      "dev_1",
+    ),
+    { kind: "connectors", step: "sign_in" },
+  );
+  assert.deepEqual(
+    connectorSetupNeed(
+      view({
+        ...installed,
+        states: [
+          {
+            kind: "gateway",
+            status: "error",
+            signedIn: true,
+            statusDetail: "Quota service down.",
+          },
+        ],
+      }),
+      "gateway",
+      "dev_1",
+    ),
+    { kind: "connectors", step: "fix", detail: "Quota service down." },
   );
 });

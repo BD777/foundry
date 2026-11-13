@@ -8,8 +8,10 @@
  * another's private state.
  */
 
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const defaultStateRoot = resolve(homedir(), ".foundry");
 export const stackStateParent = resolve(homedir(), ".foundry-stacks");
@@ -26,13 +28,47 @@ function refuseRealFolderInTests(variable: string): void {
     );
 }
 
+/**
+ * This module's package root when it runs from a source checkout: the
+ * published package carries only dist (package.json "files"), a checkout
+ * also has src and tsconfig.json.
+ */
+function checkoutPackageRoot(): string | undefined {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  return existsSync(join(root, "src")) &&
+    existsSync(join(root, "tsconfig.json"))
+    ? root
+    : undefined;
+}
+
+/**
+ * Worker code run from a checkout (a script, a repro, a test run without
+ * scripts/run-worker-tests.mjs) gets a fresh scratch state root unless it
+ * names one or opts in with FOUNDRY_USE_REAL_STATE=1. DEV-217: a benchmark's
+ * proxy repro wrote this device's real worker-proxy.json, pointing the
+ * Worker at a dead test proxy for three hours. The root is exported so the
+ * processes it starts share it.
+ */
+function checkoutScratchRoot(): string | undefined {
+  if (process.env.FOUNDRY_USE_REAL_STATE === "1") return undefined;
+  const checkout = checkoutPackageRoot();
+  if (!checkout) return undefined;
+  const root = mkdtempSync(join(tmpdir(), "foundry-checkout-state-"));
+  process.env.FOUNDRY_STATE_ROOT = root;
+  process.env.FOUNDRY_TOOLS_ROOT ??= join(root, "tools");
+  process.stderr.write(
+    `Foundry Worker code from the checkout ${checkout} keeps its state in ${root}, not ${defaultStateRoot}. Set FOUNDRY_STATE_ROOT or FOUNDRY_STACK to choose one, or FOUNDRY_USE_REAL_STATE=1 for this device's own.\n`,
+  );
+  return root;
+}
+
 export function foundryStateRoot(): string {
   const configured = process.env.FOUNDRY_STATE_ROOT?.trim();
   if (configured) return resolve(configured);
   const stack = process.env.FOUNDRY_STACK?.trim();
   if (stack) return resolve(stackStateParent, stack);
   refuseRealFolderInTests("FOUNDRY_STATE_ROOT");
-  return defaultStateRoot;
+  return checkoutScratchRoot() ?? defaultStateRoot;
 }
 
 export function foundryStatePath(...segments: string[]): string {
@@ -49,6 +85,12 @@ export function foundryToolsRoot(): string {
   const configured = process.env.FOUNDRY_TOOLS_ROOT?.trim();
   if (configured) return resolve(configured);
   refuseRealFolderInTests("FOUNDRY_TOOLS_ROOT");
+  if (
+    !process.env.FOUNDRY_STATE_ROOT?.trim() &&
+    !process.env.FOUNDRY_STACK?.trim() &&
+    checkoutScratchRoot()
+  )
+    return resolve(process.env.FOUNDRY_TOOLS_ROOT!);
   return resolve(homedir(), ".foundry-tools");
 }
 

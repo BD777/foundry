@@ -3,6 +3,11 @@ package resources
 // Leases: which session holds which instance, how long, and who waits.
 // The rules (docs/resources.md):
 //
+//   - A lease is exclusive or shared (types.go TypeSpec.Shared). Shared
+//     leases run side by side up to the instance's slots (capacity); parked
+//     ones do not count. An exclusive lease is alone on its instance.
+//     Waits are served first come first served, so a queued exclusive
+//     request keeps later shared ones off and is never starved.
 //   - A lease lives with its holder session's turns: an input that is
 //     queued, running or blocked, and a turn the agent runs on its own (a
 //     timer, a background task's continuation; lease_turns.go). While one
@@ -106,6 +111,9 @@ const (
 	CodeOffline     = "device_offline"
 	CodeInvalid     = "invalid"
 	CodeNothingHeld = "nothing_held"
+	// CodeRefused: the device's lease policy keeps the session's workspace
+	// off its resources.
+	CodeRefused = "workspace_refused"
 )
 
 // LeaseError is a refusal an agent or person can act on.
@@ -152,6 +160,9 @@ type AcquireRequest struct {
 	HoldFor *time.Duration
 	// Wait: how long to wait when busy (0: answer at once).
 	Wait time.Duration
+	// Mode: shared or exclusive; empty takes each type's default (compute
+	// shared, computer_use exclusive).
+	Mode string
 }
 
 // Leases decides leases over the inventory of a Service.
@@ -167,6 +178,10 @@ type Leases struct {
 	Router  Router
 	// HostOnline reports whether an instance's source is connected.
 	HostOnline func(sourceID string) bool
+	// SharedLeases reports whether a source's worker runs shared leases
+	// side by side (nil: every source does). One that does not gets one
+	// lease at a time.
+	SharedLeases func(sourceID string) bool
 	// WaitHostReconnect waits while a source is in its reconnect grace. A
 	// source that is already offline returns at once; request cancellation
 	// and a reconnect timeout end the wait with their error.

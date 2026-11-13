@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -19,6 +20,27 @@ const Debounce = 5 * time.Second
 
 // maxBatchMessages bounds the messages one notice carries.
 const maxBatchMessages = 20
+
+// DefaultIdleMinutes is how long a conversation may be quiet before its next
+// message starts a new session, for a channel that does not say.
+const DefaultIdleMinutes = 240
+
+// Why a conversation's message started a new session.
+const (
+	NewFirst     = "first"
+	NewIdle      = "idle"
+	NewCommand   = "command"
+	NewButton    = "button"
+	NewRestarted = "restarted"
+)
+
+// SessionRule is the channel's session rule with its defaults.
+func SessionRule(channel store.MessageChannel) store.MessageChannelSessionRule {
+	if channel.Session == nil {
+		return store.MessageChannelSessionRule{IdleMinutes: DefaultIdleMinutes, ResetCommands: []string{}}
+	}
+	return *channel.Session
+}
 
 // Dispatch hands each channel's queued messages to the assistant, one inbox
 // entry per conversation turn, and follows the entries it made. It runs as
@@ -45,6 +67,12 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 		return err
 	}
 	sortRecords(open)
+	handed, err := r.ports.Store.ListMessageChannelDeliveries(ctx, channel.ID,
+		[]string{store.MessageDeliveryDelivered, store.MessageDeliveryDone, store.MessageDeliveryFailed}, 500)
+	if err != nil {
+		return err
+	}
+	latest := latestSessions(handed)
 	// Follow what was handed over.
 	inFlight := map[string]bool{}
 	statuses := map[string]InboxStatus{}
@@ -66,7 +94,16 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 			}
 			statuses[record.InboxID] = status
 		}
-		if changed := applyInboxStatus(record, status, r.ports.Now()); changed {
+		hadSession := record.SessionID != ""
+		changed := applyInboxStatus(record, status, r.ports.Now())
+		// The inbox started another session for the same segment (the last
+		// one failed, or the model changed): say so on the record.
+		if !hadSession && record.SessionID != "" && !record.SessionNew {
+			if previous, ok := latest[segmentKey(record.SessionKey, record.Segment)]; ok && previous.SessionID != record.SessionID {
+				record.SessionNew, record.NewReason, changed = true, NewRestarted, true
+			}
+		}
+		if changed {
 			if err := r.ports.Store.SaveMessageChannelDelivery(ctx, *record); err != nil {
 				return err
 			}
@@ -112,29 +149,187 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 		for _, i := range indexes {
 			batch = append(batch, open[i])
 		}
-		label := ""
-		if r.ports.SourceLabel != nil {
-			label = r.ports.SourceLabel(ctx, channel)
-		}
-		ids := make([]string, 0, len(batch))
-		for _, record := range batch {
-			ids = append(ids, record.ID)
-		}
-		sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
-		messageID := "batch_" + hex.EncodeToString(sum[:12])
-		inboxID, err := r.ports.Inbox.Deliver(ctx, channel, key, messageID, Notice(channel.MessageChannel, label, batch))
+		delivered, err := r.handOver(ctx, channel, key, batch, latest)
 		if err != nil {
-			return fmt.Errorf("hand over %s: %w", batch[0].ID, err)
+			return err
 		}
-		for _, record := range batch {
-			record.InboxID, record.Reason = inboxID, ""
-			if err := r.ports.Store.SaveMessageChannelDelivery(ctx, record); err != nil {
-				return err
-			}
+		if delivered {
+			inFlight[key] = true
 		}
-		inFlight[key] = true
 	}
 	return nil
+}
+
+// segmentKey names one segment (one session) of a conversation.
+func segmentKey(sessionKey string, segment int) string {
+	return fmt.Sprintf("%s#%d", sessionKey, segment)
+}
+
+// latestSessions is the newest handed record with a session of every
+// segment, and of every conversation (keyed by its session key).
+func latestSessions(handed []store.MessageChannelDeliveryRecord) map[string]store.MessageChannelDeliveryRecord {
+	out := map[string]store.MessageChannelDeliveryRecord{}
+	for _, record := range handed {
+		if record.SessionID == "" {
+			continue
+		}
+		for _, key := range []string{segmentKey(record.SessionKey, record.Segment), record.SessionKey} {
+			if previous, ok := out[key]; !ok || previous.Segment < record.Segment ||
+				previous.Segment == record.Segment && previous.CreatedAt < record.CreatedAt {
+				out[key] = record
+			}
+		}
+	}
+	return out
+}
+
+// Rollover is the decision for a conversation's next batch: which segment
+// (session) it goes to, and why a new one starts.
+type Rollover struct {
+	Segment int
+	New     bool
+	Reason  string
+	// Previous is the conversation's earlier session, for the notice.
+	Previous     string
+	PreviousLast time.Time
+	// Idle is how long the conversation was quiet (Reason idle).
+	Idle time.Duration
+}
+
+// DecideRollover applies the session rule to a conversation: state is its
+// stored segment and pending reset, previous the newest record that went to
+// a session (ok false: none yet), at the arrival of the batch's first
+// message, and command whether that message asked for a new session.
+func DecideRollover(rule store.MessageChannelSessionRule, state store.MessageChannelKeyState, previous store.MessageChannelDeliveryRecord, hasPrevious bool, session SessionState, sessionKnown bool, at time.Time, command bool) Rollover {
+	decision := Rollover{Segment: state.Segment}
+	if !hasPrevious {
+		decision.New, decision.Reason = true, NewFirst
+		if state.Segment > 0 || state.ResetPending != "" {
+			decision.Reason = state.ResetPending
+			if decision.Reason == "" {
+				decision.Reason = NewFirst
+			}
+		}
+		return decision
+	}
+	decision.Previous = previous.SessionID
+	if sessionKnown {
+		decision.PreviousLast = session.LastActive
+	}
+	switch {
+	case command:
+		decision.Reason = NewCommand
+	case state.ResetPending != "":
+		decision.Reason = state.ResetPending
+	case rule.IdleMinutes > 0 && sessionKnown && !session.Running && !session.OpenWork &&
+		!session.LastActive.IsZero() && at.Sub(session.LastActive) >= time.Duration(rule.IdleMinutes)*time.Minute:
+		decision.Reason, decision.Idle = NewIdle, at.Sub(session.LastActive)
+	case sessionKnown && session.Replaced:
+		// Same segment: the assistant starts the conversation's next
+		// session in place of that one.
+		decision.New, decision.Reason = true, NewRestarted
+		return decision
+	default:
+		return decision
+	}
+	decision.Segment, decision.New = state.Segment+1, true
+	return decision
+}
+
+// handOver gives one conversation's batch to the assistant; it reports
+// whether a turn was handed over (a bare reset command hands nothing).
+func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecord, key string, batch []store.MessageChannelDeliveryRecord, latest map[string]store.MessageChannelDeliveryRecord) (bool, error) {
+	rule := SessionRule(channel.MessageChannel)
+	state, err := r.ports.Store.GetMessageChannelKey(ctx, channel.ID, key)
+	if err != nil {
+		return false, err
+	}
+	state.ChannelID, state.SessionKey = channel.ID, key
+	command := false
+	if len(rule.ResetCommands) > 0 {
+		rest, ok := StripCommand(batch[0].Envelope.Text, ChannelTriggers(channel.MessageChannel), rule.ResetCommands)
+		if ok {
+			command = true
+			if strings.TrimSpace(rest) == "" {
+				// A bare command: the next message starts a new session.
+				first := batch[0]
+				first.Status, first.Reason = store.MessageDeliveryDone, "reset_command"
+				if err := r.ports.Store.SaveMessageChannelDelivery(ctx, first); err != nil {
+					return false, err
+				}
+				state.ResetPending = NewCommand
+				if err := r.ports.Store.SaveMessageChannelKey(ctx, state); err != nil {
+					return false, err
+				}
+				if batch = batch[1:]; len(batch) == 0 {
+					return false, nil
+				}
+				command = false
+			} else {
+				batch[0].Envelope.Text = rest
+			}
+		}
+	}
+	previous, hasPrevious := latest[key]
+	var session SessionState
+	known := false
+	if hasPrevious && r.ports.Session != nil {
+		session, known = r.ports.Session(ctx, previous.SessionID)
+	}
+	at, _ := time.Parse(time.RFC3339Nano, batch[0].CreatedAt)
+	decision := DecideRollover(rule, state, previous, hasPrevious, session, known, at, command)
+	if decision.Segment != state.Segment || state.ResetPending != "" {
+		state.Segment, state.ResetPending = decision.Segment, ""
+		if err := r.ports.Store.SaveMessageChannelKey(ctx, state); err != nil {
+			return false, err
+		}
+	}
+	inboxChannel := InboxChannel(channel.ID, key)
+	if decision.Segment > 0 {
+		inboxChannel += fmt.Sprintf(":%d", decision.Segment)
+	}
+	label, hint := "", ""
+	if r.ports.SourceLabel != nil {
+		label = r.ports.SourceLabel(ctx, channel)
+	}
+	if r.ports.ContextHint != nil {
+		hint = r.ports.ContextHint(ctx, channel)
+	}
+	ids := make([]string, 0, len(batch))
+	raw := make([]json.RawMessage, 0, len(batch))
+	for i := range batch {
+		ids = append(ids, batch[i].ID)
+		batch[i].Segment, batch[i].InboxChannel = decision.Segment, inboxChannel
+		batch[i].SessionNew, batch[i].NewReason = i == 0 && decision.New, ""
+		if batch[i].SessionNew {
+			batch[i].NewReason = decision.Reason
+		}
+		if batch[i].RawJSON != "" && json.Valid([]byte(batch[i].RawJSON)) {
+			raw = append(raw, json.RawMessage(batch[i].RawJSON))
+		}
+		// The segment goes on the records before the turn exists, so the
+		// session it starts can be tied to them.
+		if err := r.ports.Store.SaveMessageChannelDelivery(ctx, batch[i]); err != nil {
+			return false, err
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
+	turn := Turn{InboxChannel: inboxChannel, SessionKey: key, Segment: decision.Segment,
+		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: Notice(channel.MessageChannel, label, hint, decision, batch)}
+	if len(raw) > 0 {
+		turn.Raw, _ = json.MarshalIndent(raw, "", "  ")
+	}
+	inboxID, err := r.ports.Inbox.Deliver(ctx, channel, turn)
+	if err != nil {
+		return false, fmt.Errorf("hand over %s: %w", batch[0].ID, err)
+	}
+	for _, record := range batch {
+		record.InboxID, record.Reason = inboxID, ""
+		if err := r.ports.Store.SaveMessageChannelDelivery(ctx, record); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // applyInboxStatus moves a record along with its inbox entry; it reports
@@ -164,6 +359,17 @@ func applyInboxStatus(record *store.MessageChannelDeliveryRecord, status InboxSt
 	return record.Status != before.Status || record.Reason != before.Reason || record.SessionID != before.SessionID
 }
 
+// RequestNewSession makes the conversation's next message start a new
+// session, as the person asked.
+func (r *Runner) RequestNewSession(ctx context.Context, channelID, sessionKey string) error {
+	state, err := r.ports.Store.GetMessageChannelKey(ctx, channelID, sessionKey)
+	if err != nil {
+		return err
+	}
+	state.ChannelID, state.SessionKey, state.ResetPending = channelID, sessionKey, NewButton
+	return r.ports.Store.SaveMessageChannelKey(ctx, state)
+}
+
 // Release hands the channel's held messages over after all, past its
 // limits, as the person asked.
 func (r *Runner) Release(ctx context.Context, channelID string) (int, error) {
@@ -178,57 +384,4 @@ func (r *Runner) Release(ctx context.Context, channelID string) (int, error) {
 		}
 	}
 	return len(held), nil
-}
-
-// Notice is what the assistant's session receives for a turn: facts about
-// the messages, which are other people's words, and nothing about what to
-// do (the channel's skill holds the person's guidance).
-func Notice(channel store.MessageChannel, sourceLabel string, records []store.MessageChannelDeliveryRecord) string {
-	var out strings.Builder
-	source := sourceLabel
-	if source == "" {
-		source = channel.Source.Kind
-	}
-	fmt.Fprintf(&out, "[Message channel %q (%s, skill %s): messages from other people, not the person's words]\n",
-		channel.Name, source, SkillName(channel))
-	first := records[0].Envelope
-	conversation := first.Conversation.Kind + " conversation " + first.Conversation.ID
-	if first.Conversation.Name != "" {
-		conversation += fmt.Sprintf(" %q", first.Conversation.Name)
-	}
-	if first.Thread.ID != "" && channel.SessionKey == "thread" {
-		conversation += ", thread " + first.Thread.ID
-	}
-	fmt.Fprintf(&out, "Conversation: %s\n", conversation)
-	for _, record := range records {
-		envelope := record.Envelope
-		out.WriteString("\n")
-		line := "Message " + cmpOr(envelope.MessageID, envelope.ID)
-		if envelope.Thread.ID != "" {
-			line += " (thread " + envelope.Thread.ID + ")"
-		}
-		sender := cmpOr(envelope.Sender.Name, "unknown sender")
-		if envelope.Sender.ID != "" {
-			sender += " (" + envelope.Sender.ID + ")"
-		}
-		if envelope.Sender.IsSelf {
-			sender += ", the person themselves"
-		}
-		line += " from " + sender
-		if envelope.OccurredAt != "" {
-			line += " at " + envelope.OccurredAt
-		}
-		if envelope.MentionsMe {
-			line += ", mentions the person"
-		}
-		fmt.Fprintf(&out, "%s; delivery %s\n", line, record.ID)
-		for _, text := range strings.Split(strings.TrimRight(envelope.Text, "\n"), "\n") {
-			out.WriteString("> " + text + "\n")
-		}
-		if envelope.TextTruncated {
-			out.WriteString("> [text cut at 8 KB]\n")
-		}
-	}
-	out.WriteString("[End of message channel]\n")
-	return out.String()
 }

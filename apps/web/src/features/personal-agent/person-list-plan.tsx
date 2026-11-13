@@ -1,5 +1,5 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   PersonalAgentItemPlan,
@@ -24,9 +24,16 @@ export function ItemPlan({
   operations,
   workspaces,
   onSave,
-  onContinue,
   onRefresh,
+  meta,
+  detailsOpen = false,
+  detailsId,
 }: {
+  /** The row's own facts (a reminder, the task helping), first on its line. */
+  meta?: ReactNode;
+  /** Shows the plan's details and evidence; the row's menu toggles it. */
+  detailsOpen?: boolean;
+  detailsId?: string;
   assistantId?: string;
   item: PersonalAgentListItem;
   items: PersonalAgentListItem[];
@@ -36,7 +43,6 @@ export function ItemPlan({
     item: PersonalAgentListItem,
     plan: PersonalAgentItemPlan,
   ) => Promise<void>;
-  onContinue?: (item: PersonalAgentListItem) => Promise<void>;
   onRefresh?: () => Promise<void>;
 }) {
   const { t } = useTranslation("personalAgent");
@@ -51,6 +57,9 @@ export function ItemPlan({
     .map((id) => items.find((i) => i.id === id))
     .filter((i) => i !== undefined);
   const progress = plan?.progress ?? "inbox";
+  // Only work handed to the assistant earns a line; "just noted" is the
+  // default and says nothing.
+  const executing = item.status === "open" && plan?.mode === "execute";
   const state = (value: string) =>
     [
       "pending",
@@ -103,58 +112,24 @@ export function ItemPlan({
     }
   }
   return (
-    <div className="grid min-w-0 gap-1.5 ps-6 wrap-anywhere">
-      <FieldHint>
-        {item.status === "done" ? (
-          t("planning.completed")
-        ) : (
-          <>
-            {t(
-              plan?.mode === "execute" ? "planning.execute" : "planning.record",
-            )}
-            {plan?.mode === "execute"
-              ? ` · ${t(`planning.progress.${progress}` as never)}`
-              : ""}
-          </>
-        )}
-      </FieldHint>
-      {item.status === "done" &&
-      latest &&
-      ["pending", "waiting", "dispatching", "delivered", "unknown"].includes(
-        latest.status,
-      ) ? (
-        <FieldHint role="status">{t("planning.executionStillOpen")}</FieldHint>
+    <div className="grid min-w-0 gap-1 ps-6 wrap-anywhere">
+      {meta || executing ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs leading-[1.45] text-ink-muted">
+          {meta}
+          {executing ? (
+            <span>
+              {t("planning.execute")}
+              {` · ${t(`planning.progress.${progress}` as never)}`}
+            </span>
+          ) : null}
+        </div>
       ) : null}
-      {item.status === "open" &&
-      latest &&
-      ["unknown", "failed", "waiting", "cancelled"].includes(latest.status) ? (
-        <FieldHint role="status">
-          {state(latest.status)}
-          {latest.reason ? ` · ${operationReason(latest.reason)}` : ""}
-        </FieldHint>
-      ) : null}
-      {item.status === "open" && plan?.route?.needsClarification ? (
-        <FieldHint>{t("planning.clarify")}</FieldHint>
-      ) : null}
-      {onContinue && item.status === "open" ? (
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            setError("");
-            void onContinue(item)
-              .catch((e) => setError(serverErrorText(e)))
-              .finally(() => setBusy(false));
-          }}
-        >
-          {t("planning.continueLabel")}
-        </Button>
-      ) : null}
-      <details className="group min-w-0">
-        <summary className="cursor-pointer py-1 text-sm text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info-text group-open:mb-2">
-          {t("planning.details")}
-        </summary>
+      <div
+        className="grid min-w-0 gap-1 text-sm text-ink"
+        data-plan-details=""
+        hidden={!detailsOpen}
+        id={detailsId}
+      >
         {plan?.route ? (
           <>
             <p>{t("planning.route", { reason: plan.route.reason })}</p>
@@ -454,7 +429,25 @@ export function ItemPlan({
             {t("planning.edit")}
           </Button>
         ) : null}
-      </details>
+      </div>
+      {item.status === "done" &&
+      latest &&
+      ["pending", "waiting", "dispatching", "delivered", "unknown"].includes(
+        latest.status,
+      ) ? (
+        <FieldHint role="status">{t("planning.executionStillOpen")}</FieldHint>
+      ) : null}
+      {item.status === "open" &&
+      latest &&
+      ["unknown", "failed", "waiting", "cancelled"].includes(latest.status) ? (
+        <FieldHint role="status">
+          {state(latest.status)}
+          {latest.reason ? ` · ${operationReason(latest.reason)}` : ""}
+        </FieldHint>
+      ) : null}
+      {item.status === "open" && plan?.route?.needsClarification ? (
+        <FieldHint>{t("planning.clarify")}</FieldHint>
+      ) : null}
     </div>
   );
 }

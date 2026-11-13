@@ -23,8 +23,15 @@ import type { PreparedExecution } from "./preparation/index.js";
 
 import { createHash, randomUUID } from "node:crypto";
 import { privateConfigurationVersion } from "../harness/agent-runtime/private-identity.js";
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "../platform/state-root.js";
 import { writeJSON } from "../platform/storage.js";
@@ -82,8 +89,9 @@ export function claudeSessionOptions(
  * (the highest-priority user-controlled layer). Values here override the
  * device user's ~/.claude/settings.json.
  *
- * - `env` keeps the selected profile's endpoint/model/credential authoritative
- *   even when the local settings file pins a different provider.
+ * - `env` keeps the selected profile's model and window authoritative even
+ *   when the local settings file pins others. Its credential is written to
+ *   no file (acquireClaudeSettings): the process has it in its environment.
  * - `autoCompactEnabled: true` guarantees long resumed sessions compact
  *   before they overflow the model window. A user-level `false` previously
  *   caused hard "Prompt is too long" failures on resume.
@@ -97,6 +105,152 @@ export function foundryClaudeSettings(
     env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
   };
+}
+
+/** Variables Claude Code authenticates with (its subprocess scrub list). */
+const claudeCredentialNames = new Set([
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_CUSTOM_HEADERS",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+  "ANTHROPIC_AWS_API_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "CLAUDE_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+  "OPENAI_API_KEY",
+  "CODEX_API_KEY",
+]);
+// `TOKENS` is a count (CLAUDE_CODE_MAX_OUTPUT_TOKENS), not a credential.
+const credentialNamed =
+  /TOKEN(?!S)|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIAL|COOKIE|AUTHORIZATION/i;
+
+/**
+ * The part of a launch environment a settings file may carry: no credential.
+ * The process gets its credential in its environment; Claude Code ignores
+ * credential and endpoint variables in settings files anyway when the host
+ * manages the provider (CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST,
+ * code.claude.com/docs/en/env-vars). A file is readable by every agent the
+ * same OS user runs; the environment of a process is not in any file. A
+ * value that embeds a credential (a header, a URL with a key) goes too.
+ */
+export function claudeSettingsEnvironment(
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const credentials = Object.entries(env)
+    .filter(
+      ([name, value]) =>
+        (claudeCredentialNames.has(name) || credentialNamed.test(name)) &&
+        typeof value === "string" &&
+        value.trim().length >= 8,
+    )
+    .map(([, value]) => value!.trim());
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" &&
+        !claudeCredentialNames.has(entry[0]) &&
+        !credentialNamed.test(entry[0]) &&
+        !credentials.some((secret) => entry[1]!.includes(secret)),
+    ),
+  );
+}
+
+/** Settings as written to a file: their env without credentials. */
+function withoutCredentials(
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  const env = settings.env;
+  if (!env || typeof env !== "object" || Array.isArray(env)) return settings;
+  return {
+    ...settings,
+    env: claudeSettingsEnvironment(env as Record<string, string | undefined>),
+  };
+}
+
+/**
+ * What makes Claude Code treat a folder as a CLAUDE.md project, so that by
+ * default it reads that instead of AGENTS.md (code.claude.com/docs/en/memory,
+ * "When Claude Code reads AGENTS.md").
+ */
+const claudeProjectInstructionNames = [
+  "CLAUDE.md",
+  join(".claude", "CLAUDE.md"),
+  "CLAUDE.local.md",
+];
+/** The built-in plugin that reads AGENTS.md; before v2.1.285 `agents-md@builtin`. */
+const agentsMdPluginId = "cc-plugin-agents-md@builtin";
+const agentsMdPluginIds = [agentsMdPluginId, "agents-md@builtin"];
+
+/**
+ * Keeps Claude Code reading the project's AGENTS.md where it would outside
+ * Foundry. Natively, a CLAUDE.md on the path from the working directory up
+ * stops AGENTS.md from loading, except the person's own `~/.claude/CLAUDE.md`.
+ * Foundry runs Claude with its own configuration directory that links the
+ * person's files, so their `~/.claude` no longer counts as theirs: its
+ * CLAUDE.md is an ancestor `.claude/CLAUDE.md` of every workspace in their
+ * home, and AGENTS.md is skipped. When that file is the only CLAUDE.md on
+ * the path, this asks for the documented `claude-md-and-agents-md`, which
+ * loads what the native run loads. A value the person set stays theirs.
+ */
+export function nativeInstructionFileSettings(
+  workspacePath: string,
+  env: NodeJS.ProcessEnv,
+): Record<string, unknown> {
+  const configDir = env.CLAUDE_CONFIG_DIR?.trim();
+  if (!configDir) return {};
+  const own = existingRealPath(join(configDir, "CLAUDE.md"));
+  if (!own || personChoseInstructionFiles(configDir)) return {};
+  let ownOnPath = false;
+  for (let dir = resolve(workspacePath); ; dir = dirname(dir)) {
+    for (const name of claudeProjectInstructionNames) {
+      const file = existingRealPath(join(dir, name));
+      if (file === undefined) continue;
+      if (file !== own) return {};
+      ownOnPath = true;
+    }
+    if (dirname(dir) === dir) break;
+  }
+  if (!ownOnPath) return {};
+  return {
+    pluginConfigs: {
+      [agentsMdPluginId]: {
+        options: { instructionFiles: "claude-md-and-agents-md" },
+      },
+    },
+  };
+}
+
+function existingRealPath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES")
+      return undefined;
+    throw error;
+  }
+}
+
+/** Whether the person's settings already choose which instruction files load. */
+function personChoseInstructionFiles(configDir: string): boolean {
+  let settings: { pluginConfigs?: Record<string, { options?: object }> };
+  try {
+    settings = JSON.parse(
+      readFileSync(join(configDir, "settings.json"), "utf8"),
+    );
+  } catch {
+    // Absent or unreadable: Claude Code reports a malformed file itself.
+    return false;
+  }
+  return agentsMdPluginIds.some((id) => {
+    const options = settings?.pluginConfigs?.[id]?.options;
+    return (
+      !!options &&
+      ("instructionFiles" in options || "projectInstructions" in options)
+    );
+  });
 }
 
 /**
@@ -231,7 +385,10 @@ export function buildClaudeLaunchPlan(input: {
       sessionEnvironment(workspacePath, profile, session),
   );
   const deviceNotes = sessionDeviceNotes(workspacePath, session, env.TMPDIR);
-  const settings = foundryClaudeSettings(profile, session, managedSkills);
+  const settings = {
+    ...foundryClaudeSettings(profile, session, managedSkills),
+    ...nativeInstructionFileSettings(workspacePath, env),
+  };
   const role = claudeRoleOptions(session);
   const tools = foundryToolsEndpoint(session);
   const mcpServers = tools && {
@@ -270,10 +427,11 @@ export function buildClaudeLaunchPlan(input: {
 
 /**
  * Claude Code reads its flag settings from a file here rather than inline:
- * inline they become a `--settings` argument, and a process's arguments are
- * readable by anyone on the machine, while these settings carry the
- * connection's key. Each file is immutable, owner-only and reference counted;
- * one execution host never clears another host's active inputs.
+ * inline they become a `--settings` argument, which anyone on the machine
+ * can read. The file never holds a credential either (withoutCredentials):
+ * every agent the same OS user runs can read it. Each file is immutable,
+ * owner-only and reference counted; one execution host never clears another
+ * host's active inputs.
  */
 // A sandboxed (Issue) session writes beside its own files: the worker's
 // state directory may not exist or be writable there.
@@ -298,8 +456,9 @@ const unleasedSettings = new Set<() => void>();
 /** An immutable private settings file, held until every native owner releases it. */
 export function acquireClaudeSettings(
   key: string,
-  settings: Record<string, unknown>,
+  flagSettings: Record<string, unknown>,
 ): { path: string; release: () => void } {
+  const settings = withoutCredentials(flagSettings);
   const version = privateConfigurationVersion(settings);
   const directory = join(claudeSettingsDir(), settingsOwner);
   const path = join(
@@ -335,6 +494,52 @@ export function clearClaudeSettingsFiles(): void {
   for (const release of unleasedSettings) release();
   unleasedSettings.clear();
   reapPrivateInputOwners(claudeSettingsDir(), "claude-settings");
+  removeCredentialsFromSettingsFiles();
+}
+
+/**
+ * Earlier Workers wrote the connection's key into these files. A running
+ * Claude process keeps its file: it has its key in its environment, and
+ * ignores one in a settings file (claudeSettingsEnvironment), so the key is
+ * taken out in place. Returns how many files changed.
+ */
+export function removeCredentialsFromSettingsFiles(
+  root = claudeSettingsDir(),
+): number {
+  let changed = 0;
+  let owners: string[];
+  try {
+    owners = readdirSync(root);
+  } catch {
+    return 0;
+  }
+  for (const owner of owners) {
+    const directory = join(root, owner);
+    let names: string[];
+    try {
+      if (!lstatSync(directory).isDirectory()) continue;
+      names = readdirSync(directory);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!/^[0-9a-f]{64}\.json$/.test(name)) continue;
+      const path = join(directory, name);
+      let settings: Record<string, unknown>;
+      try {
+        if (!lstatSync(path).isFile()) continue;
+        settings = JSON.parse(readFileSync(path, "utf8"));
+      } catch {
+        continue;
+      }
+      if (!settings || typeof settings !== "object") continue;
+      const cleaned = withoutCredentials(settings);
+      if (JSON.stringify(cleaned) === JSON.stringify(settings)) continue;
+      writeJSON(path, cleaned);
+      changed++;
+    }
+  }
+  return changed;
 }
 
 /**

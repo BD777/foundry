@@ -232,7 +232,7 @@ func TestNothingReachesTheConnectorBeforeTheSessionIsAuthenticatedAndRechecked(t
 		"unknown stand-in":           {handle: "tk_unknown", reason: ReasonAccessEnded},
 		"another device":             {handle: "tk_good", device: Device{ID: "d2", OwnerUserID: "alice"}, reason: ReasonAccessEnded},
 		"another device owner":       {handle: "tk_good", device: Device{ID: "d1", OwnerUserID: "bob"}, reason: ReasonAccessEnded},
-		"session finished":           {prepare: func(f *fixture) { f.session.Status = "completed" }, handle: "tk_good", reason: ReasonAccessEnded},
+		"session archived":           {prepare: func(f *fixture) { f.session.ArchivedAt = time.Now().UTC().Format(time.RFC3339Nano) }, handle: "tk_good", reason: ReasonAccessEnded},
 		"session on another device":  {prepare: func(f *fixture) { f.session.DeviceID = "d9" }, handle: "tk_good", reason: ReasonAccessEnded},
 		"session moved workspace":    {prepare: func(f *fixture) { f.session.WorkspaceID = "w2" }, handle: "tk_good", reason: ReasonAccessEnded},
 		"account unbound":            {prepare: func(f *fixture) { f.account.WorkspaceIDs = nil }, handle: "tk_good", reason: ReasonAccessEnded},
@@ -264,22 +264,18 @@ func TestNothingReachesTheConnectorBeforeTheSessionIsAuthenticatedAndRechecked(t
 }
 
 func TestAnEndedSessionSpendsItsGrant(t *testing.T) {
-	for _, status := range []string{"failed", "canceled"} {
+	for name, change := range map[string]func(*store.AgentSession){
+		"archived": func(s *store.AgentSession) { s.ArchivedAt = time.Now().UTC().Format(time.RFC3339Nano) },
+		"deleted":  func(s *store.AgentSession) { s.ID = "s_other" },
+		"device":   func(s *store.AgentSession) { s.DeviceID = "d2" },
+	} {
 		f := newFixture()
-		f.session.Status = status
-		f.serve("tk_good")
-		if len(f.deleted) != 1 || f.deleted[0] != "g1" {
-			t.Fatalf("%s: grants dropped: %v", status, f.deleted)
+		change(&f.session)
+		if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded || len(f.deleted) != 1 || f.deleted[0] != "g1" {
+			t.Fatalf("%s: %q, grants dropped %v", name, response.Body.String(), f.deleted)
 		}
 	}
 	f := newFixture()
-	f.session.Status, f.session.CompletedAt = "completed", time.Now().UTC().Format(time.RFC3339Nano)
-	f.session.ArchivedAt = f.session.CompletedAt
-	f.serve("tk_good")
-	if len(f.deleted) != 1 {
-		t.Fatalf("an archived session kept its grant: %v", f.deleted)
-	}
-	f = newFixture()
 	f.session.WorkspaceID = "w2"
 	f.serve("tk_good")
 	if len(f.deleted) != 0 {
@@ -394,8 +390,12 @@ func TestLiveAnswersTheSameRecheckForAConnectionTheConnectorHolds(t *testing.T) 
 		t.Fatal(err)
 	}
 	f.session.Status = "completed"
-	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrSessionIdle) {
-		t.Fatalf("finished session: %v", err)
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); err != nil {
+		t.Fatalf("a session between turns: %v", err)
+	}
+	f.session.ArchivedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrSessionEnded) {
+		t.Fatalf("archived session: %v", err)
 	}
 	f = newFixture()
 	f.account.WorkspaceIDs = nil
@@ -560,71 +560,45 @@ func TestHelperWithoutTheWorkspaceBindingIsRefused(t *testing.T) {
 	}
 }
 
-// claims is a NativeWork whose claims a test sets.
-type claims map[string]time.Time
-
-func (c claims) NativeWorkClaimedAt(deviceID, sessionID string) time.Time {
-	return c[deviceID+"/"+sessionID]
-}
-
-// DEV-155: a completed session's grant lives while its device claims that
-// the session's agent still works on its own (a background command, a
-// timer, a turn it continues by itself), not just during a Foundry turn.
-func TestACompletedSessionActsWhileItsDeviceClaimsItsNativeWork(t *testing.T) {
+// DEV-215: a connector grant is a standing one; a session holds it for as
+// long as it exists and is not archived, whatever its turns do. Each case
+// is an incident class: a call between turns (a kept agent process reused
+// by the next turn), from background work after the turn ended (Monitor,
+// a background command, a timer's turn, a subagent), after a failed or
+// canceled turn the session is continued from, days later, and with no
+// device claims at all (a restarted Worker or Server). Archive, deletion,
+// the account stopped or unbound and the session moved end it at once.
+func TestASessionHoldsItsConnectorGrantWhateverItsTurnsDo(t *testing.T) {
 	now := time.Now()
-	f := newFixture()
-	work := claims{}
-	f.pipe.Work, f.pipe.Now = work, func() time.Time { return now }
-	f.session.Status, f.session.CompletedAt = "completed", now.Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+	for name, change := range map[string]func(*store.AgentSession){
+		"running": func(s *store.AgentSession) { s.Status = "running" },
+		"between turns": func(s *store.AgentSession) {
+			s.Status, s.CompletedAt = "completed", now.Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+		},
+		"after a failed turn": func(s *store.AgentSession) { s.Status = "failed" },
+		"after a canceled turn": func(s *store.AgentSession) {
+			s.Status = "canceled"
+		},
+		"a week after its last turn": func(s *store.AgentSession) {
+			s.Status, s.CompletedAt = "completed", now.Add(-7*24*time.Hour).UTC().Format(time.RFC3339Nano)
+		},
+	} {
+		f := newFixture()
+		f.pipe.Now = func() time.Time { return now }
+		change(&f.session)
+		if response := f.serve("tk_good"); response.Body.String() != "sent" || len(f.deleted) != 0 {
+			t.Fatalf("%s: %q, deleted %v", name, response.Body.String(), f.deleted)
+		}
+	}
 
-	// No claim: refused, but the grant stays for a claim to come back.
-	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded || len(f.deleted) != 0 {
-		t.Fatalf("unclaimed: %q, deleted %v", response.Body.String(), f.deleted)
-	}
-	work["d1/s1"] = now.Add(-30 * time.Second)
-	if response := f.serve("tk_good"); response.Body.String() != "sent" {
-		t.Fatalf("claimed 30 s ago: %q", response.Body.String())
-	}
-	// Another device's claim, or the session's on another device, is not it.
+	f := newFixture()
+	f.session.Status = "completed"
+	// Another device presenting the grant is not the session's.
 	if response := f.serveAs("tk_good", Device{ID: "d2", OwnerUserID: "alice"}); response.Body.String() != "refused "+ReasonAccessEnded {
 		t.Fatalf("other device: %q", response.Body.String())
 	}
-	delete(work, "d1/s1")
-	work["d2/s1"] = now
-	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded {
-		t.Fatalf("a claim from another device: %q", response.Body.String())
-	}
-	// The claim window passes.
-	work["d1/s1"] = now.Add(-NativeWorkClaimWindow - time.Second)
-	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded || len(f.deleted) != 0 {
-		t.Fatalf("stale claim: %q, deleted %v", response.Body.String(), f.deleted)
-	}
-	work["d1/s1"] = now
-	if response := f.serve("tk_good"); response.Body.String() != "sent" {
-		t.Fatalf("claimed again: %q", response.Body.String())
-	}
-	// Ends at once, and for good: archived, failed, canceled, gone, or
-	// its turn ended longer ago than HeldSessionMaxIdle.
-	for name, change := range map[string]func(*store.AgentSession){
-		"archived": func(s *store.AgentSession) { s.ArchivedAt = now.UTC().Format(time.RFC3339Nano) },
-		"failed":   func(s *store.AgentSession) { s.Status = "failed" },
-		"canceled": func(s *store.AgentSession) { s.Status = "canceled" },
-		"gone":     func(s *store.AgentSession) { s.ID = "s_other" },
-		"max idle": func(s *store.AgentSession) {
-			s.CompletedAt = now.Add(-HeldSessionMaxIdle - time.Minute).UTC().Format(time.RFC3339Nano)
-		},
-	} {
-		saved := f.session
-		change(&f.session)
-		f.deleted = nil
-		if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded || len(f.deleted) != 1 {
-			t.Fatalf("%s: %q, deleted %v", name, response.Body.String(), f.deleted)
-		}
-		f.session = saved
-	}
-	// The account stopped or unbound, or the session moved: refused while
-	// it is claimed.
-	f.deleted = nil
+	// The grant itself ends: the account stopped or unbound, the session
+	// moved. Refused at once, between turns too.
 	f.account.Status = store.ExternalAccountRevoked
 	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded {
 		t.Fatalf("revoked account: %q", response.Body.String())
@@ -638,6 +612,15 @@ func TestACompletedSessionActsWhileItsDeviceClaimsItsNativeWork(t *testing.T) {
 	f.session.WorkspaceID = "w2"
 	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded {
 		t.Fatalf("moved session: %q", response.Body.String())
+	}
+	f.session.WorkspaceID = "w1"
+	if response := f.serve("tk_good"); response.Body.String() != "sent" {
+		t.Fatalf("bound again: %q", response.Body.String())
+	}
+	// Archived: refused, and the grant is spent.
+	f.session.ArchivedAt = now.UTC().Format(time.RFC3339Nano)
+	if response := f.serve("tk_good"); response.Body.String() != "refused "+ReasonAccessEnded || len(f.deleted) != 1 {
+		t.Fatalf("archived: %q, deleted %v", response.Body.String(), f.deleted)
 	}
 }
 

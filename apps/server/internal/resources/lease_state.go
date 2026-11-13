@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"slices"
 	"sort"
 	"time"
 
@@ -12,17 +13,28 @@ import (
 
 type leaseState struct {
 	instances map[string]store.ResourceInstance
-	live      map[string]*store.ResourceLease // by resource id
-	fences    map[string]*store.ResourceFence
-	waits     []*store.ResourceWait
-	changes   map[string]*store.ResourceLease // touched leases, by lease id
-	fenced    map[string]bool                 // touched fences
-	waited    map[string]bool                 // touched waits
-	resets    []resetJob
-	wake      []string
-	sources   map[string]bool
+	// live: the live leases by resource id, in the order they came; one
+	// exclusive lease or any number of shared ones.
+	live map[string][]*store.ResourceLease
+	// pending: ended shared leases by resource id whose own reset the
+	// device has not confirmed yet.
+	pending map[string][]*store.ResourceLease
+	fences  map[string]*store.ResourceFence
+	waits   []*store.ResourceWait
+	changes map[string]*store.ResourceLease // touched leases, by lease id
+	fenced  map[string]bool                 // touched fences
+	waited  map[string]bool                 // touched waits
+	resets  []resetJob
+	wake    []string
+	sources map[string]bool
 	// remoteCommands: the sources whose owner allows remote commands.
 	remoteCommands map[string]bool
+	// computeSlots: the sources whose owner chose a number of compute
+	// slots.
+	computeSlots map[string]int
+	// policies: each source's settings, for the workspaces that may lease
+	// its resources.
+	policies map[string]store.ResourceSourceSettings
 }
 
 type resetJob struct {
@@ -40,6 +52,10 @@ func (l *Leases) load(ctx context.Context) (*leaseState, error) {
 	if err != nil {
 		return nil, err
 	}
+	pending, err := l.store.ListResourceLeases(ctx, store.ResourceLeaseFilter{ResetPending: true})
+	if err != nil {
+		return nil, err
+	}
 	fences, err := l.store.ListResourceFences(ctx)
 	if err != nil {
 		return nil, err
@@ -49,20 +65,33 @@ func (l *Leases) load(ctx context.Context) (*leaseState, error) {
 		return nil, err
 	}
 	state := &leaseState{
-		instances: map[string]store.ResourceInstance{}, live: map[string]*store.ResourceLease{},
-		fences: map[string]*store.ResourceFence{}, changes: map[string]*store.ResourceLease{},
+		instances: map[string]store.ResourceInstance{}, live: map[string][]*store.ResourceLease{},
+		pending: map[string][]*store.ResourceLease{},
+		fences:  map[string]*store.ResourceFence{}, changes: map[string]*store.ResourceLease{},
 		fenced: map[string]bool{}, waited: map[string]bool{}, sources: map[string]bool{},
-		remoteCommands: map[string]bool{},
+		remoteCommands: map[string]bool{}, computeSlots: map[string]int{},
+		policies: map[string]store.ResourceSourceSettings{},
 	}
 	for _, source := range listing.Sources {
 		state.remoteCommands[source.ID] = source.AllowRemoteCommands
+		if source.ComputeSlots > 0 {
+			state.computeSlots[source.ID] = source.ComputeSlots
+		}
+		state.policies[source.ID] = store.ResourceSourceSettings{AllowWorkspaces: source.AllowWorkspaces, DenyWorkspaces: source.DenyWorkspaces}
 	}
 	for _, instance := range instances {
 		state.instances[instance.ID] = instance
 	}
 	for index := range live {
 		lease := live[index]
-		state.live[lease.ResourceID] = &lease
+		state.live[lease.ResourceID] = append(state.live[lease.ResourceID], &lease)
+	}
+	for _, leases := range state.live {
+		sort.Slice(leases, func(i, j int) bool { return leases[i].Generation < leases[j].Generation })
+	}
+	for index := range pending {
+		lease := pending[index]
+		state.pending[lease.ResourceID] = append(state.pending[lease.ResourceID], &lease)
 	}
 	for index := range fences {
 		fence := fences[index]
@@ -155,13 +184,111 @@ func (l *Leases) cancelWait(state *leaseState, wait *store.ResourceWait) {
 	state.wake = append(state.wake, wait.ID)
 }
 
+// sortedLive is every live lease, by resource and then as they came.
 func sortedLive(state *leaseState) []*store.ResourceLease {
-	leases := make([]*store.ResourceLease, 0, len(state.live))
-	for _, lease := range state.live {
-		leases = append(leases, lease)
+	ids := make([]string, 0, len(state.live))
+	for id := range state.live {
+		ids = append(ids, id)
 	}
-	sort.Slice(leases, func(i, j int) bool { return leases[i].ResourceID < leases[j].ResourceID })
+	sort.Strings(ids)
+	leases := []*store.ResourceLease{}
+	for _, id := range ids {
+		leases = append(leases, state.live[id]...)
+	}
 	return leases
+}
+
+// leaseOf is the live lease sessionID holds on resourceID, or nil.
+func (s *leaseState) leaseOf(resourceID, sessionID string) *store.ResourceLease {
+	for _, lease := range s.live[resourceID] {
+		if lease.HolderSessionID == sessionID {
+			return lease
+		}
+	}
+	return nil
+}
+
+// liveByID is the live lease with id, or nil.
+func (s *leaseState) liveByID(resourceID, leaseID string) *store.ResourceLease {
+	for _, lease := range s.live[resourceID] {
+		if lease.ID == leaseID {
+			return lease
+		}
+	}
+	return nil
+}
+
+// others are the live leases on resourceID held by sessions other than
+// sessionID.
+func (s *leaseState) others(resourceID, sessionID string) []*store.ResourceLease {
+	var others []*store.ResourceLease
+	for _, lease := range s.live[resourceID] {
+		if lease.HolderSessionID != sessionID {
+			others = append(others, lease)
+		}
+	}
+	return others
+}
+
+func (s *leaseState) addLive(lease *store.ResourceLease) {
+	s.live[lease.ResourceID] = append(s.live[lease.ResourceID], lease)
+}
+
+func (s *leaseState) removeLive(lease *store.ResourceLease) {
+	leases := slices.DeleteFunc(s.live[lease.ResourceID], func(other *store.ResourceLease) bool { return other.ID == lease.ID })
+	if len(leases) == 0 {
+		delete(s.live, lease.ResourceID)
+		return
+	}
+	s.live[lease.ResourceID] = leases
+}
+
+func (s *leaseState) removePending(lease *store.ResourceLease) {
+	leases := slices.DeleteFunc(s.pending[lease.ResourceID], func(other *store.ResourceLease) bool { return other.ID == lease.ID })
+	if len(leases) == 0 {
+		delete(s.pending, lease.ResourceID)
+		return
+	}
+	s.pending[lease.ResourceID] = leases
+}
+
+// capacity is how many active shared leases resourceID runs at once: 1
+// for a type without shared leases or a device whose worker cannot run
+// them side by side, else its owner's number or AutoSlots.
+func (l *Leases) capacity(state *leaseState, resourceID string) int {
+	instance := state.instances[resourceID]
+	spec, ok := Spec(instance.Type)
+	if !ok || !spec.Shared || !l.sharedCapable(instance.Source.ID) {
+		return 1
+	}
+	if slots := state.computeSlots[instance.Source.ID]; slots > 0 {
+		return min(slots, MaxComputeSlots)
+	}
+	return AutoSlots(instance.Details)
+}
+
+func (l *Leases) sharedCapable(sourceID string) bool {
+	return l.SharedLeases == nil || l.SharedLeases(sourceID)
+}
+
+// modeOf is the mode a wait asks for on resourceID: its own, else the
+// type's default.
+func modeOf(state *leaseState, wait *store.ResourceWait, resourceID string) string {
+	if wait.Mode != "" {
+		return wait.Mode
+	}
+	return specOrDefault(state.instances[resourceID].Type).DefaultMode()
+}
+
+// activeShared counts the active shared leases among leases.
+func activeShared(leases []*store.ResourceLease) int {
+	count := 0
+	for _, lease := range leases {
+		if lease.Mode == store.LeaseShared && lease.State == store.LeaseActive {
+			count++
+		}
+	}
+	return count
 }
 
 // settle hands out what became free and recomputes contention.
@@ -212,4 +339,14 @@ func newID(prefix string) string {
 		panic(err)
 	}
 	return prefix + "_" + hex.EncodeToString(raw[:])
+}
+
+// workspaceRefused refuses an instance whose device's owner does not lease
+// its resources to sessions working in workspaceID.
+func workspaceRefused(state *leaseState, instance store.ResourceInstance, workspaceID string) error {
+	if state.policies[instance.Source.ID].LeasesWorkspace(workspaceID) {
+		return nil
+	}
+	return leaseError(CodeRefused, "%s: the owner of %s does not lease its resources to sessions working in workspace %s (its lease policy on the Resources page)",
+		instance.Name, nameOr(instance.Source.Label, "the device"), workspaceID)
 }

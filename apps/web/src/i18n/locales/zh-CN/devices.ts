@@ -226,6 +226,23 @@ export const devices: Translation<typeof en> = {
     helpSwitchNow:
       "“立即切换”不再等待：它会停止正在运行的回合（会话保留），并马上切换。",
     running: "运行的 Worker 版本：{{version}}。",
+    proxyFallbackDirect:
+      "无法通过代理 {{proxy}} 连接 Foundry，这台设备已改为直连。",
+    proxyFallbackEnvironment:
+      "无法通过代理 {{proxy}} 连接 Foundry，这台设备已改用环境变量里的代理 {{environmentProxy}}。",
+    proxyFallbackBody: "自 {{since}} 起。{{proxy}} 恢复后会自动切回。",
+    proxyStopUsing: "不再使用这个代理",
+    proxyUseAnother: "改用别的代理…",
+    proxyUseAnotherTitle: "改用别的代理",
+    proxyUseAnotherDescription: "从现在起，这台设备通过这个地址连接 Foundry。",
+    proxyAddress: "代理地址",
+    proxyAddressPlaceholder: "http://主机:端口",
+    proxyAddressHint:
+      "以 http://、https://、socks5:// 或 socks5h:// 开头，后面写主机和端口。需要用户名和密码时写在主机前面（user:password@）。",
+    proxyAddressInvalid:
+      "这不是代理地址：请以 http://、https://、socks5:// 或 socks5h:// 开头，写上主机和端口，后面不要再加别的。",
+    proxyChanged: "已保存，设备会在几秒内重新连接。",
+    proxyChangeFailed: "没能修改代理：{{error}}",
     unknownVersion: "早于 0.5.7",
     serverBuild: "服务器提供的版本：{{version}}。",
     serverNpm: "服务器使用 npm 发布版。",

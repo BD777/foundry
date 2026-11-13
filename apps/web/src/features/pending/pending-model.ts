@@ -1,4 +1,15 @@
 import type { PendingItem } from "../../api";
+import { pendingPersonal } from "../../lib/pending-display";
+
+export {
+  pendingFailure,
+  pendingHeadline,
+  pendingPersonal,
+  pendingScopeUpdate,
+  pendingTitle,
+  type PendingFailure,
+  type PendingFailureKind,
+} from "../../lib/pending-display";
 
 /** The items one place holds: a chat, or an Issue. */
 export interface PendingGroup {
@@ -40,20 +51,6 @@ export function pendingByAssistant(item: PendingItem): boolean {
  * The items a filter shows, grouped by the chat or Issue they belong to:
  * groups ordered by their newest item, items newest first.
  */
-/**
- * The person's own items (DEV-125): an account or a device's sign-in, in no
- * workspace, chat or Issue; a failed bundle update; a message channel that
- * needs a look (DEV-203).
- */
-export function pendingPersonal(item: PendingItem): boolean {
-  return (
-    item.source === "account" ||
-    item.source === "connector" ||
-    item.source === "bundle_update" ||
-    item.source === "message_channel"
-  );
-}
-
 /** Where an item came from: the assistant, its chat, or its project. */
 export interface PendingOrigin {
   kind: "assistant" | "chat" | "project" | "personal";
@@ -82,18 +79,6 @@ export function pendingOrigin(
     return { kind: "personal", name: personal };
   }
   return { kind: "chat", name: untitled };
-}
-
-/**
- * An account whose login lacks scopes the newer connector CLI Foundry runs
- * asks for (DEV-154): its context names that CLI version, its excerpt the
- * missing scopes.
- */
-export function pendingScopeUpdate(item: PendingItem): boolean {
-  return (
-    item.source === "account" &&
-    (item.eventId ?? "").startsWith("account-scopes:")
-  );
 }
 
 export function groupPendingItems(
@@ -175,96 +160,12 @@ export function pendingForSession(
     );
 }
 
-/** Where a permission error was refused, as its output names it. */
-const deniedPath =
-  /(?:EACCES: permission denied, \w+ |\[Errno 13\] Permission denied: )'([^']+)'|^[\w.-]+: (?:cannot [a-z ]+? )?'?(\/[^':]+)'?: Permission denied$/m;
-
-/**
- * What an item shows as its one line, and whether its excerpt adds anything
- * beyond it: a one-line question or error is the headline itself, so it is
- * shown once. A permission error names its path ("Permission denied: <path>",
- * `pathDenied`); an Issue's question is headed by the Issue.
- */
-export function pendingHeadline(item: PendingItem): {
-  text: string;
-  pathDenied?: string;
-  showExcerpt: boolean;
-} {
-  const excerpt = item.excerpt.trim();
-  const singleLine = !excerpt.includes("\n");
-  if (item.source === "issue_question")
-    return { text: item.title, showExcerpt: excerpt !== item.title.trim() };
-  if (item.source === "needs_hands" && item.rule === "permission") {
-    const match = deniedPath.exec(excerpt);
-    const path = match?.[1] ?? match?.[2];
-    if (path)
-      return {
-        text: item.title,
-        pathDenied: path,
-        showExcerpt: !(singleLine && excerpt === item.title.trim()),
-      };
-  }
-  const text = item.title.trim() || excerpt.split("\n")[0]!;
-  return { text, showExcerpt: !(singleLine && excerpt === text) };
-}
-
 /** An Agent's option without the "(Recommended)" it may have added itself. */
 export function pendingOptionLabel(option: string): string {
   return (
     option.replace(/\s*[(（]\s*(recommended|推荐)\s*[)）]\s*$/i, "").trim() ||
     option
   );
-}
-
-/**
- * What a failed turn needs from the person, read from its error so the item
- * leads with the fix instead of the raw text: a usage limit (and when it
- * resets), a chat started on another provider, a full disk, a run the device
- * interrupted, a turn that ran out of steps. `other` keeps the error's own
- * first line as the headline.
- */
-export type PendingFailureKind =
-  | "usage_limit"
-  | "provider_mismatch"
-  | "disk_full"
-  | "interrupted"
-  | "turn_limit"
-  | "other";
-
-export interface PendingFailure {
-  kind: PendingFailureKind;
-  /** When a usage limit resets, in the provider's words. */
-  resets?: string;
-  /** The provider the chat was started on, and the one selected now. */
-  chatProvider?: string;
-  currentProvider?: string;
-}
-
-const usageLimit =
-  /\b(?:hit|reached|exceeded) (?:your |the )?(?:[\w-]+ )?(?:usage |rate )?limit\b|\busage limit\b|\brate[ _-]?limit|user tpm rate limit exceeded|throttle by model gateway|\bquota exceeded\b/i;
-const limitResets = /\bresets?\s+(?:at\s+|on\s+)?([^\n]+?)[\s.]*$/im;
-const providerMismatch =
-  /\bThis chat uses ([\w.:/-]+), but your current provider is ([\w.:/-]+?)\.?(?:\s|$)/;
-
-export function pendingFailure(item: PendingItem): PendingFailure | undefined {
-  if (item.source !== "turn_failed") return undefined;
-  const error = `${item.title}\n${item.excerpt}`;
-  const mismatch = providerMismatch.exec(error);
-  if (mismatch)
-    return {
-      kind: "provider_mismatch",
-      chatProvider: mismatch[1],
-      currentProvider: mismatch[2],
-    };
-  if (usageLimit.test(error)) {
-    const resets = limitResets.exec(error)?.[1]?.trim();
-    return resets ? { kind: "usage_limit", resets } : { kind: "usage_limit" };
-  }
-  if (/\bENOSPC\b|\bno space left on device\b/i.test(error))
-    return { kind: "disk_full" };
-  if (/\bexecution host stopped\b/i.test(error)) return { kind: "interrupted" };
-  if (/maximum number of turns/i.test(error)) return { kind: "turn_limit" };
-  return { kind: "other" };
 }
 
 /**

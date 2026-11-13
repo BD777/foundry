@@ -21,6 +21,8 @@ const fieldStyles = cva(
         chat: "fdy-field-chat px-0.5 pt-1 pb-2.5 text-md leading-normal",
         composer:
           "fdy-field-composer h-11 min-h-11 flex-1 pt-0.5 pb-1.5 text-md leading-normal",
+        /** The text box inside a chip input, after its chips. */
+        token: "min-w-24 flex-1 px-1 py-0.5 text-xs leading-normal",
       },
       resize: {
         none: "fdy-field-resize-none resize-none",

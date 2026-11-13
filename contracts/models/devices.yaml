@@ -461,6 +461,44 @@ components:
             (`~/.foundry/bin/foundry-worker`); absent for a worker run from a source checkout, which
             updates with git.
           type: string
+        proxyFallback:
+          description:
+            "`proxyFallback` is set while the worker reaches the server around its configured proxy,
+            which kept failing (DEV-217); absent when it uses the proxy as configured."
+          $ref: "#/components/schemas/DeviceProxyFallback"
+          x-go-type-skip-optional-pointer: false
+    DeviceProxyFallback:
+      description:
+        DeviceProxyFallback is how a worker reaches the server while its configured proxy is
+        unreachable.
+      type: object
+      required:
+        - configured
+        - route
+        - since
+      additionalProperties: false
+      properties:
+        configured:
+          description: The configured proxy, scheme, host and port only (never credentials).
+          type: string
+        route:
+          description:
+            'What the worker uses instead: "environment" for the proxy its environment names,
+            "direct" for no proxy.'
+          type: string
+          enum:
+            - environment
+            - direct
+          x-go-type: string
+        environmentProxy:
+          description: With route environment, that proxy's scheme, host and port.
+          type: string
+        since:
+          description: When the worker switched.
+          type: string
+        reason:
+          description: Why, in words, e.g. the attempts that failed and for how long.
+          type: string
     AgentRuntimeSettings:
       type: object
       required:

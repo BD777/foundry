@@ -86,6 +86,12 @@ import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { registerWorkspaceMigrationHandlers } from "./daemon/handlers/workspace-migration.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 import { exponentialBackoffMs } from "./platform/backoff.js";
+import { ServerRouteSupervisor } from "./platform/server-link/server-route.js";
+import {
+  lastServerContactAt,
+  serverContactLimitMs,
+  shouldRestartForServerSilence,
+} from "./platform/server-link/server-contact.js";
 
 let heartbeatStartTime: string | undefined;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -111,12 +117,59 @@ function startDaemonHeartbeat(): void {
 
 function writeDaemonHeartbeat(): void {
   heartbeatStartTime ??= processIdentity(process.pid)?.startTime;
+  const contact = lastServerContactAt();
   writePrivateJSONAtomic(foundryStatePath("daemon-heartbeat"), {
     pid: process.pid,
     startTime: heartbeatStartTime,
     at: new Date().toISOString(),
+    // The watchdog's backstop for a live Worker cut off from the server;
+    // left out while the Worker is not meant to be connected (parked).
+    ...(contactSupervised
+      ? {
+          serverContactAt: new Date(contact).toISOString(),
+          serverContactEpoch: Math.floor(contact / 1000),
+        }
+      : {}),
   });
 }
+
+/** The exit status of a restart for server silence: EX_TEMPFAIL. */
+export const serverSilenceExitCode = 75;
+
+/**
+ * Ends the process when the server has not been heard from for
+ * serverContactLimitMs, whatever the reconnect loop is doing, so launchd's
+ * KeepAlive or systemd's Restart= starts a fresh Worker (DEV-217: a live
+ * Worker sat disconnected for over 30 minutes). Returns its stop.
+ */
+function superviseServerContact(turnsInThisProcess: () => number): () => void {
+  const timer = setInterval(
+    () => {
+      const now = Date.now();
+      if (
+        !shouldRestartForServerSilence({
+          now,
+          lastContactAt: lastServerContactAt(),
+          limitMs: serverContactLimitMs,
+          turnsInThisProcess: turnsInThisProcess(),
+        })
+      )
+        return;
+      console.error(
+        `${logTime()} Nothing from the server for ${Math.round((now - lastServerContactAt()) / 1000)}s; restarting the Worker.`,
+      );
+      process.exit(serverSilenceExitCode);
+    },
+    Math.min(30_000, Math.max(1000, serverContactLimitMs / 4)),
+  );
+  timer.unref();
+  contactSupervised = true;
+  return () => {
+    contactSupervised = false;
+    clearInterval(timer);
+  };
+}
+let contactSupervised = false;
 
 /**
  * Record the server's removal decision locally and park the daemon, as its
@@ -282,9 +335,28 @@ async function connectWebSocket(args: string[]): Promise<void> {
     : new AdaptiveConcurrencyController(taskScheduler);
   admission?.start();
 
+  // Turns of a Worker without an execution host run in this process.
+  const stopContactSupervision = once
+    ? () => {}
+    : superviseServerContact(() =>
+        executionHostClient() ? 0 : sessionExecutions.activeSessionIds().length,
+      );
+  // Around a configured proxy that keeps failing (DEV-217).
+  const route = new ServerRouteSupervisor({
+    serverURL,
+    minFailures: Number(process.env.FOUNDRY_PROXY_FALLBACK_FAILURES || 5),
+    minFailingMs: Number(
+      process.env.FOUNDRY_PROXY_FALLBACK_AFTER_MS || 2 * 60_000,
+    ),
+  });
+  const checkRoute = once
+    ? undefined
+    : setInterval(() => void route.checkConfigured(), 60_000);
+  checkRoute?.unref();
   // Consecutive reconnects without a session that ran.
   let reconnects = 0;
   while (true) {
+    const contactBefore = lastServerContactAt();
     try {
       const outcome = await runControlConnection(
         {
@@ -298,18 +370,24 @@ async function connectWebSocket(args: string[]): Promise<void> {
         },
         daemonDispatch,
       );
+      route.attemptEnded(lastServerContactAt() > contactBefore);
       if (outcome === "removed") {
         // The server tombstoned this device. Park permanently; an explicit
         // pair/setup on this machine is the only way to register again.
+        if (checkRoute) clearInterval(checkRoute);
+        stopContactSupervision();
         await stopAfterDeviceRemoval(serverURL);
         return;
       }
       if (outcome === "exit" || once) {
+        if (checkRoute) clearInterval(checkRoute);
+        stopContactSupervision();
         return;
       }
       // A refused registration keeps backing off; a session that ran resets it.
       if (outcome !== "refused") reconnects = 0;
     } catch (error) {
+      route.attemptEnded(lastServerContactAt() > contactBefore);
       const message = errorMessage(error);
       console.error(`${logTime()} Daemon connection failed: ${message}`);
       if (once) {

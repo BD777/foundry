@@ -335,7 +335,9 @@ worker `packages/worker/src/connectors/device-held.ts`).
   `connectors.DeviceEligible`, and a usable login. Sessions that take no
   connectors (`connectors.takesConnectors`) get nothing. A session someone
   else started on the device, when not allowed or the login is unavailable,
-  gets the connector's isolation (`BYTEDCLI_PROFILE` on an empty profile),
+  gets the connector's isolation (`BYTEDCLI_PROFILE` on an empty profile;
+  for GitHub CLI a placeholder `GH_TOKEN` that keeps gh off the keychain
+  and an empty github.com credential helper that empties git's, DEV-208),
   which prevents accidental use only: an unsandboxed session runs as the
   device's user (see the device-credential risk above).
 - Foundry's own runs of the CLI set `BYTEDCLI_NO_AUTO_UPGRADE=1` and drop
@@ -355,21 +357,20 @@ the pipeline is the only caller of `Upstream`. The order, for every request:
    (`X-Foundry-Device-Credential`, set by the worker's forwarder) and its
    device's owner. A handle of another kind, an unknown one, or one for
    another device or owner is refused.
-2. **Recheck** (`Pipeline.Live`). The session is still live
-   (`gateway.SessionLive`: queued, running or blocked, or completed while its
-   device claims that its agent still works on its own, see
-   [Connector access past a turn](#connector-access-past-a-turn)), on the
-   grant's device, started by the grant's user, in the grant's workspace; the
-   account is of the connector's provider and its app, and
-   `externalaccounts.Eligible` (the account's owner on their own device, bound
-   to the session's workspace, ready or expiring). A session that failed, was
-   canceled, archived or deleted spends its grant; a completed one whose
-   agent stopped working is refused and keeps its grant (its claim may come
-   back after a reconnect); one that merely moved workspace does not. Then the connector's
-   own holdings (`Entitlements`; Cloudflare: the workspace's binding, the
-   session being of a kind that takes connectors, the device available).
-   Stand-ins older than the scheme's lifetime (Cloudflare: 30 minutes) are
-   refused.
+2. **Recheck** (`Pipeline.Live`). The session still exists and is not
+   archived (`gateway.SessionLive`, whatever its turns do: see
+   [Connector access is the session's](#connector-access-is-the-sessions)),
+   on the grant's device, started by the grant's user, in the grant's
+   workspace; the account is of the connector's provider and its app, and
+   `externalaccounts.Eligible` (the account's owner on their own device,
+   bound to the session's workspace, ready or expiring, allowed by the
+   assistant's permission package). A session archived, deleted or on
+   another device spends its grant; one that merely moved workspace does
+   not. Then the connector's own holdings (`Entitlements`; Cloudflare: the
+   workspace's binding, the session being of a kind that takes connectors,
+   the device available). Stand-ins older than the scheme's lifetime
+   (Cloudflare, App Store Connect, connector extensions: 30 minutes) are
+   refused; the worker's forwarder renews them before then.
 3. **Classify.** The connector names the resource the request touches and the
    access level it needs, or refuses what it never forwards (Feishu's
    blocklist, Cloudflare's path and query allowlists).
@@ -392,50 +393,53 @@ Cloudflare: the account's activity). The old routes stay as aliases:
 Only the skeleton is shared; transport, the CLI configuration the worker
 writes, and the audit's storage stay with each connector.
 
-## Connector access past a turn
+## Connector access is the session's
 
-A session's grants are not limited to its Foundry turns (DEV-155). Claude
-Code and Codex keep working after a turn by design: a command moved to the
-background, a `ScheduleWakeup` or cron timer, the turn the agent starts on a
-task's notification, a Codex goal or background terminal. That work was
-started with the session's connector environment and keeps using it.
+A connector grant is a standing one: an account (a connector instance) bound
+to a workspace, allowed by the assistant's permission package where there is
+one. A session in that workspace holds it for as long as the session exists
+and is not archived, whatever its turns do (DEV-215; it replaced DEV-155's
+"while the device claims the agent still works", which refused every call
+made more than two minutes after a turn ended unless a heartbeat claim
+happened to cover it).
 
-- **Who says the work is live.** The worker that runs the session: its
-  `session_completed` says `nativeWork` when the agent goes on after the
-  turn, and every heartbeat (25 s, and one right after it registers) lists
-  `nativeWorkSessionIds`, the sessions whose Claude process has running
-  background tasks, timers or a turn it continues by itself, or whose kept
-  Codex app-server is busy (`sessionsWithNativeWork`). The server keeps the
-  time of each device's last claim per session in memory
-  (`httpapi/session_claims.go`); a restarted server knows none until the
-  device claims again.
-- **When a completed session is live** (`gateway.SessionLive`): its status
-  is `completed` (a failed, canceled, archived or deleted session never is),
-  the claim came from the session's own device within the last 2 minutes
-  (`NativeWorkClaimWindow`), and its last turn ended less than 24 hours ago
-  (`HeldSessionMaxIdle`). Device, owner, workspace and account checks are
-  unchanged and apply on every request, so stopping, removing or unbinding
-  the account, moving the session or removing the device ends access at
-  once, whatever the device claims.
-- **What such a session can do.** Exactly what it could during its turn, as
+- **When a session may act** (`gateway.SessionLive` plus `Pipeline.Live`,
+  per call): the session exists, is not archived, runs on the device that
+  presents the stand-in, was started by that device's owner, and the account
+  is still bound to its workspace, usable, and allowed by the permission
+  package. Its status does not matter: queued, running, completed between
+  turns, after a failed or canceled turn it may be continued from. Nothing a
+  device claims about its processes is asked, so a Worker update or restart,
+  a Server restart or handoff, and the time since the last turn change
+  nothing.
+- **What ends it, at once:** archiving or deleting the session (its grants
+  are spent), stopping, removing or unbinding the account, a permission
+  package that no longer allows it, the session moving device or workspace,
+  removing the device. The Foundry tools' session token follows the same
+  rule (`sqlitestore/session_tokens.go`; 30-day hard expiry, handed over
+  long before).
+- **What such a session can do.** Exactly what it could during a turn, as
   the same person and through the same pipeline: the same scopes, Feishu
-  blocklist, Cloudflare zones and level, limits and audit. Nobody is
-  watching the session then, and the person's message is not what started
-  the call; the claim is the worker's word about processes it runs, made
-  with the device credential, so a compromised device can keep a completed
-  session's grants alive for up to a day after its last turn, no longer than
-  it could already use them during an open turn.
-- **Lifetime.** At most `HeldSessionMaxIdle` (24 hours) after the session's
-  last turn; within that, until no claim has been heard for 2 minutes. On the
-  device the profile, forwarders and launchers stay while the session's agent
-  process lives, idle or not (`holdWhileAgentRuns`): they hold only Foundry
-  stand-ins, and the server still decides each call. They are removed when
-  the process exits, at once when the session fails or is canceled, or at
-  the next start after a crash.
-- **Audit.** Every call is a line in `feishu_gateway_requests` (Cloudflare:
-  the account's activity) with its session, device, account and identity, as
-  during a turn; calls made between turns are those whose time falls outside
-  the session's turns.
+  blocklist, Cloudflare zones and level, extension routes and levels,
+  limits and audit. Its agent's own work (background commands, Monitor,
+  timers, subagents, the turns it starts itself) was started by the session
+  and acts for it; Foundry does not decide when an agent may act (no
+  turn-bound or idle-bound lifetime), only what it may reach.
+- **On the device** the profile, forwarders and launchers live while the
+  agent process started with them lives (`holdWhileAgentRuns`), whatever the
+  outcome of the run that set them up; they hold only Foundry stand-ins that
+  are useless without the device credential, and the server still decides
+  each call. They are removed when the process exits (a canceled turn
+  closes it) or at the next start after a crash.
+- **Stand-ins rotate**: Cloudflare, App Store Connect and extension handles
+  last 30 minutes and are renewed by the forwarder through `/session-handle`
+  (the same rule); each turn issues new Feishu stand-ins. Grants superseded
+  by a newer one of the same session and account for over a day, and those
+  of archived or deleted sessions, are pruned hourly.
+- **Audit.** Every call is a line in `feishu_gateway_requests` (Cloudflare,
+  App Store Connect, connector extensions: the account's activity) with its
+  session, device and account, including calls refused after the stand-in
+  was matched to a grant of the calling device (the line says why).
 
 ## Feishu Gateway
 

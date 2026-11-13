@@ -223,12 +223,35 @@ type PersonalAgentNeedsYou struct {
 	Items []PersonalAgentNeedsYouItem `json:"items"`
 }
 
-// PersonalAgentNeedsYouItem is one row of an assistant's home card.
+// PersonalAgentNeedsYouItem is one row of an assistant's home card: the
+// item as the needs-you page reads it, so the card says what is needed the
+// way that page does, and where it came from.
 type PersonalAgentNeedsYouItem struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Where string `json:"where,omitempty"`
+	PendingItem
+	From PersonalAgentNeedsYouFrom `json:"from"`
 }
+
+// PersonalAgentNeedsYouFrom is where a needs-you item came from, in names
+// the person knows and never ids. Kind is one of the NeedsYouFrom values;
+// Name is the chat, helper, channel, assistant or project (for a personal
+// item, its connector kind); Detail the chat's project or the channel's
+// conversation.
+type PersonalAgentNeedsYouFrom struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// The kinds of PersonalAgentNeedsYouFrom.
+const (
+	NeedsYouFromAssistant = "assistant"
+	NeedsYouFromHelper    = "helper"
+	NeedsYouFromChannel   = "channel"
+	NeedsYouFromChat      = "chat"
+	NeedsYouFromIssue     = "issue"
+	NeedsYouFromProject   = "project"
+	NeedsYouFromPersonal  = "personal"
+)
 
 // PersonalAgentSetupInput is POST /api/personal-agent's body.
 type PersonalAgentSetupInput struct {

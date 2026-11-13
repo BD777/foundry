@@ -82,6 +82,7 @@ test("a connector the session may not use links nothing", async () => {
   );
   assert.equal(env.PATH, "/usr/bin:/bin");
   assert.ok(env.GH_CONFIG_DIR);
-  assert.equal(env.GH_TOKEN, "");
+  // DEV-208: a placeholder, so gh never falls back to the keychain.
+  assert.equal(env.GH_TOKEN, "foundry-no-access");
   prepared.release();
 });

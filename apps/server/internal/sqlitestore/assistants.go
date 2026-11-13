@@ -308,7 +308,8 @@ func (s *Store) AssistantForSession(ctx context.Context, sessionID string) (stor
 	var assistantID string
 	err = s.reader().QueryRowContext(ctx, `SELECT assistant_id FROM pa_tasks WHERE session_id = ? AND assistant_id <> ''
 		UNION ALL SELECT assistant_id FROM pa_operations WHERE json_extract(payload_json, '$.sessionId') = ? AND assistant_id <> ''
-		LIMIT 1`, sessionID, sessionID).Scan(&assistantID)
+		UNION ALL SELECT assistant_id FROM message_channel_sessions WHERE session_id = ? AND assistant_id <> ''
+		LIMIT 1`, sessionID, sessionID, sessionID).Scan(&assistantID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.PersonalAgent{}, store.ErrNotFound
 	}

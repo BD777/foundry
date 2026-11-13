@@ -306,9 +306,44 @@ export function takeConnectorGrant(forDevice: string): string[] | undefined {
   return scopes.length ? scopes : undefined;
 }
 
+/**
+ * Opens a device connector's tab to set it up on one device:
+ * `/connectors/<kind>?setup=<deviceId>`. The tab reads it once
+ * (takeConnectorSetup) and brings that device's row into view with its
+ * next-step button focused. A link never acts by itself: the person clicks.
+ */
+export function navigateToConnectorSetup(
+  type: ConnectorType,
+  deviceId: string,
+): void {
+  navigateAppRoute({ view: "connectors", connectorTab: type }, undefined, {
+    setup: deviceId,
+  });
+}
+
+/** The device a link asked to set up, removed from the URL as it is read. */
+export function takeConnectorSetup(): string | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const deviceId = params.get("setup");
+  if (deviceId === null) return undefined;
+  params.delete("setup");
+  const search = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+  );
+  return deviceId || undefined;
+}
+
 /** Opens the workspace's Skills page through the same contract. */
 export function navigateToSkills(): void {
   navigateAppRoute({ view: "skills" });
+}
+
+/** The current workspace's Skills page. */
+export function workspaceSkillsHref(): string {
+  return `${pathForAppRoute({ view: "skills" })}${searchWithWorkspace(workspaceIdFromLocation())}`;
 }
 
 /** Opens the Skill Library, where bundles and their versions are managed. */

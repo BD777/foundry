@@ -13,7 +13,11 @@ import {
   sessionBrowserToolEnvironment,
   sessionScratchEnvironment,
 } from "../resources/resource-pool.js";
-import { isUtilitySession, isVerificationSession } from "./session-roles.js";
+import {
+  isReadOnlyWorkspaceSession,
+  isUtilitySession,
+  isVerificationSession,
+} from "./session-roles.js";
 import {
   baseProcessEnvironment,
   profileID,
@@ -137,7 +141,8 @@ export function withoutSessionToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /**
  * Whether a session gets its own scratch directory (TMPDIR) and browser
  * leases from the Resource Pool: sessions the daemon dispatched. Issue
- * sessions and verifiers run in a sandbox with their own temporary space.
+ * sessions, verifiers and read-only workspace sessions run in a sandbox with
+ * their own temporary space.
  */
 export function usesSessionScratch(session: AgentSession): boolean {
   return (
@@ -145,7 +150,8 @@ export function usesSessionScratch(session: AgentSession): boolean {
     ambientBySession.has(session.id) &&
     !session.issueId &&
     !isUtilitySession(session) &&
-    !isVerificationSession(session)
+    !isVerificationSession(session) &&
+    !isReadOnlyWorkspaceSession(session)
   );
 }
 

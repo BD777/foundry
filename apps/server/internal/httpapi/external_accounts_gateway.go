@@ -7,7 +7,6 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
-	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -18,12 +17,10 @@ import (
 // the only thing the route checks; the gateway checks the rest per request.
 
 // newFeishuGateway wires the gateway over the backend and the external
-// accounts service, with the devices' claims of their sessions' native
-// work (gateway.SessionLive), and lets the service issue its handles.
-func newFeishuGateway(st Backend, service *externalaccounts.Service, sw *integrations.Switch, work gateway.NativeWork) *feishugateway.Gateway {
+// accounts service, and lets the service issue its handles.
+func newFeishuGateway(st Backend, service *externalaccounts.Service, sw *integrations.Switch) *feishugateway.Gateway {
 	g := feishugateway.New(st, st, st, service)
 	g.Integrations = sw
-	g.UseNativeWork(work)
 	service.Handles = g
 	return g
 }

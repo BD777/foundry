@@ -1501,9 +1501,34 @@ test("item plan preserves routing, dependencies and an unknown execution without
     page.container.querySelector('input[type="checkbox"]').checked,
     false,
   );
-  await act(async () =>
-    button(page.container, "Ask assistant to continue").click(),
+  // Asking the assistant to continue sits in the row's menu, not on a line.
+  assert.equal(
+    [...page.container.querySelectorAll("button")].some(
+      (node) => node.textContent.trim() === "Ask assistant to continue",
+    ),
+    false,
   );
+  const trigger = [...page.container.querySelectorAll("button")].find((node) =>
+    (node.getAttribute("aria-label") ?? "").includes(item.text),
+  );
+  await act(async () => {
+    trigger.dispatchEvent(
+      new window.PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerType: "mouse",
+      }),
+    );
+    trigger.click();
+  });
+  const entry = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (node) => node.textContent.trim() === "Ask assistant to continue",
+  );
+  assert.ok(entry);
+  await act(async () => {
+    entry.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
   assert.deepEqual(next, [item.id]);
   await page.unmount();
 });
@@ -1575,9 +1600,8 @@ test("a completed item keeps evidence in compact details and does not ask for ve
       },
     ],
   });
-  const details = page.container.querySelector("details");
-  assert.equal(details.open, false);
-  assert.match(page.container.textContent, /Completed/);
+  const details = page.container.querySelector("[data-plan-details]");
+  assert.equal(details.hidden, true);
   assert.match(page.container.textContent, /Result available/);
   assert.doesNotMatch(
     page.container.textContent,

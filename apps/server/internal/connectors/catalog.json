@@ -541,6 +541,22 @@
             }
           }
         ],
+        "presets": [
+          {
+            "id": "all-except-delete",
+            "label": "All 34 listed except deletion",
+            "labels": {
+              "en": "All 34 listed except deletion",
+              "zh-CN": "除删除外全部（34 项）"
+            },
+            "hint": "This covers only Foundry's 34 listed scopes and omits the two dedicated delete scopes. OAuth scopes are coarse: repo can still delete branches, issues and comments; admin:* can still remove keys and hooks.",
+            "hints": {
+              "en": "This covers only Foundry's 34 listed scopes and omits the two dedicated delete scopes. OAuth scopes are coarse: repo can still delete branches, issues and comments; admin:* can still remove keys and hooks.",
+              "zh-CN": "这里只覆盖 Foundry 列出的 34 项 scope，并排除两个专门的删除 scope。OAuth scope 粒度较粗：repo 仍可删除分支、issue 和评论，admin:* 仍可移除密钥和 hook。"
+            },
+            "excludeScopes": ["delete_repo", "delete:packages"]
+          }
+        ],
         "scopeSource": {
           "label": "GitHub Docs: Scopes for OAuth apps",
           "labels": {

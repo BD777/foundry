@@ -9,6 +9,8 @@
 // tag, "dev", commits since that tag and the commit (0.5.7-dev.2.gc258bdd),
 // plus a timestamp when the packages have uncommitted changes. Only the packed
 // copies carry it; the checkout's package.json files are left alone.
+// WORKER_RELEASE_VERSION supplies that value when remote-build extracted a
+// git-less source archive; --version-only prints it for the local tree.
 
 import { execFileSync } from "node:child_process";
 import {
@@ -32,38 +34,53 @@ const protocolName = "@bd777/foundry-protocol";
 
 const outIndex = process.argv.indexOf("--out");
 const outArg = outIndex >= 0 ? process.argv[outIndex + 1] : undefined;
-if (!outArg) {
-  console.error("usage: pack-worker-release.mjs --out <dir>");
+const versionOnly = process.argv.includes("--version-only");
+if (!outArg && !versionOnly) {
+  console.error("usage: pack-worker-release.mjs --out <dir> | --version-only");
   process.exit(2);
 }
-const out = resolve(outArg);
+const out = outArg ? resolve(outArg) : "";
+const versionRoot = resolve(process.env.FOUNDRY_VERSION_ROOT || root);
 
 const run = (command, args, cwd = root) =>
   execFileSync(command, args, { cwd, encoding: "utf8" }).trim();
 
 function buildVersion() {
-  const described = run("git", [
-    "describe",
-    "--tags",
-    "--match",
-    "v[0-9]*",
-    "--long",
-  ]);
+  const suppliedVersion =
+    process.env.WORKER_RELEASE_VERSION || process.env.FOUNDRY_RELEASE_VERSION;
+  if (suppliedVersion) {
+    const supplied = suppliedVersion.trim();
+    if (!supplied) throw new Error("WORKER_RELEASE_VERSION is empty");
+    return supplied;
+  }
+  const described = run(
+    "git",
+    ["describe", "--tags", "--match", "v[0-9]*", "--long"],
+    versionRoot,
+  );
   const match = /^v(\d+)\.(\d+)\.(\d+)-(\d+)-(g[0-9a-f]+)$/.exec(described);
   if (!match) throw new Error(`unexpected git describe output: ${described}`);
   const [, major, minor, patch, commits, commit] = match;
   let version = `${major}.${minor}.${Number(patch) + 1}-dev.${commits}.${commit}`;
-  const dirty = run("git", [
-    "status",
-    "--porcelain",
-    "--",
-    ...packages.map((name) => `packages/${name}`),
-  ]);
+  const dirty = run(
+    "git",
+    [
+      "status",
+      "--porcelain",
+      "--",
+      ...packages.map((name) => `packages/${name}`),
+    ],
+    versionRoot,
+  );
   if (dirty) version += `.local.${Math.floor(Date.now() / 1000)}`;
   return version;
 }
 
 const version = buildVersion();
+if (versionOnly) {
+  console.log(version);
+  process.exit(0);
+}
 const work = mkdtempSync(join(tmpdir(), "foundry-worker-release-"));
 try {
   const files = [];

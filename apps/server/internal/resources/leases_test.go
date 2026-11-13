@@ -573,11 +573,11 @@ func TestLetFinishPostponesPreemptionOnce(t *testing.T) {
 	f.acquireAsync("sess_b", 10*time.Minute, f.screen)
 	f.waitsFor(1)
 	before := f.lease(lease.ID).PreemptAt
-	extended, err := f.leases.LetFinish(f.ctx, f.screen)
-	if err != nil || extended.PreemptAt == before {
+	extended, err := f.leases.LetFinish(f.ctx, f.screen, "")
+	if err != nil || len(extended) != 1 || extended[0].PreemptAt == before {
 		t.Fatalf("let finish = %+v %v", extended, err)
 	}
-	if _, err := f.leases.LetFinish(f.ctx, f.screen); code(err) != resources.CodeInvalid {
+	if _, err := f.leases.LetFinish(f.ctx, f.screen, ""); code(err) != resources.CodeInvalid {
 		t.Fatalf("second let finish = %v", err)
 	}
 	f.advance(16 * time.Minute)
@@ -668,8 +668,11 @@ func TestWaitTimeoutRetentionAndCancel(t *testing.T) {
 func TestPersonRevokesAndStopsAll(t *testing.T) {
 	f := newLeaseFixture(t)
 	lease := f.mustAcquire("sess_a", f.screen)
-	revoked, err := f.leases.Revoke(f.ctx, f.screen, "usr_alice")
-	if err != nil || revoked.State != store.LeaseRevoked || revoked.EndedBy != "usr_alice" {
+	ended, err := f.leases.Revoke(f.ctx, f.screen, "", "usr_alice")
+	if err != nil || len(ended) != 1 {
+		t.Fatalf("revoke = %+v %v", ended, err)
+	}
+	if revoked := ended[0]; revoked.State != store.LeaseRevoked || revoked.EndedBy != "usr_alice" {
 		t.Fatalf("revoke = %+v %v", revoked, err)
 	}
 	if _, err := f.leases.Begin(f.ctx, lease.ID, "sess_a"); code(err) != resources.CodeLeaseEnded {
@@ -678,7 +681,7 @@ func TestPersonRevokesAndStopsAll(t *testing.T) {
 	if notices := f.leases.Notices(f.ctx, "sess_a"); len(notices) != 1 || !strings.Contains(notices[0], "the person released it") {
 		t.Fatalf("notices = %v", notices)
 	}
-	if _, err := f.leases.Revoke(f.ctx, f.other, "usr_alice"); code(err) != resources.CodeNothingHeld {
+	if _, err := f.leases.Revoke(f.ctx, f.other, "", "usr_alice"); code(err) != resources.CodeNothingHeld {
 		t.Fatalf("revoking nothing = %v", err)
 	}
 	f.confirm()
@@ -686,9 +689,9 @@ func TestPersonRevokesAndStopsAll(t *testing.T) {
 	f.mustAcquire("sess_b", f.other)
 	waiting := f.acquireAsync("sess_c", 10*time.Minute, f.screen)
 	f.waitsFor(1)
-	ended, err := f.leases.StopSource(f.ctx, "dev_mac", "usr_alice")
-	if err != nil || ended != 2 {
-		t.Fatalf("stop all = %d %v", ended, err)
+	stopped, err := f.leases.StopSource(f.ctx, "dev_mac", "usr_alice")
+	if err != nil || stopped != 2 {
+		t.Fatalf("stop all = %d %v", stopped, err)
 	}
 	if result := receive(t, waiting); code(result.err) != resources.CodeCanceled {
 		t.Fatalf("waiter after stop all = %v", result.err)
@@ -768,7 +771,7 @@ func TestUnconfirmedReset(t *testing.T) {
 	if _, err := f.acquire("sess_b", 0, f.screen); err == nil {
 		t.Fatal("an unconfirmed instance was leased")
 	}
-	if _, err := f.leases.Revoke(f.ctx, f.screen, "usr_alice"); err != nil {
+	if _, err := f.leases.Revoke(f.ctx, f.screen, "", "usr_alice"); err != nil {
 		t.Fatal(err)
 	}
 	f.confirm()

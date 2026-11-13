@@ -1,4 +1,8 @@
 import { nativeCli } from "../../harness/native/native-cli.js";
+import {
+  claudeWriteRefusal,
+  workspaceWriteRefusedLabel,
+} from "../workspace-write-refusals.js";
 import { writeFileSync } from "node:fs";
 import { appendLine } from "../../platform/line-log.js";
 import { ClaudeStreamLog } from "./claude-stream-log.js";
@@ -585,6 +589,12 @@ async function routeActiveClaudeMessage(
       text: tool.detail,
     });
   }
+  if (runtime.readOnlyWorkspace && runtime.workspacePath)
+    for (const tool of finishedTools) {
+      const refused = claudeWriteRefusal(tool, runtime.workspacePath);
+      if (refused)
+        await turn.emit(workspaceWriteRefusedLabel, refused, "warning");
+    }
   await emitClaudeToolFrames(turn, message, finishedTools);
   const requestUsage = turn.requestUsage?.observe(message);
   if (requestUsage) {

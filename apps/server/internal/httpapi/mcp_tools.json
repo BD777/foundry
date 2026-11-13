@@ -67,7 +67,7 @@
   },
   {
     "name": "list_resources",
-    "description": "List what the devices you reach offer sessions and whether they are online: connection is online, reconnecting or offline; online is true only for a live connection. Instances (browsers, macOS screen control, simulators, phones, GPUs, toolchains, accounts, disk and compute) show type, state, readiness reason and holder; detailed adds the rest. During a 60-second reconnect grace, connection and instance states read reconnecting. computer_use with cua-driver and compute can be leased with acquire_resource and operated with operate_resource; compute can run commands unless its owner disabled that.",
+    "description": "List what the devices you reach offer sessions and whether they are online: connection is online, reconnecting or offline; online is true only for a live connection. Instances (browsers, macOS screen control, simulators, phones, GPUs, toolchains, accounts, disk and compute) show type, state, readiness reason and holder; detailed adds the rest. During a 60-second reconnect grace, connection and instance states read reconnecting. computer_use with cua-driver and compute can be leased with acquire_resource and operated with operate_resource; compute can run commands unless its owner disabled that and shows its shared-lease slots.",
     "summary": "Shows what each reachable device offers sessions (browsers, screen control, simulators, GPUs, toolchains and more) with readiness, whether it is online and where a session may start on it.",
     "limits": [
       "Only devices hosting a workspace the agent reaches.",
@@ -109,7 +109,7 @@
   },
   {
     "name": "connector_instances",
-    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, bind_workspace or unbind_workspace. Use kind for the extension. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
+    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, bind_workspace or unbind_workspace. Use kind for the extension. For network=device, probe and create first install the connector's published extension on the selected online device owned by the person, wait for the device to report it, then probe through that device. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
     "summary": "Configures server-held connector instances, reading secret values from device files named by secretFiles.",
     "limits": [
       "Only the person who started the session, on a device that person owns; not from Issue, clarification, verifier or utility sessions.",
@@ -157,7 +157,7 @@
         },
         "probeDeviceId": {
           "type": "string",
-          "description": "The person's online device that probes a device-network instance."
+          "description": "The person's online device that probes a device-network instance. If the extension is missing there, probe or create installs its published bundled or Git copy first. An offline device is refused."
         },
         "fields": {
           "type": "object",
@@ -380,7 +380,7 @@
   },
   {
     "name": "acquire_resource",
-    "description": "Lease a resource on one of your person's devices for operate_resource: a Mac's screen (computer_use) or a device's compute. Name resourceId, several resourceIds (all or none), or a type and optionally deviceId. The lease lasts while your turn runs; when it ends it is parked up to 10 minutes (holdFor: up to 2 hours) and handed to a session that asks. A waiting session takes it 15 minutes after it began waiting; tool results warn you. Busy: waitMs queues up to that long, else you are told who holds it. Release it when done.",
+    "description": "Lease a resource on one of your person's devices for operate_resource: a Mac's screen (computer_use) or a device's compute. Name resourceId, several resourceIds (all or none), or a type and optionally deviceId. mode: computer_use is exclusive; compute is shared by default (several sessions at once, up to the device's slots) or exclusive (no other session on the device). The lease lasts while your turn runs; when it ends it is parked up to 10 minutes (holdFor: up to 2 hours) and handed to a session that asks; a parked shared lease takes no slot. Waits are served in the order they came, so a waiting exclusive request keeps new shared leases off. A waiting session takes it 15 minutes after it began waiting; tool results warn you. Busy: waitMs queues up to that long, else you are told who holds it. Release it when done.",
     "summary": "Leases a resource on one of the person's devices (today a Mac's screen through cua-driver) to this session, waiting in a queue when it is busy.",
     "limits": [
       "Only resources on devices the session's person owns; not from a session working in an Issue.",
@@ -388,6 +388,8 @@
       "Waits at most 10 minutes per call; a session holding a lease cannot wait for another.",
       "At most 8 resources in one call, all or none.",
       "Kept while the turn runs; afterwards parked at most 10 minutes, or holdFor at most 2 hours; taken 15 minutes after another session starts waiting.",
+      "A shared lease does not become exclusive in place: release it and acquire again with mode exclusive.",
+      "Not on a device whose owner's lease policy refuses the session's workspace.",
       "The person can release any lease at any time.",
       "A commandToken works only on its lease, only with operate_resource, resource_status and release_resource, and ends with the lease."
     ],
@@ -429,13 +431,18 @@
         "forCommands": {
           "type": "boolean",
           "description": "With one compute resource: also answer commandToken, for a command you run (FOUNDRY_LEASE_TOKEN for the foundry CLI) to operate, read and release this lease alone."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["shared", "exclusive"],
+          "description": "shared (compute's default: beside other shared leases, up to the device's slots) or exclusive (computer_use's only mode; for compute, the whole device: benchmarks, work that needs every CPU)."
         }
       }
     }
   },
   {
     "name": "operate_resource",
-    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource you lease. A Mac's screen: select_window binds a window (pid + window_id) to the lease; the other operations are cua-driver's (screenshot, get_ui_tree, find_elements, list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size, wait). Prefer element_token from get_ui_tree to pixels; pixels refer to the window's latest screenshot through this lease (frame_id). Input goes in the background by default, best effort; foreground input and activate_window need delivery_mode: foreground, which needs the person's permission. A device's compute: run, put_files, get_file, git_sync, cleanup, as the worker's user in a named scratch folder that persists across leases, or in a workspace with workspaceId; a run answers exitCode, timedOut, durationMs and the tails of stdout and stderr. Each result says ok or an errorCode (stale_lease, stale_frame, backend_error).",
+    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource you lease. A Mac's screen: select_window binds a window (pid + window_id) to the lease; the other operations are cua-driver's (screenshot, get_ui_tree, find_elements, list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size, wait). Prefer element_token from get_ui_tree to pixels; pixels refer to the window's latest screenshot through this lease (frame_id). Input goes in the background by default, best effort; foreground input and activate_window need delivery_mode: foreground, which needs the person's permission. A device's compute: run, put_files, get_file, git_sync, cleanup, as the worker's user in a scratch folder that persists across leases (this session's own unless you name one; a named one is shared with every session that names it), or in a workspace with workspaceId; a run answers exitCode, timedOut, durationMs and the tails of stdout and stderr. Each result says ok or an errorCode (stale_lease, stale_frame, backend_error).",
     "summary": "Operates a leased resource step by step: screenshots, accessibility tree, clicks, typing, keys, scrolling and dragging on a Mac's screen through cua-driver.",
     "limits": [
       "Only with a live lease this session holds; refused once it ended or was taken.",
@@ -483,7 +490,7 @@
         },
         "args": {
           "type": "object",
-          "description": "The operation's arguments, with cua-driver's own names. Windows are addressed by pid and window_id (from list_windows). select_window {pid, window_id}: bind this lease to a live window without activating it (read its UI tree); screenshot {pid?, window_id?, scope?: desktop, max_image_dimension? (at most 1280)}: one window (selected or with pid and window_id); the whole display requires explicit scope:desktop and no selection; get_ui_tree {pid, window_id, query?, max_elements?, max_depth?, include_screenshot?}: the accessibility tree with element_token per element; find_elements {pid, window_id, query}; list_apps {}; list_windows {pid?, on_screen_only?}; open_app {bundle_id | name, urls?}; activate_window {pid?, window_id?, delivery_mode: foreground} (brings it to the front, taking focus); click / double_click / right_click {element_token | x, y, pid?, window_id?, button?, count?, modifier?}; type_text {text, element_token?, pid?, window_id?} (does not press Return); key {key, modifiers?, pid?, window_id?}; hotkey {keys: [\"cmd\", \"c\"], pid?, window_id?}; scroll {direction, amount?, by?, element_token? | x, y, pid?, window_id?}; drag {from_x, from_y, to_x, to_y, pid?, window_id?, frame_id?, delivery_mode?} (background by default; unsupported background drag is refused); set_value {value, element_token, pid?, window_id?}; screen_size {}; wait {ms} (at most 5000). Input tools except set_value accept delivery_mode: background|foreground (default background); frame_id binds selected-window pixel input to the last capture. Omitted pid/window_id use the selected window, otherwise input needs an exact window pair or element_token. x and y are pixels in that window's latest screenshot taken through this lease; the backend maps them to the screen. compute (every operation takes scratch? (a folder name, default \"default\") or workspaceId?; paths are relative to it and cannot leave it): run {argv: [\"pnpm\", \"test\"] | command: \"shell line\", cwd?, env? {NAME: value}, timeoutSec? (default 600, at most 1800), tailBytes? (each stream, default 32768, at most 131072), saveOutput? (a file to write the whole output to)}; put_files {upload (a name you choose), offset (bytes already sent), data (base64 of the next piece), done? (true with the last piece), format? (tar | tar.gz | zip | file; default tar), dest? (folder to unpack into, or for file the file's path)}; get_file {path, offset?, length?}; git_sync {url (https), ref? (branch, tag or commit), dir? (default \"repo\")}: clones or fetches and checks out ref, keeping ignored files such as node_modules; cleanup {path?}: deletes the scratch folder, or a path in it."
+          "description": "The operation's arguments, with cua-driver's own names. Windows are addressed by pid and window_id (from list_windows). select_window {pid, window_id}: bind this lease to a live window without activating it (read its UI tree); screenshot {pid?, window_id?, scope?: desktop, max_image_dimension? (at most 1280)}: one window (selected or with pid and window_id); the whole display requires explicit scope:desktop and no selection; get_ui_tree {pid, window_id, query?, max_elements?, max_depth?, include_screenshot?}: the accessibility tree with element_token per element; find_elements {pid, window_id, query}; list_apps {}; list_windows {pid?, on_screen_only?}; open_app {bundle_id | name, urls?}; activate_window {pid?, window_id?, delivery_mode: foreground} (brings it to the front, taking focus); click / double_click / right_click {element_token | x, y, pid?, window_id?, button?, count?, modifier?}; type_text {text, element_token?, pid?, window_id?} (does not press Return); key {key, modifiers?, pid?, window_id?}; hotkey {keys: [\"cmd\", \"c\"], pid?, window_id?}; scroll {direction, amount?, by?, element_token? | x, y, pid?, window_id?}; drag {from_x, from_y, to_x, to_y, pid?, window_id?, frame_id?, delivery_mode?} (background by default; unsupported background drag is refused); set_value {value, element_token, pid?, window_id?}; screen_size {}; wait {ms} (at most 5000). Input tools except set_value accept delivery_mode: background|foreground (default background); frame_id binds selected-window pixel input to the last capture. Omitted pid/window_id use the selected window, otherwise input needs an exact window pair or element_token. x and y are pixels in that window's latest screenshot taken through this lease; the backend maps them to the screen. compute (every operation takes scratch? (a folder name; default: this session's own folder) or workspaceId?; paths are relative to it and cannot leave it): run {argv: [\"pnpm\", \"test\"] | command: \"shell line\", cwd?, env? {NAME: value}, timeoutSec? (default 600, at most 1800), tailBytes? (each stream, default 32768, at most 131072), saveOutput? (a file to write the whole output to)}; put_files {upload (a name you choose), offset (bytes already sent), data (base64 of the next piece), done? (true with the last piece), format? (tar | tar.gz | zip | file; default tar), dest? (folder to unpack into, or for file the file's path)}; get_file {path, offset?, length?}; git_sync {url (https), ref? (branch, tag or commit), dir? (default \"repo\")}: clones or fetches and checks out ref, keeping ignored files such as node_modules; cleanup {path?}: deletes the scratch folder, or a path in it."
         },
         "actions": {
           "type": "array",
@@ -724,7 +731,7 @@
   },
   {
     "name": "save_model_provider",
-    "description": "Create an API endpoint model provider (no providerId) or update one (providerId), as the Model providers page's editor does. runtime claude is an Anthropic-compatible endpoint, codex an OpenAI-compatible one; baseUrl is corrected to the runtime's form. apiKey is sealed on the server and never answered (keySet says whether one is held); clearApiKey removes it. model is the default model, models the ones offered. deviceIds is the complete set of the person's devices that run it (omit to leave it; [] removes it from all); a new provider runs nowhere until given devices. Editing the endpoint, model or key clears earlier checks. Answers the provider as list_model_providers shows it. Subscriptions' and environments' defaults are set with set_model_defaults.",
+    "description": "Create an API endpoint model provider (no providerId) or update one (providerId), as the Model providers page's editor does. runtime claude is an Anthropic-compatible endpoint, codex an OpenAI-compatible one; baseUrl is corrected to the runtime's form. apiKey is sealed on the server and never answered (keySet says whether one is held); clearApiKey removes it. copyApiKeyFromProviderId reuses the sealed key of another API endpoint the person owns without exposing it. model is the default model, models the ones offered. deviceIds is the complete set of the person's devices that run it (omit to leave it; [] removes it from all); a new provider runs nowhere until given devices. Editing the endpoint, model or key clears earlier checks. Answers the provider as list_model_providers shows it. Subscriptions' and environments' defaults are set with set_model_defaults.",
     "summary": "Creates or updates an API endpoint provider: endpoint, key, default model and the devices it runs on.",
     "limits": [
       "Only API endpoints the person owns, on devices they own.",
@@ -758,6 +765,10 @@
         "clearApiKey": {
           "type": "boolean",
           "description": "Remove the stored key."
+        },
+        "copyApiKeyFromProviderId": {
+          "type": "string",
+          "description": "Copy the sealed key from another API endpoint the person owns. The value is never read back or answered. Use instead of apiKey and clearApiKey."
         },
         "model": {
           "type": "string",

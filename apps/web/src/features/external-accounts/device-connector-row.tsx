@@ -16,6 +16,11 @@ import {
   useConnectorInstalls,
 } from "./connector-installs";
 import { useInstallStep } from "./connector-setup-steps";
+import {
+  SetupTargetHint,
+  setupTargetClass,
+  useSetupTarget,
+} from "./connector-setup-target";
 import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import {
   deviceStatusLabel,
@@ -60,6 +65,7 @@ export function DeviceConnectorRow({
   onAutoUpdateExtension,
   showCheck = false,
   note,
+  setupTarget = false,
   children,
 }: {
   connector: ConnectorDescriptor;
@@ -79,6 +85,8 @@ export function DeviceConnectorRow({
   showCheck?: boolean;
   /** A line under who is signed in, about what the page is for. */
   note?: ReactNode;
+  /** A chat's setup panel sent the person here for this device. */
+  setupTarget?: boolean;
   /** The page's own controls for this device, under the row. */
   children?: ReactNode;
 }) {
@@ -230,15 +238,22 @@ export function DeviceConnectorRow({
         : status === "expiring"
           ? { label: t("deviceHeld.signInAgain"), run: onSignIn }
           : undefined;
+  const rowRef = useSetupTarget<HTMLLIElement>(
+    setupTarget,
+    `${status ?? ""}|${primary?.label ?? ""}|${installStep?.state ?? ""}`,
+  );
   return (
     <li
-      className="fdy-xacc-row fdy-xacc-device-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1"
+      className={`fdy-xacc-row fdy-xacc-device-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 ${setupTargetClass}`}
       data-status={status ?? "unknown"}
+      data-setup-target={setupTarget || undefined}
+      ref={rowRef}
     >
       <RowMain className="max-[520px]:flex-wrap">
         <Identity>
           <strong>{device.name}</strong>
           {distinguishDevice ? <small>{device.deviceId}</small> : null}
+          {setupTarget ? <SetupTargetHint /> : null}
           {summary ? <span>{summary}</span> : null}
           {note ? <span>{note}</span> : null}
           {state?.signedIn && installTitle ? <span>{installTitle}</span> : null}
@@ -276,7 +291,10 @@ export function DeviceConnectorRow({
             </small>
           ) : null}
         </Identity>
-        <span className="inline-flex flex-none flex-wrap items-center justify-end gap-2 max-[520px]:min-w-0 max-[520px]:flex-[1_1_100%] max-[520px]:justify-start">
+        <span
+          className="inline-flex flex-none flex-wrap items-center justify-end gap-2 max-[520px]:min-w-0 max-[520px]:flex-[1_1_100%] max-[520px]:justify-start"
+          data-row-actions
+        >
           {status ? (
             <Badge tone={deviceStatusTone(status)}>
               {deviceStatusLabel(status, connector)}

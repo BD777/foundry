@@ -330,8 +330,50 @@ func (s *Resolver) Pin(ctx context.Context, agent store.PersonalAgent, operation
 	return s.PinExecutor(ctx, agent, operationID, role, workspaceID, "default")
 }
 
+// PinIn is Pin for a coordinator turn the assistant runs in another of its
+// workspaces on its computer (a message channel's, DEV-203): the account,
+// model and budget are its own workspace's, the run is placed in
+// workspaceID.
+func (s *Resolver) PinIn(ctx context.Context, agent store.PersonalAgent, operationID, workspaceID string) (store.PersonalAgentRunSnapshot, error) {
+	return s.pin(ctx, agent, operationID, "coordinator", workspaceID, func() (store.PersonalAgentRunSnapshot, error) {
+		snapshot, err := s.Resolve(ctx, agent, "coordinator", agent.WorkspaceID)
+		if err != nil {
+			return snapshot, err
+		}
+		workspace, err := s.store.GetWorkspace(ctx, workspaceID)
+		if err != nil {
+			return snapshot, err
+		}
+		if workspace.DeviceID != snapshot.DeviceID {
+			return snapshot, invalid("the workspace is not on the assistant's computer")
+		}
+		// The account's agent is the device's report of it in that workspace.
+		accounts, err := s.accounts.WorkspaceAccounts(ctx, workspace, agent.UserID)
+		if err != nil {
+			return snapshot, err
+		}
+		index := slices.IndexFunc(accounts, func(account Account) bool {
+			return account.ProfileID == snapshot.ProfileID && account.Runtime == snapshot.Runtime
+		})
+		if index < 0 {
+			return snapshot, &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("account_unavailable: the assistant's account is not offered in the workspace")}
+		}
+		snapshot.WorkspaceID, snapshot.AgentID = workspace.ID, accounts[index].Agent.ID
+		return snapshot, nil
+	})
+}
+
 // PinExecutor is Pin with the coordinator's choice for a new helper.
 func (s *Resolver) PinExecutor(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID, executionChoice string) (store.PersonalAgentRunSnapshot, error) {
+	return s.pin(ctx, agent, operationID, role, workspaceID, func() (store.PersonalAgentRunSnapshot, error) {
+		if role == "executor" {
+			return s.ResolveExecutor(ctx, agent, workspaceID, executionChoice)
+		}
+		return s.Resolve(ctx, agent, role, workspaceID)
+	})
+}
+
+func (s *Resolver) pin(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID string, resolve func() (store.PersonalAgentRunSnapshot, error)) (store.PersonalAgentRunSnapshot, error) {
 	id := flow.Key("parun", agent.UserID, operationID)
 	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, id)
 	if err == nil {
@@ -343,12 +385,7 @@ func (s *Resolver) PinExecutor(ctx context.Context, agent store.PersonalAgent, o
 	if !errors.Is(err, store.ErrNotFound) {
 		return existing, err
 	}
-	var snapshot store.PersonalAgentRunSnapshot
-	if role == "executor" {
-		snapshot, err = s.ResolveExecutor(ctx, agent, workspaceID, executionChoice)
-	} else {
-		snapshot, err = s.Resolve(ctx, agent, role, workspaceID)
-	}
+	snapshot, err := resolve()
 	if err != nil {
 		return snapshot, err
 	}

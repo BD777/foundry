@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "bytedance",
   "name": "ByteDance tools",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "protocol": 1,
   "connectors": [
     {
@@ -17,7 +17,18 @@
         "command": "bytedcli",
         "source": "npm",
         "package": "@bytedance-dev/bytedcli",
-        "registry": "device"
+        "registry": "device",
+        "skills": {
+          "path": "skills",
+          "default": [
+            "bytedcli",
+            "bytedance-codebase",
+            "bytedance-meego",
+            "bytedance-insearch",
+            "bytedance-feishu",
+            "bytedance-scm"
+          ]
+        }
       },
       "provides": {
         "tool": true
@@ -395,6 +406,15 @@
               "rules": [
                 {
                   "when": [
+                    {
+                      "pointer": "/error/code",
+                      "equals": "LARK_CLI_NOT_FOUND"
+                    }
+                  ],
+                  "state": { "status": "needs_auth" }
+                },
+                {
+                  "when": [
                     { "pointer": "/ok", "equals": false },
                     { "pointer": "/error/type", "equals": "config" }
                   ],
@@ -429,7 +449,7 @@
               }
             },
             "authorize": {
-              "terminalMessage": "Authorize lark-cli in a terminal on this device: bytedcli lark auth login (run bytedcli lark config init --new first if lark-cli is not set up)."
+              "terminalMessage": "Authorize lark-cli in a terminal on this device: bytedcli lark auth login. If lark-cli is not on the device yet, bytedcli installs it on that first run; run bytedcli lark config init --new first if lark-cli is not set up."
             }
           }
         ]

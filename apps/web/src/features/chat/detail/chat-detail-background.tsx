@@ -12,7 +12,7 @@ import { formatFileSize } from "./chat-detail-files";
 import { formatTimerDateTime } from "./chat-detail-timer";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ChatBackgroundTaskItem } from "../chat-types";
-import { ContextStatus } from "../context/chat-context-parts";
+import { ContextStatus } from "../../../components/ui/context-card";
 import {
   MetaDetail,
   MetaHeading,

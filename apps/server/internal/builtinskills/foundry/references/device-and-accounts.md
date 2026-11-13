@@ -32,6 +32,15 @@ What a device offers changes while you work; read it when it matters with
   missing instead of working around it, for instance by restarting their
   apps with debugging ports.
 
+## Compute on another device
+
+- A device's compute is leased shared by default: several sessions run
+  commands there at once, up to its slots, each in its own scratch folder
+  unless they name one (a named folder is shared by every session naming
+  it). Lease it with `mode: exclusive` when the work needs the whole device
+  or a named folder no other session may touch at the same time (a
+  benchmark, a build in a shared checkout).
+
 ## Accounts reached through Foundry
 
 These are set up per session; their variables show which ones you have.
@@ -42,12 +51,12 @@ re-authorized by the person in Foundry's Connectors.
 - **Feishu** (`FEISHU_PROFILE`): `feishu-cli` uses the selected profile;
   other connected accounts are further `foundry-…` profiles for `--profile`.
   Calls go through Foundry's gateway, as the person or as the app's bot; the
-  profile's app secret and token are stand-ins. They work during your turns
-  and for what you leave running after one (a background command, a timer,
-  the turn you start on its notification), so long jobs may run in the
-  background; they stop when the session is stopped or archived, about two
-  minutes after nothing of yours runs any more, and a day after your last
-  turn at the latest. Not available through it: `feishu-cli auth token --as bot`,
+  profile's app secret and token are stand-ins. They work for as long as
+  this session exists, between turns too: background commands, Monitor,
+  timers, subagents and the turns you start yourself may use them, so long
+  jobs may run in the background. They stop when the session is archived or
+  deleted, or the account is stopped or unbound from the workspace. Not
+  available through it: `feishu-cli auth token --as bot`,
   the token check of `feishu-cli doctor`, and `feishu-cli markdown fetch
 --as bot` (fetch as the user). A refused call says why ("Foundry gateway:
   …"). If a command fails unexpectedly, tell the person which feishu-cli

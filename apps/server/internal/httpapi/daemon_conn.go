@@ -230,7 +230,12 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 		// Shutdown, a newer connection or a removal may have closed the
 		// socket under this read; that first cause is what really happened.
 		cause = c.setCloseCause(cause)
-		if reason != nil && !websocket.IsCloseError(reason, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+		// A normal close is unremarkable when it answers the server's own;
+		// one the device started is its decision, and its reason the only
+		// account of it until it reconnects (DEV-217: a Worker closed 1000
+		// on its own and never came back, and nothing recorded why).
+		deviceClosed := cause == closeByDevice
+		if reason != nil && (deviceClosed || !websocket.IsCloseError(reason, websocket.CloseNormalClosure, websocket.CloseGoingAway)) {
 			deviceID, _ := c.registrationSnapshot()
 			log.Printf("daemon connection %s closed (%s): %v", deviceID, cause.text, reason)
 			// A replaced connection's drop was already reported by the

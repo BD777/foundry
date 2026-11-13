@@ -435,6 +435,6 @@ func newAssistant(s *Server, events sessions.ChangeNotifier) *assistant.Service 
 		Workspaces: paWorkspaces{s}, Accounts: assistantAccounts{runAccounts{s}}, Digests: assistantDigests{s},
 		Server: assistantServer{s}, Runs: s.runs, Knowledge: s.knowledge, ArchiveSessions: s.planArchiveSession,
 		Origin: s.options.AllowedOrigin, FileTimeout: deviceFileRequestTimeout,
-		MessageChannels: messageChannelStoreOf(s.store), ChannelTitle: s.channelSessionTitle, ChannelSkills: s.channelSkillFiles,
+		MessageChannels: messageChannelStoreOf(s.store), ChannelTarget: s.messageChannelTarget, ChannelOf: s.messageChannelSessionAssistant,
 	})
 }

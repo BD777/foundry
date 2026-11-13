@@ -81,6 +81,8 @@
   --fdy-media-control: rgba(255, 255, 255, 0.1);
   --fdy-media-control-hover: rgba(255, 255, 255, 0.16);
   --fdy-media-overlay: rgba(30, 28, 24, 0.62);
+  --fdy-image-checker-a: var(--surface);
+  --fdy-image-checker-b: var(--inset);
   --fdy-diff-added: #a7e0b4;
   --fdy-diff-removed: #e2b4aa;
   --fdy-blue: var(--fdy-info-text);
@@ -186,5 +188,7 @@
   --fdy-control-border-hover: oklch(1 0 0 / 0.2);
   --fdy-chip-surface: oklch(1 0 0 / 0.07);
   --fdy-chip-ink: oklch(0.86 0.008 260);
+  --fdy-image-checker-a: oklch(1 0 0 / 0.08);
+  --fdy-image-checker-b: oklch(1 0 0 / 0.035);
   color-scheme: dark;
 }

@@ -205,6 +205,67 @@ export function fetchImage(
   );
 }
 
+export interface FileDownloadMetadata {
+  contentType: string;
+  size?: number;
+}
+
+function fileDownloadRequest(target: {
+  deviceId?: string;
+  path: string;
+  workspaceId?: string;
+  sessionId?: string;
+}) {
+  const { deviceId, path, workspaceId, sessionId } = target;
+  const params = new URLSearchParams({ path });
+  if (!sessionId && !deviceId) params.set("workspaceId", workspaceId ?? "");
+  const endpoint = deviceId
+    ? `/api/devices/${encodeURIComponent(deviceId)}/files/download`
+    : sessionId
+      ? `/api/agent-sessions/${encodeURIComponent(sessionId)}/files/download`
+      : "/api/workspace-files/download";
+  return {
+    endpoint,
+    url: `${apiBaseUrl}${endpoint}?${params}`,
+    headers: deviceId ? { headers: deviceFileIntentHeaders } : {},
+  };
+}
+
+/**
+ * Reads a download's server-detected type and size without streaming its
+ * bytes. The endpoint returns an image type only after checking its bytes.
+ */
+export async function fetchFileDownloadMetadata(
+  target: {
+    deviceId?: string;
+    path: string;
+    workspaceId?: string;
+    sessionId?: string;
+  },
+  signal: AbortSignal,
+): Promise<FileDownloadMetadata> {
+  const request = fileDownloadRequest(target);
+  const response = await apiFetch(request.url, {
+    method: "HEAD",
+    signal,
+    cache: "no-store",
+    ...request.headers,
+  });
+  if (!response.ok)
+    throw apiErrorOf(await response.text(), request.endpoint, response.status);
+  const rawLength =
+    response.headers.get("X-Foundry-File-Size") ??
+    response.headers.get("Content-Length");
+  const length =
+    rawLength === null || rawLength.trim() === ""
+      ? Number.NaN
+      : Number(rawLength);
+  return {
+    contentType: response.headers.get("Content-Type") ?? "",
+    size: Number.isSafeInteger(length) && length >= 0 ? length : undefined,
+  };
+}
+
 /**
  * Starts downloading a file of a workspace, a session, or a device outside
  * its workspaces: the response, whose body the caller reads with its
@@ -219,20 +280,13 @@ export async function fetchFileDownload(
   },
   signal: AbortSignal,
 ): Promise<Response> {
-  const { deviceId, path, workspaceId, sessionId } = target;
-  const params = new URLSearchParams({ path });
-  if (!sessionId && !deviceId) params.set("workspaceId", workspaceId ?? "");
-  const endpoint = deviceId
-    ? `/api/devices/${encodeURIComponent(deviceId)}/files/download`
-    : sessionId
-      ? `/api/agent-sessions/${encodeURIComponent(sessionId)}/files/download`
-      : "/api/workspace-files/download";
-  const response = await apiFetch(`${apiBaseUrl}${endpoint}?${params}`, {
+  const request = fileDownloadRequest(target);
+  const response = await apiFetch(request.url, {
     signal,
     cache: "no-store",
-    ...(deviceId ? { headers: deviceFileIntentHeaders } : {}),
+    ...request.headers,
   });
   if (!response.ok)
-    throw apiErrorOf(await response.text(), endpoint, response.status);
+    throw apiErrorOf(await response.text(), request.endpoint, response.status);
   return response;
 }

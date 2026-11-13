@@ -148,6 +148,35 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		}
 	}
 	var previous *store.AgentSession
+	var target ChannelTarget
+	if channelEntry {
+		if s.channelTarget == nil {
+			save("waiting", "channel_workspace_unavailable", "")
+			return
+		}
+		if target, err = s.channelTarget(ctx, entry); err != nil {
+			save("waiting", "channel_workspace_unavailable", "")
+			return
+		}
+		if connection := s.devices.Connection(agent.HomeDeviceID); connection == nil || !connection.HasCapability(store.DaemonCapabilityReadOnlyWorkspaceSessions) {
+			save("waiting", "worker_update_needed", "")
+			return
+		}
+		// The conversation's own session: it is not in the home workspace.
+		if previousID != "" {
+			// One from before the channel had its workspace (or that runs
+			// elsewhere) is not continued: the next one starts there.
+			if session, err := s.store.GetAgentSessionSummary(ctx, previousID); err == nil && session.CreatedByUserID == entry.UserID &&
+				session.WorkspaceID == target.WorkspaceID && session.WorkspaceAccess == store.SessionWorkspaceAccessRead {
+				if store.IsActiveSessionStatus(session.Status) {
+					save("waiting", "assistant_busy", "")
+					return
+				}
+				previous = &session
+			}
+		}
+		workspaceSessions = nil
+	}
 	for _, session := range workspaceSessions {
 		conversation, own := s.Conversation(ctx, session)
 		if !own || conversation.ID != agent.ID || session.CreatedByUserID != entry.UserID {
@@ -165,7 +194,12 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 			previous = &copy
 		}
 	}
-	snapshot, err := s.runs.Pin(ctx, agent, entry.ID, "coordinator", agent.WorkspaceID)
+	var snapshot store.PersonalAgentRunSnapshot
+	if channelEntry {
+		snapshot, err = s.runs.PinIn(ctx, agent, entry.ID, target.WorkspaceID)
+	} else {
+		snapshot, err = s.runs.Pin(ctx, agent, entry.ID, "coordinator", agent.WorkspaceID)
+	}
 	if err == nil {
 		err = s.runs.CheckPinned(ctx, snapshot)
 	}
@@ -194,7 +228,17 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 			return
 		}
 	}
+	if channelEntry {
+		attachments = append(attachments, target.Attachments...)
+	}
 	beforeDispatch := func(ctx context.Context, _ store.AgentSession) error {
+		if channelEntry {
+			sessionID, err := s.store.WorkRunInputSession(ctx, entry.InputID)
+			if err != nil {
+				return err
+			}
+			return target.OnSession(ctx, sessionID)
+		}
 		if entry.Origin == nil {
 			return nil
 		}
@@ -222,8 +266,8 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 	} else {
 		input := run.SessionInput(snapshot, prompt, entry.InputID)
 		input.Attachments = attachments
-		if channelEntry && s.channelTitle != nil {
-			input.Title = s.channelTitle(ctx, entry)
+		if channelEntry {
+			input.WorkspaceID, input.Title, input.WorkspaceAccess = target.WorkspaceID, target.Title, store.SessionWorkspaceAccessRead
 		}
 		if err = s.sessions.ResolveDevice(ctx, &input); err == nil {
 			session, err = s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{Reconcile: true, BeforeDispatch: beforeDispatch})

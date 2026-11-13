@@ -25,8 +25,11 @@ func (a auditLines) Record(ctx context.Context, record gateway.Record) {
 	if line.Outcome == "" {
 		line.Outcome = gateway.OutcomeRefused
 	}
-	if lease := record.Lease; lease != nil {
-		grant := lease.Grant
+	grant := record.Grant
+	if record.Lease != nil {
+		grant = &record.Lease.Grant
+	}
+	if grant != nil {
 		line.UserID, line.SessionID, line.WorkspaceID = grant.UserID, grant.SessionID, grant.WorkspaceID
 		line.AccountID, line.AppID = grant.AccountID, grant.AppID
 	}

@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-13.3": "4685311fe6e962f23767eac75c853218426802e58b921ca43d38592a6df27dd2", // DEV-212: look in their chats, mail and docs before asking; several wordings, cite sources
 	"2026-11-12.6": "333a8cd9404227cc6df7ad6572514daeb3533be32fe54c2cb80f48a894ecbbf4", // DEV-197 B1: report blockers plainly; asking remains the executor's choice
 	"2026-11-13.2": "d7f4798c007177e262b7e1944ffaedf267b0f2d216b906a5aeaac3e6b95b7ff3", // DEV-200 follow-up: check needs-you items before their deadline (DEV-199 B3)
 	"2026-11-13.1": "42fb0be72eaf05d1604d26d19a91ce47312b897e8c1b5adfed8e5e469bb38754", // DEV-200: no per-turn guidance; rules and confirmed facts in AGENTS.md, notices are facts

@@ -1,4 +1,5 @@
 import { assertEndpointReachable } from "./endpoint-reachability.js";
+import { isReadOnlyWorkspaceSession } from "../session-roles.js";
 import { nativeCli } from "../../harness/native/native-cli.js";
 import { appendLine } from "../../platform/line-log.js";
 import { errorMessage } from "../../platform/utils.js";
@@ -154,6 +155,7 @@ async function startClaudeRuntime(
     lastUsed: Date.now(),
     nativeSessionId: run.requestedNativeSessionId,
     workspacePath: run.workspacePath,
+    readOnlyWorkspace: isReadOnlyWorkspaceSession(run.session),
   };
   // Claude asks only where someone answers: the person holding the chat,
   // or the parent session that created it. There the CLI offers its

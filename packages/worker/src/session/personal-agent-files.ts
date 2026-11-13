@@ -51,14 +51,20 @@ const revisionBySession = new Map<
  * its content changed, and keeps their revision for the session's runtime
  * key: new instructions start a new runtime, which reads them. A run
  * without files (a timer's turn, a continuation) keeps the last revision.
- * Any other session's files are ignored.
+ * Any other session's files are ignored, and so are a read-only workspace
+ * session's: nothing it runs for may write its workspace.
  */
 export function writePersonalAgentFiles(
   session: AgentSession,
   workspacePath: string,
   files: SetupWorkspaceFile[] | undefined,
 ): void {
-  if (session.role !== "personal_agent" || !session.id || !files?.length)
+  if (
+    session.role !== "personal_agent" ||
+    session.workspaceAccess === "read" ||
+    !session.id ||
+    !files?.length
+  )
     return;
   for (const file of files) {
     if (!assistantFilePath.test(file.path))

@@ -7,6 +7,7 @@ import {
   readFileSync,
   readlinkSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { devNull, tmpdir } from "node:os";
@@ -18,6 +19,7 @@ import {
   createComputeDetector,
   createComputeProvider,
   ProviderRegistry,
+  removeIdleSessionScratches,
   ResourceOperations,
   ResourceSettingsStore,
   runDetector,
@@ -561,4 +563,130 @@ test("the protocol lists the compute operations", () => {
     [...computeOperations],
     ["run", "put_files", "get_file", "git_sync", "cleanup"],
   );
+});
+
+function sharedHarness() {
+  const root = mkdtempSync(join(tmpdir(), "compute-shared-"));
+  const provider = createComputeProvider({
+    root: join(root, "compute"),
+    settings: () => ({ allowRemoteCommands: true }),
+    env: () => process.env,
+  });
+  const operations = new ResourceOperations({
+    providers: new ProviderRegistry([provider]),
+    notify: async () => undefined,
+  });
+  const operate = async (lease, generation, op, args = {}) => {
+    const result = await operations.operate({
+      resourceId: "res_c",
+      key: "compute",
+      type: "compute",
+      backend: computeBackend,
+      leaseId: lease,
+      generation,
+      shared: true,
+      actions: [{ op, args }],
+      deadlineMs: 60_000,
+    });
+    const outcome = result.results[0] ?? {
+      ok: false,
+      errorCode: result.errorCode,
+      error: result.error,
+    };
+    return {
+      ...outcome,
+      value: outcome.text ? JSON.parse(outcome.text) : undefined,
+    };
+  };
+  const endLease = (generation) =>
+    operations.reset({
+      resourceId: "res_c",
+      key: "compute",
+      type: "compute",
+      generation,
+      leaseOnly: true,
+      reason: "test",
+    });
+  return {
+    root,
+    scratch: join(root, "compute"),
+    operate,
+    endLease,
+    operations,
+  };
+}
+
+test("shared leases run side by side; a newer one does not fence an older one", async () => {
+  const { operate, operations } = sharedHarness();
+  const order = [];
+  const slow = operate("lease_a", 1, "run", {
+    command: "sleep 1; echo a",
+  }).then((result) => (order.push("a"), result));
+  await new Promise((done) => setTimeout(done, 100));
+  const fast = await operate("lease_b", 2, "run", { command: "echo b" });
+  order.push("b");
+  const first = await slow;
+  assert.equal(fast.ok, true);
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.deepEqual(order, ["b", "a"]);
+  assert.equal(
+    (await operate("lease_a", 1, "run", { command: "true" })).ok,
+    true,
+  );
+  await operations.closeAll();
+});
+
+test("ending one shared lease stops only its commands and its temporary folder", async () => {
+  const { operate, endLease, operations } = sharedHarness();
+  const jobs = {};
+  const tmps = {};
+  for (const [lease, generation] of [
+    ["lease_a", 1],
+    ["lease_b", 2],
+  ]) {
+    const started = await operate(lease, generation, "run", {
+      command: 'nohup sleep 30 > /dev/null 2>&1 & echo "$! $TMPDIR"',
+      timeoutSec: 10,
+    });
+    assert.equal(started.ok, true);
+    const [pid, tmp] = started.value.stdout.trim().split(" ");
+    jobs[lease] = Number(pid);
+    tmps[lease] = tmp;
+  }
+  assert.notEqual(tmps.lease_a, tmps.lease_b);
+  assert.ok(existsSync(tmps.lease_a));
+  const result = await endLease(1);
+  assert.equal(result.error, undefined);
+  await new Promise((done) => setTimeout(done, 200));
+  assert.throws(() => process.kill(jobs.lease_a, 0));
+  assert.doesNotThrow(() => process.kill(jobs.lease_b, 0));
+  assert.equal(existsSync(tmps.lease_a), false);
+  const stale = await operate("lease_a", 1, "run", { command: "true" });
+  assert.equal(stale.errorCode, "stale_lease");
+  assert.equal(
+    (await operate("lease_b", 2, "run", { command: "true" })).ok,
+    true,
+  );
+  await operations.closeAll();
+  await new Promise((done) => setTimeout(done, 200));
+  assert.throws(() => process.kill(jobs.lease_b, 0));
+});
+
+test("idle session scratch folders are removed, other and used ones kept", async () => {
+  const root = mkdtempSync(join(tmpdir(), "compute-sweep-"));
+  const day = 24 * 60 * 60 * 1000;
+  const old = new Date(Date.now() - 4 * day);
+  for (const name of ["sess_old", "sess_used", "sess_new", "foundry"]) {
+    mkdirSync(join(root, name));
+    if (name !== "sess_new") utimesSync(join(root, name), old, old);
+  }
+  const removed = await removeIdleSessionScratches(
+    root,
+    3 * day,
+    Date.now(),
+    new Set(["sess_used"]),
+  );
+  assert.deepEqual(removed, ["sess_old"]);
+  for (const name of ["sess_used", "sess_new", "foundry"])
+    assert.ok(existsSync(join(root, name)), name);
 });

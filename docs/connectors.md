@@ -48,7 +48,7 @@
 
 ### 两种持有方式
 
-- **Server 持有型**：内置飞书、Cloudflare、App Store Connect 继续用各自的 Provider 适配器，见下文“对象”到“账号生命周期”。扩展的 Server 持有型只接受纯数据 `serverHeld`：Server 校验字段和模板、探测上游、封存 secret field，并用通用网关替换替身、按探测出的路由目录判定读写。实例是一条通用 `external_provider_apps` 加 `external_accounts` 和现有 Workspace 绑定，不建产品专用表。
+- **Server 持有型**：内置飞书、Cloudflare、App Store Connect 继续用各自的 Provider 适配器，见下文“对象”到“账号生命周期”。扩展的 Server 持有型只接受纯数据 `serverHeld`：Server 校验字段和模板、探测上游、封存 secret field，并用通用网关替换替身、按探测出的路由目录判定读写。实例是一条通用 `external_provider_apps` 加 `external_accounts` 和现有 Workspace 绑定，不建产品专用表。`network: "device"` 的 probe/create 明确选中本人的在线设备时，先在该设备安装扩展的 published bundled/Git 副本并等 Worker 回报，再探测；其他成员设备的安装与 package 资格检查不变。
 - **设备持有型（AWS CLI 与扩展提供的连接器）**：凭据只在设备上，由工具自己保存。理由：私有服务通常只在内网可达；多台设备共用一份登录会互相抢刷新；把公司 SSO 凭据导出到外部 Server 有合规风险。Foundry 做的事（`packages/worker/src/connectors/device-held.ts`，内置适配器与扩展适配器实现同一接口）：
   - **检测**：内置连接器由 Worker 找到会话 PATH 上的工具（Foundry 管理的工具目录优先），扩展连接器由扩展自己报告是否安装、版本与来源。
   - **安装与升级**：`tool.source` 为 `npm` 时设备所有者点击后经 managed-tools 安装（来源用设备自己的 npm 设置，不运行 install 脚本）；`installer` 由适配器或扩展的 `connector.install` 运行厂商安装程序；`device` 由设备自己管理，Foundry 只显示版本。
@@ -61,7 +61,7 @@
 - **外部应用**（`external_provider_apps`）：一个飞书自建应用。密钥封存在 Server 的 secret store（`external-app:<id>`），设备拿不到。来源有两种：粘贴已有应用的 App ID 和密钥；或者扫码时由飞书为确认的人新建一个 PersonalAgent 应用，再接着授权（新应用扫两次，已有应用扫一次，飞书与 Lark 都支持）。可见范围分为个人应用和实例级应用，实例级应用需要 Admin 创建。应用名和所属组织名从飞书读取，每天刷新。
 - **外部账号**（`external_accounts`）：一个人在某个应用下的飞书登录，账号 = (应用, 用户)。只有本人能查看、修改、绑定和断开自己的账号。登录由 Server 发起 RFC 8628 设备流，授权凭据（含 refresh token）封存在 `external-account:<id>`，Server 是唯一的刷新方：飞书的 refresh token 一次性使用、每次轮换，两个地方不能共用一份登录。
 - **Workspace 绑定**（`external_account_bindings`）：Maintainer 在 Workspace 的 Connectors 页绑定或解绑**自己的**账号；Viewer 能看到绑定了哪些账号，其他人的账号只显示类型，不显示其飞书身份和到期时间。
-- **会话授权**（`feishu_gateway_grants`）：会话的每个回合开始时为每个可用账号签发一组替身凭据，只存哈希。回合进行时有效；回合结束后，只要会话的 Agent 还在设备上自己工作（后台命令、定时器、被通知唤起的回合、常驻的 Codex），由设备的声明续着，见[回合之后的访问](#回合之后的访问dev-155)。
+- **会话授权**（`feishu_gateway_grants`）：会话的每个回合开始时为每个可用账号签发一组替身凭据，只存哈希。会话存在且未归档期间一直有效，与回合无关，见[授权跟着会话](#授权跟着会话不跟着回合dev-215)。
 
 ### 谁的会话能用哪个账号
 
@@ -73,7 +73,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 - `app_secret` 写 `fsg_` 替身，`token.json` 写用户 token 替身 `fsu_` 和 refresh 替身 `fsr_`；`fst_`（Bot token 替身）由网关在 `feishu-cli` 请求 tenant token 时下发。后三种都由 `fsg_` 派生，网关只存哈希。
 - `base_url` 指向 Worker 的本机转发器（只监听 127.0.0.1）。转发器原样转发请求，包括事件 WebSocket，并加上设备凭证；没有设备凭证，偷走的替身也用不了。
-- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；Foundry MCP 的 `instructions` 告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile；会话的 Agent 进程（Claude 进程、常驻的 Codex app-server）还在时，等进程退出再删，会话失败或取消时立即删。Worker 崩溃留下的 profile 在下次启动时按清单回收。
+- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；Foundry MCP 的 `instructions` 告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile；会话的 Agent 进程（Claude 进程、常驻的 Codex app-server）还在时，等进程退出再删（无论这一轮成功、失败还是取消）。Worker 崩溃留下的 profile 在下次启动时按清单回收。
 
 ### Server 侧：飞书网关（`/api/feishu-gw/*`）
 
@@ -187,15 +187,17 @@ Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloud
 - 旧路由是别名：`/api/feishu-gw/*` 与 `/api/connectors/feishu/gateway/*` 是同一个网关（会话材料仍下发旧路径，旧 Worker 不受影响）；旧 Worker 的能力 `feishu_gateway`、`cloudflare_gateway_v2` 照旧；数据表不变。
 - Worker 的本机转发器是共用的 `gateway-forwarder.ts`（`startGatewayForwarder`），行为不变；旧名 `feishu-gateway-forwarder.ts` 保留为别名。
 
-## 回合之后的访问（DEV-155）
+## 授权跟着会话，不跟着回合（DEV-215）
 
-Claude Code 和 Codex 在回合结束后仍会按原生方式继续工作：转到后台的命令、`ScheduleWakeup` / cron 定时、后台任务结束时被通知唤起的回合、Codex 的目标与后台终端。以前连接器访问只跟着 Foundry 回合：回合结束会话变成 completed，网关拒绝并删除授权，Worker 也删掉了 profile，于是后台命令中途报“访问已结束”、被唤起的回合找不到 profile。现在按“会话的 Agent 是否还在设备上工作”判断，飞书与 Cloudflare 走同一条规则，没有飞书特例：
+连接器授权是常设的：账号（连接器实例）绑定到 Workspace，助手的权限包允许它。这个 Workspace 里的会话只要存在且未归档，就一直能用，与它的回合无关。
 
-- **Worker**：`sessionsWithNativeWork`（`session/runner/active-runtimes.ts`）列出 Agent 还在自己工作的会话：Claude 进程有运行中的后台任务、定时或它自己继续的回合；常驻的 Codex app-server 在忙。回合结束时运行环境（连接器 profile 与转发器、设备持有型的 bin 目录、工具版本目录）由 `holdWhileAgentRuns` 保留到会话的 Agent 进程退出（空闲也保留：它自己开始的回合仍用这套环境），会话失败或取消时立即释放（`releaseAgentEnvironment`）；保留不扩大权限，每次调用仍由 Server 的 `SessionLive` 判断；同一会话的新回合接管同名 profile 与目录，旧回合的释放不会删掉它们。崩溃后的回收不变。
-- **声明**：回合结束的 `session_completed` 带 `nativeWork`，之后每次心跳（以及注册后立即一次）带 `nativeWorkSessionIds`；执行宿主经快照的 `nativeWork` 报给守护进程。
-- **Server**：`gateway.SessionLive` 认为 completed 的会话仍存活，当且仅当它未归档、会话所在设备 2 分钟内声明过、最后一个回合结束不到 24 小时。失败、取消、归档、删除立即结束并删除授权；只是 Agent 停了则拒绝但保留授权，等声明恢复或清理。账号停用 / 移除 / 解绑、Workspace 变化、设备不符照旧逐请求生效。Cloudflare 的替身续期（`/session-handle`）用同一判断。
-- **重新取得访问**：新进程（Worker 重启后由 Foundry 补发的定时、本人的新消息）照旧是一次 `run_session`，带新签发的授权。
-- 威胁模型（能做什么、最长多久、审计在哪）只写在[安全边界 · Connector access past a turn](security.md#connector-access-past-a-turn)。
+- **Server**：`gateway.SessionLive` 只问会话是否存在、是否归档；每次调用照旧检查设备、本人、Workspace 绑定、账号状态和权限包（`Pipeline.Live`）。会话的状态（运行中、回合之间、某一轮失败或取消后）、设备是否声明 Agent 还在工作、距上一轮多久，都不再参与判断。Foundry 工具的会话 token 同一规则。
+- **结束**：归档或删除会话（授权随之删除）、停用 / 移除 / 解绑账号、权限包不再允许、会话换设备或 Workspace、移除设备，下一次调用即拒绝。
+- **Worker**：连接器 profile、转发器和启动器跟着用它们启动的 Agent 进程走（`holdWhileAgentRuns`），进程退出时释放；与这一轮的结果无关（取消会关掉进程，于是立即释放）。
+- **轮换**：Cloudflare、App Store Connect、连接器扩展的替身 30 分钟过期，转发器提前经 `/session-handle` 续期（同一规则）；飞书每轮签发新替身。被同一会话同一账号更新的授权取代超过一天的、以及已归档或删除会话的授权，每小时清理。
+- **审计**：替身已对上本设备的授权、却被拒绝的调用也记一行，带会话、账号和原因。
+- 为什么改：DEV-155 让“回合结束后的访问”依赖设备心跳里的原生工作声明（2 分钟窗口、只在内存、最长 24 小时）。声明一旦没续上（Agent 自己继续的回合、重启、版本差异），回合结束 2 分钟后的调用就被拒绝，见 [DEV-215](devlog/DEV-215-standing-connector-access.md)。
+- 威胁模型只写在[安全边界 · Connector access is the session's](security.md#connector-access-is-the-sessions)。
 
 ## 设备持有型的会话环境（DEV-128）
 
@@ -211,6 +213,8 @@ Claude Code 和 Codex 在回合结束后仍会按原生方式继续工作：转�
 **适配器只多两个可选方法**，与 `isolationEnvironment()` 对称：`sessionEnvironment(located)` 返回能用的会话额外需要的变量；`sessionCheck(shape, environment, located)` 做读登录之外的检查（返回原因，永远不返回凭据）。其他内置适配器（AWS）不用实现。
 
 **GitHub 适配器的实现**（`github.ts`）：`sessionEnvironment` 返回 `GIT_CONFIG_COUNT=1`、`GIT_CONFIG_KEY_0=credential.https://github.com.helper`、`GIT_CONFIG_VALUE_0=!"<检测到的 gh>" auth git-credential`，只在会话进程里生效；登录流程不再运行 `gh auth setup-git`，已经写进 `~/.gitconfig` 的不去删（那是本人的，Foundry 只管自己会话里怎么用）。`sessionCheck`：用 `git credential fill`（`GIT_CONFIG_GLOBAL=/dev/null`，不提示）检查能用的会话里 git 拿得到 github.com 的凭据，被隔离的环境里 gh 的凭据助手拿不到；只判断有没有 `password=`，答案读完即丢，不打印、不上报。Server 的 `SessionUses` 现在对不是设备所有者、又没有共享绑定的会话，对设备上每个设备持有型连接器一律下发 `none`（有声明的 `isolationEnv` 一并带上）：此前它要描述符声明了隔离变量才隔离，GitHub 没声明，所以其他成员的会话根本没有隔离，适配器指向空配置目录的那一步从不执行。
+
+**GitHub 隔离（DEV-208）**：只把 `GH_CONFIG_DIR` 指向空目录不够：gh 2.40+ 在配置里找不到当前用户时会回退读钥匙串的 `gh:github.com`（macOS），`gh auth status` 显示未登录，`gh auth token` 和 `gh auth git-credential` 却照样交出 token。隔离变量因此是 `GH_TOKEN=foundry-no-access`（gh 只用环境里的 token，GitHub 拒绝这个占位符）加 `credential.https://github.com.helper=`（空值；环境里的 git 配置最后读，清空系统 osxkeychain、全局 `gh auth setup-git` 等此前为 github.com 收集的 helper）。被隔离那一侧的 `sessionCheck` 测真实路径：隔离环境里 `gh auth token` 除占位符外不得有输出；`git credential fill` 读本人的全局与系统配置，并把 gh 助手当作全局配置放在隔离之前，仍不得拿到 `password=`。
 
 限制：会话的基础环境由 Agent 的 profile 决定，检查用的是 Worker 的环境加上述会话设置，不是逐字复制；通过一个命令不同的路径泄漏的凭据（例如 bytedcli 的 `lark` 子命令在 `BYTEDCLI_PROFILE=foundry-no-login` 下仍读到登录），只有该扩展自己的读取覆盖到它（登录或附加授权）才会被反向检查看到；程序扩展若不遵守环境变量，检查只能报它读到的。扩展本身的修复不在 DEV-128 范围内。
 

@@ -247,10 +247,53 @@ export interface PersonalAgentNeedsYou {
   items: PersonalAgentNeedsYouItem[];
 }
 
+/**
+ * One row of the card: the item as the needs-you page reads it (the
+ * fields its headline is made of), and where it came from.
+ */
 export interface PersonalAgentNeedsYouItem {
   id: string;
+  workspaceId: string;
+  sessionId?: string;
+  issueId?: string;
+  eventId?: string;
+  /** A pending item source: question, turn_failed, account, … */
+  source: string;
+  rule?: string;
+  state: string;
   title: string;
-  where?: string;
+  excerpt: string;
+  context?: string;
+  occurrences: number;
+  handler?: string;
+  note?: string;
+  handedReason?: string;
+  failureCategory?: string;
+  failureResetAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  from: PersonalAgentNeedsYouFrom;
+}
+
+/**
+ * Where an item came from, in names and never ids: the assistant's own
+ * conversation, a helper it handed work to, a message channel's
+ * conversation, a chat, an Issue, a project, or the person's own (an
+ * account, a device sign-in, an update; `name` is its connector kind).
+ */
+export interface PersonalAgentNeedsYouFrom {
+  kind:
+    | "assistant"
+    | "helper"
+    | "channel"
+    | "chat"
+    | "issue"
+    | "project"
+    | "personal";
+  /** The chat, helper, channel, assistant or project. */
+  name?: string;
+  /** The chat's project, or the channel's conversation. */
+  detail?: string;
 }
 
 /** POST /api/personal-agent: set the assistant up on this device. */

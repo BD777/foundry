@@ -36,7 +36,7 @@ import {
   pendingGitHubScopes,
   pendingPrimary,
   pendingResolved,
-  pendingScopeUpdate,
+  pendingTitle,
   type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
@@ -112,28 +112,7 @@ export function PendingItemCard({
           item.source === "bundle_update" || item.source === "message_channel",
       }
     : pendingHeadline(item);
-  const title = pendingScopeUpdate(item)
-    ? t("item.accountScopes", {
-        title: item.title,
-        version: item.context ?? "",
-        count: item.excerpt.split(" ").filter(Boolean).length,
-      })
-    : item.source === "bundle_update"
-      ? t(
-          item.rule === "failed"
-            ? "item.bundleFailed"
-            : "item.bundleRolledBack",
-          { title: item.title },
-        )
-      : item.source === "account"
-        ? t("item.accountReauth", { title: item.title })
-        : item.source === "connector"
-          ? t("item.connectorExpired", { title: item.title })
-          : known
-            ? t(`failure.${failure.kind}.title`)
-            : headline.pathDenied
-              ? t("item.permissionDenied", { path: headline.pathDenied })
-              : headline.text;
+  const title = pendingTitle(item, t);
   const origin = pendingOrigin(
     item,
     t("page.untitled"),

@@ -6,7 +6,7 @@ import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { ProgressMeter } from "../../../components/ui/progress-meter";
 import { cn } from "../../../lib/cn";
-import { ContextSection } from "./chat-context-parts";
+import { ContextSection } from "../../../components/ui/context-card";
 import { CopyButton } from "../../../components/ui/copy-button";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";

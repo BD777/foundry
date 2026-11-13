@@ -49,11 +49,28 @@ export function verificationExecution(
   store = new ExecutionStore(),
 ): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
   pruneVerifiers(session.workspaceId, store);
-  const directory = verificationDirectory(
-    session.workspaceId,
-    session.id,
-    store,
+  return readOnlyWorkspaceExecution(
+    verificationDirectory(session.workspaceId, session.id, store),
+    workspacePath,
+    ambient,
+    "verification.sb",
   );
+}
+
+/**
+ * A turn in the workspace inside a sandbox that keeps it read-only for the
+ * agent and every command it runs (a verifier's, or a session with
+ * `workspaceAccess: "read"`). `directory` is the session's private state:
+ * its runtime's records stay there across turns; its temporary directory
+ * starts empty each turn.
+ */
+export function readOnlyWorkspaceExecution(
+  directory: string,
+  workspacePath: string,
+  ambient: SessionAmbientEnv,
+  policyName: string,
+  env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv = (base) => base,
+): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
   const scratch = resolve(directory, "scratch");
   rmSync(resolve(scratch, "tmp"), { recursive: true, force: true });
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
@@ -65,7 +82,7 @@ export function verificationExecution(
     sandbox: {
       profile: {
         kind: "writable_tree",
-        policyFile: resolve(directory, "verification.sb"),
+        policyFile: resolve(directory, policyName),
         workdir: workspacePath,
         readRoots: [workspacePath],
         writeRoots: [scratch],
@@ -78,7 +95,7 @@ export function verificationExecution(
         // installed it; the person's files stay read-only like the rest.
         userFiles: "readable",
       },
-      env: isolatedAgentEnvironment(scratch),
+      env: env(isolatedAgentEnvironment(scratch)),
       stderrFile: resolve(directory, "session.stderr.log"),
       ambient,
     },

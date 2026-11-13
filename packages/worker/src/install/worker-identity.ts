@@ -11,6 +11,7 @@ import type { DeviceWorker } from "@bd777/foundry-protocol";
 import { workerPackagePath } from "../platform/package-root.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import { isInside, tildePath } from "../platform/paths.js";
+import { reportedRouteFallback } from "../platform/server-link/server-proxy.js";
 
 export interface PackageIdentity {
   name: string;
@@ -48,7 +49,12 @@ export function runningWorker(): DeviceWorker {
   } catch {
     installed = false;
   }
-  return installed && existsSync(workerShimPath())
-    ? { version, command: tildePath(workerShimPath()) }
-    : { version };
+  const proxyFallback = reportedRouteFallback();
+  return {
+    version,
+    ...(installed && existsSync(workerShimPath())
+      ? { command: tildePath(workerShimPath()) }
+      : {}),
+    ...(proxyFallback ? { proxyFallback } : {}),
+  };
 }

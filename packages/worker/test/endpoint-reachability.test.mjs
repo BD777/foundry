@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import {
   assertEndpointReachable,
-  connectTcp,
   directEndpoint,
 } from "../dist/session/runner/endpoint-reachability.js";
+import { connectTcp } from "../dist/platform/tcp-connect.js";
 
 test("directEndpoint reads host and default port of the base URL", () => {
   assert.deepEqual(

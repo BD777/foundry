@@ -29,6 +29,10 @@ import {
   extensionBaseEnvironment,
   findExtensionCommand,
 } from "./process-environment.js";
+import {
+  helperErrorCode,
+  helperFailureRetryable,
+} from "../../harness/external-connection.js";
 
 /**
  * Declarative connector extensions (docs/connector-extensions.md,
@@ -49,6 +53,8 @@ const maxText = 4096;
 const defaultTimeoutSeconds = 30;
 const maxTimeoutSeconds = 300;
 const maxOutputBytes = 4 * 1024 * 1024;
+const identityProbeAttempts = 3;
+const identityProbeBackoffMs = [1_000, 4_000] as const;
 const pointerPattern = /^(\/[^\s]*)?$/;
 const templatePattern = /\{([^{}]*)\}/g;
 
@@ -1905,25 +1911,52 @@ async function describe(
   item: unknown,
   label: string,
 ): Promise<{ identity: string } | { problem: string }> {
-  try {
-    const described = await run(
-      helper,
-      spec.identity.args.map((arg) => render(arg, {}, item)),
-      undefined,
-      spec.identity.timeoutSeconds ?? defaultTimeoutSeconds,
-    );
-    const identity = at(described.answer, spec.identity.pointer);
-    if (typeof identity === "string" && identity) return { identity };
-    return {
-      problem: `${label} could not confirm its identity (the helper exited with code ${described.code}).`,
-    };
-  } catch (error) {
-    return {
-      problem: `${label} could not confirm its identity: ${
-        error instanceof Error ? error.message : String(error)
-      }`.slice(0, 300),
-    };
+  for (let attempt = 1; attempt <= identityProbeAttempts; attempt++) {
+    try {
+      const described = await run(
+        helper,
+        spec.identity.args.map((arg) => render(arg, {}, item)),
+        undefined,
+        spec.identity.timeoutSeconds ?? defaultTimeoutSeconds,
+      );
+      const identity = at(described.answer, spec.identity.pointer);
+      if (typeof identity === "string" && identity) return { identity };
+      const code = helperErrorCode(described.stderr);
+      const detail = code
+        ? ` (${code})`
+        : described.code === 0
+          ? " (the helper returned no identity)"
+          : ` (the helper exited with code ${described.code})`;
+      const retryable = described.code === 0 || helperFailureRetryable(code);
+      const suffix =
+        retryable && attempt < identityProbeAttempts
+          ? ""
+          : ` after ${attempt} attempts`;
+      if (!retryable || attempt === identityProbeAttempts)
+        return {
+          problem:
+            `${label} could not confirm its identity${detail}${suffix}.`.slice(
+              0,
+              300,
+            ),
+        };
+    } catch (error) {
+      // A timeout is already bounded by the extension call's listTimeout.
+      // Do not multiply it by the retry budget; return what the tool said.
+      return {
+        problem: `${label} could not confirm its identity: ${
+          error instanceof Error ? error.message : String(error)
+        }`.slice(0, 300),
+      };
+    }
+    const delay =
+      identityProbeBackoffMs[
+        Math.min(attempt - 1, identityProbeBackoffMs.length - 1)
+      ] ?? 0;
+    if (delay > 0)
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
   }
+  return { problem: `${label} could not confirm its identity.`.slice(0, 300) };
 }
 
 /**

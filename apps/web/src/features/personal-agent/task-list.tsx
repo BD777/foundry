@@ -1,34 +1,47 @@
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, OctagonX } from "lucide-react";
+import {
+  Bot,
+  Check,
+  CircleX,
+  Clock,
+  LoaderCircle,
+  MessageCircleQuestion,
+  OctagonX,
+} from "lucide-react";
 import type { PersonalAgentTask } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
-import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import {
+  ContextEmpty,
+  ContextHeading,
+  ContextList,
+  ContextRow,
+  ContextRowCopy,
+  ContextRowIcon,
+  ContextSection,
+  ContextStaticRow,
+  ContextStatus,
+} from "../../components/ui/context-card";
+import { Subheading } from "../../components/ui/subheading";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { isTaskActive, visibleTasks } from "./assistant-model";
-import { PaMuted } from "./pa-muted";
-import { Subheading } from "../../components/ui/subheading";
-import { DividedList } from "../../components/ui/divided-list";
 
-const statusTone: Record<
-  PersonalAgentTask["status"],
-  NonNullable<BadgeProps["tone"]>
-> = {
-  queued: "slate",
-  running: "online",
-  asking: "brass",
-  done: "neutral",
-  failed: "error",
-  cancelled: "neutral",
+const statusIcon: Record<PersonalAgentTask["status"], typeof Bot> = {
+  queued: Clock,
+  running: LoaderCircle,
+  asking: MessageCircleQuestion,
+  done: Check,
+  failed: CircleX,
+  cancelled: OctagonX,
 };
 
 /**
  * "What I'm doing": the work the assistant handed off and follows up, each
- * stoppable on its own and openable to watch its progress.
+ * openable to watch its progress and stoppable on its own.
  */
 export function TaskList({
   tasks,
@@ -44,48 +57,53 @@ export function TaskList({
 }) {
   const { t } = useTranslation("personalAgent");
   const { active, ended } = visibleTasks(tasks);
+  if (!active.length && !ended.length && !error)
+    return (
+      <ContextSection aria-label={t("tasks.title")} className="py-3.5">
+        <ContextHeading
+          action={<ContextEmpty>{t("tasks.empty")}</ContextEmpty>}
+          className="mb-0"
+        >
+          {t("tasks.title")}
+        </ContextHeading>
+      </ContextSection>
+    );
+  const row = (task: PersonalAgentTask) => (
+    <TaskRow
+      key={task.id}
+      onStop={onStop}
+      project={projectName(task.workspaceId)}
+      task={task}
+    />
+  );
   return (
-    <section aria-labelledby="fdy-pa-tasks-title" className="grid gap-2.5">
-      <Subheading as="h2" id="fdy-pa-tasks-title">
-        {t("tasks.title")}
-      </Subheading>
+    <ContextSection aria-label={t("tasks.title")}>
+      <ContextHeading count={active.length}>{t("tasks.title")}</ContextHeading>
       {error ? (
-        <Alert tone="error" title={t("tasks.loadFailed")}>
+        <Alert
+          className="mb-2.5"
+          size="compact"
+          title={t("tasks.loadFailed")}
+          tone="error"
+        >
           {error}
         </Alert>
       ) : null}
       {active.length ? (
-        <DividedList density="none">
-          {active.map((task) => (
-            <TaskRow
-              key={task.id}
-              onStop={onStop}
-              project={projectName(task.workspaceId)}
-              task={task}
-            />
-          ))}
-        </DividedList>
-      ) : (
-        <PaMuted>{t("tasks.empty")}</PaMuted>
-      )}
+        <ContextList className="gap-1">{active.map(row)}</ContextList>
+      ) : null}
       {ended.length ? (
         <>
-          <Subheading className="mt-2" size="caption">
+          <Subheading
+            className={active.length ? "mt-3 mb-1.5" : "mb-1.5"}
+            size="caption"
+          >
             {t("tasks.ended")}
           </Subheading>
-          <DividedList density="none">
-            {ended.map((task) => (
-              <TaskRow
-                key={task.id}
-                onStop={onStop}
-                project={projectName(task.workspaceId)}
-                task={task}
-              />
-            ))}
-          </DividedList>
+          <ContextList className="gap-1">{ended.map(row)}</ContextList>
         </>
       ) : null}
-    </section>
+    </ContextSection>
   );
 }
 
@@ -102,6 +120,7 @@ function TaskRow({
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const active = isTaskActive(task);
+  const StatusIcon = statusIcon[task.status];
 
   async function stop(): Promise<void> {
     setStopping(true);
@@ -115,63 +134,75 @@ function TaskRow({
     }
   }
 
-  return (
-    <li className="grid gap-1.5 py-2.5" data-status={task.status}>
-      <strong className="text-sm leading-[1.45] wrap-anywhere text-ink">
-        {task.title}
-      </strong>
-      <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-        {task.waitingFor ? (
-          <Badge tone="warn">
-            {t("tasks.waitingForComputer", { computer: task.waitingFor })}
-          </Badge>
-        ) : (
-          <Badge tone={statusTone[task.status]}>
-            {t(`tasks.status.${task.status}`)}
-          </Badge>
-        )}
-        {task.stuckSince && active ? (
-          <Badge tone="warn">{t("tasks.stuck")}</Badge>
-        ) : null}
-      </span>
-      <PaMuted
-        as="span"
-        className="flex flex-wrap items-center gap-x-2.5 gap-y-1"
+  const detail = [
+    project ? t("tasks.where", { project }) : "",
+    t("tasks.started", { when: relativeWhen(task.createdAt) }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const status = task.waitingFor
+    ? t("tasks.waitingForComputer", { computer: task.waitingFor })
+    : task.stuckSince && active
+      ? t("tasks.stuck")
+      : t(`tasks.status.${task.status}`);
+  const content = (
+    <>
+      <ContextRowIcon>
+        <Bot aria-hidden="true" size={15} />
+      </ContextRowIcon>
+      <ContextRowCopy detail={detail} title={task.title} />
+      <ContextStatus
+        tone={
+          task.status === "failed" || (task.stuckSince && active)
+            ? "failed"
+            : task.status === "running" && !task.waitingFor
+              ? "running"
+              : "default"
+        }
       >
-        {project ? <span>{t("tasks.where", { project })}</span> : null}
-        <span title={fullWhen(task.createdAt)}>
-          {t("tasks.started", { when: relativeWhen(task.createdAt) })}
-        </span>
-      </PaMuted>
-      <span className="flex flex-wrap gap-1.5">
+        <StatusIcon aria-hidden="true" size={13} />
+        {status}
+      </ContextStatus>
+    </>
+  );
+  const title = `${task.title}\n${fullWhen(task.createdAt)}`;
+  return (
+    <div className="grid min-w-0 gap-1" data-status={task.status}>
+      <div className="flex min-w-0 items-center gap-1">
         {task.sessionId ? (
-          <Button
+          <ContextRow
+            aria-label={`${t("tasks.open")}: ${task.title}`}
+            className="min-w-0 flex-1"
             onClick={() => navigateToChat(task.sessionId!, task.workspaceId)}
-            size="sm"
-            variant="ghost"
+            title={title}
           >
-            {t("tasks.open")}
-            <ArrowRight aria-hidden="true" size={14} />
-          </Button>
-        ) : null}
+            {content}
+          </ContextRow>
+        ) : (
+          <ContextStaticRow className="min-w-0 flex-1" title={title}>
+            {content}
+          </ContextStaticRow>
+        )}
         {active ? (
           <Button
             aria-busy={stopping}
+            aria-label={`${stopping ? t("tasks.stopping") : t("tasks.stop")}: ${task.title}`}
+            className="size-7 flex-none text-ink-muted"
             disabled={stopping}
             onClick={() => void stop()}
-            size="sm"
-            variant="secondary"
+            size="icon"
+            title={t("tasks.stop")}
+            variant="ghost"
           >
-            <OctagonX aria-hidden="true" size={14} />
-            {stopping ? t("tasks.stopping") : t("tasks.stop")}
+            <OctagonX aria-hidden="true" size={15} />
           </Button>
         ) : null}
-      </span>
+      </div>
       {error ? (
         <ToastFeedback tone="error" title={t("tasks.stopFailed")}>
           {error}
         </ToastFeedback>
       ) : null}
-    </li>
+    </div>
   );
 }

@@ -192,6 +192,24 @@ type DeviceProjection struct {
 	SharesSystemAccountWith []DeviceAccountShare `json:"sharesSystemAccountWith,omitempty"`
 }
 
+// DeviceProxyFallback DeviceProxyFallback is how a worker reaches the server while its configured proxy is unreachable.
+type DeviceProxyFallback struct {
+	// Configured The configured proxy, scheme, host and port only (never credentials).
+	Configured string `json:"configured"`
+
+	// Route What the worker uses instead: "environment" for the proxy its environment names, "direct" for no proxy.
+	Route string `json:"route"`
+
+	// EnvironmentProxy With route environment, that proxy's scheme, host and port.
+	EnvironmentProxy string `json:"environmentProxy,omitempty"`
+
+	// Since When the worker switched.
+	Since string `json:"since"`
+
+	// Reason Why, in words, e.g. the attempts that failed and for how long.
+	Reason string `json:"reason,omitempty"`
+}
+
 // DeviceRepairAction A repair a person can ask a worker to make on itself.
 type DeviceRepairAction = string
 
@@ -368,6 +386,9 @@ type DeviceWorker struct {
 
 	// Command The command that checks and updates the worker on that machine, as typed there (`~/.foundry/bin/foundry-worker`); absent for a worker run from a source checkout, which updates with git.
 	Command string `json:"command,omitempty"`
+
+	// ProxyFallback `proxyFallback` is set while the worker reaches the server around its configured proxy, which kept failing (DEV-217); absent when it uses the proxy as configured.
+	ProxyFallback *DeviceProxyFallback `json:"proxyFallback,omitempty"`
 }
 
 // DeviceWorkerUpdate DeviceWorkerUpdate describes an update requested from Foundry: while it runs, or as the most recent completed result retained by update_worker status.

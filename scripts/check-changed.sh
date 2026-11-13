@@ -11,13 +11,13 @@
 #   --base <ref>    diff the working tree against <ref> instead of HEAD
 #   --list          print the plan without running it
 # Default scope is the whole diff against HEAD (release check).
-# Heavy steps (tsc, builds, web/worker tests, go test) queue on a VM-wide flock so
-# concurrent callers do not thrash the CPUs; light steps (prettier, gofmt, audits) don't.
+# Heavy steps (tsc, builds, web/worker tests, go test) queue through scripts/fdy-lock so
+# concurrent callers can see the holder and their position; light steps (prettier, gofmt,
+# audits) never take the lock.
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 caller_pwd="$PWD"
-lock_file="/tmp/foundry-check-changed.lock"
 
 # root_relative <path>: a path given from the caller's folder, relative to the root
 # (GNU realpath; elsewhere, as on macOS, node).
@@ -34,10 +34,6 @@ now() { local t; t="$(date +%s.%N)"; case "$t" in *N) date +%s ;; *) echo "$t" ;
 # Go tests that drive the built Worker (real feishu-cli / cf through the Worker's forwarder)
 # fail, not skip, when packages/worker/dist lacks what they load.
 export FOUNDRY_REQUIRE_WORKER_BUILD=1
-# Linux caps go test's memory and serializes heavy steps; elsewhere they just run.
-has_flock=0
-command -v flock >/dev/null 2>&1 && has_flock=1
-
 base="HEAD"
 list_only=0
 since=""
@@ -336,20 +332,20 @@ fi
 
 logdir="$(mktemp -d)"
 trap '[ "$failed" -ne 0 ] || rm -rf "$logdir"' EXIT
-exec 9>>"$lock_file"
 run_start=$(now)
-results=() seconds=() waits=()
+results=() seconds=()
 failed=0
 for i in "${!names[@]}"; do
-  wait_s=0
-  if [ "${heavy[$i]}" = heavy ] && [ $has_flock -eq 1 ] && ! flock -n 9; then
-    echo "waiting for another check run (${names[$i]}; lock $lock_file)..."
-    wait_start=$(now)
-    flock 9
-    wait_s="$(echo "$(now) - $wait_start" | bc)"
-  fi
   start=$(now)
-  if (cd "$root" && eval "${commands[$i]}") >"$logdir/$i.log" 2>&1 9>&-; then
+  if [ "${heavy[$i]}" = heavy ] && [ "${FOUNDRY_LOCK_DISABLE:-0}" != 1 ]; then
+    (cd "$root" && "$root/scripts/fdy-lock" heavy -- bash -c "${commands[$i]}") \
+      >"$logdir/$i.log" 2> >(tee -a "$logdir/$i.log" >&2)
+    run_status=$?
+  else
+    (cd "$root" && eval "${commands[$i]}") >"$logdir/$i.log" 2>&1
+    run_status=$?
+  fi
+  if [ "$run_status" -eq 0 ]; then
     results+=(PASS)
   else
     results+=(FAIL)
@@ -360,19 +356,15 @@ for i in "${!names[@]}"; do
     echo "==== full log: $logdir/$i.log ===="
   fi
   seconds+=("$(echo "$(now) - $start" | bc)")
-  waits+=("$wait_s")
-  [ $has_flock -eq 0 ] || flock -u 9
 done
 
 echo
-printf '%-15s %-40s %-6s %8s %8s\n' CHECK TARGET RESULT SECONDS WAITED
-total_wait=0
+printf '%-15s %-40s %-6s %8s\n' CHECK TARGET RESULT SECONDS
 for i in "${!names[@]}"; do
   target="${targets[$i]}"
   [ ${#target} -gt 40 ] && target="${target:0:37}..."
-  printf '%-15s %-40s %-6s %8.1f %8.1f\n' "${names[$i]}" "$target" "${results[$i]}" "${seconds[$i]}" "${waits[$i]}"
-  total_wait="$(echo "$total_wait + ${waits[$i]}" | bc)"
+  printf '%-15s %-40s %-6s %8.1f\n' "${names[$i]}" "$target" "${results[$i]}" "${seconds[$i]}"
 done
 wall="$(echo "$(now) - $run_start" | bc)"
-printf '%-15s %-40s %-6s %8.1f %8.1f\n' "total (wall)" "" "$([ $failed -eq 0 ] && echo PASS || echo FAIL)" "$wall" "$total_wait"
+printf '%-15s %-40s %-6s %8.1f\n' "total (wall)" "" "$([ $failed -eq 0 ] && echo PASS || echo FAIL)" "$wall"
 exit $failed

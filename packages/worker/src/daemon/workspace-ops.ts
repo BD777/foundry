@@ -479,9 +479,9 @@ export async function recheckRunningNativeChats(
 }
 
 /**
- * What this worker can run only while its device allows it: verifiers need
- * the read-only sandbox (bubblewrap on Linux). The server sends a verifier
- * only to a worker that declares it.
+ * What this worker can run only while its device allows it: verifiers and
+ * read-only workspace sessions need the read-only sandbox (bubblewrap on
+ * Linux). The server sends them only to a worker that declares it.
  */
 export function availableDaemonCapabilities(): string[] {
   // native_sign_in: Model providers may sign a runtime in through this worker.
@@ -489,7 +489,14 @@ export function availableDaemonCapabilities(): string[] {
   // method to the server, which alone decides (v1 forwarded only GET and
   // refused the rest on the device).
   return [
-    ...(sandboxReady("readonly_agent") ? ["verification_sessions"] : []),
+    // read_only_workspace_sessions: a session with workspaceAccess "read"
+    // runs in the verifier's sandbox, so it needs the same.
+    ...(sandboxReady("readonly_agent")
+      ? ["verification_sessions", "read_only_workspace_sessions"]
+      : []),
+    // workspace_file_write: write_file replaces one text file in a
+    // workspace (the person's edits of a channel workspace's AGENTS.md).
+    "workspace_file_write",
     "native_sign_in",
     "cloudflare_gateway_v2",
     // profile_check: the worker checks a server profile it is handed
@@ -502,6 +509,13 @@ export function availableDaemonCapabilities(): string[] {
     // dispatch_retry: a retried Foundry input gets a fresh native execution
     // identity instead of being suppressed by its earlier completion marker.
     "dispatch_retry",
+    // shared_leases: resource operations run each lease in its own
+    // provider session, side by side; resource_reset ends one lease
+    // (leaseOnly) and shared operate requests do not fence the others.
+    "shared_leases",
+    // worker_proxy_settings: set_worker_proxy saves or clears the Worker's
+    // proxy for its owner (the device page's proxy warning, DEV-217).
+    "worker_proxy_settings",
   ];
 }
 

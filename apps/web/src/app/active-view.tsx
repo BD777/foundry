@@ -182,6 +182,7 @@ export function ActiveView({
           assistants={assistants.assistants}
           devices={data.devices}
           key={location.selectedAssistantId}
+          needsYouTotal={pending.list?.open}
           onEvent={handleAssistantEvent}
           workspaces={data.workspaces}
         />
@@ -298,6 +299,7 @@ export function ActiveView({
           ownedDeviceIds={ownedDeviceCandidates(data.devices).map(
             (device) => device.id,
           )}
+          workspaces={data.workspaces}
         />
       );
     case "usage":

@@ -80,6 +80,9 @@ export const daemonMessageTypes = {
   listSubagents: "list_subagents",
   listWorkspaceTree: "list_workspace_tree",
   readFile: "read_file",
+  /** Server asks: write one text file in a workspace (write_file, answered file_written). */
+  writeFile: "write_file",
+  fileWritten: "file_written",
   /** Server asks, for the device's owner: a file outside the workspaces. */
   readDeviceFile: "read_device_file",
   /** Server asks: the key one provider's own configuration names. */
@@ -246,6 +249,12 @@ export const daemonMessageTypes = {
   /** Server asks for its owner: stop the listed turns and switch the runner now. */
   switchExecutionRunner: "switch_execution_runner",
   executionRunnerSwitched: "execution_runner_switched",
+  /**
+   * Server asks for its owner: save or clear the Worker's proxy setting
+   * (worker-proxy.json); the Worker reconnects on the new route (DEV-217).
+   */
+  setWorkerProxy: "set_worker_proxy",
+  workerProxySet: "worker_proxy_set",
   installTool: "install_tool",
   toolInstalled: "tool_installed",
   /** Server asks: check a tool version on the device (a bundle rollout). */
@@ -500,6 +509,33 @@ export interface FileDownloadChunk {
   size: number;
   revision: string;
   dataBase64: string;
+}
+
+/**
+ * write_file: replace one UTF-8 text file inside a workspace, atomically
+ * (temporary file + rename), creating parent folders. `path` is relative to
+ * the workspace, "/"-separated, never absolute, never "..", never inside
+ * `.git`, and must not resolve through a symlink outside the workspace.
+ * With `expectedSha256` the file's current content must hash to it ("" means
+ * the file must not exist yet), else the write is refused with code
+ * `conflict`. At most 512 KiB. Answered with file_written.
+ */
+export interface WriteFilePayload {
+  workspaceId: string;
+  path: string;
+  content: string;
+  expectedSha256?: string;
+}
+
+/** file_written: the file as written, or an error (code conflict, invalid_path, too_large). */
+export interface FileWrittenPayload {
+  workspaceId: string;
+  path: string;
+  /** SHA-256 (hex) of the content now in the file. */
+  sha256: string;
+  bytes: number;
+  error?: string;
+  code?: string;
 }
 
 /** read_file */

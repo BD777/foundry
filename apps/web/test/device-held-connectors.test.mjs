@@ -2344,6 +2344,67 @@ test("GitHub's permission picker: recommended, all from GitHub's list, custom wi
   await page.click(page.button("Authorize selected permissions"));
   assert.equal(sorted(chosen[2].scopes), "gist,read:org,repo,workflow");
   await page.unmount();
+
+  page = await render(AuthorizationScopePicker, {
+    group,
+    onStart: (options) => chosen.push(options),
+  });
+  await page.click(page.button("All 34 listed except deletion"));
+  assert.match(
+    page.container.textContent,
+    /This covers only Foundry's 34 listed scopes and omits the two dedicated delete scopes/,
+  );
+  assert.match(page.container.textContent, /Excludes:/);
+  assert.match(page.container.textContent, /delete_repo/);
+  assert.match(page.container.textContent, /delete:packages/);
+  await page.click(page.button("Authorize selected permissions"));
+  const presetScopes = chosen.at(-1).scopes.split(",");
+  assert.equal(presetScopes.includes("delete_repo"), false);
+  assert.equal(presetScopes.includes("delete:packages"), false);
+  for (const scope of [
+    "repo",
+    "workflow",
+    "write:packages",
+    "admin:org",
+    "admin:public_key",
+    "admin:repo_hook",
+    "admin:org_hook",
+    "admin:gpg_key",
+  ])
+    assert.equal(presetScopes.includes(scope), true, scope);
+  await page.unmount();
+});
+
+test("scope changes summarize counts and keep the full list behind details (DEV-206)", async () => {
+  const { ScopeChangeNote } =
+    await import("../src/features/external-accounts/authorization-scope-picker.tsx");
+  const added = [
+    "admin:gpg_key",
+    "admin:org",
+    ...Array.from({ length: 32 }, (_, index) => `synthetic:${index + 1}`),
+  ];
+  const page = await render(ScopeChangeNote, {
+    change: {
+      source: "foundry",
+      at: iso(-60_000),
+      added,
+      removed: ["delete_repo"],
+    },
+  });
+  const details = page.container.querySelector("details");
+  const summary = details.querySelector("summary");
+  assert.equal(details.open, false);
+  assert.match(
+    summary.textContent,
+    /Changed in Foundry .*: 34 scopes added · 1 scope removed/,
+  );
+  assert.doesNotMatch(summary.textContent, /admin:gpg_key/);
+  const chips = [...details.querySelectorAll("code")];
+  assert.equal(chips.length, 35);
+  assert.equal(chips[0].textContent, "+admin:gpg_key");
+  assert.equal(chips[1].textContent, "+admin:org");
+  assert.equal(chips.at(-1).textContent, "−delete_repo");
+  await page.unmount();
 });
 
 test("a device-held tab draws the stored reading at once and marks stale devices checking until the refresh answers", async () => {

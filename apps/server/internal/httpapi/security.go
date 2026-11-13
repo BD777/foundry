@@ -177,8 +177,8 @@ func withCORS(allowedOrigin string, next http.Handler) http.Handler {
 			w.Header().Add("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-None-Match, Idempotency-Key")
-		w.Header().Set("Access-Control-Allow-Methods", "DELETE,GET,POST,PUT,PATCH,OPTIONS")
-		w.Header().Set("Access-Control-Expose-Headers", "ETag")
+		w.Header().Set("Access-Control-Allow-Methods", "DELETE,GET,HEAD,POST,PUT,PATCH,OPTIONS")
+		w.Header().Set("Access-Control-Expose-Headers", "ETag, X-Foundry-File-Size")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
