@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已修复并部署 dev，未提交。Worker `0.5.7-dev.357.g8f394c91.local.1794551762` 已更新 7 台设备；在 CanWendeMac-mini 上用已部署 Worker 的 `deviceHeldConnectors.handle({action:"status", fresh:true})` 复跑自检：`usable: true, isolationHolds: true`。设备重连后 Server 自动重读，存档的卡片状态已刷新为隔离成立。macbook（`dev_ca742456`）此前存着同样的红字，同一根因，同一版本修复。
 
 ## 问题

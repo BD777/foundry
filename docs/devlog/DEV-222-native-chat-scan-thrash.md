@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已修复并随车次部署（Worker `…1794567381`），sg-chaos 已验证；定向测试 37/37 通过；改动在 dev 检出中未提交（foundry 提交时间窗）。按 2026-11-13 的部署规定（只有车次 conductor `sess_1794555762602239151` 部署并执行 `update_worker`），本项没有发布，补丁已交给 conductor，随 DEV-214 进入下一班车（conductor 会 rebase 并在该车次的检查里跑 native-chat-sync、native-chat-history、native-archive）：`/tmp/dev222-patch/dev222-native-chat-scan.patch`（sha256 `032af4bf…787d`，可干净应用于 HEAD `8f394c91`；dev 检出里已有同样的改动）。
 
 来源：[sg-chaos 资源排查 session](https://dev.foundryapp.app/chats/sess_1794464313271186377)（sg-chaos 负载约 21、swap 8 GB、空闲内存 172 MB）。

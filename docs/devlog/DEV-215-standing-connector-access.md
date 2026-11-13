@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已部署 dev，真实检查通过，待人工验收；未提交。经 DEV-219 部署车（sess_1794555762602239151）上线：Server sha256 `789843f2ffc11b24b012aed124dee5f1a0dfd27da4e3abe8d86fae10ad9b6aee`（2026-11-13 11:14 UTC），Worker `0.5.7-dev.357.g8f394c91.local.1794567381`（sg-chaos 11:19:48 UTC，以及 byte-dev、byte-dev-sg、cottoncpp、limen-canada）。foundry skill 与 DEV-219 合并为修订 38。实现工作树 `~/workspace/foundry-standing-access`（基于 `8f394c91`），完整补丁 `/tmp/dev215-vs-8f394c91.patch`。
 
 ## 问题

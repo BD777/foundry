@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已实现，定向测试 7/7 通过。改动在 dev 检出中未提交（foundry 提交时间窗）。Worker `0.5.7-dev.357.g8f394c91.local.1794540840` 已于 2026-11-13 发布到 dev，并通过 `update_worker` 更新了 7 台设备；回滚用 `worker-packages/release.json.pre-dev205`。byte-dev 上的 Limen · default 已于 2026-11-13 验证通过，可以选用。
 
 ## 问题

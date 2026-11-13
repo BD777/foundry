@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已修复并部署 dev，未提交。最终 Worker `0.5.7-dev.357.g8f394c91.local.1794544799` 已通过 `update_worker` 更新到 7 台在线设备；CanWendeMac-mini 的执行宿主也已确认加载该版本，并已用部署后的解析器接住真实的 `gh 2.103.3` 设备码输出。等待本人在 CanWendeMac-mini 的 Connectors 中完成 GitHub 设备授权。
 
 ## 问题

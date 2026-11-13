@@ -1,6 +1,6 @@
 # DEV-209 DeepSeek on TokenHub through Foundry's Claude runtime
 
-状态：已部署 dev；真实 provider check 与短会话通过，待人工验收。
+状态：已合入 main（PR #267）。已部署 dev；真实 provider check 与短会话通过，待人工验收。
 
 ## 问题
 

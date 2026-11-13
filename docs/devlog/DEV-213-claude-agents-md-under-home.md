@@ -1,5 +1,9 @@
 # DEV-213 Claude 会话在家目录下的工作区读不到 AGENTS.md
 
+## 状态
+
+已合入 main（PR #267）。
+
 ## 结论
 
 回归属实。家目录下只有 `AGENTS.md` 的工作区里，Foundry 启动的 Claude Code 会话**不加载项目 AGENTS.md**。受影响的有本仓库（含 `apps/web/AGENTS.md`）和 `~/Foundry/personal-agent-*` 下的所有助理 home。Codex 不受影响。

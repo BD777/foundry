@@ -1,5 +1,9 @@
 # DEV-221 Provider credentials out of Claude settings files
 
+## 状态
+
+已合入 main（PR #267）。
+
 ## Problem
 
 sess_1794559698135735487 (DEV-213, sg-chaos) ran `cat ~/.foundry/claude-settings/<owner>/*.json` to look at Foundry's Claude execution config. The output included **another session's Tencent TokenHub (Claude) key**. Foundry writes a `--settings` file for each Claude turn, and its `env` was the whole runtime environment from `profileRuntimeEnvironment`, `ANTHROPIC_AUTH_TOKEN` included. The file was 0600 in a 0700 directory, but every Foundry session runs as the same OS user, so every session's agent could read every other session's file.

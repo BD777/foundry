@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 实现、远程检查、dev 部署和真实浏览器截图已完成；train 已恢复 DEV-216/DEV-209 并保留本功能。SVG 的代理 `Content-Length` 补丁已交 train conductor，等待应用。未提交。
 
 ## 问题

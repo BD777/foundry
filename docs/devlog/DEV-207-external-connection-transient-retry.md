@@ -2,6 +2,8 @@
 
 ## 状态
 
+已合入 main（PR #267）。
+
 已修复、验证并部署 dev（2026-11-13）。根因是 Limen helper 的 5 秒预检 deadline，不是 Foundry Server、DEV-205 或 Foundry edge tunnel 的重启。Limen 预检改为 15 秒并返回可重试的 `client_preflight_timeout`（PR #381，commit `7a36f19`）；PR 已 ready、correctness CI 通过，等待非作者账号 `wasd96040501` 的 review 后合并。Worker 的身份探测和连接准备都会对短暂 helper 失败重试、保留最后一次可用状态。Worker `0.5.7-dev.357.g8f394c91.local.1794558943` 已更新 7 台设备，byte-dev 的连接检查通过。Foundry 改动未提交（提交时间窗）。
 
 ## 问题

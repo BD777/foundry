@@ -1,6 +1,6 @@
 # DEV-220 Agent lock visibility and concurrent remote runners
 
-状态：已实现并自验；scripts 与文档改动未提交。
+状态：已合入 main（PR #267）。已实现并自验；scripts 与文档改动未提交。
 
 ## Problem
 
