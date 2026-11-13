@@ -232,7 +232,7 @@ func TestNothingReachesTheConnectorBeforeTheSessionIsAuthenticatedAndRechecked(t
 		"unknown stand-in":           {handle: "tk_unknown", reason: ReasonAccessEnded},
 		"another device":             {handle: "tk_good", device: Device{ID: "d2", OwnerUserID: "alice"}, reason: ReasonAccessEnded},
 		"another device owner":       {handle: "tk_good", device: Device{ID: "d1", OwnerUserID: "bob"}, reason: ReasonAccessEnded},
-		"session finished":           {prepare: func(f *fixture) { f.session.Status = "completed" }, handle: "tk_good", reason: ReasonAccessEnded},
+		"session archived":           {prepare: func(f *fixture) { f.session.ArchivedAt = time.Now().UTC().Format(time.RFC3339Nano) }, handle: "tk_good", reason: ReasonAccessEnded},
 		"session on another device":  {prepare: func(f *fixture) { f.session.DeviceID = "d9" }, handle: "tk_good", reason: ReasonAccessEnded},
 		"session moved workspace":    {prepare: func(f *fixture) { f.session.WorkspaceID = "w2" }, handle: "tk_good", reason: ReasonAccessEnded},
 		"account unbound":            {prepare: func(f *fixture) { f.account.WorkspaceIDs = nil }, handle: "tk_good", reason: ReasonAccessEnded},

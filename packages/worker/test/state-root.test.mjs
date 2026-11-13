@@ -18,28 +18,37 @@ import {
 
 test("each stack resolves its own private state root", (t) => {
   const original = {
-    stack: process.env.FOUNDRY_STACK,
-    root: process.env.FOUNDRY_STATE_ROOT,
+    FOUNDRY_STACK: process.env.FOUNDRY_STACK,
+    FOUNDRY_STATE_ROOT: process.env.FOUNDRY_STATE_ROOT,
+    FOUNDRY_TOOLS_ROOT: process.env.FOUNDRY_TOOLS_ROOT,
+    FOUNDRY_USE_REAL_STATE: process.env.FOUNDRY_USE_REAL_STATE,
   };
   t.after(() => {
-    for (const [key, value] of Object.entries({
-      FOUNDRY_STACK: original.stack,
-      FOUNDRY_STATE_ROOT: original.root,
-    }))
+    for (const [key, value] of Object.entries(original))
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
   });
 
   delete process.env.FOUNDRY_STACK;
   delete process.env.FOUNDRY_STATE_ROOT;
+  delete process.env.FOUNDRY_USE_REAL_STATE;
   // Inside a test run the real folder is refused…
   assert.throws(() => foundryStateRoot(), /scratch folder/);
-  // …and outside one it is the default.
+  // …outside one, code run from this checkout gets a scratch root that the
+  // processes it starts share (DEV-217)…
   const testContext = process.env.NODE_TEST_CONTEXT;
   delete process.env.NODE_TEST_CONTEXT;
   t.after(() => {
     if (testContext !== undefined) process.env.NODE_TEST_CONTEXT = testContext;
   });
+  const scratch = foundryStateRoot();
+  assert.ok(scratch.startsWith(resolve(tmpdir(), "foundry-checkout-state-")));
+  assert.equal(process.env.FOUNDRY_STATE_ROOT, scratch);
+  rmSync(scratch, { recursive: true, force: true });
+  delete process.env.FOUNDRY_STATE_ROOT;
+  delete process.env.FOUNDRY_TOOLS_ROOT;
+  // …and the real folder only when asked for.
+  process.env.FOUNDRY_USE_REAL_STATE = "1";
   assert.equal(foundryStateRoot(), resolve(homedir(), ".foundry"));
   assert.equal(foundryStackSuffix(), "");
 
