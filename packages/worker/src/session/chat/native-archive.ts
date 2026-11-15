@@ -39,7 +39,7 @@ import {
   invalidateNativeChatListings,
 } from "./native-chat.js";
 import { activeClaudeRuntimes } from "../session-state.js";
-import { isInside } from "../../platform/paths.js";
+import { isInside, samePath } from "../../platform/paths.js";
 import { writeFileAtomic } from "../../platform/storage.js";
 import { errorMessage } from "../../platform/utils.js";
 import { SerialQueue } from "../../platform/serial-queue.js";
@@ -109,7 +109,7 @@ async function ownsWorkspace(
       row.type === "session_meta" &&
       row.payload?.id === id &&
       typeof row.payload.cwd === "string" &&
-      resolve(row.payload.cwd) === resolve(workspace)
+      samePath(row.payload.cwd, workspace)
     );
   }
   const stream = createReadStream(path, { encoding: "utf8" });
@@ -118,7 +118,7 @@ async function ownsWorkspace(
     for await (const line of lines) {
       const row = JSON.parse(line);
       if (row.sessionId === id && typeof row.cwd === "string")
-        return resolve(row.cwd) === resolve(workspace);
+        return samePath(row.cwd, workspace);
     }
     return false;
   } finally {

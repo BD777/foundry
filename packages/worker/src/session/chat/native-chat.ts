@@ -35,7 +35,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import type { FileHandle } from "node:fs/promises";
-import { isInside } from "../../platform/paths.js";
+import { isInside, samePath } from "../../platform/paths.js";
 import { chatFingerprint } from "./chat-fingerprint.js";
 
 interface CodexSessionIndexEntry {
@@ -308,9 +308,12 @@ export async function nativeChatLogPath(
       .flat()
       .filter((path) => basename(path).includes(id));
     for (const path of paths) {
-      if ((await logFolder(path, provider)) !== workspacePath) continue;
+      if (!samePath(await logFolder(path, provider), workspacePath)) continue;
       const candidate = await cachedNativeChatCandidate(cache, path, parse);
-      if (candidate?.id === id && candidate.workspacePath === workspacePath)
+      if (
+        candidate?.id === id &&
+        samePath(candidate.workspacePath, workspacePath)
+      )
         return path;
     }
   }
@@ -366,7 +369,7 @@ async function codexNativeChatThreadsForWorkspace(
       if (!sessionPath) {
         continue;
       }
-      if ((await logFolder(sessionPath, "codex")) !== workspacePath) {
+      if (!samePath(await logFolder(sessionPath, "codex"), workspacePath)) {
         if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
@@ -379,7 +382,7 @@ async function codexNativeChatThreadsForWorkspace(
       if (index % 4 === 3) {
         await yieldToEventLoop();
       }
-      if (!parsed || parsed.workspacePath !== workspacePath) {
+      if (!parsed || !samePath(parsed.workspacePath, workspacePath)) {
         continue;
       }
       const indexed = titleIndex.get(parsed.id);
@@ -432,7 +435,7 @@ async function claudeNativeChatThreadsForWorkspace(
       if (!sessionPath) {
         continue;
       }
-      if ((await logFolder(sessionPath, "claude")) !== workspacePath) {
+      if (!samePath(await logFolder(sessionPath, "claude"), workspacePath)) {
         if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
@@ -445,7 +448,7 @@ async function claudeNativeChatThreadsForWorkspace(
       if (index % 4 === 3) {
         await yieldToEventLoop();
       }
-      if (!candidate || candidate.workspacePath !== workspacePath) {
+      if (!candidate || !samePath(candidate.workspacePath, workspacePath)) {
         continue;
       }
       const current = byID.get(candidate.id);

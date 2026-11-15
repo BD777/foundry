@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -48,4 +48,24 @@ export function canonical(path: string): string {
   const parent = dirname(resolve(path));
   if (parent === resolve(path)) throw new Error(`Cannot resolve ${path}`);
   return resolve(canonical(parent), relative(parent, resolve(path)));
+}
+
+/**
+ * Whether two paths name the same place. Strings that differ only by a linked
+ * parent (`/home/me` → `/data/home/me`) are the same folder; so are bind mounts
+ * of one folder, which keep different real paths but share dev:ino.
+ */
+export function samePath(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const left = resolve(a);
+  const right = resolve(b);
+  if (left === right) return true;
+  try {
+    if (canonical(left) === canonical(right)) return true;
+    const one = statSync(left);
+    const two = statSync(right);
+    return one.ino !== 0 && one.dev === two.dev && one.ino === two.ino;
+  } catch {
+    return false;
+  }
 }

@@ -10,6 +10,7 @@ import {
   rename,
   rm,
   lstat,
+  symlink,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -342,6 +343,51 @@ test("archived native logs remain discoverable and readable in their workspace",
     }
   }
 });
+test("native archive ownership follows a linked workspace and refuses another folder", async (t) => {
+  for (const provider of ["claude", "codex"]) {
+    const f = await fixture(t, provider);
+    const linked = join(f.home, "linked-workspace");
+    await symlink(f.workspace, linked);
+    const keys = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"];
+    const prior = new Map(keys.map((key) => [key, process.env[key]]));
+    Object.assign(process.env, {
+      HOME: f.home,
+      CODEX_HOME: f.home,
+      CLAUDE_CONFIG_DIR: f.home,
+    });
+    try {
+      // The transcript records the real path; Foundry may hold the linked one.
+      const item = {
+        provider,
+        nativeSessionId: id,
+        deviceId: "scratch",
+        workspacePath: linked,
+        desired: "archived",
+        generation: 0,
+      };
+      const linkedResult = await applyNativeArchive(item, false, true);
+      assert.equal(linkedResult.state, "active", linkedResult.error);
+      // The same transcript must not match an unrelated folder.
+      const otherResult = await applyNativeArchive(
+        {
+          ...item,
+          workspacePath: join(f.home, "other-workspace"),
+          generation: 1,
+        },
+        false,
+        true,
+      );
+      assert.equal(otherResult.state, "failed");
+      assert.match(otherResult.error, /workspace mismatch/);
+    } finally {
+      for (const [key, value] of prior) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  }
+});
+
 test("dispatch rejects in-use sessions and stale archive generations", async () => {
   const item = {
     provider: "claude",
