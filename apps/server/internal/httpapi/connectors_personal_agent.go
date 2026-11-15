@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
@@ -50,6 +52,18 @@ func (s *Server) handleSavePersonalAgentPermissionPackage(w http.ResponseWriter,
 	}
 	saved, err := s.store.SavePermissionPackage(r.Context(), pkg)
 	writeResult(w, saved, err)
+	if err != nil || s.assistant == nil {
+		return
+	}
+	// The project files follow the package: a workspace it no longer
+	// includes loses its file.
+	s.hub.work.Go(func() {
+		ctx, cancel := context.WithTimeout(s.hub.work.ctx, time.Minute)
+		defer cancel()
+		if err := s.assistant.WriteProjectFiles(ctx, agent); err != nil {
+			log.Printf("assistant %s: write project files after its package changed: %v", agent.ID, err)
+		}
+	})
 }
 
 // invalidPermissionPackageReferences checks every named workspace and

@@ -1278,7 +1278,28 @@
         "access": { "$ref": "#/$defs/ConnectorServerHeldAccess" },
         "session": { "$ref": "#/$defs/ConnectorServerHeldSession" },
         "network": { "$ref": "#/$defs/ConnectorServerHeldNetwork" },
-        "events": { "$ref": "#/$defs/ConnectorEventsSpec" }
+        "events": { "$ref": "#/$defs/ConnectorEventsSpec" },
+        "writes": {
+          "description": "Write responses that name the message they created, so a message channel can tell an assistant's own writes from people's messages. Each entry names a catalogued write route (method and path exactly as the instance's route directory lists it) and a JSON pointer into a successful response; Foundry records the value with the request's session and account.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorServerHeldWrite" }
+        }
+      }
+    },
+    "ConnectorServerHeldWrite": {
+      "type": "object",
+      "required": ["method", "path", "createdMessageId"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string" },
+        "path": {
+          "description": "The route's path as the directory lists it, parameters included.",
+          "type": "string"
+        },
+        "createdMessageId": {
+          "description": "JSON pointer to the created message's id in the response.",
+          "type": "string"
+        }
       }
     },
     "ConnectorEventsSpec": {
@@ -1289,7 +1310,19 @@
       "properties": {
         "poll": { "$ref": "#/$defs/ConnectorEventsPoll" },
         "envelope": { "$ref": "#/$defs/ConnectorEventsEnvelope" },
-        "context": { "$ref": "#/$defs/ConnectorEventsContext" }
+        "context": { "$ref": "#/$defs/ConnectorEventsContext" },
+        "reply": { "$ref": "#/$defs/ConnectorEventsReply" }
+      }
+    },
+    "ConnectorEventsReply": {
+      "description": "How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kinds": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     },
     "ConnectorEventsPoll": {
@@ -1326,7 +1359,7 @@
       }
     },
     "ConnectorEventsEnvelope": {
-      "description": "Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.",
+      "description": "Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, sender.isOwnWrite, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.",
       "type": "object",
       "required": ["fields"],
       "additionalProperties": false,
@@ -1354,6 +1387,15 @@
         },
         "otherwise": { "type": "string" },
         "unit": { "type": "string", "enum": ["ms", "s", "rfc3339"] },
+        "when": {
+          "description": "Conditions on the item; the field is present only when all of them hold.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorEventsCondition" }
+        },
+        "trimPrefix": {
+          "description": "A prefix removed from the value after it is read.",
+          "type": "string"
+        },
         "cases": {
           "description": "Checked first, in order; the first case whose conditions all hold gives the value.",
           "type": "array",
@@ -4898,7 +4940,11 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "isSelf": { "type": "boolean" },
-        "isBot": { "type": "boolean" }
+        "isBot": { "type": "boolean" },
+        "isOwnWrite": {
+          "description": "The message was written by the assistant itself through the source, not by a person; it never starts or continues a session.",
+          "type": "boolean"
+        }
       }
     },
     "MessageChannelTriState": {
@@ -4991,6 +5037,21 @@
         "resetCommands": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "MessageChannelFollowUpFrom": {
+      "type": "string",
+      "enum": ["same-sender", "person", "anyone"]
+    },
+    "MessageChannelFollowUps": {
+      "description": "Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.",
+      "type": "object",
+      "required": ["enabled", "from", "endCommands"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "from": { "$ref": "#/$defs/MessageChannelFollowUpFrom" },
+        "endCommands": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "MessageChannelLimits": {
       "type": "object",
       "required": ["perHour", "perDay", "concurrency"],
@@ -5017,7 +5078,7 @@
     "MessageChannelCapabilities": {
       "description": "What the source's messages can tell apart, from its descriptor's envelope mapping. An empty conversationKinds means the source does not say.",
       "type": "object",
-      "required": ["conversationKinds", "mentionsMe", "fromSelf"],
+      "required": ["conversationKinds", "mentionsMe", "fromSelf", "threads"],
       "additionalProperties": false,
       "properties": {
         "conversationKinds": {
@@ -5025,7 +5086,11 @@
           "items": { "$ref": "#/$defs/MessageConversationKind" }
         },
         "mentionsMe": { "type": "boolean" },
-        "fromSelf": { "type": "boolean" }
+        "fromSelf": { "type": "boolean" },
+        "threads": {
+          "description": "The source gives a thread id, so follow-ups can ride threads.",
+          "type": "boolean"
+        }
       }
     },
     "MessageChannelSample": {
@@ -5168,7 +5233,8 @@
           "description": "The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home.",
           "type": "string"
         },
-        "session": { "$ref": "#/$defs/MessageChannelSessionRule" }
+        "session": { "$ref": "#/$defs/MessageChannelSessionRule" },
+        "followUps": { "$ref": "#/$defs/MessageChannelFollowUps" }
       }
     },
     "MessageChannel": {
@@ -5204,6 +5270,7 @@
           "type": "string"
         },
         "session": { "$ref": "#/$defs/MessageChannelSessionRule" },
+        "followUps": { "$ref": "#/$defs/MessageChannelFollowUps" },
         "skillName": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
@@ -5275,6 +5342,10 @@
           "description": "The channel's sessions.",
           "type": "array",
           "items": { "type": "string" }
+        },
+        "conversationCount": {
+          "description": "The source conversations the channel has messages from, still within retention.",
+          "type": "integer"
         }
       }
     },
@@ -5394,6 +5465,181 @@
         "deliveries": {
           "type": "array",
           "items": { "$ref": "#/$defs/MessageChannelDelivery" }
+        },
+        "nextCursor": {
+          "description": "Pass as cursor to read the next older page; absent when this is the last.",
+          "type": "string"
+        }
+      }
+    },
+    "MessageChannelOrigin": {
+      "description": "One turn's structured origin (DEV-234): the channel, the source conversation and thread, and each message of the batch. Stored with the session input, so the Web renders the turn without parsing the facts block the agent receives.\n",
+      "type": "object",
+      "required": [
+        "channelId",
+        "channelName",
+        "source",
+        "conversation",
+        "messages",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "channelId": { "type": "string" },
+        "channelName": { "type": "string" },
+        "source": {
+          "description": "The source's kind from its extension descriptor, e.g. openlark.",
+          "type": "string"
+        },
+        "conversation": { "$ref": "#/$defs/MessageEnvelopeConversation" },
+        "thread": { "$ref": "#/$defs/MessageEnvelopeThread" },
+        "segment": {
+          "description": "Which of the conversation's sessions this turn belongs to, from 0.",
+          "type": "integer"
+        },
+        "sessionNew": {
+          "description": "This turn started the session.",
+          "type": "boolean"
+        },
+        "newReason": {
+          "description": "Why a new session started: first, idle, command, button, restarted.",
+          "type": "string"
+        },
+        "at": {
+          "description": "When the turn was handed over to the assistant.",
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MessageChannelOriginMessage" }
+        }
+      }
+    },
+    "MessageChannelOriginMessage": {
+      "description": "One message of a turn, as the source sent it.",
+      "type": "object",
+      "required": ["id", "sender", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "at": { "type": "string" },
+        "sender": { "$ref": "#/$defs/MessageEnvelopeSender" },
+        "text": { "type": "string" },
+        "textTruncated": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/MessageChannelDeliveryStatus" },
+        "rule": { "type": "string" }
+      }
+    },
+    "MessageChannelOriginSummary": {
+      "description": "The channel turn a session belongs to, for the session list (DEV-234): enough to mark the row and group its chat by source conversation.\n",
+      "type": "object",
+      "required": [
+        "assistantId",
+        "channelId",
+        "channelName",
+        "source",
+        "sessionKey",
+        "conversation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "assistantId": { "type": "string" },
+        "channelId": { "type": "string" },
+        "channelName": { "type": "string" },
+        "source": { "type": "string" },
+        "sessionKey": { "type": "string" },
+        "conversation": { "$ref": "#/$defs/MessageEnvelopeConversation" },
+        "threadId": { "type": "string" },
+        "threadIsReply": { "type": "boolean" },
+        "segment": { "type": "integer" },
+        "sessionNew": { "type": "boolean" },
+        "newReason": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "lastAt": { "type": "string" },
+        "lastSender": { "$ref": "#/$defs/MessageEnvelopeSender" }
+      }
+    },
+    "MessageChannelConversation": {
+      "description": "One source conversation of a channel (DEV-234): its latest message and its sessions, newest first.\n",
+      "type": "object",
+      "required": [
+        "sessionKey",
+        "conversation",
+        "lastAt",
+        "messageCount",
+        "matchedCount",
+        "sessionCount",
+        "sessions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "description": "The conversation (and thread) key its messages carry.",
+          "type": "string"
+        },
+        "conversation": { "$ref": "#/$defs/MessageEnvelopeConversation" },
+        "lastSender": { "$ref": "#/$defs/MessageEnvelopeSender" },
+        "lastAt": { "type": "string" },
+        "messageCount": { "type": "integer" },
+        "matchedCount": {
+          "description": "Messages a rule kept and the channel handed to the assistant.",
+          "type": "integer"
+        },
+        "sessionCount": { "type": "integer" },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MessageChannelConversationSession" }
+        }
+      }
+    },
+    "MessageChannelConversationSession": {
+      "description": "One segment of a source conversation: the assistant session it started.",
+      "type": "object",
+      "required": ["segment", "lastAt", "messageCount"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "type": "string" },
+        "segment": { "type": "integer" },
+        "new": {
+          "description": "The segment's first message started the session.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Why it started: first, idle, command, button, restarted.",
+          "type": "string"
+        },
+        "status": { "type": "string" },
+        "title": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "lastAt": { "type": "string" },
+        "messageCount": { "type": "integer" }
+      }
+    },
+    "MessageChannelConversationList": {
+      "type": "object",
+      "required": ["conversations"],
+      "additionalProperties": false,
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MessageChannelConversation" }
+        },
+        "nextCursor": {
+          "description": "Pass as cursor to read the next older page; absent when this is the last.",
+          "type": "string"
+        }
+      }
+    },
+    "SessionChannel": {
+      "description": "The message channel turns of one assistant session (DEV-234), oldest first.",
+      "type": "object",
+      "required": ["sessionId", "turns"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "type": "string" },
+        "turns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MessageChannelOrigin" }
         }
       }
     },
@@ -7684,6 +7930,10 @@
           "description": "`contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts.",
           "$ref": "#/$defs/AgentContextUsage"
         },
+        "channelOrigin": {
+          "description": "`channelOrigin`, on a message channel turn's user-message event, is the turn's structured origin (DEV-234): the channel, source conversation and thread, and each message.",
+          "$ref": "#/$defs/MessageChannelOrigin"
+        },
         "codexTransport": {
           "description": "`codexTransport` is what a Codex session showed about its compatible endpoint's Responses WebSocket; the server keeps it for the profile.",
           "$ref": "#/$defs/CodexTransportReport"
@@ -7730,6 +7980,10 @@
         "sentBySessionId": {
           "description": "`sentBySessionId` is the session that sent the input (create_session's first message, send_message); its transcript event names it.",
           "type": "string"
+        },
+        "channelOrigin": {
+          "description": "`channelOrigin` is a message channel turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. The prompt still carries the facts block; clients render this instead of parsing it.",
+          "$ref": "#/$defs/MessageChannelOrigin"
         }
       }
     },
@@ -7811,6 +8065,10 @@
               "description": "`workspaceAccess` read: the session's workspace is read-only for its agent and every command it runs, kept so by the worker's sandbox (a message channel's session, DEV-203); its temporary files go to a scratch directory outside the workspace. Absent: the session writes its workspace as usual.",
               "type": "string",
               "enum": ["read"]
+            },
+            "channelOrigin": {
+              "description": "`channelOrigin` describes the message channel turn the session belongs to (DEV-234): its channel, source conversation, segment and latest message. Set only on a message channel's sessions.",
+              "$ref": "#/$defs/MessageChannelOriginSummary"
             },
             "parentSessionId": {
               "description": "`parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.",
@@ -8317,6 +8575,10 @@
         "kind": {
           "description": "`kind` is WorkspaceKindProject (sent as absent) or WorkspaceKindPersonalAgent.",
           "$ref": "#/$defs/WorkspaceKind"
+        },
+        "channelId": {
+          "description": "`channelId` is set on a message channel's workspace (DEV-234): its sessions take input only from the channel, and its chat list groups them by source conversation.",
+          "type": "string"
         },
         "archivedAt": {
           "description": "`archivedAt` is set while the workspace is archived: hidden in an \"Archived\" group, starting no sessions, everything kept.",

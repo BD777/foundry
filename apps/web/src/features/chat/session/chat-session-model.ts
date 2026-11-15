@@ -3,6 +3,7 @@ import {
   type AgentSession,
   type ChatThread,
   type DeviceProjection,
+  type MessageChannelOriginSummary,
   type SessionLink,
   sessionEventLabels,
   sessionSources,
@@ -13,6 +14,7 @@ import { isProcessLabel } from "../../../lib/process-labels";
 import { deviceAwaitedBy } from "../../../lib/device-wait";
 import { navigateToChat } from "../../../lib/in-app-navigation";
 import { isSessionLive } from "../../../lib/session-status";
+import { clockTime } from "../../../lib/time-format";
 import { agentSessionIsAwaitingDetails } from "../../../lib/agent-session-events";
 import type { ChatSessionThread } from "../chat-types";
 import type { CreateAgentSessionInput } from "../../../api-types";
@@ -435,6 +437,67 @@ export function chatStartedByLabel(
   return session.source === sessionSources.verification
     ? i18n.t("chat:listRow.verifierStartedBy", { title })
     : i18n.t("chat:listRow.startedBy", { title });
+}
+
+const channelNewReasons = [
+  "first",
+  "idle",
+  "command",
+  "button",
+  "restarted",
+] as const;
+
+/**
+ * A channel session's row line (DEV-234): when this segment started, its
+ * number, and whether the turn started a new session or continued one.
+ */
+export function channelSessionMeta(
+  origin: MessageChannelOriginSummary | undefined,
+  includeDate = true,
+): string | undefined {
+  if (!origin) return undefined;
+  const at = origin.startedAt || origin.lastAt;
+  const when = includeDate && at ? clockTime(at, { date: "short" }) : "";
+  const segment =
+    (origin.segment ?? 0) > 0
+      ? i18n.t("chat:listRow.channelSegment", {
+          number: (origin.segment ?? 0) + 1,
+        })
+      : "";
+  const reason = origin.sessionNew
+    ? i18n.t(
+        `chat:listRow.channelNew.${
+          channelNewReasons.find((known) => known === origin.newReason) ??
+          "first"
+        }`,
+      )
+    : i18n.t("chat:listRow.channelContinued");
+  return [when, segment, reason].filter(Boolean).join(" · ");
+}
+
+/**
+ * A channel session's row title (DEV-234): the generated
+ * `channel · conversation [· date]` title becomes its start time; a name
+ * the person gave it stays.
+ */
+export function channelSessionTitle(
+  title: string,
+  origin: MessageChannelOriginSummary | undefined,
+): string | undefined {
+  if (!origin?.conversation.name) return undefined;
+  if (!title.startsWith(`${origin.channelName} · ${origin.conversation.name}`))
+    return undefined;
+  const at = origin.startedAt || origin.lastAt;
+  return at ? clockTime(at, { date: "short" }) : undefined;
+}
+
+/** A channel session's row mark (DEV-234): its source and conversation. */
+export function channelOriginMark(
+  origin: MessageChannelOriginSummary | undefined,
+): string | undefined {
+  if (!origin) return undefined;
+  const name = origin.conversation.name;
+  return name ? `${origin.source} · ${name}` : origin.source;
 }
 
 /** A session of the list is the chat `id` names. */

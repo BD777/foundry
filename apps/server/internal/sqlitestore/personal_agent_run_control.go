@@ -48,8 +48,14 @@ func (s *Store) EnsurePersonalAgentRunControl(ctx context.Context, v store.Perso
 		}
 		v.State, v.Revision, v.UpdatedAt, v.UsageState = "monitoring", 1, paNow(), "not_observed"
 		if agent, e := tx.GetAssistant(ctx, v.AssistantID); e == nil && agent.State == store.PersonalAgentStopped {
-			v.State = "stop_requested"
-			v.StopReason = "assistant_stopped"
+			// Foundry's own utility/verifier run is not the assistant's
+			// action: the stop switch does not hold it back.
+			var source string
+			_ = tx.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.source'),'') FROM agent_sessions WHERE id=?`, v.SessionID).Scan(&source)
+			if !store.IsFoundryOwnedSource(source) {
+				v.State = "stop_requested"
+				v.StopReason = "assistant_stopped"
+			}
 		}
 		raw, err := json.Marshal(v)
 		if err != nil {
@@ -171,10 +177,16 @@ func (s *Store) AuthorizePersonalAgentDispatch(ctx context.Context, sessionID, i
 			return err
 		}
 		if agent, e := tx.GetAssistant(ctx, v.AssistantID); e == nil && agent.State == store.PersonalAgentStopped && v.State == "monitoring" {
-			v.State = "stop_requested"
-			v.StopReason = "assistant_stopped"
-			if _, e = tx.writePARunControl(ctx, v); e != nil {
-				return e
+			// Foundry's own utility/verifier run is not the assistant's
+			// action: the stop switch does not hold it back.
+			var source string
+			_ = tx.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.source'),'') FROM agent_sessions WHERE id=?`, sessionID).Scan(&source)
+			if !store.IsFoundryOwnedSource(source) {
+				v.State = "stop_requested"
+				v.StopReason = "assistant_stopped"
+				if _, e = tx.writePARunControl(ctx, v); e != nil {
+					return e
+				}
 			}
 		}
 		if v.State != "monitoring" {
@@ -190,7 +202,7 @@ func (s *Store) AuthorizePersonalAgentDispatch(ctx context.Context, sessionID, i
 	return allowed, err
 }
 
-func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budget *store.SessionExecutionBudget) error {
+func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budget *store.SessionExecutionBudget, foundryUpkeep bool) error {
 	if budget == nil {
 		return nil
 	}
@@ -213,7 +225,11 @@ func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budge
 		return e
 	}
 	role := roles[snapshot.WorkspaceID]
-	if role != store.WorkspaceRoleOwner && (role != store.WorkspaceRoleMember || snapshot.Role == "memory" || snapshot.Role == "governance") {
+	required := store.WorkspaceRoleMember
+	if snapshot.Role == "memory" || snapshot.Role == "governance" {
+		required = store.WorkspaceRoleOwner
+	}
+	if !store.WorkspaceRoleAtLeast(role, required) {
 		return fmt.Errorf("assistant workspace permission changed")
 	}
 	workspace, e := s.GetWorkspace(ctx, snapshot.WorkspaceID)
@@ -228,7 +244,7 @@ func (s *Store) checkPARunInput(ctx context.Context, user, inputID string, budge
 	if err != nil {
 		return err
 	}
-	if agent.State == store.PersonalAgentStopped {
+	if agent.State == store.PersonalAgentStopped && !foundryUpkeep {
 		return fmt.Errorf("assistant dispatch is paused")
 	}
 	return nil

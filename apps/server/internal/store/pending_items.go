@@ -1,9 +1,6 @@
 package store
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // A pending item is something that waits for the person (DEV-079): in a
 // session, a question an Agent asked, an Issue's question, a turn that
@@ -46,14 +43,11 @@ const (
 	PendingHandedByAssistant = "assistant"
 	PendingHandedStopped     = "assistant_stopped"
 	PendingHandedOffline     = "assistant_offline"
-	// PendingHandedTimeout: the assistant neither acknowledged nor handled
-	// the item before its deadline, so the person handles it now.
+	// PendingHandedTimeout is historical: the old 10-minute deadline handed
+	// an item to the person; Foundry no longer makes that decision. Kept to
+	// read rows written before it was removed.
 	PendingHandedTimeout = "assistant_timeout"
 )
-
-// PendingAssistantDeadline is how long an assistant item waits for its
-// assistant to acknowledge or handle it before it goes to the person.
-const PendingAssistantDeadline = 10 * time.Minute
 
 // PendingRuleHandedOver marks an item the assistant made for a helper
 // session that asked without a question card.
@@ -157,10 +151,10 @@ type PendingItem struct {
 	Note         string `json:"note,omitempty"`
 	HandedReason string `json:"handedReason,omitempty"`
 	HandedAt     string `json:"handedAt,omitempty"`
-	// DeadlineAt is when an assistant-handled item goes to the person
-	// unless the assistant acknowledged or handled it. AcknowledgedAt records
-	// that the assistant read it with needs_you; NotifiedAt records that the
-	// arrival notice reached its conversation.
+	// DeadlineAt is historical: the old 10-minute hand-over time, kept for
+	// rows written before Foundry stopped making that decision.
+	// AcknowledgedAt records that the assistant read the item with needs_you;
+	// NotifiedAt records that the arrival notice reached its conversation.
 	DeadlineAt     string `json:"deadlineAt,omitempty"`
 	AcknowledgedAt string `json:"acknowledgedAt,omitempty"`
 	NotifiedAt     string `json:"-"`
@@ -224,9 +218,6 @@ type PendingItemStore interface {
 	// ResolvePendingItem closes one of the person's items with the outcome
 	// its handler gave it.
 	ResolvePendingItem(ctx context.Context, userID, id, state, outcome string) (PendingItem, error)
-	// AcknowledgePendingItems records that the assistant read these items
-	// through needs_you, so their escalation deadline no longer applies.
-	AcknowledgePendingItems(ctx context.Context, userID string, ids []string, at string) (int, error)
 	// MarkPendingItemNotified records that the assistant heard about an
 	// item's arrival.
 	MarkPendingItemNotified(ctx context.Context, userID, id, at string) error

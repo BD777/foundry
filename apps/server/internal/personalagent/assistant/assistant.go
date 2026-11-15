@@ -13,6 +13,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -122,6 +123,66 @@ func (s *Service) AdmitSession(ctx context.Context, input store.CreateAgentSessi
 		return agent, true, limitRefusal(err, s.settingsURL(agent))
 	}
 	return agent, true, nil
+}
+
+// ApplyHelperDefaults fills what a session the assistant's conversation
+// starts runs on when it names no account, and gives it the executor role's
+// budget: the resolved run here or, when pinned is the operation's durable
+// run, that one. The conversation stays the report target and the budget
+// subject (the session's parent), as for any session its creator follows. It
+// answers whether the parent is one of the assistant's conversations; other
+// sessions are left as they are.
+func (s *Service) ApplyHelperDefaults(ctx context.Context, input *store.CreateAgentSessionInput, pinned *store.PersonalAgentRunSnapshot) (bool, error) {
+	if input.ParentSessionID == "" {
+		return false, nil
+	}
+	parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID)
+	if err != nil {
+		return false, nil
+	}
+	agent, ok := s.Conversation(ctx, parent)
+	if !ok {
+		return false, nil
+	}
+	// The session is the person's, as the store would fill in for an agent's
+	// child; the budget check needs it named before the input is dispatched.
+	input.CreatedByUserID = agent.UserID
+	// An account the caller named is its choice, not the role's default.
+	if input.Provider == "" && input.ProfileID == "" && input.AgentID == "" && input.Model == "" && input.WorkerGroupID == "" {
+		snapshot := pinned
+		if snapshot == nil {
+			resolved, err := s.runs.ResolveExecutor(ctx, agent, input.WorkspaceID, "default")
+			if err != nil {
+				return true, err
+			}
+			snapshot = &resolved
+		}
+		fillHelperRun(input, *snapshot)
+	}
+	if input.ExecutionBudget == nil {
+		if pinned != nil {
+			input.ExecutionBudget = run.ExecutionBudget(*pinned)
+		} else if err := s.runs.PinHelperInput(ctx, agent, input); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
+// fillHelperRun is what a helper runs on, from its resolved (or pinned)
+// run: the account, model and effort a generic create_session applies. A
+// named profile picks its agent; otherwise the run's agent is pinned so the
+// session starts exactly where it was resolved.
+func fillHelperRun(input *store.CreateAgentSessionInput, snapshot store.PersonalAgentRunSnapshot) {
+	input.Provider, input.ProfileID, input.Model = snapshot.Runtime, snapshot.ProfileID, snapshot.Model
+	if snapshot.ProfileID == "" {
+		input.AgentID = snapshot.AgentID
+	}
+	if snapshot.Runtime == "codex" {
+		input.CodexReasoningEffort = snapshot.Effort
+	} else {
+		input.ClaudeEffort = snapshot.Effort
+	}
 }
 
 // RecordTask follows up a session the assistant started (§6).
@@ -259,8 +320,8 @@ func (s *Service) Stop(ctx context.Context, agent store.PersonalAgent) (int, err
 		}
 	}
 	s.RefreshTasks(ctx, agent)
-	// What the assistant handled is the person's now (§h).
-	s.HandOverAll(ctx, agent, store.PendingHandedStopped)
+	// Its items stay its own: Foundry does not decide to hand them to the
+	// person. Only the assistant's needs_you hand_over does that.
 	return stopped, nil
 }
 

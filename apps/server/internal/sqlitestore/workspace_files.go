@@ -77,19 +77,44 @@ func (s *Store) GetWorkspaceFileRevision(ctx context.Context, workspaceID, path,
 }
 
 func (s *Store) AddWorkspaceFileRevision(ctx context.Context, workspaceID, path string, revision store.WorkspaceFileRevision, content string) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		return tx.insertWorkspaceFileRevision(ctx, workspaceID, path, revision, content, false)
+	})
+}
+
+func (s *Store) AddWorkspaceFileRevisionUnlessLatest(ctx context.Context, workspaceID, path string, revision store.WorkspaceFileRevision, content string) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		return tx.insertWorkspaceFileRevision(ctx, workspaceID, path, revision, content, true)
+	})
+}
+
+// insertWorkspaceFileRevision adds the version and prunes the file's older
+// ones. unlessLatest skips it in the same statement when the newest version
+// already has this content, so a repeated read adds nothing even when two
+// reads race.
+func (s *Store) insertWorkspaceFileRevision(ctx context.Context, workspaceID, path string, revision store.WorkspaceFileRevision, content string, unlessLatest bool) error {
 	if revision.At == "" {
 		revision.At = paNow()
 	}
-	return s.withTx(ctx, func(tx *Store) error {
-		if _, err := tx.conn().ExecContext(ctx, `INSERT INTO workspace_file_revisions (id, workspace_id, path, sha256, bytes, content, source, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, revision.ID, workspaceID, path, revision.Sha256, revision.Bytes, content, revision.Source, revision.At); err != nil {
-			return err
-		}
-		_, err := tx.conn().ExecContext(ctx, `DELETE FROM workspace_file_revisions WHERE workspace_id = ? AND path = ? AND id NOT IN (
-			SELECT id FROM workspace_file_revisions WHERE workspace_id = ? AND path = ? ORDER BY created_at DESC, id DESC LIMIT ?)`,
-			workspaceID, path, workspaceID, path, store.MaxWorkspaceFileRevisions)
+	args := []any{revision.ID, workspaceID, path, revision.Sha256, revision.Bytes, content, revision.Source, revision.At}
+	statement := `INSERT INTO workspace_file_revisions (id, workspace_id, path, sha256, bytes, content, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	if unlessLatest {
+		// Insert only when the newest version's sha256 is not this one
+		// (also when the file has no version yet).
+		statement = `INSERT INTO workspace_file_revisions (id, workspace_id, path, sha256, bytes, content, source, created_at)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE (SELECT sha256 FROM workspace_file_revisions WHERE workspace_id = ? AND path = ?
+				ORDER BY created_at DESC, id DESC LIMIT 1) IS NOT ?`
+		args = append(args, workspaceID, path, revision.Sha256)
+	}
+	if _, err := s.conn().ExecContext(ctx, statement, args...); err != nil {
 		return err
-	})
+	}
+	_, err := s.conn().ExecContext(ctx, `DELETE FROM workspace_file_revisions WHERE workspace_id = ? AND path = ? AND id NOT IN (
+		SELECT id FROM workspace_file_revisions WHERE workspace_id = ? AND path = ? ORDER BY created_at DESC, id DESC LIMIT ?)`,
+		workspaceID, path, workspaceID, path, store.MaxWorkspaceFileRevisions)
+	return err
 }
 
 func (s *Store) MoveWorkspaceFileRevisions(ctx context.Context, workspaceID, from, to string) error {

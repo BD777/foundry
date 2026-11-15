@@ -19,6 +19,14 @@ import (
 // Only what is shown carries it; everything else reads the stored role.
 func (s *Server) presentSession(ctx context.Context, session store.AgentSession) store.AgentSession {
 	session.Role = s.assistant.SessionRole(ctx, session)
+	// A channel session's list row names its source conversation (DEV-234).
+	if session.WorkspaceAccess == store.SessionWorkspaceAccessRead {
+		if channels, ok := s.store.(store.MessageChannelStore); ok {
+			if origin, err := channels.MessageChannelSessionOrigin(ctx, session.ID); err == nil {
+				session.ChannelOrigin = &origin
+			}
+		}
+	}
 	return session
 }
 

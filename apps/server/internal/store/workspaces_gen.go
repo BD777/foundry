@@ -211,6 +211,9 @@ type WorkspaceProjection struct {
 	// Kind `kind` is WorkspaceKindProject (sent as absent) or WorkspaceKindPersonalAgent.
 	Kind WorkspaceKind `json:"kind,omitempty"`
 
+	// ChannelID `channelId` is set on a message channel's workspace (DEV-234): its sessions take input only from the channel, and its chat list groups them by source conversation.
+	ChannelID string `json:"channelId,omitempty"`
+
 	// ArchivedAt `archivedAt` is set while the workspace is archived: hidden in an "Archived" group, starting no sessions, everything kept.
 	ArchivedAt string `json:"archivedAt,omitempty"`
 

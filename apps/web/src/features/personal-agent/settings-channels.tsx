@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderOpen,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react";
-import type { ReactNode } from "react";
+import { FolderOpen, MessagesSquare, Pencil, Plus, Trash2 } from "lucide-react";
 import type {
   MessageChannelList,
   MessageChannelSource,
@@ -22,6 +14,7 @@ import {
   updateMessageChannel,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
+import { AppLink } from "../../components/ui/app-link";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ButtonRow } from "../../components/ui/button-row";
@@ -33,6 +26,7 @@ import { RowMenu } from "../../components/ui/row-menu";
 import { Switch } from "../../components/ui/switch";
 import { ToastFeedback } from "../../components/ui/toast";
 import { serverErrorText } from "../../lib/errors";
+import { channelChatsHref } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import {
   capabilitiesOf,
@@ -40,7 +34,6 @@ import {
   ruleSentence,
   sourceOf,
 } from "./channel-model";
-import { ChannelDeliveries } from "./settings-channel-deliveries";
 import { ChannelEditor } from "./settings-channel-editor";
 import { PaMuted } from "./pa-muted";
 import { PrerequisiteNotice } from "./settings-channel-prerequisites";
@@ -188,7 +181,6 @@ export function ChannelsSection({
             {list.channels.map((view) => (
               <ChannelRow
                 assistantId={assistantId}
-                homeWorkspaceId={homeWorkspaceId}
                 key={view.channel.id}
                 onOpenFiles={onOpenFiles}
                 onChanged={replace}
@@ -239,7 +231,6 @@ export function ChannelsSection({
 
 function ChannelRow({
   assistantId,
-  homeWorkspaceId,
   view,
   onChanged,
   onDeleted,
@@ -250,7 +241,6 @@ function ChannelRow({
   sources,
 }: {
   assistantId?: string;
-  homeWorkspaceId?: string;
   sources: MessageChannelSource[];
   view: MessageChannelView;
   onChanged: (view: MessageChannelView) => void;
@@ -265,9 +255,6 @@ function ChannelRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
-  const [open, setOpen] = useState<"deliveries">();
-  const toggle = (panel: "deliveries") =>
-    setOpen((current) => (current === panel ? undefined : panel));
   const source = channel.source.label || channel.source.kind;
   const counts = status.counts;
   const capabilities = capabilitiesOf(
@@ -391,14 +378,21 @@ function ChannelRow({
       />
       {error ? <ToastFeedback title={error} tone="error" /> : null}
       <ButtonRow>
-        <PanelToggle
-          onToggle={() => toggle("deliveries")}
-          open={open === "deliveries"}
-        >
-          {open === "deliveries"
-            ? t("settings.channels.deliveries.hide")
-            : t("settings.channels.deliveries.show")}
-        </PanelToggle>
+        {view.workspace ? (
+          <Button asChild size="sm" variant="ghost">
+            <AppLink href={channelChatsHref(view.workspace.id)}>
+              <MessagesSquare aria-hidden="true" size={14} />
+              {t("settings.channels.openConversations", {
+                count: view.conversationCount,
+              })}
+            </AppLink>
+          </Button>
+        ) : (
+          <Button disabled size="sm" variant="ghost">
+            <MessagesSquare aria-hidden="true" size={14} />
+            {t("settings.channels.openConversationsPending")}
+          </Button>
+        )}
         <Button
           disabled={!view.workspace}
           onClick={() => view.workspace && onOpenFiles(view.workspace.id)}
@@ -436,16 +430,6 @@ function ChannelRow({
           label={t("settings.channels.actionsFor", { name: channel.name })}
         />
       </ButtonRow>
-      {open === "deliveries" ? (
-        <ChannelDeliveries
-          assistantId={assistantId}
-          channelId={channel.id}
-          held={counts.held}
-          onNotice={onNotice}
-          onReleased={onReload}
-          workspaceId={view.workspace?.id || homeWorkspaceId}
-        />
-      ) : null}
       <Dialog
         busy={busy}
         description={t("settings.channels.resume.description")}
@@ -480,27 +464,5 @@ function ChannelRow({
         title={t("settings.channels.resume.title", { name: channel.name })}
       />
     </li>
-  );
-}
-
-/** Opens or closes one of a row's panels. */
-function PanelToggle({
-  open,
-  onToggle,
-  children,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Button aria-expanded={open} onClick={onToggle} size="sm" variant="ghost">
-      {open ? (
-        <ChevronDown aria-hidden="true" size={14} />
-      ) : (
-        <ChevronRight aria-hidden="true" size={14} />
-      )}
-      {children}
-    </Button>
   );
 }

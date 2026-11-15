@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
@@ -22,9 +23,9 @@ type Scope struct {
 	SessionID string
 	Turn      store.SessionInput
 	owned     map[string]bool
-	// owner holds every workspace the person can read and the assistant's
-	// permission package allows: true where they are its Owner.
-	owner map[string]bool
+	// role holds every workspace the person can read and the assistant's
+	// permission package allows, with the person's role there.
+	role map[string]string
 }
 
 // ErrNotAssistant refuses an assistant tool to anything but the person's
@@ -38,7 +39,7 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 	if user, err := s.store.GetUser(ctx, agent.UserID); err != nil || !user.Active() {
 		return Scope{}, ErrNotAssistant
 	}
-	scope := Scope{Agent: agent, SessionID: sessionID, Turn: turn, owned: map[string]bool{}, owner: map[string]bool{}}
+	scope := Scope{Agent: agent, SessionID: sessionID, Turn: turn, owned: map[string]bool{}, role: map[string]string{}}
 	roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
 	if err != nil {
 		return Scope{}, err
@@ -50,7 +51,7 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 	access := permission.Access{Applicable: true, Agent: agent, Package: pkg}
 	for workspaceID, role := range roles {
 		if access.WorkspaceAllowed(workspaceID) {
-			scope.owner[workspaceID] = role == store.WorkspaceRoleOwner
+			scope.role[workspaceID] = role
 		}
 	}
 	devices, err := s.store.DevicesOwnedBy(ctx, agent.UserID)
@@ -63,17 +64,46 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 	return scope, nil
 }
 
+// Role is the person's role in a workspace the assistant reaches: "" for
+// one the package leaves out or the person cannot read.
+func (p Scope) Role(workspaceID string) string {
+	return p.role[workspaceID]
+}
+
+// Reaches reports whether the person can read the workspace and the
+// assistant's permission package allows it.
+func (p Scope) Reaches(workspaceID string) bool {
+	return p.Role(workspaceID) != ""
+}
+
+// CanStart reports whether a helper may run in the workspace: the package
+// allows it and the person is at least a Member, as any session start needs.
+func (p Scope) CanStart(workspaceID string) bool {
+	return store.WorkspaceRoleAtLeast(p.Role(workspaceID), store.WorkspaceRoleMember)
+}
+
+// StartRefusal is why the assistant may not start a helper in workspaceID,
+// or nil when it may. It reads as the dispatch refusal does, so the agent
+// tells the person the same thing whichever mechanism it used.
+func (p Scope) StartRefusal(workspaceID string) error {
+	switch {
+	case !p.Reaches(workspaceID):
+		return &personalagent.Refusal{Status: http.StatusForbidden, Err: fmt.Errorf("not allowed: this assistant's permissions do not include project %s; the person adds it in the assistant's settings → Permissions.", workspaceID)}
+	case !p.CanStart(workspaceID):
+		return &personalagent.Refusal{Status: http.StatusForbidden, Err: fmt.Errorf("not allowed: the person is a %s in project %s; starting a helper needs Member", p.Role(workspaceID), workspaceID)}
+	default:
+		return nil
+	}
+}
+
 // reaches reports whether the person can read the workspace and the
 // assistant's permission package allows it.
-func (p Scope) reaches(workspaceID string) bool {
-	_, visible := p.owner[workspaceID]
-	return visible
-}
+func (p Scope) reaches(workspaceID string) bool { return p.Reaches(workspaceID) }
 
 // manages reports whether the assistant may change the workspace: the
 // person owns it and the device it is on.
 func (p Scope) manages(workspace store.WorkspaceProjection) bool {
-	return p.owner[workspace.ID] && p.owned[workspace.DeviceID]
+	return p.Role(workspace.ID) == store.WorkspaceRoleOwner && p.owned[workspace.DeviceID]
 }
 
 // device is what the person's settings let the assistant do on one of

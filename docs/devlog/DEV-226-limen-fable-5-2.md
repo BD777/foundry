@@ -2,6 +2,16 @@
 
 状态：已部署 dev，待本人验收；已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**通过**（范围：cottoncpp 的 Limen 扩展版本、`list_models`、以及 2026-11-13 已在 cottoncpp 记录的真实 Fable 5.2 回合）。未覆盖：本次未新跑模型回合；步骤 3/5 的证据取自同一次部署的已记录回合 `sess_1794586866482839336`。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。
+
+- cottoncpp `dev_b12e3eac…` 的 Limen 扩展为 `0.2.2`（installed）。
+- `list_models(limen_default, cottoncpp)` 返回 `sonnet`、`opus`、`haiku`、`claude-fable-5-2` 四个。
+- 2026-11-13 的 cottoncpp 真实回合 `sess_1794586866482839336`：`usage_turns` 的 model 为 `claude-fable-5-2`、profile `limen_default`、cache read 12229；会话事件含 `configuredWindow {tokens: 1000000, source: official}` 与 `contextWindow: 1000000`，回复为 `fable 1m ok claude-fable-5-2[1m]`。本次未新跑模型回合。
+
 [Devlog](README.md)
 
 ## 问题

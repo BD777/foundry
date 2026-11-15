@@ -4,8 +4,9 @@
 // rules and the facts they confirmed into the AGENTS.md Foundry writes into
 // the assistant's folder, which Claude Code and Codex load natively at the
 // start of a conversation. RunFiles also supplies the project index
-// (ProjectIndexPath), the worked examples and the canonical skill files that
-// the Worker exposes to both runtimes. Foundry injects no guidance per turn:
+// (ProjectIndexPath), one summary file per project (.foundry/projects/),
+// the worked examples and the canonical skill files that the Worker exposes
+// to both runtimes. Foundry injects no guidance per turn:
 // TurnContext is one line with the time in the person's zone (the runtime
 // does not know it) and, for a captured message, its receipt. Live state
 // (computers, the list, followed work, what waits for the person) comes
@@ -45,7 +46,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-13.4"
+const Version = "2026-11-16.5"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -117,6 +118,9 @@ type Input struct {
 	// L0Index is the current project and device index, already limited by
 	// personalagent.L0IndexMaxEntries and personalagent.L0IndexMaxTokens.
 	L0Index string
+	// ProjectFiles are one summary file per project, .foundry/projects/,
+	// with their manifest; the runtime reads them natively.
+	ProjectFiles []personalagent.WorkspaceFile
 	// Places are those devices' labels and detected facts, by device id.
 	Places map[string]store.DevicePlacement
 	// MemoryPublications are the ids of the confirmed-memory publications
@@ -290,13 +294,14 @@ func writeRules(out *strings.Builder, in Input) {
 }
 
 // ProjectIndexFile is the project and device index as of the run (L0Index),
-// which AGENTS.md points to; find_workspace reads the current state.
+// which AGENTS.md points to; each project's summary is its own file in
+// .foundry/projects/, and get_workspace reads the current state.
 func ProjectIndexFile(in Input) string {
 	index := strings.TrimSpace(in.L0Index)
 	if index == "" {
 		index = "No projects yet."
 	}
-	return fmt.Sprintf("# Projects and computers\n\nAs of %s; find_workspace and get_workspace read the current state.\n\n%s\n",
+	return fmt.Sprintf("# Projects and computers\n\nAs of %s; each project's full summary is in .foundry/projects/, and get_workspace reads the current state.\n\n%s\n",
 		in.Now.In(timeLocation(in)).Format(timeLayout), index)
 }
 
@@ -309,6 +314,15 @@ func ExamplesFile(in Input) string {
 	return "# Examples\n" + examples
 }
 
+// ProjectFilesAndIndex are the facts Foundry writes into every workspace the
+// assistant runs in, its home and each message channel's workspace: the
+// project index and one summary file per project. The content is the same in
+// each (already filtered by the permission package); only .foundry/ holds it.
+func ProjectFilesAndIndex(in Input) []personalagent.WorkspaceFile {
+	files := []personalagent.WorkspaceFile{{Path: ProjectIndexPath, Content: ProjectIndexFile(in)}}
+	return append(files, in.ProjectFiles...)
+}
+
 // RunFiles are the files Foundry supplies before an assistant run. The skill
 // contents have one canonical copy; the Worker links each directory into
 // .claude/skills and .agents/skills for native runtime discovery.
@@ -316,8 +330,8 @@ func RunFiles(in Input) []personalagent.WorkspaceFile {
 	files := []personalagent.WorkspaceFile{
 		{Path: "AGENTS.md", Content: ManagedBlock(in), ManagedBlock: true, Seed: DefaultInstructions(), Whole: AgentsFile(in)},
 		{Path: ExamplesPath, Content: ExamplesFile(in)},
-		{Path: ProjectIndexPath, Content: ProjectIndexFile(in)},
 	}
+	files = append(files, ProjectFilesAndIndex(in)...)
 	for _, skill := range assistantSkills {
 		files = append(files, personalagent.WorkspaceFile{
 			Path:    AssistantSkillPath(skill.Name),

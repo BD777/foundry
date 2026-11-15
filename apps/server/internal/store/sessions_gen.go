@@ -177,6 +177,9 @@ type AgentSession struct {
 	// WorkspaceAccess `workspaceAccess` read: the session's workspace is read-only for its agent and every command it runs, kept so by the worker's sandbox (a message channel's session, DEV-203); its temporary files go to a scratch directory outside the workspace. Absent: the session writes its workspace as usual.
 	WorkspaceAccess string `json:"workspaceAccess,omitempty"`
 
+	// ChannelOrigin `channelOrigin` describes the message channel turn the session belongs to (DEV-234): its channel, source conversation, segment and latest message. Set only on a message channel's sessions.
+	ChannelOrigin *MessageChannelOriginSummary `json:"channelOrigin,omitempty"`
+
 	// ParentSessionID `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 
@@ -298,6 +301,9 @@ type AgentSessionEventMetadata struct {
 
 	// ContextUsage `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts.
 	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
+
+	// ChannelOrigin `channelOrigin`, on a message channel turn's user-message event, is the turn's structured origin (DEV-234): the channel, source conversation and thread, and each message.
+	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
 
 	// CodexTransport `codexTransport` is what a Codex session showed about its compatible endpoint's Responses WebSocket; the server keeps it for the profile.
 	CodexTransport *CodexTransportReport `json:"codexTransport,omitempty"`
@@ -593,6 +599,9 @@ type SessionInput struct {
 
 	// SentBySessionID `sentBySessionId` is the session that sent the input (create_session's first message, send_message); its transcript event names it.
 	SentBySessionID string `json:"sentBySessionId,omitempty"`
+
+	// ChannelOrigin `channelOrigin` is a message channel turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. The prompt still carries the facts block; clients render this instead of parsing it.
+	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
 }
 
 // SessionSource defines model for SessionSource.

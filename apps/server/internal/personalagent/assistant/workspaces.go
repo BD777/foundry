@@ -16,7 +16,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // The assistant's workspace tools (docs/personal-agent.md §5): finding and
@@ -591,25 +590,6 @@ func (s *Service) planArchiveWorkspace(ctx context.Context, scope Scope, args ma
 	return write, nil
 }
 
-// FindWorkspace is find_workspace: the person's projects ranked for a
-// request in their words, at most limit.
-func (s *Service) FindWorkspace(ctx context.Context, scope Scope, query string, limit int) (map[string]any, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("query is required: the request in the person's own words")}
-	}
-	limit = min(max(limit, 1), personalagent.FindWorkspaceLimit)
-	records, err := s.workspaceCandidates(ctx, scope.Agent)
-	if err != nil {
-		return nil, err
-	}
-	records = slices.DeleteFunc(records, func(record store.WorkspaceDigestRecord) bool {
-		return !scope.reaches(record.Digest.WorkspaceID)
-	})
-	candidates := workspacedigest.RankRecords(query, records, s.routingNotes(ctx, scope.Agent), time.Now(), limit)
-	return map[string]any{"candidates": candidates, "close": workspacedigest.Close(candidates)}, nil
-}
-
 // GetWorkspace is get_workspace: one project, its digest, and as include
 // asks, live state, the start of its instructions and the assistant's note.
 func (s *Service) GetWorkspace(ctx context.Context, scope Scope, workspaceID string, include []string) (map[string]any, error) {
@@ -681,13 +661,10 @@ func (s *Service) workspaceInstructions(ctx context.Context, workspace store.Wor
 	return map[string]any{"error": "no AGENTS.md or README.md"}
 }
 
-// routingNotesMax bounds the routing notes find_workspace reads.
-const routingNotesMax = 100
-
-// routingNotes are the assistant's routing notes, cards/<workspaceId>.md
-// in its folder, by workspace id; none while its computer is offline.
-func (s *Service) routingNotes(ctx context.Context, agent store.PersonalAgent) map[string]string {
-	notes := map[string]string{}
+// routingNoteIDs are the projects the assistant has a note on,
+// cards/<workspaceId>.md in its folder; none while its computer is offline.
+func (s *Service) routingNoteIDs(ctx context.Context, agent store.PersonalAgent) map[string]bool {
+	notes := map[string]bool{}
 	home, err := s.store.GetWorkspace(ctx, agent.WorkspaceID)
 	if err != nil || home.DeviceID == "" || !s.devices.Connected(home.DeviceID) {
 		return notes
@@ -700,11 +677,8 @@ func (s *Service) routingNotes(ctx context.Context, agent store.PersonalAgent) m
 	}
 	for _, entry := range entries {
 		workspaceID, isNote := strings.CutSuffix(entry.Name, ".md")
-		if entry.IsDirectory || !isNote || len(notes) >= routingNotesMax {
-			continue
-		}
-		if file, err := s.devices.ReadWorkspaceFile(listCtx, home, "cards/"+entry.Name); err == nil {
-			notes[workspaceID] = file.Content
+		if !entry.IsDirectory && isNote {
+			notes[workspaceID] = true
 		}
 	}
 	return notes

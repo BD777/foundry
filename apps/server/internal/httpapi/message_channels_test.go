@@ -10,8 +10,10 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // channelSessionFixture is the needs-you fixture plus a message channel of
@@ -285,8 +287,15 @@ func TestChannelSessionInItsWorkspaceIsTheAssistantsConversation(t *testing.T) {
 		t.Fatalf("access: %+v (%v)", access, err)
 	}
 	run, ok, err := f.server.assistant.RunFor(ctx, session)
-	if err != nil || !ok || len(run.Files) != 0 {
-		t.Fatalf("run files for a channel session: %d %v %v", len(run.Files), ok, err)
+	if err != nil || !ok {
+		t.Fatalf("run files for a channel session: %v %v", ok, err)
+	}
+	paths := map[string]bool{}
+	for _, file := range run.Files {
+		paths[file.Path] = true
+	}
+	if !paths[prompt.ProjectIndexPath] || !paths[workspacedigest.ProjectManifestPath] || paths["AGENTS.md"] {
+		t.Fatalf("a channel run takes Foundry's facts and not the person's instructions: %+v", run.Files)
 	}
 	if got, ok := f.server.messageChannelSessionAssistant(ctx, session.ID); !ok || got != f.agent.ID {
 		t.Fatalf("channel of session: %s %v", got, ok)

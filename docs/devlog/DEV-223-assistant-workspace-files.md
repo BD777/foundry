@@ -4,6 +4,27 @@
 
 已部署 dev（2026-11-13 22:49 UTC+8，conductor sess_1794555762602239151：Server `7fa8a782…`、Web `fe7e3f7b2ed75117`、Worker `0.5.7-dev.357.g8f394c91.local.1794580954`），部署后已用 e2e-alice 在线上验证；等本人验收。已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：e2e-alice 合成助理的工作区文件页步骤 1–4、6；本人 ByteWork 通道文件只读核对）。未覆盖：步骤 5 的通道编辑（属本人状态改动）、本人自己的工作区文件页未登录查看；步骤 4 的「在别处修改」要等下一次保存才出现，与预期时点不同。详见下方「Agent 代验收」。
+
+2026-11-16 后续（历史在打开时记录）：已部署 dev（train1-20261116）；Agent 代验收（2026-11-16，范围见验收记录）；已合入 main（PR #269）。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 [sess_1794464313271186377](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述本人委托（「那些验证对我来说过于繁复了」）。验收环境：e2e-alice 合成助理 `asst_3fc8b4a2107893e6b1e36425a39aacdb`、设备 `dev_a870ddf7…`（`VM-4-8-debian`，助理主目录 `~/Foundry/personal-agent-2`），真实 Chromium；本人账号只做只读库/文件核对，未登录。
+
+| 步骤                 | 结果         | 证据                                                                                                                                                                                                   |
+| -------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 工作区文件页       | 通过         | 下拉为「助理主工作区」，显示 `VM-4-8-debian · /home/windeng/Foundry/personal-agent-2` 和「你和助理自己的对话都可以修改这里的文件；消息通道的会话不能」，左侧文件树。截图 `dev223-01-home-agents.png`。 |
+| 2 AGENTS.md          | 通过         | 顶部「由 Foundry 维护 · 只读」可展开，含称呼/语言/风格、本人规则、确认过的记忆；下面是「你的说明」，显示 `7.5 KB / 28 KB`；历史有「Foundry 默认版本」「第一次修改前」「在这里修改」。                  |
+| 3 编辑说明 + 对话    | 通过         | 在说明顶部加「回答都以“好的”开头。」并保存，历史多一个可恢复版本；随后发「你好，今天天气怎么样？」，回复「好的，你想查哪个城市今天的天气？」。                                                         |
+| 4 助理写 AGENTS.md   | **部分不符** | 助理回复已写入，文件内容确实出现「周报用表格。」；但历史里**没有立即出现**「在别处修改」，直到下一次从页面保存时才补记（实测保存后出现该条，内容含助理写的行）。与步骤 4 的预期时点不同。              |
+| 5 本人 ByteWork 通道 | 部分（只读） | 只读库/文件：通道工作区 `message-channel-0e47207b6ad14d91bade` 下有 `AGENTS.md`（1490 B，与 DEV-203 版本 sha `237a4089…` 相同，source `seed`）和 `.foundry/`；通道编辑属本人状态改动，未运行。         |
+| 6 通道卡片按钮       | 通过         | 注入合成通道后卡片显示「工作区文件」（不再有「运行环境」），点击打开 `/assistants/{id}/settings/files?workspace=…`。截图 `dev223-02-channel-card.png`。                                                |
+
+补充：本人 ByteWork 主工作区的 `AGENTS.md` 仍是 DEV-223 之前的整份旧文件（7326 B，没有 `foundry:managed` 标记），因为 ByteWork 自部署以来还没有运行过；按设计会在下一次对话前迁移。本次没有替本人触发运行。
+
+未覆盖：本人自己的工作区文件页（未登录查看）；步骤 5 的通道 AGENTS.md 编辑与保存后历史；步骤 4 的即时「在别处修改」时点（交编排/本人决定是否需要调整实现或验收文案；相关实现只在下一次保存时记 `outside` 版本，见 `apps/server/internal/httpapi/assistant_files.go` 的 `keepUnsavedVersion`）。截图在 `.foundry/attachments/20261116/acceptance/`（不入库）。
+
 来源：编排会话 [sess_1794464313271186377](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述的本人反馈（2026-11-13）。本人原话：「Assistant的环境的一些信息要让我可读，你就是这样让我可读的？……其实你给我一个file system，就一个file system就可以了。然后我要在Assistant Web里面去update它。而且你只给我channel的信息，那Assistant自己的那个Workspace呢？」；此前还要求「assistant运行的workspace + system prompt的自由编辑权，包括允许assistant自己去update他们」。前置：[DEV-203](DEV-203-message-channels.md) 第二阶段（通道工作区、`write_file`、AGENTS.md 历史）、[DEV-210](DEV-210-workspace-image-preview.md)（工作区图片预览）、[DEV-196](DEV-196-assistant-progressive-disclosure.md) / [DEV-200](DEV-200-assistant-no-injection.md)（AGENTS.md 与 skills 的分工、不注入）。
 
 ## 问题
@@ -90,3 +111,37 @@
 | 2026-11-13 22:45       | 实现、定向检查与 scratch 栈浏览器验证完成；工作在 worktree `~/workspace/foundry-dev223`（`work/dev223`），补丁交 conductor                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 部署、更新 Worker、本人验收                           |
 | 2026-11-13 22:49       | conductor 上线（见状态）。迁移：`workspace_file_revisions` 收到 DEV-203 的 1 条通道 AGENTS.md 版本，`assistant_instructions_defaults` 已建；部署前库备份 `backups/foundry-20261113-pre-dev223.db.gz`。Worker 已更新 byte-dev、byte-dev-sg、limen-canada、Mac mini；sg-chaos、cottoncpp 安装中，macbook 离线                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | —                                                     |
 | 2026-11-13 22:50–22:57 | 线上验证（e2e-alice，没有碰本人账号）：用新发布的 Worker runtime 临时运行 e2e-alice 的合成设备（`dev_a870ddf7-…`，`systemd-run --user` 单元 `dev223-dev148-worker`，DEV-148 的仓库外状态目录）。`files/workspaces` 显示其主工作区在线、`canWrite`/`canManage` 为 true。它的 AGENTS.md 原是 DEV-223 之前 Foundry 整份写的旧文件（第一行 `You are 助理…`，没有块）。发一条合成收件消息后，第一次运行把它迁成「块 + 默认说明」：顶部是块，`# The person's rules` 和 `# What you are for` 各只出现一次，`assistant_instructions_defaults` 写入一行。真实浏览器（Chromium，1440 浅色、390 深色）：打开 AGENTS.md，展开只读块，显示「7.5 KB / 28 KB」；编辑时由脚本往电脑上的文件追加一行，保存后出现冲突提示和差异，选择「用我的覆盖」后保存成功；历史为「第一次修改前」「在这里修改（当前）」；窄屏下树和文件之间可以来回切换。第二条合成消息由 Codex（gpt-6-astra）答「OK」，运行后块仍在顶部，浏览器里加的那行原样保留在块下面。最后用「采用默认」把 e2e-alice 的说明恢复为默认（历史：default/web/seed），登出，删除 cookie，停掉临时 Worker 和它留下的执行宿主。截图：`.foundry/attachments/20261113/dev223/live/`（不入库） | 本人按验收步骤验收；sg-chaos、cottoncpp 装完新 Worker |
+
+## 后续：打开文件即记录「在别处修改」（2026-11-16）
+
+### 问题
+
+委派验收第 4 步：助理自己往工作区的 `AGENTS.md` 写入之后，Web「工作区文件」的历史要等到本人在页面上再保存一次才出现「在别处修改」；本人一打开或刷新文件时就应该看到。
+
+### 根因
+
+历史只在 Web 保存时补记别处的改动：`saveAssistantFile` 在写入前调用 `keepUnsavedVersion`（`apps/server/internal/httpapi/assistant_files.go:327`），这是它唯一的调用点。读文件的 `assistantFile`（同文件 `:212`）只列出已有版本，不比较电脑上文件的当前内容，所以助理写入后，历史里没有任何东西，直到本人下次保存。
+
+### 做法
+
+- `assistantFile` 在列出版本之前，对「这里能编辑的文件」（非缺失、`ReadOnly` 为空）调用同一个 `keepUnsavedVersion`：最新版本内容不同就先把当前内容记一个版本。没有版本时记为「第一次修改前」（与首次保存的语义一致），否则记为「在别处修改」。首页 `AGENTS.md` 记的是块下面的说明，和保存时存的版本一致。
+- 幂等：新增 `AddWorkspaceFileRevisionUnlessLatest`（`sqlitestore/workspace_files.go`），用一条 `INSERT … SELECT … WHERE (最新版本的 sha256) IS NOT ?` 完成比较与写入；同一内容重复读取（含 StrictMode 的并发两次读取）不会再添一条。显式保存、恢复、删除仍用原来的 `AddWorkspaceFileRevision`。
+- 只读的文件不记版本：`.foundry/` 与助理 skills（`generated` / `foundry_skill`）、二进制、过大被截断、缺失，以及旧 Worker 下整份只读的 `AGENTS.md`（`whole_file`）。
+
+### 改动范围
+
+- `apps/server/internal/httpapi/assistant_files.go`：`assistantFile` 读时补记；`keepUnsavedVersion` 走新的条件写入（`addFileRevisionIfChanged`），注释更新。
+- `apps/server/internal/store/assistant_files.go`、`apps/server/internal/sqlitestore/workspace_files.go`：`AddWorkspaceFileRevisionUnlessLatest`。
+- `apps/server/internal/httpapi/assistant_files_test.go`：`fakeFolder.put`（模拟别处修改）与两项测试。
+
+### 检查
+
+| 检查                                                                                                                                                                                                                                          | 结果                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `go test ./internal/httpapi -run 'TestOpeningAFileChangedElsewhereRecordsThatVersion\|TestOpeningChangedInstructionsRecordsTheInstructions\|TestAssistantInstructions\|TestAssistantWorkspaceFiles\|TestAssistantFilesThroughLinks' -count=1` | 通过（新增两项：普通文件首次读取记「第一次修改前」、别处改后打开即记「在别处修改」且再读不重复；首页 `AGENTS.md` 记的是块下面的说明；生成文件不记版本） |
+
+Web 未改动，不需要 Web 检查。
+
+### 状态
+
+已部署 dev（2026-11-16 02:54 UTC+8，train1-20261116：Server `fde6390b2dfa…`、Worker `0.5.7-dev.359.g4e830ac6.local.1794768695`，6 台在线设备已更新，macbook 离线）。同车的部署后检查：ByteWork 助理在 02:57 运行，byte-dev 主目录 `~/Foundry/personal-agent/.foundry/projects/` 写出 5 个项目摘要与 `.manifest`。未提交，待本人验收。补丁：`.foundry/patches/dev223fix.patch`（worktree `~/workspace/foundry-dev223fix`，分支 `work/dev223fix`，基于 `4e830ac6`）。部署后按第 4 步验收：在助理对话里让它「在 AGENTS.md 里记一条：周报用表格」，打开工作区文件页，不保存也应看到「在别处修改」及其内容；刷新页面不重复出现。

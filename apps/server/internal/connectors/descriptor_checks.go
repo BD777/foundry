@@ -381,6 +381,22 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 			return err
 		}
 	}
+	if len(serverHeld.Writes) > 20 {
+		return fmt.Errorf("serverHeld.writes lists at most 20 write responses")
+	}
+	for _, write := range serverHeld.Writes {
+		switch strings.ToUpper(strings.TrimSpace(write.Method)) {
+		case "POST", "PATCH", "PUT", "DELETE":
+		default:
+			return fmt.Errorf("serverHeld.writes method is a write method")
+		}
+		if err := checkExtensionPath("serverHeld.writes.path", write.Path); err != nil {
+			return err
+		}
+		if write.CreatedMessageID == "" || !jsonPointer(write.CreatedMessageID) {
+			return fmt.Errorf("serverHeld.writes.createdMessageId is a JSON pointer")
+		}
+	}
 	if len(serverHeld.Network.Holdings) == 0 || len(serverHeld.Network.Holdings) > 2 {
 		return fmt.Errorf("serverHeld.network.holdings lists server, device or both")
 	}
@@ -450,6 +466,14 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 		if field.Unit != "" && field.Unit != "ms" && field.Unit != "s" && field.Unit != "rfc3339" {
 			return fmt.Errorf("serverHeld.events.envelope field %q has an unknown unit", key)
 		}
+		if len(field.When) > 10 || len(field.TrimPrefix) > 100 {
+			return fmt.Errorf("serverHeld.events.envelope field %q has a bounded when and trimPrefix", key)
+		}
+		for _, condition := range field.When {
+			if err := checkEventsCondition(condition); err != nil {
+				return fmt.Errorf("serverHeld.events.envelope field %q: %w", key, err)
+			}
+		}
 		if len(field.Cases) > 10 {
 			return fmt.Errorf("serverHeld.events.envelope field %q has at most 10 cases", key)
 		}
@@ -475,7 +499,30 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 	if err := checkText("serverHeld.events.context.hint", events.Context.Hint, 300, false); err != nil {
 		return err
 	}
-	return checkLocalized("serverHeld.events.context.hints", events.Context.Hints, 300)
+	if err := checkLocalized("serverHeld.events.context.hints", events.Context.Hints, 300); err != nil {
+		return err
+	}
+	if len(events.Reply.Kinds) > 10 {
+		return fmt.Errorf("serverHeld.events.reply.kinds has at most 10 conversation kinds")
+	}
+	for kind, command := range events.Reply.Kinds {
+		switch kind {
+		case "direct", "self", "group", "channel", "feed", "other":
+		default:
+			return fmt.Errorf("serverHeld.events.reply.kinds names an unknown conversation kind %q", kind)
+		}
+		if err := checkText("serverHeld.events.reply.kinds."+kind, command, 300, true); err != nil {
+			return err
+		}
+		rest := command
+		for _, placeholder := range []string{"{message.id}", "{conversation.id}", "{thread.id}"} {
+			rest = strings.ReplaceAll(rest, placeholder, "")
+		}
+		if strings.Contains(rest, "{") || strings.Contains(rest, "}") {
+			return fmt.Errorf("serverHeld.events.reply.kinds.%s may only use {message.id}, {conversation.id} and {thread.id}", kind)
+		}
+	}
+	return nil
 }
 
 // checkEventsCondition: a JSON pointer, and a bounded value or a second

@@ -273,7 +273,7 @@ type ConnectorEventsContext struct {
 	Hints map[string]string `json:"hints,omitempty"`
 }
 
-// ConnectorEventsEnvelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+// ConnectorEventsEnvelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, sender.isOwnWrite, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
 type ConnectorEventsEnvelope struct {
 	Fields   jsonempty.Map[ConnectorEventsValue] `json:"fields"`
 	SkipWhen []ConnectorEventsCondition          `json:"skipWhen,omitempty"`
@@ -301,16 +301,24 @@ type ConnectorEventsPoll struct {
 	Gap *ConnectorEventsGap `json:"gap,omitempty"`
 }
 
+// ConnectorEventsReply How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.
+type ConnectorEventsReply struct {
+	Kinds map[string]string `json:"kinds,omitempty"`
+}
+
 // ConnectorEventsSpec How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server.
 type ConnectorEventsSpec struct {
 	// Poll One GET request per poll. Query values are templates that may use `{cursor}`; a parameter named in omitWhenEmpty is left out while its value is empty (the first poll starts from now). cursor, items and more are JSON pointers into the answer.
 	Poll ConnectorEventsPoll `json:"poll"`
 
-	// Envelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+	// Envelope Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, sender.isOwnWrite, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
 	Envelope ConnectorEventsEnvelope `json:"envelope"`
 
 	// Context How an agent reads what surrounds a message itself with the connector's own tool; a template that may use `{message.id}`, `{conversation.id}` and `{thread.id}`.
 	Context ConnectorEventsContext `json:"context,omitempty"`
+
+	// Reply How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.
+	Reply ConnectorEventsReply `json:"reply,omitempty"`
 }
 
 // ConnectorEventsValue One envelope field, the value at pointer, or template with `{/pointer}` parts. map translates the value (otherwise for values map does not name); unit reads a time (ms or s since the epoch, or rfc3339).
@@ -320,6 +328,12 @@ type ConnectorEventsValue struct {
 	Map       map[string]string `json:"map,omitempty"`
 	Otherwise string            `json:"otherwise,omitempty"`
 	Unit      string            `json:"unit,omitempty"`
+
+	// When Conditions on the item; the field is present only when all of them hold.
+	When []ConnectorEventsCondition `json:"when,omitempty"`
+
+	// TrimPrefix A prefix removed from the value after it is read.
+	TrimPrefix string `json:"trimPrefix,omitempty"`
 
 	// Cases Checked first, in order; the first case whose conditions all hold gives the value.
 	Cases []ConnectorEventsCase `json:"cases,omitempty"`
@@ -803,6 +817,9 @@ type ConnectorServerHeldSpec struct {
 
 	// Events How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server.
 	Events *ConnectorEventsSpec `json:"events,omitempty"`
+
+	// Writes Write responses that name the message they created, so a message channel can tell an assistant's own writes from people's messages. Each entry names a catalogued write route (method and path exactly as the instance's route directory lists it) and a JSON pointer into a successful response; Foundry records the value with the request's session and account.
+	Writes []ConnectorServerHeldWrite `json:"writes,omitempty"`
 }
 
 // ConnectorServerHeldStep One group of field ids in a server-held instance form.
@@ -821,6 +838,17 @@ type ConnectorServerHeldUpstream struct {
 	RequestBodyLimitBytes  int               `json:"requestBodyLimitBytes,omitempty"`
 	ResponseBodyLimitBytes int               `json:"responseBodyLimitBytes,omitempty"`
 	TimeoutSeconds         int               `json:"timeoutSeconds,omitempty"`
+}
+
+// ConnectorServerHeldWrite defines model for ConnectorServerHeldWrite.
+type ConnectorServerHeldWrite struct {
+	Method string `json:"method"`
+
+	// Path The route's path as the directory lists it, parameters included.
+	Path string `json:"path"`
+
+	// CreatedMessageID JSON pointer to the created message's id in the response.
+	CreatedMessageID string `json:"createdMessageId"`
 }
 
 // ConnectorSetup ConnectorSetup is how to set an extension connector up on another device.

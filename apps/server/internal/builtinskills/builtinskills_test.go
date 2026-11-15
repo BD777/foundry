@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		41: "55d11772433f7815ae2018713604adec9692c0fcec552760895184a556f1e3c2", // DEV-240: one orchestration guidance: briefs, executor default, turn_end, evidence, heartbeat, one writer
 		40: "fa338753e16dd2eec829646a744160e795fa66b16bffc0659c86840bf91f7292", // Cloudflare: name the level a refusal needs; Zero Trust reads Tunnel connections
 		39: "a8d8ddabd8fe51288fd29c336e112a8eb1bf12dfc3484359cbd7348b2c923558", // worker_groups: edit worker group members from a chat or assistant
 		38: "140ba5d0bebacf1e00caf7c24ff66f3d6dd5acd169fea9e235495a6a083e0e36", // DEV-215 + DEV-219: connector access lasts the session; compute leases are shared by default

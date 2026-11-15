@@ -33,6 +33,13 @@ func (folder *fakeFolder) get(path string) (string, bool) {
 	return content, ok
 }
 
+// put changes a file as if another editor (the assistant) did.
+func (folder *fakeFolder) put(path, content string) {
+	folder.mu.Lock()
+	defer folder.mu.Unlock()
+	folder.files[path] = content
+}
+
 func (folder *fakeFolder) answers() map[string]fakeAnswer {
 	return map[string]fakeAnswer{
 		wsReadFileType: func(raw json.RawMessage) (string, any) {
@@ -66,6 +73,27 @@ func (folder *fakeFolder) answers() map[string]fakeAnswer {
 			}
 			folder.files[request.Path] = request.Content
 			return wsFileWrittenType, wsFileWrittenPayload{WorkspaceID: request.WorkspaceID, Path: request.Path, Sha256: contentSha256(request.Content), Bytes: len(request.Content)}
+		},
+		wsListWorkspaceTreeType: func(raw json.RawMessage) (string, any) {
+			var request wsListWorkspaceTreePayload
+			_ = json.Unmarshal(raw, &request)
+			folder.mu.Lock()
+			defer folder.mu.Unlock()
+			prefix := strings.Trim(request.Path, "/")
+			if prefix != "" {
+				prefix += "/"
+			}
+			entries := []map[string]any{}
+			for path := range folder.files {
+				rest := strings.TrimPrefix(path, prefix)
+				if rest == path || strings.Contains(rest, "/") {
+					continue
+				}
+				entries = append(entries, map[string]any{"name": rest, "path": path, "isDirectory": false})
+			}
+			return wsWorkspaceTreeListedType, map[string]any{
+				"workspaceId": request.WorkspaceID, "path": request.Path, "entries": entries,
+			}
 		},
 		wsManageFileType: func(raw json.RawMessage) (string, any) {
 			var request wsManageFilePayload
@@ -176,6 +204,56 @@ func TestAssistantInstructionsAreThePersonsBelowTheManagedBlock(t *testing.T) {
 	expectStatus(t, removal, http.StatusForbidden, "AGENTS.md is not deleted")
 }
 
+// A file changed elsewhere is kept as a version as soon as the person opens
+// it, not only when they next save from the page; opening it again (the
+// content unchanged) adds nothing.
+func TestOpeningAFileChangedElsewhereRecordsThatVersion(t *testing.T) {
+	f, folder := assistantFilesFixture(t, allFileCapabilities, map[string]string{"notes/a.md": "one\n", ".foundry/project-index.md": "# Projects\n"})
+	first := readAssistantFile(t, f, "notes/a.md")
+	if len(first.Revisions) != 1 || first.Revisions[0].Source != "seed" || !first.Revisions[0].Current {
+		t.Fatalf("the first read: %+v", first.Revisions)
+	}
+	folder.put("notes/a.md", "two\n")
+	changed := readAssistantFile(t, f, "notes/a.md")
+	if len(changed.Revisions) != 2 || changed.Revisions[0].Source != "outside" || !changed.Revisions[0].Current ||
+		changed.Revisions[0].Bytes != len("two\n") || changed.Revisions[1].Source != "seed" {
+		t.Fatalf("after it changed elsewhere: %+v", changed.Revisions)
+	}
+	again := readAssistantFile(t, f, "notes/a.md")
+	if len(again.Revisions) != 2 {
+		t.Fatalf("reading it again added a version: %+v", again.Revisions)
+	}
+	// Generated files are not versioned, even when read.
+	if generated := readAssistantFile(t, f, ".foundry/project-index.md"); len(generated.Revisions) != 0 {
+		t.Fatalf("a generated file has versions: %+v", generated.Revisions)
+	}
+}
+
+// The home AGENTS.md keeps the instructions (below Foundry's block) as the
+// version a change elsewhere produced.
+func TestOpeningChangedInstructionsRecordsTheInstructions(t *testing.T) {
+	f, folder := assistantFilesFixture(t, allFileCapabilities, map[string]string{"AGENTS.md": prompt.InitialAgentsFile()})
+	if first := readAssistantFile(t, f, "AGENTS.md"); len(first.Revisions) != 1 || first.Revisions[0].Source != "seed" {
+		t.Fatalf("the first read: %+v", first.Revisions)
+	}
+	block := prompt.ManagedBlockStart + "\nYou are A.\n" + prompt.ManagedBlockEnd
+	folder.put("AGENTS.md", prompt.JoinAgentsFile(block, "Written by the assistant.\n"))
+	changed := readAssistantFile(t, f, "AGENTS.md")
+	if len(changed.Revisions) != 2 || changed.Revisions[0].Source != "outside" || !changed.Revisions[0].Current {
+		t.Fatalf("after the assistant wrote it: %+v", changed.Revisions)
+	}
+	st, err := f.server.workspaceFileStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, content, err := st.GetWorkspaceFileRevision(context.Background(), "ws_alice", "AGENTS.md", changed.Revisions[0].ID); err != nil || content != "Written by the assistant.\n" {
+		t.Fatalf("the version's content: %q %v", content, err)
+	}
+	if again := readAssistantFile(t, f, "AGENTS.md"); len(again.Revisions) != 2 {
+		t.Fatalf("reading it again added a version: %+v", again.Revisions)
+	}
+}
+
 // Foundry's generated files are read-only; ordinary files are created,
 // renamed and deleted, a deleted file's content staying among its versions.
 func TestAssistantWorkspaceFilesCreateRenameDelete(t *testing.T) {
@@ -236,6 +314,42 @@ func TestAssistantInstructionsOnAnOlderWorkerAndNewerDefaults(t *testing.T) {
 	}
 	if file := readAssistantFile(t, f, "AGENTS.md"); file.Instructions.NewDefault || file.Revisions[0].Source != "default" {
 		t.Fatalf("after adopting: %+v %+v", file.Instructions, file.Revisions)
+	}
+}
+
+// Foundry's project summaries are files in the assistant's home, and the
+// Web's workspace file tree (「工作区文件」) lists them.
+func TestAssistantProjectSummariesAppearInTheWorkspaceFileTree(t *testing.T) {
+	f, folder := assistantFilesFixture(t, allFileCapabilities, map[string]string{})
+	ctx := context.Background()
+	if err := f.server.store.SetWorkspaceKind(ctx, "ws_alice", store.WorkspaceKindPersonalAgent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.server.store.RenameWorkspace(ctx, "ws_bob", "Budget"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.store.SetWorkspaceMember(ctx, "ws_bob", f.aliceID, store.WorkspaceRoleMember, "test"); err != nil {
+		t.Fatal(err)
+	}
+	agent, err := f.server.store.GetPersonalAgent(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.assistant.WriteProjectFiles(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	summary, ok := folder.get(".foundry/projects/budget.md")
+	if !ok || !strings.Contains(summary, "ws_bob") || !strings.Contains(summary, "Budget") {
+		t.Fatalf("project summary = %q, %v", summary, ok)
+	}
+	tree := doAuthCall(t, f.handler, authCall{
+		method: http.MethodGet,
+		path:   "/api/workspace-files/tree?workspaceId=ws_alice&path=.foundry/projects",
+		cookie: f.alice,
+	})
+	expectStatus(t, tree, http.StatusOK, "list the project summaries")
+	if body := tree.Body.String(); !strings.Contains(body, "budget.md") || !strings.Contains(body, ".manifest") {
+		t.Fatalf("workspace file tree = %s", body)
 	}
 }
 

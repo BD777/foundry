@@ -569,16 +569,6 @@ type DeviceDigest struct {
 	CompiledAt     string   `json:"compiledAt"`
 }
 
-// WorkspaceCandidate is one find_workspace answer.
-type WorkspaceCandidate struct {
-	WorkspaceID string  `json:"workspaceId"`
-	Name        string  `json:"name"`
-	Reason      string  `json:"reason"`
-	Score       float64 `json:"score"`
-	CompiledAt  string  `json:"compiledAt"`
-	Stale       bool    `json:"stale"`
-}
-
 // PersonalAgentRoutingDecision is one routing choice (table
 // pa_routing_decisions). RequestClass, Target and Confidence take the
 // values of the protocol's PersonalAgentRequestClass, RouteTarget and

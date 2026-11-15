@@ -13,22 +13,19 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Supervision (docs/personal-agent.md §6): the server follows the sessions
-// the assistant handed work to and tells the conversation that handed it
-// off, as a server notice (personalagent.Notice, never the person's word),
-// when one finishes, fails, ends with a question or waits for an answer,
-// or goes quiet (TaskSilentAfter without any activity; running past the
-// person's StuckAfterMinutes), or cannot reach its model service
+// the assistant handed work to. A turn that ends is reported once, by the
+// generic child report (turn_end), so it carries its own status, answer and
+// error. The server adds facts the generic path does not produce, as server
+// notices (personalagent.Notice, never the person's word): a helper gone
+// quiet (TaskSilentAfter without any activity), running past the person's
+// StuckAfterMinutes, or unable to reach its model service
 // (ServiceUnreachableAfter of nothing but failed attempts; it is told, not
-// stopped). A failure or an unreachable service carries its reason
-// category (helperFailureReason) and the accounts that work there, so the
-// assistant can start the work again elsewhere. Notices to one conversation within
-// TaskEventCoalesce go as one. Nothing is told while the assistant is
-// stopped, and the assistant's hourly turn limit applies to them as to any
-// turn.
+// stopped). Notices to one conversation within TaskEventCoalesce go as one.
+// Nothing is told while the assistant is stopped, and the assistant's
+// hourly turn limit applies to them as to any turn.
 
 // taskReactions follows the sessions the assistant handed work to.
 type taskReactions struct{ s *Service }
@@ -68,8 +65,8 @@ func (s *Service) TaskOf(ctx context.Context, session store.AgentSession) (store
 	return agents[0], store.PersonalAgentTask{}, false
 }
 
-// followTask brings the session's task up to date and tells its
-// conversation what needs its attention.
+// followTask brings the session's task up to date. An ended turn is its own
+// report (turn_end); supervision adds no second notice for it.
 func (s *Service) followTask(ctx context.Context, change sessions.Change, session store.AgentSession) {
 	// One waiting on its model service retrying waits for no one:
 	// supervision follows whether it reaches the service.
@@ -80,43 +77,22 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 	if !ok {
 		return
 	}
-	now := time.Now()
-	kind := ""
 	switch change {
 	case sessions.Completed:
 		task.Status, task.EndedAt = taskStatusOf(session.Status), sessionEndedAt(session)
-		switch {
-		case session.Status == "failed" || session.Status == "canceled":
-			kind = store.PersonalAgentTaskEventFailed
-		case session.Status == "completed" && endsWithQuestion(session.Response):
-			kind, task.Status, task.EndedAt = store.PersonalAgentTaskEventAsked, store.PersonalAgentTaskAsking, ""
-		case session.Status == "completed":
-			kind = store.PersonalAgentTaskEventFinished
+		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
 		}
-	case sessions.Blocked:
-		kind, task.Status = store.PersonalAgentTaskEventAsked, store.PersonalAgentTaskAsking
+		if session.Status == "failed" || session.Status == "canceled" {
+			s.noteHelperFailedOffline(ctx, agent, task, session)
+		}
 	default:
 		// It works again (the assistant passed the answer on).
 		task.Status, task.EndedAt, task.StuckSince = store.PersonalAgentTaskRunning, "", ""
+		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
+		}
 	}
-	if kind != "" {
-		task.LastEventAt = formatPATime(now)
-	}
-	if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
-		log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
-	}
-	if kind != "" {
-		s.noticeTask(ctx, agent, task, session, kind, now)
-	}
-	if kind == store.PersonalAgentTaskEventFailed {
-		s.noteHelperFailedOffline(ctx, agent, task, session)
-	}
-}
-
-// endsWithQuestion reports whether a helper's answer ends by asking.
-func endsWithQuestion(response string) bool {
-	response = strings.TrimRight(strings.TrimSpace(response), "*_`\"')）」』 ")
-	return strings.HasSuffix(response, "?") || strings.HasSuffix(response, "？")
 }
 
 // AdoptTask makes the assistant conversation that just sent a
@@ -152,11 +128,6 @@ func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, tas
 	if agent.State != store.PersonalAgentActive || task.ConversationSessionID == "" {
 		return
 	}
-	if kind == store.PersonalAgentTaskEventAsked {
-		if item, ok := s.pendingItemForSession(ctx, agent, session.ID); ok && s.NotifyPendingItem(ctx, agent, item) {
-			return
-		}
-	}
 	line := s.taskLine(ctx, agent, task, session, kind, now)
 	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
 	s.notices.add(task.ConversationSessionID, language, line, now, func(text string) {
@@ -169,30 +140,16 @@ func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, tas
 	})
 }
 
-// taskExcerptChars bounds the part of a helper's answer or error a notice
-// quotes.
-const taskExcerptChars = 600
-
 // taskLine is one task event as the assistant reads it, in the
 // person's language: its conversation shows it too.
 func (s *Service) taskLine(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, kind string, now time.Time) string {
 	say := func(key string, args ...any) string { return s.sayTask(ctx, agent, key, args...) }
 	work := s.taskWork(ctx, agent, task, session)
-	answer := cmp.Or(textcut.Excerpt(session.Response, taskExcerptChars), say("none"))
 	switch kind {
-	case store.PersonalAgentTaskEventFinished:
-		return say("finished", work, answer)
-	case store.PersonalAgentTaskEventFailed:
-		return s.failedTaskLine(ctx, agent, session, work)
 	case assistantTaskEventUnreachable:
 		since, latest, _ := s.unreachableSince(ctx, session.ID)
 		minutes := max(int(now.Sub(since)/time.Minute), int(ServiceUnreachableAfter/time.Minute))
 		return say("stuckUnreachable", work, minutes, latest) + "\n" + reasonTag(helperUnreachable, session) + "\n" + s.retryAdvice(ctx, agent, session, true)
-	case store.PersonalAgentTaskEventAsked:
-		if session.Status == "blocked" {
-			return say("blocked", work)
-		}
-		return say("asked", work, answer)
 	}
 	if task.StuckSince != "" {
 		return say("stuck", personalagent.EffectiveLimits(agent.Settings.Limits).StuckAfterMinutes, work)
@@ -230,23 +187,13 @@ func languageIndex(language string) int {
 
 // taskNoticeTexts are the task events' texts, [Chinese, English].
 var taskNoticeTexts = map[string][2]string{
-	"work":     {"“%s”（项目 %s，会话 %s）", "%q in %s, session %s"},
-	"link":     {"（给本人看进度与结果的链接：%s）", " (the link that shows the person its progress and result: %s)"},
-	"none":     {"（无）", "(none)"},
-	"finished": {"完成了：%s。它的回答开头是：%s", "Finished: %s. Its answer begins: %s"},
-	"failed":   {"失败了：%s。错误：%s", "Failed: %s. Error: %s"},
-	"blocked":  {"在等回答或许可：%s。", "Waiting for an answer or an approval: %s."},
-	"asked":    {"以提问结束：%s。它问：%s", "Ended with a question: %s. It asks: %s"},
-	"stuck":    {"已经跑了超过 %d 分钟、没人看过：%s。", "Still running after more than %d minutes and nobody looked at it: %s."},
-	"silent":   {"%d 分钟没有动静：%s。", "No news for %d minutes: %s."},
+	"work":   {"“%s”（项目 %s，会话 %s）", "%q in %s, session %s"},
+	"link":   {"（给本人看进度与结果的链接：%s）", " (the link that shows the person its progress and result: %s)"},
+	"stuck":  {"已经跑了超过 %d 分钟、没人看过：%s。", "Still running after more than %d minutes and nobody looked at it: %s."},
+	"silent": {"%d 分钟没有动静：%s。", "No news for %d minutes: %s."},
 	"stuckUnreachable": {"卡住了，连不上它的模型服务：%s 已经 %d 分钟没连上（最近一次：%s）。它还在自己重试，没有被停掉。",
 		"Stuck, can't reach its service: %s has not reached its model service for %d minutes (latest: %s). It keeps retrying and was not stopped."},
-	"failedAccount": {"失败了：%s。错误：%s\n原因：%s。",
-		"Failed: %s. Error: %s\nWhy: %s."},
-	helperNotSignedIn: {"它用的账号“%s”在那台电脑上没有登录", "its account %q is not signed in on that computer"},
-	helperNotReady:    {"它用的账号“%s”在那台电脑上还不能用", "its account %q is not ready on that computer"},
 	helperUnreachable: {"它用的账号“%s”连不上模型服务", "its account %q cannot reach its model service"},
-	helperRateLimited: {"它用的账号“%s”被限流或额度用完了", "its account %q is rate-limited or out of quota"},
 	"retryElsewhere": {"那台电脑上能用的其他账号（可用性观察，不是切换许可；只有角色设置允许的 fallback 可以用）：%s",
 		"Other accounts usable on that computer (availability only, not permission to switch; only a fallback the role configuration allows may be used): %s"},
 	"stopAndRetryElsewhere": {"它还在运行。那台电脑上能用的其他账号（可用性观察，不是切换许可；只有角色设置允许的 fallback 可以用）：%s",
@@ -271,6 +218,11 @@ var taskNoticeTexts = map[string][2]string{
 // tasks are looked for: often enough that a helper that cannot reach its
 // service is told within ServiceUnreachableAfter and half a minute.
 var supervisionInterval = 30 * time.Second
+
+// taskSilentMaxGap caps how long a silent helper's reminders may space out.
+// After the first, the gap is half the silence so far (doubling: 30m, 1h,
+// 2h, ...), so a helper silent for a day is still followed up.
+const taskSilentMaxGap = 6 * time.Hour
 
 // superviseNow looks for the assistant's tasks that went quiet
 // or ran too long.
@@ -317,7 +269,9 @@ func (s *Service) Supervise(ctx context.Context, now time.Time) error {
 			task.StuckSince = formatPATime(now)
 		case unreachable():
 			kind = assistantTaskEventUnreachable
-		case silentFor >= personalagent.TaskSilentAfter && (!noticed || lastNotice.Before(lastActivity.Add(personalagent.TaskSilentAfter))):
+		case silentFor >= personalagent.TaskSilentAfter &&
+			(!noticed || lastNotice.Before(lastActivity.Add(personalagent.TaskSilentAfter)) ||
+				now.Sub(lastNotice) >= min(silentFor/2, taskSilentMaxGap)):
 		default:
 			continue
 		}

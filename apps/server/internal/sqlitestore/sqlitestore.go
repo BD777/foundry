@@ -1061,7 +1061,7 @@ func (s *Store) saveAsset(ctx context.Context, value store.AssetProjection, upda
 }
 
 func (s *Store) attachAgentSessionEvents(ctx context.Context, session *store.AgentSession) error {
-	events, err := listSessionEvents(ctx, s.reader(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
+	events, err := listSessionEventsChronologically(ctx, s.reader(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE session_id = ?`, session.ID)
 	if err != nil {
 		return err
 	}

@@ -145,8 +145,14 @@ func TestAssistantPackageGatesDispatchReadsAndCreatedWorkspaces(t *testing.T) {
 	if text, failed := f.tool(t, f.token, "get_workspace", map[string]any{"workspaceId": "ws_alice"}); !failed || !strings.Contains(text, "not found") {
 		t.Fatalf("get_workspace of an excluded workspace: %s", text)
 	}
-	if text, _ := f.tool(t, f.token, "find_workspace", map[string]any{"query": "ws_alice"}); strings.Contains(text, `"ws_alice"`) {
-		t.Fatalf("find_workspace proposed an excluded workspace: %s", text)
+	files, err := f.server.assistant.ProjectFiles(ctx, agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.Contains(file.Content, "ws_alice") {
+			t.Fatalf("the project summaries include an excluded workspace: %s", file.Path)
+		}
 	}
 	f.setPolicy(t, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentAuto)
 	text, failed := f.tool(t, f.token, "create_workspace", map[string]any{"name": "Fresh", "purpose": "x", "deviceId": "dev_alice", "source": map[string]any{"kind": "empty"}})

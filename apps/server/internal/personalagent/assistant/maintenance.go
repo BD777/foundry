@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	pathpkg "path"
 	"slices"
 	"strconv"
@@ -17,7 +18,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/upkeep"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -47,6 +48,12 @@ func (s *Service) drainMaintenance(ctx context.Context) {
 		s.RunMaintenance(run, job)
 		cancel()
 	}
+	// A target archived or removed while a review waited or waited for
+	// approval can never be acted on: settle it, never leave it waiting.
+	s.FinalizeGoneTargets(ctx)
+	// A stalled, failed or waiting review and a ready patch are facts the
+	// assistant should see; announce them once, coalesced (DEV-238).
+	s.AnnounceUpkeep(ctx)
 }
 
 // GovernanceEventKey is the key of a governance review's event for a
@@ -66,38 +73,35 @@ func (s *Service) CaptureMaintenanceEvents(ctx context.Context) {
 		return
 	}
 	for _, agent := range agents {
-		// Upkeep is the person's, not one assistant's: it runs under their
-		// default assistant until it is split per vault and filtered per
-		// permission package (DEV-191 P5).
+		// Upkeep is the person's, not one assistant's (DEV-191 §4): global
+		// reviews belong to the default assistant and run on its home even
+		// while its conversation is stopped. Per-assistant memory layers are
+		// captured here too, once per person.
 		if !agent.IsDefault {
 			continue
 		}
 		if user, e := s.store.GetUser(ctx, agent.UserID); e != nil || !user.Active() {
 			continue
 		}
-		active := agent.State == store.PersonalAgentActive
-		if active {
-			s.captureGovernance(ctx, agent)
-		}
+		s.captureGovernance(ctx, agent)
 		vaults, err := s.store.ListKnowledgeVaults(ctx, agent.UserID)
 		if err != nil {
 			continue
 		}
 		// One review per vault, each reading only its own vault
-		// (maintenancePrompt): an assistant's memory layer is reviewed as
-		// that assistant, domain sources as the default one, and the
-		// person's layer, which every assistant recalls, as the default one
-		// or, while it is stopped, the first active assistant.
+		// (maintenancePrompt): the person's layer, which every assistant
+		// recalls, belongs to the default assistant; an assistant's own
+		// layer belongs to that assistant and needs it active.
 		for _, v := range vaults {
 			if v.State != "active" {
 				continue
 			}
-			reviewer, ok := agent, active
+			reviewer, ok := agent, true
 			if v.Kind == "memory" && v.AssistantID != "" && v.AssistantID != agent.ID {
 				owner, err := s.store.GetAssistant(ctx, v.AssistantID)
 				reviewer, ok = owner, err == nil && owner.UserID == agent.UserID && owner.State == store.PersonalAgentActive
-			} else if v.Kind == "memory" && v.Scope == store.MemoryScopePerson && !active {
-				reviewer, ok = s.activeAssistant(ctx, agent.UserID)
+			} else if v.Kind == "memory" && v.Scope == store.MemoryScopePerson {
+				reviewer, ok = agent, true
 			}
 			if !ok {
 				continue
@@ -129,20 +133,6 @@ func (s *Service) captureGovernance(ctx context.Context, agent store.PersonalAge
 	}
 }
 
-// activeAssistant is user's first active assistant (the default first).
-func (s *Service) activeAssistant(ctx context.Context, user string) (store.PersonalAgent, bool) {
-	assistants, err := s.store.ListAssistants(ctx, user)
-	if err != nil {
-		return store.PersonalAgent{}, false
-	}
-	for _, a := range assistants {
-		if a.State == store.PersonalAgentActive {
-			return a, true
-		}
-	}
-	return store.PersonalAgent{}, false
-}
-
 // EnqueueMaintenance queues a role's review of a workspace (or vault) for
 // the event key, once per key.
 func (s *Service) EnqueueMaintenance(ctx context.Context, agent store.PersonalAgent, role, workspace, vault, key string) {
@@ -159,19 +149,70 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 	save := func(status, reason string, delay time.Duration) {
 		job.Status, job.Reason = status, reason
 		job.DueAt = time.Now().Add(delay).UTC().Format(time.RFC3339Nano)
-		_, _ = s.store.SavePersonalAgentMaintenance(ctx, job)
+		if status == "waiting" {
+			if job.WaitingSince == "" {
+				job.WaitingSince = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+		} else {
+			job.WaitingSince = ""
+		}
+		// A job that ran out its 20s (a slow device read) must still record
+		// why it waits; the worker context is already gone.
+		saveCtx := ctx
+		if ctx.Err() != nil {
+			var cancel context.CancelFunc
+			saveCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+		}
+		if _, err := s.store.SavePersonalAgentMaintenance(saveCtx, job); err != nil {
+			log.Printf("maintenance %s: save %s: %v", job.ID, status, err)
+		}
+	}
+	// A failed review is retried a bounded number of times with backoff; its
+	// input and snapshot are cleared so the retry pins a fresh run.
+	fail := func(reason string) {
+		if job.Attempt < maxMaintenanceAttempts {
+			// The store's retry transition re-queues the job as pending,
+			// with its accepted input and run cleared so it pins a fresh one.
+			job.Attempt++
+			job.Status, job.Reason = "pending", "retry_scheduled"
+			job.InputID, job.SessionID, job.SnapshotID = "", "", ""
+			job.Result = nil
+			job.WaitingSince = ""
+			job.DueAt = time.Now().Add(maintenanceRetryDelay(job.Attempt)).UTC().Format(time.RFC3339Nano)
+			saveCtx := ctx
+			if ctx.Err() != nil {
+				var cancel context.CancelFunc
+				saveCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+			}
+			if _, err := s.store.SavePersonalAgentMaintenance(saveCtx, job); err != nil {
+				log.Printf("maintenance %s: schedule retry: %v", job.ID, err)
+			}
+			return
+		}
+		save("failed", reason, 0)
 	}
 	if job.InputID != "" {
-		id, e := s.store.WorkRunInputSession(ctx, job.InputID)
+		// The job records its session once it exists; the input mapping is
+		// the fallback for a run accepted before that was saved.
+		id, e := job.SessionID, error(nil)
+		if id == "" {
+			id, e = s.store.WorkRunInputSession(ctx, job.InputID)
+		}
 		if e == nil {
 			session, e := s.store.GetAgentSessionSummary(ctx, id)
 			if e != nil {
+				log.Printf("maintenance %s: reconcile session %s: %v", job.ID, id, e)
 				return
 			}
-			if session.CreatedByUserID != job.UserID || session.WorkspaceID != job.WorkspaceID {
+			runWorkspace, e := s.maintenanceRunWorkspace(ctx, job)
+			if e != nil || session.CreatedByUserID != job.UserID || session.WorkspaceID != runWorkspace {
+				log.Printf("maintenance %s: reconcile skip: e=%v created=%s/%s ws=%s/%s", job.ID, e, session.CreatedByUserID, job.UserID, session.WorkspaceID, runWorkspace)
 				return
 			}
-			if session.Input.ID != job.InputID {
+			if session.Input.ID != job.InputID && session.DispatchID != job.InputID {
+				log.Printf("maintenance %s: input moved %q/%q", job.ID, session.Input.ID, job.InputID)
 				save("failed", "input_moved", 0)
 				return
 			}
@@ -187,7 +228,13 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 				return
 			}
 			if session.Status != "completed" {
-				save("failed", "native_"+session.Status, 0)
+				// A canceled review was stopped on purpose; only a failure
+				// is retried.
+				if session.Status == "failed" {
+					fail("native_failed")
+				} else {
+					save("failed", "native_"+session.Status, 0)
+				}
 				return
 			}
 			if current, e := s.maintenanceEventCurrent(ctx, job); e != nil {
@@ -203,7 +250,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 			}
 			review, e := parseMaintenanceReview(job.Role, full.Response)
 			if e != nil {
-				save("failed", "invalid_review_result", 0)
+				fail("invalid_review_result")
 				return
 			}
 			result := review.MaintenanceResult
@@ -220,6 +267,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 			return
 		}
 		if !errors.Is(e, store.ErrNotFound) {
+			log.Printf("maintenance %s: look up input %s: %v", job.ID, job.InputID, e)
 			return
 		}
 	}
@@ -234,34 +282,39 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("superseded", "source_changed", 0)
 		return
 	}
-	agent, err := s.store.GetAssistant(ctx, job.AssistantID)
+	placement, err := s.placeMaintenance(ctx, job)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			save("superseded", "workspace_gone", 0)
+			return
+		}
 		return
 	}
-	if agent.State != store.PersonalAgentActive {
+	// Global upkeep is Foundry's maintenance of the person's data, not the
+	// default assistant's action: it keeps running while that assistant's
+	// conversation is stopped. A per-assistant layer follows its assistant.
+	if !placement.Global && placement.Agent.State != store.PersonalAgentActive {
 		save("waiting", "assistant_paused", time.Minute)
 		return
 	}
-	if preference, e := personalagent.RunPreference(agent.Settings, job.Role); e != nil || preference.Disabled {
+	if preference, e := personalagent.RunPreference(placement.Agent.Settings, job.Role); e != nil || preference.Disabled {
 		save("waiting", "role_configuration_unavailable", 5*time.Minute)
 		return
 	}
-	// Concurrency and daily model budget are checked transactionally when
-	// claiming below, without relying on the paginated display list.
-	snapshot, err := s.runs.Pin(ctx, agent, job.ID+":"+strconv.Itoa(job.Attempt), job.Role, job.WorkspaceID)
+	runWorkspace, err := s.store.GetWorkspace(ctx, placement.RunWorkspace)
 	if err != nil {
-		save("waiting", "role_configuration_unavailable", 5*time.Minute)
+		save("superseded", "workspace_gone", 0)
 		return
 	}
-	if err = s.runs.CheckPinned(ctx, snapshot); err != nil {
-		save("waiting", "role_configuration_changed", 5*time.Minute)
+	if runWorkspace.ArchivedAt != "" {
+		save("superseded", "workspace_archived", 0)
 		return
 	}
-	workspace, err := s.store.GetWorkspace(ctx, job.WorkspaceID)
-	if err != nil {
+	if runWorkspace.UnavailableOnDevice != nil {
+		save("superseded", "workspace_unavailable", 0)
 		return
 	}
-	connection := s.devices.Connection(workspace.DeviceID)
+	connection := s.devices.Connection(runWorkspace.DeviceID)
 	if connection == nil {
 		save("waiting", "device_offline", time.Minute)
 		return
@@ -270,45 +323,409 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("waiting", "worker_update_required", 5*time.Minute)
 		return
 	}
+	if job.Role == "governance" {
+		// The review reads the project's instruction files over the device
+		// channel; only an offline project machine defers this one job.
+		target, err := s.store.GetWorkspace(ctx, job.WorkspaceID)
+		if err != nil {
+			save("superseded", "workspace_gone", 0)
+			return
+		}
+		if target.ArchivedAt != "" {
+			save("superseded", "workspace_archived", 0)
+			return
+		}
+		if target.UnavailableOnDevice != nil {
+			save("superseded", "workspace_unavailable", 0)
+			return
+		}
+		if s.devices.Connection(target.DeviceID) == nil {
+			save("waiting", "target_device_offline", time.Minute)
+			return
+		}
+	}
 	prompt, err := s.MaintenancePrompt(ctx, job)
 	if err != nil {
-		save("waiting", "source_unavailable", time.Minute)
-		return
-	}
-	job.InputID, job.SnapshotID = snapshot.InputID, snapshot.ID
-	job.Status, job.Reason, job.DueAt = "starting", "", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-	claimed, err := s.store.SavePersonalAgentMaintenance(ctx, job)
-	if err != nil {
-		if strings.Contains(err.Error(), "maintenance_busy") {
-			save("waiting", "maintenance_busy", time.Minute)
-		} else if strings.Contains(err.Error(), "daily_maintenance_limit") {
-			save("waiting", "daily_maintenance_limit", time.Hour)
+		reason := "source_unavailable"
+		if errors.Is(err, errMaintenanceTargetOffline) {
+			reason = "target_device_offline"
 		}
+		save("waiting", reason, time.Minute)
 		return
 	}
-	job = claimed
-	input := run.SessionInput(snapshot, prompt, job.InputID)
-	input.Source = store.SessionSourceVerification
-	input.Verification = true
-	if err = s.sessions.PickDevice(ctx, &input, true); err != nil {
-		save("waiting", "account_unavailable", 5*time.Minute)
-		return
-	}
-	bind := func(ctx context.Context, session store.AgentSession) error {
-		job.SessionID = session.ID
-		_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.AssistantID, snapshot.ID, session.ID)
-		return nil
-	}
-	session, err := s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{FailOffline: true, BeforeDispatch: bind})
+	runner := upkeep.Runner{Runs: s.runs, Sessions: s.sessions, Connected: func(deviceID string) bool {
+		return s.devices.Connection(deviceID) != nil
+	}}
+	outcome, err := runner.Start(ctx, upkeep.Request{
+		OperationID:  job.ID + ":" + strconv.Itoa(job.Attempt),
+		Role:         job.Role,
+		Agent:        placement.Agent,
+		WorkspaceID:  placement.RunWorkspace,
+		TargetDevice: placement.TargetDevice,
+		Prompt:       prompt,
+		Configure: func(input *store.CreateAgentSessionInput) {
+			input.Source = store.SessionSourceVerification
+			input.Verification = true
+		},
+		// Claim transactionally, before a session exists: concurrency and the
+		// daily model budget are job states, not reasons to create and fail a
+		// session.
+		Claim: func(ctx context.Context, snapshot store.PersonalAgentRunSnapshot) error {
+			claim := job
+			claim.InputID, claim.SnapshotID = snapshot.InputID, snapshot.ID
+			claim.Status, claim.Reason, claim.WaitingSince = "starting", "", ""
+			claim.DueAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+			claimed, err := s.store.SavePersonalAgentMaintenance(ctx, claim)
+			if err != nil {
+				switch {
+				case strings.Contains(err.Error(), "maintenance_busy"):
+					return &upkeep.DeferError{Reason: "maintenance_busy", Delay: time.Minute}
+				case strings.Contains(err.Error(), "daily_maintenance_limit"):
+					return &upkeep.DeferError{Reason: "daily_maintenance_limit", Delay: time.Hour}
+				}
+				return err
+			}
+			job = claimed
+			return nil
+		},
+		BeforeDispatch: func(ctx context.Context, snapshot store.PersonalAgentRunSnapshot, session store.AgentSession) error {
+			job.SessionID = session.ID
+			_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.AssistantID, snapshot.ID, session.ID)
+			return nil
+		},
+		Defer: func(ctx context.Context, reason string, delay time.Duration) error {
+			save("waiting", reason, delay)
+			return nil
+		},
+	})
 	switch {
-	case errors.Is(err, store.ErrSessionInputExists):
-		// Another run of this job started it.
+	case errors.Is(err, upkeep.ErrDeferred), outcome.Existing:
+		// The reason was saved by Defer, or another dispatcher claimed it.
 		return
-	case session.ID == "":
+	case err != nil:
 		save("waiting", "input_acceptance_failed", time.Minute)
 		return
 	}
 	save("running", "", 30*time.Second)
+}
+
+// maxMaintenanceAttempts is how many times a failed review is retried
+// automatically (with the attempt field counting them), so a transient
+// sandbox or model failure does not leave a job failed forever.
+const maxMaintenanceAttempts = 2
+
+// maintenanceRetryDelay backs off 5m, then 10m.
+func maintenanceRetryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	return time.Duration(1<<(attempt-1)) * 5 * time.Minute
+}
+
+// errMaintenanceTargetOffline: a governance review could not read the
+// project's instruction files because the project's machine is away.
+var errMaintenanceTargetOffline = errors.New("maintenance target device offline")
+
+// maintenancePlacement is where a review runs and which machine it reads.
+// Global reviews belong to the default assistant and run in its home; a
+// memory review runs in its vault's workspace. Only governance reads a
+// different project's machine, and only to read its instruction files.
+type maintenancePlacement struct {
+	Agent        store.PersonalAgent
+	Global       bool
+	RunWorkspace string
+	TargetDevice string
+}
+
+func (s *Service) placeMaintenance(ctx context.Context, job store.PersonalAgentMaintenance) (maintenancePlacement, error) {
+	agent, err := s.store.GetAssistant(ctx, job.AssistantID)
+	if err != nil {
+		return maintenancePlacement{}, err
+	}
+	if job.Role == "governance" {
+		target, err := s.store.GetWorkspace(ctx, job.WorkspaceID)
+		if err != nil {
+			return maintenancePlacement{}, err
+		}
+		return maintenancePlacement{Agent: agent, Global: true, RunWorkspace: agent.WorkspaceID, TargetDevice: target.DeviceID}, nil
+	}
+	v, err := s.store.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
+	if err != nil {
+		return maintenancePlacement{}, err
+	}
+	if v.WorkspaceID != job.WorkspaceID {
+		return maintenancePlacement{}, invalid("knowledge authority moved")
+	}
+	workspace, err := s.store.GetWorkspace(ctx, v.WorkspaceID)
+	if err != nil {
+		return maintenancePlacement{}, err
+	}
+	return maintenancePlacement{
+		Agent: agent, Global: v.Scope == store.MemoryScopePerson,
+		RunWorkspace: v.WorkspaceID, TargetDevice: workspace.DeviceID,
+	}, nil
+}
+
+// maintenanceRunWorkspace is where the job's session runs, for reconciling
+// a run that a restart or a later drain left behind.
+func (s *Service) maintenanceRunWorkspace(ctx context.Context, job store.PersonalAgentMaintenance) (string, error) {
+	if job.Role == "memory" {
+		return job.WorkspaceID, nil
+	}
+	agent, err := s.store.GetAssistant(ctx, job.AssistantID)
+	if err != nil {
+		return "", err
+	}
+	return agent.WorkspaceID, nil
+}
+
+var (
+	// UpkeepSweepInterval is how often archived or removed targets are
+	// settled and upkeep announcements are looked at; tests shorten it.
+	UpkeepSweepInterval = 5 * time.Minute
+)
+
+const (
+	// upkeepStallAfter is how long a review waits before the assistant is
+	// told it is stuck.
+	upkeepStallAfter = 30 * time.Minute
+	// upkeepDeviceGoneAfter settles a review whose target machine has been
+	// away this long: the project is dormant, and a new instruction change
+	// queues a fresh review. Without it, a project on a machine that never
+	// comes back waits forever.
+	upkeepDeviceGoneAfter = 7 * 24 * time.Hour
+)
+
+// FinalizeGoneTargets settles reviews whose target can never be reviewed
+// or approved again: an archived or unavailable project, or one removed
+// with its machine. They become superseded with a reason instead of
+// waiting forever.
+func (s *Service) FinalizeGoneTargets(ctx context.Context) {
+	if now := time.Now(); now.Sub(s.lastUpkeepSweep) < UpkeepSweepInterval {
+		return
+	} else {
+		s.lastUpkeepSweep = now
+	}
+	agents, err := s.store.ListPersonalAgents(ctx)
+	if err != nil {
+		return
+	}
+	lastSeen := map[string]time.Time{}
+	if devices, err := s.store.ListDevices(ctx); err == nil {
+		for _, device := range devices {
+			if at, err := time.Parse(time.RFC3339Nano, device.LastSeenAt); err == nil {
+				lastSeen[device.ID] = at
+			}
+		}
+	}
+	for _, owner := range agents {
+		if !owner.IsDefault {
+			continue
+		}
+		jobs, err := s.store.ListPersonalAgentMaintenanceForUser(ctx, owner.UserID)
+		if err != nil {
+			continue
+		}
+		for _, job := range jobs {
+			switch job.Status {
+			case "pending", "waiting", "review":
+			default:
+				continue
+			}
+			reason := s.goneTargetReason(ctx, job, lastSeen)
+			if reason == "" {
+				continue
+			}
+			job.Status, job.Reason = "superseded", reason
+			job.WaitingSince = ""
+			job.DueAt = time.Now().UTC().Format(time.RFC3339Nano)
+			_, _ = s.store.SavePersonalAgentMaintenance(ctx, job)
+		}
+	}
+}
+
+// goneTargetReason names why a job's target can no longer be acted on, or
+// "" when it can.
+func (s *Service) goneTargetReason(ctx context.Context, job store.PersonalAgentMaintenance, lastSeen map[string]time.Time) string {
+	workspace, err := s.store.GetWorkspace(ctx, job.WorkspaceID)
+	if errors.Is(err, store.ErrNotFound) {
+		return "workspace_gone"
+	}
+	if err != nil {
+		return ""
+	}
+	if workspace.ArchivedAt != "" {
+		return "workspace_archived"
+	}
+	if workspace.UnavailableOnDevice != nil {
+		return "workspace_unavailable"
+	}
+	if workspace.DeviceID != "" && !s.devices.Connected(workspace.DeviceID) {
+		if at, ok := lastSeen[workspace.DeviceID]; ok && time.Since(at) >= upkeepDeviceGoneAfter {
+			return "device_offline_too_long"
+		}
+	}
+	if job.Role == "memory" {
+		v, err := s.store.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
+		if errors.Is(err, store.ErrNotFound) {
+			return "source_gone"
+		}
+		if err == nil && v.State != "active" {
+			return "source_inactive"
+		}
+	}
+	return ""
+}
+
+// upkeepState is what one person's upkeep needs the assistant to know: a
+// review ready for approval, a failure, a job waiting too long, or project
+// summaries waiting for the default assistant's machine.
+type upkeepState struct {
+	Signature string
+	Approvals int
+	Patches   int
+	Failed    int
+	Stalled   int
+	Digests   int
+}
+
+// AnnounceUpkeep tells each active assistant once per distinct upkeep
+// state, as one factual notice it can decide to raise with the person.
+// Foundry does not create "needs you" items: that list is the assistant's.
+func (s *Service) AnnounceUpkeep(ctx context.Context) {
+	now := time.Now()
+	if now.Sub(s.lastUpkeepNotice) < UpkeepSweepInterval {
+		return
+	}
+	s.lastUpkeepNotice = now
+	owners, err := s.store.ListPersonalAgents(ctx)
+	if err != nil {
+		return
+	}
+	for _, owner := range owners {
+		if !owner.IsDefault {
+			continue
+		}
+		if user, e := s.store.GetUser(ctx, owner.UserID); e != nil || !user.Active() {
+			continue
+		}
+		jobs, err := s.store.ListPersonalAgentMaintenanceForUser(ctx, owner.UserID)
+		if err != nil {
+			continue
+		}
+		state := s.upkeepStateOf(ctx, owner, jobs, now)
+		if state.Signature == "" {
+			continue
+		}
+		assistants, err := s.store.ListAssistants(ctx, owner.UserID)
+		if err != nil {
+			continue
+		}
+		for _, agent := range assistants {
+			if agent.State != store.PersonalAgentActive {
+				continue
+			}
+			last, err := s.store.UpkeepNoticeSignature(ctx, agent.ID)
+			if err != nil || last == state.Signature {
+				continue
+			}
+			conversation := s.latestConversation(ctx, agent)
+			if conversation == "" {
+				continue
+			}
+			line := s.upkeepNoticeText(ctx, agent, owner, state)
+			language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
+			assistantID := agent.ID
+			s.notices.add(conversation, language, line, now, func(text string) {
+				current, err := s.store.GetAssistant(context.Background(), assistantID)
+				if err != nil || current.State != store.PersonalAgentActive {
+					return
+				}
+				s.tell(context.Background(), conversation, text)
+			})
+			_ = s.store.SaveUpkeepNoticeSignature(ctx, agent.ID, state.Signature, formatPATime(now))
+		}
+	}
+}
+
+// upkeepStateOf reads the person's jobs and returns a stable signature of
+// what needs attention. Repeatedly deferred jobs keep the same signature.
+func (s *Service) upkeepStateOf(ctx context.Context, owner store.PersonalAgent, jobs []store.PersonalAgentMaintenance, now time.Time) upkeepState {
+	state := upkeepState{}
+	parts := []string{}
+	for _, job := range jobs {
+		switch job.Status {
+		case "review":
+			if job.Result != nil && len(job.Result.Patches) > 0 {
+				state.Approvals++
+				state.Patches += len(job.Result.Patches)
+				parts = append(parts, fmt.Sprintf("review:%s:%d", job.ID, len(job.Result.Patches)))
+			}
+		case "failed":
+			state.Failed++
+			parts = append(parts, "failed:"+job.ID)
+		case "waiting", "starting", "running":
+			since, err := time.Parse(time.RFC3339Nano, job.WaitingSince)
+			if err == nil && now.Sub(since) >= upkeepStallAfter {
+				state.Stalled++
+				parts = append(parts, "stalled:"+job.ID+":"+job.Status+":"+job.Reason)
+			}
+		}
+	}
+	if !s.devices.Connected(owner.HomeDeviceID) {
+		if records, err := s.store.ListWorkspaceDigests(ctx, owner.UserID); err == nil {
+			for _, record := range records {
+				if record.SummaryDueAt != "" {
+					state.Digests++
+				}
+			}
+		}
+	}
+	if state.Digests > 0 {
+		parts = append(parts, fmt.Sprintf("digests:%d", state.Digests))
+	}
+	if len(parts) == 0 {
+		return state
+	}
+	slices.Sort(parts)
+	state.Signature = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(parts, "|"))))
+	return state
+}
+
+var upkeepNoticeTexts = map[string][2]string{
+	"approvals": {"项目维护：%d 个项目共 %d 条修改建议等本人确认（设置 → 维护，或打开 %s）。",
+		"Project upkeep: %d projects have %d suggested changes waiting for the person's approval (Settings → Maintenance, or open %s)."},
+	"failed": {"项目维护：%d 项失败（设置 → 维护里可以重试）。",
+		"Project upkeep: %d failed (they can be retried in Settings → Maintenance)."},
+	"stalled": {"项目维护：%d 项在等待，已经超过 %d 分钟（设置 → 维护里可查看原因）。",
+		"Project upkeep: %d have been waiting for more than %d minutes (see why in Settings → Maintenance)."},
+	"digests": {"项目摘要：%d 个项目的摘要等着「%s」上线。",
+		"Project summaries: %d are waiting for %q to come online."},
+}
+
+// upkeepNoticeText is the one sentence (or few) an assistant gets.
+func (s *Service) upkeepNoticeText(ctx context.Context, agent, owner store.PersonalAgent, state upkeepState) string {
+	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
+	index := languageIndex(language)
+	lines := []string{}
+	if state.Approvals > 0 {
+		settings := s.WebURL(personalagent.AssistantSettingsPath(owner.ID))
+		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["approvals"][index], state.Approvals, state.Patches, settings))
+	}
+	if state.Failed > 0 {
+		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["failed"][index], state.Failed))
+	}
+	if state.Stalled > 0 {
+		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["stalled"][index], state.Stalled, int(upkeepStallAfter/time.Minute)))
+	}
+	if state.Digests > 0 {
+		label := s.devices.Label(ctx, owner.HomeDeviceID)
+		if label == "" {
+			label = owner.HomeDeviceID
+		}
+		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["digests"][index], state.Digests, label))
+	}
+	return strings.Join(lines, " ")
 }
 
 // sortMemoryLayer applies a memory review's placements to its layer.
@@ -327,7 +744,7 @@ func (s *Service) sortMemoryLayer(ctx context.Context, job store.PersonalAgentMa
 // MaintenancePrompt is what a review job starts with: a memory review reads
 // only the index of its own vault.
 func (s *Service) MaintenancePrompt(ctx context.Context, job store.PersonalAgentMaintenance) (string, error) {
-	scope := "Review only AGENTS.md, CLAUDE.md and README.md in this workspace, and the purpose below. Identify stale, conflicting, duplicate or bloated instructions. A workspace can serve any domain; do not assume software or require Git. If a file is absent, propose a small initialization with purpose, authoritative sources and explicit open questions; do not invent personal facts."
+	scope := "Review the instruction files of the project in the packet below. The packet holds the exact current bytes read from the project's machine; baseHash is their SHA-256 (empty when the file is absent). Do not read any local workspace: this session runs in the person's assistant workspace, not the project. Identify stale, conflicting, duplicate or bloated instructions. A project can serve any domain; do not assume software or require Git. If a file is absent, propose a small initialization with purpose, authoritative sources and explicit open questions; do not invent personal facts."
 	if job.Role == "memory" {
 		v, e := s.store.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
 		if e != nil {
@@ -354,11 +771,11 @@ func (s *Service) MaintenancePrompt(ctx context.Context, job store.PersonalAgent
 			scope += "\n" + memorySortingPrompt(v)
 		}
 	} else if job.Role == "governance" {
-		facts, err := s.governanceInstructionFacts(ctx, job.WorkspaceID)
+		packet, err := s.governanceReviewPacket(ctx, job.WorkspaceID)
 		if err != nil {
 			return "", err
 		}
-		scope += " Instruction budget facts (deterministic; do not recount): " + facts
+		scope += " Project packet (deterministic; do not recount): " + packet
 	}
 	purpose, _ := s.store.WorkspacePurpose(ctx, job.WorkspaceID)
 	return maintenancePromptText(job.Role, scope, purpose), nil
@@ -383,10 +800,46 @@ type governanceInstructionBudget struct {
 	FilesCouldNotBeCounted []string                    `json:"filesCouldNotBeCounted,omitempty"`
 }
 
-// governanceInstructionFacts gives the reviewer exact budget inputs for the
-// root files it must not recount. Nested instruction files are still read by
-// the reviewer itself; this preflight covers the two root budget files.
-func (s *Service) governanceInstructionFacts(ctx context.Context, workspaceID string) (string, error) {
+// governancePacketBytes bounds the project files handed to one review. Root
+// instruction files are always included; other reviewable files follow in
+// path order until the budget is spent.
+const governancePacketBytes = 64 * 1024
+
+// governancePatchBytes is the one-patch content limit (decodeMaintenanceReview
+// enforces it too).
+const governancePatchBytes = 32768
+
+// governancePacketMaxFiles bounds the device reads one governance review
+// makes. Reading every docs/ and skill file of a large repository one by one
+// over the device channel would outlast the review job's dispatch timeout.
+const governancePacketMaxFiles = 48
+
+type governancePacketFile struct {
+	Path      string `json:"path"`
+	Present   bool   `json:"present"`
+	Patchable bool   `json:"patchable"`
+	Lines     int    `json:"lines,omitempty"`
+	Bytes     int    `json:"bytes,omitempty"`
+	SHA256    string `json:"sha256,omitempty"`
+	Content   string `json:"content,omitempty"`
+	Note      string `json:"note,omitempty"`
+}
+
+type governancePacket struct {
+	WorkspaceID string                      `json:"workspaceId"`
+	Name        string                      `json:"name"`
+	Files       []governancePacketFile      `json:"files"`
+	Omitted     int                         `json:"omittedFiles,omitempty"`
+	Budget      governanceInstructionBudget `json:"budget"`
+}
+
+// governanceReviewPacket gives the reviewer the exact current bytes of the
+// project's reviewable instruction files, read over the device channel, and
+// the deterministic budget inputs it must not recount. The review session
+// runs in the assistant's home workspace, so this packet is its only source
+// for the project's files. A file it cannot read in full is listed, never
+// patched.
+func (s *Service) governanceReviewPacket(ctx context.Context, workspaceID string) (string, error) {
 	files, err := s.store.ListWorkspaceFiles(ctx, workspaceID)
 	if err != nil {
 		return "", err
@@ -395,44 +848,94 @@ func (s *Service) governanceInstructionFacts(ctx context.Context, workspaceID st
 	if err != nil {
 		return "", err
 	}
+	root := map[string]bool{}
+	ordered := []string{}
+	seen := map[string]bool{}
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			ordered = append(ordered, path)
+		}
+	}
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md", "README.md", "README", "README.markdown", "README.txt"} {
+		for _, file := range files {
+			if file.Kind != "directory" && strings.EqualFold(file.Path, name) {
+				add(file.Path)
+				root[file.Path] = true
+				break
+			}
+		}
+	}
+	others := []string{}
+	for _, file := range files {
+		if file.Kind == "directory" || !maintenancePatchPathAllowed(file.Path) {
+			continue
+		}
+		others = append(others, file.Path)
+	}
+	slices.Sort(others)
+	for _, path := range others {
+		add(path)
+	}
 	budget := governanceInstructionBudget{
 		RootFiles:             []governanceInstructionFact{},
 		LineBudgetPerFile:     governanceInstructionLineBudget,
 		CodexInstructionBytes: governanceInstructionByteLimit,
 		RecommendedRootBytes:  governanceRootByteTarget,
 	}
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-		found := false
-		for _, file := range files {
-			if file.Kind == "directory" || !strings.EqualFold(file.Path, name) {
-				continue
+	packet := governancePacket{WorkspaceID: workspace.ID, Name: workspace.Name, Files: []governancePacketFile{}}
+	contentBytes := 0
+	for _, path := range ordered {
+		// Root instruction files are always read; everything else stops at
+		// the packet budget and the read-count bound.
+		if !root[path] && (contentBytes >= governancePacketBytes || len(packet.Files) >= governancePacketMaxFiles) {
+			break
+		}
+		read, err := s.devices.ReadWorkspaceFile(ctx, workspace, path)
+		if err != nil {
+			if !s.devices.Connected(workspace.DeviceID) {
+				return "", errMaintenanceTargetOffline
 			}
-			found = true
-			read, err := s.devices.ReadWorkspaceFile(ctx, workspace, file.Path)
-			if err != nil || read.Truncated {
-				budget.FilesCouldNotBeCounted = append(budget.FilesCouldNotBeCounted, file.Path)
-				continue
-			}
-			fact := governanceInstructionFact{
-				Path:  file.Path,
-				Lines: instructionLineCount(read.Content),
-				Bytes: len(read.Content),
-			}
+			budget.FilesCouldNotBeCounted = append(budget.FilesCouldNotBeCounted, path)
+			packet.Files = append(packet.Files, governancePacketFile{Path: path, Note: "could not be read"})
+			continue
+		}
+		entry := governancePacketFile{
+			Path: path, Present: true, Lines: instructionLineCount(read.Content), Bytes: len(read.Content),
+			SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(read.Content))),
+		}
+		switch {
+		case read.Truncated:
+			entry.Note = "truncated by the device; not patchable"
+			budget.FilesCouldNotBeCounted = append(budget.FilesCouldNotBeCounted, path)
+		case contentBytes+len(read.Content) > governancePacketBytes && !root[path]:
+			entry.Note = "not included: the review packet is full; name it in findings only"
+		case len(read.Content) > governancePatchBytes:
+			entry.Patchable = false
+			entry.Note = "larger than one patch; findings only"
+			contentBytes += len(read.Content)
+			entry.Content = read.Content
+		default:
+			entry.Patchable = true
+			entry.Content = read.Content
+			contentBytes += len(read.Content)
+		}
+		packet.Files = append(packet.Files, entry)
+		if !read.Truncated && (strings.EqualFold(path, "AGENTS.md") || strings.EqualFold(path, "CLAUDE.md")) {
+			fact := governanceInstructionFact{Path: path, Lines: entry.Lines, Bytes: entry.Bytes}
 			budget.RootFiles = append(budget.RootFiles, fact)
 			budget.RootLines += fact.Lines
 			budget.RootBytes += fact.Bytes
 			if fact.Lines > governanceInstructionLineBudget {
 				budget.OverLineBudget = true
 			}
-			break
-		}
-		if !found {
-			continue
 		}
 	}
 	budget.OverCodexInstruction = budget.RootBytes > governanceInstructionByteLimit
 	budget.OverRecommendedBytes = budget.RootBytes > governanceRootByteTarget
-	raw, err := json.Marshal(budget)
+	packet.Omitted = len(ordered) - len(packet.Files)
+	packet.Budget = budget
+	raw, err := json.Marshal(packet)
 	if err != nil {
 		return "", err
 	}

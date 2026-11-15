@@ -10,6 +10,82 @@ import (
 
 // A poll still running when its channel is deleted must not bring back the
 // channel's runtime row or records.
+func record(channel store.MessageChannelRecord, id, at, sessionKey, sessionID, inboxID string, segment int, extra store.MessageEnvelope) store.MessageChannelDeliveryRecord {
+	item := store.MessageChannelDeliveryRecord{UserID: channel.UserID, AssistantID: channel.AssistantID}
+	item.ID, item.ChannelID, item.Status, item.CreatedAt = id, channel.ID, store.MessageDeliveryDelivered, at
+	item.SessionKey, item.SessionID, item.InboxID, item.Segment = sessionKey, sessionID, inboxID, segment
+	item.Envelope = store.MessageEnvelope{ID: "env_" + id, Kind: "message", Op: "new", MessageID: id, Text: id}
+	item.Envelope.Conversation = extra.Conversation
+	item.Envelope.Sender = extra.Sender
+	return item
+}
+
+// A channel's conversations page by newest activity, its deliveries filter
+// by conversation and session with a cursor, and a session's origin names
+// its conversation, segment and latest sender (DEV-234).
+func TestMessageChannelReadPagesAndOrigins(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	channel := store.MessageChannelRecord{UserID: "user_1", MessageChannel: store.MessageChannel{
+		ID: "mch_read", AssistantID: "asst_1", Name: "Ops", Enabled: true,
+		Source: store.MessageChannelSource{Kind: "openlark", AccountID: "xacc_1"},
+		Limits: store.MessageChannelLimits{PerHour: 10, PerDay: 10, Concurrency: 1}, CreatedAt: "2026-11-13T00:00:00Z", UpdatedAt: "2026-11-13T00:00:00Z",
+	}}
+	if err := db.SaveMessageChannel(ctx, channel); err != nil {
+		t.Fatal(err)
+	}
+	ops := store.MessageEnvelope{Conversation: store.MessageEnvelopeConversation{ID: "oc_a", Kind: "group", Name: "Ops"}, Sender: store.MessageEnvelopeSender{ID: "u_1", Name: "张三"}}
+	design := store.MessageEnvelope{Conversation: store.MessageEnvelopeConversation{ID: "oc_b", Kind: "direct", Name: "Design"}, Sender: store.MessageEnvelopeSender{ID: "u_2", Name: "李四"}}
+	r1 := record(channel, "r1", "2026-11-16T06:00:01Z", "c:a", "s1", "i1", 0, ops)
+	r1.SessionNew, r1.NewReason, r1.Rule = true, "first", "group"
+	r2 := record(channel, "r2", "2026-11-16T06:00:02Z", "c:a", "s1", "i1", 0, ops)
+	r2.Envelope.Sender = store.MessageEnvelopeSender{ID: "u_3", Name: "李四"}
+	r3 := record(channel, "r3", "2026-11-16T07:00:01Z", "c:a", "s2", "i2", 1, ops)
+	r3.SessionNew, r3.NewReason = true, "idle"
+	r4 := record(channel, "r4", "2026-11-16T08:00:01Z", "c:b", "s3", "i3", 0, design)
+	r5 := record(channel, "r5", "2026-11-16T08:30:00Z", "c:a", "", "", 0, ops)
+	r5.Status = store.MessageDeliveryDropped
+	stored, err := db.RecordMessageChannelBatch(ctx, channel.ID, []store.MessageChannelDeliveryRecord{r1, r2, r3, r4, r5}, "c1")
+	if err != nil || len(stored) != 5 {
+		t.Fatalf("stored %d, %v", len(stored), err)
+	}
+
+	first, next, err := db.MessageChannelConversations(ctx, channel.ID, "", 1)
+	if err != nil || len(first) != 1 || first[0].SessionKey != "c:a" || next == "" {
+		t.Fatalf("first conversation page = %+v, %q, %v", first, next, err)
+	}
+	second, next, err := db.MessageChannelConversations(ctx, channel.ID, next, 1)
+	if err != nil || len(second) != 1 || second[0].SessionKey != "c:b" || next != "" {
+		t.Fatalf("second conversation page = %+v, %q, %v", second, next, err)
+	}
+	if count, err := db.CountMessageChannelConversations(ctx, channel.ID); err != nil || count != 2 {
+		t.Fatalf("conversations = %d, %v", count, err)
+	}
+
+	page, next, err := db.ListMessageChannelDeliveriesPage(ctx, channel.ID, store.MessageChannelDeliveryFilter{SessionKey: "c:a"}, "", 2)
+	if err != nil || len(page) != 2 || page[0].ID != "r5" || page[1].ID != "r3" || next == "" {
+		t.Fatalf("first delivery page = %+v, %q, %v", page, next, err)
+	}
+	page, next, err = db.ListMessageChannelDeliveriesPage(ctx, channel.ID, store.MessageChannelDeliveryFilter{SessionKey: "c:a"}, next, 2)
+	if err != nil || len(page) != 2 || page[0].ID != "r2" || page[1].ID != "r1" || next != "" {
+		t.Fatalf("second delivery page = %+v, %q, %v", page, next, err)
+	}
+	page, _, err = db.ListMessageChannelDeliveriesPage(ctx, channel.ID, store.MessageChannelDeliveryFilter{SessionID: "s1"}, "", 10)
+	if err != nil || len(page) != 2 || page[0].ID != "r2" || page[1].ID != "r1" {
+		t.Fatalf("session deliveries = %+v, %v", page, err)
+	}
+
+	origin, err := db.MessageChannelSessionOrigin(ctx, "s1")
+	if err != nil || origin.Conversation.Name != "Ops" || origin.Segment != 0 || !origin.SessionNew || origin.NewReason != "first" ||
+		origin.LastSender.Name != "李四" || origin.LastAt != "2026-11-16T06:00:02Z" || origin.ChannelID != channel.ID {
+		t.Fatalf("session origin = %+v, %v", origin, err)
+	}
+	inbox, err := db.MessageChannelInboxDeliveries(ctx, channel.AssistantID, "i1")
+	if err != nil || len(inbox) != 2 || inbox[0].ID != "r1" || inbox[1].ID != "r2" {
+		t.Fatalf("inbox deliveries = %+v, %v", inbox, err)
+	}
+}
+
 func TestDeletedMessageChannelKeepsNoPollState(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()

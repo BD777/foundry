@@ -29,6 +29,7 @@ export interface PersonalAgentMaintenance {
   inputId?: string;
   snapshotId?: string;
   dueAt: string;
+  waitingSince?: string;
   createdAt: string;
   updatedAt: string;
   result?: MaintenanceResult;

@@ -952,6 +952,29 @@ components:
         events:
           $ref: "#/components/schemas/ConnectorEventsSpec"
           x-go-type-skip-optional-pointer: false
+        writes:
+          description:
+            Write responses that name the message they created, so a message channel can tell
+            an assistant's own writes from people's messages. Each entry names a catalogued write
+            route (method and path exactly as the instance's route directory lists it) and a JSON
+            pointer into a successful response; Foundry records the value with the request's
+            session and account.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldWrite"
+    ConnectorServerHeldWrite:
+      type: object
+      required: [method, path, createdMessageId]
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+        path:
+          description: The route's path as the directory lists it, parameters included.
+          type: string
+        createdMessageId:
+          description: JSON pointer to the created message's id in the response.
+          type: string
     ConnectorEventsSpec:
       description:
         How a message channel (DEV-203) reads this connector's event feed, as pure data. The
@@ -967,6 +990,21 @@ components:
           $ref: "#/components/schemas/ConnectorEventsEnvelope"
         context:
           $ref: "#/components/schemas/ConnectorEventsContext"
+        reply:
+          $ref: "#/components/schemas/ConnectorEventsReply"
+    ConnectorEventsReply:
+      description:
+        How an agent replies to a message with the connector's own tool, one command template per
+        conversation kind (direct, self, group, channel, feed, other); a template may use
+        `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as
+        a fact, not as advice.
+      type: object
+      additionalProperties: false
+      properties:
+        kinds:
+          type: object
+          additionalProperties:
+            type: string
     ConnectorEventsPoll:
       description:
         One GET request per poll. Query values are templates that may use `{cursor}`; a
@@ -1018,7 +1056,8 @@ components:
         Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op,
         occurredAt, conversation.id, conversation.kind, conversation.name, thread.id,
         thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot,
-        mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored.
+        sender.isOwnWrite, mentionsMe, attributes.<name>); an item matching any skipWhen condition
+        is ignored.
       type: object
       required: [fields]
       additionalProperties: false
@@ -1053,6 +1092,14 @@ components:
           type: string
           enum: [ms, s, rfc3339]
           x-go-type: string
+        when:
+          description: Conditions on the item; the field is present only when all of them hold.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorEventsCondition"
+        trimPrefix:
+          description: A prefix removed from the value after it is read.
+          type: string
         cases:
           description: Checked first, in order; the first case whose conditions all hold gives the value.
           type: array

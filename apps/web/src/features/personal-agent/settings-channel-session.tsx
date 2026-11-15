@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  MessageChannelFollowUps,
   MessageChannelSessionRule,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
@@ -9,7 +10,13 @@ import { ChipInput } from "../../components/ui/chip-input";
 import { FieldHint, Radio } from "../../components/ui/field";
 import { FieldLabel, FormFieldGroup } from "../../components/ui/form-field";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { channelBounds, idleChoices, type ChannelDraft } from "./channel-model";
+import { Switch } from "../../components/ui/switch";
+import {
+  channelBounds,
+  followUpFroms,
+  idleChoices,
+  type ChannelDraft,
+} from "./channel-model";
 import { idleLabelParts } from "./channel-session-model";
 import { ProblemHint } from "./settings-channel-filter";
 
@@ -110,6 +117,86 @@ export function ChannelSessionFields({
           {t("settings.channels.editor.resetCommandsHint")}
         </FieldHint>
       </FormFieldGroup>
+    </>
+  );
+}
+
+/**
+ * 续聊: after a message matched, who may continue its thread or quote it
+ * without a trigger word, and which words stop it.
+ */
+export function ChannelFollowUpFields({
+  followUps,
+  onChange,
+  commandsProblem,
+}: {
+  followUps: MessageChannelFollowUps;
+  onChange: (followUps: MessageChannelFollowUps) => void;
+  commandsProblem?: string;
+}) {
+  const { t } = useTranslation("personalAgent");
+  const ids = useId();
+  return (
+    <>
+      <label className="flex min-w-0 cursor-pointer items-center gap-2.5 text-sm text-ink">
+        <Switch
+          checked={followUps.enabled}
+          onCheckedChange={(enabled) => onChange({ ...followUps, enabled })}
+        />
+        <span>{t("settings.channels.editor.followUps")}</span>
+      </label>
+      <FieldHint>{t("settings.channels.editor.followUpsHint")}</FieldHint>
+      {followUps.enabled ? (
+        <>
+          <fieldset className="grid min-w-0 gap-2 border-0 p-0">
+            <FieldLabel as="span">
+              {t("settings.channels.editor.followUpsFrom")}
+            </FieldLabel>
+            {followUpFroms.map((value) => (
+              <CheckLabel key={value}>
+                <Radio
+                  checked={followUps.from === value}
+                  name={`${ids}-follow-up-from`}
+                  onChange={() => onChange({ ...followUps, from: value })}
+                  value={value}
+                />
+                <span>
+                  <span>
+                    {t(`settings.channels.editor.followUpFroms.${value}`)}
+                  </span>
+                  <small>
+                    {t(`settings.channels.editor.followUpFromHints.${value}`)}
+                  </small>
+                </span>
+              </CheckLabel>
+            ))}
+          </fieldset>
+          <FormFieldGroup data-channel-field="">
+            <FieldLabel htmlFor={`${ids}-end`}>
+              {t("settings.channels.editor.endCommands")}
+            </FieldLabel>
+            <ChipInput
+              aria-describedby={`${ids}-end-hint`}
+              id={`${ids}-end`}
+              invalid={Boolean(commandsProblem)}
+              maxItems={channelBounds.endCommands}
+              maxLength={channelBounds.endCommand}
+              onChange={(endCommands) =>
+                onChange({ ...followUps, endCommands })
+              }
+              placeholder={t("settings.channels.editor.endCommandsPlaceholder")}
+              removeLabel={(word) =>
+                t("settings.channels.editor.removeEndCommand", { word })
+              }
+              values={followUps.endCommands}
+            />
+            <ProblemHint>{commandsProblem}</ProblemHint>
+            <FieldHint id={`${ids}-end-hint`}>
+              {t("settings.channels.editor.endCommandsHint")}
+            </FieldHint>
+          </FormFieldGroup>
+        </>
+      ) : null}
     </>
   );
 }

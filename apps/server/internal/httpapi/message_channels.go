@@ -50,7 +50,8 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 	return channels.NewRunner(channels.Ports{
 		Store: st, Open: s.openMessageChannelSource, Inbox: messageChannelInbox{s},
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
-		ContextHint: s.messageChannelContextHint, Session: s.messageChannelSessionState,
+		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
+		OwnWrites: s.messageChannelOwnWrites, Session: s.messageChannelSessionState,
 	})
 }
 
@@ -140,7 +141,7 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	}
 	record.Name, record.Enabled, record.Source, record.Filters = channel.Name, channel.Enabled, channel.Source, channel.Filters
 	record.Guide, record.SessionKey, record.Scope, record.Limits = channel.Guide, channel.SessionKey, channel.Scope, channel.Limits
-	record.Session = channel.Session
+	record.Session, record.FollowUps = channel.Session, channel.FollowUps
 	record.SkillName, record.UpdatedAt = channels.SkillName(record.MessageChannel), now
 	if channel.WorkspaceID != "" && channel.WorkspaceID != record.WorkspaceID {
 		if err := s.checkMessageChannelWorkspace(ctx, r, agent, channel.WorkspaceID); err != nil {
@@ -210,12 +211,17 @@ func (s *Server) handleMessageChannelDeliveries(w http.ResponseWriter, r *http.R
 	if r.URL.Query().Get("dropped") == "1" {
 		statuses = nil
 	}
-	records, err := st.ListMessageChannelDeliveries(r.Context(), record.ID, statuses, 50)
+	filter := store.MessageChannelDeliveryFilter{
+		Statuses:   statuses,
+		SessionKey: r.URL.Query().Get("conversation"),
+		SessionID:  r.URL.Query().Get("sessionId"),
+	}
+	records, next, err := st.ListMessageChannelDeliveriesPage(r.Context(), record.ID, filter, r.URL.Query().Get("cursor"), 50)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	list := store.MessageChannelDeliveryList{Deliveries: []store.MessageChannelDelivery{}}
+	list := store.MessageChannelDeliveryList{Deliveries: []store.MessageChannelDelivery{}, NextCursor: next}
 	actions := s.messageChannelActions(r.Context(), agent, record, records)
 	for _, item := range records {
 		delivery := item.MessageChannelDelivery
@@ -332,6 +338,10 @@ func (s *Server) messageChannelView(ctx context.Context, agent store.PersonalAge
 	}
 	view.Workspace = s.messageChannelWorkspaceView(ctx, record)
 	view.SessionIDs, err = st.MessageChannelSessions(ctx, agent.ID, record.ID)
+	if err != nil {
+		return view, err
+	}
+	view.ConversationCount, err = st.CountMessageChannelConversations(ctx, record.ID)
 	return view, err
 }
 
@@ -532,6 +542,29 @@ func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, 
 		return channel, bad("at most 5 new-session commands")
 	}
 	channel.Session = &store.MessageChannelSessionRule{IdleMinutes: rule.IdleMinutes, ResetCommands: commands}
+	followUps := store.MessageChannelFollowUps{Enabled: true, From: channels.FollowUpSameSender, EndCommands: []string{"/end"}}
+	if input.FollowUps != nil {
+		followUps.Enabled, followUps.From = input.FollowUps.Enabled, input.FollowUps.From
+		if followUps.From == "" {
+			followUps.From = channels.FollowUpSameSender
+		}
+		if !slices.Contains([]string{channels.FollowUpSameSender, channels.FollowUpPerson, channels.FollowUpAnyone}, followUps.From) {
+			return channel, bad("followUps.from is same-sender, person or anyone")
+		}
+		followUps.EndCommands = []string{}
+		for _, command := range input.FollowUps.EndCommands {
+			if command = strings.TrimSpace(command); command != "" && !slices.Contains(followUps.EndCommands, command) {
+				if utf8.RuneCountInString(command) > 40 || strings.ContainsFunc(command, unicode.IsSpace) {
+					return channel, bad("an end command is one word of at most 40 characters")
+				}
+				followUps.EndCommands = append(followUps.EndCommands, command)
+			}
+		}
+		if len(followUps.EndCommands) > 5 {
+			return channel, bad("at most 5 end commands")
+		}
+	}
+	channel.FollowUps = &followUps
 	channel.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	scope := input.Scope
 	if scope.ConnectorDefault == "" {

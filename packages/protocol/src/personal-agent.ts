@@ -532,19 +532,6 @@ export interface DeviceDigest {
   compiledAt: string;
 }
 
-/** One find_workspace answer, best first. */
-export interface WorkspaceCandidate {
-  workspaceId: string;
-  name: string;
-  /** Why it matched, for the assistant. */
-  reason: string;
-  /** 0–1; only the order and the gaps between candidates mean anything. */
-  score: number;
-  /** The digest it matched: dirty or older than seven days is stale. */
-  compiledAt: string;
-  stale: boolean;
-}
-
 /** The kind of message, as step 1 of the prompt sorts it. */
 export type PersonalAgentRequestClass =
   "stop" | "reply" | "question" | "remember" | "task" | "small_talk";
@@ -567,7 +554,7 @@ export interface PersonalAgentRoutingDecision {
   /** The project, for target workspace (and new, once created). */
   workspaceId?: string;
   confidence: PersonalAgentRouteConfidence;
-  /** The candidates find_workspace offered, best first. */
+  /** The projects the assistant considered, in its order. */
   candidates: string[];
   /** The person redirected it. */
   corrected: boolean;

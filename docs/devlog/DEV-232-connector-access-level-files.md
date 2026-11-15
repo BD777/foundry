@@ -2,6 +2,16 @@
 
 状态：已部署 dev，待本人验收；已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：步骤 1 的线上档位说明、步骤 3 的本人 `workspace` 现行 `dns_edit` 被拒原因与审计）。未覆盖：步骤 2（把本人 `workspace` 调到 Zero Trust 再读 Tunnel connections）属本人状态改动，未运行；e2e-alice 没有 Cloudflare 账号，无法用合成数据复现该读取。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。
+
+- 步骤 1（e2e-alice 真实浏览器，只读 `GET /api/external-accounts`）：Cloudflare 三档 `只读` / `只读 + DNS 编辑` / `只读 + DNS 编辑 + Zero Trust` 都带中英文名称、说明和重新授权提示；`zero_trust` 的说明写明可读 Tunnel 详情、连接状态和 ingress，可更新 Public Hostname，不能创建 Bypass 策略、不能新建或删除 Tunnel。App Store Connect 两档同样带中英文说明。
+- 步骤 3（只读线上库）：本人 `workspace` `ws_0fde4df9…` 的 Cloudflare 绑定仍为 `dns_edit`；2026-11-15T14:16:42Z 的审计行为 `GET /accounts/:id/cfd_tunnel/:id/connections refused access_level needs zero_trust, has dns_edit`，同批 `/zones/:id forwarded` 与 `unsupported_path … path_not_allowed`，说明拒绝原因已写明所需级别。
+- 步骤 2 未运行：需要把本人 `workspace` 调到 `zero_trust` 并读取真实 Tunnel `99734e87…` 的连接列表；这是本人账号的状态改动，且 e2e-alice 没有 Cloudflare 账号可做合成复现。`workspace` 仍保持 `dns_edit`。
+
 ## 问题
 
 2026-11-15 `sess_1794748572690000429`（排查极空间 Vault 经 Cloudflare Tunnel 无法访问）在工作区 `workspace`（`ws_0fde4df9…`）里读 Tunnel 被拒了 7 次，最后对本人说“Foundry 不让我改 Tunnel 配置”，没有说怎么放开。本人随后问：各连接器的权限选项是不是配置驱动的，能否把选项补全，并把说明写清楚。

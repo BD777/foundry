@@ -49,6 +49,7 @@ import {
   prerequisitesMissing,
 } from "./settings-channel-prerequisites";
 import {
+  ChannelFollowUpFields,
   ChannelSessionFields,
   ChannelWorkspaceChoice,
 } from "./settings-channel-session";
@@ -316,6 +317,16 @@ export function ChannelEditor({
             sessionKey={draft.sessionKey}
           />
         </SettingsGroup>
+
+        {capabilities.threads ? (
+          <SettingsGroup title={t("settings.channels.editor.followUpsTitle")}>
+            <ChannelFollowUpFields
+              commandsProblem={problemOf("endCommands")}
+              followUps={draft.followUps}
+              onChange={(followUps) => change({ followUps })}
+            />
+          </SettingsGroup>
+        ) : null}
 
         {view ? null : (
           <SettingsGroup title={t("settings.channels.editor.workspaceTitle")}>

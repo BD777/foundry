@@ -277,6 +277,9 @@ function chatMessagesForSession(
       at: session.startedAt,
       role: "user",
       text: session.input?.prompt ?? session.prompt,
+      ...(session.input?.channelOrigin
+        ? { channelOrigin: session.input.channelOrigin }
+        : {}),
     });
   }
   const sessionActive = isSessionLive(session);
@@ -326,6 +329,9 @@ function chatMessagesForSession(
           ? { sentBySessionId: segment.sentBySessionId }
           : {}),
         ...(segment.steered ? { steered: true } : {}),
+        ...(segment.channelOrigin
+          ? { channelOrigin: segment.channelOrigin }
+          : {}),
         ...(steer
           ? {
               steer: {
@@ -422,6 +428,9 @@ function chatMessagesForSession(
       id: `agent-session:${session.id}:${pendingInput.id}`,
       role: "user",
       text: pendingInput.prompt,
+      ...(pendingInput.channelOrigin
+        ? { channelOrigin: pendingInput.channelOrigin }
+        : {}),
     });
   }
   // Until the turn's first shown step, the session can stay silent for a

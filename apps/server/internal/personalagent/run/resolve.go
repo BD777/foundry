@@ -373,6 +373,60 @@ func (s *Resolver) PinExecutor(ctx context.Context, agent store.PersonalAgent, o
 	})
 }
 
+// ReasonInputBudget is a create_session run's selection reason: the input's
+// own snapshot, which carries the executor role's token and time budget.
+const ReasonInputBudget = "create_session"
+
+// PinHelperInput records the run of a helper the assistant starts through
+// create_session, keyed to that input: the executor role's budget, with the
+// account the input names or ApplyHelperDefaults filled. It is the same
+// snapshot mechanism dispatch pins, so budget enforcement has one path.
+func (s *Resolver) PinHelperInput(ctx context.Context, agent store.PersonalAgent, input *store.CreateAgentSessionInput) error {
+	if input.InputID == "" {
+		return invalid("a budgeted helper needs its input id")
+	}
+	id := flow.Key("parun", agent.UserID, "input:"+input.InputID)
+	if existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, id); err == nil {
+		if existing.WorkspaceID != input.WorkspaceID || existing.InputID != input.InputID {
+			return store.ErrIdempotencyConflict
+		}
+		input.ExecutionBudget = ExecutionBudget(existing)
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	preference, err := personalagent.RunPreference(agent.Settings, "executor")
+	if err != nil {
+		return invalid("%v", err)
+	}
+	workspace, err := s.store.GetWorkspace(ctx, input.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	effort := input.ClaudeEffort
+	if input.Provider == "codex" {
+		effort = input.CodexReasoningEffort
+	}
+	configHash, err := flow.Fingerprint(struct {
+		Role, Input, Device, Workspace, Profile, Runtime, Model, Effort string
+	}{"executor", input.InputID, workspace.DeviceID, workspace.ID, input.ProfileID, input.Provider, input.Model, effort})
+	if err != nil {
+		return err
+	}
+	snapshot, err := s.store.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{
+		ID: id, InputID: input.InputID, UserID: agent.UserID, AssistantID: agent.ID, Role: "executor",
+		WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID,
+		Runtime: input.Provider, ProfileID: input.ProfileID, AgentID: input.AgentID, Model: input.Model, Effort: effort,
+		ConfigHash: configHash, TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes,
+		SelectionReason: ReasonInputBudget,
+	})
+	if err != nil {
+		return err
+	}
+	input.ExecutionBudget = ExecutionBudget(snapshot)
+	return nil
+}
+
 func (s *Resolver) pin(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID string, resolve func() (store.PersonalAgentRunSnapshot, error)) (store.PersonalAgentRunSnapshot, error) {
 	id := flow.Key("parun", agent.UserID, operationID)
 	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, id)

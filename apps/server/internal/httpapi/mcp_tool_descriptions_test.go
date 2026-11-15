@@ -43,7 +43,9 @@ func TestMCPGenericToolDescriptionsStateContractsWithoutWorkflowPolicy(t *testin
 	if len(seen) != len(targets) {
 		t.Fatalf("found %d of %d target tools", len(seen), len(targets))
 	}
-	if total > 5200 {
-		t.Errorf("target descriptions total %d characters, want at most 5200", total)
+	// The assistant's create_session contract (DEV-239: helper admission,
+	// executor defaults, dispatch_item) adds about 300 characters.
+	if total > 5500 {
+		t.Errorf("target descriptions total %d characters, want at most 5500", total)
 	}
 }

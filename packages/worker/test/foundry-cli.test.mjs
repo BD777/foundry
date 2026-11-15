@@ -444,11 +444,6 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       },
     ],
     [
-      ["workspace", "find", "the blog", "--limit", "2"],
-      "find_workspace",
-      { query: "the blog", limit: 2 },
-    ],
-    [
       ["workspace", "get", "ws_blog", "--include", "live,note"],
       "get_workspace",
       { workspaceId: "ws_blog", include: ["live", "note"] },

@@ -2,6 +2,16 @@
 
 状态：已部署 dev 并自验，待本人验收。已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：本人库的绑定/排除只读核对 + e2e-alice 注入连接器数据的 Skills 页）。未覆盖：本人自己的 Skills 页未登录查看；步骤 2 的新会话 `/olk` 菜单、步骤 3 的真实解绑未运行。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。
+
+- 本人库只读：ByteWork 助理主工作区 `ws_802a0130-d9ca-4cae-82ab-f84042b10e97` 与 `llm-gateway` `ws_a7edd4dc-6a80-4d53-b2e5-8367dcddf505` 都绑定 OpenLark `xacc_2f3e7a85…`；`workspace_skill_exclusions` 为空；OpenLark 套件含 `skill-olk`、`skill-open-lark`、`skill-setup-open-lark`。
+- e2e-alice 合成工作区（浏览器内注入 `connectorSkills`，未写服务器数据）：套件行「来自连接器 OpenLark · 已启用 3 / 3」、勾选框已勾且不可点；展开后三个 Skill 各带「来自连接器 OpenLark」。取消 `olk` 后显示「已启用 2 / 3」和「来自连接器 OpenLark，此处已关闭」；保存后库里出现 `workspace_skill_exclusions(ws_68dbe9ca…, skill-olk)`，刷新仍为关；重新勾选保存后排除行删除（回读 0 行）。截图 `.foundry/attachments/20261116/acceptance/dev225-01-connector-skills.png`。
+- 移除注入后页面不再出现「来自连接器」标签，演示了步骤 3 的投影依赖。未覆盖：本人页面未登录；新会话 `/olk` 菜单与真实移除绑定未运行（e2e-alice 没有 OpenLark 连接器）。
+
 ## 问题
 
 本人在 ccm-omh-integration 启用了 OpenLark（「Use byte-dev OpenLark（内网） in this workspace · Ready」），但这个工作区的 Skills 页上，OpenLark 的 Skill 没有显示为开，本人只好手动打开。早上 bytedcli 也是一样：连接器已授权，Skills 页上它的 Skill 却是关的。要求是：连接器授权给工作区或助理后，它的 Skill 默认就是开的。

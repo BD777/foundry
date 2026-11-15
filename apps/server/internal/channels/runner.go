@@ -107,6 +107,15 @@ type Ports struct {
 	// message, a template over {message.id}, {conversation.id} and
 	// {thread.id}; "" without one.
 	ContextHint func(ctx context.Context, channel store.MessageChannelRecord) string
+	// ReplyCommand is the source's command for replying to a message of a
+	// conversation kind, a template over {message.id}, {conversation.id}
+	// and {thread.id}; "" without one.
+	ReplyCommand func(ctx context.Context, channel store.MessageChannelRecord, kind string) string
+	// OwnWrites is the set of message ids the channel's source account
+	// created through Foundry's gateway (the assistant's own writes), which
+	// never start or continue a session. An error means the check could not
+	// run: the batch is not delivered and is retried.
+	OwnWrites func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error)
 	// Session reads an earlier session of a conversation; ok false when it
 	// is gone.
 	Session func(ctx context.Context, sessionID string) (state SessionState, ok bool)
@@ -291,11 +300,29 @@ func (r *Runner) pollOnce(ctx context.Context, channel store.MessageChannelRecor
 		}
 		return 0
 	}
-	records, held := r.decide(ctx, channel, batch.Envelopes, batch.Raw)
+	records, held, ended, err := r.decide(ctx, channel, batch.Envelopes, batch.Raw)
+	if err != nil {
+		// Without the own-write set a delivery could answer the assistant's
+		// own reply. Keep the cursor where it is and read the same batch
+		// again on the next tick.
+		log.Printf("message channel %s: own writes: %v", channel.ID, err)
+		setState(StateBackingOff, "could not check the assistant's own writes: "+err.Error())
+		return nextBackoff(backoff)
+	}
 	stored, err := r.ports.Store.RecordMessageChannelBatch(ctx, channel.ID, records, batch.Cursor)
 	if err != nil {
 		setState(StateBackingOff, "could not record the batch: "+err.Error())
 		return nextBackoff(backoff)
+	}
+	for _, key := range ended {
+		state, err := r.ports.Store.GetMessageChannelKey(ctx, channel.ID, key)
+		if err != nil {
+			continue
+		}
+		state.ChannelID, state.SessionKey, state.ResetPending = channel.ID, key, NewFollowUpEnd
+		if err := r.ports.Store.SaveMessageChannelKey(ctx, state); err != nil && ctx.Err() == nil {
+			log.Printf("message channel %s: end follow-ups of %s: %v", channel.ID, key, err)
+		}
 	}
 	runtime.Cursor = batch.Cursor
 	if len(batch.Envelopes) > 0 {
@@ -339,13 +366,27 @@ func nextBackoff(backoff *time.Duration) time.Duration {
 const OpNew = "new"
 
 // decide filters a batch and applies the channel's limits: records to
-// store, and how many matched messages were held.
-func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord, envelopes []store.MessageEnvelope, raw []string) ([]store.MessageChannelDeliveryRecord, int) {
+// store, how many matched messages were held, and the conversations whose
+// follow-ups an end command ended.
+func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord, envelopes []store.MessageEnvelope, raw []string) ([]store.MessageChannelDeliveryRecord, int, []string, error) {
 	if len(envelopes) == 0 {
-		return nil, 0
+		return nil, 0, nil, nil
 	}
 	now := r.ports.Now().UTC()
 	stages := []Stage{Rules(channel.Filters.Rules)}
+	followUps := FollowUpRule(channel.MessageChannel)
+	index := newFollowUpIndex()
+	if followUps.Enabled {
+		index = r.followUps(ctx, channel.MessageChannel)
+	}
+	var ownWrites map[string]bool
+	if r.ports.OwnWrites != nil {
+		var err error
+		if ownWrites, err = r.ports.OwnWrites(ctx, channel); err != nil {
+			return nil, 0, nil, err
+		}
+	}
+	var ended []string
 	hour, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-time.Hour).Format(time.RFC3339Nano))
 	day, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-24*time.Hour).Format(time.RFC3339Nano))
 	inHour, inDay := hour.Matched-hour.Held, day.Matched-day.Held
@@ -363,7 +404,29 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 		record.ChannelID = channel.ID
 		record.CreatedAt = now.Add(time.Duration(i) * time.Microsecond).Format(time.RFC3339Nano)
 		record.Envelope = envelope
+		if envelope.Sender.IsOwnWrite || ownWrites[envelope.MessageID] || ownWrites[envelope.ID] {
+			record.Status, record.Reason = store.MessageDeliveryDropped, ReasonOwnWrite
+			record.Envelope.Text, record.Envelope.TextTruncated = "", false
+			records = append(records, record)
+			continue
+		}
 		decision := Decide(stages, envelope)
+		if followUps.Enabled {
+			if key, ok := index.followUpEnd(channel.MessageChannel, followUps, envelope); ok {
+				record.Status, record.Rule, record.Reason = store.MessageDeliveryDropped, "", ReasonFollowUpEnd
+				record.Envelope.Text, record.Envelope.TextTruncated = "", false
+				ended = append(ended, key)
+				index.end(key)
+				records = append(records, record)
+				continue
+			}
+		}
+		if !decision.Keep && followUps.Enabled {
+			if fact, ok := index.followUp(channel.MessageChannel, followUps, envelope); ok {
+				decision = Decision{Keep: true, Rule: RuleFollowUp}
+				record.FollowUp = fact
+			}
+		}
 		if decision.Keep && i < len(raw) && len(raw[i]) <= 64*1024 {
 			record.RawJSON = raw[i]
 		}
@@ -381,10 +444,11 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 			record.Status, record.Rule = store.MessageDeliveryQueued, decision.Rule
 			inHour++
 			inDay++
+			index.add(channel.MessageChannel, envelope, record.CreatedAt)
 		}
 		records = append(records, record)
 	}
-	return records, held
+	return records, held, ended, nil
 }
 
 func limitReached(limit, count int) bool { return limit > 0 && count >= limit }

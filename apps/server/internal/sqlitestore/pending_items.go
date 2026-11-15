@@ -160,9 +160,6 @@ func (s *Store) RecordPendingItem(ctx context.Context, item store.PendingItem) (
 			item.CreatedAt, item.UpdatedAt, item.ResolvedAt = now, now, ""
 			item.Handler = store.PendingHandledBy(item)
 			item.Outcome = ""
-			if item.Handler == store.PendingHandlerAssistant && item.DeadlineAt == "" {
-				item.DeadlineAt = formatTime(nowTime.Add(store.PendingAssistantDeadline))
-			}
 			result, changed = item, true
 			return tx.savePendingItem(ctx, item)
 		}
@@ -342,9 +339,6 @@ func (s *Store) MergePendingItems(ctx context.Context, target store.PendingItem,
 		result.ResolvedAt, result.Outcome = "", ""
 		result.ResolutionReason, result.ResolutionDetail = "", ""
 		result.Handler = store.PendingHandledBy(result)
-		if result.Handler == store.PendingHandlerAssistant && result.DeadlineAt == "" {
-			result.DeadlineAt = formatTime(now.Add(store.PendingAssistantDeadline))
-		}
 		if err := tx.savePendingItem(ctx, result); err != nil {
 			return err
 		}
@@ -567,9 +561,6 @@ func (s *Store) ResolvePendingItem(ctx context.Context, userID, id, state, outco
 			item.ResolutionReason, item.ResolutionDetail = "", ""
 			item.Outcome, item.AcknowledgedAt, item.NotifiedAt = "", "", ""
 			item.DeadlineAt = ""
-			if store.PendingHandledBy(item) == store.PendingHandlerAssistant {
-				item.DeadlineAt = formatTime(time.Now().UTC().Add(store.PendingAssistantDeadline))
-			}
 		} else {
 			item.Outcome = outcome
 			logged = item
@@ -628,36 +619,6 @@ func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, 
 		logPendingOutcome(logged)
 	}
 	return result, err
-}
-
-// AcknowledgePendingItems records the assistant reading its items through
-// needs_you. Only its own open assistant-handled items change.
-func (s *Store) AcknowledgePendingItems(ctx context.Context, userID string, ids []string, at string) (int, error) {
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	acknowledged := 0
-	err := s.withTx(ctx, func(tx *Store) error {
-		for _, id := range ids {
-			item, err := scanPendingItem(tx.conn().QueryRowContext(ctx, `SELECT `+pendingItemColumns+` FROM pending_items WHERE id = ? AND user_id = ?`, id, userID))
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerAssistant || item.AcknowledgedAt != "" {
-				continue
-			}
-			item.AcknowledgedAt, item.UpdatedAt = at, at
-			if err := tx.savePendingItem(ctx, item); err != nil {
-				return err
-			}
-			acknowledged++
-		}
-		return nil
-	})
-	return acknowledged, err
 }
 
 func (s *Store) MarkPendingItemNotified(ctx context.Context, userID, id, at string) error {

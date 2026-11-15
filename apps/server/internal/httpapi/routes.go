@@ -625,6 +625,8 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/personal-agent/channels/{channel}", s.handleUpdateMessageChannel, personOnly()),
 		fn("DELETE /api/personal-agent/channels/{channel}", s.handleDeleteMessageChannel, personOnly()),
 		fn("GET /api/personal-agent/channels/{channel}/deliveries", s.handleMessageChannelDeliveries, personOnly()),
+		fn("GET /api/personal-agent/channels/{channel}/conversations", s.handleMessageChannelConversations, personOnly()),
+		fn("GET /api/personal-agent/sessions/{session}/channel", s.handleSessionChannel, personOnly()),
 		fn("POST /api/personal-agent/channels/{channel}/release", s.handleReleaseMessageChannel, personOnly()),
 		fn("POST /api/personal-agent/channels/{channel}/new-session", s.handleMessageChannelNewSession, personOnly()),
 		// The files of the assistant's workspaces (assistant_files.go).

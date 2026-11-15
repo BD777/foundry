@@ -115,6 +115,11 @@ type Devices interface {
 	// root; none while it is offline.
 	ManagedRootFolders(ctx context.Context, deviceID string) []string
 	ReadWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) (store.WorkspaceFileRead, error)
+	// WriteWorkspaceFile replaces one text file on the workspace's device;
+	// DeleteWorkspaceFile removes one. They write Foundry's own files in the
+	// assistant's home, never a project.
+	WriteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path, content string) error
+	DeleteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) error
 	ListWorkspaceTree(ctx context.Context, workspace store.WorkspaceProjection, path string) ([]store.WorkspaceTreeEntry, error)
 	// WorkspaceGit is the git state the workspace's device inspects, when
 	// it answers.
@@ -243,6 +248,13 @@ type Service struct {
 	// deviceWaits keeps what the assistant could not do while a computer
 	// was offline, for when it is back (device_back.go).
 	deviceWaits deviceWaits
+	// projectFileWrites serializes each assistant's foundry files (the index
+	// and project summaries) so a stale snapshot cannot prune a newer write.
+	projectFileWrites keyedMutex
+	// Upkeep sweeps and announcements are cheap but not per-drain; these
+	// throttle them (maintenance.go).
+	lastUpkeepSweep  time.Time
+	lastUpkeepNotice time.Time
 }
 
 // New is the assistant over st, telling events what it changes of sessions.

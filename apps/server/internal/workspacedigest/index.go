@@ -21,10 +21,11 @@ const (
 // Index is the L0 index the assistant starts each conversation with: one
 // line per device the person owns, then one per project, most recently
 // active first, at most personalagent.L0IndexMaxEntries projects and
-// personalagent.L0IndexMaxTokens tokens (EstimateTokens) in all; what does
-// not fit is counted, for find_workspace. Archived projects and the
-// assistant's own workspace are left out.
+// personalagent.L0IndexMaxTokens tokens (EstimateTokens) in all; each line
+// names the project's summary file, and what does not fit is counted.
+// Archived projects and the assistant's own workspace are left out.
 func Index(digests []store.WorkspaceDigest, devices []store.DeviceDigest, now time.Time) string {
+	slugs := ProjectSlugs(digests)
 	projects := []store.WorkspaceDigest{}
 	for _, digest := range digests {
 		if !digest.Archived && digest.Kind != store.WorkspaceKindPersonalAgent {
@@ -63,7 +64,7 @@ func Index(digests []store.WorkspaceDigest, devices []store.DeviceDigest, now ti
 	add(fmt.Sprintf("Projects (%d), most recently active first:", len(projects)))
 	listed := 0
 	for _, project := range projects {
-		if listed == personalagent.L0IndexMaxEntries || !add(projectLine(project, now)) {
+		if listed == personalagent.L0IndexMaxEntries || !add(projectLine(project, slugs[project.WorkspaceID], now)) {
 			break
 		}
 		listed++
@@ -75,7 +76,7 @@ func Index(digests []store.WorkspaceDigest, devices []store.DeviceDigest, now ti
 }
 
 func moreLine(count int) string {
-	return fmt.Sprintf("…and %d more projects: use find_workspace to look them up.", count)
+	return fmt.Sprintf("…and %d more projects: their summaries are in %s/.", count, ProjectFilesDir)
 }
 
 func deviceLine(device store.DeviceDigest) string {
@@ -94,7 +95,7 @@ func deviceLine(device store.DeviceDigest) string {
 	return strings.Join(parts, " · ")
 }
 
-func projectLine(digest store.WorkspaceDigest, now time.Time) string {
+func projectLine(digest store.WorkspaceDigest, slug string, now time.Time) string {
 	parts := []string{fmt.Sprintf("- 『%s』 (%s)", textcut.Excerpt(digest.Name, indexNameRunes), digest.WorkspaceID)}
 	where := textcut.Excerpt(digest.DeviceLabel, indexLabelRunes)
 	switch {
@@ -118,6 +119,9 @@ func projectLine(digest store.WorkspaceDigest, now time.Time) string {
 	line := strings.Join(parts, " · ")
 	if about := L0Line(digest); about != "" {
 		line += " — " + about
+	}
+	if slug != "" {
+		line += " · " + ProjectFilesDir + "/" + slug + ".md"
 	}
 	return line
 }
@@ -155,12 +159,26 @@ func firstSentence(text string) string {
 	return text
 }
 
+// Stale reports a digest to check live before acting on it: its summary
+// predates what it summarizes, or nothing about it changed in a week.
+func Stale(digest store.WorkspaceDigest, now time.Time) bool {
+	if digest.Dirty {
+		return true
+	}
+	compiled, ok := parseTime(digest.CompiledAt)
+	return !ok || now.Sub(compiled) > personalagent.DigestStaleAfter
+}
+
 func dayOf(value string) string {
 	at, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
 	return at.UTC().Format("2006-01-02")
+}
+
+func isCJK(r rune) bool {
+	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
 }
 
 // EstimateTokens bounds how many model tokens text takes, erring high: a

@@ -29,15 +29,20 @@ const {
 } = await import("../src/features/personal-agent/channel-model.ts");
 const {
   channelWorkspaceChoices,
-  groupDeliveries,
+
   idleLabelParts,
-  newSessionReason,
+
   revisionSource,
 } = await import("../src/features/personal-agent/channel-session-model.ts");
 const { recentAssistantSessions } =
   await import("../src/features/personal-agent/assistant-model.ts");
 
-const full = { conversationKinds: [], mentionsMe: true, fromSelf: true };
+const full = {
+  conversationKinds: [],
+  mentionsMe: true,
+  fromSelf: true,
+  threads: true,
+};
 const source = {
   kind: "chat",
   accountId: "acct_chat",
@@ -477,6 +482,11 @@ test("the session rule loads, validates and goes to the server", () => {
   const draft = draftFromChannel(channel, [source]);
   assert.equal(draft.sessionKey, "conversation");
   assert.deepEqual(draft.session, { idleMinutes: 240, resetCommands: [] });
+  assert.deepEqual(draft.followUps, {
+    enabled: true,
+    from: "same-sender",
+    endCommands: ["/end"],
+  });
   draft.session = { idleMinutes: 45, resetCommands: ["/new", "two words"] };
   assert.deepEqual(
     channelProblems(draft, full).map((problem) => problem.kind),
@@ -493,14 +503,34 @@ test("the session rule loads, validates and goes to the server", () => {
     ["resetCommands"],
   );
   draft.session.resetCommands = ["/new", "/NEW"];
+  draft.followUps.endCommands = ["a", "b", "c", "d", "e", "f"];
+  assert.deepEqual(
+    channelProblems(draft, full).map((problem) => problem.kind),
+    ["endCommands"],
+  );
+  draft.followUps = {
+    enabled: true,
+    from: "anyone",
+    endCommands: [" /end", "/END"],
+  };
   const input = channelInput(draft, [source], channel);
   assert.deepEqual(input.session, { idleMinutes: 0, resetCommands: ["/new"] });
+  assert.deepEqual(input.followUps, {
+    enabled: true,
+    from: "anyone",
+    endCommands: ["/end"],
+  });
   // Editing keeps the workspace and the old guide text.
   assert.equal(input.workspaceId, "ws_chan");
   assert.equal(input.guide, "old guide");
   assert.equal(input.sessionKey, "conversation");
   const toggled = inputFromChannel(channel, { enabled: false });
   assert.deepEqual(toggled.session, { idleMinutes: 240, resetCommands: [] });
+  assert.deepEqual(toggled.followUps, {
+    enabled: true,
+    from: "same-sender",
+    endCommands: ["/end"],
+  });
   assert.equal(toggled.workspaceId, "ws_chan");
 
   assert.deepEqual(idleLabelParts(0), { unit: "never", count: 0 });
@@ -551,86 +581,7 @@ test("a new channel creates its workspace or names one on the assistant's comput
   assert.deepEqual(channelWorkspaceChoices([ws("ws_a")], undefined, ""), []);
 });
 
-test("deliveries group by session, newest first", () => {
-  const d = (id, at, extra = {}) => ({
-    id,
-    channelId: "mc_1",
-    status: "done",
-    createdAt: at,
-    envelope: {
-      id,
-      kind: "message",
-      op: "created",
-      occurredAt: at,
-      conversation: { id: "oc_1", kind: "group", name: "Ops" },
-      sender: { id: "u_1" },
-      mentionsMe: false,
-      text: id,
-    },
-    ...extra,
-  });
-  const groups = groupDeliveries([
-    d("m1", "2026-11-13T10:00:00Z", {
-      sessionId: "s1",
-      sessionKey: "oc_1",
-      segment: 0,
-      sessionNew: true,
-      newReason: "first",
-    }),
-    d("m5", "2026-11-13T14:00:00Z", {
-      status: "queued",
-      sessionKey: "oc_1",
-      segment: 1,
-    }),
-    d("m2", "2026-11-13T10:05:00Z", {
-      sessionId: "s1",
-      sessionKey: "oc_1",
-      segment: 0,
-    }),
-    d("m3", "2026-11-13T13:00:00Z", {
-      sessionId: "s2",
-      sessionKey: "oc_1",
-      segment: 1,
-      sessionNew: true,
-      newReason: "idle",
-    }),
-    d("m4", "2026-11-13T13:30:00Z", { status: "dropped" }),
-    d("m6", "2026-11-13T12:00:00Z", {
-      status: "queued",
-      sessionKey: "oc_2",
-      segment: 3,
-    }),
-    d("m7", "2026-11-13T11:00:00Z", {
-      sessionId: "s3",
-      sessionKey: "oc_2",
-      segment: 2,
-      sessionNew: true,
-      newReason: "something new",
-    }),
-  ]);
-  assert.deepEqual(
-    groups.map((group) => [
-      group.key,
-      group.deliveries.map((delivery) => delivery.id),
-      group.started,
-      group.newReason,
-      group.latest,
-    ]),
-    [
-      ["session:s2", ["m5", "m3"], true, "idle", true],
-      ["message:m4", ["m4"], false, undefined, false],
-      ["segment:oc_2#3", ["m6"], false, undefined, true],
-      ["session:s3", ["m7"], true, undefined, false],
-      ["session:s1", ["m2", "m1"], true, "first", false],
-    ],
-  );
-});
-
 test("session reasons and revision sources read as known words", () => {
-  assert.equal(newSessionReason("button"), "button");
-  assert.equal(newSessionReason("restarted"), "restarted");
-  assert.equal(newSessionReason("other"), undefined);
-  assert.equal(newSessionReason(undefined), undefined);
   assert.equal(revisionSource("seed"), "seed");
   assert.equal(revisionSource("web"), "web");
   assert.equal(revisionSource("revert"), "revert");

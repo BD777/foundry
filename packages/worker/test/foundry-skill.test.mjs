@@ -22,8 +22,10 @@ const tools = new Map(
   ).map((tool) => [tool.name, tool]),
 );
 
-// Words in code that look like tool names but name something else.
-const notTools = new Set(["run_in_background"]);
+// Words in code that look like tool names but name something else:
+// run_in_background is a Claude turn option, turn_end a send_message delivery
+// and session event label (DEV-240).
+const notTools = new Set(["run_in_background", "turn_end"]);
 
 function markdownFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

@@ -63,27 +63,18 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 	if len(jobs) != 1 {
 		t.Fatal("inferred fact written to authority")
 	}
-	for _, tool := range []string{"create_session", "send_message"} {
-		text, failed = f.tool(t, token, tool, map[string]any{})
-		if !failed || !strings.Contains(text, "dispatch_item") {
-			t.Fatalf("assistant bypassed dispatch ledger through %s: %s", tool, text)
-		}
+	// The assistant starts helpers through the generic session mechanism
+	// (create_session) within its scope; an item's steps still keep their
+	// durable operation through dispatch_item.
+	if text, failed = f.tool(t, token, "create_session", map[string]any{"workspaceId": "ws_alice", "prompt": "a helper for this"}); failed {
+		t.Fatalf("assistant create_session in its scope: %s", text)
 	}
-	// The REST route its token also reaches refuses it the same way.
 	request := httptest.NewRequest(http.MethodPost, "/api/agent-sessions", strings.NewReader(`{"workspaceId":"ws_alice","provider":"claude","prompt":"do it myself"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token)
 	response := httptest.NewRecorder()
 	f.handler.ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "dispatch_item") {
-		t.Fatalf("assistant bypassed dispatch ledger through POST /api/agent-sessions: %d %s", response.Code, response.Body.String())
-	}
-	request = httptest.NewRequest(http.MethodPost, "/api/agent-sessions/"+session.ID+"/messages", strings.NewReader(`{"prompt":"do it myself"}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+token)
-	response = httptest.NewRecorder()
-	f.handler.ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "dispatch_item") {
-		t.Fatalf("assistant bypassed dispatch ledger through POST messages: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusCreated {
+		t.Fatalf("assistant starts a helper through POST /api/agent-sessions: %d %s", response.Code, response.Body.String())
 	}
 }

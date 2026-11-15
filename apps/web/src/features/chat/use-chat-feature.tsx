@@ -655,6 +655,7 @@ export function useChatFeature({
           ) : undefined
         }
         readOnlyReason={workspaceDenial(workspace, "member")}
+        channelWorkspace={Boolean(workspace?.channelId)}
         selectedChatId={selectedChatId}
         pendingCounts={pendingCounts}
         threadAttention={threadAttention}
@@ -692,7 +693,7 @@ export function useChatFeature({
           selectedThread?.title ||
           selectedChat?.title ||
           notices.linked?.title ||
-          i18n.t("chat:list.newChat")
+          (workspace?.channelId ? workspace.name : i18n.t("chat:list.newChat"))
         }
         accountUsage={accountUsageTarget(
           profiles.find(

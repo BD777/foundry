@@ -316,11 +316,6 @@ export const foundryCommands: Record<
   workspace: {
     "refresh-skills": { tool: "refresh_workspace_skills", flags: {} },
     list: { tool: "list_workspaces", flags: {} },
-    find: {
-      tool: "find_workspace",
-      positional: "query",
-      flags: { "--limit": flag("limit", "number") },
-    },
     get: {
       tool: "get_workspace",
       positional: "workspaceId",

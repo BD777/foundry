@@ -423,6 +423,11 @@ func (s *Store) DeleteAssistant(ctx context.Context, assistantID string) error {
 				}
 			}
 		}
+		// Announced upkeep state is the assistant's (DEV-238); it has no
+		// user_id column, so it is not in assistantRecordTables.
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM pa_upkeep_notices WHERE assistant_id = ?`, assistantID); err != nil {
+			return fmt.Errorf("delete assistant upkeep notices: %w", err)
+		}
 		if agent.PermissionPackageID != "" {
 			if _, err := tx.conn().ExecContext(ctx, `DELETE FROM permission_packages WHERE id = ? AND owner_user_id = ?`, agent.PermissionPackageID, agent.UserID); err != nil {
 				return fmt.Errorf("delete assistant package: %w", err)

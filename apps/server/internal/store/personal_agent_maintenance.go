@@ -9,22 +9,25 @@ type PersonalAgentMaintenance struct {
 	ID     string `json:"id"`
 	UserID string `json:"-"`
 	// AssistantID is the assistant the record belongs to (DEV-191).
-	AssistantID string             `json:"-"`
-	Role        string             `json:"role"`
-	WorkspaceID string             `json:"workspaceId"`
-	VaultID     string             `json:"vaultId,omitempty"`
-	EventKey    string             `json:"eventKey"`
-	Status      string             `json:"status"`
-	Reason      string             `json:"reason,omitempty"`
-	Revision    int64              `json:"revision"`
-	Attempt     int                `json:"attempt"`
-	SessionID   string             `json:"sessionId,omitempty"`
-	InputID     string             `json:"inputId,omitempty"`
-	SnapshotID  string             `json:"snapshotId,omitempty"`
-	DueAt       string             `json:"dueAt"`
-	CreatedAt   string             `json:"createdAt"`
-	UpdatedAt   string             `json:"updatedAt"`
-	Result      *MaintenanceResult `json:"result,omitempty"`
+	AssistantID string `json:"-"`
+	Role        string `json:"role"`
+	WorkspaceID string `json:"workspaceId"`
+	VaultID     string `json:"vaultId,omitempty"`
+	EventKey    string `json:"eventKey"`
+	Status      string `json:"status"`
+	Reason      string `json:"reason,omitempty"`
+	Revision    int64  `json:"revision"`
+	Attempt     int    `json:"attempt"`
+	SessionID   string `json:"sessionId,omitempty"`
+	InputID     string `json:"inputId,omitempty"`
+	SnapshotID  string `json:"snapshotId,omitempty"`
+	DueAt       string `json:"dueAt"`
+	// WaitingSince is when the job last entered waiting (empty otherwise),
+	// so a repeatedly deferred job still shows how long it has waited.
+	WaitingSince string             `json:"waitingSince,omitempty"`
+	CreatedAt    string             `json:"createdAt"`
+	UpdatedAt    string             `json:"updatedAt"`
+	Result       *MaintenanceResult `json:"result,omitempty"`
 }
 type MaintenanceFinding struct {
 	Kind       string   `json:"kind"`
@@ -47,8 +50,15 @@ type PersonalAgentMaintenanceStore interface {
 	EnqueuePersonalAgentMaintenance(context.Context, PersonalAgentMaintenance) (PersonalAgentMaintenance, error)
 	GetPersonalAgentMaintenance(context.Context, string, string) (PersonalAgentMaintenance, error)
 	ListPersonalAgentMaintenance(context.Context, string) ([]PersonalAgentMaintenance, error)
+	// ListPersonalAgentMaintenanceForUser lists the person's upkeep jobs
+	// across assistants (their default is the owner of global upkeep).
+	ListPersonalAgentMaintenanceForUser(context.Context, string) ([]PersonalAgentMaintenance, error)
 	DuePersonalAgentMaintenance(context.Context, string) ([]PersonalAgentMaintenance, error)
 	SavePersonalAgentMaintenance(context.Context, PersonalAgentMaintenance) (PersonalAgentMaintenance, error)
+	// UpkeepNoticeSignature is the last upkeep state announced to an
+	// assistant ("" when none).
+	UpkeepNoticeSignature(context.Context, string) (string, error)
+	SaveUpkeepNoticeSignature(context.Context, string, string, string) error
 }
 
 type ContextPatchCommand struct {

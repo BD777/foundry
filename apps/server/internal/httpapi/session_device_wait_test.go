@@ -188,10 +188,10 @@ func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &visible) != nil || len(visible) != 1 || visible[0].Reason != "device_offline" {
 		t.Fatalf("visible waiting work: %d %s", recorder.Code, recorder.Body.String())
 	}
-	for _, tool := range []string{"create_session", "send_message"} {
-		text, failed = f.tool(t, f.token, tool, map[string]any{"workspaceId": "ws_alice", "sessionId": f.conversation.ID, "prompt": "bypass"})
-		if !failed || !strings.Contains(text, "dispatch_item") {
-			t.Fatalf("legacy bypass %s: %s", tool, text)
-		}
+	// The same helper can start directly through the generic create_session
+	// path; its session waits for the offline computer like any other.
+	text, failed = f.tool(t, f.token, "create_session", map[string]any{"workspaceId": "ws_alice", "prompt": "tidy directly"})
+	if failed || !strings.Contains(text, "waitingForDevice") {
+		t.Fatalf("assistant create_session for the offline computer: %s", text)
 	}
 }

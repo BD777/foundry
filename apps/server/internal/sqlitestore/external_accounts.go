@@ -91,6 +91,7 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_external_account_events_account ON external_account_events (account_id, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_external_account_events_session ON external_account_events (session_ref, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_external_account_events_kind ON external_account_events (account_id, kind, created_at)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
@@ -595,6 +596,27 @@ func (s *Store) ListExternalAccountEvents(ctx context.Context, accountID string,
 		return nil, fmt.Errorf("list external account events: %w", err)
 	}
 	defer rows.Close()
+	return scanExternalAccountEvents(rows)
+}
+
+// ListExternalAccountEventsByKind lists an account's events of one kind
+// since the given time, newest first. The (account_id, kind, created_at)
+// index keeps it off the account's whole audit trail.
+func (s *Store) ListExternalAccountEventsByKind(ctx context.Context, accountID, kind, since string, limit int) ([]store.ExternalAccountEvent, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 5000
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT id, account_id, kind, detail, session_ref, device_ref, actor_id, created_at
+		FROM external_account_events WHERE account_id = ? AND kind = ? AND created_at >= ? ORDER BY id DESC LIMIT ?`,
+		accountID, kind, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list external account events of kind %s: %w", kind, err)
+	}
+	defer rows.Close()
+	return scanExternalAccountEvents(rows)
+}
+
+func scanExternalAccountEvents(rows *sql.Rows) ([]store.ExternalAccountEvent, error) {
 	events := []store.ExternalAccountEvent{}
 	for rows.Next() {
 		var event store.ExternalAccountEvent

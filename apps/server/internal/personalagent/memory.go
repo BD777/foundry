@@ -39,14 +39,76 @@ func MemoryOrigin(inferred, grounded bool) string {
 	}
 }
 
+// channelNoticePrefix starts a message channel's notice (channels.Notice).
+// It carries other people's messages too; only the blocks marked
+// "sender is the person: yes" are the person's words.
+const channelNoticePrefix = "[Message channel:"
+
 // PersonWords is an input's text when the person wrote it: a server
-// notice and a timer's prompt (the assistant's own) are not theirs. What
-// the person attached is never in the text, only its marker.
+// notice and a timer's prompt (the assistant's own) are not theirs. A
+// message channel's notice yields only the messages whose sender is the
+// person. What the person attached is never in the text, only its marker.
 func PersonWords(input store.SessionInput) (string, bool) {
 	if input.SentBySessionID != "" || input.TimerFire != nil || IsNotice(input.Prompt) || strings.TrimSpace(input.Prompt) == "" {
 		return "", false
 	}
+	if strings.HasPrefix(strings.TrimSpace(input.Prompt), channelNoticePrefix) {
+		return channelPersonWords(input.Prompt)
+	}
 	return input.Prompt, true
+}
+
+// channelPersonWords keeps the text of the notice's messages whose sender
+// is the person, and nothing else. A notice it cannot read yields none:
+// channel text is other people's until the notice says otherwise.
+func channelPersonWords(prompt string) (string, bool) {
+	var kept []string
+	var block []string
+	self, inText := false, false
+	flush := func() {
+		if self {
+			if text := strings.TrimSpace(strings.Join(block, "\n")); text != "" {
+				kept = append(kept, text)
+			}
+		}
+		block, self, inText = nil, false, false
+	}
+	for _, line := range strings.Split(prompt, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "message ") && strings.HasSuffix(trimmed, ":") {
+			flush()
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[End of message channel]") {
+			break
+		}
+		// A key sits at two spaces; a text block's lines are indented four.
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") {
+			key, value, _ := strings.Cut(strings.TrimSpace(line), ":")
+			inText = false
+			switch strings.TrimSpace(key) {
+			case "sender is the person":
+				self = strings.TrimSpace(value) == "yes"
+			case "text", "text without trigger", "trigger":
+				if value = strings.TrimSpace(value); value == "|" {
+					inText = true
+				} else if value != "" {
+					block = append(block, value)
+				}
+			}
+			continue
+		}
+		if inText && strings.HasPrefix(line, "    ") {
+			block = append(block, line[4:])
+			continue
+		}
+		inText = false
+	}
+	flush()
+	if len(kept) == 0 {
+		return "", false
+	}
+	return strings.Join(kept, "\n"), true
 }
 
 // QuoteMinChars is the fewest letters or digits a quote has.

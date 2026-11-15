@@ -1175,12 +1175,13 @@
   },
   {
     "name": "create_session",
-    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. Returns the session id and status.",
+    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, dispatch_item ties the step to that item. Returns the session id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 8 sessions it started queued, running or blocked at once.",
       "Sessions that start sessions nest at most 4 levels below the first one.",
       "Needs Member in the target workspace; the session runs on that workspace's device, under its logins.",
+      "In the assistant's conversation, only workspaces its permission package includes as a Member can start a helper, and its work counts against the person's limits.",
       "At most 10 attachments, each at most 25 MB, from the caller's own workspace folder.",
       "A verifier runs in the read-only verification sandbox: the workspace is read-only at the operating-system level, it writes only to its temporary directory, and its Foundry tools only read."
     ],
@@ -1679,35 +1680,6 @@
     }
   },
   {
-    "name": "find_workspace",
-    "description": "Find the projects (workspaces) a request belongs in, best first, matched on name, summary, routing notes, your note cards/<workspaceId>.md and recent activity. Each candidate has why it matched, a score (only order and gaps mean anything) and stale (its summary may be out of date; get_workspace reads the current one); close says the top two are a tie. query is the request in the person's words. Archived projects are left out.",
-    "summary": "Ranks the person's projects for a request, with why each matched and how fresh its summary is.",
-    "limits": [
-      "At most 5 candidates per call.",
-      "Only projects the person can read; archived ones are left out.",
-      "Only the person's assistant (a personal_agent session) has it."
-    ],
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "The request, in the person's own words."
-        },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5,
-          "description": "How many candidates, at most 5 (default 3)."
-        }
-      },
-      "required": ["query"]
-    },
-    "annotations": {
-      "readOnlyHint": true
-    }
-  },
-  {
     "name": "get_workspace",
     "description": "Read one project: its summary (purpose, routing notes, latest sessions, open Issues, skills, connectors, Git branch) and accounts (which can run a session there and why not, defaultProfileId, defaultAgent); include adds live state (device online, running sessions, Git), instructions (the start of AGENTS.md or README) and your note.",
     "summary": "Reads one project's summary, live state, instructions and the assistant's routing note.",
@@ -1722,7 +1694,7 @@
       "properties": {
         "workspaceId": {
           "type": "string",
-          "description": "The project's id (ws_…), from find_workspace or list_workspaces."
+          "description": "The project's id (ws_…), from the project index, its summary file or list_workspaces."
         },
         "include": {
           "type": "array",
@@ -2140,7 +2112,7 @@
   },
   {
     "name": "dispatch_item",
-    "description": "Persist one authorized execution step of a saved item: needs an execute plan with matching workspace and intentRevision. The same stepKey with the exact same request answers the same operation (safe to retry). Answers a durable operation, not completion, and helper: the account, model and effort a new helper runs on, or why it cannot run on that computer yet (unavailable; the step waits and starts by itself). executionChoice is default or an alternative from get_execution_default; values outside the configured default and alternatives are refused. sessionId reuses the item's existing session and keeps its model.",
+    "description": "Tie one authorized execution step to a saved item on the person's list: needs an execute plan with matching workspace and intentRevision. A helper that is not part of an item starts with create_session and continues with send_message. The same stepKey with the exact same request answers the same operation (safe to retry). Answers a durable operation, not completion, and helper: the account, model and effort a new helper runs on, or why it cannot run on that computer yet (unavailable; the step waits and starts by itself). executionChoice is default or an alternative from get_execution_default; values outside the configured default and alternatives are refused. sessionId reuses the item's existing session and keeps its model.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2184,7 +2156,7 @@
       ],
       "additionalProperties": false
     },
-    "summary": "Records one idempotent execution step for an authorized saved item.",
+    "summary": "Ties one idempotent execution step to an authorized saved item.",
     "limits": [
       "Requires the current execute intent and workspace.",
       "An unsettled operation must be reconciled before another step is dispatched."
@@ -2400,7 +2372,7 @@
   },
   {
     "name": "needs_you",
-    "description": "The person's one list of what waits for them (questions, approvals, failed turns, steps only they can take, stuck helpers), each item handled by you or by them. Each of your items has a deadline 10 minutes after it opens; one you have not listed or handled by then goes to the person (reason assistant_timeout). op list: the open items, yours (handler assistant, with their deadline; listing acknowledges them, which stops that escalation) and the person's (also from chats they started themselves). op hand_over: give one of your items to the person with note, one sentence in their language saying what is needed; with sessionId and no open item (a helper asked in its answer, without a question card) it adds one. Their answer in the list reaches the helper. op resolve: close one of your items. Answering a helper with send_message, or a new dispatch to it, closes its items by itself.",
+    "description": "The person's one list of what waits for them (questions, approvals, failed turns, steps only they can take, stuck helpers), each item handled by you or by them. Your items stay yours until you decide. op list: the open items, yours (handler assistant) and the person's (also from chats they started themselves). op hand_over: give one of your items to the person with note, one sentence in their language saying what is needed; with sessionId and no open item (a helper asked in its answer, without a question card) it adds one. Their answer in the list reaches the helper. op resolve: close one of your items. Answering a helper with send_message, or a new dispatch to it, closes its items by itself.",
     "summary": "Lists, hands over and closes the items in the person's \"needs you\" list.",
     "limits": [
       "Only the items of the assistant's own person; hand_over and resolve only items of its own helpers.",

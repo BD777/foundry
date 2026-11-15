@@ -121,6 +121,11 @@ type Service struct {
 	// ExtensionDevices lists the owner's devices a device-network instance of
 	// the connector may be probed from, with their display names.
 	ExtensionDevices func(ctx context.Context, ownerUserID, kind string) ([]ExtensionDeviceCandidate, error)
+	// ExtensionDescriptor reads the connector descriptor installed now on the
+	// owner's devices (the newest extension version). ExtensionData re-derives
+	// an instance's descriptor-derived metadata from it when the installed
+	// version changed; nil leaves every instance on its stored snapshot.
+	ExtensionDescriptor func(ctx context.Context, ownerUserID, kind string) (store.ConnectorDescriptor, error)
 
 	authorizationEpochs sync.Map
 	loginsMu            sync.Mutex

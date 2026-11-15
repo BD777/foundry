@@ -6,18 +6,20 @@
 // sources (Sources) and runs the summary sessions; the rows are kept
 // through store.WorkspaceDigestStore.
 //
-// The API the assistant's tools call (find_workspace, get_workspace) and the
-// L0 snapshot uses; every call first brings the person's digests up to date
-// with their sources, so a rename or a lost membership shows at once:
+// The API the assistant's tools and the run's files use; every call first
+// brings the person's digests up to date with their sources, so a rename or
+// a lost membership shows at once:
 //
 //	svc := workspacedigest.New(st, sources)       // cheap; build per call
-//	svc.Find(ctx, userID, query, FindOptions{})   // []store.WorkspaceCandidate, best first, with reasons
 //	svc.Digest(ctx, userID, workspaceID)          // store.WorkspaceDigest; store.ErrNotFound when unreadable
 //	svc.Index(ctx, userID)                        // the L0 project and device index (≤ 3k tokens)
 //	svc.Devices(ctx, userID)                      // []store.DeviceDigest of the devices the person owns
 //
-// The assistant's routing notes (cards/<workspaceId>.md) live on its home
-// device; pass them in FindOptions.Notes to rank by them too.
+// The assistant's runtime reads one summary file per project from
+// .foundry/projects/<name>.md (ProjectFiles), written from the same
+// digests and summaries as the index; the index points at the files. The
+// assistant's own routing notes (cards/<workspaceId>.md) live on its home
+// device and are named in the project file.
 //
 // The summary loop: Refresh (observers) and the calls above mark a digest
 // dirty when what a summary reads changed and set when it is due (30 min
@@ -28,6 +30,6 @@
 //
 // Dependencies: store and personalagent's defaults. The personalagent
 // package itself must not import this package; the assistant's flows
-// (personalagent/assistant) rank with it, and read digests through the
-// port httpapi implements over this service.
+// (personalagent/assistant) build the run's files with it, and read
+// digests through the port httpapi implements over this service.
 package workspacedigest

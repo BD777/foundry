@@ -128,11 +128,10 @@ const (
 
 // The snapshot (L0) each assistant session starts with (§2).
 const (
-	L0AboutMaxChars    = 2000
-	L0IndexMaxTokens   = 3000
-	L0IndexMaxEntries  = 40
-	L0TotalMaxTokens   = 6000
-	FindWorkspaceLimit = 5
+	L0AboutMaxChars   = 2000
+	L0IndexMaxTokens  = 3000
+	L0IndexMaxEntries = 40
+	L0TotalMaxTokens  = 6000
 )
 
 // Digests (§3).

@@ -434,6 +434,9 @@ type ExternalAccountStore interface {
 
 	AppendExternalAccountEvent(ctx context.Context, event ExternalAccountEvent) error
 	ListExternalAccountEvents(ctx context.Context, accountID string, limit int) ([]ExternalAccountEvent, error)
+	// ListExternalAccountEventsByKind lists an account's events of one kind
+	// since the given RFC 3339 time, newest first.
+	ListExternalAccountEventsByKind(ctx context.Context, accountID, kind, since string, limit int) ([]ExternalAccountEvent, error)
 
 	// SaveExternalCodeLogin inserts a browser sign-in or updates the fields
 	// a pending one gains (request, app, authorization URL, phase); an

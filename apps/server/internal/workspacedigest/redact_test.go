@@ -63,12 +63,16 @@ func TestCompileRedactsThePersonsHistory(t *testing.T) {
 	if !strings.Contains(digest.Purpose, "renderkit") || !strings.Contains(digest.OpenIssues[0].Title, "unreachable from dev-server") {
 		t.Errorf("routing words lost: %q, %q", digest.Purpose, digest.OpenIssues[0].Title)
 	}
-	records := []store.WorkspaceDigestRecord{record}
-	if candidates := RankRecords("203.0.113.62 ec2", records, nil, time.Now(), 0); len(candidates) != 0 {
-		t.Errorf("ranked on a redacted address: %+v", candidates)
+	files := ProjectFiles([]store.WorkspaceDigest{digest}, nil, time.Now())
+	if len(files) != 2 || !strings.HasSuffix(files[0].Path, ".md") {
+		t.Fatalf("project files = %+v", files)
 	}
-	if candidates := RankRecords("配置 ssh 跑 renderkit", records, nil, time.Now(), 0); len(candidates) != 1 {
-		t.Errorf("routing words no longer rank the project: %+v", candidates)
+	summary := files[0].Content
+	assertNoLeak(t, "project summary", summary)
+	for _, kept := range []string{"renderkit", "unreachable from dev-server", "Rotate the OpenAI key ‹secret›"} {
+		if !strings.Contains(summary, kept) {
+			t.Errorf("project summary lost %q: %q", kept, summary)
+		}
 	}
 }
 

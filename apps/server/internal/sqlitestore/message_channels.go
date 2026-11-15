@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,7 +95,7 @@ func (s *Store) setupMessageChannels(ctx context.Context) error {
 	}
 	for _, column := range []string{
 		`segment INTEGER NOT NULL DEFAULT 0`, `session_new INTEGER NOT NULL DEFAULT 0`, `new_reason TEXT NOT NULL DEFAULT ''`,
-		`inbox_channel TEXT NOT NULL DEFAULT ''`, `raw_json TEXT NOT NULL DEFAULT ''`,
+		`inbox_channel TEXT NOT NULL DEFAULT ''`, `raw_json TEXT NOT NULL DEFAULT ''`, `follow_up TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE message_channel_deliveries ADD COLUMN `+column); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("setup message channel deliveries: %w", err)
@@ -251,12 +252,12 @@ func (s *Store) insertMessageChannelDelivery(ctx context.Context, record store.M
 	}
 	result, err := s.conn().ExecContext(ctx, `INSERT INTO message_channel_deliveries
 		(id, channel_id, envelope_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at,
-		 segment, session_new, new_reason, inbox_channel, raw_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 segment, session_new, new_reason, inbox_channel, raw_json, follow_up)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(channel_id, envelope_id) DO NOTHING`,
 		record.ID, record.ChannelID, record.Envelope.ID, record.UserID, record.AssistantID, record.Status, record.Reason,
 		record.Rule, record.SessionKey, string(envelope), record.InboxID, record.SessionID, string(actions), record.CreatedAt, record.DeliveredAt,
-		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.RawJSON)
+		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.RawJSON, record.FollowUp)
 	if err != nil {
 		return false, err
 	}
@@ -264,14 +265,14 @@ func (s *Store) insertMessageChannelDelivery(ctx context.Context, record store.M
 	return changed > 0, nil
 }
 
-const messageDeliveryColumns = `id, channel_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at, segment, session_new, new_reason, inbox_channel, raw_json`
+const messageDeliveryColumns = `id, channel_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at, segment, session_new, new_reason, inbox_channel, raw_json, follow_up`
 
 func scanMessageChannelDelivery(row rowScanner) (store.MessageChannelDeliveryRecord, error) {
 	var record store.MessageChannelDeliveryRecord
 	var envelope, actions string
 	err := row.Scan(&record.ID, &record.ChannelID, &record.UserID, &record.AssistantID, &record.Status, &record.Reason, &record.Rule,
 		&record.SessionKey, &envelope, &record.InboxID, &record.SessionID, &actions, &record.CreatedAt, &record.DeliveredAt,
-		&record.Segment, &record.SessionNew, &record.NewReason, &record.InboxChannel, &record.RawJSON)
+		&record.Segment, &record.SessionNew, &record.NewReason, &record.InboxChannel, &record.RawJSON, &record.FollowUp)
 	if err != nil {
 		return record, err
 	}
@@ -316,15 +317,199 @@ func (s *Store) ListMessageChannelDeliveries(ctx context.Context, channelID stri
 	return out, rows.Err()
 }
 
+// encodeMessageChannelCursor is an opaque page position: two strings joined
+// by a NUL, base64url encoded (neither created_at nor ids contain NUL).
+func encodeMessageChannelCursor(primary, secondary string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(primary + "\x00" + secondary))
+}
+
+func decodeMessageChannelCursor(cursor string) (string, string, bool) {
+	if cursor == "" {
+		return "", "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return "", "", false
+	}
+	primary, secondary, ok := strings.Cut(string(raw), "\x00")
+	if !ok || primary == "" {
+		return "", "", false
+	}
+	return primary, secondary, true
+}
+
+func (s *Store) ListMessageChannelDeliveriesPage(ctx context.Context, channelID string, filter store.MessageChannelDeliveryFilter, cursor string, limit int) ([]store.MessageChannelDeliveryRecord, string, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query := `SELECT ` + messageDeliveryColumns + ` FROM message_channel_deliveries WHERE channel_id = ?`
+	args := []any{channelID}
+	if len(filter.Statuses) > 0 {
+		query += ` AND status IN (` + strings.TrimSuffix(strings.Repeat("?,", len(filter.Statuses)), ",") + `)`
+		for _, status := range filter.Statuses {
+			args = append(args, status)
+		}
+	}
+	if filter.SessionKey != "" {
+		query += ` AND session_key = ?`
+		args = append(args, filter.SessionKey)
+	}
+	if filter.SessionID != "" {
+		query += ` AND session_id = ?`
+		args = append(args, filter.SessionID)
+	}
+	if at, id, ok := decodeMessageChannelCursor(cursor); ok {
+		query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
+		args = append(args, at, at, id)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var out []store.MessageChannelDeliveryRecord
+	for rows.Next() {
+		record, err := scanMessageChannelDelivery(rows)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > limit {
+		out = out[:limit]
+		last := out[len(out)-1]
+		next = encodeMessageChannelCursor(last.CreatedAt, last.ID)
+	}
+	return out, next, nil
+}
+
+func (s *Store) MessageChannelConversations(ctx context.Context, channelID, cursor string, limit int) ([]store.MessageChannelConversationSummary, string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	query := `SELECT session_key, MAX(created_at) FROM message_channel_deliveries
+		WHERE channel_id = ? AND session_key <> ''`
+	args := []any{channelID}
+	if at, key, ok := decodeMessageChannelCursor(cursor); ok {
+		query += ` GROUP BY session_key HAVING MAX(created_at) < ? OR (MAX(created_at) = ? AND session_key < ?)`
+		args = append(args, at, at, key)
+	} else {
+		query += ` GROUP BY session_key`
+	}
+	query += ` ORDER BY MAX(created_at) DESC, session_key DESC LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var out []store.MessageChannelConversationSummary
+	for rows.Next() {
+		var summary store.MessageChannelConversationSummary
+		if err := rows.Scan(&summary.SessionKey, &summary.LastAt); err != nil {
+			return nil, "", err
+		}
+		out = append(out, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > limit {
+		out = out[:limit]
+		last := out[len(out)-1]
+		next = encodeMessageChannelCursor(last.LastAt, last.SessionKey)
+	}
+	return out, next, nil
+}
+
+func (s *Store) messageChannelDeliveriesWhere(ctx context.Context, query string, args ...any) ([]store.MessageChannelDeliveryRecord, error) {
+	rows, err := s.reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.MessageChannelDeliveryRecord
+	for rows.Next() {
+		record, err := scanMessageChannelDelivery(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) MessageChannelConversationDeliveries(ctx context.Context, channelID, sessionKey string) ([]store.MessageChannelDeliveryRecord, error) {
+	return s.messageChannelDeliveriesWhere(ctx, `SELECT `+messageDeliveryColumns+` FROM message_channel_deliveries
+		WHERE channel_id = ? AND session_key = ? ORDER BY created_at, id`, channelID, sessionKey)
+}
+
+func (s *Store) MessageChannelSessionDeliveries(ctx context.Context, sessionID string) ([]store.MessageChannelDeliveryRecord, error) {
+	return s.messageChannelDeliveriesWhere(ctx, `SELECT `+messageDeliveryColumns+` FROM message_channel_deliveries
+		WHERE session_id = ? ORDER BY created_at, id`, sessionID)
+}
+
+func (s *Store) MessageChannelInboxDeliveries(ctx context.Context, assistantID, inboxID string) ([]store.MessageChannelDeliveryRecord, error) {
+	return s.messageChannelDeliveriesWhere(ctx, `SELECT `+messageDeliveryColumns+` FROM message_channel_deliveries
+		WHERE assistant_id = ? AND inbox_id = ? ORDER BY created_at, id`, assistantID, inboxID)
+}
+
+func (s *Store) MessageChannelPendingInboxDeliveries(ctx context.Context, assistantID, inboxChannel string) ([]store.MessageChannelDeliveryRecord, error) {
+	return s.messageChannelDeliveriesWhere(ctx, `SELECT `+messageDeliveryColumns+` FROM message_channel_deliveries
+		WHERE assistant_id = ? AND inbox_channel = ? AND inbox_id = '' ORDER BY created_at, id`, assistantID, inboxChannel)
+}
+
+func (s *Store) MessageChannelSessionOrigin(ctx context.Context, sessionID string) (store.MessageChannelOriginSummary, error) {
+	records, err := s.MessageChannelSessionDeliveries(ctx, sessionID)
+	if err != nil || len(records) == 0 {
+		if err == nil {
+			err = store.ErrNotFound
+		}
+		return store.MessageChannelOriginSummary{}, err
+	}
+	channel, err := s.GetMessageChannel(ctx, records[0].ChannelID)
+	if err != nil {
+		return store.MessageChannelOriginSummary{}, err
+	}
+	first, last := records[0], records[len(records)-1]
+	lastAt := last.Envelope.OccurredAt
+	if lastAt == "" {
+		lastAt = last.CreatedAt
+	}
+	summary := store.MessageChannelOriginSummary{
+		AssistantID: channel.AssistantID, ChannelID: channel.ID, ChannelName: channel.Name,
+		Source: channel.Source.Kind, SessionKey: first.SessionKey,
+		Conversation: first.Envelope.Conversation, ThreadID: first.Envelope.Thread.ID,
+		ThreadIsReply: first.Envelope.Thread.IsReply, Segment: first.Segment,
+		SessionNew: first.SessionNew, NewReason: first.NewReason,
+		StartedAt: first.CreatedAt, LastSender: last.Envelope.Sender, LastAt: lastAt,
+	}
+	return summary, nil
+}
+
+func (s *Store) CountMessageChannelConversations(ctx context.Context, channelID string) (int, error) {
+	var count int
+	err := s.reader().QueryRowContext(ctx, `SELECT COUNT(DISTINCT session_key) FROM message_channel_deliveries
+		WHERE channel_id = ? AND session_key <> ''`, channelID).Scan(&count)
+	return count, err
+}
+
 func (s *Store) SaveMessageChannelDelivery(ctx context.Context, record store.MessageChannelDeliveryRecord) error {
 	actions, err := json.Marshal(record.Actions)
 	if err != nil {
 		return err
 	}
 	result, err := s.conn().ExecContext(ctx, `UPDATE message_channel_deliveries SET status = ?, reason = ?, inbox_id = ?, session_id = ?,
-		actions_json = ?, delivered_at = ?, segment = ?, session_new = ?, new_reason = ?, inbox_channel = ? WHERE id = ? AND channel_id = ?`,
+		actions_json = ?, delivered_at = ?, segment = ?, session_new = ?, new_reason = ?, inbox_channel = ?, follow_up = ? WHERE id = ? AND channel_id = ?`,
 		record.Status, record.Reason, record.InboxID, record.SessionID, string(actions), record.DeliveredAt,
-		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.ID, record.ChannelID)
+		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.FollowUp, record.ID, record.ChannelID)
 	if err != nil {
 		return err
 	}

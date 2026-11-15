@@ -1065,6 +1065,13 @@ components:
             or a compaction; the newest counts."
           $ref: "#/components/schemas/AgentContextUsage"
           x-go-type-skip-optional-pointer: false
+        channelOrigin:
+          description:
+            "`channelOrigin`, on a message channel turn's user-message event, is the turn's
+            structured origin (DEV-234): the channel, source conversation and thread, and each
+            message."
+          $ref: ./message_channels.yaml#/components/schemas/MessageChannelOrigin
+          x-go-type-skip-optional-pointer: false
         codexTransport:
           description:
             "`codexTransport` is what a Codex session showed about its compatible endpoint's
@@ -1132,6 +1139,13 @@ components:
             "`sentBySessionId` is the session that sent the input (create_session's first message,
             send_message); its transcript event names it."
           type: string
+        channelOrigin:
+          description:
+            "`channelOrigin` is a message channel turn's structured origin (DEV-234): the channel,
+            source conversation and thread, and each message. The prompt still carries the facts
+            block; clients render this instead of parsing it."
+          $ref: ./message_channels.yaml#/components/schemas/MessageChannelOrigin
+          x-go-type-skip-optional-pointer: false
     SessionSource:
       type: string
       enum:
@@ -1232,6 +1246,13 @@ components:
               type: string
               enum: [read]
               x-go-type: string
+            channelOrigin:
+              description:
+                "`channelOrigin` describes the message channel turn the session belongs to
+                (DEV-234): its channel, source conversation, segment and latest message. Set only on
+                a message channel's sessions."
+              $ref: ./message_channels.yaml#/components/schemas/MessageChannelOriginSummary
+              x-go-type-skip-optional-pointer: false
             parentSessionId:
               description:
                 "`parentSessionId` records orchestration lineage: the agent session that created this

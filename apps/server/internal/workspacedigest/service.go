@@ -28,7 +28,7 @@ type Sources interface {
 	Devices(ctx context.Context, userID string) ([]DeviceSource, error)
 }
 
-// Service computes, keeps and ranks digests.
+// Service computes and keeps digests and writes their summary files.
 type Service struct {
 	store   store.WorkspaceDigestStore
 	sources Sources
@@ -42,26 +42,6 @@ type Service struct {
 // New is a service over st and sources. It holds no state of its own.
 func New(st store.WorkspaceDigestStore, sources Sources) *Service {
 	return &Service{store: st, sources: sources, Now: time.Now}
-}
-
-// FindOptions tune Find.
-type FindOptions struct {
-	// Limit is how many candidates, at most personalagent.FindWorkspaceLimit
-	// (0 for that many).
-	Limit int
-	// Notes are the assistant's routing notes (cards/<id>.md), by
-	// workspace id.
-	Notes map[string]string
-}
-
-// Find ranks the person's readable, unarchived projects for a request,
-// best first, with why each matched (find_workspace).
-func (s *Service) Find(ctx context.Context, userID, query string, options FindOptions) ([]store.WorkspaceCandidate, error) {
-	records, err := s.Sync(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	return RankRecords(query, records, options.Notes, s.Now(), options.Limit), nil
 }
 
 // Digest is the person's digest of one workspace, brought up to date

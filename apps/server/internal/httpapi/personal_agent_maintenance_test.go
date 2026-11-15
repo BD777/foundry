@@ -5,11 +5,31 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
+
+// fail reports the session's turn as failed, as a device does.
+func (d *digestDaemon) fail(session store.AgentSession, message string) {
+	d.write("test_failed_"+session.ID, wsSessionCompleteType, map[string]any{
+		"sessionId": session.ID, "inputId": session.Input.ID, "error": message,
+	})
+}
+
+// nextUpkeepNotice is the next run that is not Foundry's own utility work
+// (a digest summary or a chat title).
+func (d *digestDaemon) nextUpkeepNotice() wsRunSessionPayload {
+	for {
+		run := d.nextRun()
+		if run.Session.Source == store.SessionSourceDigest || run.Session.Source == "naming" {
+			continue
+		}
+		return run
+	}
+}
 
 func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	f := newAssistantFixture(t)
@@ -71,6 +91,41 @@ func TestGovernancePromptIncludesLongInstructionBudget(t *testing.T) {
 	}
 }
 
+// A large project's packet stops at the read bound and says what it omitted;
+// it never makes one review read every docs/ file over the device channel.
+func TestGovernancePacketIsBounded(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	files := []store.WorkspaceFileEntry{
+		{ID: "root", WorkspaceID: "ws_budget", Path: "AGENTS.md", Name: "AGENTS.md", Kind: "file"},
+	}
+	for i := 0; i < 60; i++ {
+		path := fmt.Sprintf("docs/%02d.md", i)
+		files = append(files, store.WorkspaceFileEntry{ID: path, WorkspaceID: "ws_budget", Path: path, Name: path, Kind: "file"})
+	}
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:         store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace:      store.WorkspaceProjection{ID: "ws_budget", Name: "Budget", LocalPath: "/home/me/budget"},
+		WorkspaceFiles: files,
+		Agents: []store.AgentProjection{{
+			ID: "agent_budget", WorkspaceID: "ws_budget", DeviceID: "dev_home", Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := f.server.assistant.MaintenancePrompt(ctx, store.PersonalAgentMaintenance{Role: "governance", WorkspaceID: "ws_budget", UserID: f.aliceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, `"omittedFiles":13`) {
+		t.Fatalf("packet did not report omitted files:\n%s", prompt)
+	}
+	if got := strings.Count(prompt, `"path":"docs/`); got != 47 {
+		t.Fatalf("packet read %d docs files, want 47", got)
+	}
+}
+
 func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
@@ -94,12 +149,15 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 		t.Fatalf("did not start: %+v", job)
 	}
 	run := f.daemon.nextChatRun()
-	if run.Session.Source != "verification" || run.Session.Input.ExecutionBudget == nil || run.Session.WorkspaceID != "ws_budget" {
+	if run.Session.Source != "verification" || run.Session.Input.ExecutionBudget == nil || run.Session.WorkspaceID != "ws_pa" {
 		t.Fatalf("wrong role envelope %+v", run.Session)
+	}
+	if !strings.Contains(run.Session.Input.Prompt, `"workspaceId":"ws_budget"`) {
+		t.Fatalf("governance did not read the target over the device channel: %s", run.Session.Input.Prompt)
 	}
 	// Replaying the dispatcher after native acceptance reconciles its identity.
 	f.server.assistant.RunMaintenance(ctx, job)
-	sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_budget")
+	sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_pa")
 	if len(sessions) != 1 {
 		t.Fatal("duplicate maintenance execution")
 	}
@@ -142,6 +200,370 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	op.Status = "conflict"
 	if _, e = patches.SavePersonalAgentContextPatch(ctx, op); e != nil {
 		t.Fatal(e)
+	}
+}
+
+// enableVerificationSessions adds the read-only verifier capability the
+// fixture's device ships without.
+func enableVerificationSessions(f digestFixture) {
+	c := f.server.hub.connectionFor("dev_home")
+	if c == nil {
+		return
+	}
+	c.registrationMu.Lock()
+	defer c.registrationMu.Unlock()
+	for _, capability := range c.registration.Capabilities {
+		if capability == store.DaemonCapabilityVerificationSessions {
+			return
+		}
+	}
+	c.registration.Capabilities = append(c.registration.Capabilities, store.DaemonCapabilityVerificationSessions)
+}
+
+// Governance runs in the assistant's home workspace, not in the project it
+// reviews; the project's files arrive over the device channel (DEV-238).
+func TestGovernanceRunsInTheAssistantHomeAndReadsTheTargetOverTheChannel(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	enableVerificationSessions(f)
+	f.daemon.setInstruction("AGENTS.md", "# Budget\n\nRun make before publishing.\n")
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_budget", Name: "Budget", LocalPath: "/home/me/budget"},
+		WorkspaceFiles: []store.WorkspaceFileEntry{
+			{ID: "f1", WorkspaceID: "ws_budget", Path: "AGENTS.md", Name: "AGENTS.md", Kind: "file"},
+			{ID: "f2", WorkspaceID: "ws_budget", Path: "README.md", Name: "README.md", Kind: "file"},
+		},
+		Agents: []store.AgentProjection{{
+			ID: "agent_budget", WorkspaceID: "ws_budget", DeviceID: "dev_home", Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	job, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-home", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(f.digest(t)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, job)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+	if job.Status != "running" {
+		t.Fatalf("did not start: %+v", job)
+	}
+	run := f.daemon.nextChatRun()
+	if run.Session.WorkspaceID != "ws_pa" {
+		t.Fatalf("governance ran in %s, want the assistant home ws_pa", run.Session.WorkspaceID)
+	}
+	if !strings.Contains(run.Session.Input.Prompt, `"workspaceId":"ws_budget"`) ||
+		!strings.Contains(run.Session.Input.Prompt, "Run make before publishing.") {
+		t.Fatalf("governance lacked the target packet:\n%s", run.Session.Input.Prompt)
+	}
+	f.daemon.complete(run.Session, `{"summary":"healthy","findings":[],"patches":[]}`)
+	waitForStatus(t, f.db, run.Session.ID, "completed")
+}
+
+// Digests are the person's upkeep: a stopped default assistant's conversation
+// does not freeze them on its online home (DEV-238).
+func TestDigestSummariesRunOnAStoppedDefaultAssistantsHome(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	if _, err := f.db.SetPersonalAgentState(ctx, agent.ID, store.PersonalAgentStopped); err != nil {
+		t.Fatal(err)
+	}
+	f.digest(t)
+	f.server.runDigestSummaries(ctx, 0)
+	records, _ := f.db.ListWorkspaceDigests(ctx, f.aliceID)
+	var record store.WorkspaceDigestRecord
+	for _, candidate := range records {
+		if candidate.Digest.WorkspaceID == "ws_budget" {
+			record = candidate
+		}
+	}
+	select {
+	case run := <-f.daemon.runs:
+		if run.Session.Source != store.SessionSourceDigest || run.Session.WorkspaceID != "ws_pa" {
+			t.Fatalf("summary did not run on the stopped assistant's home: %+v", run.Session)
+		}
+		f.daemon.complete(run.Session, `{"l0":"budget","summary":"Tracks the family budget.","routeWhen":[],"notWhen":[]}`)
+		waitForStatus(t, f.db, run.Session.ID, "completed")
+	case <-time.After(5 * time.Second):
+		if record.SummarySessionID != "" {
+			claimed, _ := f.db.GetAgentSessionSummary(ctx, record.SummarySessionID)
+			t.Fatalf("no summary session; digest = %+v; claimed session = %+v", record, claimed)
+		}
+		t.Fatalf("no summary session; digest = %+v", record)
+	}
+	if current, _ := f.db.GetAssistant(ctx, agent.ID); current.State != store.PersonalAgentStopped {
+		t.Fatal("upkeep resumed the assistant's conversation")
+	}
+}
+
+// A project whose machine is away defers only its own review; reviews that
+// read an online project keep running (DEV-238).
+func TestAnOfflineTargetDefersOnlyItsOwnReview(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	enableVerificationSessions(f)
+	budget := f.digest(t)
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_away", Label: "Away", Status: "disconnected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_away", Name: "Away project", LocalPath: "/home/me/away"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.SetWorkspaceMember(ctx, "ws_away", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.server.workspaceDigests().Digest(ctx, f.aliceID, "ws_away"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := f.server.store.ListWorkspaceDigests(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	away := store.WorkspaceDigestRecord{}
+	for _, record := range records {
+		if record.Digest.WorkspaceID == "ws_away" {
+			away = record
+		}
+	}
+	if away.Digest.WorkspaceID == "" {
+		t.Fatal("no digest for the offline project")
+	}
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	offline, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-offline", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_away", EventKey: assistant.GovernanceEventKey(away),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	online, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-online", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(budget),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, offline)
+	offline, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, offline.ID)
+	if offline.Status != "waiting" || offline.Reason != "target_device_offline" {
+		t.Fatalf("offline target = %+v, want waiting/target_device_offline", offline)
+	}
+	f.server.assistant.RunMaintenance(ctx, online)
+	online, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, online.ID)
+	if online.Status != "running" {
+		t.Fatalf("an offline project blocked another review: %+v", online)
+	}
+	run := f.daemon.nextChatRun()
+	f.daemon.complete(run.Session, `{"summary":"healthy","findings":[],"patches":[]}`)
+	waitForStatus(t, f.db, run.Session.ID, "completed")
+}
+
+// A target archived or removed while a review waited is settled, never left
+// waiting for a person who cannot act on it (DEV-238).
+func TestArchivedTargetsAndWaitingReviewsAreSuperseded(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	enableVerificationSessions(f)
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	record := f.digest(t)
+	job, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-archive", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(record),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.SetWorkspaceArchived(ctx, "ws_budget", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, job)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+	if job.Status != "superseded" || job.Reason != "workspace_archived" {
+		t.Fatalf("archived target = %+v, want superseded/workspace_archived", job)
+	}
+	// A review already waiting for approval is settled by the sweep too.
+	job.Status, job.Reason = "review", ""
+	job.Result = &store.MaintenanceResult{Summary: "change", Patches: []store.MaintenancePatch{{Path: "AGENTS.md", Content: "# x", Reason: "y"}}}
+	if _, err := f.server.store.SavePersonalAgentMaintenance(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	saved := assistant.UpkeepSweepInterval
+	assistant.UpkeepSweepInterval = 0
+	defer func() { assistant.UpkeepSweepInterval = saved }()
+	f.server.assistant.FinalizeGoneTargets(ctx)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+	if job.Status != "superseded" || job.Reason != "workspace_archived" {
+		t.Fatalf("review on an archived target = %+v, want superseded", job)
+	}
+}
+
+// A review that must wait for a running one is postponed before a session
+// exists: a concurrency/budget refusal is not a failed native run.
+func TestBusyMaintenanceDoesNotCreateASession(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	enableVerificationSessions(f)
+	budget := f.digest(t)
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_second", Name: "Second", LocalPath: "/home/me/second"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.SetWorkspaceMember(ctx, "ws_second", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.server.workspaceDigests().Digest(ctx, f.aliceID, "ws_second"); err != nil {
+		t.Fatal(err)
+	}
+	records, _ := f.server.store.ListWorkspaceDigests(ctx, f.aliceID)
+	second := store.WorkspaceDigestRecord{}
+	for _, record := range records {
+		if record.Digest.WorkspaceID == "ws_second" {
+			second = record
+		}
+	}
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	first, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-first", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(budget),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, first)
+	first, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, first.ID)
+	if first.Status != "running" {
+		t.Fatalf("first review did not start: %+v", first)
+	}
+	run := f.daemon.nextChatRun()
+	countVerification := func() int {
+		sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_pa")
+		count := 0
+		for _, session := range sessions {
+			if session.Source == store.SessionSourceVerification {
+				count++
+			}
+		}
+		return count
+	}
+	before := countVerification()
+	blocked, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-blocked", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_second", EventKey: assistant.GovernanceEventKey(second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, blocked)
+	blocked, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, blocked.ID)
+	if blocked.Status != "waiting" || blocked.Reason != "maintenance_busy" {
+		t.Fatalf("second review = %+v, want waiting/maintenance_busy", blocked)
+	}
+	if after := countVerification(); after != before {
+		t.Fatalf("a busy review created a session: %d -> %d", before, after)
+	}
+	f.daemon.complete(run.Session, `{"summary":"healthy","findings":[],"patches":[]}`)
+	waitForStatus(t, f.db, run.Session.ID, "completed")
+}
+
+// A failed review is retried a bounded number of times with backoff.
+func TestFailedReviewsRetryWithBackoff(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	enableVerificationSessions(f)
+	f.server.hub.retrySessionFailure = func(context.Context, store.AgentSession, string) (bool, error) { return false, nil }
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	job, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-retry", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(f.digest(t)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RunMaintenance(ctx, job)
+	for attempt := 1; attempt <= 2; attempt++ {
+		run := f.daemon.nextChatRun()
+		f.daemon.fail(run.Session, "sandbox failed")
+		waitForStatus(t, f.db, run.Session.ID, "failed")
+		// The next drain settles the failed run and schedules a retry.
+		job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+		f.server.assistant.RunMaintenance(ctx, job)
+		job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+		if job.Attempt != attempt || job.Status != "pending" || job.Reason != "retry_scheduled" || job.InputID != "" || job.SessionID != "" {
+			t.Fatalf("attempt %d = %+v, want pending/retry_scheduled with no input", attempt, job)
+		}
+		f.server.assistant.RunMaintenance(ctx, job)
+	}
+	run := f.daemon.nextChatRun()
+	f.daemon.fail(run.Session, "sandbox failed again")
+	waitForStatus(t, f.db, run.Session.ID, "failed")
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+	f.server.assistant.RunMaintenance(ctx, job)
+	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, agent.ID, job.ID)
+	if job.Status != "failed" || job.Attempt != 2 {
+		t.Fatalf("exhausted retries = %+v, want failed at attempt 2", job)
+	}
+}
+
+// Upkeep that needs the person or is stuck is announced once, coalesced, to
+// the active assistant; Foundry does not create "needs you" items (DEV-238).
+func TestUpkeepStateIsAnnouncedOnceToTheActiveAssistant(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	job, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
+		ID: "maint-notice", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: "notice-event",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Status = "review"
+	job.Result = &store.MaintenanceResult{Summary: "change", Patches: []store.MaintenancePatch{{Path: "AGENTS.md", Content: "# x", Reason: "y"}}}
+	if _, err := f.server.store.SavePersonalAgentMaintenance(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Prompt: "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.CompleteAgentSession(ctx, conversation.ID, "hello", "native_"+conversation.ID); err != nil {
+		t.Fatal(err)
+	}
+	saved := assistant.UpkeepSweepInterval
+	assistant.UpkeepSweepInterval = 0
+	defer func() { assistant.UpkeepSweepInterval = saved }()
+	f.server.assistant.AnnounceUpkeep(ctx)
+	notice := f.daemon.nextUpkeepNotice()
+	if !strings.Contains(notice.Session.Input.Prompt, "approval") && !strings.Contains(notice.Session.Input.Prompt, "确认") {
+		t.Fatalf("notice lacked the approval fact:\n%s", notice.Session.Input.Prompt)
+	}
+	f.daemon.complete(notice.Session, "noted")
+	waitForStatus(t, f.db, notice.Session.ID, "completed")
+	// The same state is not announced again (automatic chat naming is not a
+	// second announcement).
+	f.server.assistant.AnnounceUpkeep(ctx)
+	deadline := time.After(300 * time.Millisecond)
+	for {
+		select {
+		case duplicate := <-f.daemon.runs:
+			if duplicate.Session.Source == "naming" {
+				continue
+			}
+			t.Fatalf("upkeep announced twice: %+v", duplicate.Session)
+		case <-deadline:
+			return
+		}
 	}
 }
 

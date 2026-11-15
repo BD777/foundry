@@ -68,6 +68,22 @@ func pendingAnswers(session store.AgentSession, sentBySessionID string) bool {
 	return sentBySessionID == "" || (session.ParentSessionID != "" && sentBySessionID == session.ParentSessionID)
 }
 
+// pendingChannelPersonMessage reports whether a queued channel turn carries
+// the person's own words. A batch with no origin is a direct message and
+// counts as before. In a channel batch only a message with
+// "sender is the person: yes" that Foundry did not write itself answers.
+func pendingChannelPersonMessage(origin *store.MessageChannelOrigin) bool {
+	if origin == nil {
+		return true
+	}
+	for _, message := range origin.Messages {
+		if message.Sender.IsSelf && !message.Sender.IsOwnWrite {
+			return true
+		}
+	}
+	return false
+}
+
 // pendingAnswerable are the sources an answer to a session settles.
 var pendingAnswerable = []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands, store.PendingSourceHelperStuck}
 
@@ -128,9 +144,13 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 	switch change {
 	case sessions.Queued:
 		// A new message from the person (a helper's: also from the assistant
-		// that started it; never a timer) answers what it showed before.
+		// that started it; never a timer) answers what it showed before. A
+		// channel turn only counts when it carries the person's own words:
+		// an echo of the assistant's write, or another person's message,
+		// answers nothing.
 		input := session.Input
-		if input.ID == "" || !pendingAnswers(session, input.SentBySessionID) || input.TimerFire != nil {
+		if input.ID == "" || !pendingAnswers(session, input.SentBySessionID) || input.TimerFire != nil ||
+			!pendingChannelPersonMessage(input.ChannelOrigin) {
 			return
 		}
 		before := input.At

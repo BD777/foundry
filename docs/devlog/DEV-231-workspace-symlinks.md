@@ -2,6 +2,21 @@
 
 状态：已部署 dev（train19-20261115：Server sha256 `1b046a1b…`，2026-11-15T09:58:04Z 起；Web `dc3d404bd630e0d6`，front matter 追加修复为 train20 的 Web `a4e4ae9349381109`；Worker `0.5.7-dev.358.g602765a0.local.1794735511`），部署后由 Agent 验证；待本人验收。已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**通过**（范围：步骤 1、2、4 在 e2e-alice 真实浏览器；步骤 1、3 另对本人 byte-dev 主目录做只读文件核对）。未覆盖：本人主目录的残留 `channel-0e47207b…` 要等本人助理下一次运行才会被清掉（本次未替本人触发运行）。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。
+
+| 步骤                | 结果         | 证据                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 链接文件夹        | 通过         | e2e-alice `.agents/skills` 下 `assistant-handoff`、`assistant-memory-and-list`、`assistant-projects` 显示为可展开文件夹并带「链接」；`foundry`、`foundry-orchestration` 带「链接的 skill」；没有 4.0 KB。本人 byte-dev `personal-agent/.agents/skills` 与 `.claude/skills` 均为 4 个软链接（含 `channel-0e47207b…`），指向 `.foundry/assistant-skills/`。 |
+| 2 SKILL.md          | 通过         | 打开 `assistant-handoff/SKILL.md`：顶部「Foundry 每次对话前都会重写这个文件，这里只读」，front matter 显示为 `name`/`description` 键值块，正文从标题开始，没有编辑/改名/删除。                                                                                                                                                                            |
+| 3 残留清理          | 通过（合成） | 在 e2e-alice 主目录放一个合成的 `channel-devaccept` 残留和一个本人拥有的 `devaccept-mine`，跑一轮助理后：残留从 `.agents/skills`、`.claude/skills`、`.foundry/assistant-skills` 消失，`devaccept-mine` 保留。本人主目录的 `channel-0e47207b…` 仍在（mtime 2026-11-13 16:49），按设计等本人下一次运行清理。                                                |
+| 4 工作区外/失效链接 | 通过         | 临时合成 `devaccept-outside`（工作区外）与 `devaccept-missing`（失效）链接：树中分别标「工作区外」「失效链接」，打开是说明卡片，没有编辑器或修改按钮。截图 `dev231-01-links.png`。                                                                                                                                                                        |
+
+清理：合成的链接、`devaccept-mine`、临时目录已删除；e2e-alice 的助理语言仍为 zh-CN。
+
 来源：本人截图（`.foundry/attachments/20261115/att_dmvo919u8v18_0_image.png`）。ByteWork 设置 →「工作区文件」→ 助理主目录（byte-dev，`/data00/home/dengcanwen/Foundry/personal-agent`）里，`.agents/skills/assistant-handoff`、`assistant-memory-and-list`、`assistant-projects`、`channel-0e47207b…` 显示为 4.0 KB 的文件，点开是「Couldn't read this file — requested workspace path is not a file」。编号说明：派单写的是 DEV-230，但 DEV-230 已被「定时回合删掉自己的 schedule」占用，本项用 DEV-231。
 
 ## 根因

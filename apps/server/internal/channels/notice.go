@@ -67,7 +67,7 @@ func StripCommand(text string, triggers, commands []string) (string, bool) {
 // "key: value" facts about the channel, the conversation, the session and
 // each message, which are other people's words. It says nothing about what
 // to do; that is the channel workspace's AGENTS.md.
-func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decision Rollover, records []store.MessageChannelDeliveryRecord) string {
+func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord) string {
 	var out strings.Builder
 	line := func(key, format string, args ...any) {
 		fmt.Fprintf(&out, "%s: %s\n", key, fmt.Sprintf(format, args...))
@@ -106,6 +106,9 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decis
 	if contextHint != "" {
 		line("context", "%s", fillHint(contextHint, first))
 	}
+	if replyCommand != "" {
+		line("reply", "%s", fillHint(replyCommand, records[len(records)-1].Envelope))
+	}
 	for i, record := range records {
 		envelope := record.Envelope
 		fmt.Fprintf(&out, "\nmessage %d:\n", i+1)
@@ -135,6 +138,9 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decis
 					trigger, rest, _ = MatchTrigger(envelope.Text, rule.TextPrefixes, rule.CaseSensitive)
 				}
 			}
+		}
+		if record.FollowUp != "" {
+			item("follow-up", "%s", record.FollowUp)
 		}
 		// The text is carried once: as it came, or as the trigger, the
 		// mentions before it and what follows it.

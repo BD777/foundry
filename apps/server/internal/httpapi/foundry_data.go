@@ -251,6 +251,27 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 	if workspace.ID != "" {
 		workspace.AccessRole = view.scope.role(workspace.ID)
 	}
+	// Message channel workspaces carry their channel id (DEV-234): the chat
+	// list groups by source conversation and offers no new chat there.
+	if channels, ok := s.store.(store.MessageChannelStore); ok && view.scope.userID != "" {
+		records, err := channels.ListMessageChannels(ctx, view.scope.userID, "")
+		if err != nil {
+			return foundryDataAnswer{}, err
+		}
+		byWorkspace := map[string]string{}
+		for _, record := range records {
+			if record.WorkspaceID != "" {
+				byWorkspace[record.WorkspaceID] = record.ID
+			}
+		}
+		projected := make([]store.WorkspaceProjection, len(workspaces))
+		copy(projected, workspaces)
+		for index := range projected {
+			projected[index].ChannelID = byWorkspace[projected[index].ID]
+		}
+		workspaces = projected
+		workspace.ChannelID = byWorkspace[workspace.ID]
+	}
 	data := foundryDataAnswer{FoundryDataProjection: store.FoundryDataProjection{Workspace: workspace, Workspaces: workspaces}}
 	if err := loadFoundryDataSections(want, timer, s.deviceSections(ctx, view, workspace, &data)); err != nil {
 		return foundryDataAnswer{}, err

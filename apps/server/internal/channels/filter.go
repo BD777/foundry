@@ -210,5 +210,6 @@ func Capabilities(spec store.ConnectorEventsEnvelope) store.MessageChannelCapabi
 	}
 	_, capabilities.MentionsMe = spec.Fields["mentionsMe"]
 	_, capabilities.FromSelf = spec.Fields["sender.isSelf"]
+	_, capabilities.Threads = spec.Fields["thread.id"]
 	return capabilities
 }

@@ -91,7 +91,7 @@ func ExtensionRouteFor(routes []store.ConnectorServerHeldRoute, method, path str
 		if !strings.EqualFold(strings.TrimSpace(route.Method), method) {
 			continue
 		}
-		if extensionRoutePathMatches(route.Path, path) {
+		if ExtensionRoutePathMatches(route.Path, path) {
 			return route, true
 		}
 	}
@@ -124,7 +124,10 @@ func normalizeExtensionRequestPath(path string) string {
 	return path
 }
 
-func extensionRoutePathMatches(template, path string) bool {
+// ExtensionRoutePathMatches reports whether a catalogued route template
+// governs a request path. It is the one matcher for both the route directory
+// and a descriptor's write declarations.
+func ExtensionRoutePathMatches(template, path string) bool {
 	template = normalizeExtensionRequestPath(template)
 	path = normalizeExtensionRequestPath(path)
 	if template == path {

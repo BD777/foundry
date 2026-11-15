@@ -13,6 +13,10 @@ type WorkspaceFileStore interface {
 	// AddWorkspaceFileRevision saves a version and keeps the file's newest
 	// MaxWorkspaceFileRevisions.
 	AddWorkspaceFileRevision(ctx context.Context, workspaceID, path string, revision WorkspaceFileRevision, content string) error
+	// AddWorkspaceFileRevisionUnlessLatest saves a version unless the file's
+	// latest one already has the same content, so observing an unchanged
+	// file again adds nothing.
+	AddWorkspaceFileRevisionUnlessLatest(ctx context.Context, workspaceID, path string, revision WorkspaceFileRevision, content string) error
 	// MoveWorkspaceFileRevisions gives a renamed file its versions.
 	MoveWorkspaceFileRevisions(ctx context.Context, workspaceID, from, to string) error
 	// AssistantInstructionsDefault is the sha256 of the default

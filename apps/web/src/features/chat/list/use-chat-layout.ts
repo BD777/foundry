@@ -118,7 +118,7 @@ export function retainChatLayouts(): () => void {
  * read again when an event does not carry the layout or after a resync.
  * This tab's own changes go through ChatLayoutSync.
  */
-export function useChatLayout(workspaceId: string) {
+export function useChatLayout(workspaceId: string, enabled = true) {
   const [layout, setLayout] = useState(
     () => currentLayout(workspaceId) ?? emptyChatLayout(),
   );
@@ -134,6 +134,7 @@ export function useChatLayout(workspaceId: string) {
   const [reload, setReload] = useState(0);
   const syncRef = useRef<ChatLayoutSync | undefined>(undefined);
   useEffect(() => {
+    if (!enabled) return;
     const release = retainChatLayouts();
     let active = true;
     let sync: ChatLayoutSync | undefined;
@@ -219,9 +220,9 @@ export function useChatLayout(workspaceId: string) {
       syncRef.current = undefined;
       release();
     };
-  }, [workspaceId, reload]);
+  }, [enabled, workspaceId, reload]);
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || !enabled) return;
     try {
       window.localStorage.setItem(
         `foundry.chatGroupCollapsed.v1:${workspaceId}`,
@@ -230,7 +231,7 @@ export function useChatLayout(workspaceId: string) {
     } catch {
       /* local preference only */
     }
-  }, [collapsed, workspaceId]);
+  }, [collapsed, enabled, workspaceId]);
   return {
     layout,
     collapsed,
