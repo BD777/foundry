@@ -179,6 +179,25 @@ func (s *Server) handleRevokeServerHeldExtensionInstance(w http.ResponseWriter, 
 	writeJSON(w, http.StatusOK, instance)
 }
 
+func (s *Server) handleDeleteServerHeldExtensionInstance(w http.ResponseWriter, r *http.Request) {
+	actor, ok := personActor(w, r)
+	if !ok {
+		return
+	}
+	descriptor, ok := s.serverHeldExtensionDescriptor(w, r, actor.AccountID())
+	if !ok {
+		return
+	}
+	if err := s.connectors.ServerHeld.DeleteExtensionInstance(
+		r.Context(), actor.AccountID(), descriptor.Kind, strings.TrimSpace(r.PathValue("instanceId")), actor.AccountID(),
+	); err != nil {
+		writeServerHeldExtensionError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "kind": descriptor.Kind})
+}
+
 func (s *Server) handleServerHeldExtensionSessionHandle(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	kind := strings.TrimSpace(r.PathValue("kind"))
@@ -245,6 +264,8 @@ func writeServerHeldExtensionError(w http.ResponseWriter, err error) {
 		}
 	case errors.Is(err, externalaccounts.ErrInvalidExtensionInstance):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, externalaccounts.ErrExtensionInstanceNotRevoked):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, store.ErrExternalAppNotFound), errors.Is(err, store.ErrExternalAccountNotFound), errors.Is(err, connectors.ErrUnknownConnector):
 		writeError(w, http.StatusNotFound, "connector extension instance not found")
 	default:

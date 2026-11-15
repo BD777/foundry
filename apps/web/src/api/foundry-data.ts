@@ -79,6 +79,7 @@ export const workspaceSwitchFields: readonly FoundryDataField[] = [
   "agentSessions",
   "assets",
   "chats",
+  "connectorSkills",
   "defaultBundleIds",
   "defaultSkillIds",
   "inheritedSkillIds",

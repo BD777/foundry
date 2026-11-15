@@ -8,14 +8,20 @@ import { Checkbox } from "../../components/ui/field";
 import { RowCard } from "../../components/ui/row-card";
 import { SkillCatalogHeading } from "../../components/skills/skill-catalog-heading";
 import { DefaultSkillBadge } from "./default-skill-badge";
+import type { ConnectorSkillGroup } from "../../api-types";
 
 /**
  * Bundles the workspace uses as a unit: all of a bundle's current skills,
  * including ones its later releases add. Saved as soon as it is toggled.
  * Unchecking one of the owner's default bundles turns it off here only.
+ * A bundle a granted connector brings says so and how many of its skills
+ * are on; when the connector already turns all of them on, it shows as
+ * used and its single skills turn off in the list below.
  */
 export function WorkspaceBundles({
   bundles,
+  connectorSkills = [],
+  onIds,
   selectedIds,
   defaultIds,
   workspaceId,
@@ -23,6 +29,10 @@ export function WorkspaceBundles({
   onChanged,
 }: {
   bundles: SkillBundleSummary[];
+  /** The skills the connectors granted here bring, by connector. */
+  connectorSkills?: ConnectorSkillGroup[];
+  /** The skills on in this workspace, as the list below shows them. */
+  onIds?: ReadonlySet<string>;
   selectedIds: string[];
   defaultIds: string[];
   workspaceId: string;
@@ -66,6 +76,22 @@ export function WorkspaceBundles({
       <ul className="grid gap-1.5">
         {bundles.map((bundle) => {
           const byDefault = defaultIds.includes(bundle.id);
+          const selected = selectedIds.includes(bundle.id);
+          const connector = connectorSkills.find((group) =>
+            group.bundleIds.includes(bundle.id),
+          );
+          const fromConnector = connector
+            ? bundle.skillIds.filter((id) => connector.skillIds.includes(id))
+            : [];
+          const onCount = bundle.skillIds.filter((id) => onIds?.has(id)).length;
+          // The connector already brings every skill: the bundle is not
+          // selected or taken off here, and shows as used while all are on;
+          // its single skills turn off in the list below.
+          const coveredByConnector =
+            !selected &&
+            fromConnector.length > 0 &&
+            fromConnector.length === bundle.skillIds.length;
+          const allOn = onCount === bundle.skillIds.length;
           return (
             <li key={bundle.id}>
               <RowCard
@@ -75,8 +101,8 @@ export function WorkspaceBundles({
               >
                 <Checkbox
                   aria-label={t("workspace.useBundle", { name: bundle.name })}
-                  checked={selectedIds.includes(bundle.id)}
-                  disabled={busy || readOnly}
+                  checked={selected || (coveredByConnector && allOn)}
+                  disabled={busy || readOnly || coveredByConnector}
                   onChange={() => void toggle(bundle.id)}
                 />
                 <span className="grid min-w-0 gap-0.5 text-sm">
@@ -85,10 +111,22 @@ export function WorkspaceBundles({
                     <Badge dot={false} tone="neutral">
                       {t("library.bundle.badge")}
                     </Badge>{" "}
-                    <DefaultSkillBadge
-                      off={!selectedIds.includes(bundle.id)}
-                      show={byDefault}
-                    />
+                    <DefaultSkillBadge off={!selected} show={byDefault} />
+                    {connector ? (
+                      <Badge
+                        dot={false}
+                        title={t("workspace.bundleFromConnectorTitle", {
+                          name: connector.label,
+                        })}
+                        tone="neutral"
+                      >
+                        {t("workspace.bundleFromConnector", {
+                          name: connector.label,
+                          on: onCount,
+                          total: bundle.skillIds.length,
+                        })}
+                      </Badge>
+                    ) : null}
                   </strong>
                   <small className="text-ink-muted [overflow-wrap:anywhere]">
                     {[

@@ -1,5 +1,5 @@
 {
-  "source": "Ported from foundry-private-connectors/bytedcli/reference/bytedcli-outputs.json (bytedcli 0.170.0, 2026-10-15).",
+  "source": "Ported from foundry-private-connectors/bytedcli/reference/bytedcli-outputs.json (bytedcli 0.170.0, 2026-10-15); larkMissing is bytedcli 0.192.0 on byte-dev without the lark runtime (2026-11-13).",
   "statusSignedIn": "{\"status\":\"success\",\"data\":{\"authenticated\":true,\"auth_source\":\"bytecloud_auth\",\"auth_as\":\"auto\",\"profile\":null,\"token_expires_at\":\"2026-10-15T02:39:56.000+08:00\",\"login_expires_at\":\"2026-11-14T00:39:56.146+08:00\",\"bytecloud_auth\":{\"site\":\"cn\",\"status\":\"ready\",\"initialized\":true,\"authType\":\"user\",\"authSource\":\"login\",\"expiresAt\":\"2026-10-14T18:39:56Z\",\"refreshTokenExpiresAt\":\"2026-11-14T00:39:56.146667+08:00\",\"identity\":{\"username\":\"someone\",\"email\":\"someone@example.com\"}}},\"error\":null}",
   "statusSignedOut": "{\"status\":\"success\",\"data\":{\"authenticated\":false,\"auth_source\":\"bytecloud_auth\",\"auth_as\":\"auto\",\"profile\":\"foundry-test-1\",\"token_expires_at\":null,\"bytecloud_auth\":{\"site\":\"cn\",\"status\":\"need_login\",\"initialized\":true,\"nextCommand\":\"bytedcli auth login\"}},\"error\":null}",
   "loginBegin": "{\"status\":\"success\",\"data\":{\"message\":\"Login challenge created\",\"login_mode\":\"device_code\",\"login_status\":\"pending\",\"challenge_reused\":false,\"complete_token\":\"00000000000000000000000000000000\",\"complete_command\":\"bytedcli --json auth login --complete 00000000000000000000000000000000\",\"qr_image_path\":\"/tmp/foundry-connector-x/sign-in.png\",\"verification_uri_complete\":\"https://cloud.bytedance.net/open/ai/service_account/create_and_bind?code=00000000000000000000000000000000&domain-id=online&source=bytedancecli%2F1.0\"},\"error\":null}",
@@ -23,5 +23,6 @@
   "larkReady": "{\"ok\":true,\"identities\":{\"user\":{\"available\":true},\"bot\":{\"available\":false}}}",
   "larkNeedsAuth": "{\"ok\":false,\"error\":{\"type\":\"config\",\"message\":\"no profile\"}}",
   "larkUnknown": "{\"ok\":false,\"error\":{\"type\":\"runtime\",\"message\":\"?\"}}",
-  "larkUpgrade": "{\"ok\":false,\"error\":{\"code\":\"CLI_PARSE_ERROR\",\"message\":\"unknown flag --no-auto-install\"}}"
+  "larkUpgrade": "{\"ok\":false,\"error\":{\"code\":\"CLI_PARSE_ERROR\",\"message\":\"unknown flag --no-auto-install\"}}",
+  "larkMissing": "{\"status\":\"error\",\"data\":null,\"error\":{\"message\":\"Feishu/Lark runtime not found and automatic installation is disabled\",\"code\":\"LARK_CLI_NOT_FOUND\",\"endpoint\":\"CLI\",\"hint\":\"Provide an installed runtime with BYTEDCLI_LARK_CLI_BIN or `bytedcli lark --cli-bin <path>`. To allow installation, unset BYTEDCLI_LARK_AUTO_INSTALL and omit --no-auto-install.\"},\"context\":{\"execution_time_ms\":50,\"timestamp\":\"2026-11-13T17:03:54.278+08:00\",\"api_endpoint\":\"CLI\"}}"
 }

@@ -837,6 +837,7 @@ export const chat: Translation<typeof en> = {
     htmlPreview: "预览",
     htmlCode: "源码",
     htmlModeLabel: "预览或源码",
+    frontMatter: "文件头信息（front matter）",
     webPreviewTitle: "预览 {{url}}",
     background: {
       kind: "类型",
@@ -903,5 +904,24 @@ export const chat: Translation<typeof en> = {
     loading: "正在读取工作区目录…",
     noMatches: "未找到与“{{query}}”匹配的文件",
     empty: "工作区目录为空",
+    link: {
+      workspace: "链接",
+      foundry: "链接的 skill",
+      outside: "工作区外",
+      missing: "失效链接",
+    },
+    linkTitle: {
+      workspace: "指向本工作区里 {{path}} 的链接",
+      foundry: "Foundry 从自己保存的副本链接进来的 skill，只读",
+      outside: "指向工作区外的链接，Foundry 不会打开",
+      missing: "目标不存在的链接",
+    },
+    linkNotice: {
+      outsideTitle: "指向工作区外的链接",
+      outsideBody:
+        "{{name}} 指向工作区之外。Foundry 不会打开或修改那里的任何内容。",
+      missingTitle: "失效链接",
+      missingBody: "{{name}} 指向的目标不存在，没有可显示的内容。",
+    },
   },
 };

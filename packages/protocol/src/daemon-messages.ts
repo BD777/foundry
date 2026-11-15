@@ -83,6 +83,8 @@ export const daemonMessageTypes = {
   /** Server asks: write one text file in a workspace (write_file, answered file_written). */
   writeFile: "write_file",
   fileWritten: "file_written",
+  manageFile: "manage_file",
+  fileManaged: "file_managed",
   /** Server asks, for the device's owner: a file outside the workspaces. */
   readDeviceFile: "read_device_file",
   /** Server asks: the key one provider's own configuration names. */
@@ -538,6 +540,32 @@ export interface FileWrittenPayload {
   code?: string;
 }
 
+/**
+ * manage_file: rename or delete one file inside a workspace, with the same
+ * path rules as write_file (never a folder, a link or `.git`). Rename
+ * refuses an existing `toPath` and creates its parent folders. With
+ * `expectedSha256` the file's current content must hash to it, else code
+ * `conflict`. Answered with file_managed. Workers declare
+ * `workspace_file_manage`.
+ */
+export interface ManageFilePayload {
+  workspaceId: string;
+  op: "rename" | "delete";
+  path: string;
+  toPath?: string;
+  expectedSha256?: string;
+}
+
+/** file_managed: what was done, or an error (code conflict, invalid_path, exists, missing). */
+export interface FileManagedPayload {
+  workspaceId: string;
+  op: "rename" | "delete";
+  path: string;
+  toPath?: string;
+  error?: string;
+  code?: string;
+}
+
 /** read_file */
 export interface ReadFilePayload {
   download?: FileDownloadRequest;
@@ -727,6 +755,16 @@ export interface SetupWorkspaceFile {
   path: string;
   /** UTF-8 text. */
   content: string;
+  /**
+   * The assistant's AGENTS.md (DEV-223): `content` is only Foundry's managed
+   * block, from its start marker to its end marker. The worker replaces the
+   * block in the file and keeps the rest, the person's instructions; a
+   * missing file, or one Foundry wrote whole before, becomes the block and
+   * `seed`. Sent only to workers that declare `assistant_instructions_block`.
+   */
+  managedBlock?: boolean;
+  /** The default instructions written below the block when there are none. */
+  seed?: string;
 }
 
 /** forget_workspace */

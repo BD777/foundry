@@ -218,6 +218,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"skill_bundle_selections", workspaceBundleOwner, ownerWorkspace},
 	{"agents", "workspace_id", ownerWorkspace},
 	{"workspace_files", "workspace_id", ownerWorkspace},
+	{"workspace_file_revisions", "workspace_id", ownerWorkspace},
 	{"assets", "workspace_id", ownerWorkspace},
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
 	{"workspace_migrations", "workspace_id", ownerWorkspace},

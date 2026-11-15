@@ -164,16 +164,16 @@ export class AdaptiveConcurrencyController {
           ? { loadAverage1: signals.loadAverage1 }
           : {}),
         ...(signals.memoryAvailableBytes !== undefined
-          ? { memoryAvailableBytes: signals.memoryAvailableBytes }
+          ? { memoryAvailableBytes: Math.round(signals.memoryAvailableBytes) }
           : {}),
         ...(signals.memoryPressurePercent !== undefined
           ? { memoryPressurePercent: signals.memoryPressurePercent }
           : {}),
         ...(signals.memoryTotalBytes !== undefined
-          ? { memoryTotalBytes: signals.memoryTotalBytes }
+          ? { memoryTotalBytes: Math.round(signals.memoryTotalBytes) }
           : {}),
         ...(signals.swapFreeBytes !== undefined
-          ? { swapFreeBytes: signals.swapFreeBytes }
+          ? { swapFreeBytes: Math.round(signals.swapFreeBytes) }
           : {}),
       },
     };
@@ -199,12 +199,15 @@ export class AdaptiveConcurrencyController {
   }
 }
 
+// The contract's byte counts are integers (int64 on the server), while the
+// sampler's moving averages are not: one fraction made every heartbeat
+// unreadable to the server.
 function contractEstimate(estimate: TurnUsageEstimate) {
   return {
     averageCpuCores: estimate.averageCpuCores,
-    peakRssBytes: estimate.peakRssBytes,
+    peakRssBytes: Math.round(estimate.peakRssBytes),
     source: estimate.source,
-    typicalRssBytes: estimate.typicalRssBytes,
+    typicalRssBytes: Math.round(estimate.typicalRssBytes),
     ...(estimate.runtime ? { runtime: estimate.runtime } : {}),
     ...(estimate.workspaceId ? { workspaceId: estimate.workspaceId } : {}),
   };

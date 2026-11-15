@@ -62,6 +62,7 @@ import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationExecution } from "../session/verification-session.js";
 import { readOnlySessionExecution } from "../session/read-only-workspace-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
+import { errorMessage } from "../platform/utils.js";
 
 // Chats run unsandboxed in the workspace itself; Issue-backed sessions run
 // where and how the Issue decides; a verifier, and a session whose workspace
@@ -415,12 +416,16 @@ export async function executeAgentSession(
     flushPendingResponse();
     const stopped = role.stopped?.(error, canceled);
     if (!canceled) reportWorkerFailure(transport, session, error, stopped);
-    else if (stopped)
+    else
+      // Every canceled input is reported ended. A cancel the server asked
+      // for is settled there already and the report changes nothing; one
+      // this device started (a stopped schedule or child session) is known
+      // to the server only through it.
       transport.send(daemonMessageTypes.sessionCompleted, {
         sessionId: session.id,
         inputId,
         ...(session.dispatchId ? { dispatchId: session.dispatchId } : {}),
-        ...stopped,
+        ...(stopped ?? { error: errorMessage(error) }),
       });
     return canceled ? "canceled" : "failed";
   } finally {

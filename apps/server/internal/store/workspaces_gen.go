@@ -6,6 +6,30 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for WorkspaceTreeEntryLink.
+const (
+	WorkspaceTreeEntryLinkFoundry   WorkspaceTreeEntryLink = "foundry"
+	WorkspaceTreeEntryLinkMissing   WorkspaceTreeEntryLink = "missing"
+	WorkspaceTreeEntryLinkOutside   WorkspaceTreeEntryLink = "outside"
+	WorkspaceTreeEntryLinkWorkspace WorkspaceTreeEntryLink = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceTreeEntryLink enum.
+func (e WorkspaceTreeEntryLink) Valid() bool {
+	switch e {
+	case WorkspaceTreeEntryLinkFoundry:
+		return true
+	case WorkspaceTreeEntryLinkMissing:
+		return true
+	case WorkspaceTreeEntryLinkOutside:
+		return true
+	case WorkspaceTreeEntryLinkWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
 // AssetProjection defines model for AssetProjection.
 type AssetProjection struct {
 	ID          string `json:"id"`
@@ -210,7 +234,16 @@ type WorkspaceTreeEntry struct {
 	IsDirectory bool   `json:"isDirectory"`
 	Size        int64  `json:"size,omitempty"`
 	Extension   string `json:"extension,omitempty"`
+
+	// Link Set when the entry is a symbolic link, by where it leads. workspace: a file or folder in this workspace, listed and opened as it. foundry: a skill folder Foundry linked in from its own skill snapshots, shown read-only. outside: somewhere outside this workspace, never followed. missing: its target does not exist.
+	Link WorkspaceTreeEntryLink `json:"link,omitempty"`
+
+	// ReadOnly The entry can't be changed through Foundry (a link out of the workspace or a file in one).
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
+
+// WorkspaceTreeEntryLink Set when the entry is a symbolic link, by where it leads. workspace: a file or folder in this workspace, listed and opened as it. foundry: a skill folder Foundry linked in from its own skill snapshots, shown read-only. outside: somewhere outside this workspace, never followed. missing: its target does not exist.
+type WorkspaceTreeEntryLink string
 
 // WorkspaceUnavailability WorkspaceUnavailability says why a workspace cannot run on its device.
 type WorkspaceUnavailability struct {

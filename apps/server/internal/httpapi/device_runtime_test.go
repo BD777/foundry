@@ -77,6 +77,32 @@ func TestHeartbeatStoresLatestRuntimeStateAsReported(t *testing.T) {
 	}
 }
 
+// A heartbeat whose runtime sample this server cannot read (a fractional
+// byte count) still replaces the connection's session claims: an ended
+// session must not stay claimed, and so never go stale, for good.
+func TestHeartbeatClaimsSurviveAnUnreadableRuntimeState(t *testing.T) {
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
+	hub.claims = newSessionClaims(time.Time{})
+	connection := &daemonConnection{
+		activeSessions: map[string]bool{"sess_ended": true},
+		deviceID:       "dev_runtime",
+		hub:            hub,
+		registration:   store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_runtime"}},
+	}
+	connection.noteHeartbeat(json.RawMessage(`{
+		"activeSessionIds": ["sess_running"],
+		"outbox": {"queued": 2},
+		"runtimeState": {"capturedAt": "2026-11-14T00:00:00Z", "mode": "adaptive", "limit": 3, "running": 1, "queued": 0, "hardHold": false, "reasons": [], "signals": {},
+			"estimates": [{"typicalRssBytes": 262288354.26635045, "peakRssBytes": 1, "averageCpuCores": 0.1}]}
+	}`))
+	if connection.hasActiveSession("sess_ended") || !connection.hasActiveSession("sess_running") {
+		t.Fatalf("claims not replaced: %v", connection.activeSessions)
+	}
+	if connection.outbox.outbox.Queued != 2 {
+		t.Fatalf("readable outbox section dropped: %+v", connection.outbox.outbox)
+	}
+}
+
 func TestNormalizeAgentRuntimeSettingsInputAcceptsOldAndNewShapes(t *testing.T) {
 	tests := []struct {
 		name   string

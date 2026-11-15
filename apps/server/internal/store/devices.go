@@ -32,6 +32,15 @@ const DaemonCapabilityReadOnlyWorkspaceSessions = "read_only_workspace_sessions"
 // workspace on the server's request (write_file).
 const DaemonCapabilityWorkspaceFileWrite = "workspace_file_write"
 
+// DaemonCapabilityWorkspaceFileManage: the worker renames or deletes one
+// file of a workspace (manage_file, DEV-223).
+const DaemonCapabilityWorkspaceFileManage = "workspace_file_manage"
+
+// DaemonCapabilityAssistantInstructionsBlock: the worker replaces only
+// Foundry's managed block of the assistant's AGENTS.md and keeps the rest,
+// the person's instructions (DEV-223).
+const DaemonCapabilityAssistantInstructionsBlock = "assistant_instructions_block"
+
 // DaemonCapabilitySharedLeases: the worker runs shared leases of one
 // resource side by side (a provider session per lease, resetLeaseOnly
 // resets, operate requests marked shared). Without it the server gives

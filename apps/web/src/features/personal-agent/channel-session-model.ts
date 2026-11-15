@@ -58,13 +58,17 @@ export function newSessionReason(
   return newSessionReasons.find((known) => known === reason);
 }
 
-/** Where a saved version of AGENTS.md came from. */
-export type RevisionSource = "seed" | "web" | "revert" | "outside";
+/** Where a saved version of a workspace file came from (DEV-223). */
+export type RevisionSource =
+  "seed" | "web" | "revert" | "outside" | "default" | "deleted" | "renamed";
 const revisionSources: readonly RevisionSource[] = [
   "seed",
   "web",
   "revert",
   "outside",
+  "default",
+  "deleted",
+  "renamed",
 ];
 
 /** A revision's source; anything unknown reads as changed elsewhere. */

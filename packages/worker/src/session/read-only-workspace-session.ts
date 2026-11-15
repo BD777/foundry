@@ -34,6 +34,21 @@ export function readOnlySessionDirectory(
 }
 
 /**
+ * The home its processes have: the private scratch its sandbox lets it
+ * write, kept across turns (verification-session.ts).
+ */
+export function readOnlySessionHome(
+  workspaceId: string,
+  sessionId: string,
+  store = new ExecutionStore(),
+): string {
+  return resolve(
+    readOnlySessionDirectory(workspaceId, sessionId, store),
+    "scratch",
+  );
+}
+
+/**
  * Where and how a read-only workspace session's turn runs. Without a ready
  * sandbox the turn fails: it never runs unsandboxed.
  */
@@ -66,5 +81,9 @@ export function readOnlySessionExecution(
         ),
       };
     },
+    // It works on other people's messages: the person's own files (their
+    // CLI logins, ~/.ssh, browser data) stay out of its reach. Its tools
+    // and connectors come from Foundry's folders and its scratch home.
+    "hidden",
   );
 }

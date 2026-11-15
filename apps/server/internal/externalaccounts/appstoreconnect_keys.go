@@ -35,10 +35,12 @@ type appStoreConnectKeyPayload struct {
 	PrivateKey string `json:"private_key"`
 }
 
-var AppStoreConnectAccessLevels = []store.ExternalAccessLevel{
-	{Name: "read"},
-	{Name: "commerce"},
-}
+// AppStoreConnectAccess is access/appstoreconnect.json. Its gateway checks
+// requests against the bound apps' resource tree in code, so the file holds
+// the levels only.
+var AppStoreConnectAccess = mustAccessCatalog("appstoreconnect")
+
+var AppStoreConnectAccessLevels = AppStoreConnectAccess.Levels
 
 // AppStoreConnectAccessLevel validates a workspace level; "" is read.
 func AppStoreConnectAccessLevel(name string) (string, bool) {

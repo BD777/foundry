@@ -6,18 +6,18 @@ import {
   fetchFileDownload,
   fetchFileDownloadMetadata,
   type FileDownloadMetadata,
-} from "../../../api";
-import { Alert } from "../../../components/ui/alert";
-import { Button } from "../../../components/ui/button";
-import { LoadingState } from "../../../components/ui/loading";
-import { cn } from "../../../lib/cn";
-import { formatBytes } from "../../../lib/format";
-import { FileReadFeedback } from "./chat-file-read-feedback";
+} from "../../api";
+import { Alert } from "../ui/alert";
+import { Button } from "../ui/button";
+import { LoadingState } from "../ui/loading";
+import { cn } from "../../lib/cn";
+import { formatBytes } from "../../lib/format";
+import { FileReadFeedback } from "./file-read-feedback";
 import { requestDeviceFile } from "./device-file-request";
 import {
   decideInlineImage,
   inlineImagePreviewMaxBytes,
-} from "./chat-image-preview-model";
+} from "./image-preview-model";
 
 type ImagePreviewState =
   | { phase: "loading" }

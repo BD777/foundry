@@ -592,7 +592,12 @@ func (s *Service) createFolder(ctx context.Context, userID, deviceID, name strin
 	if err != nil {
 		return store.WorkspaceProjection{}, err
 	}
-	files := append([]personalagent.WorkspaceFile{{Path: "AGENTS.md", Content: personalagent.AgentsFile()}}, carried...)
+	// The instructions are the person's: carried over when the assistant
+	// moves, else the default (DEV-223).
+	files := carried
+	if !slices.ContainsFunc(carried, func(file personalagent.WorkspaceFile) bool { return file.Path == "AGENTS.md" }) {
+		files = append([]personalagent.WorkspaceFile{{Path: "AGENTS.md", Content: prompt.InitialAgentsFile()}}, carried...)
+	}
 	return s.workspaces.CreateWorkspace(ctx, personalagent.WorkspaceActor{UserID: userID}, personalagent.NewWorkspace{
 		DeviceID:   deviceID,
 		Create:     &personalagent.WorkspaceSource{Kind: personalagent.WorkspaceCreateEmpty, GitInit: false, Files: files},

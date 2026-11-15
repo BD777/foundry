@@ -458,6 +458,15 @@ func TestPersonalAgentSessionMaterialsUseOwnedAccountsWithoutABinding(t *testing
 	if err != nil || len(materials) != 1 || materials[0].AccountID != account.ID {
 		t.Fatalf("assistant without a binding: %+v (%v)", materials, err)
 	}
+	// Before any session (the Skills page, the composer): the home's next
+	// conversation reaches the same accounts; a project only its bindings.
+	accounts, err := h.service.SessionAccounts(h.ctx, agent.WorkspaceID, "", "user_owner", "dev_1", "user_owner")
+	if err != nil || len(accounts) != 1 || accounts[0].ID != account.ID {
+		t.Fatalf("assistant home before a session: %+v (%v)", accounts, err)
+	}
+	if accounts, err := h.service.SessionAccounts(h.ctx, "ws_project", "", "user_owner", "dev_1", "user_owner"); err != nil || len(accounts) != 0 {
+		t.Fatalf("project before a session: %+v (%v)", accounts, err)
+	}
 
 	materials, err = h.service.SessionMaterials(h.ctx, "ws_project", "sess_project", "dev_1", "user_owner", "user_owner")
 	if err != nil || len(materials) != 0 {

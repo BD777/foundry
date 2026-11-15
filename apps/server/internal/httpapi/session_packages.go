@@ -28,26 +28,37 @@ func connectorKinds(uses []store.ExternalAccountMaterial, devices []store.Device
 }
 
 // sessionPackageSkills resolves the Skill bundles that come with the
-// connectors the session receives: the package bundles selected on this
-// device, and the bundles that follow a connector tool's own package
-// (toolBundles, from connectorToolBundles), limited to the Skills its
-// descriptor turns on by default. The returned pins are independent
-// of Skill exclusions: a workspace may hide the Skills but the connector's CLI
-// still has to be the version paired with the connector.
+// connectors the session receives (receivedSkillSources) to the Skills and
+// tool pins of the version paired with the device. The returned pins are
+// independent of Skill exclusions: a workspace may hide the Skills but the
+// connector's CLI still has to be the version paired with the connector.
 func sessionPackageSkills(ctx context.Context, db Backend, ownerUserID, deviceID string, kinds map[string]bool, toolBundles []connectorSkillSource) ([]store.SessionSkillRef, []store.SessionToolPin, error) {
+	sources, err := receivedSkillSources(ctx, db, ownerUserID, deviceID, kinds, toolBundles)
+	if err != nil {
+		return nil, nil, err
+	}
+	refs, pins, _, err := sourceSkills(ctx, db, deviceID, sources)
+	return refs, pins, err
+}
+
+// receivedSkillSources are the bundles of the connectors a session receives:
+// the package bundles enabled on this device, and the bundles that follow a
+// connector tool's own package (toolBundles, from connectorToolBundles),
+// limited to the Skills its descriptor turns on by default.
+func receivedSkillSources(ctx context.Context, db Backend, ownerUserID, deviceID string, kinds map[string]bool, toolBundles []connectorSkillSource) ([]connectorSkillSource, error) {
 	if ownerUserID == "" || deviceID == "" || len(kinds) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	enabled, err := db.ListConnectorPackages(ctx, ownerUserID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var repositories []connectorSkillSource
 	seen := map[string]bool{}
 	for _, item := range enabled {
 		if kinds[item.Kind] && containsDevice(item.Devices, deviceID) && !seen[item.RepositoryID] {
 			seen[item.RepositoryID] = true
-			repositories = append(repositories, connectorSkillSource{RepositoryID: item.RepositoryID})
+			repositories = append(repositories, connectorSkillSource{RepositoryID: item.RepositoryID, Kind: item.Kind})
 		}
 	}
 	for _, source := range toolBundles {
@@ -56,16 +67,23 @@ func sessionPackageSkills(ctx context.Context, db Backend, ownerUserID, deviceID
 			repositories = append(repositories, source)
 		}
 	}
+	return repositories, nil
+}
+
+// sourceSkills reads the sources' Skills and tool pins at the version paired
+// with the device; originOf says which connector and bundle bring each Skill.
+func sourceSkills(ctx context.Context, db Backend, deviceID string, repositories []connectorSkillSource) ([]store.SessionSkillRef, []store.SessionToolPin, map[string]connectorSkillOrigin, error) {
 	if len(repositories) == 0 {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	reported, err := db.ListDeviceTools(ctx, deviceID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	installed := installedByDevice(reported)[deviceID]
 	var refs []store.SessionSkillRef
 	var pins []store.SessionToolPin
+	originOf := map[string]connectorSkillOrigin{}
 	for _, source := range repositories {
 		repositoryID := source.RepositoryID
 		repo, err := db.GetSkillRepository(ctx, repositoryID)
@@ -87,7 +105,7 @@ func sessionPackageSkills(ctx context.Context, db Backend, ownerUserID, deviceID
 		}
 		members, err := db.SkillRevisionRefs(ctx, source.activeMembers(version.Members))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		name := repo.Name
 		if name == "" {
@@ -98,6 +116,7 @@ func sessionPackageSkills(ctx context.Context, db Backend, ownerUserID, deviceID
 			refs = append(refs, members[i])
 			marked := bundle
 			refs[len(refs)-1].Bundle = &marked
+			originOf[members[i].SkillID] = connectorSkillOrigin{Kind: source.Kind, BundleID: repo.ID}
 		}
 		for tool, version := range standing.Tools {
 			pins = append(pins, store.SessionToolPin{
@@ -110,7 +129,7 @@ func sessionPackageSkills(ctx context.Context, db Backend, ownerUserID, deviceID
 		return strings.ToLower(refs[i].Name) < strings.ToLower(refs[j].Name)
 	})
 	sort.Slice(pins, func(i, j int) bool { return pins[i].Name < pins[j].Name })
-	return refs, pins, nil
+	return refs, pins, originOf, nil
 }
 
 func containsDevice(devices []string, deviceID string) bool {
@@ -122,55 +141,85 @@ func containsDevice(devices []string, deviceID string) bool {
 	return false
 }
 
-// workspacePackageSkills is the one decision of which connector package
-// Skills a workspace's session on deviceID gets, shared by session dispatch
-// and the composer's "/" menu: the connectors the session receives, the
-// packages enabled on the device (kinds: connectorKinds, or
-// the kinds the Workspace is bound to before a session exists), then the Workspace's own choices and
-// exclusions on top (mergePackageSkillRefs). toolBundles are the bundles of
-// the received connectors' own tools (connectorToolBundles); deviceOwn names
-// the Skills the agent already finds in the device's own folders
-// (deviceOwnSkillNames), which keep their place. base is the Workspace's refs
-// the package Skills are added to.
+// workspacePackageSkills is the one decision of which connector Skills a
+// workspace's session on deviceID gets, shared by session dispatch, the
+// composer's "/" menu and the Skills page (workspaceConnectorSkills).
 func workspacePackageSkills(ctx context.Context, db Backend, ownerUserID, workspaceID, deviceID string, kinds map[string]bool, toolBundles []connectorSkillSource, deviceOwn map[string]bool, base []store.SessionSkillRef) ([]store.SessionSkillRef, []store.SessionToolPin, error) {
-	extra, pins, err := sessionPackageSkills(ctx, db, ownerUserID, deviceID, kinds, toolBundles)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolve connector package skills: %w", err)
-	}
-	merged, err := mergePackageSkillRefs(ctx, db, workspaceID, base, withoutDeviceOwn(extra, deviceOwn))
-	if err != nil {
-		return nil, nil, fmt.Errorf("merge connector package skills: %w", err)
-	}
-	return merged, pins, nil
+	resolved, err := workspaceConnectorSkills(ctx, db, ownerUserID, workspaceID, deviceID, kinds, toolBundles, deviceOwn, base)
+	return resolved.Refs, resolved.Pins, err
 }
 
-// mergePackageSkillRefs adds package Skills after Workspace choices. An
-// existing name and an explicitly excluded skill win.
-func mergePackageSkillRefs(ctx context.Context, db Backend, workspaceID string, refs []store.SessionSkillRef, extra []store.SessionSkillRef) ([]store.SessionSkillRef, error) {
-	if len(extra) == 0 {
-		return refs, nil
+// connectorSkillsResolution is what the connectors a workspace's session
+// receives add to its Skills.
+type connectorSkillsResolution struct {
+	// Refs is base with the connectors' Skills added.
+	Refs []store.SessionSkillRef
+	Pins []store.SessionToolPin
+	// Contributed are the Skills the connectors bring here, the ones this
+	// workspace turned off included (by skill ID).
+	Contributed map[string]connectorSkillOrigin
+	// Off are the contributed Skills this workspace turned off.
+	Off []string
+}
+
+// connectorSkillOrigin is the connector and library bundle a Skill comes with.
+type connectorSkillOrigin struct {
+	Kind     string
+	BundleID string
+}
+
+// workspaceConnectorSkills: a connector the session receives (kinds:
+// connectorKinds, or the kinds the Workspace is bound to before a session
+// exists) brings its bundle's Skills on by default: the package bundles
+// enabled on the device, and the bundles of the received connectors' own
+// tools (toolBundles, from connectorToolBundles) limited to their default
+// set. A name the workspace already has (base), a Skill the agent finds in
+// the device's own folders (deviceOwn, from deviceOwnSkillNames) and a Skill
+// the workspace turned off stay out.
+func workspaceConnectorSkills(ctx context.Context, db Backend, ownerUserID, workspaceID, deviceID string, kinds map[string]bool, toolBundles []connectorSkillSource, deviceOwn map[string]bool, base []store.SessionSkillRef) (connectorSkillsResolution, error) {
+	result := connectorSkillsResolution{Refs: base}
+	sources, err := receivedSkillSources(ctx, db, ownerUserID, deviceID, kinds, toolBundles)
+	if err != nil {
+		return result, fmt.Errorf("resolve connector package skills: %w", err)
 	}
-	names := map[string]bool{}
-	for _, ref := range refs {
-		names[strings.ToLower(ref.Name)] = true
+	extra, pins, originOf, err := sourceSkills(ctx, db, deviceID, sources)
+	if err != nil {
+		return result, fmt.Errorf("resolve connector package skills: %w", err)
+	}
+	result.Pins = pins
+	extra = withoutDeviceOwn(extra, deviceOwn)
+	if len(extra) == 0 {
+		return result, nil
 	}
 	excluded, err := db.ListWorkspaceSkillExclusions(ctx, workspaceID)
 	if err != nil {
-		return nil, err
+		return result, fmt.Errorf("merge connector package skills: %w", err)
 	}
 	off := map[string]bool{}
 	for _, id := range excluded {
 		off[id] = true
 	}
+	names := map[string]bool{}
+	for _, ref := range base {
+		names[strings.ToLower(ref.Name)] = true
+	}
+	refs := base
+	result.Contributed = map[string]connectorSkillOrigin{}
 	for _, ref := range extra {
 		name := strings.ToLower(ref.Name)
-		if names[name] || off[ref.SkillID] {
+		if names[name] {
 			continue
 		}
 		names[name] = true
+		result.Contributed[ref.SkillID] = originOf[ref.SkillID]
+		if off[ref.SkillID] {
+			result.Off = append(result.Off, ref.SkillID)
+			continue
+		}
 		refs = append(refs, ref)
 	}
-	return refs, nil
+	result.Refs = refs
+	return result, nil
 }
 
 func mergeToolPins(left, right []store.SessionToolPin) []store.SessionToolPin {

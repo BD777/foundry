@@ -561,6 +561,26 @@ export const foundryCommands: Record<
       flags: { "--workspace": flag("workspaceId") },
     },
   },
+  "worker-group": {
+    list: { tool: "worker_groups", fixed: { action: "list" }, flags: {} },
+    create: {
+      tool: "worker_groups",
+      fixed: { action: "save" },
+      flags: {
+        "--label": flag("label"),
+        "--members": flag("members", "json"),
+      },
+    },
+    update: {
+      tool: "worker_groups",
+      positional: "id",
+      fixed: { action: "save" },
+      flags: {
+        "--label": flag("label"),
+        "--members": flag("members", "json"),
+      },
+    },
+  },
   model: {
     list: {
       tool: "list_models",

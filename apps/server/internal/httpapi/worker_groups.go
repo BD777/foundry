@@ -82,17 +82,8 @@ func (s *Server) handleCreateWorkerGroup(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
-	group := storedWorkerGroup(input, m.userID, "")
-	if err := s.validateWorkerGroup(r.Context(), m, group); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	saved, err := s.store.SaveWorkerGroup(r.Context(), group)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	writeResultWithStatus(w, http.StatusCreated, publicWorkerGroup(saved), nil)
+	saved, err := s.saveWorkerGroup(r.Context(), m, "", input)
+	writeResultWithStatus(w, http.StatusCreated, saved, err)
 }
 
 func (s *Server) handleUpdateWorkerGroup(w http.ResponseWriter, r *http.Request) {
@@ -105,23 +96,32 @@ func (s *Server) handleUpdateWorkerGroup(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
-	current, err := s.store.GetWorkerGroup(r.Context(), r.PathValue("id"))
-	if errors.Is(err, store.ErrWorkerGroupNotFound) || err == nil && current.OwnerUserID != m.userID {
-		err = &statusError{http.StatusNotFound, store.ErrWorkerGroupNotFound}
+	saved, err := s.saveWorkerGroup(r.Context(), m, r.PathValue("id"), input)
+	writeResult(w, saved, err)
+}
+
+// saveWorkerGroup creates a group (no id) or replaces one of the person's,
+// keeping its creation time (the store keeps the cursor while members match).
+func (s *Server) saveWorkerGroup(ctx context.Context, m providerManager, id string, input store.WorkerGroupInput) (store.WorkerGroup, error) {
+	group := storedWorkerGroup(input, m.userID, "")
+	if id != "" {
+		current, err := s.store.GetWorkerGroup(ctx, id)
+		if errors.Is(err, store.ErrWorkerGroupNotFound) || err == nil && current.OwnerUserID != m.userID {
+			err = &statusError{http.StatusNotFound, store.ErrWorkerGroupNotFound}
+		}
+		if err != nil {
+			return store.WorkerGroup{}, err
+		}
+		group.ID, group.CreatedAt, group.Cursor = current.ID, current.CreatedAt, current.Cursor
 	}
+	if err := s.validateWorkerGroup(ctx, m, group); err != nil {
+		return store.WorkerGroup{}, err
+	}
+	saved, err := s.store.SaveWorkerGroup(ctx, group)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.WorkerGroup{}, err
 	}
-	group := storedWorkerGroup(input, m.userID, current.ID)
-	group.CreatedAt = current.CreatedAt
-	group.Cursor = current.Cursor
-	if err := s.validateWorkerGroup(r.Context(), m, group); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	saved, err := s.store.SaveWorkerGroup(r.Context(), group)
-	writeResult(w, publicWorkerGroup(saved), err)
+	return publicWorkerGroup(saved), nil
 }
 
 func (s *Server) handleDeleteWorkerGroup(w http.ResponseWriter, r *http.Request) {

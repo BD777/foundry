@@ -115,3 +115,36 @@ test("the first real step replaces the indicator, and a settled session has none
   );
   assert.deepEqual(awaiting(done), []);
 });
+
+test("a new session's first input shows once, before and after its own event", async () => {
+  const { withOutbox } =
+    await import("../src/features/chat/composer/chat-outbox.ts");
+  const sent = {
+    id: "c1",
+    sessionId: "s",
+    inputId: "in_1",
+    threadId: "t",
+    text: "First question",
+    at: at(0),
+    state: "accepted",
+  };
+  const userRows = (events) =>
+    withOutbox(
+      chatMessagesForThread(
+        thread({
+          status: "running",
+          input: { id: "in_1", prompt: "First question", at: at(0) },
+          events,
+        }),
+      ),
+      [sent],
+      "t",
+    ).messages.filter((message) => message.role === "user");
+  for (const events of [[], firstTurn]) {
+    const rows = userRows(events);
+    assert.deepEqual(
+      rows.map((message) => [message.id, message.clientId]),
+      [["agent-session:s:in_1", "c1"]],
+    );
+  }
+});

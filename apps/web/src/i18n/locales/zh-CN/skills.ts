@@ -117,6 +117,13 @@ export const skills: Translation<typeof en> = {
     useBundle: "在这个工作区使用 {{name}}",
     viaBundle: "来自 {{name}}",
     viaBundleTitle: "这个工作区通过它使用的 {{name}} 套件获得这个 Skill",
+    fromConnector: "来自连接器 {{name}}",
+    fromConnectorOff: "来自连接器 {{name}}，此处已关闭",
+    fromConnectorTitle:
+      "这个工作区授权了 {{name}} 连接器，所以这里的会话会带上这个 Skill。取消勾选只在这个工作区关闭；移除连接器后它也会移除。",
+    bundleFromConnector: "来自连接器 {{name}} · 已启用 {{on}} / {{total}}",
+    bundleFromConnectorTitle:
+      "这个工作区授权的 {{name}} 连接器会启用这些 Skill。可在下方列表里逐个关闭；勾选套件则使用它的全部 Skill。",
     collapseBundle: "收起",
     expandBundle: "展开",
     bundleSkillsCount_one: "{{count}} 个技能",

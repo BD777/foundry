@@ -369,3 +369,77 @@ func TestParseChannelInbox(t *testing.T) {
 		}
 	}
 }
+
+// DEV-229: what a channel session did is read for its own sessions and
+// window, not from the account's last few hundred audit lines, which a
+// busy account fills with other sessions' reads.
+func TestMessageChannelActionsSurviveABusyAccount(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	ctx := context.Background()
+	if err := f.db.AppendExternalAccountEvent(ctx, store.ExternalAccountEvent{AccountID: "xacc_lark", Kind: "extension_connector_request", SessionID: f.session.ID,
+		CreatedAt: "2026-01-01T00:00:09Z", Detail: `{"method":"POST","route":"/agent/v1/messages/:messageId/replies","status":200,"outcome":"forwarded","write":true}`}); err != nil {
+		t.Fatal(err)
+	}
+	// Before the delivery: not this turn's.
+	if err := f.db.AppendExternalAccountEvent(ctx, store.ExternalAccountEvent{AccountID: "xacc_lark", Kind: "extension_connector_request", SessionID: f.session.ID,
+		CreatedAt: "2025-12-31T00:00:00Z", Detail: `{"method":"POST","route":"/old","status":200,"write":true}`}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 600; i++ {
+		if err := f.db.AppendExternalAccountEvent(ctx, store.ExternalAccountEvent{AccountID: "xacc_lark", Kind: "extension_connector_request", SessionID: "sess_other",
+			CreatedAt: "2026-01-01T00:01:00Z", Detail: `{"method":"GET","route":"/agent/v1/conversations/:feedId/messages","status":200,"outcome":"forwarded","access":"read"}`}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.db.AppendExternalAccountEvent(ctx, store.ExternalAccountEvent{AccountID: "xacc_lark", Kind: "token_issued", SessionID: f.session.ID, CreatedAt: "2026-01-01T00:02:00Z", Detail: "not json"}); err != nil {
+		t.Fatal(err)
+	}
+	actions := f.server.messageChannelActions(ctx, f.agent, f.channel, f.mustDeliveries(t))
+	got := actions["dlv_1"]
+	if len(got) != 1 || got[0].Kind != "connector_write" || !strings.Contains(got[0].Summary, "/replies") {
+		t.Fatalf("actions: %+v", actions)
+	}
+}
+
+// DEV-229: a channel session keeps the title it was started with
+// (「channel · conversation」): automatic naming after its first answer
+// does not replace it, and the person's rename still does.
+func TestChannelSessionTitleIsKeptFromAutomaticNaming(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	ctx := context.Background()
+	title := "Lark /fd · 张三"
+	if err := f.db.RecordMessageChannelSession(ctx, store.MessageChannelSession{SessionID: f.session.ID, ChannelID: f.channel.ID, AssistantID: f.agent.ID,
+		SessionKey: "c:oc_1", WorkspaceID: f.session.WorkspaceID, Title: title}); err != nil {
+		t.Fatal(err)
+	}
+	titleOf := func() string {
+		titles, err := f.db.ListChatTitles(ctx, f.session.WorkspaceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range titles {
+			if item.ChatID == f.session.ID {
+				return item.Title
+			}
+		}
+		return ""
+	}
+	if got := titleOf(); got != title {
+		t.Fatalf("title record %q", got)
+	}
+	job, err := f.db.CreateChatTitleJob(ctx, f.session.ID, store.CreateAgentSessionInput{WorkspaceID: f.session.WorkspaceID, AgentID: "agent_pa", Prompt: "name it"}, true)
+	if err != nil || job.ID != "" {
+		t.Fatalf("automatic naming ran: %+v %v", job, err)
+	}
+	if _, err := f.db.RenameChat(ctx, f.session.ID, store.RenameChatInput{WorkspaceID: f.session.WorkspaceID, Title: "我的名字"}); err != nil {
+		t.Fatal(err)
+	}
+	// Recording the session again (a continued turn) keeps the rename.
+	if err := f.db.RecordMessageChannelSession(ctx, store.MessageChannelSession{SessionID: f.session.ID, ChannelID: f.channel.ID, AssistantID: f.agent.ID,
+		SessionKey: "c:oc_1", WorkspaceID: f.session.WorkspaceID, Title: title}); err != nil {
+		t.Fatal(err)
+	}
+	if got := titleOf(); got != "我的名字" {
+		t.Fatalf("rename lost: %q", got)
+	}
+}

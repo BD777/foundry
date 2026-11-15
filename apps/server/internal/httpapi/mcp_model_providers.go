@@ -32,6 +32,7 @@ var modelProviderMCPTools = map[string]bool{
 	"set_model_defaults":    true,
 	"sign_in_subscription":  true,
 	"get_execution_default": true,
+	"worker_groups":         true,
 }
 
 var errProviderManagementRefused = &statusError{http.StatusForbidden, errors.New(

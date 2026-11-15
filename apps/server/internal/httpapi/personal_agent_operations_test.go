@@ -2,9 +2,13 @@ package httpapi
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -148,5 +152,118 @@ func TestAssistantContinuedSessionKeepsItsOwnModel(t *testing.T) {
 	snapshot, e := f.server.store.GetPersonalAgentRunSnapshot(ctx, agent.ID, flow.Key("parun", f.aliceID, op.ID))
 	if e != nil || snapshot.SelectionReason != "continued_session" || snapshot.Model != "owner-model" {
 		t.Fatalf("snapshot: %+v %v", snapshot, e)
+	}
+}
+
+// DEV-229: a write step waits for the session writing in its workspace and
+// its dispatching conversation hears so after OperationQueuedNoticeAfter
+// and again when it starts; a read-only step starts beside that session,
+// and a session running a read-only step is no writer.
+func TestAssistantOperationWaitsForTheWriterAndSaysSo(t *testing.T) {
+	previous, after := assistant.CoalesceNotices, assistant.OperationQueuedNoticeAfter
+	assistant.CoalesceNotices = 0
+	t.Cleanup(func() { assistant.CoalesceNotices, assistant.OperationQueuedNoticeAfter = previous, after })
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	agent.Settings.Language = "en"
+	if _, err := f.db.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "check the release", Source: "chat",
+	}, sessions.StartOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.daemon.complete(f.daemon.nextChatRun().Session, "On it.")
+	waitForStatus(t, f.db, conversation.ID, "completed")
+	// Runs of other sessions go by; the conversation's next one is a notice.
+	told := func() string {
+		t.Helper()
+		for {
+			run := f.daemon.nextChatRun()
+			if run.Session.ID != conversation.ID {
+				continue
+			}
+			stored, _ := f.db.GetAgentSession(ctx, conversation.ID)
+			if !personalagent.IsNotice(stored.Input.Prompt) {
+				t.Fatalf("the news reads as the person's words: %q", stored.Input.Prompt)
+			}
+			f.daemon.complete(run.Session, "Noted.")
+			waitForStatus(t, f.db, conversation.ID, "completed")
+			return stored.Input.Prompt
+		}
+	}
+	writer, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget", AgentID: "agent_budget", Prompt: "long rerun"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.StartAgentSession(ctx, writer.ID); err != nil {
+		t.Fatal(err)
+	}
+	capture := func(id string, readOnly bool) store.PersonalAgentOperation {
+		t.Helper()
+		item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Check " + id, Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		op, err := f.server.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: id, AssistantID: agent.ID, UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: id, WorkspaceID: "ws_budget", SourceSessionID: conversation.ID, InputID: flow.InputID(id), Prompt: "do " + id, RequestHash: id, ReadOnly: readOnly})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return op
+	}
+	get := func(id string) store.PersonalAgentOperation {
+		saved, err := f.server.store.GetPersonalAgentOperation(ctx, agent.ID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+
+	write := capture("write-step", false)
+	f.server.assistant.DeliverOperation(ctx, write)
+	saved := get(write.ID)
+	if saved.Status != "waiting" || saved.Reason != "workspace_writer_busy" || saved.BusySessionID != writer.ID || saved.BusySince == "" || saved.WaitingSince == "" || saved.QueuedNoticeAt != "" {
+		t.Fatalf("waiting write step: %+v", saved)
+	}
+	// Past the limit, the conversation hears it waits and for whom.
+	assistant.OperationQueuedNoticeAfter = 0
+	f.server.assistant.DeliverOperation(ctx, saved)
+	if text := told(); !strings.Contains(text, "Queued: dispatched step write-step") || !strings.Contains(text, writer.ID) {
+		t.Fatalf("queued notice: %q", text)
+	}
+	saved = get(write.ID)
+	if saved.Status != "waiting" || saved.QueuedNoticeAt == "" {
+		t.Fatalf("after the notice: %+v", saved)
+	}
+	f.server.assistant.DeliverOperation(ctx, saved)
+	if again := get(write.ID); again.QueuedNoticeAt != saved.QueuedNoticeAt {
+		t.Fatal("told twice")
+	}
+
+	// A read-only step starts beside the writer.
+	read := capture("read-step", true)
+	f.server.assistant.DeliverOperation(ctx, read)
+	if saved := get(read.ID); saved.Status != "delivered" || saved.SessionID == "" {
+		t.Fatalf("read-only step waited: %+v", saved)
+	}
+	helper, _ := f.db.GetAgentSession(ctx, get(read.ID).SessionID)
+	if !strings.Contains(helper.Input.Prompt, "dispatched this step as read-only") {
+		t.Fatalf("helper prompt: %q", helper.Input.Prompt)
+	}
+
+	// The writer ends; the read-only helper still runs and is no writer.
+	if _, err := f.db.CompleteAgentSession(ctx, writer.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.DeliverOperation(ctx, get(write.ID))
+	saved = get(write.ID)
+	if saved.Status != "delivered" || saved.SessionID == "" {
+		t.Fatalf("write step after the writer ended: %+v", saved)
+	}
+	if text := told(); !strings.Contains(text, "Started: dispatched step write-step") || !strings.Contains(text, saved.SessionID) {
+		t.Fatalf("started notice: %q", text)
 	}
 }

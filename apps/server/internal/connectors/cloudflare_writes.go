@@ -85,21 +85,13 @@ func (e *CloudflareRefusal) Foundry() map[string]any {
 const cloudflareAccessWhereShort = "Connectors → this workspace → Cloudflare (Session access); the account owner decides"
 const cloudflareAccessWhere = "the account owner sets it per workspace in Connectors → this workspace → Cloudflare"
 
-// cloudflareWriteRules say which changes each level other than read
-// allows: method and path below /zones/<bound zone>/.
-var cloudflareWriteRules = map[string]func(method string, rest []string) bool{
-	externalaccounts.CloudflareAccessDNSEdit: func(method string, rest []string) bool {
-		if len(rest) == 1 && rest[0] == "dns_records" {
-			return method == http.MethodPost
-		}
-		if len(rest) == 2 && rest[0] == "dns_records" && cloudflareZoneID.MatchString(rest[1]) {
-			return method == http.MethodPatch || method == http.MethodPut || method == http.MethodDelete
-		}
-		return false
-	},
+// cloudflareZoneChangesText lists the zone changes access/cloudflare.json
+// allows.
+func cloudflareZoneChangesText() string {
+	return cloudflareRoutesText(func(method string, route externalaccounts.AccessRoute) bool {
+		return method != http.MethodGet && strings.HasPrefix(route.Path, "/zones/")
+	})
 }
-
-const cloudflareDNSEditPaths = "POST /zones/<zone id>/dns_records, and PATCH, PUT or DELETE /zones/<zone id>/dns_records/<record id>"
 
 // cloudflareWriteBody is the request body as plain JSON data: an object for
 // POST, PATCH and PUT, nothing for DELETE.

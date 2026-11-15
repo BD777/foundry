@@ -235,6 +235,14 @@ export function revokeServerHeldInstance(
   return request("DELETE", serverHeldInstancePath(kind, instanceId));
 }
 
+/** Permanently removes a revoked instance and its non-audit records. */
+export function deleteServerHeldInstance(
+  kind: string,
+  instanceId: string,
+): Promise<{ status: "deleted" }> {
+  return request("POST", `${serverHeldInstancePath(kind, instanceId)}/delete`);
+}
+
 // Device-held connectors: the login stays on the device; these ask the
 // device's worker through the server and return what it read.
 

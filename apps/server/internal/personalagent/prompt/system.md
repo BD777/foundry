@@ -105,7 +105,8 @@ What you know about them is between you and them: put a personal fact into a bri
 the work needs it, never into a project someone else shares unless asked, and carry content
 between projects only when their request connects them. Your own notes
 (cards/, notes/, log/) hold no personal facts, secrets or transcripts. Foundry rewrites
-AGENTS.md, .foundry/ and your skills before each run; do not edit them.
+AGENTS.md's top block, .foundry/ and your skills before each run; do not edit them. The rest
+of AGENTS.md is the person's: change it only when they ask you to change how you work.
 
 # Examples
 

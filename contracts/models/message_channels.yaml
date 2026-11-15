@@ -547,61 +547,6 @@ components:
           type: array
           items:
             type: string
-    MessageChannelInstructionsRevision:
-      type: object
-      required: [id, at, sha256, bytes, source]
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        at:
-          type: string
-        sha256:
-          type: string
-        bytes:
-          type: integer
-        source:
-          description: "seed, web, revert, or outside (changed on the device, found when read)."
-          type: string
-    MessageChannelInstructions:
-      description: The AGENTS.md of the channel's workspace as it is on the device now, and its saved revisions.
-      type: object
-      required: [workspaceId, path, content, sha256, missing, revisions]
-      additionalProperties: false
-      properties:
-        workspaceId:
-          type: string
-        path:
-          type: string
-        content:
-          type: string
-        sha256:
-          type: string
-        missing:
-          type: boolean
-        revisions:
-          type: array
-          items:
-            $ref: "#/components/schemas/MessageChannelInstructionsRevision"
-    MessageChannelInstructionsInput:
-      description: New content; baseSha256 is the sha256 the editor started from (refused when the file changed since).
-      type: object
-      required: [content, baseSha256]
-      additionalProperties: false
-      properties:
-        content:
-          type: string
-        baseSha256:
-          type: string
-    MessageChannelInstructionsRevert:
-      type: object
-      required: [revisionId, baseSha256]
-      additionalProperties: false
-      properties:
-        revisionId:
-          type: string
-        baseSha256:
-          type: string
     MessageChannelRolloverInput:
       description: The conversation (sessionKey of a delivery) whose next message starts a new session.
       type: object

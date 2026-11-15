@@ -88,6 +88,7 @@ const serverMessages = [
   "workspaceMigrationPurge",
   "writeFile",
   "setWorkerProxy",
+  "manageFile",
 ];
 
 test("the daemon handles every message type the server sends it", () => {
@@ -95,6 +96,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 82);
+  assert.equal(expected.length, 83);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

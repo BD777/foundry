@@ -46,6 +46,7 @@ test("official windows are found under the names relays give models", () => {
     "claude-opus-4-20250514": 200_000,
     "claude-opus-4-6@20260101": 200_000,
     "claude-opus-4-8[1m]": 1_000_000,
+    "claude-fable-5-2": 1_000_000,
     "CLAUDE-HAIKU-5-5": 1_000_000,
     "flux/gpt-6-astra": 872_000,
     "mira/gpt-5.6-sol": 872_000,
@@ -84,6 +85,8 @@ test("Claude models whose 1M window is an opt-in are named from Claude Code's ta
     "claude-sonnet-4-5-20250929",
     "us.anthropic.claude-sonnet-4-20250514-v1:0",
     "claude-opus-4-6",
+    // Newer than the stable Claude Code's own catalog.
+    "claude-fable-5-2",
   ])
     assert.equal(claudeOneMillionOptIn(model), true, model);
   for (const model of [

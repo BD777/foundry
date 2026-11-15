@@ -24,13 +24,17 @@ import {
   ReplacesOfficialBadge,
 } from "./builtin-shadow-badge";
 import { DefaultSkillBadge, ViaBundleBadge } from "./default-skill-badge";
+import { FromConnectorBadge, connectorLabels } from "./connector-badge";
 import { WorkspaceBundles } from "./workspace-bundles";
 import { MissingToolsBadge } from "./missing-tools-badge";
 import { OfficialSkillsSection } from "./official-skills-section";
 import { SkillVersionPin } from "./skill-version-pin";
 import { useWorkspaceSkillSelection } from "./use-workspace-skill-selection";
 import { SkillListingNote, claudeListedSkills } from "./skill-listing-note";
-import type { WorkspaceSkillSummary } from "../../api-types";
+import type {
+  ConnectorSkillGroup,
+  WorkspaceSkillSummary,
+} from "../../api-types";
 
 export type SkillsFeatureEvent =
   | { type: "manage-devices.requested" }
@@ -49,6 +53,8 @@ export interface SkillsFeatureProps {
   builtinSkills?: BuiltinSkill[];
   /** The Skills a new session here gets from Foundry, connector bundles included. */
   workspaceSkills?: WorkspaceSkillSummary[];
+  /** The skills the connectors granted here bring, by connector. */
+  connectorSkills?: ConnectorSkillGroup[];
   /** Which programs skills need the devices have. */
   deviceTools?: DeviceTool[];
   /** Owner's default skills this workspace gets besides its selection. */
@@ -87,6 +93,7 @@ export function SkillsFeature({
   providerHealth,
   builtinSkills,
   workspaceSkills,
+  connectorSkills,
   defaultSkillIds,
   deviceTools,
   skillBundles,
@@ -116,6 +123,7 @@ export function SkillsFeature({
       .filter((bundle) => workspaceBundleIds?.includes(bundle.id))
       .flatMap((bundle) => bundle.skillIds.map((id) => [id, bundle.name])),
   );
+  const viaConnector = connectorLabels(connectorSkills);
   const {
     normalizedSkills,
     resolution,
@@ -182,6 +190,8 @@ export function SkillsFeature({
 
       <WorkspaceBundles
         bundles={skillBundles ?? []}
+        connectorSkills={connectorSkills ?? []}
+        onIds={onIds}
         onChanged={onChanged}
         readOnly={!!readOnlyReason}
         defaultIds={defaultBundleIds ?? []}
@@ -275,6 +285,10 @@ export function SkillsFeature({
               providerHealth={providerHealth}
             />
             <ViaBundleBadge name={viaBundle.get(skill.id)} />
+            <FromConnectorBadge
+              name={viaConnector.get(skill.id)}
+              off={!onIds.has(skill.id)}
+            />
             <MissingToolsBadge
               deviceLabel={workspaceDevice?.label}
               deviceTools={deviceTools?.filter(

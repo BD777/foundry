@@ -1,6 +1,7 @@
 package sqlitestore
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -160,6 +161,7 @@ func (s *Store) SavePersonalAgentOperation(ctx context.Context, op store.Persona
 		}
 		// Immutable instruction fields are never replaced by a worker's stale copy.
 		old.Status, old.Reason, old.SessionID, old.LeaseUntil = op.Status, op.Reason, op.SessionID, op.LeaseUntil
+		old.WaitingSince, old.BusySessionID, old.BusySince, old.QueuedNoticeAt = op.WaitingSince, op.BusySessionID, op.BusySince, op.QueuedNoticeAt
 		if old.SnapshotID != "" && old.SnapshotID != op.SnapshotID {
 			return store.ErrIdempotencyConflict
 		}
@@ -216,12 +218,17 @@ func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision i
 	if err := s.checkPAOperationIntent(ctx, op, true); err != nil {
 		return err
 	}
+	// A read-only step does not take the writer's place, so it never waits
+	// for it.
+	if op.ReadOnly {
+		return nil
+	}
 	var unsettled bool
-	if e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`, workspace).Scan(&unsettled); e != nil {
+	if e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1 AND NOT EXISTS(SELECT 1 FROM pa_operations o WHERE o.input_id=c.input_id AND json_extract(o.payload_json,'$.readOnly')=1))`, workspace).Scan(&unsettled); e != nil {
 		return e
 	}
 	if unsettled {
-		return fmt.Errorf("workspace_writer_busy: an earlier input still needs its native end receipt")
+		return &store.WorkspaceWriterBusyError{Unsettled: true}
 	}
 	sessions, err := s.ListAgentSessionSummaries(ctx, workspace)
 	if err != nil {
@@ -231,8 +238,16 @@ func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision i
 		if session.Source == store.SessionSourceVerification || store.IsUtilitySessionSource(session.Source) {
 			continue
 		}
-		if store.IsActiveSessionStatus(session.Status) {
-			return fmt.Errorf("workspace_writer_busy: reuse or wait for the existing owner")
+		if !store.IsActiveSessionStatus(session.Status) {
+			continue
+		}
+		// A session running a read-only step's input is not a writer.
+		var readOnly bool
+		if e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_operations WHERE input_id=? AND json_extract(payload_json,'$.readOnly')=1)`, session.Input.ID).Scan(&readOnly); e != nil {
+			return e
+		}
+		if !readOnly {
+			return &store.WorkspaceWriterBusyError{SessionID: session.ID, Since: cmp.Or(session.Input.At, session.StartedAt)}
 		}
 	}
 	return nil

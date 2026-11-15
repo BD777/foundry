@@ -635,5 +635,7 @@ test("session reasons and revision sources read as known words", () => {
   assert.equal(revisionSource("web"), "web");
   assert.equal(revisionSource("revert"), "revert");
   assert.equal(revisionSource("outside"), "outside");
+  assert.equal(revisionSource("default"), "default");
+  assert.equal(revisionSource("deleted"), "deleted");
   assert.equal(revisionSource("device"), "outside");
 });

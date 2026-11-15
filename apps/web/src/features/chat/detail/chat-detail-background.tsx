@@ -8,7 +8,7 @@ import { Button } from "../../../components/ui/button";
 import { formatDuration } from "../../../components/conversation/turn-usage";
 import { useSharedNow } from "../../../lib/use-shared-now";
 import { BackgroundStatusIcon } from "../context/chat-context-background";
-import { formatFileSize } from "./chat-detail-files";
+import { formatFileSize } from "../../../components/workspace/workspace-file-view";
 import { formatTimerDateTime } from "./chat-detail-timer";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ChatBackgroundTaskItem } from "../chat-types";

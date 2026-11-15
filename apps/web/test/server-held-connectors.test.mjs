@@ -479,6 +479,62 @@ test("server-held instances show the permission found during validation", async 
   await page.unmount();
 });
 
+test("revoked instances stay collapsed until opened, then can be deleted", async () => {
+  await i18n.changeLanguage("en");
+  requests = [];
+  api = routes({
+    "GET /api/connectors/extensions/acme-api/instances": {
+      body: {
+        kind: "acme-api",
+        descriptor,
+        instances: [
+          instance({ id: "inst_ready", label: "Production" }),
+          instance({
+            id: "inst_revoked",
+            label: "Old synthetic instance",
+            status: "revoked",
+            statusDetail: "revoked",
+          }),
+        ],
+        devices: [],
+      },
+    },
+    "POST /api/connectors/extensions/acme-api/instances/inst_revoked/delete": {
+      body: { status: "deleted" },
+    },
+  });
+  const page = await render(ConnectorsFeature, connectorProps);
+  assert.match(page.container.textContent, /Production/);
+
+  const revoked = page.container.querySelector("details");
+  assert.ok(revoked);
+  assert.equal(revoked.open, false);
+  assert.equal(
+    revoked.querySelector("summary")?.textContent.trim(),
+    "Revoked (1)",
+  );
+
+  await page.click(revoked.querySelector("summary"));
+  assert.equal(revoked.open, true);
+  assert.match(revoked.textContent, /Old synthetic instance/);
+  await page.click(page.button("Delete", revoked));
+  assert.match(
+    window.document.body.textContent,
+    /Delete Old synthetic instance\?/,
+  );
+  await page.click(page.button("Delete permanently"));
+
+  const request = requests.find(
+    (entry) =>
+      entry.method === "POST" &&
+      entry.path ===
+        "/api/connectors/extensions/acme-api/instances/inst_revoked/delete",
+  );
+  assert.ok(request);
+  assert.doesNotMatch(page.container.textContent, /Old synthetic instance/);
+  await page.unmount();
+});
+
 test("validate probes the first step, then loads select options from that result", async () => {
   await i18n.changeLanguage("en");
   requests = [];

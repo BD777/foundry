@@ -36,8 +36,9 @@ const (
 )
 
 var (
-	ErrInvalidExtensionInstance = errors.New("invalid connector extension instance")
-	errExtensionRedirect        = errors.New("connector extension redirects are not followed")
+	ErrInvalidExtensionInstance    = errors.New("invalid connector extension instance")
+	ErrExtensionInstanceNotRevoked = errors.New("revoke the connector instance before deleting it")
+	errExtensionRedirect           = errors.New("connector extension redirects are not followed")
 )
 
 type ExtensionProbeError struct {
@@ -1271,6 +1272,42 @@ func (s *Service) RevokeExtensionInstance(ctx context.Context, ownerUserID, kind
 	}
 	s.event(ctx, store.ExternalAccountEvent{AccountID: account.ID, Kind: "extension_instance_revoked", ActorID: actorID})
 	return extensionInstance(app, account, data, nil), nil
+}
+
+// DeleteExtensionInstance permanently removes a revoked instance's sealed
+// credential, account, bindings and provider app. External account audit
+// events remain in the database.
+func (s *Service) DeleteExtensionInstance(ctx context.Context, ownerUserID, kind, appID, actorID string) error {
+	app, err := s.store.GetExternalProviderApp(ctx, appID)
+	if err != nil || app.OwnerUserID != ownerUserID || app.Provider != kind || app.CreatedVia != "extension" {
+		return store.ErrExternalAppNotFound
+	}
+	if _, err := decodeExtensionData(app); err != nil {
+		return err
+	}
+	account, err := s.extensionAccount(ctx, ownerUserID, kind, app.ID)
+	if err != nil {
+		return err
+	}
+	if account.Status != store.ExternalAccountRevoked {
+		return ErrExtensionInstanceNotRevoked
+	}
+	deleter, ok := any(s.store).(extensionInstanceDeleteStore)
+	if !ok {
+		return errors.New("connector instance storage does not support deletion")
+	}
+	if s.secrets != nil {
+		if err := s.secrets.DeleteSecret(ctx, ExtensionSecretID(app.ID)); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("delete the connector instance secret: %w", err)
+		}
+	}
+	if err := deleter.DeleteExternalAccountAndProviderApp(ctx, account.ID, app.ID); err != nil {
+		return err
+	}
+	s.event(ctx, store.ExternalAccountEvent{
+		AccountID: account.ID, Kind: "extension_instance_deleted", ActorID: actorID, Detail: kind,
+	})
+	return nil
 }
 
 func extensionProbeClass(err error) string {

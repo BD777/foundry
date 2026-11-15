@@ -9,6 +9,7 @@ Foundry 内置的连接器只有公开服务：飞书、Cloudflare、App Store C
 - **只做外层转换。** 扩展（程序或声明式）只调用工具公开的命令行，不要求工具实现 Foundry 的协议，也不把 Foundry 的东西放进工具自己的仓库。
 - **Server 持有型只接受纯数据。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）；设备持有型仍是默认。若私有部署公开可达，并且一份 API key/令牌加声明式探测、路由目录和请求头模板就能完成接入，扩展可以声明 `holding: "server_held"`。凭据封存在 Server，通用网关执行描述符；Server 永远不加载或运行扩展代码，也不会为某个产品加 Provider 分支。
 - **只由设备所有者安装，到自己的设备上。** 在设备的终端里 `foundry-worker extension add`，或在 Connectors 页上点击（从扩展发布的 git 文件夹，见“来源”）。代码由设备自己用它的 git 凭据拉取，Server 从不经手扩展代码；会话、Workspace 和 Server 都不能自行安装、更新或移除扩展。2026-11-04 本人决定取消原先“只能在本机用命令装”的限制：页面上的安装和 Install bytedcli 一样，是设备所有者明确点击、在自己设备上以自己身份运行的代码，安全边界不变，易用性高得多。
+- **描述符是扩展的契约，Foundry 原样消费。** 本人 2026-11-13 定的原则：bug 在哪里就修哪里。Foundry 消费描述符出错时修 Foundry，不改扩展已有的字段或语义来绕开。比如 `list_models` 丢掉了 Limen 声明的 `sonnet`/`opus`/`haiku`（DEV-226），Foundry 跑 `claude-fable-5-2` 的窗口不对，都不能靠把短名换成完整 id、往 `models` 里加 `[1m]` 后缀或改默认模型来解决。给扩展新增能力（新模型、新命令）是另一回事。
 - **扩展以设备用户身份运行，不是沙箱。** 和会话本身一样信任设备所有者装的东西；Worker 只给它普通环境（`HOME`、`PATH`、语言、代理与 CA 变量），从不给 Worker 自己的凭据，也不读它的 stderr。
 
 ## 安装与登记
@@ -58,6 +59,8 @@ foundry-worker extension remove my-company
 - **工具自带的 Skill** `tool.skills: { "path": "skills", "default": [...] }`（DEV-218，例：bytedcli）：只用于 `tool.source: "npm"`，表示 npm 包里这个文件夹带着 Skill。连接器自己装 CLI，不另设启用步骤；关联的是 Skill 库里跟随 `npm:<tool.package>` 的 bundle（文件夹相同的优先，其次读整个包的那个，`connector_skills.go`）。`default` 列出会话默认拿到的几个 Skill（不写则整个 bundle）；其余的由 Workspace（含 Assistant 的工作区）在 Skills 页单独勾选。Skill 库还没跟随这个包时，页面写明包名并链到 Skill 库。
 
 **设备上已有同名 Skill 时用设备的。** 连接器带来的 Skill 如果和设备自己文件夹里的 Skill 同名（设备级的 `~/.claude/skills`、`~/.codex/skills` 等，以及这个 Workspace 自己的 `.claude/skills`、`.agents/skills`，按设备最近一次扫描），就不再加 Foundry 那一份；只看这个会话的 Agent 会读的文件夹：Claude Code 读 `.claude/skills`，Codex 读 `.codex/skills` 和 `.agents/skills`。理由：那一份是本人自己装、自己维护的；Skill 没有可比较的版本号；两份同名只会在 Agent 的清单里重复占位。Workspace 显式勾选的 Skill 不受影响。
+
+**Skills 页显示为开。** 授权给 Workspace 的连接器（绑定，或 Assistant 主工作区按权限包拿到的全部账号）带来的 Skill，在这个 Workspace 的 Skills 页显示为开、标「来自连接器 X」；它们属于 `inheritedSkillIds`，关掉的属于 `offSkillIds`，关掉写进 `workspace_skill_exclusions`，之后一直生效（会话一样不给）；连接器不再授权时它们一起消失。页面与会话走同一条判定（`workspaceConnectorSkills`，`GET /api/foundry-data` 的 `connectorSkills` 按连接器列出）；套件区里，连接器已带上全部 Skill 的套件显示为在用，不用再勾（DEV-225）。
 
 Connectors 页和 Workspace 的连接器卡片在“凭据在哪”下面列出这一行：Skill：bundle 名（链到 Skill 库）· 开启个数/总数 · 版本，Workspace 卡片上另有“开启更多”链到这个 Workspace 的 Skills 页（`GET /api/connectors` 与 Workspace 连接器视图的 `skillBundles`）。集成包的 Skill 逐个列在它的面板里。
 

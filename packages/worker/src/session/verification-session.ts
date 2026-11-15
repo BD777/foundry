@@ -16,6 +16,8 @@ import {
 } from "../candidate-store/execution-storage.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import type { WorkspaceSandbox } from "./index.js";
+import type { WritableTreeProfile } from "../sandbox/index.js";
+import { foundryToolsRoot } from "../platform/state-root.js";
 import { isolatedAgentEnvironment } from "./isolated-environment.js";
 
 /** A verifier's directory unused this long is removed with its caches. */
@@ -54,6 +56,10 @@ export function verificationExecution(
     workspacePath,
     ambient,
     "verification.sb",
+    undefined,
+    // Checks run the project's own toolchain, wherever the person
+    // installed it; the person's files stay read-only like the rest.
+    "readable",
   );
 }
 
@@ -70,6 +76,7 @@ export function readOnlyWorkspaceExecution(
   ambient: SessionAmbientEnv,
   policyName: string,
   env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv = (base) => base,
+  userFiles: WritableTreeProfile["userFiles"] = "readable",
 ): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
   const scratch = resolve(directory, "scratch");
   rmSync(resolve(scratch, "tmp"), { recursive: true, force: true });
@@ -91,11 +98,14 @@ export function readOnlyWorkspaceExecution(
         readOnlyPaths: [],
         connectSockets: [],
         executables: [],
-        // Checks run the project's own toolchain, wherever the person
-        // installed it; the person's files stay read-only like the rest.
-        userFiles: "readable",
+        userFiles,
       },
-      env: env(isolatedAgentEnvironment(scratch)),
+      env: env({
+        ...isolatedAgentEnvironment(scratch),
+        // The session host inside runs with this scratch as its home: name
+        // the device's tools folder, which it would otherwise look for there.
+        FOUNDRY_TOOLS_ROOT: foundryToolsRoot(),
+      }),
       stderrFile: resolve(directory, "session.stderr.log"),
       ambient,
     },

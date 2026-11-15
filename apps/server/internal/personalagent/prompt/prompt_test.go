@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-13.4": "d1d501712681e0f82c8fa11ad21bca4dcc7600ea2d4a03d03ea26bcf55e0c49e", // DEV-223: AGENTS.md is a managed block on top of the person's own instructions
 	"2026-11-13.3": "4685311fe6e962f23767eac75c853218426802e58b921ca43d38592a6df27dd2", // DEV-212: look in their chats, mail and docs before asking; several wordings, cite sources
 	"2026-11-12.6": "333a8cd9404227cc6df7ad6572514daeb3533be32fe54c2cb80f48a894ecbbf4", // DEV-197 B1: report blockers plainly; asking remains the executor's choice
 	"2026-11-13.2": "d7f4798c007177e262b7e1944ffaedf267b0f2d216b906a5aeaac3e6b95b7ff3", // DEV-200 follow-up: check needs-you items before their deadline (DEV-199 B3)
@@ -315,8 +316,9 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 
 // agentsFileBudget is the size of the typical AGENTS.md (fullInput) before
 // the rules and confirmed facts moved into it (DEV-196, 7840 bytes): moving
-// them must not make the file larger.
-const agentsFileBudget = 7840
+// them must not make the file larger. DEV-223 adds the managed block's two
+// markers and who owns which part (about 250 bytes).
+const agentsFileBudget = 8100
 
 func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	size := len(prompt.AgentsFile(fullInput()))
@@ -363,11 +365,11 @@ func TestAgentsFileFitsCodexsLimit(t *testing.T) {
 func TestTheDesignLimitsHold(t *testing.T) {
 	in := newPersonInput()
 	in.Settings.Language = "zh-CN"
-	if out := prompt.AgentsFile(in); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameZH+",") {
-		t.Fatalf("Chinese default name: %q", out[:40])
+	if out := prompt.AgentsFile(in); !strings.HasPrefix(out, prompt.ManagedBlockStart+"\nYou are "+personalagent.DefaultNameZH+",") {
+		t.Fatalf("Chinese default name: %q", out[:160])
 	}
-	if out := prompt.AgentsFile(newPersonInput()); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameEN+",") {
-		t.Fatalf("English default name: %q", out[:40])
+	if out := prompt.AgentsFile(newPersonInput()); !strings.HasPrefix(out, prompt.ManagedBlockStart+"\nYou are "+personalagent.DefaultNameEN+",") {
+		t.Fatalf("English default name: %q", out[:160])
 	}
 
 	in = newPersonInput()

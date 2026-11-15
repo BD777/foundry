@@ -36,7 +36,22 @@ export type FoundryData = FoundryDataProjection & {
    * pages that show it.
    */
   workspaceSkills?: WorkspaceSkillSummary[];
+  /**
+   * The skills the connectors granted to the workspace bring, by connector.
+   * They are among inheritedSkillIds, and among offSkillIds when the
+   * workspace turned them off.
+   */
+  connectorSkills?: ConnectorSkillGroup[];
 };
+
+/** One connector's skills in a workspace. */
+export interface ConnectorSkillGroup {
+  kind: string;
+  label: string;
+  skillIds: string[];
+  /** The library bundles these skills come from. */
+  bundleIds: string[];
+}
 
 export type { FoundryDataField } from "@bd777/foundry-protocol";
 

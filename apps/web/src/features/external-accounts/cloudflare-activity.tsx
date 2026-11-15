@@ -1,13 +1,17 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CloudflareActivityEntry } from "@bd777/foundry-protocol";
+import type {
+  CloudflareActivityEntry,
+  ExternalAccessLevel,
+} from "@bd777/foundry-protocol";
 import { getCloudflareActivity } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
+import { accessLevelWords } from "./connector-text";
 import { cn } from "../../lib/cn";
 import { ButtonRow } from "../../components/ui/button-row";
 import { MutedText } from "../../components/ui/text";
@@ -31,7 +35,14 @@ const resultTone: Record<string, NonNullable<BadgeProps["tone"]>> = {
  * through Foundry, with its workspace, session, record and result, and
  * each change of a workspace's access level. Newest first.
  */
-export function CloudflareActivity({ accountId }: { accountId: string }) {
+export function CloudflareActivity({
+  accountId,
+  levels,
+}: {
+  accountId: string;
+  /** The provider's access levels, for their names; undefined while unknown. */
+  levels?: ExternalAccessLevel[];
+}) {
   const { t, i18n } = useTranslation("externalAccounts");
   const [entries, setEntries] = useState<CloudflareActivityEntry[]>();
   const [error, setError] = useState("");
@@ -55,14 +66,7 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
       dateStyle: "short",
       timeStyle: "short",
     });
-  const level = (name?: string) =>
-    name === "dns_edit"
-      ? t("cloudflare.accessDnsEdit")
-      : name === "zero_trust"
-        ? t("cloudflare.accessZeroTrust")
-        : name === "read"
-          ? t("cloudflare.accessRead")
-          : (name ?? "");
+  const level = (name?: string) => accessLevelWords(levels, name).label;
   return (
     <details className={scopesDisclosureClass}>
       <summary className={scopesSummaryClass}>

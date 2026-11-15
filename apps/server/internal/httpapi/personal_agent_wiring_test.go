@@ -63,7 +63,7 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	for _, file := range first.PersonalAgentFiles {
 		files[file.Path] = file.Content
 	}
-	if len(files) != 3+len(prompt.AssistantSkills()) || !strings.HasPrefix(files["AGENTS.md"], "You are ") ||
+	if len(files) != 3+len(prompt.AssistantSkills()) || !strings.HasPrefix(files["AGENTS.md"], prompt.ManagedBlockStart+"\nYou are ") ||
 		strings.Contains(files["AGENTS.md"], "ws_budget") || !strings.Contains(files[prompt.ProjectIndexPath], "(ws_budget)") {
 		t.Fatalf("the assistant's files: %+v", first.PersonalAgentFiles)
 	}
@@ -535,7 +535,7 @@ func TestSetupAndMovingTheAssistantsHome(t *testing.T) {
 	}
 	setup := f.lifecycle.creates[len(f.lifecycle.creates)-1]
 	if setup.Kind != store.WorkspaceKindPersonalAgent || setup.FolderName != "personal-agent" || setup.Name != personalagent.DefaultNameEN || setup.Create == nil ||
-		len(setup.Create.Files) != 1 || setup.Create.Files[0].Path != "AGENTS.md" || setup.Create.Files[0].Content != personalagent.AgentsFile() {
+		len(setup.Create.Files) != 1 || setup.Create.Files[0].Path != "AGENTS.md" || setup.Create.Files[0].Content != prompt.InitialAgentsFile() {
 		t.Fatalf("setup created %+v", setup)
 	}
 

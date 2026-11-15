@@ -17,6 +17,10 @@ their assistant manage them; an Issue's sessions and verifiers do not.
   `effort` are its defaults on every device.
 - `set_model_defaults` sets a subscription's or environment's default model
   and effort on one device.
+- `worker_groups` lists the person's worker groups (`list`) or saves one
+  (`save`): `members` is the whole list, each one model on one provider with
+  its effort and `tokensPerMinute`. `get_execution_default` shows which group
+  or provider delegated work uses.
 - `delete_model_provider` removes an API endpoint and its stored key. Say
   what will stop working and confirm with the person first.
 

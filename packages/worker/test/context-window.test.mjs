@@ -115,6 +115,52 @@ test("selected device connections resolve a window while native Claude logins ke
   assert.equal(official.contextWindow, undefined);
 });
 
+test("a connector or native Claude login runs a 1M model newer than its Claude Code as <model>[1m]", async () => {
+  const { claudeRunModel } = await import("../dist/harness/context-window.js");
+  const limen = {
+    id: "limen_default",
+    label: "Limen · default",
+    runtime: "claude",
+    connectionType: "external",
+    model: "sonnet",
+    models: ["sonnet", "opus", "haiku", "claude-fable-5-2"],
+    externalConnection: { executable: "bun", args: [], identity: "limen" },
+  };
+  for (const profile of [
+    limen,
+    serverProfile({ connectionType: "local_login", baseUrl: undefined }),
+  ]) {
+    const resolved = await withSessionContextWindow(
+      profile,
+      { id: "s", model: "claude-fable-5-2" },
+      catalog,
+    );
+    assert.deepEqual(resolved.contextWindow, {
+      model: "claude-fable-5-2",
+      tokens: 1_000_000,
+      source: "official",
+    });
+    assert.equal(
+      claudeRunModel(resolved, "claude-fable-5-2"),
+      "claude-fable-5-2[1m]",
+    );
+    const env = profileRuntimeEnvironment(resolved, {
+      id: "s",
+      model: "claude-fable-5-2",
+    });
+    assert.equal(env.ANTHROPIC_MODEL, "claude-fable-5-2[1m]");
+    assert.equal(env.FOUNDRY_AGENT_MODEL, "claude-fable-5-2");
+    // Aliases and models Claude Code already knows keep its own window.
+    for (const model of ["sonnet", "opus[1m]", "claude-opus-4-8"])
+      assert.equal(
+        (await withSessionContextWindow(profile, { id: "s", model }, catalog))
+          .contextWindow,
+        undefined,
+        model,
+      );
+  }
+});
+
 test("Claude Code gets the window for a model it does not know", async () => {
   const profile = await withSessionContextWindow(
     serverProfile(),

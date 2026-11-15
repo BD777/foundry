@@ -13,8 +13,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
-
 	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
@@ -27,9 +25,6 @@ import (
 
 // channelInstructionsPath is the instructions file of a channel workspace.
 const channelInstructionsPath = "AGENTS.md"
-
-// maxChannelInstructions bounds the instructions the editor saves.
-const maxChannelInstructions = 256 * 1024
 
 type wsWriteFilePayload struct {
 	WorkspaceID    string  `json:"workspaceId"`
@@ -106,7 +101,7 @@ func (s *Server) checkMessageChannelWorkspace(ctx context.Context, r *http.Reque
 		return err
 	}
 	if workspace.ID == agent.WorkspaceID {
-		return &statusError{http.StatusBadRequest, errors.New("the assistant's own folder can't be a channel's workspace: Foundry rewrites its AGENTS.md")}
+		return &statusError{http.StatusBadRequest, errors.New("the assistant's own folder can't be a channel's workspace: channel sessions may not write it")}
 	}
 	if workspace.DeviceID != agent.HomeDeviceID {
 		return &statusError{http.StatusBadRequest, errors.New("the channel's workspace must be on the assistant's computer")}
@@ -136,7 +131,7 @@ func (s *Server) createMessageChannelWorkspace(ctx context.Context, agent store.
 	if err != nil {
 		return "", err
 	}
-	if err := s.addChannelInstructionsRevision(ctx, channel.ID, seed, "seed"); err != nil {
+	if err := s.addChannelInstructionsRevision(ctx, workspace.ID, seed, "seed"); err != nil {
 		return "", err
 	}
 	return workspace.ID, nil
@@ -162,18 +157,17 @@ func (s *Server) seedMessageChannelInstructions(ctx context.Context, channel sto
 		}
 		return err
 	}
-	return s.addChannelInstructionsRevision(ctx, channel.ID, seed, "seed")
+	return s.addChannelInstructionsRevision(ctx, workspace.ID, seed, "seed")
 }
 
-func (s *Server) addChannelInstructionsRevision(ctx context.Context, channelID, content, source string) error {
-	st, err := s.messageChannelStore()
+// addChannelInstructionsRevision keeps a version of the channel
+// workspace's AGENTS.md among the workspace's file versions (DEV-223).
+func (s *Server) addChannelInstructionsRevision(ctx context.Context, workspaceID, content, source string) error {
+	st, err := s.workspaceFileStore()
 	if err != nil {
 		return err
 	}
-	return st.AddMessageChannelInstructionRevision(ctx, channelID, store.MessageChannelInstructionsRevision{
-		ID: "rev_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16], At: time.Now().UTC().Format(time.RFC3339Nano),
-		Sha256: contentSha256(content), Bytes: len(content), Source: source,
-	}, content)
+	return addFileRevision(ctx, st, workspaceID, channelInstructionsPath, content, source)
 }
 
 // ensureMessageChannelWorkspaces gives every channel without a workspace
@@ -269,7 +263,11 @@ func (s *Server) messageChannelTarget(ctx context.Context, entry store.PersonalA
 			target.Title += " · " + name
 		}
 		if segment > 0 {
-			target.Title += " · " + time.Now().In(time.Local).Format("01-02 15:04")
+			zone := time.Local
+			if agent, err := s.store.GetAssistant(ctx, channel.AssistantID); err == nil && s.assistant != nil {
+				zone = s.assistant.PersonLocation(ctx, agent)
+			}
+			target.Title += " · " + time.Now().In(zone).Format("01-02 15:04")
 		}
 	}
 	target.Title = clipRunes(target.Title, 120)
@@ -293,6 +291,7 @@ func (s *Server) messageChannelTarget(ctx context.Context, entry store.PersonalA
 	target.OnSession = func(ctx context.Context, sessionID string) error {
 		return st.RecordMessageChannelSession(ctx, store.MessageChannelSession{
 			SessionID: sessionID, ChannelID: channel.ID, AssistantID: channel.AssistantID, SessionKey: sessionKey, Segment: segment,
+			WorkspaceID: workspace.ID, Title: target.Title,
 		})
 	}
 	return target, nil
@@ -391,110 +390,8 @@ func (s *Server) messageChannelWorkspaceView(ctx context.Context, channel store.
 
 // --- the person's API ---
 
-func (s *Server) handleMessageChannelInstructions(w http.ResponseWriter, r *http.Request) {
-	_, record, st, ok := s.messageChannelOf(w, r)
-	if !ok {
-		return
-	}
-	instructions, err := s.readChannelInstructions(r.Context(), st, record)
-	writeResult(w, instructions, err)
-}
-
-// readChannelInstructions reads the workspace's AGENTS.md from its device;
-// a version saved elsewhere (the person's own chat, an editor) becomes a
-// revision so history stays complete.
-func (s *Server) readChannelInstructions(ctx context.Context, st store.MessageChannelStore, channel store.MessageChannelRecord) (store.MessageChannelInstructions, error) {
-	out := store.MessageChannelInstructions{WorkspaceID: channel.WorkspaceID, Path: channelInstructionsPath}
-	if channel.WorkspaceID == "" {
-		return out, &statusError{http.StatusConflict, errors.New("the channel has no workspace yet; it gets one when the assistant's computer is online")}
-	}
-	workspace, err := s.store.GetWorkspace(ctx, channel.WorkspaceID)
-	if err != nil {
-		return out, err
-	}
-	if s.hub.connectionFor(workspace.DeviceID) == nil {
-		return out, &statusError{http.StatusConflict, errors.New("the workspace's device is not connected")}
-	}
-	file, err := s.hub.ReadWorkspaceFile(ctx, workspace, channelInstructionsPath)
-	switch {
-	case err == nil:
-		out.Content, out.Sha256 = file.Content, contentSha256(file.Content)
-	case strings.Contains(strings.ToLower(err.Error()), "no such file") || strings.Contains(strings.ToLower(err.Error()), "not found"):
-		out.Missing, out.Sha256 = true, ""
-	default:
-		return out, err
-	}
-	revisions, err := st.ListMessageChannelInstructionRevisions(ctx, channel.ID, 50)
-	if err != nil {
-		return out, err
-	}
-	if !out.Missing && (len(revisions) == 0 || revisions[0].Sha256 != out.Sha256) {
-		if err := s.addChannelInstructionsRevision(ctx, channel.ID, out.Content, "outside"); err != nil {
-			return out, err
-		}
-		if revisions, err = st.ListMessageChannelInstructionRevisions(ctx, channel.ID, 50); err != nil {
-			return out, err
-		}
-	}
-	out.Revisions = revisions
-	return out, nil
-}
-
-func (s *Server) handleSaveMessageChannelInstructions(w http.ResponseWriter, r *http.Request) {
-	_, record, st, ok := s.messageChannelOf(w, r)
-	if !ok {
-		return
-	}
-	var input store.MessageChannelInstructionsInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	s.writeChannelInstructions(w, r, st, record, input.Content, input.BaseSha256, "web")
-}
-
-func (s *Server) handleRevertMessageChannelInstructions(w http.ResponseWriter, r *http.Request) {
-	_, record, st, ok := s.messageChannelOf(w, r)
-	if !ok {
-		return
-	}
-	var input store.MessageChannelInstructionsRevert
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	_, content, err := st.GetMessageChannelInstructionRevision(r.Context(), record.ID, input.RevisionID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	s.writeChannelInstructions(w, r, st, record, content, input.BaseSha256, "revert")
-}
-
-func (s *Server) writeChannelInstructions(w http.ResponseWriter, r *http.Request, st store.MessageChannelStore, record store.MessageChannelRecord, content, base, source string) {
-	ctx := r.Context()
-	if len(content) > maxChannelInstructions || !utf8.ValidString(content) {
-		writeError(w, http.StatusBadRequest, "AGENTS.md is UTF-8 text of at most 256 KiB")
-		return
-	}
-	if record.WorkspaceID == "" {
-		writeError(w, http.StatusConflict, "the channel has no workspace yet")
-		return
-	}
-	workspace, err := s.store.GetWorkspace(ctx, record.WorkspaceID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	if _, err := s.writeWorkspaceTextFile(ctx, workspace, channelInstructionsPath, content, &base); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	if err := s.addChannelInstructionsRevision(ctx, record.ID, content, source); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	instructions, err := s.readChannelInstructions(ctx, st, record)
-	writeResult(w, instructions, err)
-}
+// The channel workspace's AGENTS.md is edited, with its versions, in the
+// assistant's workspace files (assistant_files.go).
 
 // handleMessageChannelNewSession makes a conversation's next message start
 // a new session, as the person asked (「下次开新会话」).

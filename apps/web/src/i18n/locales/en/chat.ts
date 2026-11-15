@@ -889,6 +889,7 @@ export const chat = {
     htmlPreview: "Preview",
     htmlCode: "Code",
     htmlModeLabel: "Preview or code",
+    frontMatter: "Front matter",
     webPreviewTitle: "Preview {{url}}",
     background: {
       kind: "Kind",
@@ -956,5 +957,26 @@ export const chat = {
     loading: "Reading the workspace folder…",
     noMatches: "No files match “{{query}}”",
     empty: "The workspace folder is empty",
+    link: {
+      workspace: "link",
+      foundry: "linked skill",
+      outside: "outside",
+      missing: "broken link",
+    },
+    linkTitle: {
+      workspace: "A link to {{path}} in this workspace",
+      foundry: "A skill Foundry links in from its own copy; shown read-only",
+      outside:
+        "A link to somewhere outside this workspace; Foundry doesn't open it",
+      missing: "A link whose target doesn't exist",
+    },
+    linkNotice: {
+      outsideTitle: "Link outside this workspace",
+      outsideBody:
+        "{{name}} leads outside the workspace. Foundry doesn't open or change anything there.",
+      missingTitle: "Broken link",
+      missingBody:
+        "{{name}} points to something that doesn't exist, so there is nothing to show.",
+    },
   },
 };

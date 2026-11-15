@@ -54,3 +54,45 @@ test("the controller puts hard hold on the scheduler and releases queued work", 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("runtime state reports whole byte counts: the server reads them as integers", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundry-admission-controller-"));
+  const estimator = new TurnUsageSampler(join(root, "estimates.json"));
+  const original = estimator.reportedEstimates.bind(estimator);
+  estimator.reportedEstimates = (estimates) =>
+    original(estimates).map((estimate) => ({
+      ...estimate,
+      typicalRssBytes: 262288354.26635045,
+      peakRssBytes: 379289600.5,
+    }));
+  const scheduler = new ConcurrentTaskScheduler(2);
+  void scheduler.schedule("chat:a", () => new Promise(() => {}), undefined, {
+    sessionId: "sess_a",
+    workspaceId: "ws_a",
+    runtime: "claude",
+  });
+  const controller = new AdaptiveConcurrencyController(scheduler, {
+    estimator,
+    readSettings: () => ({ activeRuntimeTtlMs: 60_000, mode: "adaptive" }),
+    readSignals: () => ({
+      capturedAt: new Date().toISOString(),
+      cpuCount: 4,
+      memoryAvailableBytes: 5.5 * GiB + 0.25,
+      memoryTotalBytes: 8 * GiB,
+      swapFreeBytes: 1024.75,
+    }),
+  });
+  try {
+    const state = controller.tick();
+    assert.ok(state.estimates.length > 0);
+    for (const estimate of state.estimates) {
+      assert.ok(Number.isInteger(estimate.typicalRssBytes));
+      assert.ok(Number.isInteger(estimate.peakRssBytes));
+    }
+    assert.ok(Number.isInteger(state.signals.memoryAvailableBytes));
+    assert.ok(Number.isInteger(state.signals.swapFreeBytes));
+  } finally {
+    controller.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

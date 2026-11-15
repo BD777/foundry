@@ -175,7 +175,16 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		if isAssistant {
 			session.Role = store.AgentSessionRolePersonalAgent
 			for _, file := range run.Files {
-				assistantFiles = append(assistantFiles, wsSetupWorkspaceFile{Path: file.Path, Content: file.Content})
+				switch {
+				case !file.ManagedBlock:
+					assistantFiles = append(assistantFiles, wsSetupWorkspaceFile{Path: file.Path, Content: file.Content})
+				case c.hasCapability(store.DaemonCapabilityAssistantInstructionsBlock):
+					assistantFiles = append(assistantFiles, wsSetupWorkspaceFile{Path: file.Path, Content: file.Content, ManagedBlock: true, Seed: file.Seed})
+				default:
+					// An older Worker writes AGENTS.md whole: the person's
+					// edits are not kept there (the editor says so).
+					assistantFiles = append(assistantFiles, wsSetupWorkspaceFile{Path: file.Path, Content: file.Whole})
+				}
 			}
 			session.Input = assistant.WithTurnContext(session.Input, run.TurnContext)
 		}

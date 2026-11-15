@@ -188,7 +188,7 @@ func (s *Server) finishConnectorPackageStep(ctx context.Context, ownerUserID, ki
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		log.Printf("connector package %s: record %s: %v", kind, step.deviceID, err)
 	}
-	s.projectionsChanged("", fieldConnectorPackages)
+	s.projectionsChanged("", append([]string{fieldConnectorPackages}, workspaceSkillFields...)...)
 }
 
 // runConnectorPackageApply applies the package's pending devices until none
@@ -207,7 +207,7 @@ func (s *Server) runConnectorPackageApply(ctx context.Context, ownerUserID, kind
 		if len(steps) == 0 {
 			return
 		}
-		s.projectionsChanged("", fieldConnectorPackages)
+		s.projectionsChanged("", append([]string{fieldConnectorPackages}, workspaceSkillFields...)...)
 		descriptor, _, err := s.packageDescriptorForOwner(ctx, ownerUserID, kind)
 		if err != nil {
 			for _, step := range steps {
@@ -301,6 +301,6 @@ func (s *Server) removeConnectorPackage(ctx context.Context, ownerUserID string,
 	if err := s.store.DeleteConnectorPackage(ctx, ownerUserID, descriptor.Kind); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	s.projectionsChanged("", fieldConnectorPackages)
+	s.projectionsChanged("", append([]string{fieldConnectorPackages}, workspaceSkillFields...)...)
 	return record.Devices, nil
 }

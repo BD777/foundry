@@ -109,7 +109,7 @@
   },
   {
     "name": "connector_instances",
-    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, bind_workspace or unbind_workspace. Use kind for the extension. For network=device, probe and create first install the connector's published extension on the selected online device owned by the person, wait for the device to report it, then probe through that device. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
+    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, delete, bind_workspace or unbind_workspace. Use kind for the extension. For network=device, probe and create first install the connector's published extension on the selected online device owned by the person, wait for the device to report it, then probe through that device. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
     "summary": "Configures server-held connector instances, reading secret values from device files named by secretFiles.",
     "limits": [
       "Only the person who started the session, on a device that person owns; not from Issue, clarification, verifier or utility sessions.",
@@ -130,6 +130,7 @@
             "update",
             "check",
             "revoke",
+            "delete",
             "bind_workspace",
             "unbind_workspace"
           ]
@@ -140,7 +141,7 @@
         },
         "instanceId": {
           "type": "string",
-          "description": "The instance id for update, check, revoke, bind_workspace and unbind_workspace."
+          "description": "The instance id for update, check, revoke, delete, bind_workspace and unbind_workspace. Delete is allowed only after revocation."
         },
         "workspaceId": {
           "type": "string",
@@ -1040,6 +1041,70 @@
     },
     "annotations": {
       "readOnlyHint": true
+    }
+  },
+  {
+    "name": "worker_groups",
+    "description": "List the person's worker groups or save one, as the Model providers page's worker group editor does. A worker group spreads new sessions over its members; each member is one model on one provider with its own effort and tokensPerMinute quota (or weight). save without id creates a group (label required); with id it replaces that group's members (and label when given), keeping its id. Every member's provider must be the person's, of that runtime, and its effort valid for the runtime. Sessions already running keep the member they were given. Answers the saved group, or for list { groups }.",
+    "summary": "Lists or saves the person's worker groups: the models, efforts and quotas new sessions are spread over.",
+    "limits": [
+      "Only the person's own groups and providers.",
+      "Changes apply to sessions started afterwards.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "save"]
+        },
+        "id": {
+          "type": "string",
+          "description": "The group to replace (wgroup_…); omit to create one."
+        },
+        "label": {
+          "type": "string",
+          "description": "Its name; required to create, kept when omitted on update."
+        },
+        "members": {
+          "type": "array",
+          "description": "The complete member list, replacing the current one.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "providerKind": {
+                "type": "string",
+                "enum": ["subscription", "api", "environment", "discovered"]
+              },
+              "providerId": {
+                "type": "string"
+              },
+              "runtime": {
+                "type": "string",
+                "enum": ["claude", "codex"]
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string",
+                "description": "claude low…max, codex minimal…xhigh; omit for the runtime's default."
+              },
+              "tokensPerMinute": {
+                "type": "integer",
+                "description": "This model's metered quota."
+              },
+              "weight": {
+                "type": "integer",
+                "description": "Relative share when no quota is set."
+              }
+            },
+            "required": ["providerKind", "providerId", "runtime", "model"]
+          }
+        }
+      },
+      "required": ["action"]
     }
   },
   {
@@ -2104,6 +2169,10 @@
         "replaceOwner": {
           "type": "boolean",
           "description": "Start a fresh context for the item after sessionId stopped; the old session's history is not copied."
+        },
+        "readOnly": {
+          "type": "boolean",
+          "description": "The step changes nothing in the workspace: it starts beside a session writing there. Otherwise it waits for that session; you are told after 5 minutes and when it starts."
         }
       },
       "required": [
@@ -2475,7 +2544,7 @@
   },
   {
     "name": "control_session_work",
-    "description": "Control persistent work: stop, pause (no future runs), resume, run a schedule now, stop_all (this conversation's work, not shared services, native subagents or child sessions), or link/unlink a session to a shared service. Single actions need the item's current revision; reuse idempotencyKey for retries. A control is done only when list_session_work shows the device confirmed it.",
+    "description": "Control persistent work: stop, pause (no future runs), resume, run a schedule now, stop_all (this conversation's work, not shared services, native subagents or child sessions), or link/unlink a session to a shared service. Single actions need the item's current revision; reuse idempotencyKey for retries. A control is done only when list_session_work shows the device confirmed it. Stopping or removing, from a scheduled turn, the schedule that started it does not cancel that turn: it is confirmed once the turn ends.",
     "summary": "Pauses, resumes or stops conversation work, returning a durable receipt that devices must confirm.",
     "inputSchema": {
       "type": "object",

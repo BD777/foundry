@@ -263,7 +263,9 @@ function chatMessagesForSession(
   }
   const messages: ChatViewMessage[] = [];
   // Every input is a transcript event; only legacy per-turn rows carried
-  // their prompt alone, and a list projection has no events yet.
+  // their prompt alone, and a list projection has no events yet. It takes
+  // the id of the input's own event, so the sender's outbox copy and the
+  // event that lands later are this same row.
   if (
     !session.events?.some(
       (event) => event.label === sessionEventLabels.userMessage,
@@ -271,7 +273,7 @@ function chatMessagesForSession(
   ) {
     messages.push({
       attachments: session.input?.attachments ?? [],
-      id: `agent-session:${session.id}:prompt`,
+      id: `agent-session:${session.id}:${session.input?.id ?? "prompt"}`,
       at: session.startedAt,
       role: "user",
       text: session.input?.prompt ?? session.prompt,

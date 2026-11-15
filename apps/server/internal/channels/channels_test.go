@@ -456,8 +456,9 @@ func TestDispatchHandsOneTurnPerConversationAndFollowsIt(t *testing.T) {
 	for id, text := range texts {
 		if f.inbox.keys[id] == "c:oc_a" {
 			conversationA = id
-			if !strings.Contains(text, "  text: /fd one\n") || !strings.Contains(text, "\n    second line\n") || !strings.Contains(text, "not the person's words") ||
-				!strings.Contains(text, "  text without trigger: one\n") || !strings.Contains(text, "session: new (first)") {
+			// The text is carried once: the trigger and what follows it.
+			if strings.Contains(text, "  text: ") || !strings.Contains(text, "\n    second line\n") || !strings.Contains(text, "not the person's words") ||
+				!strings.Contains(text, "  trigger: /fd\n") || !strings.Contains(text, "  text without trigger: one\n") || !strings.Contains(text, "session: new (first)") {
 				t.Fatalf("notice: %s", text)
 			}
 			if strings.Contains(strings.ToLower(text), "you should") {
@@ -503,10 +504,26 @@ func TestSeedInstructionsCarryTheGuideAndHowToReadTheFacts(t *testing.T) {
 	channel := store.MessageChannel{ID: "mch_abc123", Name: "飞书 /fd", Guide: "只回答项目相关的问题。",
 		Source: store.MessageChannelSource{Kind: "openlark", AccountID: "xacc_1"}}
 	file := channels.SeedInstructions(channel, "byte-dev OpenLark", "olk im context {message.id} --limit 50")
-	for _, want := range []string{"# 消息通道「飞书 /fd」", "只回答项目相关的问题。", "olk im context {message.id} --limit 50", "hand_over", "sender is the person: yes", "只读"} {
+	for _, want := range []string{"# 消息通道「飞书 /fd」", "只回答项目相关的问题。", "olk im context {message.id} --limit 50", "hand_over", "sender is the person: yes", "只读",
+		"没有哪个设置能放开写入", "Foundry Web", "`text without trigger`", "`mentions before trigger`", "`text cut`"} {
 		if !strings.Contains(file, want) {
 			t.Errorf("seed lacks %q:\n%s", want, file)
 		}
+	}
+	// Without a rule, nothing says messages need a trigger.
+	if strings.Contains(file, "不带触发词") {
+		t.Errorf("seed claims a trigger the channel has none of:\n%s", file)
+	}
+	// Every rule needs a trigger: a reply without one never arrives.
+	channel.Filters.Rules = []store.MessageChannelRule{rule("dm", []string{"direct"}, "any", "any", "/ai"), rule("self", []string{"self"}, "any", "any", "/fd")}
+	file = channels.SeedInstructions(channel, "byte-dev OpenLark", "")
+	if !strings.Contains(file, "不带触发词（「/ai」、「/fd」）的消息不会转给你") || !strings.Contains(file, "needs_you") {
+		t.Errorf("seed lacks the trigger fact:\n%s", file)
+	}
+	// One rule lets any message through: no such claim.
+	channel.Filters.Rules = append(channel.Filters.Rules, rule("all", []string{"direct"}, "any", "any"))
+	if file = channels.SeedInstructions(channel, "", ""); strings.Contains(file, "不带触发词") {
+		t.Errorf("seed claims every message needs a trigger:\n%s", file)
 	}
 }
 
@@ -635,6 +652,25 @@ func TestNoticeStatesTheFactsOfAContinuedAndANewSession(t *testing.T) {
 		if !strings.Contains(notice, want) {
 			t.Errorf("notice lacks %q:\n%s", want, notice)
 		}
+	}
+	if !strings.HasPrefix(notice, "[Message channel: messages from the person]\n") || strings.Contains(notice, "  text: ") {
+		t.Errorf("the person's batch reads as theirs, its text once:\n%s", notice)
+	}
+	// Long text: carried once, cut marker kept.
+	long := record
+	long.Envelope.Text, long.Envelope.TextTruncated = "@bot /ai "+strings.Repeat("长", 3000), true
+	cut := channels.Notice(channel, "", "", channels.Rollover{}, []store.MessageChannelDeliveryRecord{long})
+	if strings.Count(cut, "长长长长") == 0 || strings.Count(cut, strings.Repeat("长", 3000)) != 1 || !strings.Contains(cut, "  mentions before trigger: @bot\n") || !strings.Contains(cut, "  text cut: yes, at 8 KB\n") {
+		t.Errorf("long text:\n%.400s", cut)
+	}
+	other := record
+	other.Rule, other.Envelope.Text = "", "随便说一句"
+	other.Envelope.Sender = store.MessageEnvelopeSender{ID: "ou_x", Name: "X"}
+	if text := channels.Notice(channel, "", "", channels.Rollover{}, []store.MessageChannelDeliveryRecord{other}); !strings.HasPrefix(text, "[Message channel: messages from other people, not the person's words]\n") || !strings.Contains(text, "  text: 随便说一句\n") {
+		t.Errorf("others' batch:\n%s", text)
+	}
+	if text := channels.Notice(channel, "", "", channels.Rollover{}, []store.MessageChannelDeliveryRecord{record, other}); !strings.HasPrefix(text, "[Message channel: messages from the person and from other people;") {
+		t.Errorf("mixed batch:\n%s", text)
 	}
 	continued := channels.Notice(channel, "OpenLark", "", channels.Rollover{}, []store.MessageChannelDeliveryRecord{record})
 	if !strings.Contains(continued, "session: continued\n") || strings.Contains(continued, "earlier session") || strings.Contains(continued, "context:") {

@@ -7,9 +7,12 @@ import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { FieldHint } from "../../../components/ui/field";
 import { ChatFileDownload } from "./chat-file-download";
-import { formatFileSize, TextFileView } from "./chat-detail-files";
-import { FileReadFeedback } from "./chat-file-read-feedback";
-import { requestDeviceFile } from "./device-file-request";
+import {
+  formatFileSize,
+  TextFileView,
+} from "../../../components/workspace/workspace-file-view";
+import { FileReadFeedback } from "../../../components/workspace/file-read-feedback";
+import { requestDeviceFile } from "../../../components/workspace/device-file-request";
 import type { ChatDeviceFileItem } from "../chat-types";
 import { DetailFeedback, detailDocument } from "./chat-detail-parts";
 import { LoadingState } from "../../../components/ui/loading";

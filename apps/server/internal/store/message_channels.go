@@ -67,6 +67,10 @@ type MessageChannelSession struct {
 	SessionKey  string
 	Segment     int
 	CreatedAt   string
+	// WorkspaceID and Title, when recording a new session, keep its title
+	// from automatic naming (DEV-229).
+	WorkspaceID string
+	Title       string
 }
 
 // The states of a delivery record (MessageChannelDeliveryStatus).
@@ -113,16 +117,15 @@ type MessageChannelStore interface {
 	// MessageChannelSessionEvents are the events of the sessions with this
 	// label, newest first.
 	MessageChannelSessionEvents(ctx context.Context, sessionIDs []string, label string, limit int) ([]MessageChannelSessionEvent, error)
+	// MessageChannelGatewayActions are the account's connector requests by
+	// these sessions since then that wrote or were refused, newest first.
+	MessageChannelGatewayActions(ctx context.Context, accountID string, sessionIDs []string, since string, limit int) ([]ExternalAccountEvent, error)
 	GetMessageChannelKey(ctx context.Context, channelID, sessionKey string) (MessageChannelKeyState, error)
 	SaveMessageChannelKey(ctx context.Context, state MessageChannelKeyState) error
 	// RecordMessageChannelSession ties a session to its channel segment
 	// (once; later calls for the same session change nothing).
 	RecordMessageChannelSession(ctx context.Context, session MessageChannelSession) error
 	GetMessageChannelSession(ctx context.Context, sessionID string) (MessageChannelSession, error)
-	// The saved revisions of a channel workspace's AGENTS.md, newest first.
-	ListMessageChannelInstructionRevisions(ctx context.Context, channelID string, limit int) ([]MessageChannelInstructionsRevision, error)
-	GetMessageChannelInstructionRevision(ctx context.Context, channelID, id string) (MessageChannelInstructionsRevision, string, error)
-	AddMessageChannelInstructionRevision(ctx context.Context, channelID string, revision MessageChannelInstructionsRevision, content string) error
 	// PruneMessageChannelDeliveries removes dropped records created before
 	// droppedBefore and clears the text of the others created before
 	// keptBefore.

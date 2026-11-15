@@ -52,6 +52,13 @@ func IsActiveSessionStatus(status string) bool {
 	return slices.Contains(ActiveSessionStatuses, status)
 }
 
+// IsCanceledTurnFailure reports whether a device's failure report for an
+// input says it was canceled ("Session was canceled."): the input ended
+// canceled, it did not fail.
+func IsCanceledTurnFailure(failure string) bool {
+	return strings.Contains(strings.ToLower(failure), "session was canceled")
+}
+
 func IsUtilitySessionSource(source string) bool {
 	return slices.Contains(UtilitySessionSources, source)
 }

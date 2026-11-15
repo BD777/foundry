@@ -631,7 +631,21 @@ func (s *Server) messageChannelActions(ctx context.Context, agent store.Personal
 		}
 		return id
 	}
-	events, _ := s.store.ListExternalAccountEvents(ctx, channel.Source.AccountID, 500)
+	sessionIDs := make([]string, 0, len(bySession))
+	since := ""
+	for id, delivered := range bySession {
+		sessionIDs = append(sessionIDs, id)
+		for _, record := range delivered {
+			if since == "" || record.DeliveredAt < since {
+				since = record.DeliveredAt
+			}
+		}
+	}
+	var events []store.ExternalAccountEvent
+	st, channelStore := s.store.(store.MessageChannelStore)
+	if channelStore {
+		events, _ = st.MessageChannelGatewayActions(ctx, channel.Source.AccountID, sessionIDs, since, 2000)
+	}
 	for _, event := range events {
 		if event.Kind != "extension_connector_request" || bySession[event.SessionID] == nil {
 			continue
@@ -650,11 +664,7 @@ func (s *Server) messageChannelActions(ctx context.Context, agent store.Personal
 		}
 		out[id] = append(out[id], store.MessageChannelAction{At: event.CreatedAt, Kind: kind, Summary: detail.text})
 	}
-	sessionIDs := make([]string, 0, len(bySession))
-	for id := range bySession {
-		sessionIDs = append(sessionIDs, id)
-	}
-	if st, ok := s.store.(store.MessageChannelStore); ok {
+	if channelStore {
 		refused, _ := st.MessageChannelSessionEvents(ctx, sessionIDs, "Workspace write refused", 200)
 		for _, event := range refused {
 			if id := owner(event.SessionID, event.At); id != "" {

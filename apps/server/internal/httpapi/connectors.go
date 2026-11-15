@@ -853,6 +853,8 @@ func (s *Server) handleSetWorkspaceDeviceConnectors(w http.ResponseWriter, r *ht
 		}
 		return
 	}
+	// A granted connector brings its Skills (workspaceConnectorSkills).
+	s.projectionsChanged(workspaceID, workspaceSkillFields...)
 	view, err := s.workspaceDeviceConnectors(r.Context(), workspaceID, actor.AccountID())
 	if err != nil {
 		writeResult(w, nil, err)

@@ -38,6 +38,11 @@ type WorkspaceFileRead struct {
 	Path        string `json:"path"`
 	Content     string `json:"content"`
 	Truncated   bool   `json:"truncated"`
+	// RealPath is where the file is, relative to the workspace, when Path
+	// reaches it through a link inside the workspace.
+	RealPath string `json:"realPath,omitempty"`
+	// ReadOnly: a file of a skill Foundry linked in from its own snapshots.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 type CreateWorkspaceInput struct {

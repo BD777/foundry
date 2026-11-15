@@ -449,10 +449,23 @@ func (s *Store) RecordMessageChannelSession(ctx context.Context, session store.M
 	if session.CreatedAt == "" {
 		session.CreatedAt = paNow()
 	}
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO message_channel_sessions (session_id, channel_id, assistant_id, session_key, segment, created_at)
+	return s.withTx(ctx, func(tx *Store) error {
+		result, err := tx.conn().ExecContext(ctx, `INSERT INTO message_channel_sessions (session_id, channel_id, assistant_id, session_key, segment, created_at)
 		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
-		session.SessionID, session.ChannelID, session.AssistantID, session.SessionKey, session.Segment, session.CreatedAt)
-	return err
+			session.SessionID, session.ChannelID, session.AssistantID, session.SessionKey, session.Segment, session.CreatedAt)
+		if err != nil {
+			return err
+		}
+		added, err := result.RowsAffected()
+		if err != nil || added == 0 || session.Title == "" || session.WorkspaceID == "" {
+			return err
+		}
+		// A title record is what keeps automatic naming (after the first
+		// answer) from replacing the channel's title; a rename still wins.
+		_, err = tx.conn().ExecContext(ctx, `INSERT OR IGNORE INTO chat_titles (workspace_id, chat_id, title, version) VALUES (?, ?, ?, ?)`,
+			session.WorkspaceID, session.SessionID, session.Title, session.CreatedAt)
+		return err
+	})
 }
 
 func (s *Store) GetMessageChannelSession(ctx context.Context, sessionID string) (store.MessageChannelSession, error) {
@@ -465,42 +478,35 @@ func (s *Store) GetMessageChannelSession(ctx context.Context, sessionID string) 
 	return session, err
 }
 
-func (s *Store) ListMessageChannelInstructionRevisions(ctx context.Context, channelID string, limit int) ([]store.MessageChannelInstructionsRevision, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 200
+func (s *Store) MessageChannelGatewayActions(ctx context.Context, accountID string, sessionIDs []string, since string, limit int) ([]store.ExternalAccountEvent, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
 	}
-	rows, err := s.reader().QueryContext(ctx, `SELECT id, created_at, sha256, bytes, source FROM message_channel_instructions
-		WHERE channel_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`, channelID, limit)
+	if limit <= 0 || limit > 2000 {
+		limit = 2000
+	}
+	args := []any{accountID, since}
+	for _, id := range sessionIDs {
+		args = append(args, id)
+	}
+	args = append(args, limit)
+	rows, err := s.reader().QueryContext(ctx, `SELECT id, account_id, kind, detail, session_ref, device_ref, actor_id, created_at FROM external_account_events
+		WHERE account_id = ? AND kind = 'extension_connector_request' AND created_at >= ? AND session_ref IN (`+strings.TrimSuffix(strings.Repeat("?,", len(sessionIDs)), ",")+`)
+		AND CASE WHEN json_valid(detail) THEN json_extract(detail, '$.write') = 1 OR json_extract(detail, '$.outcome') = 'refused' ELSE 0 END
+		ORDER BY id DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []store.MessageChannelInstructionsRevision{}
+	var out []store.ExternalAccountEvent
 	for rows.Next() {
-		var revision store.MessageChannelInstructionsRevision
-		if err := rows.Scan(&revision.ID, &revision.At, &revision.Sha256, &revision.Bytes, &revision.Source); err != nil {
+		var event store.ExternalAccountEvent
+		if err := rows.Scan(&event.ID, &event.AccountID, &event.Kind, &event.Detail, &event.SessionID, &event.DeviceID, &event.ActorID, &event.CreatedAt); err != nil {
 			return nil, err
 		}
-		out = append(out, revision)
+		out = append(out, event)
 	}
 	return out, rows.Err()
-}
-
-func (s *Store) GetMessageChannelInstructionRevision(ctx context.Context, channelID, id string) (store.MessageChannelInstructionsRevision, string, error) {
-	var revision store.MessageChannelInstructionsRevision
-	var content string
-	err := s.reader().QueryRowContext(ctx, `SELECT id, created_at, sha256, bytes, source, content FROM message_channel_instructions WHERE channel_id = ? AND id = ?`,
-		channelID, id).Scan(&revision.ID, &revision.At, &revision.Sha256, &revision.Bytes, &revision.Source, &content)
-	if errors.Is(err, sql.ErrNoRows) {
-		return revision, "", store.ErrNotFound
-	}
-	return revision, content, err
-}
-
-func (s *Store) AddMessageChannelInstructionRevision(ctx context.Context, channelID string, revision store.MessageChannelInstructionsRevision, content string) error {
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO message_channel_instructions (id, channel_id, sha256, bytes, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		revision.ID, channelID, revision.Sha256, revision.Bytes, content, revision.Source, revision.At)
-	return err
 }
 
 func (s *Store) MessageChannelSessionEvents(ctx context.Context, sessionIDs []string, label string, limit int) ([]store.MessageChannelSessionEvent, error) {

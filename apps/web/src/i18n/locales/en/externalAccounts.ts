@@ -129,17 +129,9 @@ export const externalAccounts = {
       "Bound sessions use the official cf CLI (or curl) through Foundry; the server decides every request, so a change of access applies to a running session at once. It needs the installed cf CLI and an updated Worker on the device. Credentials are never copied to the device.",
     accessTitle: "Session access",
     accessDetail:
-      "What sessions in this workspace may do in the selected zones. A choice applies at once.",
-    accessRead: "Read",
-    accessReadDetail: "Zones, DNS records and certificate metadata.",
-    accessDnsEdit: "Read + DNS edit",
-    accessDnsEditDetail:
-      "Also create, update and delete DNS records in the selected zones, such as A records or ACME TXT challenges. Each change is listed under Activity on the identity.",
-    accessZeroTrust: "Read + DNS edit + Zero Trust",
-    accessZeroTrustDetail:
-      "Also manage Access applications, policies and service tokens, and update Tunnel ingress for the Cloudflare accounts of the selected zones. Foundry never creates a Bypass policy; automations use Service Auth only. Each change is listed under Activity.",
+      "What sessions in this workspace may do in the selected zones. Each level also allows everything above it; a choice applies at once, also to running sessions.",
     accessNeedsScopes:
-      "Needs {{scopes}}, which this authorization does not include. Use Re-authorize on the identity and allow the matching Cloudflare permissions: DNS Write; Access: Apps and Policies Edit; Access: Service Tokens Edit; Cloudflare Tunnel Edit or Read.",
+      "Needs {{scopes}}, which this authorization does not include. Use Re-authorize on the identity. {{hint}}",
     accessGrantLost:
       "This workspace is set to {{level}}, but the authorization no longer includes {{scopes}}: changes are refused until you re-authorize.",
     accessSaved: "Session access set to {{level}}.",
@@ -244,13 +236,7 @@ export const externalAccounts = {
       "This saved app is not in the current list. Check the key or deselect it.",
     accessTitle: "Session access",
     accessDetail:
-      "Read allows GET requests. Commerce also allows creating and updating subscription groups, subscriptions, offers, localizations and review screenshots.",
-    accessRead: "Read",
-    accessReadDetail:
-      "Apps, subscription groups, subscriptions, prices and localized metadata.",
-    accessCommerce: "Read + commerce",
-    accessCommerceDetail:
-      "Also creates and updates subscription groups, subscriptions, introductory offers, localizations and review screenshots. Price changes and review submission stay in App Store Connect.",
+      "What sessions in this workspace may do in the selected apps. Each level also allows everything above it.",
     saveBinding: "Save apps and access",
     removeBinding: "Remove workspace binding",
     boundNotice: "Bound the selected apps for {{name}} in this workspace.",
@@ -485,6 +471,16 @@ export const externalAccounts = {
       "Foundry deletes the sealed credential and refuses new requests. The credential still exists at the service; rotate it there if it may have leaked. A revoked instance cannot be restored.",
     revokeConfirm: "Revoke and stop access",
     revokedNotice: "Revoked {{name}}; sessions lost access.",
+    revokedInstances_one: "Revoked ({{count}})",
+    revokedInstances_other: "Revoked ({{count}})",
+    delete: "Delete",
+    deleteTitle: "Delete {{name}}?",
+    deleteDescription:
+      "Permanently remove this revoked instance and its remaining non-audit records.",
+    deleteBody:
+      "The credential was already removed when the instance was revoked. Foundry removes the instance, account and workspace bindings, but keeps its audit history. This cannot be undone.",
+    deleteConfirm: "Delete permanently",
+    deletedNotice: "Deleted {{name}} permanently.",
     errors: {
       credential: {
         title: "Credential rejected",

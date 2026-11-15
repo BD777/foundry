@@ -170,6 +170,96 @@ test("a skill from the owner's defaults shows on, and unchecking turns it off fo
   }
 });
 
+test("a connector's skills show on, labelled with the connector, and its bundle shows in use", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = await createFeedbackRoot(container);
+  const original = globalThis.fetch;
+  let saved;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.body) saved = JSON.parse(init.body);
+    return new Response("[]", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const skill = (id) => ({
+    id,
+    name: id,
+    description: "",
+    originDeviceId: "d",
+    originRoot: "/one",
+    latestRevision: 1,
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SkillsFeature, {
+          workspaceId: "w",
+          catalog: [skill("olk"), skill("open-lark")],
+          bindings: [],
+          devices: [],
+          skillBundles: [
+            {
+              id: "repo_ol",
+              name: "open-lark",
+              skillIds: ["olk", "open-lark"],
+            },
+          ],
+          workspaceBundleIds: [],
+          connectorSkills: [
+            {
+              kind: "openlark",
+              label: "OpenLark",
+              skillIds: ["olk", "open-lark"],
+              bundleIds: ["repo_ol"],
+            },
+          ],
+          inheritedSkillIds: ["olk", "open-lark"],
+          offSkillIds: [],
+        }),
+      ),
+    );
+    const bundle = document.querySelector(
+      'input[aria-label="Use open-lark in this workspace"]',
+    );
+    assert.equal(bundle.checked, true);
+    assert.equal(bundle.disabled, true);
+    assert.match(
+      document.body.textContent,
+      /From connector OpenLark · 2 of 2 on/,
+    );
+    await act(async () =>
+      container.querySelector(".fdy-skill-bundle-header").click(),
+    );
+    const sublist = container.querySelector(".fdy-skill-bundle-sublist");
+    const olk = [...sublist.querySelectorAll("li")]
+      .find((row) => !row.textContent.includes("open-lark"))
+      ?.querySelector('input[type="checkbox"]');
+    assert.equal(olk.checked, true);
+    assert.match(document.body.textContent, /From connector OpenLark(?! ·)/);
+    await act(async () => olk.click());
+    assert.equal(olk.checked, false);
+    assert.match(
+      document.body.textContent,
+      /From connector OpenLark, off here/,
+    );
+    assert.match(document.body.textContent, /1 of 2 on/);
+    assert.equal(bundle.checked, false);
+    assert.equal(bundle.disabled, true);
+    const save = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Save selection",
+    );
+    await act(async () => save.click());
+    assert.deepEqual(saved.skillIds, []);
+    assert.deepEqual(saved.offSkillIds, ["olk"]);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    globalThis.fetch = original;
+  }
+});
+
 test("workspace skill selection auto-enables related dependencies and supports text filtering", async () => {
   const container = document.createElement("div");
   document.body.append(container);

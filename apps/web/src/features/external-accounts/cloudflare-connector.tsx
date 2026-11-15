@@ -192,6 +192,7 @@ export function CloudflareConnector(props: Props) {
             <CloudflareAccountCard
               key={a.id}
               account={a}
+              accessLevels={accessLevels}
               onReauthorize={() => setAuth({ accountId: a.id })}
               onRevoke={() => setRevoking(a)}
             />

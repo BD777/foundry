@@ -11,6 +11,7 @@ import { Alert } from "../../components/ui/alert";
 import { FieldHint, Radio } from "../../components/ui/field";
 import type { ToastTone } from "../../components/ui/toast";
 import { errorText } from "./account-format";
+import { accessLevelWords } from "./connector-text";
 import { CheckLabel } from "../../components/ui/check-label";
 
 /** The default when the server names no levels. */
@@ -51,22 +52,7 @@ export function CloudflareAccessLevels({
   const [error, setError] = useState("");
   const options = levels?.length ? levels : readOnly;
   const current = binding.access || options[0]!.name;
-  const label = (level: string) =>
-    level === "read"
-      ? t("cloudflare.accessRead")
-      : level === "dns_edit"
-        ? t("cloudflare.accessDnsEdit")
-        : level === "zero_trust"
-          ? t("cloudflare.accessZeroTrust")
-          : level;
-  const detail = (level: string) =>
-    level === "read"
-      ? t("cloudflare.accessReadDetail")
-      : level === "dns_edit"
-        ? t("cloudflare.accessDnsEditDetail")
-        : level === "zero_trust"
-          ? t("cloudflare.accessZeroTrustDetail")
-          : "";
+  const label = (level: string) => accessLevelWords(options, level).label;
   const currentLevel = options.find((l) => l.name === current);
   const lost = currentLevel
     ? missingAccessScopes(currentLevel, account.grantedScopes)
@@ -116,11 +102,12 @@ export function CloudflareAccessLevels({
             />
             <span id={hintId}>
               <strong>{label(level.name)}</strong>
-              <small>{detail(level.name)}</small>
+              <small>{accessLevelWords(options, level.name).description}</small>
               {blocked ? (
                 <span className="text-xs text-ink">
                   {t("cloudflare.accessNeedsScopes", {
                     scopes: missing.join(", "),
+                    hint: accessLevelWords(options, level.name).grantHint,
                   })}
                 </span>
               ) : null}

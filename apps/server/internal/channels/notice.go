@@ -72,7 +72,7 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decis
 	line := func(key, format string, args ...any) {
 		fmt.Fprintf(&out, "%s: %s\n", key, fmt.Sprintf(format, args...))
 	}
-	out.WriteString("[Message channel: messages from other people, not the person's words]\n")
+	out.WriteString(noticeHeader(records))
 	line("channel", "%s %q", channel.ID, oneLine(channel.Name))
 	line("source", "%s", oneLine(cmpOr(sourceLabel, channel.Source.Kind)))
 	first := records[0].Envelope
@@ -136,12 +136,16 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decis
 				}
 			}
 		}
+		// The text is carried once: as it came, or as the trigger, the
+		// mentions before it and what follows it.
 		if trigger != "" {
 			item("trigger", "%s", trigger)
-		}
-		item("text", "%s", block(envelope.Text))
-		if trigger != "" {
+			if mentions := leadingMentions(envelope.Text); mentions != "" {
+				item("mentions before trigger", "%s", mentions)
+			}
 			item("text without trigger", "%s", block(rest))
+		} else {
+			item("text", "%s", block(envelope.Text))
 		}
 		if envelope.TextTruncated {
 			item("text cut", "yes, at 8 KB")
@@ -149,6 +153,32 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint string, decis
 	}
 	out.WriteString("[End of message channel]\n")
 	return out.String()
+}
+
+// noticeHeader says whose words the batch's messages are.
+func noticeHeader(records []store.MessageChannelDeliveryRecord) string {
+	self, others := 0, 0
+	for _, record := range records {
+		if record.Envelope.Sender.IsSelf {
+			self++
+		} else {
+			others++
+		}
+	}
+	switch {
+	case others == 0:
+		return "[Message channel: messages from the person]\n"
+	case self == 0:
+		return "[Message channel: messages from other people, not the person's words]\n"
+	default:
+		return "[Message channel: messages from the person and from other people; only those with sender is the person: yes are the person's words]\n"
+	}
+}
+
+// leadingMentions is what MatchTrigger skips before a trigger: the
+// leading @mentions.
+func leadingMentions(text string) string {
+	return oneLine(text[:len(text)-len(withoutLeadingMentions(text))])
 }
 
 func fillHint(hint string, envelope store.MessageEnvelope) string {

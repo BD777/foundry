@@ -77,9 +77,11 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_external_account_bindings_account ON external_account_bindings (account_id)`,
 		// session_ref and device_ref name what used the account; the line is
 		// an audit record of the account, not a row owned by that session.
+		// It deliberately has no foreign key so deleting an account removes
+		// its configuration without erasing its history.
 		`CREATE TABLE IF NOT EXISTS external_account_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			account_id TEXT NOT NULL REFERENCES external_accounts(id) ON DELETE CASCADE,
+			account_id TEXT NOT NULL,
 			kind TEXT NOT NULL,
 			detail TEXT NOT NULL DEFAULT '',
 			session_ref TEXT NOT NULL DEFAULT '',
@@ -88,6 +90,7 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			created_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_external_account_events_account ON external_account_events (account_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_external_account_events_session ON external_account_events (session_ref, id)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
@@ -103,7 +106,53 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite external accounts: %w", err)
 		}
 	}
+	if err := s.migrateExternalAccountEventsAudit(ctx); err != nil {
+		return err
+	}
 	return s.setupExternalCodeLogins(ctx)
+}
+
+// migrateExternalAccountEventsAudit removes the old account foreign key from
+// the audit table. SQLite cannot drop a constraint in place, so the table is
+// rebuilt once. The server applies this before serving requests, which also
+// makes the first delete after an upgrade safe.
+func (s *Store) migrateExternalAccountEventsAudit(ctx context.Context) error {
+	var schema string
+	if err := s.conn().QueryRowContext(ctx,
+		`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'external_account_events'`,
+	).Scan(&schema); err != nil {
+		return fmt.Errorf("inspect external account audit table: %w", err)
+	}
+	if !strings.Contains(schema, "REFERENCES external_accounts") {
+		return nil
+	}
+	return s.withTx(ctx, func(tx *Store) error {
+		for _, statement := range []string{
+			`CREATE TABLE external_account_events_audit (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				account_id TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				detail TEXT NOT NULL DEFAULT '',
+				session_ref TEXT NOT NULL DEFAULT '',
+				device_ref TEXT NOT NULL DEFAULT '',
+				actor_id TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL
+			)`,
+			`INSERT INTO external_account_events_audit
+				(id, account_id, kind, detail, session_ref, device_ref, actor_id, created_at)
+				SELECT id, account_id, kind, detail, session_ref, device_ref, actor_id, created_at
+				FROM external_account_events`,
+			`DROP TABLE external_account_events`,
+			`ALTER TABLE external_account_events_audit RENAME TO external_account_events`,
+			`CREATE INDEX IF NOT EXISTS idx_external_account_events_account
+				ON external_account_events (account_id, id)`,
+		} {
+			if _, err := tx.conn().ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("migrate external account audit table: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) CreateExternalProviderApp(ctx context.Context, app store.ExternalProviderApp) (store.ExternalProviderApp, error) {
@@ -376,6 +425,28 @@ func (s *Store) DeleteExternalAccount(ctx context.Context, id string) error {
 		return store.ErrExternalAccountNotFound
 	}
 	return nil
+}
+
+// DeleteExternalAccountAndProviderApp removes one server-held extension's
+// configuration atomically. Account bindings cascade; audit events remain.
+func (s *Store) DeleteExternalAccountAndProviderApp(ctx context.Context, accountID, appID string) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		result, err := tx.conn().ExecContext(ctx, `DELETE FROM external_accounts WHERE id = ?`, accountID)
+		if err != nil {
+			return fmt.Errorf("delete external account: %w", err)
+		}
+		if count, _ := result.RowsAffected(); count == 0 {
+			return store.ErrExternalAccountNotFound
+		}
+		result, err = tx.conn().ExecContext(ctx, `DELETE FROM external_provider_apps WHERE id = ?`, appID)
+		if err != nil {
+			return fmt.Errorf("delete external provider app: %w", err)
+		}
+		if count, _ := result.RowsAffected(); count == 0 {
+			return store.ErrExternalAppNotFound
+		}
+		return nil
+	})
 }
 
 func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string, resources ...map[string][]string) error {

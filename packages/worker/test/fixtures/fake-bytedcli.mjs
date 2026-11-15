@@ -162,6 +162,7 @@ if (args.includes("--version")) {
   else if (state.lark === "parse_error")
     (process.stderr.write("not json\n"), (process.exitCode = 1));
   else if (state.lark === "upgrade") out(output("larkUpgrade"), 1);
+  else if (state.lark === "missing") out(output("larkMissing"), 1);
   else
     (process.stderr.write(`${output("larkNeedsAuth")}\n`),
       (process.exitCode = 1));

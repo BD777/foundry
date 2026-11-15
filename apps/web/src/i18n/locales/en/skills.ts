@@ -121,6 +121,13 @@ export const skills = {
     viaBundle: "From {{name}}",
     viaBundleTitle:
       "This workspace gets the skill from the {{name}} bundle it uses",
+    fromConnector: "From connector {{name}}",
+    fromConnectorOff: "From connector {{name}}, off here",
+    fromConnectorTitle:
+      "Sessions here get this skill because the {{name}} connector is granted to this workspace. Uncheck it to turn it off in this workspace only; removing the connector removes it.",
+    bundleFromConnector: "From connector {{name}} · {{on}} of {{total}} on",
+    bundleFromConnectorTitle:
+      "The {{name}} connector granted to this workspace turns these skills on. Turn single skills off in the list below; checking the bundle uses all of its skills.",
     collapseBundle: "Collapse",
     expandBundle: "Expand",
     bundleSkillsCount_one: "{{count}} skill",

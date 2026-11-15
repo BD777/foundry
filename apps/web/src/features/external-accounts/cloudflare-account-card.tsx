@@ -1,7 +1,10 @@
 import { ChevronRight } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ExternalAccount } from "@bd777/foundry-protocol";
+import type {
+  ExternalAccessLevel,
+  ExternalAccount,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { CopyButton } from "../../components/ui/copy-button";
@@ -31,10 +34,13 @@ const filterThreshold = 30;
 export function CloudflareAccountCard({
   account,
   requestedScopes,
+  accessLevels,
   onReauthorize,
   onRevoke,
 }: {
   account: ExternalAccount;
+  /** The provider's access levels, for the activity's level names. */
+  accessLevels?: ExternalAccessLevel[];
   /** What Foundry asks for; undefined while unknown. */
   requestedScopes?: string[];
   onReauthorize: () => void;
@@ -162,7 +168,7 @@ export function CloudflareAccountCard({
           </div>
         </details>
       ) : null}
-      <CloudflareActivity accountId={account.id} />
+      <CloudflareActivity accountId={account.id} levels={accessLevels} />
     </li>
   );
 }

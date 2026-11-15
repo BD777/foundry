@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Folder,
   FolderOpen,
+  Link2,
+  Link2Off,
   RefreshCw,
   Search,
   X,
@@ -19,13 +21,24 @@ import { formatBytes } from "../../lib/format";
 import { Skeleton, Spinner } from "../ui/loading";
 import { cn } from "../../lib/cn";
 
+/** A file (or link that is not a folder) the person picked in the tree. */
+export type WorkspaceTreeSelection = Pick<
+  WorkspaceTreeEntry,
+  "name" | "path" | "link" | "readOnly"
+>;
+
+/** A link leading out of the workspace or nowhere: never opened. */
+export function unopenableLink(entry: Pick<WorkspaceTreeEntry, "link">) {
+  return entry.link === "outside" || entry.link === "missing";
+}
+
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
   /** Shown as the folder's caption. */
   rootPath?: string;
   /** The folder to list, relative to the workspace; its root by default. */
   startPath?: string;
-  onSelectFile: (file: { name: string; path: string }) => void;
+  onSelectFile: (file: WorkspaceTreeSelection) => void;
   selectedPath?: string;
 }
 
@@ -78,6 +91,28 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
   );
 }
 
+/** A link's kind, in words beside its name (not by colour or icon only). */
+function LinkMark({ entry }: { entry: WorkspaceTreeEntry }) {
+  const { t } = useTranslation("chat");
+  if (!entry.link) return null;
+  const Icon = unopenableLink(entry) ? Link2Off : Link2;
+  return (
+    <span className="inline-flex flex-none items-center gap-1 text-2xs font-normal text-ink-faint">
+      <Icon aria-hidden="true" size={11} />
+      {t(`directory.link.${entry.link}`)}
+    </span>
+  );
+}
+
+function linkTitle(
+  entry: WorkspaceTreeEntry,
+  t: ReturnType<typeof useTranslation<"chat">>["t"],
+): string {
+  return entry.link
+    ? `${entry.path}\n${t(`directory.linkTitle.${entry.link}`, { path: entry.path })}`
+    : entry.path;
+}
+
 interface TreeNodeProps {
   depth: number;
   entry: WorkspaceTreeEntry;
@@ -85,7 +120,7 @@ interface TreeNodeProps {
   filterQuery: string;
   folderChildren: Map<string, WorkspaceTreeEntry[]>;
   loadingPaths: Set<string>;
-  onSelectFile: (file: { name: string; path: string }) => void;
+  onSelectFile: (file: WorkspaceTreeSelection) => void;
   onToggleFolder: (path: string) => void;
   selectedPath?: string;
 }
@@ -156,7 +191,7 @@ function TreeNode({
           data-expanded={isExpanded ? "true" : "false"}
           data-selected={isSelected ? "true" : "false"}
           onClick={() => onToggleFolder(entry.path)}
-          title={entry.path}
+          title={linkTitle(entry, t)}
           variant="ghost"
         >
           <span
@@ -180,6 +215,7 @@ function TreeNode({
           <span className="min-w-0 flex-1 truncate">
             <HighlightMatch query={filterQuery} text={entry.name} />
           </span>
+          <LinkMark entry={entry} />
         </Button>
       ) : (
         <Button
@@ -187,8 +223,15 @@ function TreeNode({
           className={cn(treeRow, treeIndent[depthClamped])}
           data-depth={depthClamped}
           data-selected={isSelected ? "true" : "false"}
-          onClick={() => onSelectFile({ name: entry.name, path: entry.path })}
-          title={entry.path}
+          onClick={() =>
+            onSelectFile({
+              name: entry.name,
+              path: entry.path,
+              link: entry.link,
+              readOnly: entry.readOnly,
+            })
+          }
+          title={linkTitle(entry, t)}
           variant="ghost"
         >
           <span className="size-3.5 flex-none" aria-hidden="true" />
@@ -196,11 +239,16 @@ function TreeNode({
             className="inline-flex size-4 flex-none items-center justify-center text-ink-muted"
             aria-hidden="true"
           >
-            {fileIconForName(entry.name)}
+            {unopenableLink(entry) ? (
+              <Link2Off size={15} />
+            ) : (
+              fileIconForName(entry.name)
+            )}
           </span>
           <span className="min-w-0 flex-1 truncate">
             <HighlightMatch query={filterQuery} text={entry.name} />
           </span>
+          <LinkMark entry={entry} />
           {entry.size !== undefined ? (
             <span className="ml-auto text-2xs font-normal text-ink-faint">
               {formatSize(entry.size)}

@@ -43,6 +43,7 @@ import { ActivitySection } from "./settings-activity";
 import { ChannelsSection } from "./settings-channels";
 import { ConnectorsSection, connectorLevels } from "./settings-connectors";
 import { EntrySection } from "./settings-entry";
+import { FilesSection } from "./settings-files";
 import { LimitsSection } from "./settings-limits";
 import { KnowledgeSection } from "./settings-knowledge";
 import { MaintenanceSection } from "./settings-maintenance";
@@ -140,6 +141,8 @@ function SettingsPanel({
     agent.settings.assistantName?.trim() ||
     t("defaultName");
   const activeSection = section ?? "status";
+  // The workspace the files section opens on, when a channel asked for it.
+  const [filesWorkspaceId, setFilesWorkspaceId] = useState<string>();
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
   const [connectors, setConnectors] = useState<PersonalAgentConnector[]>();
   const [savedConnectors, setSavedConnectors] =
@@ -368,6 +371,12 @@ function SettingsPanel({
               />
             ) : activeSection === "rules" ? (
               <RulesSection change={change} draft={draft} />
+            ) : activeSection === "files" ? (
+              <FilesSection
+                assistantId={assistantId}
+                initialWorkspaceId={filesWorkspaceId}
+                onNotice={notice}
+              />
             ) : activeSection === "places" ? (
               <PlacesSection
                 assistantId={assistantId}
@@ -426,6 +435,10 @@ function SettingsPanel({
                 homeDeviceId={agent.homeDeviceId}
                 homeWorkspaceId={agent.workspaceId}
                 onNotice={notice}
+                onOpenFiles={(workspaceId) => {
+                  setFilesWorkspaceId(workspaceId);
+                  onSectionChange("files");
+                }}
                 workspaces={workspaces}
               />
             ) : activeSection === "limits" ? (

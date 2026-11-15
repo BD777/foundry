@@ -397,6 +397,8 @@ var workspaceMigrationKeptColumns = map[string]string{
 	// Regenerated: the target's registration reports them again.
 	"agents.device_id":     "regenerated: activation deletes the source device's agents; the target registers its own",
 	"workspace_files.path": "regenerated: paths inside the folder, replaced by the target's registration",
+	// Carried as is: relative to the workspace folder, so valid on the target.
+	"workspace_file_revisions.path": "carried: saved versions of a file, named by its path inside the folder",
 	// Not carried: tied to the source device, listed in the job's notCarried.
 	"device_connector_bindings.device_id": "not carried: a connector held on the source device; set it up again on the target",
 	"feishu_gateway_grants.device_id":     "not carried: a Feishu grant of a session on the source device",

@@ -1565,3 +1565,47 @@ test("host schedule scans are asynchronous and reuse a short cache", async (t) =
   await host.scan({ fresh: true });
   assert.ok(calls > firstCalls, "a forced scan did not refresh");
 });
+
+test("a scheduled turn that removes its own schedule is not canceled; another remover's stop is", async (t) => {
+  const startedAt = new Date(Date.now() - 1000).toISOString();
+  const h = await scheduleHarness(
+    t,
+    work({
+      kind: "schedule",
+      desiredState: "removed",
+      revision: 2,
+      finishRunId: "wrun_self",
+      spec: { schedule: "*/30 * * * *", recurring: true, prompt: "check" },
+      observation: {
+        status: "running",
+        confirmedRevision: 1,
+        at: startedAt,
+        startedAt,
+        runId: "wrun_self",
+        executionSessionId: "session",
+      },
+    }),
+    { id: "unexpected", status: "running" },
+  );
+  let stops = 0;
+  h.supervisor.configureRuntime({
+    stopScheduledRun: async () => {
+      stops++;
+    },
+    inspect: () => "unknown",
+    stop: async () => {},
+    stopChild: async () => {},
+  });
+  await h.supervisor.start("http://isolated.invalid");
+  await h.supervisor.stop();
+  await h.supervisor.tick();
+  assert.equal(stops, 0, "the turn that asked for the removal was canceled");
+  assert.equal(h.current.observation.status, "running");
+  assert.equal(h.current.observation.confirmedRevision, 1);
+  assert.equal(h.current.observation.error, undefined);
+
+  h.current.finishRunId = undefined;
+  h.current.revision = 3;
+  await h.supervisor.tick();
+  assert.equal(stops, 1);
+});

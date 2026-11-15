@@ -119,17 +119,10 @@ export const externalAccounts: Translation<typeof en> = {
     consumption:
       "已绑定的会话经 Foundry 使用官方 cf CLI（或 curl）；每个请求都由 Server 判定，所以访问级别的改动对正在运行的会话立即生效。设备上需要安装 cf CLI 并更新 Worker。凭据不会复制到设备。",
     accessTitle: "会话权限",
-    accessDetail: "此工作区的会话在所选域名中可以做什么。选择后立即生效。",
-    accessRead: "只读",
-    accessReadDetail: "域名、DNS 记录和证书信息。",
-    accessDnsEdit: "只读 + DNS 编辑",
-    accessDnsEditDetail:
-      "还可在所选域名中新建、修改和删除 DNS 记录，例如 A 记录或 ACME TXT 验证记录。每次修改都会列在身份的“活动”中。",
-    accessZeroTrust: "只读 + DNS 编辑 + Zero Trust",
-    accessZeroTrustDetail:
-      "还可为所选域名所属的 Cloudflare 账号管理 Access 应用、策略和服务令牌，并更新 Tunnel ingress。Foundry 绝不创建 Bypass 策略；自动开通只使用 Service Auth。每次修改都会列在身份的“活动”中。",
+    accessDetail:
+      "此工作区的会话在所选域名中可以做什么。每一档都包含上面各档的权限；选择后立即生效，正在运行的会话也一样。",
     accessNeedsScopes:
-      "需要 {{scopes}}，当前授权不包含。请在身份上点“重新授权”，并允许对应权限：DNS 写入；Access: Apps and Policies Edit；Access: Service Tokens Edit；Cloudflare Tunnel Edit 或 Read。",
+      "需要 {{scopes}}，当前授权不包含。请在身份上点“重新授权”。{{hint}}",
     accessGrantLost:
       "此工作区设为{{level}}，但授权已不包含 {{scopes}}：重新授权前修改会被拒绝。",
     accessSaved: "会话权限已设为{{level}}。",
@@ -230,12 +223,7 @@ export const externalAccounts: Translation<typeof en> = {
     unverifiedApp: "已保存的 App 不在当前列表中。请检查密钥，或取消选择。",
     accessTitle: "会话访问级别",
     accessDetail:
-      "“只读”允许 GET 请求；“commerce”还允许创建和更新订阅组、订阅、优惠、本地化与审核截图。",
-    accessRead: "只读",
-    accessReadDetail: "App、订阅组、订阅、价格与本地化元数据。",
-    accessCommerce: "只读 + commerce",
-    accessCommerceDetail:
-      "还可创建和更新订阅组、订阅、推介优惠、本地化与审核截图。修改价格和提交审核仍需在 App Store Connect 中操作。",
+      "此工作区的会话在所选 App 中可以做什么。每一档都包含上面各档的权限。",
     saveBinding: "保存 App 与访问级别",
     removeBinding: "移除工作区绑定",
     boundNotice: "已在工作区为 {{name}} 绑定所选 App。",
@@ -459,6 +447,15 @@ export const externalAccounts: Translation<typeof en> = {
       "Foundry 会删除封存的凭据并拒绝新请求。凭据本身仍存在于服务中；如果怀疑泄露，请在那里轮换。已吊销的实例无法恢复。",
     revokeConfirm: "吊销并停止访问",
     revokedNotice: "已吊销 {{name}}；相关会话已失去访问。",
+    revokedInstances_one: "已撤销 ({{count}})",
+    revokedInstances_other: "已撤销 ({{count}})",
+    delete: "删除",
+    deleteTitle: "删除 {{name}}？",
+    deleteDescription: "永久删除这个已撤销实例及其剩余的非审计记录。",
+    deleteBody:
+      "实例吊销时已删除凭据。Foundry 会删除实例、账号和工作区绑定，但保留审计记录。此操作无法撤销。",
+    deleteConfirm: "永久删除",
+    deletedNotice: "已永久删除 {{name}}。",
     errors: {
       credential: {
         title: "凭据被拒绝",

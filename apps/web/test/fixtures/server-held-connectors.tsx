@@ -195,6 +195,24 @@ let instances: ConnectorServerHeldInstance[] = [
     createdAt: iso(-14 * 86_400_000),
     updatedAt: iso(-86_400_000),
   },
+  {
+    id: "inst_revoked",
+    accountId: "xacc_acme_revoked",
+    kind: "acme-api",
+    label: "Old synthetic device",
+    network: "device",
+    probeDeviceId: "dev_byte",
+    status: "revoked",
+    statusDetail: "revoked",
+    version: "2026.10-synthetic",
+    routeCount: 1,
+    values: { baseUrl: "http://127.0.0.1:32333", account: "" },
+    secretFields: [],
+    fieldOptions,
+    probeValues: { version: "2026.10-synthetic" },
+    createdAt: iso(-2 * 86_400_000),
+    updatedAt: iso(-86_400_000),
+  },
 ];
 const probeResult = {
   values: {
@@ -341,6 +359,10 @@ window.fetch = async (input, init = {}) => {
       found.statusDetail = "ok";
       found.updatedAt = iso();
       return json(found);
+    }
+    if (method === "POST" && url.pathname.endsWith("/delete")) {
+      instances = instances.filter((instance) => instance.id !== id);
+      return json({ status: "deleted" });
     }
     if (method === "PUT") {
       found.label = body.label || found.label;

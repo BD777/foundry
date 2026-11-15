@@ -665,6 +665,11 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(sandboxed); got != "" {
 		t.Fatalf("sandboxed = %q", got)
 	}
+	channel := session
+	channel.WorkspaceAccess = store.SessionWorkspaceAccessRead
+	if got := uses(channel); got != "aws:none,github:none,tencentcloud:none,alibabacloud:none,corpcli:none" {
+		t.Fatalf("the owner's read-only session = %q", got)
+	}
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "corpcli", DeviceID: "dev", Members: true}}, owns); err != nil {
 		t.Fatal(err)
 	}

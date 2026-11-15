@@ -46,6 +46,7 @@ import type {
   SessionEventEmitter,
 } from "./session-state.js";
 import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
+import { sessionToolsFolder } from "../skills/session-tools.js";
 import {
   resolveClaudeCommand,
   resolveCodexCommand,
@@ -388,6 +389,7 @@ async function runSandboxed(
           profile: childProfile,
           managedSkills: run.managedSkills,
           ambient: sandbox.ambient,
+          sessionTools: sessionToolsFolder(session.id),
         })}\n`,
       );
     });

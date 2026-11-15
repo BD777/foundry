@@ -1,0 +1,221 @@
+{
+  "levels": [
+    {
+      "name": "read",
+      "label": "Read",
+      "labels": { "zh-CN": "只读" },
+      "description": "Reads the selected zones: zone details, DNS records, SSL and certificate metadata, subscription, page rules, Workers routes and the cache ruleset. Changes nothing, and does not reach account-level Zero Trust (Access, Tunnel). Choose it when sessions only need to look things up.",
+      "descriptions": {
+        "zh-CN": "读取所选域名：域名详情、DNS 记录、SSL 与证书信息、订阅、Page Rules、Workers 路由和缓存规则。不做任何修改，也读不到账号级的 Zero Trust（Access、Tunnel）。会话只需要查询时选这一档。"
+      }
+    },
+    {
+      "name": "dns_edit",
+      "scopes": ["dns.write"],
+      "label": "Read + DNS edit",
+      "labels": { "zh-CN": "只读 + DNS 编辑" },
+      "description": "Also creates, updates and deletes DNS records in the selected zones, such as A, CNAME or ACME TXT records. Still no Access or Tunnel. Each change is listed under Activity on the identity.",
+      "descriptions": {
+        "zh-CN": "在只读之外，还可在所选域名中新建、修改、删除 DNS 记录，例如 A、CNAME 或 ACME TXT 验证记录。仍然碰不到 Access 和 Tunnel。每次修改都列在身份的“活动”中。"
+      },
+      "grantHint": "Allow Zone > DNS: Edit when re-authorizing.",
+      "grantHints": { "zh-CN": "重新授权时允许 Zone > DNS: Edit。" }
+    },
+    {
+      "name": "zero_trust",
+      "scopes": [
+        "zone.read",
+        "dns.read",
+        "dns.write",
+        "ssl-and-certificates.read",
+        "access-app.read",
+        "access-app.write",
+        "access-policy.read",
+        "access-policy.write",
+        "access-service-token.read",
+        "access-service-token.write",
+        "argotunnel.read",
+        "argotunnel.write"
+      ],
+      "label": "Read + DNS edit + Zero Trust",
+      "labels": { "zh-CN": "只读 + DNS 编辑 + Zero Trust" },
+      "description": "Also works on the Cloudflare accounts of the selected zones: reads Access applications, policies and service tokens, and Tunnels with their connections and ingress; creates and updates Access applications and policies, creates and deletes service tokens, and updates a Tunnel's ingress (public hostnames). It cannot create a Bypass policy, or create or delete a Tunnel. Choose it to diagnose a Tunnel (such as Error 1033) or to let sessions change a public hostname. Each change is listed under Activity.",
+      "descriptions": {
+        "zh-CN": "还可操作所选域名所属的 Cloudflare 账号：读取 Access 应用、策略、服务令牌，以及 Tunnel 的详情、连接状态和 ingress；创建和更新 Access 应用与策略，创建和删除服务令牌，更新 Tunnel 的 ingress（Public Hostname）。不能创建 Bypass 策略，也不能新建或删除 Tunnel。要排查 Tunnel（例如 Error 1033）或让会话修改 Public Hostname 时选这一档。每次修改都列在“活动”中。"
+      },
+      "grantHint": "Allow Account > Access: Apps and Policies Edit, Access: Service Tokens Edit and Cloudflare Tunnel Edit, plus Zone > DNS: Edit, when re-authorizing.",
+      "grantHints": {
+        "zh-CN": "重新授权时允许 Account > Access: Apps and Policies Edit、Access: Service Tokens Edit、Cloudflare Tunnel Edit，以及 Zone > DNS: Edit。"
+      }
+    }
+  ],
+  "routes": [
+    { "methods": ["GET"], "path": "/zones", "level": "read" },
+    { "methods": ["GET"], "path": "/zones/{zone}", "level": "read" },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/dns_records",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/dns_records/{record}",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/ssl/certificate_packs",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/ssl/universal/settings",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/ssl/verification",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/settings/ssl",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/subscription",
+      "level": "read"
+    },
+    { "methods": ["GET"], "path": "/zones/{zone}/pagerules", "level": "read" },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/workers/routes",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/rulesets/phases/http_request_cache_settings/entrypoint",
+      "level": "read"
+    },
+
+    {
+      "methods": ["POST"],
+      "path": "/zones/{zone}/dns_records",
+      "level": "dns_edit",
+      "action": "dns_record"
+    },
+    {
+      "methods": ["PATCH", "PUT", "DELETE"],
+      "path": "/zones/{zone}/dns_records/{record}",
+      "level": "dns_edit",
+      "action": "dns_record"
+    },
+
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/service_tokens",
+      "level": "zero_trust",
+      "query": ["page", "per_page", "name", "search"]
+    },
+    {
+      "methods": ["POST"],
+      "path": "/accounts/{account}/access/service_tokens",
+      "level": "zero_trust",
+      "action": "service_token_create"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/service_tokens/{id}",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["DELETE"],
+      "path": "/accounts/{account}/access/service_tokens/{id}",
+      "level": "zero_trust",
+      "action": "service_token_delete"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/apps",
+      "level": "zero_trust",
+      "query": [
+        "page",
+        "per_page",
+        "name",
+        "search",
+        "domain",
+        "aud",
+        "target_attributes",
+        "exact"
+      ]
+    },
+    {
+      "methods": ["POST"],
+      "path": "/accounts/{account}/access/apps",
+      "level": "zero_trust",
+      "action": "application_create"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/apps/{id}",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["PATCH", "PUT"],
+      "path": "/accounts/{account}/access/apps/{id}",
+      "level": "zero_trust",
+      "action": "application_update"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/apps/{id}/policies",
+      "level": "zero_trust",
+      "query": ["page", "per_page", "name", "search"]
+    },
+    {
+      "methods": ["POST"],
+      "path": "/accounts/{account}/access/apps/{id}/policies",
+      "level": "zero_trust",
+      "action": "policy_create"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/access/apps/{id}/policies/{id}",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["PATCH", "PUT"],
+      "path": "/accounts/{account}/access/apps/{id}/policies/{id}",
+      "level": "zero_trust",
+      "action": "policy_update"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/cfd_tunnel",
+      "level": "zero_trust",
+      "query": ["page", "per_page", "name", "search", "is_deleted", "status"]
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/cfd_tunnel/{id}",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/cfd_tunnel/{id}/connections",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/cfd_tunnel/{id}/configurations",
+      "level": "zero_trust"
+    },
+    {
+      "methods": ["PUT"],
+      "path": "/accounts/{account}/cfd_tunnel/{id}/configurations",
+      "level": "zero_trust",
+      "action": "tunnel_ingress_update"
+    }
+  ]
+}

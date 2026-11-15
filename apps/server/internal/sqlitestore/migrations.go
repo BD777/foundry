@@ -69,6 +69,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupPersonalAgentList,
 		s.setupPersonalAgentInbox,
 		s.setupMessageChannels,
+		s.setupWorkspaceFiles,
 		s.setupPersonalAgentRuntime,
 		s.setupPersonalAgentRunControls,
 		s.setupPersonalAgentOperations,

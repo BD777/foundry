@@ -39,6 +39,7 @@ const fieldFlags: Record<FoundryDataField, true> = {
   defaultBundleIds: true,
   workspaces: true,
   workspaceSkills: true,
+  connectorSkills: true,
 };
 export const foundryDataFields = Object.keys(fieldFlags) as FoundryDataField[];
 

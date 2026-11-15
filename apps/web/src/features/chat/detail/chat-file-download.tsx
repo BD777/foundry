@@ -5,13 +5,13 @@ import { Button } from "../../../components/ui/button";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { cn } from "../../../lib/cn";
 import { detailAction, detailInset } from "./chat-detail-parts";
-import { FileReadFeedback } from "./chat-file-read-feedback";
+import { FileReadFeedback } from "../../../components/workspace/file-read-feedback";
 import {
   readResponseBlob,
   type ReadProgress,
 } from "../../../lib/read-response-blob";
 import { formatBytes } from "../../../lib/format";
-import { requestDeviceFile } from "./device-file-request";
+import { requestDeviceFile } from "../../../components/workspace/device-file-request";
 import { fetchFileDownload } from "../../../api";
 
 /** A download's button or status, in line with the file shown below it. */
