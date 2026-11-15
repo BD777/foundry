@@ -1,6 +1,6 @@
 # DEV-231 工作区文件树把软链接当成 4 KB 文件，点开报「requested workspace path is not a file」
 
-状态：已部署 dev（train19-20261115：Server sha256 `1b046a1b…`，2026-11-15T09:58:04Z 起；Web `dc3d404bd630e0d6`，front matter 追加修复为 train20 的 Web `a4e4ae9349381109`；Worker `0.5.7-dev.358.g602765a0.local.1794735511`），部署后由 Agent 验证；待本人验收。未提交。
+状态：已部署 dev（train19-20261115：Server sha256 `1b046a1b…`，2026-11-15T09:58:04Z 起；Web `dc3d404bd630e0d6`，front matter 追加修复为 train20 的 Web `a4e4ae9349381109`；Worker `0.5.7-dev.358.g602765a0.local.1794735511`），部署后由 Agent 验证；待本人验收。已合入 main（PR #268）。
 
 来源：本人截图（`.foundry/attachments/20261115/att_dmvo919u8v18_0_image.png`）。ByteWork 设置 →「工作区文件」→ 助理主目录（byte-dev，`/data00/home/dengcanwen/Foundry/personal-agent`）里，`.agents/skills/assistant-handoff`、`assistant-memory-and-list`、`assistant-projects`、`channel-0e47207b…` 显示为 4.0 KB 的文件，点开是「Couldn't read this file — requested workspace path is not a file」。编号说明：派单写的是 DEV-230，但 DEV-230 已被「定时回合删掉自己的 schedule」占用，本项用 DEV-231。
 

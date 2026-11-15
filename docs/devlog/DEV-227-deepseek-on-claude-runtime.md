@@ -1,6 +1,6 @@
 # DEV-227 DeepSeek execution moves to the Claude runtime
 
-状态：已部署 dev（Server train16-20261113），配置已切换并自检通过；Codex TokenHub provider 已撤下全部设备（byte-dev 最后撤下，2026-11-13T22:00Z）。代码已并入共享树 main，等 22:00 提交窗口；Worker 部分随 Worker `0.5.7-dev.357.g8f394c91.local.1794593951`（train18）上线。待人工验收。
+状态：已部署 dev（Server train16-20261113），配置已切换并自检通过；Codex TokenHub provider 已撤下全部设备（byte-dev 最后撤下，2026-11-13T22:00Z）。代码已并入共享树 main，等 22:00 提交窗口；Worker 部分随 Worker `0.5.7-dev.357.g8f394c91.local.1794593951`（train18）上线。待人工验收。已合入 main（PR #268）。
 
 ## 问题
 

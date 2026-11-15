@@ -2,7 +2,7 @@
 
 ## 状态
 
-已部署 dev（2026-11-13 22:49 UTC+8，conductor sess_1794555762602239151：Server `7fa8a782…`、Web `fe7e3f7b2ed75117`、Worker `0.5.7-dev.357.g8f394c91.local.1794580954`），部署后已用 e2e-alice 在线上验证；等本人验收。没有提交。
+已部署 dev（2026-11-13 22:49 UTC+8，conductor sess_1794555762602239151：Server `7fa8a782…`、Web `fe7e3f7b2ed75117`、Worker `0.5.7-dev.357.g8f394c91.local.1794580954`），部署后已用 e2e-alice 在线上验证；等本人验收。已合入 main（PR #268）。
 
 来源：编排会话 [sess_1794464313271186377](https://dev.foundryapp.app/chats/sess_1794464313271186377) 转述的本人反馈（2026-11-13）。本人原话：「Assistant的环境的一些信息要让我可读，你就是这样让我可读的？……其实你给我一个file system，就一个file system就可以了。然后我要在Assistant Web里面去update它。而且你只给我channel的信息，那Assistant自己的那个Workspace呢？」；此前还要求「assistant运行的workspace + system prompt的自由编辑权，包括允许assistant自己去update他们」。前置：[DEV-203](DEV-203-message-channels.md) 第二阶段（通道工作区、`write_file`、AGENTS.md 历史）、[DEV-210](DEV-210-workspace-image-preview.md)（工作区图片预览）、[DEV-196](DEV-196-assistant-progressive-disclosure.md) / [DEV-200](DEV-200-assistant-no-injection.md)（AGENTS.md 与 skills 的分工、不注入）。
 

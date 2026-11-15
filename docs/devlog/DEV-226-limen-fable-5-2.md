@@ -1,5 +1,7 @@
 # DEV-226 Limen 模型列表加入 Fable 5.2
 
+状态：已部署 dev，待本人验收；已合入 main（PR #268）。
+
 [Devlog](README.md)
 
 ## 问题

@@ -1,5 +1,7 @@
 # DEV-232 Cloudflare Tunnel 被拒且说错原因；内置连接器的访问级别改为声明文件
 
+状态：已部署 dev，待本人验收；已合入 main（PR #268）。
+
 ## 问题
 
 2026-11-15 `sess_1794748572690000429`（排查极空间 Vault 经 Cloudflare Tunnel 无法访问）在工作区 `workspace`（`ws_0fde4df9…`）里读 Tunnel 被拒了 7 次，最后对本人说“Foundry 不让我改 Tunnel 配置”，没有说怎么放开。本人随后问：各连接器的权限选项是不是配置驱动的，能否把选项补全，并把说明写清楚。

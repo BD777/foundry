@@ -1,6 +1,6 @@
 # DEV-228 只读通道会话里的连接器工具：olk 找不到、bytedcli 坏链接、家目录其实没隔离
 
-状态：已部署 dev（train18-20261113：Server `36e580b1…`，Worker `0.5.7-dev.357.g8f394c91.local.1794593951`，2026-11-14 02:28–02:29 UTC+8）；byte-dev 执行宿主已加载新代码；真实通道回合待本人下一条 `/ai` 消息；待人工验收；未提交。负责会话 `sess_1794591666137320210`（编排会话 `sess_1794464313271186377` 下发，brief `.foundry/briefs/dev228-229-channel-test-fixes.md`）。
+状态：已部署 dev（train18-20261113：Server `36e580b1…`，Worker `0.5.7-dev.357.g8f394c91.local.1794593951`，2026-11-14 02:28–02:29 UTC+8）；byte-dev 执行宿主已加载新代码；真实通道回合待本人下一条 `/ai` 消息；待人工验收；已合入 main（PR #268）。负责会话 `sess_1794591666137320210`（编排会话 `sess_1794464313271186377` 下发，brief `.foundry/briefs/dev228-229-channel-test-fixes.md`）。
 
 ## 问题
 
