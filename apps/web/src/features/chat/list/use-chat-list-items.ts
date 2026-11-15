@@ -15,7 +15,11 @@ import {
   latestThreadSession,
 } from "../thread/chat-model";
 import { liveThreadSchedule } from "../context/chat-schedule-model";
-import type { NamedSessions } from "../session/chat-session-model";
+import {
+  channelSessionMeta,
+  channelSessionTitle,
+  type NamedSessions,
+} from "../session/chat-session-model";
 import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
 import type { ChatSessionThread } from "../chat-types";
 import type { ChatListItem } from "../chat-surface-types";
@@ -89,6 +93,8 @@ export function useChatListItems({
     titleState.titles[thread.id]?.title || thread.title;
   const sessionChats = threads.map((thread) => {
     const latest = latestThreadSession(thread);
+    const title = threadTitle(thread);
+    const channelTitle = channelSessionTitle(title, latest?.channelOrigin);
     const terminalError = latest
       ? agentSessionTerminalError(latest)
       : undefined;
@@ -113,7 +119,7 @@ export function useChatListItems({
       },
       runtime: latest?.provider ?? thread.sessions[0]?.provider,
       selected: thread.id === selectedThread?.id,
-      title: threadTitle(thread),
+      title: channelTitle ?? title,
       activityAt: latest?.activityAt,
       updateTime: chatUpdateTime(
         latest?.activityAt ??
@@ -142,6 +148,8 @@ export function useChatListItems({
         threadTitle,
         namedSessions,
       ),
+      channelOrigin: latest?.channelOrigin,
+      channelMeta: channelSessionMeta(latest?.channelOrigin, !channelTitle),
       unread,
       waitingChildCount: latest?.waitingChildCount ?? 0,
       foundrySessionId: latest?.id ?? thread.id,

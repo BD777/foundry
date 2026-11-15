@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/channels"
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -331,6 +334,77 @@ func (s *Server) messageChannelContextHint(ctx context.Context, channel store.Me
 		language = person.Locale
 	}
 	return channels.LongPoll{Spec: *spec}.ContextHint(language)
+}
+
+// messageChannelReplyCommand is the source's reply command for a
+// conversation kind.
+func (s *Server) messageChannelReplyCommand(ctx context.Context, channel store.MessageChannelRecord, kind string) string {
+	account, err := s.messageChannelAccount(ctx, channel.UserID, channel.Source.AccountID)
+	if err != nil {
+		return ""
+	}
+	app, data, err := s.messageChannelInstance(ctx, channel.UserID, account)
+	if err != nil {
+		return ""
+	}
+	spec, _ := s.messageChannelFeed(ctx, channel.UserID, app, data)
+	if spec == nil {
+		return ""
+	}
+	return channels.LongPoll{Spec: *spec}.Reply(kind)
+}
+
+// messageChannelOwnWrites is the set of messages the channel's source
+// account created through Foundry's gateway from sessions that work for the
+// channel's assistant: its channel sessions, its home conversation, and the
+// helpers those started (DEV-233, DEV-243). A write by any other session of
+// the same account (an agent session the person ran, a script) is not the
+// assistant's own and must stay deliverable. It reads only this event kind
+// in the last 48 hours (the rollover is 4 hours), not the account's whole
+// audit trail; an error is passed on so the batch is not delivered without
+// the check.
+func (s *Server) messageChannelOwnWrites(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error) {
+	since := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339Nano)
+	events, err := s.store.ListExternalAccountEventsByKind(ctx, channel.Source.AccountID, connectors.ExtensionWriteCreatedMessage, since, 5000)
+	if err != nil {
+		return nil, err
+	}
+	own := map[string]bool{}
+	belongs := map[string]bool{}
+	for _, event := range events {
+		if event.SessionID == "" || !s.messageChannelSessionBelongs(ctx, channel.AssistantID, event.SessionID, belongs) {
+			continue
+		}
+		var detail struct {
+			MessageID string `json:"messageId"`
+		}
+		if json.Unmarshal([]byte(event.Detail), &detail) == nil && detail.MessageID != "" {
+			own[detail.MessageID] = true
+		}
+	}
+	return own, nil
+}
+
+// messageChannelSessionBelongs reports whether session works for
+// assistantID: the assistant's own conversation (its channel session or its
+// home conversation) or a helper one of those started, which
+// permission.Resolve finds by walking parent links. belongs caches the
+// answer per session across one batch.
+func (s *Server) messageChannelSessionBelongs(ctx context.Context, assistantID, sessionID string, belongs map[string]bool) bool {
+	if assistantID == "" {
+		return false
+	}
+	if known, ok := belongs[sessionID]; ok {
+		return known
+	}
+	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+	current := false
+	if err == nil {
+		access, accessErr := permission.Resolve(ctx, s.store, session)
+		current = accessErr == nil && access.Applicable && access.Agent.ID == assistantID
+	}
+	belongs[sessionID] = current
+	return current
 }
 
 // messageChannelSessionState is an earlier channel session as the

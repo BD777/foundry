@@ -264,6 +264,15 @@ export const chat: Translation<typeof en> = {
   },
   listRow: {
     pending: "{{count}} 项待处理",
+    channelSegment: "第 {{number}} 段",
+    channelContinued: "续聊",
+    channelNew: {
+      first: "新会话",
+      idle: "空闲后新会话",
+      command: "命令开启新会话",
+      button: "手动开启新会话",
+      restarted: "重启后新会话",
+    },
     startedBy: "由 {{title}} 派出",
     verifierStartedBy: "由 {{title}} 派出的验证会话",
     anotherSession: "另一个会话",
@@ -289,6 +298,23 @@ export const chat: Translation<typeof en> = {
     renameTitle: "重命名会话",
     nameLabel: "会话名称",
     closeRename: "关闭重命名",
+  },
+  channelGroups: {
+    kind: {
+      direct: "私聊",
+      self: "自己的会话",
+      group: "群聊",
+      channel: "频道",
+      feed: "信息流",
+      other: "会话",
+    },
+    empty: "还没有通道对话。",
+    selectTitle: "通道对话",
+    selectBody: "从左侧选择一个对话，查看它的消息。",
+    nextSession: "下条新会话",
+    nextSessionHint: "这条会话的下一条消息会开启新会话。",
+    nextSessionDone: "下一条消息会开启新会话。",
+    nextSessionFailed: "无法设置新会话",
   },
   waitingChildren: {
     tab: "等待 {{count}}",
@@ -335,6 +361,9 @@ export const chat: Translation<typeof en> = {
   },
   thread: {
     readOnly: "只读权限",
+    channelOnlyTitle: "只接收通道消息",
+    channelOnly: "这个对话只接收 {{source}} 通道的消息。",
+    openChannelSettings: "通道设置",
     workingForIssue:
       "这个会话属于一个 Issue。这里可以查看记录；要继续它，请到它的 Issue。",
     openIssue: "打开它所属的 Issue",

@@ -74,6 +74,50 @@ const ChannelInboxPrefix = "mc:"
 // IsChannelInbox reports whether an inbox channel is a message channel's.
 func IsChannelInbox(channel string) bool { return strings.HasPrefix(channel, ChannelInboxPrefix) }
 
+// channelOriginOf is one channel hand-over's structured origin (DEV-234):
+// its channel, source conversation and thread, and each message of the
+// batch, so clients render the turn without parsing the facts block.
+func (s *Service) channelOriginOf(ctx context.Context, entry store.PersonalAgentInboxEntry) *store.MessageChannelOrigin {
+	if s.messageChannels == nil || entry.AssistantID == "" {
+		return nil
+	}
+	records, err := s.messageChannels.MessageChannelInboxDeliveries(ctx, entry.AssistantID, entry.ID)
+	if err != nil {
+		return nil
+	}
+	if len(records) == 0 {
+		// The runner saves the batch before handing it over, so a turn
+		// drained before the runner tags its records still has them.
+		records, err = s.messageChannels.MessageChannelPendingInboxDeliveries(ctx, entry.AssistantID, entry.Channel)
+		if err != nil || len(records) == 0 {
+			return nil
+		}
+	}
+	channel, err := s.messageChannels.GetMessageChannel(ctx, records[0].ChannelID)
+	if err != nil {
+		return nil
+	}
+	first := records[0]
+	origin := &store.MessageChannelOrigin{
+		ChannelID: channel.ID, ChannelName: channel.Name, Source: channel.Source.Kind,
+		Conversation: first.Envelope.Conversation, Thread: first.Envelope.Thread,
+		Segment: first.Segment, SessionNew: first.SessionNew, NewReason: first.NewReason,
+		At: first.CreatedAt, Messages: []store.MessageChannelOriginMessage{},
+	}
+	for _, record := range records {
+		id := record.Envelope.MessageID
+		if id == "" {
+			id = record.Envelope.ID
+		}
+		origin.Messages = append(origin.Messages, store.MessageChannelOriginMessage{
+			ID: id, At: record.Envelope.OccurredAt, Sender: record.Envelope.Sender,
+			Text: record.Envelope.Text, TextTruncated: record.Envelope.TextTruncated,
+			Status: record.Status, Rule: record.Rule,
+		})
+	}
+	return origin
+}
+
 func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) {
 	entry.Status, entry.LeaseUntil = "dispatching", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
 	claimed, err := s.store.SavePersonalAgentInbox(ctx, entry)
@@ -220,6 +264,10 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		save("waiting", reason, "")
 		return
 	}
+	var channelOrigin *store.MessageChannelOrigin
+	if channelEntry {
+		channelOrigin = s.channelOriginOf(ctx, entry)
+	}
 	prompt, attachments := entry.Text, []store.ChatAttachment(nil)
 	if entry.Origin != nil {
 		prompt, attachments, err = s.channel.PrepareAssistantInbox(ctx, entry, agent.WorkspaceID)
@@ -262,10 +310,12 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		s.recordInboxResult(ctx, *previous)
 		session, err = s.sessions.Send(ctx, previous.ID, store.SendAgentSessionInput{
 			ExecutionBudget: run.ExecutionBudget(snapshot), Prompt: prompt, Attachments: attachments, InputID: entry.InputID, RequireIdle: true,
+			ChannelOrigin: channelOrigin,
 		}, beforeDispatch)
 	} else {
 		input := run.SessionInput(snapshot, prompt, entry.InputID)
 		input.Attachments = attachments
+		input.ChannelOrigin = channelOrigin
 		if channelEntry {
 			input.WorkspaceID, input.Title, input.WorkspaceAccess = target.WorkspaceID, target.Title, store.SessionWorkspaceAccessRead
 		}

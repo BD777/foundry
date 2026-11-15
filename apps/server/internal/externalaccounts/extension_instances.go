@@ -1007,7 +1007,7 @@ func (s *Service) ListExtensionInstances(ctx context.Context, ownerUserID, kind 
 		if app.OwnerUserID != ownerUserID || app.Provider != kind || app.CreatedVia != "extension" {
 			continue
 		}
-		data, err := decodeExtensionData(app)
+		data, err := s.ExtensionData(ctx, app)
 		if err != nil {
 			continue
 		}
@@ -1358,8 +1358,57 @@ func (s *Service) ExtensionData(ctx context.Context, app store.ExternalProviderA
 	if err != nil {
 		return store.ExtensionInstanceData{}, err
 	}
-	_ = ctx
+	// An instance stores the descriptor it was created or last checked with.
+	// That snapshot is descriptor-derived, not instance data: when the
+	// installed extension changes (an upgrade, or a new bundled descriptor),
+	// it and everything read from it have to follow. The person's fields, the
+	// sealed secrets, the account and the device binding stay. The validated
+	// route directory stays too: re-reading it means probing the connector,
+	// which CheckExtensionInstance does when the person checks the instance.
+	if current, ok := s.currentExtensionDescriptor(ctx, app); ok && !sameExtensionDescriptor(data.Descriptor, current) {
+		data = refreshExtensionDescriptor(data, current)
+		if raw, encodeErr := encodeExtensionData(data); encodeErr == nil {
+			if st, storeErr := s.extensionStore(); storeErr == nil {
+				_, _ = st.SaveExternalProviderAppExtensionData(ctx, app.ID, raw)
+			}
+		}
+	}
 	return data, nil
+}
+
+// currentExtensionDescriptor is the descriptor installed now for the
+// instance's kind, ok false when the server cannot tell (no resolver, the
+// extension is not installed on any of the owner's devices any more, or the
+// read failed). A stored snapshot is better than none.
+func (s *Service) currentExtensionDescriptor(ctx context.Context, app store.ExternalProviderApp) (store.ConnectorDescriptor, bool) {
+	if s.ExtensionDescriptor == nil {
+		return store.ConnectorDescriptor{}, false
+	}
+	current, err := s.ExtensionDescriptor(ctx, app.OwnerUserID, app.Provider)
+	if err != nil || current.ServerHeld == nil {
+		return store.ConnectorDescriptor{}, false
+	}
+	return current, true
+}
+
+// sameExtensionDescriptor reports whether two descriptors declare the same
+// connector. The installed descriptor is authoritative, so any difference
+// (a version, a commit, a write pointer) refreshes the instance.
+func sameExtensionDescriptor(a, b store.ConnectorDescriptor) bool {
+	left, leftErr := json.Marshal(a)
+	right, rightErr := json.Marshal(b)
+	return leftErr == nil && rightErr == nil && bytes.Equal(left, right)
+}
+
+// refreshExtensionDescriptor replaces the creation-time descriptor snapshot
+// and the data derived from it with the installed descriptor.
+func refreshExtensionDescriptor(data store.ExtensionInstanceData, descriptor store.ConnectorDescriptor) store.ExtensionInstanceData {
+	data.Descriptor = descriptor
+	data.Access = ""
+	if descriptor.ServerHeld != nil {
+		data.Access = ExtensionAccessLevel(descriptor.ServerHeld.Access, data.ProbeValues)
+	}
+	return data
 }
 
 func (s *Service) DoExtensionRequest(ctx context.Context, app store.ExternalProviderApp, deviceID, method, path string, query url.Values, headers http.Header, body io.Reader) (*http.Response, error) {

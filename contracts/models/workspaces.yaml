@@ -69,6 +69,11 @@ components:
         kind:
           description: "`kind` is WorkspaceKindProject (sent as absent) or WorkspaceKindPersonalAgent."
           $ref: "#/components/schemas/WorkspaceKind"
+        channelId:
+          description:
+            "`channelId` is set on a message channel's workspace (DEV-234): its sessions take input
+            only from the channel, and its chat list groups them by source conversation."
+          type: string
         archivedAt:
           description:
             '`archivedAt` is set while the workspace is archived: hidden in an "Archived" group,

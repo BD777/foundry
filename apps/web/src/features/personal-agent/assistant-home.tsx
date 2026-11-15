@@ -1,9 +1,10 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
   ChevronRight,
+  MessagesSquare,
   OctagonX,
   Play,
   Plus,
@@ -15,6 +16,7 @@ import type {
   AgentProfileProjection,
   AssistantSummary,
   DeviceProjection,
+  MessageChannelView,
   PersonalAgent,
   PersonalAgentOverview,
   WorkspaceProjection,
@@ -22,6 +24,7 @@ import type {
 import { Conversation } from "../../components/conversation/conversation";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import { Alert } from "../../components/ui/alert";
+import { AppLink } from "../../components/ui/app-link";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -37,6 +40,8 @@ import {
   DropdownMenuSurface,
 } from "../../components/ui/row-menu-parts";
 import { serverErrorText } from "../../lib/errors";
+import { channelChatsHref } from "../../lib/in-app-navigation";
+import { listMessageChannels } from "../../api";
 import {
   answerableProposal,
   assistantActivity,
@@ -150,6 +155,25 @@ function AssistantHomeReady({
     agent.id,
     agent.workspaceId,
     agent.formerWorkspaceIds,
+  );
+  // The channels this assistant reads: a quiet way into each channel
+  // workspace's conversations (DEV-234).
+  const [channels, setChannels] = useState<MessageChannelView[]>();
+  useEffect(() => {
+    let cancelled = false;
+    listMessageChannels(agent.id)
+      .then((list) => {
+        if (!cancelled) setChannels(list.channels);
+      })
+      .catch(() => {
+        if (!cancelled) setChannels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id]);
+  const channelLinks = (channels ?? []).filter(
+    (view) => view.workspace !== undefined,
   );
   const [switching, setSwitching] = useState<"stop" | "resume">();
   const [switchError, setSwitchError] = useState("");
@@ -451,6 +475,26 @@ function AssistantHomeReady({
             {t("home.openSettings")}
           </Button>
         </div>
+        {channelLinks.length ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+            {channelLinks.map((view) => (
+              <AppLink
+                className="inline-flex items-center gap-1 rounded-xs text-ink-muted hover:text-ink"
+                href={channelChatsHref(view.workspace!.id)}
+                key={view.channel.id}
+              >
+                <MessagesSquare aria-hidden="true" size={13} />
+                <span>
+                  {t("home.channelConversations", {
+                    source:
+                      view.channel.source.label || view.channel.source.kind,
+                    count: view.conversationCount,
+                  })}
+                </span>
+              </AppLink>
+            ))}
+          </div>
+        ) : null}
         {switchError ? (
           <ToastFeedback tone="error" title={t("loadFailed")}>
             {switchError}

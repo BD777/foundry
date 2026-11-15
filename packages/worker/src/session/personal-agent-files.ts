@@ -25,10 +25,18 @@ import { within } from "../platform/paths.js";
 
 /** The only files Foundry writes into the assistant's folder for a run. */
 const assistantFilePath =
-  /^(AGENTS\.md|\.foundry\/[A-Za-z0-9._-]+\.md|\.foundry\/assistant-skills\/[A-Za-z0-9][A-Za-z0-9_-]*\/SKILL\.md)$/;
+  /^(AGENTS\.md|\.foundry\/[A-Za-z0-9._-]+\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest|\.foundry\/assistant-skills\/[A-Za-z0-9][A-Za-z0-9_-]*\/SKILL\.md)$/u;
+/** Foundry's own facts, which also go into a read-only channel workspace. */
+const foundryFactPath =
+  /^(\.foundry\/project-index\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest)$/u;
+/** Facts the runtime reads on demand, so changing them keeps its identity. */
+const foundryFactFile = (path: string) =>
+  path === ".foundry/project-index.md" || path.startsWith(".foundry/projects/");
 const assistantSkillPath =
   /^\.foundry\/assistant-skills\/([A-Za-z0-9][A-Za-z0-9_-]*)\/SKILL\.md$/;
 const assistantSkillsRoot = [".foundry", "assistant-skills"];
+const projectFilesRoot = [".foundry", "projects"];
+const projectManifestPath = ".foundry/projects/.manifest";
 const runtimeSkillRoots = [
   [".claude", "skills"],
   [".agents", "skills"],
@@ -51,22 +59,24 @@ const revisionBySession = new Map<
  * its content changed, and keeps their revision for the session's runtime
  * key: new instructions start a new runtime, which reads them. A run
  * without files (a timer's turn, a continuation) keeps the last revision.
- * Any other session's files are ignored, and so are a read-only workspace
- * session's: nothing it runs for may write its workspace.
+ * Any other session's files are ignored. A read-only workspace (a message
+ * channel's) takes only Foundry's own facts under .foundry/, never the
+ * person's AGENTS.md or the assistant's skills: the sessions there still
+ * may not write their workspace.
  */
 export function writePersonalAgentFiles(
   session: AgentSession,
   workspacePath: string,
   files: SetupWorkspaceFile[] | undefined,
 ): void {
-  if (
-    session.role !== "personal_agent" ||
-    session.workspaceAccess === "read" ||
-    !session.id ||
-    !files?.length
-  )
+  if (session.role !== "personal_agent" || !session.id || !files?.length)
     return;
-  for (const file of files) {
+  const writable =
+    session.workspaceAccess === "read"
+      ? files.filter((file) => foundryFactPath.test(file.path))
+      : files;
+  if (!writable.length) return;
+  for (const file of writable) {
     if (!assistantFilePath.test(file.path))
       throw new Error(
         `Foundry does not write ${file.path} into the assistant's folder`,
@@ -79,7 +89,7 @@ export function writePersonalAgentFiles(
     )
       throw new Error("Foundry sent a malformed managed block for AGENTS.md");
   }
-  const skills = files.flatMap((file): AssistantSkillFile[] => {
+  const skills = writable.flatMap((file): AssistantSkillFile[] => {
     const name = assistantSkillPath.exec(file.path)?.[1];
     return name ? [{ name, path: file.path, content: file.content }] : [];
   });
@@ -88,15 +98,20 @@ export function writePersonalAgentFiles(
   if (skills.length > 0) syncAssistantSkills(workspacePath, skills);
 
   const revision = createHash("sha256");
-  for (const file of files) {
+  let manifest: string | undefined;
+  for (const file of writable) {
     const target = join(workspacePath, file.path);
     const current = readIfPresent(target);
     const content = file.managedBlock
       ? withManagedBlock(current, file.content, file.seed ?? "")
       : file.content;
+    if (file.path === projectManifestPath) manifest = content;
     // The whole file as written: an edit of the person's part of AGENTS.md
-    // starts a new runtime too, which reads it.
-    revision.update(`${file.path}\0${content}\0`);
+    // starts a new runtime too, which reads it. The project index and
+    // summaries are facts the runtime reads on demand, not instructions: a
+    // digest change must not restart the native conversation.
+    if (!foundryFactFile(file.path))
+      revision.update(`${file.path}\0${content}\0`);
     if (current === content) continue;
     writeFileAtomic(target, content, {
       mode: 0o644,
@@ -104,10 +119,39 @@ export function writePersonalAgentFiles(
       hardenParent: false,
     });
   }
+  if (manifest !== undefined) removeStaleProjectFiles(workspacePath, manifest);
   revisionBySession.set(session.id, {
     workspaceId: session.workspaceId,
     revision: revision.digest("hex"),
   });
+}
+
+/** Removes summary files of projects the manifest no longer lists. */
+function removeStaleProjectFiles(
+  workspacePath: string,
+  manifest: string,
+): void {
+  const keep = new Set(
+    manifest
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  const root = join(workspacePath, ...projectFilesRoot);
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".md") || keep.has(entry)) continue;
+    try {
+      rmSync(join(root, entry), { force: true });
+    } catch {
+      // A folder named like a file, or a concurrent run: leave it.
+    }
+  }
 }
 
 /** The revision of a session's last files; undefined for other sessions. */

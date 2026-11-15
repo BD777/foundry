@@ -95,17 +95,33 @@ func newAccountsFixture(t *testing.T) accountsFixture {
 	return f
 }
 
-// heard is the next notice the assistant's conversation was told, once
-// it has answered it.
+// heard is the next turn the assistant's conversation ran, once it has
+// answered it: a server notice or a helper's turn_end report.
 func (f accountsFixture) heard(t *testing.T) string {
 	t.Helper()
-	run := f.daemon.nextChatRun()
-	if run.Session.ID != f.conversation.ID {
-		t.Fatalf("a run of %s, want the conversation", run.Session.ID)
+	// A helper's ended turn arrives as an inbox report; place it as the
+	// background pump would.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		f.server.sessionService.PumpInbox(context.Background())
+		select {
+		case run := <-f.daemon.runs:
+			if run.Session.Source == store.SessionSourceDigest || run.Session.Source == "naming" {
+				continue
+			}
+			if run.Session.ID != f.conversation.ID {
+				t.Fatalf("a run of %s, want the conversation", run.Session.ID)
+			}
+			f.daemon.complete(run.Session, "Noted.")
+			waitForStatus(t, f.db, f.conversation.ID, "completed")
+			return run.Session.Input.Prompt
+		case <-time.After(50 * time.Millisecond):
+			if time.Now().After(deadline) {
+				stored, _ := f.db.GetAgentSession(context.Background(), f.conversation.ID)
+				t.Fatalf("the assistant's conversation ran no turn (status=%s input=%q)", stored.Status, stored.Input.Prompt)
+			}
+		}
 	}
-	f.daemon.complete(run.Session, "Noted.")
-	waitForStatus(t, f.db, f.conversation.ID, "completed")
-	return run.Session.Input.Prompt
 }
 
 // quiet fails the test if the assistant is told anything soon.
@@ -122,6 +138,11 @@ func instantNotices(t *testing.T) {
 	previous := assistant.CoalesceNotices
 	assistant.CoalesceNotices = 0
 	t.Cleanup(func() { assistant.CoalesceNotices = previous })
+	// A helper's turn_end report gathers between turns in production; these
+	// tests read each one as its own turn.
+	previousGather := sessions.ChildReportGather
+	sessions.ChildReportGather = 0
+	t.Cleanup(func() { sessions.ChildReportGather = previousGather })
 }
 
 // createHelper exercises the shared dispatch/account layer used by all callers.
@@ -149,6 +170,9 @@ func (f accountsFixture) createHelper(t *testing.T, arguments map[string]any) st
 // account the person last completed work on there comes first.
 func TestHelperRunsUnderAnAccountThatWorksOnItsDevice(t *testing.T) {
 	f := newAccountsFixture(t)
+	// A helper's turn_end report is gathered between turns in production;
+	// this test reads it as its own turn.
+	instantNotices(t)
 	ctx := context.Background()
 	for _, want := range []struct {
 		arguments map[string]any
@@ -201,7 +225,6 @@ func TestRuntimeSwitchRunsUnderAnAccountThatWorks(t *testing.T) {
 	helper := f.createHelper(t, map[string]any{"profileId": f.service.ID})
 	f.daemon.complete(helper, "Done.")
 	waitForStatus(t, f.db, helper.ID, "completed")
-	f.heard(t)
 	for _, provider := range []string{"codex", "codex"} {
 		if _, err := f.server.sessionService.Send(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "again", Provider: provider}, nil); err != nil {
 			t.Fatalf("runtime switch: %v", err)
@@ -212,28 +235,22 @@ func TestRuntimeSwitchRunsUnderAnAccountThatWorks(t *testing.T) {
 		}
 		f.daemon.complete(run, "Done.")
 		waitForStatus(t, f.db, helper.ID, "completed")
-		f.heard(t)
 	}
 }
 
-// A helper that failed because its account is not signed in tells the
-// assistant why, as a category it can act on, and which accounts work
-// there instead.
-func TestFailedHelperNoticeCarriesItsReason(t *testing.T) {
+// A helper that failed tells the assistant as its turn_end report: the
+// status and the error, the same one completion signal as any other turn.
+func TestFailedHelperTurnReachesTheAssistant(t *testing.T) {
 	instantNotices(t)
 	f := newAccountsFixture(t)
 	ctx := context.Background()
 	helper := f.createHelper(t, map[string]any{"profileId": "claude_local"})
 	f.server.sessionService.FailUndelivered(ctx, helper, "Not logged in · Please run /login")
-	notice := f.heard(t)
-	for _, want := range []string{"Failed:", "Not logged in", "is not signed in on that computer", "[reason=not_signed_in profileId=claude_local runtime=claude]",
-		"availability only, not permission to switch", "profileId " + accountsGateway} {
-		if !strings.Contains(notice, want) {
-			t.Fatalf("failure notice misses %q:\n%s", want, notice)
+	report := f.heard(t)
+	for _, want := range []string{sessions.ChildReportPrefix, "failed", "Not logged in"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("the failed turn's report misses %q:\n%s", want, report)
 		}
-	}
-	if strings.Contains(notice, "profileId claude_local,") || strings.Contains(notice, "profileId codex_local") {
-		t.Fatalf("the notice offers an account that does not work:\n%s", notice)
 	}
 }
 
@@ -297,6 +314,28 @@ func TestUnreachableHelperIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.quiet(t, "the same spell was reported twice")
+}
+
+// A blocked helper is a plain fact: Foundry no longer decides that every
+// blocked session is asking its assistant something.
+func TestBlockedHelperIsNotReportedAsAsking(t *testing.T) {
+	instantNotices(t)
+	f := newAccountsFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	helper := f.createHelper(t, nil)
+	if _, err := f.db.StartAgentSession(ctx, helper.ID); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := f.db.BlockAgentSession(ctx, helper.ID, "Waiting for the person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.sessions.Changed(ctx, sessions.Blocked, blocked)
+	f.quiet(t, "a blocked helper was reported")
+	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskAsking}); len(tasks) != 0 {
+		t.Fatalf("asking tasks = %+v", tasks)
+	}
 }
 
 // A helper the worker blocks while its model request retries waits on no

@@ -89,8 +89,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if text, isError := call("ask_person", map[string]any{"question": "Deploy?"}); !isError || !strings.Contains(text, "only an Issue's execution can ask the person") {
 		t.Fatalf("a chat calling ask_person = %q", text)
 	}
-	if text, isError := call("find_workspace", map[string]any{"query": "budget"}); !isError || !strings.Contains(text, "only available to the person's assistant") {
-		t.Fatalf("a chat calling find_workspace = %q", text)
+	if text, isError := call("read_list", map[string]any{}); !isError || !strings.Contains(text, "only available to the person's assistant") {
+		t.Fatalf("a chat calling read_list = %q", text)
 	}
 	if text, isError := call("delete_everything", map[string]any{}); !isError || text != "unknown tool: delete_everything" {
 		t.Fatalf("an unknown tool = %q", text)

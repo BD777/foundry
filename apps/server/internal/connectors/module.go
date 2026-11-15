@@ -59,6 +59,7 @@ func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switc
 		ToolChecks: gateway.NewChecks(),
 	}
 	module.Extensions = NewExtensionGateway(st, serverHeld, module.Devices.ServerHeldDescriptorOn)
+	serverHeld.ExtensionDescriptor = module.Devices.ServerHeldDescriptorForOwner
 	serverHeld.AllowSessionAccount = func(ctx context.Context, account store.ExternalAccount, deviceID string) (bool, error) {
 		if descriptor, ok := catalog.Lookup(account.Provider); ok && descriptor.Holding == store.ConnectorServerHeld {
 			return true, nil

@@ -14,6 +14,10 @@ func (s *Store) setupPersonalAgentMaintenance(ctx context.Context) error {
 	for _, q := range []string{
 		`CREATE TABLE IF NOT EXISTS pa_maintenance(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',role TEXT NOT NULL,workspace_id TEXT NOT NULL,event_key TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,due_at TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,role,workspace_id,event_key))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_due ON pa_maintenance(status,due_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_user ON pa_maintenance(user_id)`,
+		// What upkeep state each assistant was last told, so a stalled or
+		// failed review is announced once rather than every drain.
+		`CREATE TABLE IF NOT EXISTS pa_upkeep_notices(assistant_id TEXT PRIMARY KEY,signature TEXT NOT NULL,notified_at TEXT NOT NULL)`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, q); err != nil {
 			return err
@@ -102,6 +106,26 @@ func (s *Store) listPAMaintenance(ctx context.Context, q string, args ...any) ([
 func (s *Store) ListPersonalAgentMaintenance(ctx context.Context, assistantID string) ([]store.PersonalAgentMaintenance, error) {
 	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200`, assistantID)
 }
+
+func (s *Store) ListPersonalAgentMaintenanceForUser(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? ORDER BY rowid DESC LIMIT 500`, userID)
+}
+
+func (s *Store) UpkeepNoticeSignature(ctx context.Context, assistantID string) (string, error) {
+	var signature string
+	err := s.reader().QueryRowContext(ctx, `SELECT signature FROM pa_upkeep_notices WHERE assistant_id=?`, assistantID).Scan(&signature)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return signature, err
+}
+
+func (s *Store) SaveUpkeepNoticeSignature(ctx context.Context, assistantID, signature, at string) error {
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_upkeep_notices(assistant_id,signature,notified_at) VALUES(?,?,?)
+		ON CONFLICT(assistant_id) DO UPDATE SET signature=excluded.signature,notified_at=excluded.notified_at`,
+		assistantID, signature, at)
+	return err
+}
 func (s *Store) DuePersonalAgentMaintenance(ctx context.Context, now string) ([]store.PersonalAgentMaintenance, error) {
 	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE status IN ('pending','waiting','starting','running') AND due_at<=? ORDER BY due_at LIMIT 20`, now)
 }
@@ -119,7 +143,10 @@ func (s *Store) SavePersonalAgentMaintenance(ctx context.Context, v store.Person
 		}
 
 		if v.Attempt != old.Attempt {
-			if (old.Status != "failed" && old.Status != "waiting") || old.Attempt >= 2 || v.Attempt != old.Attempt+1 || v.Status != "pending" || v.InputID != "" || v.SessionID != "" || v.SnapshotID != "" {
+			// A run that failed while the job was running retries like one
+			// already waiting: pending, with its accepted input and run
+			// cleared so the retry pins a fresh one.
+			if (old.Status != "failed" && old.Status != "waiting" && old.Status != "running") || old.Attempt >= 2 || v.Attempt != old.Attempt+1 || v.Status != "pending" || v.InputID != "" || v.SessionID != "" || v.SnapshotID != "" {
 				return fmt.Errorf("invalid maintenance retry")
 			}
 			if old.InputID != "" {

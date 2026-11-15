@@ -117,6 +117,9 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if s.refusePersonChannelInput(w, r, chatID, "") {
+		return
+	}
 	var input store.EnqueueChatMessageInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
@@ -158,6 +161,9 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 func (s *Server) handleEditChatQueueItem(w http.ResponseWriter, r *http.Request) {
 	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
+		return
+	}
+	if s.refusePersonChannelInput(w, r, chatID, "") {
 		return
 	}
 	var input store.EditChatQueueItemInput
@@ -222,6 +228,9 @@ func (s *Server) handleRetryChatQueueItem(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if s.refusePersonChannelInput(w, r, chatID, "") {
+		return
+	}
 	queue, err := s.store.RetryChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"))
 	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 	if err == nil {
@@ -233,6 +242,9 @@ func (s *Server) handleRetryChatQueueItem(w http.ResponseWriter, r *http.Request
 func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request) {
 	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
+		return
+	}
+	if s.refusePersonChannelInput(w, r, chatID, "") {
 		return
 	}
 	// An optional body asks when the message enters the turn: {"delivery":

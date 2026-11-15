@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -110,17 +112,47 @@ func listSessionEventRows(ctx context.Context, db dbExecutor, query string, args
 }
 
 // listSessionEvents runs a query of sessionEventColumns and decodes each
-// row once the statement is closed (see listJSON).
+// row once the statement is closed (see listJSON). Rows keep the query's
+// order; use listSessionEventsChronologically when that order is time.
 func listSessionEvents(ctx context.Context, db dbExecutor, query string, args ...any) ([]store.AgentSessionEvent, error) {
 	rows, err := listSessionEventRows(ctx, db, query, args...)
 	if err != nil {
 		return nil, err
 	}
+	return decodeSessionEventRows(rows)
+}
+
+// listSessionEventsChronologically is listSessionEvents oldest first.
+//
+// Ordering by created_at alone is not chronological: that text does not
+// always sort as time does because RFC3339Nano trims trailing zeros, so
+// ".7514Z" sorts after ".751401Z". A stable sort on the parsed time keeps
+// the query's order for equal times and fixes the pairs text order swaps,
+// as readChronologicalWindow does for a page.
+func listSessionEventsChronologically(ctx context.Context, db dbExecutor, query string, args ...any) ([]store.AgentSessionEvent, error) {
+	rows, err := listSessionEventRows(ctx, db, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(rows, func(a, b sessionEventRow) int {
+		at, aerr := time.Parse(time.RFC3339Nano, a.createdAt)
+		bt, berr := time.Parse(time.RFC3339Nano, b.createdAt)
+		if aerr != nil || berr != nil {
+			return 0
+		}
+		return at.Compare(bt)
+	})
+	return decodeSessionEventRows(rows)
+}
+
+func decodeSessionEventRows(rows []sessionEventRow) ([]store.AgentSessionEvent, error) {
 	events := make([]store.AgentSessionEvent, len(rows))
 	for index, row := range rows {
-		if events[index], err = row.decode(); err != nil {
+		event, err := row.decode()
+		if err != nil {
 			return nil, err
 		}
+		events[index] = event
 		rows[index].payload = nil
 	}
 	return events, nil

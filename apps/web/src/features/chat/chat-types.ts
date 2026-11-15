@@ -18,6 +18,7 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
+  MessageChannelOrigin,
   SubagentUsage,
   WorkerRuntimeId,
   ConfiguredContextWindow,
@@ -74,6 +75,8 @@ export interface ChatViewMessage {
   sentBySessionId?: string;
   /** A user message steered into a running turn, not a turn's input. */
   steered?: boolean;
+  /** A message channel turn: its channel, conversation and messages. */
+  channelOrigin?: MessageChannelOrigin;
   /**
    * On a boundary: a turn the agent ran on its own, for a timer it set
    * ("scheduled") or after its background work ended ("background").

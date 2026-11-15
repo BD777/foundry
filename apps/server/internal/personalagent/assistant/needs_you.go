@@ -105,29 +105,6 @@ func (s *Service) Handler(ctx context.Context, session store.AgentSession) (hand
 	return store.PendingHandlerAssistant, agent.ID
 }
 
-// HandOverAll hands every open item the assistant handles to the person,
-// saying why (store.PendingHanded*). It answers how many.
-func (s *Service) HandOverAll(ctx context.Context, agent store.PersonalAgent, reason string) int {
-	userID := agent.UserID
-	items, err := s.store.ListPendingItems(ctx, userID, []string{store.PendingOpen}, "", 500)
-	if err != nil {
-		log.Printf("personal agent %s: list items to hand over: %v", userID, err)
-		return 0
-	}
-	handed := 0
-	for _, item := range items {
-		if store.PendingHandledBy(item) != store.PendingHandlerAssistant || item.AssistantID != agent.ID {
-			continue
-		}
-		if _, err := s.store.HandPendingItem(ctx, userID, item.ID, store.PendingHandlerPerson, "", reason, store.PendingOutcomeHandedOver); err != nil {
-			log.Printf("personal agent %s: hand over item %s: %v", userID, item.ID, err)
-			continue
-		}
-		handed++
-	}
-	return handed
-}
-
 // helperStuckExcerptChars bounds what a stuck helper's item quotes.
 const helperStuckExcerptChars = 600
 
@@ -152,8 +129,8 @@ func (s *Service) recordHelperStuck(ctx context.Context, agent store.PersonalAge
 
 // NotifyPendingItem tells an accessible assistant conversation about one
 // item as a short server notice. It is the existing task-notice path and
-// carries facts only: the helper, its question, the item id and the
-// deadline. It reports whether a notice was queued.
+// carries facts only: the helper, its question and the item id. It reports
+// whether a notice was queued.
 func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAgent, item store.PendingItem) bool {
 	if agent.State != store.PersonalAgentActive || item.State != store.PendingOpen {
 		return false
@@ -175,12 +152,8 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 		helper = session.ID
 	}
 	question := textcut.Excerpt(strings.TrimSpace(item.Title), 240)
-	deadline := item.DeadlineAt
-	if parsed, err := time.Parse(time.RFC3339Nano, deadline); err == nil {
-		deadline = parsed.Format(time.RFC3339)
-	}
 	line := fmt.Sprintf(pendingNoticeTexts[languageIndex(language)],
-		helper, session.ID, question, item.ID, deadline)
+		helper, session.ID, question, item.ID)
 	s.notices.add(conversationID, language, line, time.Now(), func(text string) {
 		current, err := s.store.GetAssistant(context.Background(), agent.ID)
 		if err != nil || current.State != store.PersonalAgentActive {
@@ -196,26 +169,9 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 	return true
 }
 
-// pendingItemForSession is the newest open item the assistant handles for
-// one helper. It lets the existing task-asked notice carry the item facts
-// instead of sending a second arrival notice.
-func (s *Service) pendingItemForSession(ctx context.Context, agent store.PersonalAgent, sessionID string) (store.PendingItem, bool) {
-	items, err := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", 500)
-	if err != nil {
-		return store.PendingItem{}, false
-	}
-	for _, item := range items {
-		if item.SessionID == sessionID && item.AssistantID == agent.ID &&
-			store.PendingHandledBy(item) == store.PendingHandlerAssistant {
-			return item, true
-		}
-	}
-	return store.PendingItem{}, false
-}
-
 var pendingNoticeTexts = [2]string{
-	"帮手“%s”（%s）的问题：%s。事项 %s，截止 %s。",
-	"Helper %q (%s) asks: %s. Item %s, deadline %s.",
+	"帮手“%s”（%s）的问题：%s。事项 %s。",
+	"Helper %q (%s) asks: %s. Item %s.",
 }
 
 func firstLineOf(text string) string {

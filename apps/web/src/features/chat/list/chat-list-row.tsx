@@ -5,6 +5,7 @@ import {
   GitBranch,
   Hourglass,
   LoaderCircle,
+  MessageSquareText,
   PauseCircle,
   Terminal,
 } from "lucide-react";
@@ -64,7 +65,18 @@ export const ChatListRow = memo(function ChatListRow({
                 >
                   {chat.title}
                 </strong>
-                {chat.startedBy ? (
+                {chat.channelMeta ? (
+                  <span className="flex items-center gap-[3px] overflow-hidden text-2xs leading-[1.3] font-medium text-ink-faint">
+                    <MessageSquareText
+                      className="flex-none"
+                      size={10}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate" title={chat.channelMeta}>
+                      {chat.channelMeta}
+                    </span>
+                  </span>
+                ) : chat.startedBy ? (
                   <span className="flex items-center gap-[3px] overflow-hidden text-2xs leading-[1.3] font-medium text-ink-faint">
                     <GitBranch
                       className="flex-none"

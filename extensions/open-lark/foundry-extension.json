@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.4.0",
+  "version": "1.6.1",
   "protocol": 1,
   "connectors": [
     {
@@ -277,6 +277,16 @@
               "attributes.replyToMe": {
                 "pointer": "/item/signals/replyToMe"
               },
+              "attributes.replyTo": {
+                "pointer": "/item/refs/-1/id",
+                "when": [
+                  {
+                    "pointer": "/item/refs/-1/rel",
+                    "equals": "parent"
+                  }
+                ],
+                "trimPrefix": "msg:"
+              },
               "attributes.hidden": {
                 "pointer": "/hidden"
               }
@@ -293,8 +303,28 @@
             "hints": {
               "zh-CN": "olk im context {message.id} --limit 50"
             }
+          },
+          "reply": {
+            "kinds": {
+              "group": "olk im reply {message.id} --thread",
+              "direct": "olk im reply {message.id}",
+              "self": "olk im reply {message.id}",
+              "other": "olk im reply {message.id}"
+            }
           }
-        }
+        },
+        "writes": [
+          {
+            "method": "POST",
+            "path": "/agent/v1/messages/:messageId/replies",
+            "createdMessageId": "/messageId"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/messages",
+            "createdMessageId": "/messageId"
+          }
+        ]
       }
     }
   ]

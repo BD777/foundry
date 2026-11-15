@@ -2,6 +2,8 @@ import type {
   MessageChannel,
   MessageChannelCapabilities,
   MessageChannelConnectorScope,
+  MessageChannelFollowUpFrom,
+  MessageChannelFollowUps,
   MessageChannelInput,
   MessageChannelList,
   MessageChannelPeers,
@@ -33,6 +35,13 @@ export const triStates = [
   "no",
 ] as const satisfies readonly MessageChannelTriState[];
 
+/** Who may continue a conversation without a trigger word. */
+export const followUpFroms = [
+  "same-sender",
+  "person",
+  "anyone",
+] as const satisfies readonly MessageChannelFollowUpFrom[];
+
 /** What the channel's sessions may do with the source connector. */
 export type SourceAccess = "read" | "confirm" | "direct";
 export const sourceAccesses: readonly SourceAccess[] = [
@@ -48,6 +57,8 @@ export const channelBounds = {
   prefix: 40,
   resetCommands: 5,
   resetCommand: 40,
+  endCommands: 5,
+  endCommand: 40,
   perHour: { min: 1, max: 1000, initial: 20 },
   perDay: { min: 1, max: 10000, initial: 100 },
   concurrency: { min: 1, max: 10, initial: 3 },
@@ -95,6 +106,7 @@ export interface ChannelDraft {
   filter: FilterDraft;
   sessionKey: "conversation" | "thread";
   session: MessageChannelSessionRule;
+  followUps: MessageChannelFollowUps;
   /** On create: a new workspace, or one the person works in. */
   workspace: { mode: "new" | "existing"; id: string };
   access: SourceAccess;
@@ -111,6 +123,7 @@ export function capabilitiesOf(
       conversationKinds: [],
       mentionsMe: true,
       fromSelf: true,
+      threads: true,
     }
   );
 }
@@ -448,6 +461,7 @@ export function newChannelDraft(sourceAccountId = ""): ChannelDraft {
     },
     sessionKey: "thread",
     session: defaultSessionRule(),
+    followUps: defaultFollowUpRule(),
     workspace: { mode: "new", id: "" },
     access: "direct",
     inheritOtherConnectors: true,
@@ -504,6 +518,7 @@ export function draftFromChannel(
     ),
     sessionKey: channel.sessionKey === "thread" ? "thread" : "conversation",
     session: sessionRuleOf(channel),
+    followUps: followUpRuleOf(channel),
     workspace: channel.workspaceId
       ? { mode: "existing", id: channel.workspaceId }
       : { mode: "new", id: "" },
@@ -542,6 +557,11 @@ export function channelInput(
       idleMinutes: draft.session.idleMinutes,
       resetCommands: cleanTriggers(draft.session.resetCommands),
     },
+    followUps: {
+      enabled: draft.followUps.enabled,
+      from: draft.followUps.from,
+      endCommands: cleanTriggers(draft.followUps.endCommands),
+    },
     workspaceId: previous
       ? (previous.workspaceId ?? "")
       : draft.workspace.mode === "existing"
@@ -568,6 +588,7 @@ export type ChannelProblem =
   | { kind: "workspace" }
   | { kind: "idle" }
   | { kind: "resetCommands" }
+  | { kind: "endCommands" }
   | { kind: "tooManyRules" }
   | { kind: "noTriggers" }
   | { kind: "noPlace" }
@@ -606,6 +627,8 @@ export function channelProblems(
     problems.push({ kind: "idle" });
   if (!resetCommandsValid(draft.session.resetCommands))
     problems.push({ kind: "resetCommands" });
+  if (!endCommandsValid(draft.followUps.endCommands))
+    problems.push({ kind: "endCommands" });
   for (const key of channelLimitKeys) {
     const { min, max } = channelBounds[key];
     const value = draft.limits[key];
@@ -820,6 +843,7 @@ export function inputFromChannel(
     guide: channel.guide,
     sessionKey: channel.sessionKey,
     session: sessionRuleOf(channel),
+    followUps: followUpRuleOf(channel),
     workspaceId: channel.workspaceId ?? "",
     scope: channel.scope,
     limits: channel.limits,
@@ -855,6 +879,34 @@ export function resetCommandsValid(commands: readonly string[]): boolean {
     clean.length <= channelBounds.resetCommands &&
     clean.every(
       (word) => word.length <= channelBounds.resetCommand && !/\s/.test(word),
+    )
+  );
+}
+
+export function defaultFollowUpRule(): MessageChannelFollowUps {
+  return { enabled: true, from: "same-sender", endCommands: ["/end"] };
+}
+
+/** A channel's follow-up rule; a channel saved without one is on by default. */
+export function followUpRuleOf(channel: {
+  followUps?: MessageChannelFollowUps;
+}): MessageChannelFollowUps {
+  return channel.followUps
+    ? {
+        enabled: channel.followUps.enabled,
+        from: channel.followUps.from,
+        endCommands: [...channel.followUps.endCommands],
+      }
+    : defaultFollowUpRule();
+}
+
+/** At most five commands, each one word of at most 40 characters. */
+export function endCommandsValid(commands: readonly string[]): boolean {
+  const clean = cleanTriggers(commands);
+  return (
+    clean.length <= channelBounds.endCommands &&
+    clean.every(
+      (word) => word.length <= channelBounds.endCommand && !/\s/.test(word),
     )
   );
 }

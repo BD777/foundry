@@ -325,3 +325,57 @@ func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
 		t.Fatalf("async question after the turn = %s", got)
 	}
 }
+
+// A queued channel turn answers the person's card only when it carries the
+// person's own words (DEV-243): an echo of the assistant's own write, or
+// another person's message, leaves it open; the person's message resolves it.
+func TestQueuedChannelTurnNeedsThePersonsOwnWords(t *testing.T) {
+	f := newPendingFixture(t)
+	ctx := context.Background()
+	reactions := pendingReactions{f.server}
+	sessionID := f.session.ID
+	reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{
+		ID: "evt_card", SessionID: sessionID, Label: "Response stream", Level: "info", At: time.Now().UTC().Format(time.RFC3339Nano),
+		Message: &store.TranscriptMessage{
+			ID: "turn/call_card", Kind: "assistant", Delivery: "async", Text: "Which account?",
+			Questions: []store.AgentQuestion{{Title: "Use the work account?"}},
+		},
+	})
+	open := func() bool {
+		t.Helper()
+		for _, item := range f.list().Items {
+			if item.Source == store.PendingSourceQuestion {
+				return item.State == store.PendingOpen
+			}
+		}
+		t.Fatal("no question item")
+		return false
+	}
+	queued := func(at string, messages ...store.MessageChannelOriginMessage) store.AgentSession {
+		t.Helper()
+		session := f.session
+		session.Input = store.SessionInput{ID: "in_channel", At: at, ChannelOrigin: &store.MessageChannelOrigin{Messages: messages}}
+		return session
+	}
+	at := time.Now().UTC()
+
+	// The assistant's own reply echoed back: not the person's words.
+	reactions.SessionChanged(ctx, sessions.Queued, queued(at.Format(time.RFC3339Nano),
+		store.MessageChannelOriginMessage{ID: "om_echo", Sender: store.MessageEnvelopeSender{IsSelf: true, IsOwnWrite: true}}))
+	if !open() {
+		t.Fatal("an echo of the assistant's own write resolved the card")
+	}
+	// Another person's message: not the person's words.
+	reactions.SessionChanged(ctx, sessions.Queued, queued(at.Add(time.Second).Format(time.RFC3339Nano),
+		store.MessageChannelOriginMessage{ID: "om_other", Sender: store.MessageEnvelopeSender{ID: "ou_other", Name: "Someone else"}}))
+	if !open() {
+		t.Fatal("another person's message resolved the card")
+	}
+	// The person's own message, even beside an echo, resolves it.
+	reactions.SessionChanged(ctx, sessions.Queued, queued(at.Add(2*time.Second).Format(time.RFC3339Nano),
+		store.MessageChannelOriginMessage{ID: "om_echo2", Sender: store.MessageEnvelopeSender{IsSelf: true, IsOwnWrite: true}},
+		store.MessageChannelOriginMessage{ID: "om_person", Sender: store.MessageEnvelopeSender{IsSelf: true}}))
+	if open() {
+		t.Fatal("the person's message did not resolve the card")
+	}
+}

@@ -4,6 +4,7 @@ import type {
   AgentQuestion,
   AgentTurnUsage,
   ChatAttachment,
+  MessageChannelOrigin,
   SessionToolFrame,
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../agent-runtime/runtime-mark";
@@ -268,6 +269,11 @@ export interface ChatMessageItem {
   statusLabel?: ReactNode;
   /** Where the message came from, shown beside its time (e.g. "via Feishu"). */
   origin?: ReactNode;
+  /**
+   * A message channel turn: render its source conversation, sender and
+   * messages instead of the raw facts block, which goes behind 「详情」.
+   */
+  channelOrigin?: MessageChannelOrigin;
   /**
    * The session that sent a message, when another session did: named above
    * it, opened by `onOpen` (absent: the viewer cannot open it).

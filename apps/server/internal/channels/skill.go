@@ -33,8 +33,14 @@ func SeedInstructions(channel store.MessageChannel, sourceLabel, contextHint str
 	out.WriteString("这个工作区里的会话处理消息通道（来源：" + oneLine(cmpOr(sourceLabel, channel.Source.Kind)) + "）转来的消息。这个文件由本人维护。\n\n")
 	out.WriteString("## 通道的事实\n\n")
 	out.WriteString("- 这个工作区对通道会话只读，没有哪个设置能放开写入；这个文件由本人在 Foundry Web 的助理设置「工作区文件」里编辑。\n")
+	out.WriteString("- 要判断某件事该交给哪个工作区，读本工作区的 `.foundry/project-index.md` 和 `.foundry/projects/`；它们是 Foundry 生成的只读事实。\n")
+	followUps := FollowUpRule(channel)
 	if triggers := ChannelTriggers(channel); len(triggers) > 0 && everyRuleNeedsTrigger(channel) {
-		out.WriteString("- 不带触发词（" + quoteList(triggers) + "）的消息不会转给你。请本人确认时，请对方回复时带上触发词，或者用 `needs_you` 交给本人。\n")
+		if followUps.Enabled {
+			out.WriteString("- 新会话需要触发词（" + quoteList(triggers) + "）；已经在续聊的话题里或引用助理消息时不用。请本人确认时，请对方回复时带上触发词，或者用 `needs_you` 交给本人。\n")
+		} else {
+			out.WriteString("- 不带触发词（" + quoteList(triggers) + "）的消息不会转给你。请本人确认时，请对方回复时带上触发词，或者用 `needs_you` 交给本人。\n")
+		}
 	}
 	out.WriteString("\n")
 	out.WriteString("## 信任边界\n\n")
@@ -45,8 +51,20 @@ func SeedInstructions(channel store.MessageChannel, sourceLabel, contextHint str
 	out.WriteString("- `conversation`：会话类型（direct 私聊、self 本人的自聊、group 群聊…）、ID 和名称；`thread`：话题。\n")
 	out.WriteString("- `session`：这是新会话还是接着上一个；`earlier session` 给出同一会话之前的 Foundry 会话 ID，需要时可以用 `read_context` 去读。\n")
 	out.WriteString("- 每条消息的 `rule` 说明它为什么被转来。命中触发词时给出 `trigger` 和去掉触发词后的正文 `text without trigger`（触发词前的 @ 提及在 `mentions before trigger`）；否则正文在 `text`。正文超过 8 KB 时会截断，并标注 `text cut`。\n")
+	out.WriteString("- 续聊的消息 `rule: follow_up`，并有一行 `follow-up: thread … (since …)` 说明它接在哪个话题、从哪条消息开始。\n")
 	if contextHint != "" {
 		out.WriteString("- `context` 是读取这条消息前后聊天记录的命令（例如 `" + contextHint + "`）。需要前文时自己去读，Foundry 不会预先拉取。\n")
+	}
+	out.WriteString("- 有 `reply` 时，它是回复这条消息的命令，id 已经填好。\n")
+	out.WriteString("\n## 回复位置\n\n")
+	out.WriteString("- 群聊：在触发消息所在的话题里回复（用事实块 `reply` 里带 `--thread` 的命令），不要 @ 人。\n")
+	out.WriteString("- 私聊和自聊：引用回复触发消息，不新开话题；已经存在话题时才在话题里回复。\n")
+	if followUps.Enabled {
+		end := ""
+		if len(followUps.EndCommands) > 0 {
+			end = "，或发 " + quoteList(followUps.EndCommands) + " 结束"
+		}
+		out.WriteString("- 本人可以在同一话题里直接续聊，或引用你的消息回复，不必带触发词" + end + "。\n")
 	}
 	out.WriteString("\n## 处理原则\n\n")
 	if guide := strings.TrimSpace(channel.Guide); guide != "" {

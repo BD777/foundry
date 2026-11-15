@@ -364,6 +364,20 @@ export const conversation = {
     stopping: "Stopping {{tool}}…",
     stopFailed: "{{tool}} could not be stopped",
   },
+  channelTurn: {
+    kind: {
+      direct: "Direct message",
+      self: "Notes to self",
+      group: "Group",
+      channel: "Channel",
+      feed: "Feed",
+      other: "Conversation",
+    },
+    thread: "Thread",
+    continued: "Continued",
+    details: "Details",
+    noText: "(no text)",
+  },
   errors: {
     notSent: "Message was not sent. Your draft has been retained.",
     responseChanged:

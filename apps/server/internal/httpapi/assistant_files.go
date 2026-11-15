@@ -120,15 +120,16 @@ func (s *Server) assistantWorkspaceOf(ctx context.Context, agent store.PersonalA
 	return workspace, all[index].Kind, err
 }
 
-// generatedAssistantPath reports a home file Foundry rewrites before each
-// run: everything under .foundry/ (its index, examples and skills) and the
-// links to its skills in each runtime's skill folder.
+// generatedAssistantPath reports a file Foundry writes: everything under
+// .foundry/ (the project index and summaries, examples and skills) in the
+// home and in every channel workspace it runs in, and in the home the links
+// to its skills in each runtime's skill folder.
 func generatedAssistantPath(kind store.AssistantWorkspaceKind, path string) bool {
-	if kind != store.AssistantWorkspaceKindHome {
-		return false
-	}
 	if path == ".foundry" || strings.HasPrefix(path, ".foundry/") {
 		return true
+	}
+	if kind != store.AssistantWorkspaceKindHome {
+		return false
 	}
 	for _, root := range []string{".claude/skills/", ".agents/skills/"} {
 		if name, ok := strings.CutPrefix(path, root); ok {
@@ -208,7 +209,9 @@ func (s *Server) assistantManagedBlock(ctx context.Context, agent store.Personal
 	return prompt.ManagedBlock(input), nil
 }
 
-// assistantFile reads one file for the editor, with its versions.
+// assistantFile reads one file for the editor, with its versions. Content
+// changed outside this page (the assistant, another editor) is kept as a
+// version first, so the history shows it as soon as the file is opened.
 func (s *Server) assistantFile(ctx context.Context, agent store.PersonalAgent, workspace store.WorkspaceProjection, kind store.AssistantWorkspaceKind, path string) (store.AssistantFile, error) {
 	out := store.AssistantFile{WorkspaceID: workspace.ID, Path: path, Revisions: []store.WorkspaceFileRevision{}}
 	st, err := s.workspaceFileStore()
@@ -259,6 +262,11 @@ func (s *Server) assistantFile(ctx context.Context, agent store.PersonalAgent, w
 		out.Instructions = view
 		if out.ReadOnly == "" && !connection.hasCapability(store.DaemonCapabilityAssistantInstructionsBlock) {
 			out.ReadOnly = store.AssistantFileReadOnlyWholeFile
+		}
+	}
+	if out.ReadOnly == "" && !out.Missing {
+		if err := s.keepUnsavedVersion(ctx, st, workspace.ID, path, out.Content); err != nil {
+			return out, err
 		}
 	}
 	revisions, err := st.ListWorkspaceFileRevisions(ctx, workspace.ID, path, store.MaxWorkspaceFileRevisions)
@@ -337,6 +345,8 @@ func (s *Server) saveAssistantFile(ctx context.Context, agent store.PersonalAgen
 
 // keepUnsavedVersion saves the file as it is now when its newest version is
 // another (changed on the device, or never saved), so it can be restored.
+// Reading a file calls it too: a change made elsewhere is recorded as soon
+// as the file is opened, not only when it is next saved here.
 func (s *Server) keepUnsavedVersion(ctx context.Context, st store.WorkspaceFileStore, workspaceID, path, content string) error {
 	revisions, err := st.ListWorkspaceFileRevisions(ctx, workspaceID, path, 1)
 	if err != nil {
@@ -349,11 +359,19 @@ func (s *Server) keepUnsavedVersion(ctx context.Context, st store.WorkspaceFileS
 	if len(revisions) == 0 {
 		source = "seed"
 	}
-	return addFileRevision(ctx, st, workspaceID, path, content, source)
+	return addFileRevisionIfChanged(ctx, st, workspaceID, path, content, source)
 }
 
 func addFileRevision(ctx context.Context, st store.WorkspaceFileStore, workspaceID, path, content, source string) error {
 	return st.AddWorkspaceFileRevision(ctx, workspaceID, path, store.WorkspaceFileRevision{
+		ID: newRevisionID(), At: time.Now().UTC().Format(time.RFC3339Nano), Sha256: contentSha256(content), Bytes: len(content), Source: source,
+	}, content)
+}
+
+// addFileRevisionIfChanged adds a version only when the file's latest one
+// has another content, so observing the same content again adds nothing.
+func addFileRevisionIfChanged(ctx context.Context, st store.WorkspaceFileStore, workspaceID, path, content, source string) error {
+	return st.AddWorkspaceFileRevisionUnlessLatest(ctx, workspaceID, path, store.WorkspaceFileRevision{
 		ID: newRevisionID(), At: time.Now().UTC().Format(time.RFC3339Nano), Sha256: contentSha256(content), Bytes: len(content), Source: source,
 	}, content)
 }

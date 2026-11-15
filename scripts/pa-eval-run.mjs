@@ -3,16 +3,13 @@
 // (scripts/scratch-stack.sh: a throwaway server on a copy of the dev database,
 // FOUNDRY_INTEGRATIONS=off), never on a live one.
 //
-//   routing (default)  no model: every case with a clear gold project is put
-//                      to find_workspace (WP-S2's ranking) through a
-//                      personal_agent session's own token; top-1/top-3, MRR,
-//                      and how well the scores separate "should create" and
-//                      "should ask" from clear cases. The copy's projects have
-//                      no summaries (those need a model): --summaries-wait-min N
-//                      lets the server's digest sessions run first.
 //   e2e (--e2e)        a real model: a sample of cases, each a fresh assistant
 //                      session in the Personal Agent workspace (the person's
 //                      native Claude/Codex login through a Foundry worker).
+//                      Routing is the assistant's own judgement from
+//                      .foundry/project-index.md, .foundry/projects/ and its
+//                      notes; the score is the workspace it dispatched to
+//                      against the case's gold project.
 //                      Scored from its tool calls and reply: routing accuracy,
 //                      wrong dispatches when it went ahead, asking on ambiguous
 //                      requests, needless questions, "should create" precision
@@ -50,16 +47,14 @@
 // worker is paired to the person with its own state root and HOME under the
 // instance (e2e: CLAUDE_CONFIG_DIR / CODEX_HOME point at the real logins, or
 // --worker-home real), the assistant is set up on it, and its limits are
-// raised to the hard caps. Routing then stops the worker, starts one
-// assistant session that therefore never runs, and asks the server for that
-// session's token with the worker's device credential.
+// raised to the hard caps. Each e2e case then runs a real assistant turn;
+// its dispatched workspace is the routing answer.
 //
-// usage: node scripts/pa-eval-run.mjs [--e2e] [--no-routing] [--sample N]
+// usage: node scripts/pa-eval-run.mjs [--e2e] [--sample N]
 //          [--only id,id] [--judge] [--instance NAME] [--reuse] [--keep]
 //          [--user USERNAME] [--provider claude|codex] [--model M]
 //          [--worker-home scratch|real] [--case-timeout-s N] [--eval DIR]
 //          [--out FILE] [--scenario a1a2|plans] [--scenario-timeout-s N]
-//          [--summaries-wait-min N]
 // Exit: 0 every gate passed, 1 a gate failed, 2 the run itself failed.
 
 import { spawn, spawnSync } from "node:child_process";
@@ -138,7 +133,6 @@ const specialTargets = new Set(["new", "answer", "ask"]);
 
 function parseArgs(argv) {
   const args = {
-    routing: true,
     e2e: false,
     sample: 24,
     only: [],
@@ -155,7 +149,6 @@ function parseArgs(argv) {
     out: "",
     scenario: "",
     scenarioTimeoutS: 1800,
-    summariesWaitMin: 0,
   };
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i];
@@ -169,7 +162,7 @@ function parseArgs(argv) {
         args.e2e = true;
         break;
       case "--no-routing":
-        args.routing = false;
+        // Kept for older invocations; routing accuracy now comes from --e2e.
         break;
       case "--sample":
         args.sample = Number(value());
@@ -216,9 +209,6 @@ function parseArgs(argv) {
       case "--scenario-timeout-s":
         args.scenarioTimeoutS = Number(value());
         break;
-      case "--summaries-wait-min":
-        args.summariesWaitMin = Number(value());
-        break;
       case "-h":
       case "--help":
         console.log(usage());
@@ -237,8 +227,10 @@ function parseArgs(argv) {
     throw new Error("--worker-home is scratch or real");
   if (args.scenario && !["a1a2", "plans"].includes(args.scenario))
     throw new Error("--scenario is a1a2 or plans");
-  if (!args.routing && !args.e2e && !args.scenario)
-    throw new Error("nothing to run: --no-routing without --e2e or --scenario");
+  if (!args.e2e && !args.scenario)
+    throw new Error(
+      "nothing to run: routing accuracy needs --e2e (or use --scenario)",
+    );
   return args;
 }
 
@@ -860,258 +852,6 @@ async function workerAndAssistant(client, worker, logins) {
   return { deviceId, agent };
 }
 
-// --- (a) routing without a model -------------------------------------------------
-
-async function routingRun(client, worker, agent, deviceId, cases, names, args) {
-  // Summaries first, while the worker has the person's login: setting up the
-  // assistant already queued every project's first one on it.
-  const summaries =
-    args.summariesWaitMin > 0
-      ? await waitForSummaries(
-          client,
-          worker,
-          deviceId,
-          names,
-          args.user,
-          args.summariesWaitMin,
-        )
-      : null;
-
-  // The assistant's tools answer to a personal_agent session's token. The
-  // probe session runs on this worker's local Claude agent, which has no
-  // login under the worker's scratch HOME: it cannot reach a model, and it is
-  // cancelled at once; only its token is used.
-  const localAgent = async () =>
-    (
-      await client.get(
-        `/api/agents?workspaceId=${encodeURIComponent(agent.workspaceId)}`,
-      )
-    ).find(
-      (a) =>
-        a.deviceId === deviceId &&
-        a.connectionType === "local_login" &&
-        a.provider === "claude",
-    );
-  let local = await localAgent();
-  // A worker restarted without logins reports so a moment after connecting.
-  for (let i = 0; i < 30 && local && local.authMode !== "missing"; i++) {
-    await sleep(2000);
-    local = await localAgent();
-  }
-  if (!local)
-    throw new SetupError(
-      "the assistant's workspace has no local Claude agent on the eval worker",
-    );
-  if (local.authMode !== "missing")
-    throw new SetupError(
-      `the eval worker's local Claude agent is signed in (${local.authMode}); routing must run without a model: use --worker-home scratch`,
-    );
-  const { data: probe } = await client.request("POST", "/api/agent-sessions", {
-    body: {
-      workspaceId: agent.workspaceId,
-      agentId: local.id,
-      provider: "claude",
-      prompt: "pa-eval routing probe",
-      source: "chat",
-    },
-    raw: true,
-  });
-  if (!probe?.id)
-    throw new SetupError(
-      `could not start the probe session: ${JSON.stringify(probe).slice(0, 300)}`,
-    );
-  await client
-    .post(`/api/agent-sessions/${encodeURIComponent(probe.id)}/cancel`, {})
-    .catch(() => {});
-  const minted = await client.request(
-    "POST",
-    `/api/daemon/sessions/${encodeURIComponent(probe.id)}/session-tokens`,
-    { device: worker.credential() },
-  );
-  const token = minted?.sessionToken;
-  if (!token) throw new SetupError("no session token for the probe session");
-  try {
-    await client.mcp(token, "find_workspace", { query: "probe", limit: 1 });
-  } catch (error) {
-    if (/not available yet|501/.test(error.message))
-      throw new SetupError(
-        "find_workspace is still the placeholder (WP-S2's ranking is not in this build)",
-      );
-    if (/only available to the person's assistant/.test(error.message))
-      throw new SetupError(
-        "the probe session is not a personal_agent session: WP-S1's role assignment is not in this build",
-      );
-    throw error;
-  }
-
-  const eligible = cases.filter(
-    (c) => !c.explicitRef && (c.class === "task" || c.class === "question"),
-  );
-  const rows = [];
-  for (const c of eligible) {
-    const started = Date.now();
-    let candidates = [];
-    let error = "";
-    try {
-      const answer = await client.mcp(token, "find_workspace", {
-        query: c.request,
-        limit: 5,
-      });
-      candidates = (
-        Array.isArray(answer) ? answer : answer?.candidates || []
-      ).map((x) => ({
-        id: x.workspaceId,
-        score: Number(x.score) || 0,
-        stale: !!x.stale,
-        reason: x.reason || "",
-      }));
-    } catch (e) {
-      error = e.message;
-    }
-    rows.push({
-      id: c.id,
-      kind: goldKind(c),
-      intent: c.intent,
-      origin: c.origin,
-      candidates,
-      error,
-      ms: Date.now() - started,
-    });
-  }
-  await client
-    .post(`/api/agent-sessions/${encodeURIComponent(probe.id)}/cancel`, {})
-    .catch(() => {});
-  const scored = scoreRouting(rows, cases, names);
-  if (summaries) scored.metrics.summarized = summaries;
-  return scored;
-}
-
-// Summaries come from the server's digest sessions, which need a model (a
-// Foundry session on the assistant's computer). Without them the ranking only
-// has names, files and chat titles. Setting up the assistant queued every
-// project's first summary; this lets them run, with the person's login, until
-// every project has one or the wait is over, reading the scratch copy. The
-// worker is left without logins, as the routing probe needs it.
-async function waitForSummaries(
-  client,
-  worker,
-  deviceId,
-  names,
-  username,
-  minutes,
-) {
-  if (!worker.pid || !worker.logins) {
-    await worker.start({ logins: true });
-    await worker.waitConnected(client, deviceId, true);
-  }
-  const ids = [...names.keys()];
-  const until = Date.now() + minutes * 60_000;
-  const { DatabaseSync } = await importSQLite();
-  let summarized = 0;
-  try {
-    while (true) {
-      const db = new DatabaseSync(worker.stack.dbPath, { readOnly: true });
-      try {
-        db.exec("PRAGMA busy_timeout = 10000");
-        const rows = db
-          .prepare(
-            "SELECT d.workspace_id FROM workspace_digests d JOIN users u ON u.id = d.user_id WHERE d.summarized_at <> '' AND u.username = ?",
-          )
-          .all(username);
-        const done = new Set(rows.map((r) => r.workspace_id));
-        summarized = ids.filter((id) => done.has(id)).length;
-      } finally {
-        db.close();
-      }
-      log(`summaries: ${summarized}/${ids.length}`);
-      if (summarized === ids.length || Date.now() > until) break;
-      await sleep(30_000);
-    }
-  } finally {
-    await worker.start({ logins: false });
-    await worker.waitConnected(client, deviceId, true);
-  }
-  return `${summarized}/${ids.length}`;
-}
-
-function scoreRouting(rows, cases, names) {
-  const byId = new Map(cases.map((c) => [c.id, c]));
-  const clear = rows.filter((r) => r.kind === "project" && !r.error);
-  const hit = (r, k) =>
-    r.candidates.slice(0, k).some((x) => accepted(byId.get(r.id)).has(x.id));
-  const rank = (r) =>
-    r.candidates.findIndex((x) => accepted(byId.get(r.id)).has(x.id));
-  const top1 = ratio(clear.filter((r) => hit(r, 1)).length, clear.length);
-  const top3 = ratio(clear.filter((r) => hit(r, 3)).length, clear.length);
-  const mrr = clear.length
-    ? clear.reduce((s, r) => s + (rank(r) >= 0 ? 1 / (rank(r) + 1) : 0), 0) /
-      clear.length
-    : null;
-  const topScore = (r) => r.candidates[0]?.score ?? 0;
-  const gap = (r) =>
-    (r.candidates[0]?.score ?? 0) - (r.candidates[1]?.score ?? 0);
-  // How often a clear case outranks a "create" (or "ask") case on the
-  // signal a threshold would use: 1 separates perfectly, 0.5 is chance.
-  const separation = (positives, negatives, f) => {
-    if (!positives.length || !negatives.length) return null;
-    let wins = 0;
-    for (const p of positives)
-      for (const n of negatives)
-        wins += f(p) > f(n) ? 1 : f(p) === f(n) ? 0.5 : 0;
-    return wins / (positives.length * negatives.length);
-  };
-  const ok = rows.filter((r) => !r.error);
-  const byIntent = {};
-  for (const r of clear) {
-    const b = (byIntent[r.intent] ||= { n: 0, top1: 0 });
-    b.n++;
-    if (hit(r, 1)) b.top1++;
-  }
-  const misses = clear
-    .filter((r) => !hit(r, 1))
-    .map((r) => {
-      const c = byId.get(r.id);
-      return {
-        id: r.id,
-        request: c.request.slice(0, 90),
-        gold: names.get(c.gold.target) || c.gold.target,
-        got: r.candidates
-          .slice(0, 3)
-          .map((x) => `${names.get(x.id) || x.id} ${x.score.toFixed(2)}`),
-      };
-    });
-  const errors = rows
-    .filter((r) => r.error)
-    .map((r) => ({ id: r.id, error: r.error.slice(0, 200) }));
-  const metrics = {
-    cases: rows.length,
-    clear: clear.length,
-    top1,
-    top3,
-    mrr,
-    newSeparation: separation(
-      clear,
-      ok.filter((r) => r.kind === "new"),
-      topScore,
-    ),
-    askSeparation: separation(
-      clear,
-      ok.filter((r) => r.kind === "ask"),
-      gap,
-    ),
-    staleShare: ratio(
-      ok.filter((r) => r.candidates[0]?.stale).length,
-      ok.length,
-    ),
-    msPerCall: median(ok.map((r) => r.ms)),
-    byIntent: Object.fromEntries(
-      Object.entries(byIntent).map(([k, v]) => [k, `${v.top1}/${v.n}`]),
-    ),
-  };
-  const checks = [gate("routing: clear top-1", top1, ">=", gates.clearTop1)];
-  return { metrics, checks, misses, errors, rows };
-}
-
 // --- (b) end to end with a real model --------------------------------------------
 
 function sampleCases(cases, n, only) {
@@ -1372,8 +1112,6 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
         name: t.name,
         workspaceId: t.args.workspaceId || "",
       })),
-      findWorkspaceCalls: tools.filter((t) => t.name === "find_workspace")
-        .length,
       proposals: events.filter((e) =>
         /needs_confirmation/.test(JSON.stringify(e.message || e.detail || "")),
       ).length,
@@ -1514,10 +1252,6 @@ function scoreE2E(rows, cases, names) {
       : null,
     bannedTermReplies: banned.length,
     bannedTerms: [...new Set(banned.flatMap((r) => r.banned))],
-    usedFindWorkspace: ratio(
-      ok.filter((r) => r.findWorkspaceCalls > 0).length,
-      ok.length,
-    ),
     latencyMsMedian: median(ok.map((r) => r.wallMs)),
     latencyMsP90: percentile(
       ok.map((r) => r.wallMs),
@@ -1686,12 +1420,6 @@ function gate(name, value, op, bound, ratio = true) {
 
 // Metrics that are shares, printed as percentages.
 const ratioMetrics = new Set([
-  "top1",
-  "top3",
-  "mrr",
-  "newSeparation",
-  "askSeparation",
-  "staleShare",
   "routingAccuracy",
   "clearTop1",
   "wrongDispatchRate",
@@ -1699,7 +1427,6 @@ const ratioMetrics = new Set([
   "newPrecision",
   "newRecall",
   "needlessQuestionRate",
-  "usedFindWorkspace",
 ]);
 
 function printReport(report) {
@@ -1710,7 +1437,7 @@ function printReport(report) {
         ? `${(v * 100).toFixed(1)}%`
         : String(v);
   const lines = [];
-  for (const part of ["routing", "e2e"]) {
+  for (const part of ["e2e"]) {
     const r = report[part];
     if (!r) continue;
     lines.push(`\n## ${part}`);
@@ -1765,18 +1492,6 @@ async function runRoutingAndE2E(
   args,
   report,
 ) {
-  if (args.routing) {
-    report.routing = await routingRun(
-      client,
-      worker,
-      agent,
-      deviceId,
-      cases,
-      names,
-      args,
-    );
-    report.checks.push(...report.routing.checks);
-  }
   if (args.e2e) {
     const sample = sampleCases(cases, args.sample, args.only);
     const rows = await e2eRun(
@@ -2175,13 +1890,13 @@ async function main() {
     await client.post("/api/auth/login", { username, password });
     log(`signed in as ${username} on ${stack.url}`);
 
-    if (args.routing || args.e2e) {
-      // Setting up the assistant queues every project's first summary on
-      // its worker: with --summaries-wait-min it needs the person's login.
+    if (args.e2e) {
+      // The assistant reads the project summary files natively; the eval
+      // scores the workspace it dispatched to.
       const { deviceId, agent } = await workerAndAssistant(
         client,
         worker,
-        args.e2e || (args.routing && args.summariesWaitMin > 0),
+        true,
       );
       await runRoutingAndE2E(
         client,

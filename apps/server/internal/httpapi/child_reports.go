@@ -91,13 +91,20 @@ func (s *Server) childReportTarget(ctx context.Context, child store.AgentSession
 		return "", "the parent is archived"
 	case parent.Status == "canceled":
 		return "", "the parent was stopped"
-	case parent.Role != "":
+	case parent.Role != "" && parent.Role != store.AgentSessionRolePersonalAgent:
 		return "", "the parent is controlled by its Issue"
 	}
-	// The person's assistant follows the work it hands out itself.
-	if _, _, ok := s.assistant.TaskOf(ctx, child); ok {
-		return "", "an assistant task"
+	// An adopted task follows the conversation that took it over (§7): the
+	// assistant may move homes and keep following the same helper.
+	if _, task, ok := s.assistant.TaskOf(ctx, child); ok && task.ConversationSessionID != "" && task.ConversationSessionID != parent.ID {
+		if adopted, err := s.store.GetAgentSessionSummary(ctx, task.ConversationSessionID); err == nil &&
+			adopted.ArchivedAt == "" && adopted.Status != "canceled" && (adopted.Role == "" || adopted.Role == store.AgentSessionRolePersonalAgent) {
+			return adopted.ID, ""
+		}
 	}
+	// A helper of the person's assistant reports to the conversation that
+	// handed it off, as any child reports to its creator: turn_end is its
+	// completion signal, not a separate server notice.
 	return parent.ID, ""
 }
 

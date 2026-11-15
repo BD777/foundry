@@ -177,6 +177,11 @@ export function chatHref(sessionId: string, workspaceId?: string): string {
     : path;
 }
 
+/** A real link to a workspace's chat list (a channel's conversations). */
+export function channelChatsHref(workspaceId: string): string {
+  return `${pathForAppRoute({ view: "chats" })}${searchWithWorkspace(workspaceId)}`;
+}
+
 /**
  * A chat opened by a link that is in another workspace: shows it there,
  * correcting the address in place (the link named the chat, not where).

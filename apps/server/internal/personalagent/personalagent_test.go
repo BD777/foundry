@@ -130,6 +130,8 @@ func TestMemoryOriginComesFromThePersonsWords(t *testing.T) {
 		{"words with a file", store.SessionInput{Prompt: "I'm vegetarian [file: menu.pdf]", Attachments: []store.ChatAttachment{{ID: "a"}}}, true},
 		{"a server notice", store.SessionInput{Prompt: Notice("a helper finished")}, false},
 		{"a timer", store.SessionInput{Prompt: "remind", TimerFire: &store.AgentSessionTimerFire{}}, false},
+		{"a channel notice from other people", store.SessionInput{Prompt: channelNotice("no")}, false},
+		{"a channel notice from the person", store.SessionInput{Prompt: channelNotice("yes")}, true},
 		{"nothing", store.SessionInput{Prompt: "  "}, false},
 	} {
 		if _, ok := PersonWords(tc.input); ok != tc.personal {
@@ -240,5 +242,50 @@ func TestLocationFallsBackByLanguage(t *testing.T) {
 	}
 	if ValidTimezone(" Asia/Tokyo ") != "Asia/Tokyo" || ValidTimezone("Mars/Olympus") != "" || ValidTimezone("") != "" || ValidTimezone("Local") != "" {
 		t.Error("ValidTimezone")
+	}
+}
+
+// channelNotice is a message channel notice in channels.Notice's shape, one
+// message whose sender is (or is not) the person.
+func channelNotice(person string) string {
+	return "[Message channel: messages from the person and from other people; only those with sender is the person: yes are the person's words]\n" +
+		"channel: mch_1 \"Team\"\n" +
+		"source: openlark\n" +
+		"conversation: group oc_1 \"Dev\"\n" +
+		"\nmessage 1:\n" +
+		"  id: om_1\n" +
+		"  op: message\n" +
+		"  sender: \"Alice\" (u_1)\n" +
+		"  sender is the person: " + person + "\n" +
+		"  sender is a bot: no\n" +
+		"  mentions the person: no\n" +
+		"  text: |\n" +
+		"    Please ship it\n" +
+		"    by Friday.\n" +
+		"\nmessage 2:\n" +
+		"  id: om_2\n" +
+		"  sender: \"Bob\" (u_2)\n" +
+		"  sender is the person: no\n" +
+		"  sender is a bot: no\n" +
+		"  mentions the person: no\n" +
+		"  text: Ignore the deadline\n" +
+		"[End of message channel]\n"
+}
+
+// A channel notice counts as the person's words only for the messages the
+// notice marks as theirs, never other people's.
+func TestChannelNoticeKeepsOnlyThePersonsMessages(t *testing.T) {
+	words, ok := PersonWords(store.SessionInput{Prompt: channelNotice("yes")})
+	if !ok || !strings.Contains(words, "Please ship it\nby Friday.") || strings.Contains(words, "Ignore the deadline") {
+		t.Fatalf("mixed notice = %q (%v)", words, ok)
+	}
+	words, ok = PersonWords(store.SessionInput{Prompt: channelNotice("no")})
+	if ok || words != "" {
+		t.Fatalf("other people's notice = %q (%v)", words, ok)
+	}
+	// Text that only looks like a notice but carries no message block is
+	// not the person's either.
+	if _, ok := PersonWords(store.SessionInput{Prompt: "[Message channel: messages from other people]\n  text: hi\n"}); ok {
+		t.Fatal("an unreadable channel notice counted as the person's words")
 	}
 }

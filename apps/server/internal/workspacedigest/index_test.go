@@ -37,7 +37,7 @@ func TestIndexStaysWithinItsBudget(t *testing.T) {
 	if tokens > personalagent.L0IndexMaxTokens {
 		t.Fatalf("index takes %d tokens, more than %d", tokens, personalagent.L0IndexMaxTokens)
 	}
-	if !strings.Contains(index, "more projects: use find_workspace") {
+	if !strings.Contains(index, "more projects: their summaries are in .foundry/projects/") {
 		t.Fatalf("the index does not say what it left out:\n%s", index)
 	}
 	about := strings.Repeat("关", personalagent.L0AboutMaxChars)
@@ -63,8 +63,8 @@ func TestIndexLinesSayWhatAndHowFresh(t *testing.T) {
 		"Computers (1):",
 		"- MacBook (dev_1) · online · 2 projects",
 		"Projects (2), most recently active first:",
-		"- 『Budget』 (ws_a) · on MacBook · active 2026-10-14 · verified 2026-10-14 — 记账网页",
-		"- 『Blog』 (ws_b) · on MacBook, offline · active 2026-10-01 · you are viewer · verified 2026-10-01, stale — My blog.",
+		"- 『Budget』 (ws_a) · on MacBook · active 2026-10-14 · verified 2026-10-14 — 记账网页 · .foundry/projects/budget.md",
+		"- 『Blog』 (ws_b) · on MacBook, offline · active 2026-10-01 · you are viewer · verified 2026-10-01, stale — My blog. · .foundry/projects/blog.md",
 	}
 	if index != strings.Join(want, "\n") {
 		t.Fatalf("index =\n%s\nwant\n%s", index, strings.Join(want, "\n"))

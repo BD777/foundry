@@ -15,6 +15,7 @@ import {
   AgentQuestionCard,
   AgentQuestionReplyView,
 } from "./agent-question-card";
+import { ChannelTurnMessage } from "./channel-turn-message";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessDisclosure, ToolCallItem } from "./process-disclosure";
 import { SteerStatus } from "./steer-status";
@@ -309,6 +310,14 @@ export const ChatMessageRow = memo(
           streaming={message.streaming}
           text={message.text}
           title={displayTitle(message.title) ?? t("message.context")}
+        />
+      );
+    }
+    if (user && message.channelOrigin) {
+      return (
+        <ChannelTurnMessage
+          origin={message.channelOrigin}
+          rawText={typeof message.text === "string" ? message.text : ""}
         />
       );
     }

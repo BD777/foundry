@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
@@ -182,6 +183,26 @@ func (d assistantDevices) ManagedRootFolders(ctx context.Context, deviceID strin
 
 func (d assistantDevices) ReadWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) (store.WorkspaceFileRead, error) {
 	return d.s.hub.ReadWorkspaceFile(ctx, workspace, path)
+}
+
+func (d assistantDevices) WriteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path, content string) error {
+	_, err := d.s.writeWorkspaceTextFile(ctx, workspace, path, content, nil)
+	return err
+}
+
+func (d assistantDevices) DeleteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) error {
+	connection := d.s.hub.connectionFor(workspace.DeviceID)
+	if connection == nil {
+		return &statusError{http.StatusConflict, errors.New("the workspace's device is not connected")}
+	}
+	if !connection.hasCapability(store.DaemonCapabilityWorkspaceFileManage) {
+		return &statusError{http.StatusConflict, errors.New("the workspace's device runs a Worker too old to remove the file; update it")}
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := callDevice[wsFileManagedPayload](callCtx, connection, wsManageFileType,
+		wsManageFilePayload{WorkspaceID: workspace.ID, Op: "delete", Path: path})
+	return err
 }
 
 func (d assistantDevices) ListWorkspaceTree(ctx context.Context, workspace store.WorkspaceProjection, path string) ([]store.WorkspaceTreeEntry, error) {

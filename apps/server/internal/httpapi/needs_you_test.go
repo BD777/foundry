@@ -171,59 +171,38 @@ func TestNeedsYouAssistantFirstWhenAssistantIsStopped(t *testing.T) {
 	f.ask(t, f.helper, "offline", "Which export format?")
 	_, open := f.open(t)
 	item := open[f.helper.ID]
-	if item.Handler != store.PendingHandlerAssistant || item.AssistantID != agent.ID || item.DeadlineAt == "" {
+	if item.Handler != store.PendingHandlerAssistant || item.AssistantID != agent.ID || item.DeadlineAt != "" {
 		t.Fatalf("assistant stopped at creation: %+v", item)
 	}
 }
 
-func TestNeedsYouEscalatesAnUnacknowledgedItemAfterTenMinutes(t *testing.T) {
+func TestNeedsYouLeavesItemsWithTheAssistant(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	ctx := context.Background()
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	now := time.Now().UTC()
 	item, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
 		UserID: f.aliceID, AssistantID: agent.ID, WorkspaceID: f.helper.WorkspaceID, SessionID: f.helper.ID,
-		Source: store.PendingSourceQuestion, Key: "escalate:test", Title: "Choose a format", Excerpt: "Choose a format",
-		Handler: store.PendingHandlerAssistant, DeadlineAt: formatPendingTime(now.Add(-time.Minute)),
+		Source: store.PendingSourceQuestion, Key: "keep:test", Title: "Choose a format", Excerpt: "Choose a format",
+		Handler: store.PendingHandlerAssistant,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Sweeps and a read by the assistant never hand it over or give it a
+	// deadline of Foundry's own.
 	f.server.maintainNeedsYou(ctx, now)
-	got, err := f.db.GetPendingItem(ctx, f.aliceID, item.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Handler != store.PendingHandlerPerson || got.HandedReason != store.PendingHandedTimeout ||
-		got.Outcome != store.PendingOutcomeEscalatedTimeout || got.HandedAt == "" {
-		t.Fatalf("escalated item = %+v", got)
-	}
-}
-
-func TestNeedsYouAcknowledgementPreventsEscalation(t *testing.T) {
-	f := newNeedsYouFixture(t)
-	ctx := context.Background()
-	agent := defaultAssistantOf(t, f.server, f.aliceID)
-	now := time.Now().UTC()
-	item, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
-		UserID: f.aliceID, AssistantID: agent.ID, WorkspaceID: f.helper.WorkspaceID, SessionID: f.helper.ID,
-		Source: store.PendingSourceQuestion, Key: "ack:test", Title: "Choose a format", Excerpt: "Choose a format",
-		Handler: store.PendingHandlerAssistant, DeadlineAt: formatPendingTime(now.Add(-time.Minute)),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, failed := f.needsYou(t, map[string]any{"op": "list"})
-	if failed || !strings.Contains(text, "Choose a format") {
+	f.server.maintainNeedsYou(ctx, now.Add(24*time.Hour))
+	if text, failed := f.needsYou(t, map[string]any{"op": "list"}); failed || !strings.Contains(text, "Choose a format") {
 		t.Fatalf("needs_you list: %s", text)
 	}
-	f.server.maintainNeedsYou(ctx, now)
 	got, err := f.db.GetPendingItem(ctx, f.aliceID, item.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Handler != store.PendingHandlerAssistant || got.AcknowledgedAt == "" || got.Outcome != "" {
-		t.Fatalf("acknowledged item = %+v", got)
+	if got.Handler != store.PendingHandlerAssistant || got.Outcome != "" || got.HandedAt != "" ||
+		got.AcknowledgedAt != "" || got.DeadlineAt != "" {
+		t.Fatalf("item = %+v", got)
 	}
 }
 
@@ -388,9 +367,10 @@ func TestNeedsYouOfflineItemsStayWithTheAssistant(t *testing.T) {
 	}
 }
 
-// The stop switch hands the assistant's existing items to the person; a
-// question created while it is stopped still queues for the assistant.
-func TestNeedsYouStoppedAssistantHandsOver(t *testing.T) {
+// A stopped assistant keeps its items: Foundry neither hands them to the
+// person nor adds an item of its own; a question created while it is
+// stopped still queues for the assistant.
+func TestNeedsYouStoppedAssistantKeepsItsItems(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	ctx := context.Background()
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
@@ -398,9 +378,16 @@ func TestNeedsYouStoppedAssistantHandsOver(t *testing.T) {
 	if _, err := f.server.assistant.Stop(ctx, agent); err != nil {
 		t.Fatal(err)
 	}
+	now := time.Now().UTC()
+	f.server.maintainNeedsYou(ctx, now)
+	f.server.maintainNeedsYou(ctx, now.Add(time.Minute))
 	items, err := f.db.ListPendingItems(ctx, f.aliceID, []string{store.PendingOpen}, "", 10)
-	if err != nil || len(items) != 1 || items[0].Handler != store.PendingHandlerPerson || items[0].HandedReason != store.PendingHandedStopped {
-		t.Fatalf("stopped: %+v %v", items, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Source != store.PendingSourceQuestion ||
+		items[0].Handler != store.PendingHandlerAssistant || items[0].HandedReason != "" || items[0].Outcome != "" {
+		t.Fatalf("stopped assistant's items = %+v", items)
 	}
 	helper2, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget", AgentID: "agent_budget", Prompt: "another", Source: "agent", ParentSessionID: f.conversation.ID})
 	if err != nil {

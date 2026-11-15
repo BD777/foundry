@@ -692,12 +692,28 @@ interface components {
       session: components["schemas"]["ConnectorServerHeldSession"];
       network: components["schemas"]["ConnectorServerHeldNetwork"];
       events?: components["schemas"]["ConnectorEventsSpec"];
+      /** @description Write responses that name the message they created, so a message channel can tell an assistant's own writes from people's messages. Each entry names a catalogued write route (method and path exactly as the instance's route directory lists it) and a JSON pointer into a successful response; Foundry records the value with the request's session and account. */
+      writes?: components["schemas"]["ConnectorServerHeldWrite"][];
+    };
+    ConnectorServerHeldWrite: {
+      method: string;
+      /** @description The route's path as the directory lists it, parameters included. */
+      path: string;
+      /** @description JSON pointer to the created message's id in the response. */
+      createdMessageId: string;
     };
     /** @description How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server. */
     ConnectorEventsSpec: {
       poll: components["schemas"]["ConnectorEventsPoll"];
       envelope: components["schemas"]["ConnectorEventsEnvelope"];
       context?: components["schemas"]["ConnectorEventsContext"];
+      reply?: components["schemas"]["ConnectorEventsReply"];
+    };
+    /** @description How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice. */
+    ConnectorEventsReply: {
+      kinds?: {
+        [key: string]: string;
+      };
     };
     /** @description One GET request per poll. Query values are templates that may use `{cursor}`; a parameter named in omitWhenEmpty is left out while its value is empty (the first poll starts from now). cursor, items and more are JSON pointers into the answer. */
     ConnectorEventsPoll: {
@@ -719,7 +735,7 @@ interface components {
       codeEquals?: string;
       reset: string;
     };
-    /** @description Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored. */
+    /** @description Maps one feed item to a message envelope. fields keys are envelope fields (id, kind, op, occurredAt, conversation.id, conversation.kind, conversation.name, thread.id, thread.isReply, message.id, text, sender.id, sender.name, sender.isSelf, sender.isBot, sender.isOwnWrite, mentionsMe, attributes.<name>); an item matching any skipWhen condition is ignored. */
     ConnectorEventsEnvelope: {
       fields: {
         [key: string]: components["schemas"]["ConnectorEventsValue"];
@@ -736,6 +752,10 @@ interface components {
       otherwise?: string;
       /** @enum {string} */
       unit?: "ms" | "s" | "rfc3339";
+      /** @description Conditions on the item; the field is present only when all of them hold. */
+      when?: components["schemas"]["ConnectorEventsCondition"][];
+      /** @description A prefix removed from the value after it is read. */
+      trimPrefix?: string;
       /** @description Checked first, in order; the first case whose conditions all hold gives the value. */
       cases?: components["schemas"]["ConnectorEventsCase"][];
     };
@@ -2575,6 +2595,8 @@ interface components {
       name?: string;
       isSelf?: boolean;
       isBot?: boolean;
+      /** @description The message was written by the assistant itself through the source, not by a person; it never starts or continues a session. */
+      isOwnWrite?: boolean;
     };
     /**
      * @description A condition on a yes/no envelope field; any ignores it.
@@ -2620,6 +2642,14 @@ interface components {
       idleMinutes: number;
       resetCommands: string[];
     };
+    /** @enum {string} */
+    MessageChannelFollowUpFrom: "same-sender" | "person" | "anyone";
+    /** @description Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end. */
+    MessageChannelFollowUps: {
+      enabled: boolean;
+      from: components["schemas"]["MessageChannelFollowUpFrom"];
+      endCommands: string[];
+    };
     MessageChannelLimits: {
       perHour: number;
       perDay: number;
@@ -2638,6 +2668,8 @@ interface components {
       conversationKinds: components["schemas"]["MessageConversationKind"][];
       mentionsMe: boolean;
       fromSelf: boolean;
+      /** @description The source gives a thread id, so follow-ups can ride threads. */
+      threads: boolean;
     };
     /** @description A message the person makes up to try the rules on. */
     MessageChannelSample: {
@@ -2705,6 +2737,7 @@ interface components {
       /** @description The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home. */
       workspaceId?: string;
       session?: components["schemas"]["MessageChannelSessionRule"];
+      followUps?: components["schemas"]["MessageChannelFollowUps"];
     };
     MessageChannel: {
       id: string;
@@ -2721,6 +2754,7 @@ interface components {
       /** @description The workspace the channel's sessions run in, read-only for them; its AGENTS.md is the person's instructions for the channel. Empty on input creates one beside the assistant's home. */
       workspaceId?: string;
       session?: components["schemas"]["MessageChannelSessionRule"];
+      followUps?: components["schemas"]["MessageChannelFollowUps"];
       skillName?: string;
       createdAt: string;
       updatedAt: string;
@@ -2765,6 +2799,8 @@ interface components {
       workspace?: components["schemas"]["MessageChannelWorkspace"];
       /** @description The channel's sessions. */
       sessionIds: string[];
+      /** @description The source conversations the channel has messages from, still within retention. */
+      conversationCount?: number;
     };
     /** @description Where the channel's sessions run, read-only for them. */
     MessageChannelWorkspace: {
@@ -2824,6 +2860,90 @@ interface components {
     };
     MessageChannelDeliveryList: {
       deliveries: components["schemas"]["MessageChannelDelivery"][];
+      /** @description Pass as cursor to read the next older page; absent when this is the last. */
+      nextCursor?: string;
+    };
+    /** @description One turn's structured origin (DEV-234): the channel, the source conversation and thread, and each message of the batch. Stored with the session input, so the Web renders the turn without parsing the facts block the agent receives. */
+    MessageChannelOrigin: {
+      channelId: string;
+      channelName: string;
+      /** @description The source's kind from its extension descriptor, e.g. openlark. */
+      source: string;
+      conversation: components["schemas"]["MessageEnvelopeConversation"];
+      thread?: components["schemas"]["MessageEnvelopeThread"];
+      /** @description Which of the conversation's sessions this turn belongs to, from 0. */
+      segment?: number;
+      /** @description This turn started the session. */
+      sessionNew?: boolean;
+      /** @description Why a new session started: first, idle, command, button, restarted. */
+      newReason?: string;
+      /** @description When the turn was handed over to the assistant. */
+      at: string;
+      messages: components["schemas"]["MessageChannelOriginMessage"][];
+    };
+    /** @description One message of a turn, as the source sent it. */
+    MessageChannelOriginMessage: {
+      id: string;
+      at?: string;
+      sender: components["schemas"]["MessageEnvelopeSender"];
+      text: string;
+      textTruncated?: boolean;
+      status?: components["schemas"]["MessageChannelDeliveryStatus"];
+      rule?: string;
+    };
+    /** @description The channel turn a session belongs to, for the session list (DEV-234): enough to mark the row and group its chat by source conversation. */
+    MessageChannelOriginSummary: {
+      assistantId: string;
+      channelId: string;
+      channelName: string;
+      source: string;
+      sessionKey: string;
+      conversation: components["schemas"]["MessageEnvelopeConversation"];
+      threadId?: string;
+      threadIsReply?: boolean;
+      segment?: number;
+      sessionNew?: boolean;
+      newReason?: string;
+      startedAt?: string;
+      lastAt?: string;
+      lastSender?: components["schemas"]["MessageEnvelopeSender"];
+    };
+    /** @description One source conversation of a channel (DEV-234): its latest message and its sessions, newest first. */
+    MessageChannelConversation: {
+      /** @description The conversation (and thread) key its messages carry. */
+      sessionKey: string;
+      conversation: components["schemas"]["MessageEnvelopeConversation"];
+      lastSender?: components["schemas"]["MessageEnvelopeSender"];
+      lastAt: string;
+      messageCount: number;
+      /** @description Messages a rule kept and the channel handed to the assistant. */
+      matchedCount: number;
+      sessionCount: number;
+      sessions: components["schemas"]["MessageChannelConversationSession"][];
+    };
+    /** @description One segment of a source conversation: the assistant session it started. */
+    MessageChannelConversationSession: {
+      sessionId?: string;
+      segment: number;
+      /** @description The segment's first message started the session. */
+      new?: boolean;
+      /** @description Why it started: first, idle, command, button, restarted. */
+      reason?: string;
+      status?: string;
+      title?: string;
+      startedAt?: string;
+      lastAt: string;
+      messageCount: number;
+    };
+    MessageChannelConversationList: {
+      conversations: components["schemas"]["MessageChannelConversation"][];
+      /** @description Pass as cursor to read the next older page; absent when this is the last. */
+      nextCursor?: string;
+    };
+    /** @description The message channel turns of one assistant session (DEV-234), oldest first. */
+    SessionChannel: {
+      sessionId: string;
+      turns: components["schemas"]["MessageChannelOrigin"][];
     };
     /** @description Maps one provider's model id to a guide. An absent `providerId` or `runtime` matches any; the most specific alias wins on resolve. */
     ModelGuideAlias: {
@@ -4170,6 +4290,8 @@ interface components {
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `contextUsage` is how full the session's context is after a main-agent model request or a compaction; the newest counts. */
       contextUsage?: components["schemas"]["AgentContextUsage"];
+      /** @description `channelOrigin`, on a message channel turn's user-message event, is the turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. */
+      channelOrigin?: components["schemas"]["MessageChannelOrigin"];
       /** @description `codexTransport` is what a Codex session showed about its compatible endpoint's Responses WebSocket; the server keeps it for the profile. */
       codexTransport?: components["schemas"]["CodexTransportReport"];
       /** @description `sentBySessionId`, on a message's event (its input, or a message steered into a running turn), is the session that sent it; empty for what the person typed. Viewers resolve its title themselves, as far as they may read that session. */
@@ -4195,6 +4317,8 @@ interface components {
       timerFire?: components["schemas"]["AgentSessionTimerFire"];
       /** @description `sentBySessionId` is the session that sent the input (create_session's first message, send_message); its transcript event names it. */
       sentBySessionId?: string;
+      /** @description `channelOrigin` is a message channel turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. The prompt still carries the facts block; clients render this instead of parsing it. */
+      channelOrigin?: components["schemas"]["MessageChannelOrigin"];
     };
     /** @enum {string} */
     SessionSource:
@@ -4238,6 +4362,8 @@ interface components {
        * @enum {string}
        */
       workspaceAccess?: "read";
+      /** @description `channelOrigin` describes the message channel turn the session belongs to (DEV-234): its channel, source conversation, segment and latest message. Set only on a message channel's sessions. */
+      channelOrigin?: components["schemas"]["MessageChannelOriginSummary"];
       /** @description `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission. */
       parentSessionId?: string;
       /** @description `waitingChildCount` is how many direct sub-sessions this session is waiting on: active turns whose current input it started, or ended children that are themselves waiting on such descendants up to four levels deep. Absent or 0 when none. */
@@ -4536,6 +4662,8 @@ interface components {
       unavailableOnDevice?: components["schemas"]["WorkspaceUnavailability"];
       /** @description `kind` is WorkspaceKindProject (sent as absent) or WorkspaceKindPersonalAgent. */
       kind?: components["schemas"]["WorkspaceKind"];
+      /** @description `channelId` is set on a message channel's workspace (DEV-234): its sessions take input only from the channel, and its chat list groups them by source conversation. */
+      channelId?: string;
       /** @description `archivedAt` is set while the workspace is archived: hidden in an "Archived" group, starting no sessions, everything kept. */
       archivedAt?: string;
       /** @description `migration` is the workspace's move to another device (DEV-146) still under way, or the latest completed one whose old copy on the source device was not deleted yet. */
@@ -4850,7 +4978,11 @@ export type ConnectorSetup = components["schemas"]["ConnectorSetup"];
 export type ConnectorHolding = components["schemas"]["ConnectorHolding"];
 export type ConnectorServerHeldSpec =
   components["schemas"]["ConnectorServerHeldSpec"];
+export type ConnectorServerHeldWrite =
+  components["schemas"]["ConnectorServerHeldWrite"];
 export type ConnectorEventsSpec = components["schemas"]["ConnectorEventsSpec"];
+export type ConnectorEventsReply =
+  components["schemas"]["ConnectorEventsReply"];
 export type ConnectorEventsPoll = components["schemas"]["ConnectorEventsPoll"];
 export type ConnectorEventsGap = components["schemas"]["ConnectorEventsGap"];
 export type ConnectorEventsEnvelope =
@@ -5103,6 +5235,10 @@ export type MessageChannelConnectorScope =
 export type MessageChannelScope = components["schemas"]["MessageChannelScope"];
 export type MessageChannelSessionRule =
   components["schemas"]["MessageChannelSessionRule"];
+export type MessageChannelFollowUpFrom =
+  components["schemas"]["MessageChannelFollowUpFrom"];
+export type MessageChannelFollowUps =
+  components["schemas"]["MessageChannelFollowUps"];
 export type MessageChannelLimits =
   components["schemas"]["MessageChannelLimits"];
 export type MessageChannelSource =
@@ -5144,6 +5280,19 @@ export type MessageChannelDelivery =
   components["schemas"]["MessageChannelDelivery"];
 export type MessageChannelDeliveryList =
   components["schemas"]["MessageChannelDeliveryList"];
+export type MessageChannelOrigin =
+  components["schemas"]["MessageChannelOrigin"];
+export type MessageChannelOriginMessage =
+  components["schemas"]["MessageChannelOriginMessage"];
+export type MessageChannelOriginSummary =
+  components["schemas"]["MessageChannelOriginSummary"];
+export type MessageChannelConversation =
+  components["schemas"]["MessageChannelConversation"];
+export type MessageChannelConversationSession =
+  components["schemas"]["MessageChannelConversationSession"];
+export type MessageChannelConversationList =
+  components["schemas"]["MessageChannelConversationList"];
+export type SessionChannel = components["schemas"]["SessionChannel"];
 export type ModelGuideAlias = components["schemas"]["ModelGuideAlias"];
 export type ModelGuideSections = components["schemas"]["ModelGuideSections"];
 export type ModelGuideUpdater = components["schemas"]["ModelGuideUpdater"];

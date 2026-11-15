@@ -287,16 +287,14 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 		writeForbidden(w, "you cannot send messages to this session")
 		return
 	}
-	// As over MCP (send_message): an assistant hands work on by dispatch_item.
-	if _, err := s.paScope(r.Context(), actor); err == nil {
-		writeResult(w, nil, errAssistantStartsByDispatch)
-		return
-	}
 	var input store.SendAgentSessionInput
 	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
 	input.SentBySessionID = messageSender(actor)
+	if s.refusePersonChannelInput(w, r, anchor.ID, input.SentBySessionID) {
+		return
+	}
 	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/messages:"+anchor.ID, input, http.StatusOK)
 	if handled {
 		return

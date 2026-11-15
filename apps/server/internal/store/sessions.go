@@ -71,6 +71,9 @@ type SendAgentSessionInput struct {
 	// SentBySessionID is the session sending the message (set by the
 	// server from the caller's session token, never by clients).
 	SentBySessionID string `json:"-"`
+	// ChannelOrigin is a message channel turn's structured origin (DEV-234),
+	// set by the server when it hands the turn to a session.
+	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
 }
 
 // SessionWorkspaceAccessRead: the session's workspace is read-only for it,
@@ -116,6 +119,9 @@ type CreateAgentSessionInput struct {
 	Source          string `json:"source"`
 	// InputID names the first input, as SendAgentSessionInput.InputID does.
 	InputID string `json:"inputId,omitempty"`
+	// ChannelOrigin is a message channel turn's structured origin (DEV-234),
+	// set by the server when it hands the turn to a session.
+	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
 	// ReportBack false keeps an agent's child from reporting its ended
 	// turns to its parent's inbox; unset reports them (DEV-090).
 	ReportBack *bool `json:"reportBack,omitempty"`

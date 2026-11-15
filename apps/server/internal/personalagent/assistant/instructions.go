@@ -8,6 +8,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
@@ -70,9 +71,11 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 		turnContext = strings.Replace(turnContext, prompt.TurnContextEnd, receipt+prompt.TurnContextEnd, 1)
 	}
 	// A message channel's session runs in the channel's workspace, whose
-	// instructions are the person's (DEV-203): Foundry writes nothing there.
+	// instructions are the person's (DEV-203): Foundry adds only its own
+	// facts there, the same project index and summary files as the home, so
+	// routing reads them from a channel too.
 	if session.WorkspaceID != agent.WorkspaceID {
-		return Run{TurnContext: turnContext}, true, nil
+		return Run{Files: prompt.ProjectFilesAndIndex(input), TurnContext: turnContext}, true, nil
 	}
 	// The default instructions an AGENTS.md first starts from, so a newer
 	// default is offered to the person, never applied (DEV-223).
@@ -84,6 +87,158 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 		}
 	}
 	return Run{Files: prompt.RunFiles(input), TurnContext: turnContext}, true, nil
+}
+
+// ProjectFiles are the assistant's one summary file per project, from the
+// same permission-filtered digests and notes its prompt index uses.
+func (s *Service) ProjectFiles(ctx context.Context, agent store.PersonalAgent) ([]personalagent.WorkspaceFile, error) {
+	records, err := s.workspaceCandidates(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
+	workspaces := make([]store.WorkspaceDigest, len(records))
+	for i, record := range records {
+		workspaces[i] = record.Digest
+	}
+	return workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), time.Now()), nil
+}
+
+// AssistantProjectFiles are the facts Foundry writes into every workspace
+// the assistant runs in (its home and each message channel's workspace): the
+// project index and one summary file per project, filtered by the permission
+// package. A run supplies the same files, so a channel workspace routes from
+// them too instead of only at the home.
+func (s *Service) AssistantProjectFiles(ctx context.Context, agent store.PersonalAgent) ([]personalagent.WorkspaceFile, error) {
+	input, err := s.PromptInput(ctx, agent, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return prompt.ProjectFilesAndIndex(input), nil
+}
+
+// WriteProjectFiles writes the project index and summary files into the
+// assistant's home and each of its message channel workspaces now, removing
+// the files of projects it no longer covers. The digest and summary paths
+// call it when their facts change, as do archive/restore and a saved
+// permission package; a run writes the same files before the runtime starts.
+// Best-effort per workspace: an offline device keeps the last files until the
+// next run.
+func (s *Service) WriteProjectFiles(ctx context.Context, agent store.PersonalAgent) error {
+	// One write per assistant at a time: a digest refresh queued before a
+	// membership or archive change could otherwise prune files a later write
+	// just made, and the last write must be the freshest.
+	s.projectFileWrites.Lock(agent.ID)
+	defer s.projectFileWrites.Unlock(agent.ID)
+	files, err := s.AssistantProjectFiles(ctx, agent)
+	if err != nil {
+		return err
+	}
+	targets, err := s.projectFileWorkspaces(ctx, agent)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, workspace := range targets {
+		if workspace.DeviceID == "" || !s.devices.Connected(workspace.DeviceID) {
+			continue
+		}
+		if err := s.writeAssistantFiles(ctx, workspace, files); err != nil {
+			log.Printf("assistant %s: write project files into %s: %v", agent.ID, workspace.ID, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// projectFileWorkspaces are every workspace the assistant runs in: its home,
+// then each message channel's workspace (on the assistant's own computer),
+// without duplicates.
+func (s *Service) projectFileWorkspaces(ctx context.Context, agent store.PersonalAgent) ([]store.WorkspaceProjection, error) {
+	home, err := s.store.GetWorkspace(ctx, agent.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	targets := []store.WorkspaceProjection{home}
+	if s.messageChannels == nil {
+		return targets, nil
+	}
+	channels, err := s.messageChannels.ListMessageChannels(ctx, agent.UserID, agent.ID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{home.ID: true}
+	for _, channel := range channels {
+		if channel.WorkspaceID == "" || seen[channel.WorkspaceID] {
+			continue
+		}
+		workspace, err := s.store.GetWorkspace(ctx, channel.WorkspaceID)
+		if err != nil {
+			continue
+		}
+		seen[workspace.ID] = true
+		targets = append(targets, workspace)
+	}
+	return targets, nil
+}
+
+// writeAssistantFiles replaces Foundry's files in one workspace and removes
+// the project summaries it no longer covers.
+func (s *Service) writeAssistantFiles(ctx context.Context, workspace store.WorkspaceProjection, files []personalagent.WorkspaceFile) error {
+	keep := make(map[string]bool, len(files))
+	for _, file := range files {
+		keep[file.Path] = true
+	}
+	if entries, err := s.devices.ListWorkspaceTree(ctx, workspace, workspacedigest.ProjectFilesDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDirectory || !strings.HasSuffix(entry.Name, ".md") {
+				continue
+			}
+			path := workspacedigest.ProjectFilesDir + "/" + entry.Name
+			if keep[path] {
+				continue
+			}
+			if err := s.devices.DeleteWorkspaceFile(ctx, workspace, path); err != nil {
+				log.Printf("assistant: remove stale project file %s of %s: %v", path, workspace.ID, err)
+			}
+		}
+	}
+	for _, file := range files {
+		if err := s.devices.WriteWorkspaceFile(ctx, workspace, file.Path, file.Content); err != nil {
+			return fmt.Errorf("write %s: %w", file.Path, err)
+		}
+	}
+	return nil
+}
+
+// keyedMutex serializes work per key.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (m *keyedMutex) Lock(key string) {
+	m.mu.Lock()
+	if m.locks == nil {
+		m.locks = map[string]*sync.Mutex{}
+	}
+	lock, ok := m.locks[key]
+	if !ok {
+		lock = &sync.Mutex{}
+		m.locks[key] = lock
+	}
+	m.mu.Unlock()
+	lock.Lock()
+}
+
+func (m *keyedMutex) Unlock(key string) {
+	m.mu.Lock()
+	lock := m.locks[key]
+	m.mu.Unlock()
+	if lock != nil {
+		lock.Unlock()
+	}
 }
 
 // WithTurnContext is the turn's input as the assistant reads it: the
@@ -147,6 +302,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Workspaces:                    workspaces,
 		Devices:                       devices,
 		L0Index:                       l0Index,
+		ProjectFiles:                  workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), now),
 		Places:                        places,
 		DirectChatPreviousWorkspaceID: s.directChatPrior(ctx, agent),
 		ConnectorsURL:                 s.WebURL("/connectors"),
@@ -196,8 +352,9 @@ func (s *Service) directChatPrior(ctx context.Context, agent store.PersonalAgent
 
 // workspaceCandidates is the routing projection of readable history.
 // A removed device's digest stays readable through get_workspace and its old
-// work stays attributable, but neither the prompt index nor find_workspace may
-// propose it for new work. Shared workspaces retain their membership scope.
+// work stays attributable, but neither the prompt index nor the project
+// summary files may propose it for new work. Shared workspaces retain their
+// membership scope.
 // Digests are kept per person; an assistant reads only those of the
 // workspaces its permission package allows.
 func (s *Service) workspaceCandidates(ctx context.Context, agent store.PersonalAgent) ([]store.WorkspaceDigestRecord, error) {

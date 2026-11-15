@@ -351,6 +351,20 @@ export const conversation: Translation<typeof en> = {
     stopping: "正在停止 {{tool}}…",
     stopFailed: "无法停止 {{tool}}",
   },
+  channelTurn: {
+    kind: {
+      direct: "私聊",
+      self: "自己的会话",
+      group: "群聊",
+      channel: "频道",
+      feed: "信息流",
+      other: "会话",
+    },
+    thread: "话题",
+    continued: "续聊",
+    details: "详情",
+    noText: "（无文字）",
+  },
   errors: {
     notSent: "消息没有发出，草稿已保留。",
     responseChanged: "当前回复已经变了，这条消息仍排在下一轮。",

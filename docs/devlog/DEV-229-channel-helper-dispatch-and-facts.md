@@ -2,6 +2,12 @@
 
 状态：已部署 dev（train17-20261113，Server only，sha256 `380677b3…`，2026-11-13T18:18:46Z 起运行）；待本人验收。已合入 main（PR #268）。工作树 `~/workspace/foundry-dev229`（以 main 当时的工作区为基线，补丁 = `git diff`）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：步骤 7 的种子内容定向测试；步骤 1–6 按委托跳过）。未覆盖：未新建 `/ai` 通道，未改动本人现有通道的 AGENTS.md。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托；步骤 1–6 明确由另一会话经 openlark 通道执行，本会话跳过。步骤 7：e2e-alice 没有 OpenLark 来源，新建通道会改动本人/合成账号的数据，因此未在线上新建；种子内容由 `channels.SeedInstructions` 与定向测试覆盖，本次在共享树上重跑 `go test ./internal/channels -run TestSeedInstructionsCarryTheGuideAndHowToReadTheFacts -count=1` 通过（`ok … internal/channels 0.016s`）。只读核对本人现有通道 `ws_0349bea7…` 的 AGENTS.md 仍为 DEV-203 的 1490 B 旧种子（按设计 Foundry 不改已有工作区）。未覆盖：新通道的「通道的事实」两条在真实页面上出现。
+
 来源：DEV-203 通道实测报告（`sess_1794585597739851554` 最后一条回答），通道 `mch_0e47207b6ad14d91bade`，通道会话 `sess_1794585876751990513`。Worker 侧（通道会话里的连接器工具）是 DEV-228，另一会话负责。
 
 ## 1.（高）只读 helper 被无关会话卡住，且没人知道

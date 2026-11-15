@@ -40,7 +40,7 @@ var conversationKinds = map[string]bool{"direct": true, "self": true, "group": t
 var EnvelopeFields = []string{
 	"id", "kind", "op", "occurredAt", "conversation.id", "conversation.kind", "conversation.name",
 	"thread.id", "thread.isReply", "message.id", "text", "sender.id", "sender.name", "sender.isSelf",
-	"sender.isBot", "mentionsMe",
+	"sender.isBot", "sender.isOwnWrite", "mentionsMe",
 }
 
 // ValidEnvelopeField reports whether a mapping may set key.
@@ -101,6 +101,20 @@ func conditionHolds(item any, condition store.ConnectorEventsCondition) bool {
 }
 
 func fieldValue(field store.ConnectorEventsValue, item any) (string, bool) {
+	for _, condition := range field.When {
+		if !conditionHolds(item, condition) {
+			return "", false
+		}
+	}
+	value, present := rawFieldValue(field, item)
+	if !present {
+		return "", false
+	}
+	return strings.TrimPrefix(value, field.TrimPrefix), true
+}
+
+// rawFieldValue reads one field's value from item.
+func rawFieldValue(field store.ConnectorEventsValue, item any) (string, bool) {
 	for _, next := range field.Cases {
 		holds := len(next.When) > 0
 		for _, condition := range next.When {
@@ -174,6 +188,8 @@ func setEnvelopeField(envelope *store.MessageEnvelope, key, value, unit string) 
 		envelope.Sender.IsSelf = value == "true"
 	case "sender.isBot":
 		envelope.Sender.IsBot = value == "true"
+	case "sender.isOwnWrite":
+		envelope.Sender.IsOwnWrite = value == "true"
 	case "mentionsMe":
 		envelope.MentionsMe = value == "true"
 	default:
@@ -233,6 +249,13 @@ func Pointer(document any, pointer string) (any, bool) {
 			}
 			current = next
 		case []any:
+			if token == "-1" {
+				if len(value) == 0 {
+					return nil, false
+				}
+				current = value[len(value)-1]
+				continue
+			}
 			index, err := strconv.Atoi(token)
 			if err != nil || index < 0 || index >= len(value) {
 				return nil, false

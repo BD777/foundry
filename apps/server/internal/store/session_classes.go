@@ -63,6 +63,15 @@ func IsUtilitySessionSource(source string) bool {
 	return slices.Contains(UtilitySessionSources, source)
 }
 
+// IsFoundryOwnedSource reports whether Foundry starts the session for
+// itself (a utility job or a read-only verifier), not as an action of the
+// assistant it runs as. Such sessions may run while that assistant's
+// conversation is stopped; the assistant's own chats, helpers and operations
+// may not.
+func IsFoundryOwnedSource(source string) bool {
+	return IsUtilitySessionSource(source) || source == SessionSourceVerification
+}
+
 func IsPromptOnlySessionSource(source string) bool {
 	return slices.Contains(PromptOnlySessionSources, source)
 }

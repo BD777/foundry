@@ -443,7 +443,7 @@ func (s *Store) UsageBackfillSessionIDs(ctx context.Context, after string, limit
 }
 
 func (s *Store) UsageSessionEvents(ctx context.Context, sessionID string) ([]store.AgentSessionEvent, error) {
-	events, err := listSessionEvents(ctx, s.reader(), `SELECT `+sessionEventColumns+`
+	events, err := listSessionEventsChronologically(ctx, s.reader(), `SELECT `+sessionEventColumns+`
 		FROM agent_session_events
 		WHERE session_id = ?
 			AND (
@@ -451,8 +451,7 @@ func (s *Store) UsageSessionEvents(ctx context.Context, sessionID string) ([]sto
 				OR json_type(payload_json, '$.metadata.turnUsage') = 'object'
 				OR json_type(payload_json, '$.metadata.requestUsage') = 'object'
 				OR json_type(payload_json, '$.metadata.contextUsage') = 'object'
-			)
-		ORDER BY created_at ASC, rowid ASC`, sessionID, store.EventLabelUserMessage)
+			)`, sessionID, store.EventLabelUserMessage)
 	if err != nil {
 		return nil, fmt.Errorf("read usage backfill events for %s: %w", sessionID, err)
 	}

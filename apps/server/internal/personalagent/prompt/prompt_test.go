@@ -23,6 +23,11 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-16.5": "1b71d1d598f8c0bada0e5a26a907f6f036f95252661373d67bf935f5e0e5f8b9", // DEV-240: a person's decision is recorded with needs_you and, in a channel, also said briefly
+	"2026-11-16.4": "21f6214c58c8e218d95451636958e8112530ecd44776c305bd02e709755c526f", // DEV-240: assistant-handoff keeps only the list, needs_you, permissions and channels; orchestration guidance lives in the foundry skill
+	"2026-11-16.3": "571c4a88dcf05971d44c6608b94d2a141417dcd0a395257534a34efc843a31a9", // DEV-239: create_session/send_message like any orchestrator; dispatch_item ties work to a list item
+	"2026-11-16.2": "f35251d868c9892001da51aceefca951775423a97fbce3e5d73b3cf46b6ecdc9", // DEV-236: continue a helper with send_message; needs_you is only what the assistant cannot settle; recomputed on DEV-235's project-file prompt
+	"2026-11-16.1": "5ad848c1c05369f674ff97661dea2d91d190dab0ef7d8dfdbf3b1d2f7cedb517", // DEV-235: route by the project summary files, not find_workspace
 	"2026-11-13.4": "d1d501712681e0f82c8fa11ad21bca4dcc7600ea2d4a03d03ea26bcf55e0c49e", // DEV-223: AGENTS.md is a managed block on top of the person's own instructions
 	"2026-11-13.3": "4685311fe6e962f23767eac75c853218426802e58b921ca43d38592a6df27dd2", // DEV-212: look in their chats, mail and docs before asking; several wordings, cite sources
 	"2026-11-12.6": "333a8cd9404227cc6df7ad6572514daeb3533be32fe54c2cb80f48a894ecbbf4", // DEV-197 B1: report blockers plainly; asking remains the executor's choice

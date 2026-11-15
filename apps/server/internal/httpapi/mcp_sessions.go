@@ -271,12 +271,33 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	return encodeJSON(s.mcpSessionAnswer(ctx, session, handed.list()))
 }
 
-func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
-	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
-		return "", errAssistantStartsByDispatch
+// messageTarget is the session send_message may write to: one the caller
+// controls, or always its own parent — the report-back path — whatever
+// workspace the parent runs in. Admission is otherwise the generic one: the
+// caller controls the session, and agentScope (access.go) holds an
+// assistant's session to its permission package, so it reaches only
+// workspaces within its scope — plus the one it runs in.
+func (s *Server) messageTarget(ctx context.Context, actor Actor, raw string) (store.AgentSession, error) {
+	if actor.Agent() {
+		caller, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
+		if err == nil && caller.ParentSessionID != "" && inspectedID(raw) == caller.ParentSessionID {
+			parent, err := s.store.GetAgentSessionRecord(ctx, caller.ParentSessionID)
+			if errors.Is(err, store.ErrNotFound) {
+				return store.AgentSession{}, inspectNotFound(caller.ParentSessionID)
+			}
+			if err != nil {
+				return store.AgentSession{}, err
+			}
+			return parent, nil
+		}
 	}
+	return s.controlledSession(ctx, actor, raw, "message")
+}
+
+func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	ctx, args := call.r.Context(), call.args
-	target, err := s.controlledSession(ctx, call.actor, mcpArgString(args, "sessionId"), "message")
+	// All delivery modes go through this admission.
+	target, err := s.messageTarget(ctx, call.actor, mcpArgString(args, "sessionId"))
 	if err != nil {
 		return "", err
 	}

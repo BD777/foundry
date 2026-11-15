@@ -10,7 +10,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/upkeep"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -19,14 +19,16 @@ import (
 )
 
 // What the Personal Agent knows of a person's projects and devices
-// (docs/personal-agent.md §3): workspacedigest keeps and ranks the digests;
-// here they are fed. Only people with an assistant have digests. Every read
-// (find_workspace, get_workspace, the L0 index) first brings the person's
-// digests up to date with the store, so renames, archives, devices coming
-// and going and lost memberships show at once; the observers below refresh
-// a workspace's digests when its sessions end or its Issues change, and run
-// the summaries that fell due, each a read-only session with source
-// "digest" in the person's assistant workspace.
+// (docs/personal-agent.md §3): workspacedigest keeps the digests and writes
+// their summary files; here they are fed. Only people with an assistant have
+// digests. Every read (get_workspace, the L0 index, a run's files) first
+// brings the person's digests up to date with the store, so renames,
+// archives, devices coming and going and lost memberships show at once; the
+// observers below refresh a workspace's digests when its sessions end or its
+// Issues change, and run the summaries that fell due, each a read-only
+// session with source "digest" in the person's assistant workspace. A
+// digest or summary change rewrites that project's summary file in each
+// affected assistant's home.
 
 // workspaceDigests is the digest service; the assistant's tools call its
 // Find, Digest, Index and Devices with the person's id.
@@ -59,8 +61,46 @@ func (s *Server) refreshWorkspaceDigests(ctx context.Context, workspaceID string
 	if strings.TrimSpace(workspaceID) == "" {
 		return
 	}
-	if err := s.workspaceDigests().Refresh(ctx, workspaceID); err != nil && !errors.Is(err, store.ErrNotFound) {
-		log.Printf("refresh digests of %s: %v", workspaceID, err)
+	if err := s.workspaceDigests().Refresh(ctx, workspaceID); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Printf("refresh digests of %s: %v", workspaceID, err)
+		}
+		return
+	}
+	s.queueAssistantProjectFiles(workspaceID)
+}
+
+// queueAssistantProjectFiles rewrites each affected assistant's project
+// summary files after a digest changed, off the caller's path.
+func (s *Server) queueAssistantProjectFiles(workspaceID string) {
+	if s.assistant == nil || s.hub == nil {
+		return
+	}
+	s.hub.work.Go(func() {
+		ctx, cancel := context.WithTimeout(s.hub.work.ctx, 2*time.Minute)
+		defer cancel()
+		s.refreshAssistantProjectFiles(ctx, workspaceID)
+	})
+}
+
+// refreshAssistantProjectFiles writes the project files of every assistant
+// whose person can read the workspace. Each writer removes files of projects
+// its assistant no longer covers (archived or outside its package).
+func (s *Server) refreshAssistantProjectFiles(ctx context.Context, workspaceID string) {
+	readers, err := (digestSources{s}).Readers(ctx, workspaceID)
+	if err != nil {
+		return
+	}
+	for _, reader := range readers {
+		agents, err := s.store.ListAssistants(ctx, reader.UserID)
+		if err != nil {
+			continue
+		}
+		for _, agent := range agents {
+			if err := s.assistant.WriteProjectFiles(ctx, agent); err != nil {
+				log.Printf("assistant %s: write project files after %s changed: %v", agent.ID, workspaceID, err)
+			}
+		}
 	}
 }
 
@@ -403,10 +443,12 @@ func (s *Server) runDigestSummaries(ctx context.Context, ahead time.Duration) {
 
 func (s *Server) startDigestSummary(ctx context.Context, service *workspacedigest.Service, record store.WorkspaceDigestRecord) error {
 	now := service.Now()
-	// Transitional (DEV-191 A1): digests are the person's and run under
-	// their default assistant until upkeep is filtered per package (P5).
-	agent, err := s.store.GetPersonalAgent(ctx, record.Digest.UserID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && agent.State != store.PersonalAgentActive) {
+	// Digests are the person's, not one assistant's: they run on the default
+	// assistant's home with its account and settings, whether or not that
+	// assistant's conversation is stopped (Foundry's upkeep, not its action).
+	// See docs/devlog/DEV-238-upkeep-routing.md.
+	agent, err := upkeep.Owner(ctx, s.store, record.Digest.UserID)
+	if errors.Is(err, store.ErrNotFound) {
 		return service.Postpone(ctx, record, now.Add(digestRetryAway))
 	}
 	if err != nil {
@@ -433,34 +475,56 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return err
 	}
 	operationID := flow.Key("digest", agent.UserID, record.Digest.WorkspaceID, record.ContentRev, record.SummaryDueAt)
-	snapshot, err := s.runs.Pin(ctx, agent, operationID, "digest", agent.WorkspaceID)
-	if err != nil {
-		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
+	runner := upkeep.Runner{Runs: s.runs, Sessions: s.sessionService, Connected: s.hub.HasConnection}
+	// BeforeDispatch sees the session even when a later dispatch error loses
+	// it from the return value; Abort needs it to release the claim.
+	var claimed store.AgentSession
+	outcome, err := runner.Start(ctx, upkeep.Request{
+		OperationID: operationID,
+		Role:        "digest",
+		Agent:       agent,
+		WorkspaceID: agent.WorkspaceID,
+		// The summary reads its project's instruction files only when that
+		// machine is online, and the prompt does without them otherwise. It
+		// never waits for the project's machine.
+		Prompt: prompt,
+		Configure: func(input *store.CreateAgentSessionInput) {
+			input.Source = store.SessionSourceDigest
+			input.CodexSandboxMode, input.CodexApprovalPolicy, input.ClaudePermissionMode = "read-only", "never", "dontAsk"
+		},
+		Resume: true,
+		BeforeDispatch: func(ctx context.Context, snapshot store.PersonalAgentRunSnapshot, session store.AgentSession) error {
+			claimed = session
+			_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.ID, snapshot.ID, session.ID)
+			ok, err := service.Claim(ctx, record, session.ID)
+			if err == nil && !ok {
+				err = errDigestRunning
+			}
+			return err
+		},
+		Abort: func(ctx context.Context, session store.AgentSession) {
+			// The claim is the record's summary_session_id; release it so a
+			// failed hand-off does not leave the summary claimed forever.
+			if session.ID == "" {
+				session = claimed
+			}
+			if session.ID != "" {
+				_, _, _ = service.Complete(ctx, session.ID, false, "")
+			}
+		},
+		Defer: func(ctx context.Context, reason string, delay time.Duration) error {
+			return service.Postpone(ctx, record, service.Now().Add(delay))
+		},
+	})
+	if errors.Is(err, upkeep.ErrDeferred) || outcome.Existing {
+		return nil
 	}
-	if err = s.runs.CheckPinned(ctx, snapshot); err != nil {
-		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
-	}
-	input := run.SessionInput(snapshot, prompt, flow.InputID(operationID))
-	input.Source = store.SessionSourceDigest
-	input.CodexSandboxMode, input.CodexApprovalPolicy, input.ClaudePermissionMode = "read-only", "never", "dontAsk"
-	if err := s.sessionService.PickDevice(ctx, &input, true); err != nil {
-		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
-	}
-	claim := func(ctx context.Context, session store.AgentSession) error {
-		_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.ID, snapshot.ID, session.ID)
-		claimed, err := service.Claim(ctx, record, session.ID)
-		if err == nil && !claimed {
-			err = errDigestRunning
-		}
+	if err != nil || store.IsActiveSessionStatus(outcome.Session.Status) {
 		return err
 	}
 	// A restart between starting the summary and claiming it left its
 	// session (Resume); one that already ended is finished here.
-	session, err := s.sessionService.CreateAndDispatch(ctx, input, sessions.StartOptions{FailOffline: true, Resume: true, BeforeDispatch: claim})
-	if err != nil || store.IsActiveSessionStatus(session.Status) {
-		return err
-	}
-	full, err := s.store.GetAgentSession(ctx, session.ID)
+	full, err := s.store.GetAgentSession(ctx, outcome.Session.ID)
 	if err != nil {
 		return err
 	}
@@ -591,6 +655,9 @@ func (s *Server) finishDigestSummary(ctx context.Context, session store.AgentSes
 		log.Printf("finish summary session %s: %v", session.ID, err)
 	case refused != nil:
 		log.Printf("summary of %s kept its previous version: %v", record.Digest.WorkspaceID, refused)
+	}
+	if record.Digest.WorkspaceID != "" {
+		s.queueAssistantProjectFiles(record.Digest.WorkspaceID)
 	}
 	if err == nil {
 		// A first summary waiting for this one to end starts now.

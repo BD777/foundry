@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { ChatArchiveFeedback } from "./archive/chat-archive-feedback";
 import { sidebarWorkCounts } from "./context/chat-work-state";
 import { ChatThreadHeader } from "./chat-thread-header";
@@ -176,6 +177,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           onNewChat={handleNewChat}
           newChatDisabledReason={props.newChatDisabledReason}
           readOnly={Boolean(props.readOnlyReason)}
+          channelWorkspace={props.channelWorkspace}
         />
 
         <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
@@ -282,6 +284,10 @@ export function ChatSurface(props: ChatSurfaceProps) {
                     readOnlyReason={props.readOnlyReason}
                     threadNotice={props.threadNotice}
                   />
+                ) : props.channelWorkspace && !props.selectedChatId ? (
+                  <Alert title={t("channelGroups.selectTitle")}>
+                    {t("channelGroups.selectBody")}
+                  </Alert>
                 ) : undefined
               }
               composer={chatComposer(props)}

@@ -277,6 +277,15 @@ export const chat = {
   },
   listRow: {
     pending: "{{count}} pending",
+    channelSegment: "Segment {{number}}",
+    channelContinued: "Continued",
+    channelNew: {
+      first: "New session",
+      idle: "New session after a break",
+      command: "New session by command",
+      button: "New session requested",
+      restarted: "New session after a restart",
+    },
     startedBy: "Started by {{title}}",
     verifierStartedBy: "Verifier started by {{title}}",
     anotherSession: "another session",
@@ -302,6 +311,23 @@ export const chat = {
     renameTitle: "Rename chat",
     nameLabel: "Chat name",
     closeRename: "Close rename",
+  },
+  channelGroups: {
+    kind: {
+      direct: "Direct message",
+      self: "Notes to self",
+      group: "Group",
+      channel: "Channel",
+      feed: "Feed",
+      other: "Conversation",
+    },
+    empty: "No channel conversations yet.",
+    selectTitle: "Channel conversations",
+    selectBody: "Choose a conversation on the left to read its messages.",
+    nextSession: "Next session",
+    nextSessionHint: "The conversation's next message starts a new session.",
+    nextSessionDone: "The conversation's next message starts a new session.",
+    nextSessionFailed: "Could not set a new session",
   },
   waitingChildren: {
     tab: "Waiting {{count}}",
@@ -350,6 +376,10 @@ export const chat = {
   },
   thread: {
     readOnly: "Read-only access",
+    channelOnlyTitle: "Channel messages only",
+    channelOnly:
+      "This conversation takes input only from the {{source}} channel.",
+    openChannelSettings: "Channel settings",
     workingForIssue:
       "This session works for an Issue. You can read it here; continue it from its Issue.",
     openIssue: "Open its Issue",

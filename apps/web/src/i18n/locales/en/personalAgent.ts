@@ -52,6 +52,18 @@ export const personalAgent = {
       role_configuration_changed:
         "The pinned account or workspace access changed.",
       device_offline: "The source computer is offline.",
+      target_device_offline:
+        "The project's computer is offline; this review starts when it is back.",
+      device_offline_too_long:
+        "The project's computer has been offline for a long time; the review starts again when the project changes.",
+      workspace_archived:
+        "The project was archived; this review is no longer needed.",
+      workspace_unavailable:
+        "The project's folder is not available on its computer.",
+      workspace_gone: "The project no longer exists.",
+      source_gone: "The memory source no longer exists.",
+      source_inactive: "The memory source is no longer active.",
+      retry_scheduled: "The review failed; a retry is scheduled.",
       worker_update_required:
         "Update the source computer’s worker to run this role safely.",
       source_unavailable:
@@ -478,6 +490,7 @@ export const personalAgent = {
       nothing: "Nothing needs you",
     },
     side: "Your assistant at a glance",
+    channelConversations: "{{source}} channel · {{count}} conversations",
     needsYou: {
       label: "Needs you",
       title: "Needs you",
@@ -1406,6 +1419,28 @@ export const personalAgent = {
         resetCommandsHint:
           "A message that starts with the command, alone or right after a trigger word (“/new text” or “/ai /new text”), starts a new session with the text after it as its first message; the command alone makes the next message start fresh. Nothing is posted back to the chat.",
         removeResetCommand: "Remove {{word}}",
+        followUpsTitle: "Follow-ups",
+        followUps: "Continue without a trigger word",
+        followUpsHint:
+          "After a message comes through, later messages in its thread, or replies and quotes of messages the assistant handled, continue the same session without a trigger word.",
+        followUpsFrom: "Who may continue",
+        followUpFroms: {
+          "same-sender": "The person who started it",
+          person: "You",
+          anyone: "Anyone",
+        },
+        followUpFromHints: {
+          "same-sender":
+            "Other people in the chat can still start a turn with a trigger word.",
+          person: "Only messages from your own account continue it.",
+          anyone:
+            "Any message in the thread or replying to the assistant continues it.",
+        },
+        endCommands: "End commands",
+        endCommandsPlaceholder: "e.g. /end",
+        endCommandsHint:
+          "A message that is the command alone, or right after a trigger word, ends the follow-up; nothing is posted back to the chat.",
+        removeEndCommand: "Remove {{word}}",
         workspaceTitle: "Workspace",
         workspaceModes: {
           new: "New workspace (recommended)",
@@ -1441,6 +1476,8 @@ export const personalAgent = {
           idle: "Choose when to start a new session.",
           resetCommands:
             "Use at most 5 commands, each one word of up to 40 characters.",
+          endCommands:
+            "Use at most 5 end commands, each one word of up to 40 characters.",
           tooManyRules: "Use at most 20 places and rules together.",
           noTriggers: "Fill in a trigger word, e.g. /ai",
           noPlace: "Turn on at least one place.",
@@ -1460,6 +1497,8 @@ export const personalAgent = {
         pending:
           "The workspace is created once the assistant's computer is online.",
       },
+      openConversations: "{{count}} conversations",
+      openConversationsPending: "Conversations (workspace pending)",
       deliveries: {
         loading: "Loading recent messages…",
         show: "Recent messages",
@@ -1483,6 +1522,8 @@ export const personalAgent = {
         reasons: {
           no_rule_matched: "no rule matched",
           no_rules: "no enabled rules",
+          own_write: "the assistant wrote it",
+          follow_up_end: "follow-ups ended",
         },
         openSession: "Open conversation",
         sessionNew: "New session · {{reason}}",
@@ -1494,6 +1535,7 @@ export const personalAgent = {
           command: "new-session command",
           button: "you chose “Start fresh next time”",
           restarted: "the previous session failed or the model changed",
+          ended: "follow-ups ended",
         },
         newSession: "Start fresh next time",
         newSessionHint:

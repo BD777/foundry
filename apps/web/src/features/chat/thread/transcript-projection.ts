@@ -32,6 +32,7 @@ export type TranscriptEntry = TranscriptMessage &
     | "turnFiles"
     | "sentBySessionId"
     | "steered"
+    | "channelOrigin"
     | "questionItemId"
     | "questionDelivery"
     | "continuation"

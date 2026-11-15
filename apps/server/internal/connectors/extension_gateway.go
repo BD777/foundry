@@ -70,19 +70,28 @@ type extensionCall struct {
 	Domain string
 	Route  string
 	Access string
+	// CreatedMessageID is the message id the write response named, when the
+	// descriptor declares one for this route.
+	CreatedMessageID string
 }
 
+// ExtensionWriteCreatedMessage is the audit kind of a write that created a
+// message; Detail holds its messageId. A message channel uses these to tell
+// the assistant's own writes from people's messages.
+const ExtensionWriteCreatedMessage = "extension_write_created_message"
+
 type extensionAuditDetail struct {
-	Kind        string `json:"kind"`
-	WorkspaceID string `json:"workspaceId"`
-	Method      string `json:"method"`
-	Route       string `json:"route"`
-	Access      string `json:"access,omitempty"`
-	Write       bool   `json:"write,omitempty"`
-	Domain      string `json:"domain,omitempty"`
-	Status      int    `json:"status,omitempty"`
-	Outcome     string `json:"outcome"`
-	Error       string `json:"error,omitempty"`
+	Kind             string `json:"kind"`
+	WorkspaceID      string `json:"workspaceId"`
+	Method           string `json:"method"`
+	Route            string `json:"route"`
+	Access           string `json:"access,omitempty"`
+	Write            bool   `json:"write,omitempty"`
+	Domain           string `json:"domain,omitempty"`
+	Status           int    `json:"status,omitempty"`
+	Outcome          string `json:"outcome"`
+	Error            string `json:"error,omitempty"`
+	CreatedMessageID string `json:"createdMessageId,omitempty"`
 }
 
 var extensionSessionRate = gateway.Rate{PerSecond: 20, Burst: 60}
@@ -432,6 +441,14 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 		writeExtensionGatewayError(w, http.StatusBadGateway, gateway.ReasonUnavailable, "", "", "the connector response is larger than this instance accepts")
 		return nil
 	}
+	if x.Need.Write && response.StatusCode >= 200 && response.StatusCode < 300 {
+		if pointer, ok := extensionCreatedMessagePointer(data.Descriptor.ServerHeld.Writes, call.Method, call.Route); ok {
+			if id := extensionPointerText(payload, pointer); id != "" {
+				call.CreatedMessageID = id
+				p.gateway.recordCreatedMessage(r.Context(), x, call, id)
+			}
+		}
+	}
 	for name, values := range response.Header {
 		switch http.CanonicalHeaderKey(name) {
 		case "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade", "Set-Cookie":
@@ -451,6 +468,81 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 }
 
 const extensionDefaultResponseMax = 16 << 20
+
+// extensionCreatedMessagePointer is the descriptor's response pointer for
+// this write route, when it declares one.
+func extensionCreatedMessagePointer(writes []store.ConnectorServerHeldWrite, method, route string) (string, bool) {
+	for _, write := range writes {
+		if strings.EqualFold(strings.TrimSpace(write.Method), method) &&
+			externalaccounts.ExtensionRoutePathMatches(write.Path, route) {
+			return write.CreatedMessageID, true
+		}
+	}
+	return "", false
+}
+
+// extensionPointerText reads a scalar at an RFC 6901 JSON pointer.
+func extensionPointerText(payload []byte, pointer string) string {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var document any
+	if decoder.Decode(&document) != nil || !strings.HasPrefix(pointer, "/") {
+		return ""
+	}
+	current := document
+	for _, token := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		switch value := current.(type) {
+		case map[string]any:
+			next, ok := value[token]
+			if !ok {
+				return ""
+			}
+			current = next
+		case []any:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(value) {
+				return ""
+			}
+			current = value[index]
+		default:
+			return ""
+		}
+	}
+	switch value := current.(type) {
+	case string:
+		return value
+	case json.Number:
+		return value.String()
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(value)
+	default:
+		return ""
+	}
+}
+
+// recordCreatedMessage remembers a message a channel session's connector
+// write created, before the response goes back, so the message channel can
+// drop the echo even if it polls again at once.
+func (g *ExtensionGateway) recordCreatedMessage(ctx context.Context, x *gateway.Exchange, call *extensionCall, messageID string) {
+	if x.Lease == nil {
+		return
+	}
+	detail, _ := json.Marshal(struct {
+		MessageID string `json:"messageId"`
+		Method    string `json:"method"`
+		Route     string `json:"route"`
+	}{MessageID: messageID, Method: call.Method, Route: call.Route})
+	audit, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer done()
+	_ = g.store.AppendExternalAccountEvent(audit, store.ExternalAccountEvent{
+		AccountID: x.Lease.Grant.AccountID, Kind: ExtensionWriteCreatedMessage,
+		SessionID: x.Lease.Grant.SessionID, DeviceID: x.Lease.Grant.DeviceID,
+		ActorID: x.Device.OwnerUserID, Detail: string(detail),
+	})
+}
 
 func writeExtensionGatewayError(w http.ResponseWriter, status int, reason, needed, current, message string) gateway.Refused {
 	code := strings.ToUpper(strings.ReplaceAll(cmpOrText(reason, gateway.ReasonBlocked), "-", "_"))
@@ -513,7 +605,7 @@ func (a extensionAudit) Record(ctx context.Context, record gateway.Record) {
 	}
 	if call != nil {
 		detail.Route, detail.Domain, detail.Access = call.Route, call.Domain, call.Access
-		detail.Write = record.Need.Write
+		detail.Write, detail.CreatedMessageID = record.Need.Write, call.CreatedMessageID
 		if detail.Route == "" {
 			detail.Route = call.Path
 		}

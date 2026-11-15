@@ -13,6 +13,7 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
+  MessageChannelOriginSummary,
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../../components/agent-runtime/runtime-mark";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
@@ -44,6 +45,10 @@ export interface ChatListItem {
   waitingFor?: string;
   /** Who started it, when another session did: "Started by <title>". */
   startedBy?: string;
+  /** A channel session's turn origin (DEV-234), for the row mark and grouping. */
+  channelOrigin?: MessageChannelOriginSummary;
+  /** A channel session's row line: segment date and why it started. */
+  channelMeta?: string;
   unread: boolean;
   /** Open pending items of the chat (DEV-079), shown as a count. */
   pendingCount?: number;
@@ -199,6 +204,8 @@ export interface ChatSurfaceProps {
   sendDisabledReason?: string;
   /** Why no chat can be started here now (the workspace is paused). */
   newChatDisabledReason?: string;
+  /** A message channel's workspace (DEV-234): sessions grouped by conversation. */
+  channelWorkspace?: boolean;
   sending?: boolean;
   threadKey: string;
 }

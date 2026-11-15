@@ -25,6 +25,11 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	previous := assistant.CoalesceNotices
 	assistant.CoalesceNotices = 0
 	t.Cleanup(func() { assistant.CoalesceNotices = previous })
+	// A failed turn's report gathers between turns in production; the test
+	// reads it as its own turn.
+	previousGather := sessions.ChildReportGather
+	sessions.ChildReportGather = 0
+	t.Cleanup(func() { sessions.ChildReportGather = previousGather })
 	f := newDigestFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -64,17 +69,32 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	}
 	told := func() string {
 		t.Helper()
-		run := f.daemon.nextChatRun()
-		if run.Session.ID != conversation.ID {
-			t.Fatalf("a run of %s, want the conversation", run.Session.ID)
+		// A failed helper's ended turn arrives as an inbox report; place it
+		// as the background pump would.
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			f.server.sessionService.PumpInbox(ctx)
+			select {
+			case run := <-f.daemon.runs:
+				if run.Session.Source == store.SessionSourceDigest || run.Session.Source == "naming" {
+					continue
+				}
+				if run.Session.ID != conversation.ID {
+					t.Fatalf("a run of %s, want the conversation", run.Session.ID)
+				}
+				stored, _ := f.db.GetAgentSession(ctx, conversation.ID)
+				if !strings.Contains(stored.Input.Prompt, strings.TrimSpace(personalagent.NoticePrefix)) && !strings.Contains(stored.Input.Prompt, sessions.ChildReportPrefix) {
+					t.Fatalf("the news reads as the person's words: %q", stored.Input.Prompt)
+				}
+				f.daemon.complete(run.Session, "Noted.")
+				waitForStatus(t, f.db, conversation.ID, "completed")
+				return stored.Input.Prompt
+			case <-time.After(50 * time.Millisecond):
+				if time.Now().After(deadline) {
+					t.Fatal("the assistant's conversation ran no turn")
+				}
+			}
 		}
-		stored, _ := f.db.GetAgentSession(ctx, conversation.ID)
-		if !personalagent.IsNotice(stored.Input.Prompt) {
-			t.Fatalf("the news reads as the person's words: %q", stored.Input.Prompt)
-		}
-		f.daemon.complete(run.Session, "Noted.")
-		waitForStatus(t, f.db, conversation.ID, "completed")
-		return stored.Input.Prompt
 	}
 	connects := func(away time.Duration) {
 		t.Helper()
@@ -98,8 +118,8 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	if err := f.server.sessionService.ExpireDeviceWaits(ctx, time.Now().Add(sessions.OfflineWaitLimit+time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if text := told(); !strings.Contains(text, "Failed:") || !strings.Contains(text, failed.ID) || !strings.Contains(text, "stayed offline") {
-		t.Fatalf("failed notice: %q", text)
+	if text := told(); !strings.Contains(text, sessions.ChildReportPrefix) || !strings.Contains(text, failed.ID) || !strings.Contains(text, "stayed offline") {
+		t.Fatalf("failed turn report: %q", text)
 	}
 	waiting := handOff("print the best ones")
 	// Another helper ran there when the Studio went away.

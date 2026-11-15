@@ -33,7 +33,6 @@ type needsYouLine struct {
 	SessionID string   `json:"sessionId,omitempty"`
 	Link      string   `json:"link,omitempty"`
 	Since     string   `json:"since"`
-	Deadline  string   `json:"deadline,omitempty"`
 }
 
 func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
@@ -63,9 +62,6 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	}
 	items, helper, err := s.needsYouTargets(ctx, scope.Agent, itemID, sessionID)
 	if err != nil {
-		return "", err
-	}
-	if err := s.acknowledgeNeedsYou(ctx, scope.Agent.UserID, items); err != nil {
 		return "", err
 	}
 	var changed []needsYouLine
@@ -169,9 +165,6 @@ func (s *Server) needsYouList(ctx context.Context, agent store.PersonalAgent) (s
 	if err != nil {
 		return "", err
 	}
-	if err := s.acknowledgeNeedsYou(ctx, agent.UserID, items); err != nil {
-		return "", err
-	}
 	yours, persons := []needsYouLine{}, []needsYouLine{}
 	for _, item := range items {
 		line := s.needsYouLineOf(ctx, item)
@@ -184,23 +177,10 @@ func (s *Server) needsYouList(ctx context.Context, agent store.PersonalAgent) (s
 	return encodeJSON(map[string]any{"yours": yours, "theirs": persons})
 }
 
-// acknowledgeNeedsYou records that the assistant read its own items. The
-// person's list and unassigned visibility results are not acknowledgement.
-func (s *Server) acknowledgeNeedsYou(ctx context.Context, userID string, items []store.PendingItem) error {
-	ids := make([]string, 0, len(items))
-	for _, item := range items {
-		if store.PendingHandledBy(item) == store.PendingHandlerAssistant {
-			ids = append(ids, item.ID)
-		}
-	}
-	_, err := s.store.AcknowledgePendingItems(ctx, userID, ids, formatPendingTime(time.Now()))
-	return err
-}
-
 func (s *Server) needsYouLineOf(ctx context.Context, item store.PendingItem) needsYouLine {
 	line := needsYouLine{
 		ID: item.ID, Handler: store.PendingHandledBy(item), Source: item.Source, Title: item.Title,
-		Options: item.Options, Note: item.Note, SessionID: item.SessionID, Since: item.CreatedAt, Deadline: item.DeadlineAt,
+		Options: item.Options, Note: item.Note, SessionID: item.SessionID, Since: item.CreatedAt,
 	}
 	if excerpt := strings.TrimSpace(item.Excerpt); excerpt != item.Title {
 		line.Excerpt = textcut.Excerpt(excerpt, 400)

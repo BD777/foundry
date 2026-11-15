@@ -27,10 +27,13 @@ type MessageChannel struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 
 	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
-	Session   *MessageChannelSessionRule `json:"session,omitempty"`
-	SkillName string                     `json:"skillName,omitempty"`
-	CreatedAt string                     `json:"createdAt"`
-	UpdatedAt string                     `json:"updatedAt"`
+	Session *MessageChannelSessionRule `json:"session,omitempty"`
+
+	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
+	SkillName string                   `json:"skillName,omitempty"`
+	CreatedAt string                   `json:"createdAt"`
+	UpdatedAt string                   `json:"updatedAt"`
 }
 
 // MessageChannelAction Something the channel's session did after the message arrived.
@@ -45,6 +48,9 @@ type MessageChannelCapabilities struct {
 	ConversationKinds jsonempty.List[MessageConversationKind] `json:"conversationKinds"`
 	MentionsMe        bool                                    `json:"mentionsMe"`
 	FromSelf          bool                                    `json:"fromSelf"`
+
+	// Threads The source gives a thread id, so follow-ups can ride threads.
+	Threads bool `json:"threads"`
 }
 
 // MessageChannelConnectorScope One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card.
@@ -52,6 +58,46 @@ type MessageChannelConnectorScope struct {
 	AccountID string `json:"accountId"`
 	Level     string `json:"level"`
 	Writes    string `json:"writes"`
+}
+
+// MessageChannelConversation One source conversation of a channel (DEV-234): its latest message and its sessions, newest first.
+type MessageChannelConversation struct {
+	// SessionKey The conversation (and thread) key its messages carry.
+	SessionKey   string                      `json:"sessionKey"`
+	Conversation MessageEnvelopeConversation `json:"conversation"`
+	LastSender   MessageEnvelopeSender       `json:"lastSender,omitempty"`
+	LastAt       string                      `json:"lastAt"`
+	MessageCount int                         `json:"messageCount"`
+
+	// MatchedCount Messages a rule kept and the channel handed to the assistant.
+	MatchedCount int                                               `json:"matchedCount"`
+	SessionCount int                                               `json:"sessionCount"`
+	Sessions     jsonempty.List[MessageChannelConversationSession] `json:"sessions"`
+}
+
+// MessageChannelConversationList defines model for MessageChannelConversationList.
+type MessageChannelConversationList struct {
+	Conversations jsonempty.List[MessageChannelConversation] `json:"conversations"`
+
+	// NextCursor Pass as cursor to read the next older page; absent when this is the last.
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
+// MessageChannelConversationSession One segment of a source conversation: the assistant session it started.
+type MessageChannelConversationSession struct {
+	SessionID string `json:"sessionId,omitempty"`
+	Segment   int    `json:"segment"`
+
+	// New The segment's first message started the session.
+	New bool `json:"new,omitempty"`
+
+	// Reason Why it started: first, idle, command, button, restarted.
+	Reason       string `json:"reason,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Title        string `json:"title,omitempty"`
+	StartedAt    string `json:"startedAt,omitempty"`
+	LastAt       string `json:"lastAt"`
+	MessageCount int    `json:"messageCount"`
 }
 
 // MessageChannelCounts defines model for MessageChannelCounts.
@@ -96,6 +142,9 @@ type MessageChannelDelivery struct {
 // MessageChannelDeliveryList defines model for MessageChannelDeliveryList.
 type MessageChannelDeliveryList struct {
 	Deliveries jsonempty.List[MessageChannelDelivery] `json:"deliveries"`
+
+	// NextCursor Pass as cursor to read the next older page; absent when this is the last.
+	NextCursor string `json:"nextCursor,omitempty"`
 }
 
 // MessageChannelDeliveryStatus defines model for MessageChannelDeliveryStatus.
@@ -104,6 +153,16 @@ type MessageChannelDeliveryStatus = string
 // MessageChannelFilters defines model for MessageChannelFilters.
 type MessageChannelFilters struct {
 	Rules jsonempty.List[MessageChannelRule] `json:"rules"`
+}
+
+// MessageChannelFollowUpFrom defines model for MessageChannelFollowUpFrom.
+type MessageChannelFollowUpFrom = string
+
+// MessageChannelFollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+type MessageChannelFollowUps struct {
+	Enabled     bool                       `json:"enabled"`
+	From        MessageChannelFollowUpFrom `json:"from"`
+	EndCommands jsonempty.List[string]     `json:"endCommands"`
 }
 
 // MessageChannelInput What the person sets on a channel.
@@ -133,6 +192,9 @@ type MessageChannelInput struct {
 
 	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
 	Session *MessageChannelSessionRule `json:"session,omitempty"`
+
+	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
 }
 
 // MessageChannelLimits defines model for MessageChannelLimits.
@@ -151,6 +213,59 @@ type MessageChannelList struct {
 
 	// Sources Connector instances whose descriptor declares an event feed.
 	Sources jsonempty.List[MessageChannelSource] `json:"sources"`
+}
+
+// MessageChannelOrigin One turn's structured origin (DEV-234): the channel, the source conversation and thread, and each message of the batch. Stored with the session input, so the Web renders the turn without parsing the facts block the agent receives.
+type MessageChannelOrigin struct {
+	ChannelID   string `json:"channelId"`
+	ChannelName string `json:"channelName"`
+
+	// Source The source's kind from its extension descriptor, e.g. openlark.
+	Source       string                      `json:"source"`
+	Conversation MessageEnvelopeConversation `json:"conversation"`
+	Thread       MessageEnvelopeThread       `json:"thread,omitempty"`
+
+	// Segment Which of the conversation's sessions this turn belongs to, from 0.
+	Segment int `json:"segment,omitempty"`
+
+	// SessionNew This turn started the session.
+	SessionNew bool `json:"sessionNew,omitempty"`
+
+	// NewReason Why a new session started: first, idle, command, button, restarted.
+	NewReason string `json:"newReason,omitempty"`
+
+	// At When the turn was handed over to the assistant.
+	At       string                                      `json:"at"`
+	Messages jsonempty.List[MessageChannelOriginMessage] `json:"messages"`
+}
+
+// MessageChannelOriginMessage One message of a turn, as the source sent it.
+type MessageChannelOriginMessage struct {
+	ID            string                       `json:"id"`
+	At            string                       `json:"at,omitempty"`
+	Sender        MessageEnvelopeSender        `json:"sender"`
+	Text          string                       `json:"text"`
+	TextTruncated bool                         `json:"textTruncated,omitempty"`
+	Status        MessageChannelDeliveryStatus `json:"status,omitempty"`
+	Rule          string                       `json:"rule,omitempty"`
+}
+
+// MessageChannelOriginSummary The channel turn a session belongs to, for the session list (DEV-234): enough to mark the row and group its chat by source conversation.
+type MessageChannelOriginSummary struct {
+	AssistantID   string                      `json:"assistantId"`
+	ChannelID     string                      `json:"channelId"`
+	ChannelName   string                      `json:"channelName"`
+	Source        string                      `json:"source"`
+	SessionKey    string                      `json:"sessionKey"`
+	Conversation  MessageEnvelopeConversation `json:"conversation"`
+	ThreadID      string                      `json:"threadId,omitempty"`
+	ThreadIsReply bool                        `json:"threadIsReply,omitempty"`
+	Segment       int                         `json:"segment,omitempty"`
+	SessionNew    bool                        `json:"sessionNew,omitempty"`
+	NewReason     string                      `json:"newReason,omitempty"`
+	StartedAt     string                      `json:"startedAt,omitempty"`
+	LastAt        string                      `json:"lastAt,omitempty"`
+	LastSender    MessageEnvelopeSender       `json:"lastSender,omitempty"`
 }
 
 // MessageChannelPeer A conversation or sender the person's channels saw recently from a source.
@@ -305,6 +420,9 @@ type MessageChannelView struct {
 
 	// SessionIDs The channel's sessions.
 	SessionIDs jsonempty.List[string] `json:"sessionIds"`
+
+	// ConversationCount The source conversations the channel has messages from, still within retention.
+	ConversationCount int `json:"conversationCount,omitempty"`
 }
 
 // MessageChannelWorkspace Where the channel's sessions run, read-only for them.
@@ -352,10 +470,19 @@ type MessageEnvelopeSender struct {
 	Name   string `json:"name,omitempty"`
 	IsSelf bool   `json:"isSelf,omitempty"`
 	IsBot  bool   `json:"isBot,omitempty"`
+
+	// IsOwnWrite The message was written by the assistant itself through the source, not by a person; it never starts or continues a session.
+	IsOwnWrite bool `json:"isOwnWrite,omitempty"`
 }
 
 // MessageEnvelopeThread defines model for MessageEnvelopeThread.
 type MessageEnvelopeThread struct {
 	ID      string `json:"id,omitempty"`
 	IsReply bool   `json:"isReply,omitempty"`
+}
+
+// SessionChannel The message channel turns of one assistant session (DEV-234), oldest first.
+type SessionChannel struct {
+	SessionID string                               `json:"sessionId"`
+	Turns     jsonempty.List[MessageChannelOrigin] `json:"turns"`
 }

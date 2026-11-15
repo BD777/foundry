@@ -2,6 +2,12 @@
 
 状态：已部署 dev（train18-20261113：Server `36e580b1…`，Worker `0.5.7-dev.357.g8f394c91.local.1794593951`，2026-11-14 02:28–02:29 UTC+8）；byte-dev 执行宿主已加载新代码；真实通道回合待本人下一条 `/ai` 消息；待人工验收；已合入 main（PR #268）。负责会话 `sess_1794591666137320210`（编排会话 `sess_1794464313271186377` 下发，brief `.foundry/briefs/dev228-229-channel-test-fixes.md`）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：步骤 4 的 byte-dev 只读工具检查；步骤 1–3 按委托跳过，由另一会话走 openlark 通道）。未覆盖：未在普通会话里实际运行 bytedcli/olk。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托；其中步骤 1–3 明确由另一会话经 openlark 通道执行，本会话跳过。步骤 4 只读核对（byte-dev compute lease，未启动模型会话）：`bytedcli 0.193.0` 在 `/home/dengcanwen/.local/bin/bytedcli`，`olk 0.3.0` 在 `.foundry-tools/olk/0e68e0db82de6b0ee58df96b2cfb3c7bdf40581c/olk`，普通会话的工具链接存在。未启动普通 Foundry 会话实际运行这两个命令，以免在本人设备/工作区新建会话。
+
 ## 问题
 
 DEV-203 通道实测报告（`sess_1794585597739851554` 最后一条回答）问题 1、3：通道会话 `sess_1794585876751990513`（byte-dev，ByteWork 助理，Claude）里

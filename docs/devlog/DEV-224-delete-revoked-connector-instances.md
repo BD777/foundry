@@ -2,6 +2,16 @@
 
 状态：Server/Web 已上线，两项 OpenLark 测试实例已删除并核验；待本人验收。已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**部分通过**（范围：本人 Connectors 的只读名单与审计；两项测试实例确已删除，真实 OpenLark 仍在）。未覆盖：未撤销实例的 delete 冲突（没有对本人真实连接器发起删除）、已撤销折叠/删除 UI（e2e-alice 没有连接器实例）。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。只读线上库（`mode=ro`）：
+
+- `external_provider_apps` / `external_accounts` 只剩真实 `xapp_8ef44948-45e9-4e98-b279-b3eae3a40db1` / `xacc_2f3e7a85-2234-4138-aa5f-2618c8975f85`（OpenLark，ready）。
+- 两项测试实例的账号 `xacc_3e9efb0b-3aef-42c4-ab29-428f8c32694d`、`xacc_3d8e9090-a5c1-418e-b482-930c655180c1` 已无账号行；`external_account_events` 保留 `extension_instance_added`、`revoked`、`deleted` 六条审计。
+- 未对本人真实连接器调用 delete；未撤销实例的冲突拒绝和 Web「已撤销 (N)」折叠/删除流程未运行（e2e-alice 没有连接器实例，且不在本人账号创建测试实例）。
+
 ## 问题
 
 本人 Connectors 页出现两个由验证会话创建的 OpenLark 实例：

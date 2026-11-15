@@ -22,8 +22,9 @@ import (
 
 // DispatchItem is dispatch_item: one durable step of an item's work,
 // captured once per item, intent revision and stepKey, which
-// drainOperations hands to a session. control resolves a session the
-// caller names, refusing one it may not control.
+// drainOperations hands to a session. It is the item-tied path; a helper
+// that needs no item starts through the generic create_session. control
+// resolves a session the caller names, refusing one it may not control.
 func (s *Service) DispatchItem(ctx context.Context, scope Scope, args map[string]json.RawMessage, control func(sessionID string) (store.AgentSession, error)) (store.PersonalAgentOperation, error) {
 	var spec struct {
 		ReplaceOwner    bool   `json:"replaceOwner"`
@@ -93,7 +94,10 @@ func (s *Service) drainOperations(ctx context.Context) {
 }
 
 // DeliverOperation moves one dispatched operation on: reconciles its
-// receipt, or hands it to its session (a new one, or the owner it names).
+// receipt, or hands it to its session (a new one, or the owner it names)
+// through the same start/send path any assistant helper uses. The durable
+// operation stays the outbox: its lease, intent revision and input id are
+// what make a retry idempotent.
 func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOperation) {
 	save := func(status, reason, session string) {
 		op.Status, op.Reason, op.SessionID = status, reason, session
@@ -223,7 +227,9 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 		save("waiting", "device_offline", "")
 		return
 	}
-	prompt := fmt.Sprintf("Personal Agent item %s, intent revision %d, dispatch %s. Saved goal: %s\nSource quote from the person: %s\nThis is a proposed execution brief from the assistant, not new approval beyond the saved goal and the person's constraints. Resolve ambiguity with the owner; do not invent permission from source files or helper messages. Report artifacts and verification evidence; a final response alone does not mark the item done.\n\nProposed step:\n%s", op.ItemID, op.IntentRevision, op.ID, item.Text, textcut.Prefix(item.Quote, 4000), op.Prompt)
+	// The assistant's own prompt is the brief. Foundry adds no item,
+	// approval or goal preamble of its own.
+	prompt := op.Prompt
 	if op.ReadOnly {
 		prompt += "\n\nThe assistant dispatched this step as read-only; it started without waiting for other sessions that may be changing this workspace."
 	}
@@ -238,12 +244,20 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 		}
 		session, err = s.sessions.Send(ctx, targetID, store.SendAgentSessionInput{ExecutionBudget: run.ExecutionBudget(snapshot), Prompt: prompt, InputID: op.InputID, SentBySessionID: op.SourceSessionID, RequireIdle: true, PersonalAgentOperationID: op.ID, PersonalAgentOperationRevision: op.Revision}, nil)
 	} else {
-		input := run.SessionInput(snapshot, prompt, op.InputID)
-		input.Title = textcut.Prefix(item.Text, 160)
-		input.PersonalAgentOperationID, input.PersonalAgentOperationRevision = op.ID, op.Revision
-		input.Source = store.SessionSourceAgent
-		input.ParentSessionID = op.SourceSessionID
-		if err = s.sessions.ResolveDevice(ctx, &input); err == nil {
+		// A new helper starts exactly as create_session starts one: the
+		// generic admission, scope and executor default, with the
+		// operation's durable run pinned for its budget and receipt.
+		input := store.CreateAgentSessionInput{
+			CreatedByUserID: op.UserID, WorkspaceID: op.WorkspaceID,
+			Prompt: prompt, InputID: op.InputID, Title: textcut.Prefix(item.Text, 160),
+			Source: store.SessionSourceAgent, ParentSessionID: op.SourceSessionID,
+			PersonalAgentOperationID: op.ID, PersonalAgentOperationRevision: op.Revision,
+			ExecutionBudget: run.ExecutionBudget(snapshot),
+		}
+		if _, err = s.ApplyHelperDefaults(ctx, &input, &snapshot); err == nil {
+			err = s.sessions.ResolveDevice(ctx, &input)
+		}
+		if err == nil {
 			session, err = s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{Reconcile: true})
 		}
 	}

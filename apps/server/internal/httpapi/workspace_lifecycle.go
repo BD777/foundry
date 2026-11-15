@@ -541,6 +541,8 @@ func (s *Server) setWorkspaceArchived(ctx context.Context, workspaceID string, a
 	if workspace, err = s.store.SetWorkspaceArchived(ctx, workspaceID, at); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
+	// An archived project loses its summary file; a restored one gets it back.
+	s.refreshWorkspaceDigests(ctx, workspaceID)
 	s.projectionsChanged("", fieldWorkspaces)
 	return workspace, nil
 }

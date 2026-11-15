@@ -94,9 +94,14 @@ func TestDeviceLifecycleMCPAndExplicitDefault(t *testing.T) {
 	if _, err := f.server.store.RenameWorkspace(ctx, "ws_retired", "Retired matching project"); err != nil {
 		t.Fatal(err)
 	}
-	text, failed := f.tool(t, f.token, "find_workspace", map[string]any{"query": "Retired matching project"})
-	if failed || strings.Contains(text, "ws_retired") {
-		t.Fatalf("routing suggests removed project: %s", text)
+	files, err := f.server.assistant.ProjectFiles(ctx, agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.Contains(file.Content, "ws_retired") || strings.Contains(file.Content, "Retired matching project") {
+			t.Fatalf("project summaries suggest removed project: %s", file.Path)
+		}
 	}
 	// Then its data is purged: the workspace and its digests are gone.
 	f.server.purgeRemovedDevices(ctx)

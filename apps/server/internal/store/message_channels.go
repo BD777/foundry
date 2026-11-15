@@ -38,6 +38,10 @@ type MessageChannelDeliveryRecord struct {
 	// (its session); RawJSON the source's own item, for a matched message.
 	InboxChannel string
 	RawJSON      string
+	// FollowUp is the fact that made a follow-up continue an earlier
+	// message (a thread and when it started, or a quoted message), for the
+	// notice; "" otherwise.
+	FollowUp string
 }
 
 // MessageChannelKeyState is where one source conversation of a channel is:
@@ -73,6 +77,20 @@ type MessageChannelSession struct {
 	Title       string
 }
 
+// MessageChannelDeliveryFilter narrows a channel's delivery records (DEV-234).
+type MessageChannelDeliveryFilter struct {
+	Statuses   []string
+	SessionKey string
+	SessionID  string
+}
+
+// MessageChannelConversationSummary is one source conversation's newest
+// activity, for paging the conversation index.
+type MessageChannelConversationSummary struct {
+	SessionKey string
+	LastAt     string
+}
+
 // The states of a delivery record (MessageChannelDeliveryStatus).
 const (
 	MessageDeliveryDropped   = "dropped"
@@ -105,6 +123,32 @@ type MessageChannelStore interface {
 	// ListMessageChannelDeliveries is the newest records of a channel first,
 	// only those in statuses when given.
 	ListMessageChannelDeliveries(ctx context.Context, channelID string, statuses []string, limit int) ([]MessageChannelDeliveryRecord, error)
+	// ListMessageChannelDeliveriesPage is ListMessageChannelDeliveries with
+	// filters and an opaque cursor over (createdAt, id), newest first; it also
+	// returns the cursor of the next older page ("" at the end).
+	ListMessageChannelDeliveriesPage(ctx context.Context, channelID string, filter MessageChannelDeliveryFilter, cursor string, limit int) ([]MessageChannelDeliveryRecord, string, error)
+	// MessageChannelConversations groups a channel's records by source
+	// conversation, newest activity first, at most limit; it also returns the
+	// cursor of the next older page.
+	MessageChannelConversations(ctx context.Context, channelID, cursor string, limit int) ([]MessageChannelConversationSummary, string, error)
+	// MessageChannelConversationDeliveries are one conversation's records,
+	// oldest first.
+	MessageChannelConversationDeliveries(ctx context.Context, channelID, sessionKey string) ([]MessageChannelDeliveryRecord, error)
+	// MessageChannelSessionDeliveries are one session's records, oldest first.
+	MessageChannelSessionDeliveries(ctx context.Context, sessionID string) ([]MessageChannelDeliveryRecord, error)
+	// MessageChannelInboxDeliveries are the records one hand-over (an inbox
+	// entry) stored, oldest first.
+	MessageChannelInboxDeliveries(ctx context.Context, assistantID, inboxID string) ([]MessageChannelDeliveryRecord, error)
+	// MessageChannelPendingInboxDeliveries are the records saved for an inbox
+	// channel and not yet tagged with the entry that took them, oldest first;
+	// they let the origin be built even if the entry is drained first.
+	MessageChannelPendingInboxDeliveries(ctx context.Context, assistantID, inboxChannel string) ([]MessageChannelDeliveryRecord, error)
+	// MessageChannelSessionOrigin describes the channel turn a session
+	// belongs to; ErrNotFound for a session no channel delivered to.
+	MessageChannelSessionOrigin(ctx context.Context, sessionID string) (MessageChannelOriginSummary, error)
+	// CountMessageChannelConversations counts the source conversations the
+	// channel still has records of.
+	CountMessageChannelConversations(ctx context.Context, channelID string) (int, error)
 	SaveMessageChannelDelivery(ctx context.Context, record MessageChannelDeliveryRecord) error
 	// CountMessageChannelDeliveries counts a channel's records created since.
 	CountMessageChannelDeliveries(ctx context.Context, channelID, since string) (MessageChannelCounts, error)

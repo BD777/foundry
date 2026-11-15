@@ -63,9 +63,24 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	for _, file := range first.PersonalAgentFiles {
 		files[file.Path] = file.Content
 	}
-	if len(files) != 3+len(prompt.AssistantSkills()) || !strings.HasPrefix(files["AGENTS.md"], prompt.ManagedBlockStart+"\nYou are ") ||
+	// DEV-235 adds one summary file per project and their manifest under
+	// .foundry/projects/, so the run carries those beside the instructions.
+	wiringAgent, err := f.db.GetPersonalAgent(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectFiles, err := f.server.assistant.ProjectFiles(ctx, wiringAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3+len(prompt.AssistantSkills())+len(projectFiles) || !strings.HasPrefix(files["AGENTS.md"], prompt.ManagedBlockStart+"\nYou are ") ||
 		strings.Contains(files["AGENTS.md"], "ws_budget") || !strings.Contains(files[prompt.ProjectIndexPath], "(ws_budget)") {
 		t.Fatalf("the assistant's files: %+v", first.PersonalAgentFiles)
+	}
+	for _, file := range projectFiles {
+		if _, ok := files[file.Path]; !ok {
+			t.Fatalf("the assistant's files lack the project summary %s: %+v", file.Path, first.PersonalAgentFiles)
+		}
 	}
 	if _, ok := files[prompt.ExamplesPath]; !ok {
 		t.Fatalf("the assistant's files lack %s: %+v", prompt.ExamplesPath, first.PersonalAgentFiles)
@@ -209,10 +224,9 @@ func TestSetupPrimesEveryProjectAFewAtATime(t *testing.T) {
 	}
 }
 
-// §6: a helper that ends tells the conversation that handed it off, as
-// Foundry, never as the person; one asking a question leaves its task
-// asking; a quiet one is reported once per silence; nothing reaches a
-// stopped assistant.
+// §6: an ended helper turn reaches the conversation that handed it off once,
+// as the generic turn_end report, not a second supervision notice; a quiet
+// one is reported once per silence; nothing reaches a stopped assistant.
 func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
@@ -254,25 +268,83 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 		waitForStatus(t, f.db, conversation.ID, "completed")
 		return stored.Input.Prompt
 	}
+	report := func(child store.AgentSession, want string) string {
+		t.Helper()
+		// The report is admitted off the completion handler; place it as
+		// the background pump would.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			items, _ := f.db.SessionInboxItems(ctx, conversation.ID, time.Now().Add(-time.Hour), 50)
+			arrived := false
+			for _, item := range items {
+				if item.SenderSessionID == child.ID && strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
+					arrived = true
+				}
+			}
+			f.server.sessionService.PumpInbox(ctx)
+			if arrived {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the turn_end never reached the conversation's inbox")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		run := f.daemon.nextChatRun()
+		if run.Session.ID != conversation.ID {
+			t.Fatalf("a run of %s, want the conversation", run.Session.ID)
+		}
+		stored, _ := f.db.GetAgentSession(ctx, conversation.ID)
+		if !strings.HasPrefix(stored.Input.Prompt, sessions.ChildReportPrefix) || strings.Contains(stored.Input.Prompt, personalagent.NoticePrefix) {
+			t.Fatalf("turn_end is not the completion signal: %q", stored.Input.Prompt)
+		}
+		if !strings.Contains(stored.Input.Prompt, want) {
+			t.Fatalf("the report misses %q: %q", want, stored.Input.Prompt)
+		}
+		f.daemon.complete(run.Session, "Noted.")
+		waitForStatus(t, f.db, conversation.ID, "completed")
+		return stored.Input.Prompt
+	}
+
+	// A report gathers briefly between turns in production; the test reads
+	// each one as its own turn.
+	previousGather := sessions.ChildReportGather
+	sessions.ChildReportGather = 0
+	t.Cleanup(func() { sessions.ChildReportGather = previousGather })
 
 	finished := handOff("add an Excel export")
 	f.daemon.complete(finished, "Added the export.")
-	if text := notice(); !strings.Contains(text, "Finished:") || !strings.Contains(text, "Added the export.") || strings.Contains(text, "read_context") ||
-		!strings.Contains(text, f.server.assistant.SessionURL(finished)) || !strings.Contains(f.server.assistant.SessionURL(finished), "/chats/"+finished.ID+"?workspace=ws_budget") {
-		t.Fatalf("finished notice: %q", text)
+	if text := report(finished, "Added the export."); !strings.Contains(text, f.server.assistant.SessionURL(finished)) ||
+		!strings.Contains(f.server.assistant.SessionURL(finished), "/chats/"+finished.ID+"?workspace=ws_budget") {
+		t.Fatalf("finished report: %q", text)
+	}
+	items, err := f.db.SessionInboxItems(ctx, conversation.ID, time.Now().Add(-time.Hour), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := 0
+	for _, item := range items {
+		if item.SenderSessionID == finished.ID && strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
+			reports++
+		}
+	}
+	if reports != 1 {
+		t.Fatalf("the finished turn arrived %d times, want its one turn_end", reports)
 	}
 
 	previous := assistant.CoalesceNotices
 	assistant.CoalesceNotices = 0
 	t.Cleanup(func() { assistant.CoalesceNotices = previous })
+	// An answer that ends with a question is still just a finished turn:
+	// what counts as a question is the assistant's call, not Foundry's.
 	asking := handOff("pick a chart")
 	f.daemon.complete(asking, "Bars or lines?")
-	if text := notice(); !strings.Contains(text, "Ended with a question") || !strings.Contains(text, "Bars or lines?") {
-		t.Fatalf("question notice: %q", text)
+	report(asking, "Bars or lines?")
+	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskAsking}); len(tasks) != 0 {
+		t.Fatalf("Foundry marked a task asked: %+v", tasks)
 	}
-	tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskAsking})
-	if len(tasks) != 1 || tasks[0].SessionID != asking.ID {
-		t.Fatalf("asking tasks = %+v", tasks)
+	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, agent.ID, []string{store.PersonalAgentTaskDone}); len(tasks) != 2 {
+		t.Fatalf("finished tasks = %+v", tasks)
 	}
 
 	quiet := handOff("a long job")
@@ -309,6 +381,11 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	previous := assistant.CoalesceNotices
 	assistant.CoalesceNotices = 0
 	t.Cleanup(func() { assistant.CoalesceNotices = previous })
+	// A child report gathers briefly between turns in production; this test
+	// reads each one as its own turn.
+	previousGather := sessions.ChildReportGather
+	sessions.ChildReportGather = 0
+	t.Cleanup(func() { sessions.ChildReportGather = previousGather })
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
@@ -326,9 +403,33 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	}
 	toldIs := func(want string) {
 		t.Helper()
+		// A helper's ended turn arrives as an inbox report; place it as the
+		// background pump would (DEV-240: turn_end is the completion signal).
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			f.server.sessionService.PumpInbox(ctx)
+			items, _ := f.db.SessionInboxItems(ctx, want, time.Now().Add(-time.Hour), 50)
+			arrived := false
+			for _, item := range items {
+				if strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
+					arrived = true
+				}
+			}
+			if arrived {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the turn_end never reached the conversation's inbox")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
 		run := f.daemon.nextChatRun()
-		if run.Session.ID != want || !personalagent.IsNotice(run.Session.Input.Prompt) {
-			t.Fatalf("the helper's news went to %s (%q), want %s", run.Session.ID, run.Session.Input.Prompt, want)
+		if run.Session.ID != want {
+			t.Fatalf("the helper's news went to %s, want %s", run.Session.ID, want)
+		}
+		stored, _ := f.db.GetAgentSession(ctx, want)
+		if !strings.HasPrefix(stored.Input.Prompt, sessions.ChildReportPrefix) || strings.Contains(stored.Input.Prompt, personalagent.NoticePrefix) {
+			t.Fatalf("the helper's news is not its turn_end report: %q", stored.Input.Prompt)
 		}
 		f.daemon.complete(run.Session, "Noted.")
 		waitForStatus(t, f.db, want, "completed")

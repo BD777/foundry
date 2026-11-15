@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -121,26 +119,6 @@ func TestAssistantRefusalsKeepTheirStatus(t *testing.T) {
 	limit := limitRefusal(&personalagent.LimitError{Limit: "dailyWorkspaces", Max: 3}, settings)
 	if kind := refusalKind(limit); kind != store.PersonalAgentRefusalLimit || !strings.Contains(limit.Error(), "/assistants/asst_work/settings") {
 		t.Fatalf("a limit is refused as %s: %v", kind, limit)
-	}
-}
-
-func TestHelperFailureReasons(t *testing.T) {
-	var s Service
-	for text, want := range map[string]string{
-		"Not logged in · Please run /login":                            helperNotSignedIn,
-		"unexpected status 401 Unauthorized":                           helperNotSignedIn,
-		"API Error: 429 rate limit exceeded":                           helperRateLimited,
-		"API Error: Connection error.":                                 helperUnreachable,
-		"stream disconnected before completion: error sending request": helperUnreachable,
-		sessions.ErrLocalDaemonNotConnected.Error():                    helperDeviceOffline,
-		"spawn E2BIG": helperTaskError,
-	} {
-		if got := s.helperFailureReason(store.AgentSession{Error: text}, run.Account{}, false); got != want {
-			t.Errorf("reason of %q = %s, want %s", text, got, want)
-		}
-	}
-	if got := s.helperFailureReason(store.AgentSession{Error: "exit code 1"}, run.Account{Problem: run.AccountNotReady}, true); got != run.AccountNotReady {
-		t.Errorf("reason of a failure on an account that is not ready = %s", got)
 	}
 }
 

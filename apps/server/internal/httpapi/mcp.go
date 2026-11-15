@@ -459,7 +459,6 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"ask_person":      mcpRequestTool((*Server).askPersonForMCP),
 	"feishu_events":   mcpRequestTool((*Server).feishuEventsForMCP),
 	// The Personal Agent's tools (mcp_personal_agent.go).
-	"find_workspace":       mcpTextTool((*Server).findWorkspaceForMCP),
 	"get_workspace":        mcpTextTool((*Server).getWorkspaceForMCP),
 	"create_workspace":     mcpTextTool((*Server).createWorkspaceForMCP),
 	"update_workspace":     mcpTextTool((*Server).updateWorkspaceForMCP),

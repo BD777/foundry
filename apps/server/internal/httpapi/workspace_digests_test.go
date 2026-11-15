@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -32,6 +33,8 @@ type digestDaemon struct {
 	runs           chan wsRunSessionPayload
 	instructionsMu sync.RWMutex
 	instructions   map[string]string
+	filesMu        sync.Mutex
+	files          map[string]string
 }
 
 func (d *digestDaemon) setInstruction(path, content string) {
@@ -64,7 +67,7 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 	t.Helper()
 	conn := dialDaemonForTest(t, live)
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities":     []string{"role_run_budgets_v1", "exact_input_cancel_v1", "context_files_v1"},
+		"capabilities":     []string{"role_run_budgets_v1", "exact_input_cancel_v1", "context_files_v1", store.DaemonCapabilityWorkspaceFileWrite, store.DaemonCapabilityWorkspaceFileManage},
 		"activeSessionIds": []string{},
 		"device":           map[string]any{"id": "dev_home", "label": "MacBook", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_pa", "name": "Assistant", "localPath": "/home/me/Foundry/personal-agent"},
@@ -75,7 +78,7 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 		}},
 	})
 	readWSTypeForTest(t, conn, "registered")
-	daemon := &digestDaemon{t: t, conn: conn, runs: make(chan wsRunSessionPayload, 8), instructions: map[string]string{}}
+	daemon := &digestDaemon{t: t, conn: conn, runs: make(chan wsRunSessionPayload, 8), instructions: map[string]string{}, files: map[string]string{}}
 	// Runs before dialDaemonForTest's cleanup closes the socket.
 	t.Cleanup(func() { daemon.closing.Store(true) })
 	answer := func(id, messageType string, payload any) bool {
@@ -111,6 +114,36 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 				}) {
 					return
 				}
+			case wsListWorkspaceTreeType:
+				var request wsListWorkspaceTreePayload
+				_ = json.Unmarshal(envelope.Payload, &request)
+				if !answer(envelope.ID, wsWorkspaceTreeListedType, wsWorkspaceTreeListedPayload{
+					WorkspaceID: request.WorkspaceID, Path: request.Path, Entries: daemon.tree(request.WorkspaceID, request.Path),
+				}) {
+					return
+				}
+			case wsWriteFileType:
+				var request wsWriteFilePayload
+				_ = json.Unmarshal(envelope.Payload, &request)
+				daemon.filesMu.Lock()
+				daemon.files[workspaceFilePath(request.WorkspaceID, request.Path)] = request.Content
+				daemon.filesMu.Unlock()
+				if !answer(envelope.ID, wsFileWrittenType, wsFileWrittenPayload{
+					WorkspaceID: request.WorkspaceID, Path: request.Path, Sha256: contentSha256(request.Content), Bytes: len(request.Content),
+				}) {
+					return
+				}
+			case wsManageFileType:
+				var request wsManageFilePayload
+				_ = json.Unmarshal(envelope.Payload, &request)
+				daemon.filesMu.Lock()
+				delete(daemon.files, workspaceFilePath(request.WorkspaceID, request.Path))
+				daemon.filesMu.Unlock()
+				if !answer(envelope.ID, wsFileManagedType, wsFileManagedPayload{
+					WorkspaceID: request.WorkspaceID, Op: request.Op, Path: request.Path, ToPath: request.ToPath,
+				}) {
+					return
+				}
 			case wsCancelSessionType:
 				if daemon.ignoreCancel.Load() {
 					continue
@@ -129,6 +162,44 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 		}
 	}()
 	return daemon
+}
+
+// workspaceFilePath keys a daemon's files by the workspace they belong to:
+// the assistant's home and its channel workspaces share one device.
+func workspaceFilePath(workspaceID, path string) string {
+	return workspaceID + "\x00" + path
+}
+
+// tree lists the summary files the daemon holds in workspace under path.
+func (d *digestDaemon) tree(workspaceID, path string) []store.WorkspaceTreeEntry {
+	d.filesMu.Lock()
+	defer d.filesMu.Unlock()
+	if path != workspacedigest.ProjectFilesDir {
+		return nil
+	}
+	prefix := workspaceFilePath(workspaceID, workspacedigest.ProjectFilesDir+"/")
+	entries := []store.WorkspaceTreeEntry{}
+	for file := range d.files {
+		name, ok := strings.CutPrefix(file, prefix)
+		if ok && !strings.Contains(name, "/") && strings.HasSuffix(name, ".md") {
+			entries = append(entries, store.WorkspaceTreeEntry{Name: name, Path: workspacedigest.ProjectFilesDir + "/" + name})
+		}
+	}
+	return entries
+}
+
+// workspaceFiles are workspace's files, by path.
+func (d *digestDaemon) workspaceFiles(workspaceID string) map[string]string {
+	d.filesMu.Lock()
+	defer d.filesMu.Unlock()
+	prefix := workspaceID + "\x00"
+	out := map[string]string{}
+	for key, content := range d.files {
+		if path, ok := strings.CutPrefix(key, prefix); ok {
+			out[path] = content
+		}
+	}
+	return out
 }
 
 func (d *digestDaemon) nextRun() wsRunSessionPayload {
@@ -226,15 +297,106 @@ func (f digestFixture) digest(t *testing.T) store.WorkspaceDigestRecord {
 	return records[0]
 }
 
+// A digest change updates the assistant's project summary files: Foundry
+// writes them into its home, and removes the one of an archived project.
+func TestAssistantProjectFilesFollowTheDigest(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent, err := f.server.store.GetPersonalAgent(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.assistant.WriteProjectFiles(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	files := f.daemon.workspaceFiles("ws_pa")
+	summary := files[workspacedigest.ProjectFilesDir+"/budget.md"]
+	if !strings.Contains(summary, "ws_budget") || !strings.Contains(summary, "Budget") {
+		t.Fatalf("project summary = %q", summary)
+	}
+	if manifest := files[workspacedigest.ProjectManifestPath]; !strings.Contains(manifest, "budget.md") {
+		t.Fatalf("manifest = %q", manifest)
+	}
+	if _, err := f.db.SetWorkspaceArchived(ctx, "ws_budget", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.assistant.WriteProjectFiles(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	files = f.daemon.workspaceFiles("ws_pa")
+	if _, ok := files[workspacedigest.ProjectFilesDir+"/budget.md"]; ok {
+		t.Fatalf("an archived project kept its summary: %+v", files)
+	}
+	if manifest := files[workspacedigest.ProjectManifestPath]; strings.Contains(manifest, "budget.md") {
+		t.Fatalf("manifest kept an archived project: %q", manifest)
+	}
+}
+
+// A message channel's workspace gets the same project index and summary
+// files as the assistant's home (routing reads them from a channel too),
+// and a digest change refreshes the index there as well.
+func TestAssistantProjectFilesReachAChannelWorkspace(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent, err := f.server.store.GetPersonalAgent(ctx, f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_channel", Name: "Assistant · messages", LocalPath: "/home/me/message-channel-mch_1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.SetWorkspaceMember(ctx, "ws_channel", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.SaveMessageChannel(ctx, store.MessageChannelRecord{UserID: f.aliceID, MessageChannel: store.MessageChannel{
+		ID: "mch_1", AssistantID: agent.ID, WorkspaceID: "ws_channel", Name: "Lark /fd", Enabled: true, SessionKey: "conversation",
+		Source:    store.MessageChannelSource{Kind: "openlark", AccountID: "xacc_lark"},
+		CreatedAt: "2026-11-13T00:00:00Z", UpdatedAt: "2026-11-13T00:00:00Z",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.assistant.WriteProjectFiles(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	home := f.daemon.workspaceFiles("ws_pa")
+	channel := f.daemon.workspaceFiles("ws_channel")
+	if _, ok := channel[".foundry/projects/budget.md"]; !ok {
+		t.Fatalf("the channel workspace lacks the project summary: %+v", channel)
+	}
+	if _, ok := channel["AGENTS.md"]; ok {
+		t.Fatal("the channel workspace's AGENTS.md is the person's, not Foundry's")
+	}
+	if home[prompt.ProjectIndexPath] == "" || home[prompt.ProjectIndexPath] != channel[prompt.ProjectIndexPath] {
+		t.Fatalf("the channel's index differs from the home's: %q / %q", home[prompt.ProjectIndexPath], channel[prompt.ProjectIndexPath])
+	}
+	if !strings.Contains(channel[prompt.ProjectIndexPath], "Budget") {
+		t.Fatalf("the channel's index names no project: %q", channel[prompt.ProjectIndexPath])
+	}
+	// A digest change refreshes the index where the channel's sessions read it.
+	if _, err := f.db.RenameWorkspace(ctx, "ws_budget", "Household budget"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.assistant.WriteProjectFiles(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	channel = f.daemon.workspaceFiles("ws_channel")
+	if index := channel[prompt.ProjectIndexPath]; !strings.Contains(index, "Household budget") {
+		t.Fatalf("the channel's index after a digest change: %q", index)
+	}
+}
+
 // The summary loop end to end: a new digest is summarized at once by a
 // read-only session without Foundry tools in the assistant's workspace;
 // its answer is the summary unless it is not the JSON asked for.
 func TestWorkspaceDigestSummarySessions(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
-	candidates, err := f.server.workspaceDigests().Find(ctx, f.aliceID, "budget", workspacedigest.FindOptions{})
-	if err != nil || len(candidates) != 1 || candidates[0].WorkspaceID != "ws_budget" || !candidates[0].Stale {
-		t.Fatalf("find = %+v, %v; want only ws_budget, not summarized yet", candidates, err)
+	digest, err := f.server.workspaceDigests().Digest(ctx, f.aliceID, "ws_budget")
+	if err != nil || digest.WorkspaceID != "ws_budget" || !workspacedigest.Stale(digest, time.Now()) {
+		t.Fatalf("digest = %+v, %v; want ws_budget, not summarized yet", digest, err)
 	}
 
 	run := f.daemon.nextRun()
@@ -354,8 +516,5 @@ func TestWorkspaceDigestTriggers(t *testing.T) {
 	}
 	if _, err := f.server.workspaceDigests().Digest(ctx, f.aliceID, "ws_budget"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("digest of a workspace without access: %v", err)
-	}
-	if candidates, _ := f.server.workspaceDigests().Find(ctx, f.aliceID, "budget", workspacedigest.FindOptions{}); len(candidates) != 0 {
-		t.Fatalf("find after losing access = %+v", candidates)
 	}
 }

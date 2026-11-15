@@ -88,6 +88,14 @@ func (p LongPoll) ContextHint(language string) string {
 	return p.Spec.Context.Hint
 }
 
+// Reply is the source's reply command for a conversation kind, or "".
+func (p LongPoll) Reply(kind string) string {
+	if command := strings.TrimSpace(p.Spec.Reply.Kinds[kind]); command != "" {
+		return command
+	}
+	return strings.TrimSpace(p.Spec.Reply.Kinds["other"])
+}
+
 func (p LongPoll) Poll(ctx context.Context, cursor string) (Batch, error) {
 	poll := p.Spec.Poll
 	query := url.Values{}

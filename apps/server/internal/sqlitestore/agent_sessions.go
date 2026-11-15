@@ -122,11 +122,10 @@ func (s *Store) ListIssueExecutionRecords(ctx context.Context, workspaceID strin
 }
 
 func (s *Store) attachAgentSessionThreadEvents(ctx context.Context, sessions []store.AgentSession, workspaceID string, threadID string) error {
-	events, err := listSessionEvents(ctx, s.reader(), `SELECT event.id, event.session_id, event.level, event.created_at, event.payload_json
+	events, err := listSessionEventsChronologically(ctx, s.reader(), `SELECT event.id, event.session_id, event.level, event.created_at, event.payload_json
 		FROM agent_session_events AS event
 		JOIN agent_sessions AS session ON session.id = event.session_id
-		WHERE session.workspace_id = ? AND session.id = ?
-		ORDER BY event.created_at ASC`, workspaceID, threadID)
+		WHERE session.workspace_id = ? AND session.id = ?`, workspaceID, threadID)
 	if err != nil {
 		return err
 	}
@@ -285,7 +284,7 @@ func (s *Store) CreateAgentSessionAdopting(ctx context.Context, input store.Crea
 }
 
 func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, string, error) {
-	if err := s.checkPARunInput(ctx, input.CreatedByUserID, input.InputID, input.ExecutionBudget); err != nil {
+	if err := s.checkPARunInput(ctx, input.CreatedByUserID, input.InputID, input.ExecutionBudget, store.IsFoundryOwnedSource(input.Source)); err != nil {
 		return store.AgentSession{}, "", err
 	}
 	if err := s.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, input.CreatedByUserID, input.WorkspaceID, input.InputID); err != nil {
@@ -526,6 +525,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 			ImportedContext:       strings.TrimSpace(input.ImportedContext),
 			// The session that started it wrote its first message.
 			SentBySessionID: start.parent.ID,
+			ChannelOrigin:   input.ChannelOrigin,
 		},
 		CreatedLabel: "just now",
 		UpdatedLabel: "queued",
@@ -751,7 +751,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		if err := tx.checkPAContextPatchFence(ctx, session.WorkspaceID); err != nil {
 			return err
 		}
-		if err := tx.checkPARunInput(ctx, session.CreatedByUserID, input.InputID, input.ExecutionBudget); err != nil {
+		if err := tx.checkPARunInput(ctx, session.CreatedByUserID, input.InputID, input.ExecutionBudget, false); err != nil {
 			return err
 		}
 		if err := tx.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, session.CreatedByUserID, session.WorkspaceID, input.InputID); err != nil {
@@ -826,6 +826,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			TimerFire:             input.TimerFire,
 			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),
+			ChannelOrigin:         input.ChannelOrigin,
 		}
 		session.DispatchID = inputID
 		// What the native session missed is the server's to tell, never the

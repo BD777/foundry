@@ -288,12 +288,15 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	if decision.Segment > 0 {
 		inboxChannel += fmt.Sprintf(":%d", decision.Segment)
 	}
-	label, hint := "", ""
+	label, hint, reply := "", "", ""
 	if r.ports.SourceLabel != nil {
 		label = r.ports.SourceLabel(ctx, channel)
 	}
 	if r.ports.ContextHint != nil {
 		hint = r.ports.ContextHint(ctx, channel)
+	}
+	if r.ports.ReplyCommand != nil {
+		reply = r.ports.ReplyCommand(ctx, channel, batch[len(batch)-1].Envelope.Conversation.Kind)
 	}
 	ids := make([]string, 0, len(batch))
 	raw := make([]json.RawMessage, 0, len(batch))
@@ -315,7 +318,7 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	}
 	sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
 	turn := Turn{InboxChannel: inboxChannel, SessionKey: key, Segment: decision.Segment,
-		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: Notice(channel.MessageChannel, label, hint, decision, batch)}
+		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: Notice(channel.MessageChannel, label, hint, reply, decision, batch)}
 	if len(raw) > 0 {
 		turn.Raw, _ = json.MarshalIndent(raw, "", "  ")
 	}

@@ -1,11 +1,13 @@
 import type {
   AgentSession,
   ChatThread,
+  MessageChannelOriginSummary,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../../i18n";
 import { issuesEnabled } from "../../../lib/feature-flags";
 import {
+  navigateToAssistantSettings,
   navigateToChat,
   navigateToIssue,
 } from "../../../lib/in-app-navigation";
@@ -100,6 +102,24 @@ export function linkedChatNotice(
 }
 
 /**
+ * A message channel's session takes input only from its channel (DEV-234):
+ * the chat shows no composer, and says where the channel is set.
+ */
+function channelSessionNotice(
+  origin: MessageChannelOriginSummary,
+): ChatThreadNotice {
+  return {
+    action: {
+      label: i18n.t("chat:thread.openChannelSettings"),
+      onSelect: () =>
+        navigateToAssistantSettings("channels", origin.assistantId),
+    },
+    message: i18n.t("chat:thread.channelOnly", { source: origin.source }),
+    title: i18n.t("chat:thread.channelOnlyTitle"),
+  };
+}
+
+/**
  * The notices of the chat selected: `thread` in place of its composer;
  * `linked` when the chat a link names is not shown (no thread, no chat).
  */
@@ -123,10 +143,12 @@ export function selectedChatNotices(input: {
           input.showChats,
           input.following,
         );
+  const channel = input.selectedThread?.sessions[0]?.channelOrigin;
   return {
     linked,
-    thread:
-      input.selectedThread && input.unlistedSelection
+    thread: channel
+      ? channelSessionNotice(channel)
+      : input.selectedThread && input.unlistedSelection
         ? startedElsewhereNotice(input.selectedThread.sessions[0])
         : linked,
   };

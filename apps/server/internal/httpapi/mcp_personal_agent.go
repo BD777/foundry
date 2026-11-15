@@ -16,7 +16,6 @@ import (
 // personalAgentMCPTools are the Personal Agent's own tools
 // (docs/personal-agent.md §5): only a personal_agent session lists them.
 var personalAgentMCPTools = map[string]bool{
-	"find_workspace":       true,
 	"get_workspace":        true,
 	"create_workspace":     true,
 	"update_workspace":     true,
@@ -118,19 +117,6 @@ func (s *Server) listTasksForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	return encodeJSON(tasks)
-}
-
-func (s *Server) findWorkspaceForMCP(call mcpCall) (string, error) {
-	ctx := call.r.Context()
-	scope, err := s.paScope(ctx, call.actor)
-	if err != nil {
-		return "", err
-	}
-	answer, err := s.assistant.FindWorkspace(ctx, scope, mcpArgString(call.args, "query"), mcpArgNumber(call.args, "limit", 3))
-	if err != nil {
-		return "", err
-	}
-	return encodeJSON(answer)
 }
 
 func (s *Server) getWorkspaceForMCP(call mcpCall) (string, error) {

@@ -223,8 +223,9 @@ func TestMemorySortSharesSuggestsAndUndoes(t *testing.T) {
 }
 
 // The first run reviews each person's layer once (the sorting version is in
-// its key): capturing again queues nothing new. While the default assistant
-// is stopped, the person's layer is reviewed as the first active one.
+// its key): capturing again queues nothing new. The person's layer is a
+// global review and belongs to the default assistant, which keeps it even
+// while its conversation is stopped; the assistant's own layer waits for it.
 func TestMemorySortFirstRunIsOnceAndSurvivesAStoppedDefault(t *testing.T) {
 	f := newMemoryLayersFixture(t)
 	ctx, db := context.Background(), f.server.store
@@ -251,7 +252,7 @@ func TestMemorySortFirstRunIsOnceAndSurvivesAStoppedDefault(t *testing.T) {
 	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	jobs := count()
-	if len(jobs[f.person.ID]) != 1 || jobs[f.person.ID][0].AssistantID != f.b.ID || len(jobs[f.layerB.ID]) != 1 || len(jobs[f.layerA.ID]) != 0 {
+	if len(jobs[f.person.ID]) != 1 || jobs[f.person.ID][0].AssistantID != f.a.ID || len(jobs[f.layerB.ID]) != 1 || len(jobs[f.layerA.ID]) != 0 {
 		t.Fatalf("memory reviews = %+v", jobs)
 	}
 	text, err := f.server.assistant.MaintenancePrompt(ctx, jobs[f.person.ID][0])

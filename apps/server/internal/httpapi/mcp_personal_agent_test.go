@@ -979,10 +979,15 @@ func TestAssistantToolDescriptionsStateOnlyTheirContract(t *testing.T) {
 		}
 		collect(tool)
 		if name == "needs_you" {
-			for _, fact := range []string{"listing acknowledges them", "10 minutes", "assistant_timeout"} {
+			for _, fact := range []string{"Your items stay yours until you decide"} {
 				if !strings.Contains(tool["description"].(string), fact) {
 					t.Errorf("needs_you's description lacks %q", fact)
 				}
+			}
+			// The server no longer takes an item away on a deadline (DEV-236):
+			// the agent decides, so the description must not promise one.
+			if strings.Contains(tool["description"].(string), "assistant_timeout") {
+				t.Errorf("needs_you's description still states a server deadline")
 			}
 		}
 		for _, text := range texts {

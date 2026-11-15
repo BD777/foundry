@@ -84,6 +84,11 @@ components:
           type: boolean
         isBot:
           type: boolean
+        isOwnWrite:
+          description:
+            The message was written by the assistant itself through the source, not by a person; it
+            never starts or continues a session.
+          type: boolean
     MessageChannelTriState:
       description: A condition on a yes/no envelope field; any ignores it.
       type: string
@@ -201,6 +206,29 @@ components:
           type: array
           items:
             type: string
+    MessageChannelFollowUpFrom:
+      type: string
+      enum: [same-sender, person, anyone]
+      x-go-type: string
+    MessageChannelFollowUps:
+      description:
+        Which messages continue a conversation without a trigger word once a message matched a rule.
+        enabled turns it on; from says who may continue (same-sender, the sender of the message that
+        started the session; person, the person the assistant works for; anyone). endCommands are
+        words that stop it, matched like trigger words and never handed to the assistant. Missing
+        means enabled, same-sender and /end.
+      type: object
+      required: [enabled, from, endCommands]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        from:
+          $ref: "#/components/schemas/MessageChannelFollowUpFrom"
+        endCommands:
+          type: array
+          items:
+            type: string
     MessageChannelLimits:
       type: object
       required: [perHour, perDay, concurrency]
@@ -234,7 +262,7 @@ components:
         What the source's messages can tell apart, from its descriptor's envelope mapping. An
         empty conversationKinds means the source does not say.
       type: object
-      required: [conversationKinds, mentionsMe, fromSelf]
+      required: [conversationKinds, mentionsMe, fromSelf, threads]
       additionalProperties: false
       properties:
         conversationKinds:
@@ -244,6 +272,9 @@ components:
         mentionsMe:
           type: boolean
         fromSelf:
+          type: boolean
+        threads:
+          description: The source gives a thread id, so follow-ups can ride threads.
           type: boolean
     MessageChannelSample:
       description: A message the person makes up to try the rules on.
@@ -391,6 +422,9 @@ components:
         session:
           $ref: "#/components/schemas/MessageChannelSessionRule"
           x-go-type-skip-optional-pointer: false
+        followUps:
+          $ref: "#/components/schemas/MessageChannelFollowUps"
+          x-go-type-skip-optional-pointer: false
     MessageChannel:
       type: object
       required:
@@ -439,6 +473,9 @@ components:
           type: string
         session:
           $ref: "#/components/schemas/MessageChannelSessionRule"
+          x-go-type-skip-optional-pointer: false
+        followUps:
+          $ref: "#/components/schemas/MessageChannelFollowUps"
           x-go-type-skip-optional-pointer: false
         skillName:
           type: string
@@ -526,6 +563,9 @@ components:
           type: array
           items:
             type: string
+        conversationCount:
+          description: The source conversations the channel has messages from, still within retention.
+          type: integer
     MessageChannelWorkspace:
       description: Where the channel's sessions run, read-only for them.
       type: object
@@ -649,3 +689,186 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MessageChannelDelivery"
+        nextCursor:
+          description: Pass as cursor to read the next older page; absent when this is the last.
+          type: string
+    MessageChannelOrigin:
+      description: >
+        One turn's structured origin (DEV-234): the channel, the source conversation and thread,
+        and each message of the batch. Stored with the session input, so the Web renders the turn
+        without parsing the facts block the agent receives.
+      type: object
+      required: [channelId, channelName, source, conversation, messages, at]
+      additionalProperties: false
+      properties:
+        channelId:
+          type: string
+        channelName:
+          type: string
+        source:
+          description: The source's kind from its extension descriptor, e.g. openlark.
+          type: string
+        conversation:
+          $ref: "#/components/schemas/MessageEnvelopeConversation"
+        thread:
+          $ref: "#/components/schemas/MessageEnvelopeThread"
+        segment:
+          description: Which of the conversation's sessions this turn belongs to, from 0.
+          type: integer
+        sessionNew:
+          description: This turn started the session.
+          type: boolean
+        newReason:
+          description: "Why a new session started: first, idle, command, button, restarted."
+          type: string
+        at:
+          description: When the turn was handed over to the assistant.
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelOriginMessage"
+    MessageChannelOriginMessage:
+      description: One message of a turn, as the source sent it.
+      type: object
+      required: [id, sender, text]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+        sender:
+          $ref: "#/components/schemas/MessageEnvelopeSender"
+        text:
+          type: string
+        textTruncated:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/MessageChannelDeliveryStatus"
+        rule:
+          type: string
+    MessageChannelOriginSummary:
+      description: >
+        The channel turn a session belongs to, for the session list (DEV-234): enough to mark the
+        row and group its chat by source conversation.
+      type: object
+      required:
+        [assistantId, channelId, channelName, source, sessionKey, conversation]
+      additionalProperties: false
+      properties:
+        assistantId:
+          type: string
+        channelId:
+          type: string
+        channelName:
+          type: string
+        source:
+          type: string
+        sessionKey:
+          type: string
+        conversation:
+          $ref: "#/components/schemas/MessageEnvelopeConversation"
+        threadId:
+          type: string
+        threadIsReply:
+          type: boolean
+        segment:
+          type: integer
+        sessionNew:
+          type: boolean
+        newReason:
+          type: string
+        startedAt:
+          type: string
+        lastAt:
+          type: string
+        lastSender:
+          $ref: "#/components/schemas/MessageEnvelopeSender"
+    MessageChannelConversation:
+      description: >
+        One source conversation of a channel (DEV-234): its latest message and its sessions,
+        newest first.
+      type: object
+      required:
+        [
+          sessionKey,
+          conversation,
+          lastAt,
+          messageCount,
+          matchedCount,
+          sessionCount,
+          sessions,
+        ]
+      additionalProperties: false
+      properties:
+        sessionKey:
+          description: The conversation (and thread) key its messages carry.
+          type: string
+        conversation:
+          $ref: "#/components/schemas/MessageEnvelopeConversation"
+        lastSender:
+          $ref: "#/components/schemas/MessageEnvelopeSender"
+        lastAt:
+          type: string
+        messageCount:
+          type: integer
+        matchedCount:
+          description: Messages a rule kept and the channel handed to the assistant.
+          type: integer
+        sessionCount:
+          type: integer
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelConversationSession"
+    MessageChannelConversationSession:
+      description: "One segment of a source conversation: the assistant session it started."
+      type: object
+      required: [segment, lastAt, messageCount]
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        segment:
+          type: integer
+        new:
+          description: The segment's first message started the session.
+          type: boolean
+        reason:
+          description: "Why it started: first, idle, command, button, restarted."
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        startedAt:
+          type: string
+        lastAt:
+          type: string
+        messageCount:
+          type: integer
+    MessageChannelConversationList:
+      type: object
+      required: [conversations]
+      additionalProperties: false
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelConversation"
+        nextCursor:
+          description: Pass as cursor to read the next older page; absent when this is the last.
+          type: string
+    SessionChannel:
+      description: The message channel turns of one assistant session (DEV-234), oldest first.
+      type: object
+      required: [sessionId, turns]
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        turns:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageChannelOrigin"

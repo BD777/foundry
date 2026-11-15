@@ -21,8 +21,11 @@ func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEven
 		ID: SessionInputEventID(input.ID), SessionID: sessionID, At: input.At, Label: EventLabelUserMessage, Level: "info",
 		Message: &TranscriptMessage{ID: input.ID, At: input.At, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
 	}
-	if input.TimerFire != nil || input.SentBySessionID != "" {
-		message.Metadata = &AgentSessionEventMetadata{TimerFire: input.TimerFire, SentBySessionID: input.SentBySessionID}
+	if input.TimerFire != nil || input.SentBySessionID != "" || input.ChannelOrigin != nil {
+		message.Metadata = &AgentSessionEventMetadata{
+			TimerFire: input.TimerFire, SentBySessionID: input.SentBySessionID,
+			ChannelOrigin: input.ChannelOrigin,
+		}
 	}
 	return append(events, message)
 }

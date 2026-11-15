@@ -357,6 +357,10 @@ export function sessionTranscriptEntries(
         at: event.message.at ?? event.at,
         ...(sentBySessionId ? { sentBySessionId } : {}),
         ...(steered ? { steered } : {}),
+        ...(event.label === sessionEventLabels.userMessage &&
+        event.metadata?.channelOrigin
+          ? { channelOrigin: event.metadata.channelOrigin }
+          : {}),
       };
       const previous =
         event.message.kind === "commentary" && event.message.id

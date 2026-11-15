@@ -46,6 +46,15 @@ export const personalAgent: Translation<typeof en> = {
       role_configuration_unavailable: "请为此角色选择可用账号及运行位置。",
       role_configuration_changed: "固定的账号或项目权限已变化。",
       device_offline: "资料所在电脑离线。",
+      target_device_offline: "项目所在电脑离线，等它上线后再开始这次检查。",
+      device_offline_too_long:
+        "项目所在电脑已离线很久；项目有变化时会重新检查。",
+      workspace_archived: "项目已归档，不再需要这次检查。",
+      workspace_unavailable: "项目文件夹在它的电脑上不可用。",
+      workspace_gone: "项目已不存在。",
+      source_gone: "记忆来源已不存在。",
+      source_inactive: "记忆来源已不再启用。",
+      retry_scheduled: "检查失败，已安排重试。",
       worker_update_required: "请更新资料电脑的 Worker，以安全运行此角色。",
       source_unavailable: "来源暂不可用，或正在迁移权威位置。",
       sandbox_unavailable: "这台电脑无法提供只读沙箱。",
@@ -426,6 +435,7 @@ export const personalAgent: Translation<typeof en> = {
       nothing: "没有要你处理的事",
     },
     side: "助理概览",
+    channelConversations: "{{source}} 通道 · {{count}} 个对话",
     needsYou: {
       label: "等你处理",
       title: "等你处理",
@@ -1311,6 +1321,26 @@ export const personalAgent: Translation<typeof en> = {
         resetCommandsHint:
           "消息以这个命令开头，或命令紧跟在触发词后（「/new 内容」或「/ai /new 内容」）时，开一个新会话，命令后面的内容是新会话的第一条消息；只发命令，则下一条消息开新会话。不会在聊天里回复。",
         removeResetCommand: "删除 {{word}}",
+        followUpsTitle: "续聊",
+        followUps: "不带触发词继续聊",
+        followUpsHint:
+          "消息送到之后，同一话题里的后续消息，或者引用、回复助理处理过的消息，不用再带触发词，也会进入同一段会话。",
+        followUpsFrom: "谁能续聊",
+        followUpFroms: {
+          "same-sender": "最初发消息的人",
+          person: "只有你",
+          anyone: "任何人",
+        },
+        followUpFromHints: {
+          "same-sender": "其他人仍可以用触发词发起新的一轮。",
+          person: "只有你自己账号发的消息会接着聊。",
+          anyone: "话题里的任何消息，或回复助理的消息，都会接着聊。",
+        },
+        endCommands: "结束续聊的命令",
+        endCommandsPlaceholder: "例如 /end",
+        endCommandsHint:
+          "消息只有这个命令，或命令紧跟在触发词后时，结束续聊；不会在聊天里回复。",
+        removeEndCommand: "删除 {{word}}",
         workspaceTitle: "工作区",
         workspaceModes: {
           new: "新建工作区（推荐）",
@@ -1342,6 +1372,7 @@ export const personalAgent: Translation<typeof en> = {
           workspace: "请选择工作区。",
           idle: "请选择多久后开新会话。",
           resetCommands: "最多 5 个命令，每个是一个不超过 40 个字符的词。",
+          endCommands: "最多 5 个结束命令，每个是一个不超过 40 个字符的词。",
           tooManyRules: "地方和规则加起来最多 20 条。",
           noTriggers: "填一个触发词，例如 /ai",
           noPlace: "至少开启一个地方",
@@ -1360,6 +1391,8 @@ export const personalAgent: Translation<typeof en> = {
         open: "工作区文件",
         pending: "助理的电脑在线后会自动创建工作区。",
       },
+      openConversations: "{{count}} 个对话",
+      openConversationsPending: "对话（工作区准备中）",
       deliveries: {
         loading: "正在读取最近消息…",
         show: "最近消息",
@@ -1383,6 +1416,8 @@ export const personalAgent: Translation<typeof en> = {
         reasons: {
           no_rule_matched: "未匹配规则",
           no_rules: "没有启用的规则",
+          own_write: "助理自己写的",
+          follow_up_end: "结束续聊",
         },
         openSession: "打开对话",
         sessionNew: "新会话 · {{reason}}",
@@ -1394,6 +1429,7 @@ export const personalAgent: Translation<typeof en> = {
           command: "新会话命令",
           button: "你点了「下次开新会话」",
           restarted: "上一个会话失败或换了模型",
+          ended: "续聊已结束",
         },
         newSession: "下次开新会话",
         newSessionHint:

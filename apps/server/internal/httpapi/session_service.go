@@ -16,6 +16,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/google/uuid"
 )
 
 // Sessions start, take messages and stop through the session service
@@ -23,17 +24,10 @@ import (
 // What stays here is who may ask and where: a caller's new session
 // (resolveNewSession), and the entry points integrations (Feishu) call.
 
-// errAssistantStartsByDispatch refuses an assistant conversation starting a
-// session itself: its work goes through dispatch_item, which keeps the
-// authorized item and its owner.
-var errAssistantStartsByDispatch = invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
-
 // resolveNewSession applies, for REST (POST /api/agent-sessions) and MCP
 // (create_session) alike, who may start input's session and where it runs,
 // in this order:
 //
-//   - an assistant's conversation does not start sessions: it dispatches
-//     (errAssistantStartsByDispatch);
 //   - the session is its caller's person's; an agent's is created by its
 //     parent's person (the store fills it in);
 //   - an agent's session is its caller's child (Source "agent"), in the
@@ -41,21 +35,28 @@ var errAssistantStartsByDispatch = invalid("use dispatch_item for assistant exec
 //     (keepAgentInIssue), and names no native session by id, which could
 //     fork one the caller cannot read;
 //   - with runLikeParent, an agent's session naming no runtime or profile
-//     runs like its parent when both are in the same workspace;
+//     runs like its parent when both are in the same workspace; the
+//     assistant's helper takes its executor default instead;
 //   - a verifier's source is store.SessionSourceVerification;
 //   - a fork runs in its source's workspace, on its agent (applySessionFork);
-//   - the caller reaches that workspace as Member (workspaceRefusal);
+//   - the caller reaches that workspace as Member (workspaceRefusal); the
+//     assistant reaches the workspaces its permission package allows
+//     (assistant.Scope.CanStart);
 //   - an agent adopts a native chat only of that workspace;
 //   - with runLikeParent, a session naming no account runs under the one
 //     its workspace and channel default to (chooseSessionAccount); without,
 //     a person's request naming nothing is refused;
+//   - the assistant's helper runs on its executor role's configured
+//     default when it names no account (ApplyHelperDefaults);
 //   - it runs on an agent of that workspace (sessions.Service.ResolveDevice).
 //
 // A refusal is a statusError. MCP passes runLikeParent; REST does not.
 func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput, runLikeParent bool) error {
-	if _, err := s.paScope(ctx, actor); err == nil {
-		return errAssistantStartsByDispatch
-	}
+	// The assistant starts helpers through this same mechanism; its
+	// admission parameters are its scope, executor default and the
+	// conversation as report target and budget subject.
+	assistantScope, assistantErr := s.paScope(ctx, actor)
+	isAssistant := assistantErr == nil
 	input.CreatedByUserID = actor.AccountID()
 	if actor.Agent() {
 		if strings.TrimSpace(input.NativeSessionID) != "" {
@@ -70,7 +71,7 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 		// Elsewhere profiles belong to another device, whose own logins may
 		// not be signed in: there the session runs under an account that
 		// works on that device (chooseSessionAccount).
-		if runLikeParent && input.ProfileID == "" && input.Provider == "" {
+		if runLikeParent && !isAssistant && input.ProfileID == "" && input.Provider == "" {
 			if parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID); err == nil && input.WorkspaceID == parent.WorkspaceID {
 				switch {
 				case input.WorkerGroupID != "":
@@ -93,12 +94,30 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 		}
 	}
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
-	scope, err := s.contextScope(ctx, actor)
-	if err != nil {
-		return err
-	}
-	if err := workspaceRefusal(scope, input.WorkspaceID, store.WorkspaceRoleMember); err != nil {
-		return err
+	if isAssistant {
+		if err := assistantScope.StartRefusal(input.WorkspaceID); err != nil {
+			return err
+		}
+		// The input's id keys the run snapshot the helper's budget and
+		// run control read, so it is settled before the budget is pinned.
+		if input.InputID == "" {
+			id, err := uuid.NewV7()
+			if err != nil {
+				return &statusError{http.StatusInternalServerError, err}
+			}
+			input.InputID = id.String()
+		}
+		if _, err := s.assistant.ApplyHelperDefaults(ctx, input, nil); err != nil {
+			return err
+		}
+	} else {
+		scope, err := s.contextScope(ctx, actor)
+		if err != nil {
+			return err
+		}
+		if err := workspaceRefusal(scope, input.WorkspaceID, store.WorkspaceRoleMember); err != nil {
+			return err
+		}
 	}
 	if input.WorkerGroupID != "" {
 		if input.Model != "" || input.Provider != "" || input.ProfileID != "" || input.AgentID != "" {

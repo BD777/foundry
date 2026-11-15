@@ -456,6 +456,98 @@ test("new instructions change the runtime key; a run without them keeps it", (t)
   assert.equal(personalAgentFilesRevision(session.id), undefined);
 });
 
+// Project summaries are facts the runtime reads on demand, not startup
+// instructions: a digest change rewrites them without restarting the native
+// conversation, and the manifest removes a project's file.
+test("project summary changes keep the runtime key and remove stale files", (t) => {
+  const dir = scratch(t);
+  const session = {
+    id: "sess_pa_projects",
+    prompt: "hello",
+    workspaceId: "ws_pa_projects",
+    role: "personal_agent",
+  };
+  t.after(() => forgetPersonalAgentFiles("ws_pa_projects"));
+  const key = () => activeRuntimeKey("claude", dir, session, claudeProfile, {});
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo.\n" },
+    { path: ".foundry/projects/.manifest", content: "budget.md\nblog.md\n" },
+    { path: ".foundry/projects/budget.md", content: "# Budget\n" },
+    { path: ".foundry/projects/blog.md", content: "# Blog\n" },
+  ]);
+  const first = key();
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "projects", "budget.md"), "utf8"),
+    "# Budget\n",
+  );
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo.\n" },
+    { path: ".foundry/projects/.manifest", content: "blog.md\n" },
+    { path: ".foundry/projects/blog.md", content: "# Blog, revised\n" },
+  ]);
+  assert.equal(key(), first);
+  assert.equal(
+    existsSync(join(dir, ".foundry", "projects", "budget.md")),
+    false,
+  );
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "projects", "blog.md"), "utf8"),
+    "# Blog, revised\n",
+  );
+});
+
+// A message channel's workspace is read-only for its sessions, yet Foundry
+// writes its own facts there: the project index and summaries, never the
+// person's AGENTS.md or the assistant's skills. A digest change to those
+// facts keeps the runtime key there too.
+test("a read-only channel workspace takes Foundry's project facts only", (t) => {
+  const dir = scratch(t);
+  const session = {
+    id: "sess_pa_channel",
+    prompt: "hello",
+    workspaceId: "ws_channel",
+    role: "personal_agent",
+    workspaceAccess: "read",
+  };
+  t.after(() => forgetPersonalAgentFiles("ws_channel"));
+  const key = () => activeRuntimeKey("claude", dir, session, claudeProfile, {});
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo.\n" },
+    {
+      path: ".foundry/assistant-skills/assistant-projects/SKILL.md",
+      content:
+        "---\nname: assistant-projects\ndescription: Test project procedure.\n---\n",
+    },
+    { path: ".foundry/project-index.md", content: "# Projects\n" },
+    { path: ".foundry/projects/.manifest", content: "budget.md\n" },
+    { path: ".foundry/projects/budget.md", content: "# Budget\n" },
+  ]);
+  assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+  assert.equal(
+    existsSync(join(dir, ".foundry", "assistant-skills", "assistant-projects")),
+    false,
+  );
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "project-index.md"), "utf8"),
+    "# Projects\n",
+  );
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "projects", "budget.md"), "utf8"),
+    "# Budget\n",
+  );
+  const first = key();
+  writePersonalAgentFiles(session, dir, [
+    { path: ".foundry/project-index.md", content: "# Projects, revised\n" },
+    { path: ".foundry/projects/.manifest", content: "budget.md\n" },
+    { path: ".foundry/projects/budget.md", content: "# Budget, revised\n" },
+  ]);
+  assert.equal(key(), first);
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "project-index.md"), "utf8"),
+    "# Projects, revised\n",
+  );
+});
+
 test("only a personal_agent session takes the assistant's files", (t) => {
   const dir = scratch(t);
   const chat = { id: "sess_chat_1", prompt: "hi", workspaceId: "ws_1" };

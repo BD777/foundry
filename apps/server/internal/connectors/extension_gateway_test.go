@@ -603,3 +603,209 @@ func TestDeviceNetworkGatewayForwardsThroughTheSessionDeviceWithoutAuditSecrets(
 		t.Fatalf("device never probed error = %v", err)
 	}
 }
+
+// OpenLark's agent API catalogues its write routes under /agent/v1 and its
+// replies and sends answer with the created message id at the top level (the
+// bodies are the ones open-lark's own route tests record). A descriptor that
+// declares those routes records the created id before the response returns,
+// so a message channel can drop the echo of the assistant's own reply.
+func TestExtensionGatewayRecordsOpenLarkCreatedMessages(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlitestore.OpenWithOptions(filepath.Join(t.TempDir(), "db"), sqlitestore.Options{SecretKeyPath: filepath.Join(t.TempDir(), "key")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	recorded := map[string]string{
+		"/agent/v1/messages/om_message/replies":    `{"feedId":"oc_chat","messageId":"om_reply","replyToMessageId":"om_message","threadRootMessageId":"om_root"}`,
+		"/agent/v1/conversations/oc_chat/messages": `{"messageId":"om_sent"}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/agent/v1/capabilities":
+			_, _ = w.Write([]byte(`{"version":"0.3.0","token":{"scope":"full"}}`))
+		case "/agent/v1/accounts":
+			_, _ = w.Write([]byte(`{"accounts":[{"id":"42","name":"Ada"}],"activeId":"42"}`))
+		case "/agent/v1":
+			_, _ = w.Write([]byte(`{"routes":[
+				{"method":"GET","path":"/agent/v1/capabilities","access":"read","domain":"im"},
+				{"method":"POST","path":"/agent/v1/messages/:messageId/replies","access":"write","domain":"im"},
+				{"method":"POST","path":"/agent/v1/conversations/:feedId/messages","access":"write","domain":"im"}
+			]}`))
+		default:
+			if body, ok := recorded[r.URL.Path]; ok && r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(body))
+				return
+			}
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	descriptor := acmeExtensionDescriptor()
+	descriptor.ServerHeld.Probe[0].Path = "/agent/v1/capabilities"
+	descriptor.ServerHeld.Probe[1].Path = "/agent/v1/accounts"
+	descriptor.ServerHeld.Probe[2] = store.ConnectorServerHeldProbe{
+		ID: "routes", Method: "GET", Path: "/agent/v1",
+		Extract: store.ConnectorServerHeldProbeExtract{
+			Routes: store.ConnectorServerHeldRoutesExtract{
+				Items: "/routes", Method: "/method", Path: "/path", Access: "/access", Domain: "/domain",
+			},
+		},
+	}
+	descriptor.ServerHeld.Upstream.PathPrefix = "/agent/v1"
+	descriptor.ServerHeld.Writes = []store.ConnectorServerHeldWrite{
+		{Method: "POST", Path: "/agent/v1/messages/:messageId/replies", CreatedMessageID: "/messageId"},
+		{Method: "POST", Path: "/agent/v1/conversations/:feedId/messages", CreatedMessageID: "/messageId"},
+	}
+	service := externalaccounts.NewService(st, st, externalaccounts.NewRegistry())
+	service.Extensions = externalaccounts.NewExtensionTestClient(upstream.Client())
+	instance, err := service.CreateExtensionInstance(ctx, "alice", descriptor, store.ConnectorServerHeldInstanceInput{
+		Label:  "OpenLark production",
+		Fields: map[string]string{"baseUrl": upstream.URL, "readToken": "fixture-secret", "account": "42"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{instance.AccountID}); err != nil {
+		t.Fatal(err)
+	}
+	session := store.AgentSession{ID: "session-alice", DeviceID: "device-alice", WorkspaceID: "workspace-a", CreatedByUserID: "alice", Status: "running"}
+	fake := &cfGatewayStore{Store: st, session: session}
+	extensionGateway := NewExtensionGateway(fake, service, func(context.Context, string, string) (store.ConnectorDescriptor, error) {
+		return descriptor, nil
+	})
+	account, err := st.GetExternalAccount(ctx, instance.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: session.ID, DeviceID: session.DeviceID, WorkspaceID: session.WorkspaceID, UserID: "alice", Account: account,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/agent/v1/messages/om_message/replies", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusAccepted || response.Body.String() != recorded["/agent/v1/messages/om_message/replies"] {
+		t.Fatalf("reply: %d %s", response.Code, response.Body.String())
+	}
+	response = serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/agent/v1/conversations/oc_chat/messages", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusAccepted || response.Body.String() != recorded["/agent/v1/conversations/oc_chat/messages"] {
+		t.Fatalf("send: %d %s", response.Code, response.Body.String())
+	}
+	events, err := st.ListExternalAccountEvents(ctx, account.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, event := range events {
+		if event.Kind != ExtensionWriteCreatedMessage || event.SessionID != session.ID {
+			continue
+		}
+		var detail struct {
+			MessageID string `json:"messageId"`
+			Route     string `json:"route"`
+		}
+		if err := json.Unmarshal([]byte(event.Detail), &detail); err != nil {
+			t.Fatalf("event detail: %s (%v)", event.Detail, err)
+		}
+		got[detail.MessageID] = detail.Route
+	}
+	if got["om_reply"] != "/agent/v1/messages/:messageId/replies" || got["om_sent"] != "/agent/v1/conversations/:feedId/messages" {
+		t.Fatalf("created messages not recorded: %+v (events %+v)", got, events)
+	}
+}
+
+// A write route whose descriptor names the created message id records it
+// before the response returns, so a message channel can drop its own echo.
+func TestExtensionGatewayRecordsTheMessageAWriteCreates(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlitestore.OpenWithOptions(filepath.Join(t.TempDir(), "db"), sqlitestore.Options{SecretKeyPath: filepath.Join(t.TempDir(), "key")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/capabilities":
+			_, _ = w.Write([]byte(`{"token":{"scope":"full"}}`))
+		case "/api/accounts":
+			_, _ = w.Write([]byte(`{"accounts":[{"id":"42","name":"Ada"}]}`))
+		case "/api/routes":
+			_, _ = w.Write([]byte(`{"version":"1","routes":[
+				{"method":"GET","path":"/api/read","access":"read","domain":"im"},
+				{"method":"POST","path":"/api/send","access":"write","domain":"im"}
+			]}`))
+		case "/api/send":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			_, _ = w.Write([]byte(`{"messageId":"om_created","feedId":"oc_1"}`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	descriptor := acmeExtensionDescriptor()
+	descriptor.ServerHeld.Writes = []store.ConnectorServerHeldWrite{
+		{Method: "POST", Path: "/api/send", CreatedMessageID: "/messageId"},
+	}
+	service := externalaccounts.NewService(st, st, externalaccounts.NewRegistry())
+	service.Extensions = externalaccounts.NewExtensionTestClient(upstream.Client())
+	instance, err := service.CreateExtensionInstance(ctx, "alice", descriptor, store.ConnectorServerHeldInstanceInput{
+		Label:  "Acme production",
+		Fields: map[string]string{"baseUrl": upstream.URL, "readToken": "fixture-secret", "account": "42"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{instance.AccountID}); err != nil {
+		t.Fatal(err)
+	}
+	session := store.AgentSession{ID: "session-alice", DeviceID: "device-alice", WorkspaceID: "workspace-a", CreatedByUserID: "alice", Status: "running"}
+	fake := &cfGatewayStore{Store: st, session: session}
+	extensionGateway := NewExtensionGateway(fake, service, func(context.Context, string, string) (store.ConnectorDescriptor, error) {
+		return descriptor, nil
+	})
+	account, err := st.GetExternalAccount(ctx, instance.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: session.ID, DeviceID: session.DeviceID, WorkspaceID: session.WorkspaceID, UserID: "alice", Account: account,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/send", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("send: %d %s", response.Code, response.Body.String())
+	}
+	events, err := st.ListExternalAccountEvents(ctx, account.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Kind != ExtensionWriteCreatedMessage || event.SessionID != session.ID {
+			continue
+		}
+		var detail struct {
+			MessageID string `json:"messageId"`
+			Method    string `json:"method"`
+			Route     string `json:"route"`
+		}
+		if err := json.Unmarshal([]byte(event.Detail), &detail); err != nil {
+			t.Fatalf("event detail: %s (%v)", event.Detail, err)
+		}
+		if detail.MessageID == "om_created" && detail.Method == http.MethodPost && detail.Route == "/api/send" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the created message was not recorded: %+v", events)
+	}
+}

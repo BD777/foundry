@@ -1,15 +1,28 @@
 import { Alert } from "../../../components/ui/alert";
 import {
   Archive,
+  ChevronDown,
   ChevronRight,
   FolderPlus,
+  Hash,
   Inbox,
+  MessagesSquare,
   Plus,
+  RotateCcw,
   Search,
+  UserRound,
 } from "lucide-react";
-import { memo, useId, useMemo, useRef, useState } from "react";
+import { memo, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
+import { ToastFeedback } from "../../../components/ui/toast";
+import { startMessageChannelNewSession } from "../../../api";
+import { serverErrorText } from "../../../lib/errors";
+import { clockTime } from "../../../lib/time-format";
+import {
+  channelChatGroups,
+  type ChannelChatGroup,
+} from "./channel-chat-groups";
 import { FieldHint, TextInput } from "../../../components/ui/field";
 import { ChatArchiveDialog } from "../archive/chat-archive-dialog";
 import { navigateToArchivedChats } from "../../../lib/in-app-navigation";
@@ -51,6 +64,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   archiveCount = 0,
   readOnly = false,
   newChatDisabledReason,
+  channelWorkspace = false,
 }: {
   workspaceId: string;
   archiveCount?: number;
@@ -67,6 +81,11 @@ export const ChatSidebar = memo(function ChatSidebar({
   readOnly?: boolean;
   /** Why no chat can be started now, said under the list's header. */
   newChatDisabledReason?: string;
+  /**
+   * A message channel's workspace (DEV-234): its sessions grouped by source
+   * conversation, no new chat and no user groups.
+   */
+  channelWorkspace?: boolean;
 }) {
   const { t } = useTranslation("chat");
   const listId = useId();
@@ -79,12 +98,13 @@ export const ChatSidebar = memo(function ChatSidebar({
     selectionAfterArchive?: string;
   }>();
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
-  const layout = useChatLayout(workspaceId);
-  const editable = layout.ready && !readOnly;
+  const layout = useChatLayout(workspaceId, !channelWorkspace);
+  const editable = layout.ready && !readOnly && !channelWorkspace;
   const newChatReasonId = `${listId}-new-chat-reason`;
   // Groups not read yet: the list's order is not known, so it waits.
-  // Without a workspace nothing is read, and nothing waits.
-  const reading = Boolean(workspaceId) && !layout.error;
+  // Without a workspace nothing is read, and nothing waits. A channel
+  // workspace groups its sessions itself, so it has no layout to wait for.
+  const reading = Boolean(workspaceId) && !channelWorkspace && !layout.error;
   const firstLoad = reading && !layout.loaded;
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
   const groupState = useMemo(
@@ -110,6 +130,53 @@ export const ChatSidebar = memo(function ChatSidebar({
     () => filterChatGroups(sorted, groupState, query),
     [sorted, groupState, query],
   );
+  // A channel workspace: its source conversations, not the person's groups.
+  const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [renewing, setRenewing] = useState<string>();
+  const [renewNote, setRenewNote] = useState("");
+  const [renewError, setRenewError] = useState("");
+  const channelGroups = useMemo(() => {
+    if (!channelWorkspace) return [];
+    const search = query.trim().toLocaleLowerCase();
+    const matching = search
+      ? sorted.filter(
+          (chat) =>
+            chat.title.toLocaleLowerCase().includes(search) ||
+            (chat.channelOrigin?.conversation.name ?? "")
+              .toLocaleLowerCase()
+              .includes(search),
+        )
+      : sorted;
+    return channelChatGroups(matching);
+  }, [channelWorkspace, sorted, query]);
+  const toggleChannel = (key: string) =>
+    setCollapsedChannels((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  async function startChannelSession(group: ChannelChatGroup): Promise<void> {
+    const origin = group.chats[0]?.channelOrigin;
+    if (!origin || renewing) return;
+    setRenewing(group.key);
+    setRenewNote("");
+    setRenewError("");
+    try {
+      await startMessageChannelNewSession(
+        origin.assistantId,
+        origin.channelId,
+        group.sessionKey,
+      );
+      setRenewNote(t("channelGroups.nextSessionDone"));
+    } catch (reason) {
+      setRenewError(serverErrorText(reason));
+    } finally {
+      setRenewing(undefined);
+    }
+  }
   // "Needs me": a flat list of the chats that wait for the person.
   const [needsMe, setNeedsMe] = useState(false);
   const needing = useMemo(() => chatsNeedingMe(sorted), [sorted]);
@@ -218,29 +285,47 @@ export const ChatSidebar = memo(function ChatSidebar({
             />
           ) : null}
         </div>
-        <Button
-          aria-label={t("groups.new")}
-          className={sideListAction}
-          title={t("groups.new")}
-          disabled={!editable}
-          onClick={() => createGroup()}
-          size="icon"
-          variant="icon"
-        >
-          <FolderPlus size={15} />
-        </Button>
-        <Button
-          aria-label={t("list.newChat")}
-          aria-describedby={newChatDisabledReason ? newChatReasonId : undefined}
-          className={sideListAction}
-          disabled={readOnly || !!newChatDisabledReason}
-          onClick={onNewChat}
-          size="icon"
-          variant="icon"
-        >
-          <Plus size={15} />
-        </Button>
+        {channelWorkspace ? null : (
+          <>
+            <Button
+              aria-label={t("groups.new")}
+              className={sideListAction}
+              title={t("groups.new")}
+              disabled={!editable}
+              onClick={() => createGroup()}
+              size="icon"
+              variant="icon"
+            >
+              <FolderPlus size={15} />
+            </Button>
+            <Button
+              aria-label={t("list.newChat")}
+              aria-describedby={
+                newChatDisabledReason ? newChatReasonId : undefined
+              }
+              className={sideListAction}
+              disabled={readOnly || !!newChatDisabledReason}
+              onClick={onNewChat}
+              size="icon"
+              variant="icon"
+            >
+              <Plus size={15} />
+            </Button>
+          </>
+        )}
       </div>
+      {renewNote || renewError ? (
+        <div className="px-3.5 pb-2">
+          <ToastFeedback
+            title={
+              renewError ? t("channelGroups.nextSessionFailed") : renewNote
+            }
+            tone={renewError ? "error" : "success"}
+          >
+            {renewError || undefined}
+          </ToastFeedback>
+        </div>
+      ) : null}
       {newChatDisabledReason ? (
         <FieldHint id={newChatReasonId} className="mt-0 px-4 pb-2">
           {newChatDisabledReason}
@@ -312,7 +397,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 </p>
               )
             ) : null}
-            {needsMe
+            {needsMe || channelWorkspace
               ? null
               : filtered.groups.map((group) => (
                   <ChatGroupSection
@@ -368,7 +453,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                     )}
                   </ChatGroupSection>
                 ))}
-            {!needsMe && groupState.groups.length > 0 ? (
+            {!needsMe && !channelWorkspace && groupState.groups.length > 0 ? (
               <div
                 className={cn(
                   "px-2.5 py-1.5 text-xs text-ink-muted",
@@ -381,8 +466,11 @@ export const ChatSidebar = memo(function ChatSidebar({
                 {t("list.ungrouped")}
               </div>
             ) : null}
-            {needsMe ? null : filtered.ungrouped.map(renderChat)}
+            {needsMe || channelWorkspace
+              ? null
+              : filtered.ungrouped.map(renderChat)}
             {!needsMe &&
+            !channelWorkspace &&
             query.trim() &&
             !filtered.groups.length &&
             !filtered.ungrouped.length ? (
@@ -390,6 +478,25 @@ export const ChatSidebar = memo(function ChatSidebar({
                 {t("list.noMatches")}
               </p>
             ) : null}
+            {needsMe || !channelWorkspace ? null : channelGroups.length ? (
+              channelGroups.map((group) => (
+                <ChannelConversationSection
+                  collapsed={collapsedChannels.has(group.key)}
+                  group={group}
+                  key={group.key}
+                  onNewSession={() => void startChannelSession(group)}
+                  onToggle={() => toggleChannel(group.key)}
+                  renewDisabled={renewing !== undefined}
+                  renewing={renewing === group.key}
+                >
+                  {group.chats.map(renderChat)}
+                </ChannelConversationSection>
+              ))
+            ) : (
+              <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
+                {query.trim() ? t("list.noMatches") : t("channelGroups.empty")}
+              </p>
+            )}
           </>
         )}
       </ScrollArea>
@@ -446,3 +553,101 @@ export const ChatSidebar = memo(function ChatSidebar({
     </aside>
   );
 });
+
+/**
+ * One source conversation of a channel workspace (DEV-234): its name and
+ * latest sender/time, its sessions, and the choice that its next message
+ * starts a new session.
+ */
+function ChannelConversationSection({
+  group,
+  collapsed,
+  onToggle,
+  onNewSession,
+  renewing,
+  renewDisabled,
+  children,
+}: {
+  group: ChannelChatGroup;
+  collapsed: boolean;
+  onToggle: () => void;
+  onNewSession: () => void;
+  renewing: boolean;
+  renewDisabled: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation("chat");
+  const contentId = useId();
+  const kind = group.conversation.kind;
+  const name =
+    group.conversation.name ||
+    t(`channelGroups.kind.${kind}`, { defaultValue: kind });
+  const Icon =
+    kind === "channel" ? Hash : kind === "group" ? MessagesSquare : UserRound;
+  const meta = [
+    group.lastSender,
+    group.lastAt ? clockTime(group.lastAt, { date: "short" }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <section aria-label={name} className="fdy-chat-group mb-1.5">
+      <div className="group/channel flex min-w-0 items-center gap-1">
+        <Button
+          aria-controls={contentId}
+          aria-expanded={!collapsed}
+          className="min-w-0 flex-1 justify-start gap-1.5 rounded-md px-1 py-[7px] text-xs text-ink-muted active:scale-100"
+          onClick={onToggle}
+          variant="ghost"
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          <Icon aria-hidden="true" size={14} />
+          <span className="grid min-w-0 flex-1 gap-0.5 text-left">
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="flex-none text-2xs text-ink-faint">
+                {group.source}
+              </span>
+              <span aria-hidden="true" className="flex-none text-ink-faint">
+                ·
+              </span>
+              <span
+                className="min-w-0 truncate font-medium text-ink"
+                title={name}
+              >
+                {name}
+              </span>
+            </span>
+            {meta ? (
+              <span
+                className="min-w-0 truncate text-2xs text-ink-faint"
+                title={meta}
+              >
+                {meta}
+              </span>
+            ) : null}
+          </span>
+        </Button>
+        <Tooltip content={t("channelGroups.nextSessionHint")} variant="hint">
+          <Button
+            aria-label={t("channelGroups.nextSession")}
+            busy={renewing}
+            className="size-6 flex-none"
+            disabled={renewDisabled || !group.sessionKey}
+            onClick={onNewSession}
+            size="icon"
+            variant="ghost"
+          >
+            <RotateCcw aria-hidden="true" size={12} />
+          </Button>
+        </Tooltip>
+      </div>
+      <div
+        className="ml-3 border-l border-line pl-[3px]"
+        hidden={collapsed}
+        id={contentId}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}

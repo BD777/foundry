@@ -2,6 +2,17 @@
 
 状态：已部署 dev（Server train16-20261113），配置已切换并自检通过；Codex TokenHub provider 已撤下全部设备（byte-dev 最后撤下，2026-11-13T22:00Z）。代码已并入共享树 main，等 22:00 提交窗口；Worker 部分随 Worker `0.5.7-dev.357.g8f394c91.local.1794593951`（train18）上线。待人工验收。已合入 main（PR #268）。
 
+2026-11-16 Agent 代验收：**通过**（范围：Model providers、Worker 组、以及本验收会话在默认执行组上的真实运行）。未覆盖：未单独复验“已在运行的 Codex DeepSeek 会话不受影响”（历史行为）。
+
+## Agent 代验收（2026-11-16）
+
+来源：编排会话 `sess_1794464313271186377` 转述本人委托。
+
+- `list_model_providers`：Tencent TokenHub (Claude) `prof_2c4c55cc…` 在 7 台设备上，6 台在线设备的检查均为 passed；Tencent TokenHub (Codex) `prof_a8985449…` 的设备列表为空。
+- `worker_groups`：`deepseek-flash-1017` 两个成员均为 `claude` runtime、`prof_2c4c55cc…`、`xhigh`、TPM 1M / 6M。
+- 步骤 3：本验收会话 `sess_1794760093665392985`（foundry 工作区、默认执行组）的 runtime 为 `claude`，profile 为 `prof_2c4c55cc…` / Tencent TokenHub (Claude)，model 为 `deepseek-v4.1-flash-1017`；`usage_requests` 有 cache read（例如 29568）。会话标题栏 UI 未另外打开查看，但会话与用量数据来自线上库。
+- 步骤 4 的“已在运行的 Codex 会话不受影响”未单独复验。
+
 ## 问题
 
 本人依据 [DeepSeek harness A/B](../research/deepseek-harness-ab.md) 做了决定：同一 `deepseek-v4.1-flash-1017` 上，Claude runtime 中位 57 s，Codex 90 s；每个解决任务 $0.019 对 $0.030；盲评 4.59 对 4.37；两组都是 27/27 通过。执行默认和 executor 改用 Claude runtime 的 TokenHub provider（DEV-209），不再使用 Codex × DeepSeek 模式（「那就改成claude，然后把我的那些executor也改成用claude的那种，那就codex Deepseek的模式就可以去掉了」）。
