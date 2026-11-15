@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   insidePath,
   isInside,
   relativeInside,
+  samePath,
   tildePath,
   within,
 } from "../dist/platform/paths.js";
@@ -48,4 +52,21 @@ test("tildePath shows paths in the home folder as a person types them", () => {
   assert.equal(tildePath("/home/me", "/home/me"), "~");
   assert.equal(tildePath("/home/meadow/x", "/home/me"), "/home/meadow/x");
   assert.equal(tildePath("/opt/x", "/home/me"), "/opt/x");
+});
+
+test("samePath follows a linked path to the directory it names", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "foundry-same-path-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const real = join(root, "real");
+  const linked = join(root, "linked");
+  const other = join(root, "other");
+  await mkdir(real);
+  await mkdir(other);
+  await symlink(real, linked);
+  assert.equal(samePath(real, real), true);
+  assert.equal(samePath(real, `${real}/`), true);
+  assert.equal(samePath(linked, real), true);
+  assert.equal(samePath(other, real), false);
+  assert.equal(samePath(join(root, "missing"), real), false);
+  assert.equal(samePath("", real), false);
 });
