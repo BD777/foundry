@@ -1,5 +1,5 @@
-import { ApiError, isAbortError } from "../../../api";
-import { i18n } from "../../../i18n";
+import { ApiError, isAbortError } from "../../api";
+import { i18n } from "../../i18n";
 
 export function deviceFileErrorKey(
   error: unknown,

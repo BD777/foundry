@@ -1,6 +1,7 @@
 import type {
   ConnectorDescriptor,
   ConnectorSignInMethod,
+  ExternalAccessLevel,
   LocalizedText,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../i18n";
@@ -14,6 +15,28 @@ export function localized(text: string, texts?: LocalizedText): string {
   if (!texts) return text;
   const language = i18n.language;
   return texts[language] ?? texts[language.split("-")[0]!] ?? text;
+}
+
+/**
+ * A workspace access level in the connector's own words (its access file on
+ * the server): the label, what it allows and when to choose it, and which
+ * provider permissions to allow when re-authorizing. A name the server's
+ * levels do not list is shown as it is.
+ */
+export function accessLevelWords(
+  levels: readonly ExternalAccessLevel[] | undefined,
+  name: string | undefined,
+): { label: string; description: string; grantHint: string } {
+  const level = levels?.find((l) => l.name === name);
+  return {
+    label: level?.label ? localized(level.label, level.labels) : (name ?? ""),
+    description: level?.description
+      ? localized(level.description, level.descriptions)
+      : "",
+    grantHint: level?.grantHint
+      ? localized(level.grantHint, level.grantHints)
+      : "",
+  };
 }
 
 /** The connector's name. */

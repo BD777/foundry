@@ -127,20 +127,24 @@ func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionID, s
 	if deviceOwner != sessionOwner {
 		return nil, nil
 	}
-	var policy Policy
+	// Without a stored session (the Skills page, the composer) the policy is
+	// that of a new conversation sessionOwner starts there: in an
+	// assistant's home, its permission package.
+	session := store.AgentSession{WorkspaceID: workspaceID, DeviceID: deviceID, CreatedByUserID: sessionOwner}
 	if sessionID != "" {
-		session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+		stored, err := s.store.GetAgentSessionSummary(ctx, sessionID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}
 		if err == nil {
-			if policy, err = ResolvePolicy(ctx, s.store, session); err != nil {
-				return nil, err
-			}
+			session = stored
 		}
 	}
+	policy, err := ResolvePolicy(ctx, s.store, session)
+	if err != nil {
+		return nil, err
+	}
 	var candidates []store.ExternalAccount
-	var err error
 	if policy.PersonalAgent() {
 		candidates, err = s.store.ListExternalAccounts(ctx, sessionOwner)
 	} else {

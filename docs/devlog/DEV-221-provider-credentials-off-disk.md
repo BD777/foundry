@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #267）。
+已合入 main（PR #267，squash 602765a0）。
 
 ## Problem
 

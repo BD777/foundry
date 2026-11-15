@@ -180,7 +180,25 @@ function hostMounts(
       if (!roots.some((root) => within(root, target))) roots.push(target);
     }
   }
-  for (const path of roots) mounts.push("--ro-bind", path, path);
+  // A hidden home stays hidden under a root that holds it (/opt linking to
+  // the disk the homes are on): those roots first, then an empty home, then
+  // the roots inside it (Foundry's tools, the runtime).
+  const holdsHome = (root: string) =>
+    !options.home && existsSync(home) && within(root, home);
+  for (const path of roots.filter(holdsHome))
+    mounts.push("--ro-bind", path, path);
+  if (roots.some(holdsHome)) {
+    mounts.push("--tmpfs", home);
+    masks.push(home);
+  }
+  for (const path of roots.filter((root) => !holdsHome(root)))
+    mounts.push("--ro-bind", path, path);
+  // A root reached through a linked parent (a home at /home/me linking to
+  // /data/home/me holds Foundry's tools folder) is also mounted where the
+  // worker names it: PATH entries and tool links use that name.
+  for (const path of systemRootPaths)
+    if (!lstatSync(path).isSymbolicLink() && canonical(path) !== path)
+      mounts.push("--ro-bind", canonical(path), path);
   const visible = (path: string) =>
     roots.some((root) => within(root, path)) ||
     (options.home && within(home, path));

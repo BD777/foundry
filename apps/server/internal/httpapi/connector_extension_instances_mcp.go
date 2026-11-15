@@ -407,6 +407,16 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 		}
 		text, err := encodeJSON(connectorInstanceSummaryOf(revoked, descriptor))
 		return text, redactConnectorInstanceError(err, secrets)
+	case "delete":
+		if err := s.connectors.ServerHeld.DeleteExtensionInstance(
+			call.r.Context(), caller.ownerID, kind, instanceID, caller.ownerID,
+		); err != nil {
+			return "", redactConnectorInstanceError(err, secrets)
+		}
+		text, err := encodeJSON(map[string]string{
+			"status": "deleted", "kind": kind, "instanceId": instanceID,
+		})
+		return text, err
 	case "bind_workspace", "unbind_workspace":
 		workspaceID := mcpArgString(call.args, "workspaceId")
 		if err := s.requireConnectorInstanceWorkspace(call.r.Context(), caller, workspaceID); err != nil {
@@ -427,6 +437,6 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 		})
 		return text, err
 	default:
-		return "", &statusError{http.StatusBadRequest, errors.New("action must be list, probe, create, update, check, revoke, bind_workspace or unbind_workspace")}
+		return "", &statusError{http.StatusBadRequest, errors.New("action must be list, probe, create, update, check, revoke, delete, bind_workspace or unbind_workspace")}
 	}
 }

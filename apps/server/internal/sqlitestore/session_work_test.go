@@ -627,3 +627,34 @@ func TestNewerNativeTerminalEventRepairsAcknowledgedRunningInventory(t *testing.
 		t.Fatalf("newer terminal evidence lost %+v %v", repaired, err)
 	}
 }
+
+// A scheduled turn that stops or removes its own schedule is not canceled by
+// it; anyone else's stop of the same run is.
+func TestWorkControlFromTheRunningTurnLetsItFinish(t *testing.T) {
+	ctx := context.Background()
+	running := func(t *testing.T) (*Store, store.SessionWork) {
+		s, w := workFixture(t)
+		if err := s.ObserveSessionWork(ctx, w.ID, store.WorkObservation{Status: "running", At: "2026-11-13T22:00:00Z", RunID: "wrun_1", ExecutionSessionID: "session", ConfirmedRevision: w.Revision}); err != nil {
+			t.Fatal(err)
+		}
+		return s, w
+	}
+	finishRun := func(s *Store) string {
+		list, _ := s.ListSessionWork(ctx, "thread", "")
+		return list.Items[0].FinishRunID
+	}
+	s, w := running(t)
+	if _, err := s.ControlSessionWork(ctx, "thread", "session", store.WorkControlInput{ID: w.ID, Action: "remove", ExpectedRevision: w.Revision, IdempotencyKey: "self", RequestedBySessionID: "session"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := finishRun(s); got != "wrun_1" {
+		t.Fatalf("own run would be canceled: finishRunId=%q", got)
+	}
+	s, w = running(t)
+	if _, err := s.ControlSessionWork(ctx, "thread", "session", store.WorkControlInput{ID: w.ID, Action: "stop", ExpectedRevision: w.Revision, IdempotencyKey: "other", RequestedBySessionID: "sess_other"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := finishRun(s); got != "" {
+		t.Fatalf("another session's stop spared the run: finishRunId=%q", got)
+	}
+}

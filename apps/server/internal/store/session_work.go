@@ -48,13 +48,17 @@ type SessionWork struct {
 	Title              string                 `json:"title"`
 	Management         string                 `json:"management"`
 	DesiredState       string                 `json:"desiredState"`
-	Revision           int64                  `json:"revision"`
-	Generation         int64                  `json:"generation"`
-	CreatedAt          string                 `json:"createdAt"`
-	UpdatedAt          string                 `json:"updatedAt"`
-	Spec               WorkSpec               `json:"spec"`
-	Observation        WorkObservation        `json:"observation"`
-	AllowedActions     []string               `json:"allowedActions"`
+	// FinishRunID is a schedule's run that asked, from its own turn, for this
+	// stop or removal: the turn is not canceled, and the control is
+	// confirmed once it ends.
+	FinishRunID    string          `json:"finishRunId,omitempty"`
+	Revision       int64           `json:"revision"`
+	Generation     int64           `json:"generation"`
+	CreatedAt      string          `json:"createdAt"`
+	UpdatedAt      string          `json:"updatedAt"`
+	Spec           WorkSpec        `json:"spec"`
+	Observation    WorkObservation `json:"observation"`
+	AllowedActions []string        `json:"allowedActions"`
 }
 
 type WorkSpec struct {
@@ -106,6 +110,9 @@ type WorkControlInput struct {
 	Action                    string `json:"action"`
 	ExpectedRevision          int64  `json:"expectedRevision,omitempty"`
 	IdempotencyKey            string `json:"idempotencyKey"`
+	// RequestedBySessionID is the agent session that asked for the control,
+	// set by the server from the caller's token, never from the request.
+	RequestedBySessionID string `json:"-"`
 }
 type SessionWorkScope struct {
 	ID              string `json:"id"`

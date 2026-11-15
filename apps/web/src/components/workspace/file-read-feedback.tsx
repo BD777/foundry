@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { deviceFileErrorMessage } from "./device-file-request";
-import { Alert } from "../../../components/ui/alert";
-import { Button } from "../../../components/ui/button";
+import { Alert } from "../ui/alert";
+import { Button } from "../ui/button";
 
 export function FileReadFeedback({
   error,

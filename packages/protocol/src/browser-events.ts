@@ -224,7 +224,9 @@ export interface WorkspaceMembersUpdatedPayload {
 export type FoundryDataField =
   | Exclude<keyof FoundryDataProjection, "workspace">
   // The library skills of the workspace, for the composer's menu.
-  | "workspaceSkills";
+  | "workspaceSkills"
+  // The skills the connectors granted to the workspace bring, by connector.
+  | "connectorSkills";
 
 /**
  * Workspace data no other event carries changed: of one workspace, or of

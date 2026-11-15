@@ -121,11 +121,17 @@ func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gat
 				need.Write = true
 				need.Detail = &CloudflareWriteDetail{WorkspaceID: lease.Session.WorkspaceID, Method: method, Path: cloudflareWriteAuditPath(path), Result: "refused"}
 			}
-			return need, &gateway.Denial{Reason: RefusalPathNotAllowed, Message: method + " " + cloudflareWriteAuditPath(path) + " is outside what Foundry's Cloudflare Zero Trust access allows"}
+			return need, &gateway.Denial{Reason: RefusalPathNotAllowed, Message: method + " " + cloudflareWriteAuditPath(path) + " is outside what Foundry's Cloudflare Zero Trust access allows: " + cloudflareRoutesText(func(m string, r externalaccounts.AccessRoute) bool {
+				return strings.HasPrefix(r.Path, "/accounts/") && (m == http.MethodGet) == (method == http.MethodGet)
+			})}
 		}
 		call.zeroTrust = &zeroTrust
-		need.Level = externalaccounts.CloudflareAccessZeroTrust
-		need.Resource = zeroTrust.account
+		need.Level = zeroTrust.level
+		// Holdings names the bound zones' accounts only at a level that
+		// reaches them; below it the refusal is the level, not "not bound".
+		if !cloudflareLevelBelow(lease.Held.Level, zeroTrust.level) {
+			need.Resource = zeroTrust.account
+		}
 		need.Write = zeroTrust.write
 		if zeroTrust.write {
 			detail := &CloudflareWriteDetail{WorkspaceID: lease.Session.WorkspaceID, Method: method, Path: cloudflareWriteAuditPath(path), Result: "refused"}
@@ -152,7 +158,8 @@ func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gat
 		if err := validateCloudflareRead(path, query); err != nil {
 			return need, asDenial(err)
 		}
-		need.Level = externalaccounts.CloudflareAccessRead
+		route, _ := matchCloudflareRoute(method, path)
+		need.Level = route.Level
 		if path != "/zones" {
 			call.zone = strings.Split(strings.TrimPrefix(path, "/"), "/")[1]
 			need.Resource = call.zone
@@ -185,23 +192,15 @@ func (g *CloudflareGateway) Classify(r *http.Request, lease *gateway.Lease) (gat
 	}
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	if len(parts) < 3 || parts[0] != "zones" || !cloudflareZoneID.MatchString(parts[1]) {
-		return need, &gateway.Denial{Reason: RefusalPathNotAllowed, Message: fmt.Sprintf("%s %s is outside what a workspace's Cloudflare access allows. DNS edit allows %s in the workspace's bound zones; other changes stay with the person in the Cloudflare dashboard", method, cloudflareWriteAuditPath(path), cloudflareDNSEditPaths)}
+		return need, &gateway.Denial{Reason: RefusalPathNotAllowed, Message: fmt.Sprintf("%s %s is outside what a workspace's Cloudflare access allows. Zone changes it allows in the workspace's bound zones: %s; other changes stay with the person in the Cloudflare dashboard", method, cloudflareWriteAuditPath(path), cloudflareZoneChangesText())}
 	}
 	call.zone, call.rest = parts[1], parts[2:]
 	need.Resource = call.zone
-	// The level whose rules allow the change; the session's own is the one
-	// asked first.
-	levels := []string{lease.Held.Level}
-	for name := range cloudflareWriteRules {
-		levels = append(levels, name)
+	if route, ok := matchCloudflareRoute(method, path); ok {
+		need.Level = route.Level
+		return need, nil
 	}
-	for _, name := range levels {
-		if allows := cloudflareWriteRules[name]; allows != nil && allows(method, call.rest) {
-			need.Level = name
-			return need, nil
-		}
-	}
-	need.Otherwise = &gateway.Denial{Reason: RefusalPathNotAllowed, Current: lease.Held.Level, Message: fmt.Sprintf("%s %s is outside what a workspace's Cloudflare access allows. DNS edit allows %s; other changes stay with the person in the Cloudflare dashboard", method, cloudflareWriteAuditPath(path), cloudflareDNSEditPaths)}
+	need.Otherwise = &gateway.Denial{Reason: RefusalPathNotAllowed, Current: lease.Held.Level, Message: fmt.Sprintf("%s %s is outside what a workspace's Cloudflare access allows. Zone changes it allows: %s; other changes stay with the person in the Cloudflare dashboard", method, cloudflareWriteAuditPath(path), cloudflareZoneChangesText())}
 	return need, nil
 }
 
@@ -223,7 +222,8 @@ func (g *CloudflareGateway) Refuse(w http.ResponseWriter, r *http.Request, d *ga
 		refusal.Message = "that zone is not bound to this workspace; the account owner binds zones in Connectors → this workspace → Cloudflare"
 	case gateway.ReasonAccessLevel:
 		refusal.Reason = RefusalAccessLevel
-		refusal.Message = fmt.Sprintf("%s %s needs the %s access level; this workspace's Cloudflare binding has %s access, and %s", method, cloudflareWriteAuditPath(path), d.Needed, d.Current, cloudflareAccessWhere)
+		levels := externalaccounts.CloudflareAccess
+		refusal.Message = fmt.Sprintf("%s %s needs the %q (%s) access level; this workspace's Cloudflare binding has %q (%s), and %s", method, cloudflareWriteAuditPath(path), levels.LevelLabel(d.Needed), d.Needed, levels.LevelLabel(d.Current), d.Current, cloudflareAccessWhere)
 	case gateway.ReasonConnectorOff:
 		refusal.Message = "the person did not give the assistant access to this Cloudflare account; they change that in Assistant settings → Connectors"
 	case gateway.ReasonConnectorRead:
@@ -423,7 +423,10 @@ func (a cloudflareAudit) Record(ctx context.Context, record gateway.Record) {
 		outcome := "forwarded"
 		switch {
 		case record.Denial != nil:
-			outcome = "refused"
+			outcome = strings.TrimSpace("refused " + record.Denial.Reason)
+			if record.Denial.Needed != "" {
+				outcome += " needs " + record.Denial.Needed + ", has " + cmp.Or(record.Denial.Current, "none")
+			}
 		case record.Outcome == gateway.OutcomeUpstreamError:
 			outcome = "upstream_error"
 		}

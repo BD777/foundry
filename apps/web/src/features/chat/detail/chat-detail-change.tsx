@@ -13,12 +13,14 @@ import { Button } from "../../../components/ui/button";
 import { FileDiff as FileDiffView } from "../../../components/ui/file-diff";
 import { SegmentedControl } from "../../../components/ui/segmented-control";
 import {
-  extensionOf,
   FilePathLine,
-  markdownExtensions,
   SessionFileContent,
   SessionFileView,
 } from "./chat-detail-files";
+import {
+  extensionOf,
+  markdownExtensions,
+} from "../../../components/workspace/workspace-file-view";
 import { detailDocument } from "./chat-detail-parts";
 import type { ChatSessionFileItem } from "../chat-types";
 import { LoadingState } from "../../../components/ui/loading";

@@ -645,6 +645,7 @@ function AppStoreConnectBinding({
       {account ? (
         <AppStoreConnectAccessLevels
           account={account}
+          levels={accessLevels}
           disabled={disabled || saving}
           onChange={setAccess}
           value={access}

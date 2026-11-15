@@ -27,4 +27,11 @@ export interface WorkspaceFileRead {
   path: string;
   content: string;
   truncated: boolean;
+  /**
+   * Where the file really is, relative to the workspace, when `path` reaches
+   * it through a link inside the workspace.
+   */
+  realPath?: string;
+  /** A file of a skill Foundry linked in from its snapshots: shown, never changed. */
+  readOnly?: boolean;
 }

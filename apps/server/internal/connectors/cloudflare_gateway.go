@@ -383,32 +383,21 @@ func validateCloudflareRead(path string, query url.Values) error {
 	if len(parts) < 2 || parts[0] != "zones" || !cloudflareZoneID.MatchString(parts[1]) {
 		return &CloudflareRefusal{Message: "GET " + shown(path) + " is outside what a workspace's Cloudflare access reads: /zones and the DNS, SSL and settings of a bound zone by its zone ID (a zone's ID comes from GET /zones?name=<domain>, as in cf zones list --name <domain>)", Reason: RefusalPathNotAllowed}
 	}
-	suffix := strings.Join(parts[2:], "/")
-	switch suffix {
-	case "", "dns_records", "ssl/certificate_packs", "ssl/universal/settings", "ssl/verification", "settings/ssl", "subscription", "pagerules", "workers/routes", "rulesets/phases/http_request_cache_settings/entrypoint":
+	if route, ok := matchCloudflareRoute(http.MethodGet, path); ok && route.zone != "" {
 		return nil
 	}
-	if len(parts) == 4 && parts[2] == "dns_records" && cloudflareZoneID.MatchString(parts[3]) {
-		return nil
-	}
-	return &CloudflareRefusal{Message: "GET /zones/:id/" + suffix + " is outside what a workspace's Cloudflare access reads: a zone's DNS records, SSL and certificate metadata, subscription, page rules, Workers routes and the cache ruleset", Reason: RefusalPathNotAllowed}
+	return &CloudflareRefusal{Message: "GET " + shown(path) + " is outside what a workspace's Cloudflare access reads in a zone: " + cloudflareRoutesText(func(method string, route externalaccounts.AccessRoute) bool {
+		return method == http.MethodGet && strings.HasPrefix(route.Path, "/zones/")
+	}), Reason: RefusalPathNotAllowed}
 }
+
+// cloudflareAuditPath is a read's path as access/cloudflare.json names it,
+// identifiers as ":id", or "unsupported_path" for a path no route has.
 func cloudflareAuditPath(path string) string {
-	if path == "/zones" {
-		return "/zones"
+	if known := cloudflareKnownPath(path); known != "" {
+		return known
 	}
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 2 || parts[0] != "zones" || !cloudflareZoneID.MatchString(parts[1]) {
-		return "unsupported_path"
-	}
-	if validateCloudflareRead(path, nil) != nil {
-		return "unsupported_path"
-	}
-	parts[1] = ":id"
-	if len(parts) == 4 && parts[2] == "dns_records" {
-		parts[3] = ":id"
-	}
-	return "/" + strings.Join(parts, "/")
+	return "unsupported_path"
 }
 
 type connectorHandleIssuer struct {

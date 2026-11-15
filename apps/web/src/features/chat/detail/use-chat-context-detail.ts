@@ -8,7 +8,7 @@ import {
   readAgentSubagentTranscript,
   readSessionFile,
 } from "../../../api";
-import { requestDeviceFile } from "./device-file-request";
+import { requestDeviceFile } from "../../../components/workspace/device-file-request";
 import type { ChatContextSelection } from "../chat-types";
 
 export function useChatContextDetail(threadKey: string) {

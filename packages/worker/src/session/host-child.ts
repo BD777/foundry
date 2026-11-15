@@ -18,6 +18,7 @@ import {
 } from "./session-ambient.js";
 import { steerActiveSession } from "./session-helpers.js";
 import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
+import { adoptSessionToolsFolder } from "../skills/session-tools.js";
 import { errorMessage } from "../platform/utils.js";
 
 const output = (value: unknown): void => {
@@ -40,8 +41,10 @@ lines.once("line", async (line) => {
       profile: AgentProfileLocalConfig;
       managedSkills?: ManagedSkillRuntime;
       ambient?: SessionAmbientEnv;
+      sessionTools?: string;
     };
     inheritRuntimeLease(input.session.provider);
+    adoptSessionToolsFolder(input.session.id, input.sessionTools);
     if (input.ambient)
       registerSessionAmbientEnv(input.session.id, input.ambient);
     lines.on("line", (line) => {

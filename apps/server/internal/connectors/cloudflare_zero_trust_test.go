@@ -74,6 +74,52 @@ func TestCloudflareZeroTrustClassifiesPathsRefusesUnownedAccountsAndRedactsSecre
 	}
 }
 
+// Diagnosing a Tunnel (Error 1033) needs its connections: zero_trust reads
+// them, dns_edit is refused with the level it needs, and the audit line says
+// which route and why.
+func TestCloudflareTunnelConnectionsReadNeedsZeroTrustAndAuditsTheReason(t *testing.T) {
+	f := newCloudflareZeroTrustFixture(t, false, false, false)
+	connections := "/accounts/" + cfAccount + "/cfd_tunnel/" + ztTunnel + "/connections"
+	body, err := callGateway(f.gateway, f.handle, f.session.DeviceID, "alice", "GET", connections, nil, nil)
+	if err != nil || !strings.Contains(string(body), "lax01") {
+		t.Fatalf("zero_trust Tunnel connections read: %s %v", body, err)
+	}
+	if err := f.st.SetExternalAccountBindingAccess(context.Background(), "workspace-a", f.account.ID, "alice", externalaccounts.CloudflareAccessDNSEdit); err != nil {
+		t.Fatal(err)
+	}
+	before := len(f.callsSnapshot())
+	_, err = callGateway(f.gateway, f.handle, f.session.DeviceID, "alice", "GET", connections, nil, nil)
+	var refusal *CloudflareRefusal
+	if !errors.As(err, &refusal) || refusal.Reason != RefusalAccessLevel || refusal.Needed != externalaccounts.CloudflareAccessZeroTrust || !strings.Contains(err.Error(), `"Read + DNS edit + Zero Trust" (zero_trust)`) {
+		t.Fatalf("dns_edit Tunnel read refusal: %v", err)
+	}
+	if got := len(f.callsSnapshot()); got != before {
+		t.Fatalf("a refused Tunnel read reached upstream: %d calls", got-before)
+	}
+	var lines []string
+	for _, event := range f.events(t) {
+		if event.Kind == "cloudflare_request" {
+			lines = append(lines, event.Detail)
+		}
+	}
+	want := []string{
+		"GET /accounts/:id/cfd_tunnel/:id/connections refused access_level needs zero_trust, has dns_edit",
+		"GET /accounts/:id/cfd_tunnel/:id/connections forwarded",
+	}
+	for _, line := range want {
+		found := false
+		for _, got := range lines {
+			found = found || got == line
+		}
+		if !found {
+			t.Errorf("audit lines %q lack %q", lines, line)
+		}
+	}
+	if _, err := callGateway(f.gateway, f.handle, f.session.DeviceID, "alice", "GET", "/accounts/"+cfAccount+"/cfd_tunnel/"+ztTunnel+"/token", nil, nil); !errors.As(err, &refusal) || refusal.Reason != RefusalPathNotAllowed || !strings.Contains(err.Error(), "/cfd_tunnel/<id>/connections (zero_trust)") {
+		t.Fatalf("an unlisted Tunnel read was not refused with the routes that exist: %v", err)
+	}
+}
+
 func TestCloudflareAutoProvisionCreatesServiceAuthApplicationAndReportsTunnelIngress(t *testing.T) {
 	f := newCloudflareZeroTrustFixture(t, false, false, false)
 	result, err := f.auto.Provision(context.Background(), CloudflareAutoProvisionInput{
@@ -317,6 +363,8 @@ func (f *cloudflareZeroTrustFixture) answer(t *testing.T, w http.ResponseWriter,
 		respond(map[string]any{"id": ztPolicy})
 	case call.Method == "GET" && call.Path == "/accounts/"+cfAccount+"/cfd_tunnel":
 		respond([]any{map[string]any{"id": ztTunnel, "name": "fixture"}})
+	case call.Method == "GET" && call.Path == "/accounts/"+cfAccount+"/cfd_tunnel/"+ztTunnel+"/connections":
+		respond([]any{map[string]any{"id": "fixture-connector", "conns": []any{map[string]any{"colo_name": "lax01"}}}})
 	case call.Method == "GET" && call.Path == "/accounts/"+cfAccount+"/cfd_tunnel/"+ztTunnel+"/configurations":
 		ingress := []any{map[string]any{"service": "http_status:404"}}
 		if f.configHasIngress {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,15 +58,17 @@ type workerOutboxReport struct {
 	outbox workerOutbox
 	at     time.Time
 	logged time.Time
+	// unreadableLogged is when an unreadable heartbeat section was last logged.
+	unreadableLogged time.Time
 }
 
 // noteHeartbeat keeps what a heartbeat says about the sessions the worker
 // runs and about its outbox. A heartbeat without a report, or one this
 // server cannot read, is still a heartbeat.
 func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
-	var heartbeat wsHeartbeatPayload
-	if len(payload) > 0 && json.Unmarshal(payload, &heartbeat) != nil {
-		heartbeat = wsHeartbeatPayload{}
+	heartbeat, unreadable := decodeHeartbeat(payload)
+	if len(unreadable) > 0 {
+		c.logUnreadableHeartbeat(unreadable)
 	}
 	c.noteHeartbeatClaims(heartbeat.ActiveSessionIDs)
 	if heartbeat.RuntimeState != nil {
@@ -99,6 +102,61 @@ func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
 		deviceID, _ := c.registrationSnapshot()
 		log.Printf("daemon %s is behind: its session messages arrive %s late; %d not yet written, %d unacknowledged, %d bytes on its socket",
 			deviceID, lag.Round(time.Second), outbox.Queued, outbox.Unacknowledged, outbox.BufferedBytes)
+	}
+}
+
+// decodeHeartbeat reads each section of a heartbeat on its own and names
+// the ones it cannot read. One unreadable section must not hide the others:
+// above all the session claims, without which every session the connection
+// once held stays claimed and an ended one is never found stale.
+func decodeHeartbeat(payload json.RawMessage) (wsHeartbeatPayload, []string) {
+	var heartbeat wsHeartbeatPayload
+	if len(payload) == 0 || json.Unmarshal(payload, &heartbeat) == nil {
+		return heartbeat, nil
+	}
+	heartbeat = wsHeartbeatPayload{}
+	var sections map[string]json.RawMessage
+	if json.Unmarshal(payload, &sections) != nil {
+		return heartbeat, []string{"payload"}
+	}
+	var unreadable []string
+	section := func(name string, into any) bool {
+		raw, ok := sections[name]
+		if !ok || string(raw) == "null" {
+			return false
+		}
+		if err := json.Unmarshal(raw, into); err != nil {
+			unreadable = append(unreadable, name+": "+err.Error())
+			return false
+		}
+		return true
+	}
+	var sessionIDs []string
+	if section("activeSessionIds", &sessionIDs) {
+		heartbeat.ActiveSessionIDs = &sessionIDs
+	}
+	var outbox workerOutbox
+	if section("outbox", &outbox) {
+		heartbeat.Outbox = &outbox
+	}
+	var runtimeState store.DeviceRuntimeState
+	if section("runtimeState", &runtimeState) {
+		heartbeat.RuntimeState = &runtimeState
+	}
+	return heartbeat, unreadable
+}
+
+func (c *daemonConnection) logUnreadableHeartbeat(unreadable []string) {
+	now := time.Now()
+	c.outbox.mu.Lock()
+	report := now.Sub(c.outbox.unreadableLogged) >= workerOutboxLogInterval
+	if report {
+		c.outbox.unreadableLogged = now
+	}
+	c.outbox.mu.Unlock()
+	if report {
+		deviceID, _ := c.registrationSnapshot()
+		log.Printf("daemon %s heartbeat has unreadable sections, ignored: %s", deviceID, strings.Join(unreadable, "; "))
 	}
 }
 

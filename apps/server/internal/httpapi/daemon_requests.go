@@ -55,6 +55,8 @@ func (c *daemonConnection) readWorkspaceFile(ctx context.Context, workspaceID st
 		Path:        value.Path,
 		Content:     value.Content,
 		Truncated:   value.Truncated,
+		RealPath:    value.RealPath,
+		ReadOnly:    value.ReadOnly,
 	}, err
 }
 

@@ -156,6 +156,18 @@ export function prepareSessionTools(
   };
 }
 
+/**
+ * In a sandboxed session host (host-child.ts): the tool folder the worker
+ * built for this session's run, so the host's session environment puts it
+ * on PATH as the worker's own would. The worker keeps and removes it.
+ */
+export function adoptSessionToolsFolder(
+  sessionId: string,
+  folder: string | undefined,
+): void {
+  if (sessionId && folder) folderBySession.set(sessionId, folder);
+}
+
 /** The session's tool folder, if its run has one. */
 export function sessionToolsFolder(
   sessionId: string | undefined,

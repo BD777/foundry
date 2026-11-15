@@ -5,7 +5,7 @@ import {
   imageMimeEssence,
   inlineImagePreviewMaxBytes,
   isInlineImageCandidate,
-} from "../src/features/chat/detail/chat-image-preview-model.ts";
+} from "../src/components/workspace/image-preview-model.ts";
 
 test("the Workspace panel recognizes every supported image extension", () => {
   for (const name of [

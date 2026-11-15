@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "limen",
   "name": "Limen",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "protocol": 1,
   "migrationSource": {
     "git": "https://github.com/BD777/foundry.git",
@@ -189,7 +189,7 @@
           "id": "limen_{/name}",
           "label": "Limen · {/name}",
           "model": "sonnet",
-          "models": ["sonnet", "opus", "haiku"],
+          "models": ["sonnet", "opus", "haiku", "claude-fable-5-2"],
           "session": {
             "command": "bun",
             "args": [

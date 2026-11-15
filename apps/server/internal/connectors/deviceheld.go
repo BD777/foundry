@@ -305,6 +305,10 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 	if err != nil {
 		return nil, err
 	}
+	// A read-only workspace session (a message channel's) runs in a sandbox
+	// that hides the person's files, where every device login lives: it gets
+	// none of them, only their isolation (DEV-228).
+	readOnly := session.WorkspaceAccess == store.SessionWorkspaceAccessRead
 	var uses []store.DeviceConnectorUse
 	for _, descriptor := range connectors {
 		if connectorHasVisibilityGate(descriptor) && !visible[descriptor.Kind] {
@@ -330,7 +334,7 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 			eligible = false
 		}
 		switch {
-		case assistantDisabled:
+		case assistantDisabled || readOnly:
 			use.Access = "none"
 			use.IsolationEnv = descriptor.IsolationEnv
 			use.State = state

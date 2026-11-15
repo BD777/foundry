@@ -215,6 +215,9 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 		}
 	}
 
+	if actor := actorFromContext(ctx); actor.Agent() {
+		input.RequestedBySessionID = actor.Identity.SessionID
+	}
 	op, err := s.store.ControlSessionWork(ctx, sessionwork.Thread(session), session.ID, input)
 	if err != nil {
 		return op, &statusError{http.StatusConflict, err}

@@ -81,7 +81,15 @@ const provider = {
   credentialMode: "server_held",
   authMethods: ["api_key"],
   tools: ["asc"],
-  accessLevels: [{ name: "read" }, { name: "commerce" }],
+  accessLevels: [
+    { name: "read", label: "Read", description: "Fixture reads only." },
+    {
+      name: "commerce",
+      label: "Read + commerce",
+      labels: { "zh-CN": "只读 + commerce" },
+      description: "Fixture subscriptions too.",
+    },
+  ],
 };
 const account = {
   id: connection.accountId,
@@ -440,7 +448,13 @@ test("workspace binding saves selected apps and commerce access", async () => {
   );
   assert.ok(appRow);
   await page.click(appRow.querySelector("input[type=checkbox]"));
-  await page.click(page.container.querySelector("input[value=commerce]"));
+  const commerce = page.container.querySelector("input[value=commerce]");
+  assert.match(
+    commerce.closest("label").textContent,
+    /Read \+ commerce.*Fixture subscriptions too\./,
+    "the level reads in the server's words",
+  );
+  await page.click(commerce);
   await page.click(page.button("Save apps and access"));
   await settle(20);
   const bindingCall = requests.find(

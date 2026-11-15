@@ -72,12 +72,15 @@ re-authorized by the person in Foundry's Connectors.
   account, and then `--zone` takes a domain or an ID; when it is not set
   (zones in several accounts), cf's lookup of a zone by domain fails, so
   get the ID with `cf zones list --name <domain>` and pass that.
-  Changes (POST, PATCH, PUT, DELETE of DNS records) work only where the
-  person set the workspace's access to DNS edit, and that can change during
-  a session: after a refusal, retry rather than restart. A refusal is an
-  HTTP 403 in Cloudflare's error shape with a `foundry` object (`reason`,
-  `needed`, `current`, `where`): tell the person what it says; do not look
-  for another credential. Cloudflare's own errors arrive unchanged. If a
+  The workspace's access level decides the rest: DNS edit adds DNS
+  record changes; Zero Trust adds the zones' accounts' Access apps,
+  policies and service tokens and Tunnels (details, connections, ingress
+  reads and ingress updates). The person sets it per workspace and can
+  change it during a session: after a refusal, retry rather than restart.
+  A refusal is an HTTP 403 in Cloudflare's error shape with a `foundry`
+  object (`reason`, `needed`, `current`, `where`); a path Foundry does not
+  forward lists the ones it does. Tell the person the level it needs, by
+  name, and where they choose it; do not look for another credential. Cloudflare's own errors arrive unchanged. If a
   change on this device fails at once with "This connector is read-only."
   from 127.0.0.1, the device's Worker predates `cloudflare_gateway_v2`: ask
   the person to update it. Manage zones and authorization in Connectors →

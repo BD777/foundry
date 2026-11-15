@@ -63,3 +63,29 @@ func TestCompletionReplayCannotSettleInputStartedAfterItsSnapshot(t *testing.T) 
 		})
 	}
 }
+
+// A turn the device canceled on its own (a stopped schedule or child) is
+// known to the server only through its report: it ends canceled, and a
+// cancel is not a failure to retry.
+func TestDeviceCanceledTurnReportEndsTheSessionCanceled(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	session := startedQueueSession(t, db)
+	server := NewServer(db)
+	server.hub.retrySessionFailure = func(context.Context, store.AgentSession, string) (bool, error) {
+		t.Fatal("a canceled turn was offered for retry")
+		return false, nil
+	}
+	c := newDaemonConnection(server.hub, nil)
+	payload, _ := json.Marshal(wsSessionCompletedPayload{SessionID: session.ID, InputID: session.Input.ID, Error: "Session was canceled."})
+	if err := c.onSessionCompleted(ctx, wsEnvelope{ID: "canceled", Type: wsSessionCompleteType, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.GetAgentSessionRecord(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "canceled" {
+		t.Fatalf("status = %s, want canceled", got.Status)
+	}
+}

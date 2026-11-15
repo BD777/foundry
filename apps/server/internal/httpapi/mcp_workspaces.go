@@ -256,7 +256,7 @@ func pageAgentModelsForMCP(profile store.AgentProfileProjection, models []store.
 
 	filtered := make([]mcpModelItem, 0, len(models))
 	for _, model := range models {
-		if !chatModelForRuntime(profile.Runtime, model) {
+		if profile.Connector == nil && !chatModel(model) {
 			continue
 		}
 		if query != "" && !strings.Contains(strings.ToLower(model.ID+"\n"+model.Label), query) {
@@ -283,15 +283,14 @@ func pageAgentModelsForMCP(profile store.AgentProfileProjection, models []store.
 	return encodeJSON(answer)
 }
 
-// chatModelForRuntime drops modalities an agent runtime cannot call as a
-// conversation model. Claude Code only invokes Claude models. Codex can use
-// OpenAI-compatible chat models from other families, so its filter is by
-// modality rather than by vendor.
-func chatModelForRuntime(runtime string, model store.AgentModelOption) bool {
+// chatModel drops what an endpoint's catalog lists beside chat models
+// (embeddings, images, video, audio, 3D). It never judges the vendor: Claude
+// Code takes its own aliases (sonnet, opus[1m], default) and a compatible
+// endpoint's ids (deepseek-…, auto_model/…) as readily as claude-…, so a
+// name without "claude" is no reason to drop it. A connector's profile is
+// not filtered at all: its models are what its manifest declares.
+func chatModel(model store.AgentModelOption) bool {
 	haystack := strings.ToLower(model.ID + "\n" + model.Label)
-	if runtime == "claude" && !strings.Contains(haystack, "claude") {
-		return false
-	}
 	for _, marker := range []string{
 		"embed", "rerank", "moderation",
 		"image", "imagen", "dall-e", "stable-diffusion", "sdxl", "flux",

@@ -497,6 +497,12 @@ export function availableDaemonCapabilities(): string[] {
     // workspace_file_write: write_file replaces one text file in a
     // workspace (the person's edits of a channel workspace's AGENTS.md).
     "workspace_file_write",
+    // workspace_file_manage: manage_file renames or deletes one file of a
+    // workspace (the assistant's workspace files, DEV-223).
+    "workspace_file_manage",
+    // assistant_instructions_block: the assistant's AGENTS.md arrives as
+    // Foundry's managed block only; the rest of the file stays the person's.
+    "assistant_instructions_block",
     "native_sign_in",
     "cloudflare_gateway_v2",
     // profile_check: the worker checks a server profile it is handed

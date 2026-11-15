@@ -63,6 +63,8 @@ func toolSkillRepository(repos []store.SkillRepository, descriptor store.Connect
 type connectorSkillSource struct {
 	RepositoryID string
 	Default      []string
+	// Kind is the connector that brings it.
+	Kind string
 }
 
 // activeMembers are the members a session gets from this source. Default
@@ -113,7 +115,7 @@ func connectorToolBundles(ctx context.Context, db Backend, devices *connectors.D
 	var sources []connectorSkillSource
 	for _, descriptor := range declaring {
 		if repo, ok := toolSkillRepository(repos, descriptor); ok {
-			sources = append(sources, connectorSkillSource{RepositoryID: repo.ID, Default: descriptor.Tool.Skills.Default})
+			sources = append(sources, connectorSkillSource{RepositoryID: repo.ID, Default: descriptor.Tool.Skills.Default, Kind: descriptor.Kind})
 		}
 	}
 	return sources, nil

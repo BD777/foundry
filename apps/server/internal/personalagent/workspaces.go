@@ -59,6 +59,13 @@ type WorkspaceSource struct {
 type WorkspaceFile struct {
 	Path    string
 	Content string
+	// ManagedBlock: Content is the managed block of the assistant's
+	// AGENTS.md, which the Worker puts in place of the file's block; Seed
+	// goes below it when the file has no instructions yet; Whole is the
+	// file for a Worker that writes it whole (DEV-223).
+	ManagedBlock bool
+	Seed         string
+	Whole        string
 }
 
 // How a new folder starts (WorkspaceSource.Kind).

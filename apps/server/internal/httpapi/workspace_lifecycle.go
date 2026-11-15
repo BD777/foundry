@@ -465,6 +465,8 @@ func (s *Server) setWorkspaceConnectors(ctx context.Context, userID string, work
 			s.recordConnectorBinding(ctx, id, "bound", workspaceID, userID)
 		}
 	}
+	// A granted connector brings its Skills (workspaceConnectorSkills).
+	s.projectionsChanged(workspaceID, workspaceSkillFields...)
 	return s.workspaceExternalAccounts(ctx, workspaceID, userID)
 }
 

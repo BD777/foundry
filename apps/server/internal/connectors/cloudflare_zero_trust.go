@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,14 +16,10 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 )
 
+// The Zero Trust actions of access/cloudflare.json that the gateway treats
+// specially.
 const (
 	cloudflareZeroTrustServiceTokenCreate = "service_token_create"
-	cloudflareZeroTrustServiceTokenDelete = "service_token_delete"
-	cloudflareZeroTrustApplicationCreate  = "application_create"
-	cloudflareZeroTrustApplicationUpdate  = "application_update"
-	cloudflareZeroTrustPolicyCreate       = "policy_create"
-	cloudflareZeroTrustPolicyUpdate       = "policy_update"
-	cloudflareZeroTrustTunnelUpdate       = "tunnel_ingress_update"
 )
 
 var cloudflareOpaqueID = regexp.MustCompile(`^[a-fA-F0-9-]{16,64}$`)
@@ -31,106 +28,35 @@ var cloudflareOpaqueID = regexp.MustCompile(`^[a-fA-F0-9-]{16,64}$`)
 // or Tunnel request.
 type cloudflareZeroTrustCall struct {
 	account string
+	level   string
 	action  string
 	write   bool
 }
 
 // classifyCloudflareZeroTrust recognises the account-level paths Foundry
-// exposes. It is deliberately an allowlist: a new Access or Tunnel endpoint
-// does not become reachable merely because the OAuth grant can call it.
+// exposes: the /accounts/ routes of access/cloudflare.json. It is
+// deliberately an allowlist: a new Access or Tunnel endpoint does not become
+// reachable merely because the OAuth grant can call it.
 func classifyCloudflareZeroTrust(method, path string) (cloudflareZeroTrustCall, bool) {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 4 || parts[0] != "accounts" || !cloudflareZoneID.MatchString(parts[1]) {
+	if !strings.HasPrefix(path, "/accounts/") {
 		return cloudflareZeroTrustCall{}, false
 	}
-	call := cloudflareZeroTrustCall{account: parts[1]}
-	switch {
-	case len(parts) == 4 && parts[2] == "access" && parts[3] == "service_tokens":
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPost:
-			call.action, call.write = cloudflareZeroTrustServiceTokenCreate, true
-			return call, true
-		}
-	case len(parts) == 5 && parts[2] == "access" && parts[3] == "service_tokens" && cloudflareOpaqueID.MatchString(parts[4]):
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodDelete:
-			call.action, call.write = cloudflareZeroTrustServiceTokenDelete, true
-			return call, true
-		}
-	case len(parts) == 4 && parts[2] == "access" && parts[3] == "apps":
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPost:
-			call.action, call.write = cloudflareZeroTrustApplicationCreate, true
-			return call, true
-		}
-	case len(parts) == 5 && parts[2] == "access" && parts[3] == "apps" && cloudflareOpaqueID.MatchString(parts[4]):
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPatch, http.MethodPut:
-			call.action, call.write = cloudflareZeroTrustApplicationUpdate, true
-			return call, true
-		}
-	case len(parts) == 6 && parts[2] == "access" && parts[3] == "apps" && cloudflareOpaqueID.MatchString(parts[4]) && parts[5] == "policies":
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPost:
-			call.action, call.write = cloudflareZeroTrustPolicyCreate, true
-			return call, true
-		}
-	case len(parts) == 7 && parts[2] == "access" && parts[3] == "apps" && cloudflareOpaqueID.MatchString(parts[4]) && parts[5] == "policies" && cloudflareOpaqueID.MatchString(parts[6]):
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPatch, http.MethodPut:
-			call.action, call.write = cloudflareZeroTrustPolicyUpdate, true
-			return call, true
-		}
-	case len(parts) == 4 && parts[2] == "cfd_tunnel":
-		if method == http.MethodGet {
-			return call, true
-		}
-	case len(parts) == 5 && parts[2] == "cfd_tunnel" && cloudflareOpaqueID.MatchString(parts[3]):
-		if method == http.MethodGet {
-			return call, true
-		}
-	case len(parts) == 6 && parts[2] == "cfd_tunnel" && cloudflareOpaqueID.MatchString(parts[3]) && parts[4] == "configurations":
-		switch method {
-		case http.MethodGet:
-			return call, true
-		case http.MethodPut:
-			call.action, call.write = cloudflareZeroTrustTunnelUpdate, true
-			return call, true
-		}
+	route, ok := matchCloudflareRoute(method, path)
+	if !ok || route.account == "" {
+		return cloudflareZeroTrustCall{}, false
 	}
-	return cloudflareZeroTrustCall{}, false
+	return cloudflareZeroTrustCall{account: route.account, level: route.Level, action: route.Action, write: method != http.MethodGet}, true
 }
 
 func validateCloudflareZeroTrustRead(path string, query url.Values) error {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	allowed := map[string]bool{}
-	collection := (len(parts) == 4 && parts[2] == "access" && (parts[3] == "service_tokens" || parts[3] == "apps")) ||
-		(len(parts) == 6 && parts[2] == "access" && parts[3] == "apps" && parts[5] == "policies") ||
-		(len(parts) == 4 && parts[2] == "cfd_tunnel")
-	if collection {
-		allowed = map[string]bool{"page": true, "per_page": true, "name": true, "search": true}
-		if len(parts) == 4 && parts[2] == "access" && parts[3] == "apps" {
-			allowed["domain"], allowed["aud"], allowed["target_attributes"], allowed["exact"] = true, true, true, true
-		}
-		if len(parts) == 4 && parts[2] == "cfd_tunnel" {
-			allowed["is_deleted"], allowed["status"] = true, true
-		}
-	}
+	route, _ := matchCloudflareRoute(http.MethodGet, path)
 	for key, values := range query {
-		if !allowed[key] {
-			return &CloudflareRefusal{Reason: RefusalQueryNotAllow, Message: "query parameter " + key + " is not accepted for this Cloudflare Zero Trust read"}
+		if !slices.Contains(route.Query, key) {
+			message := "query parameter " + key + " is not accepted for this Cloudflare Zero Trust read"
+			if len(route.Query) > 0 {
+				message += "; it takes " + strings.Join(route.Query, ", ")
+			}
+			return &CloudflareRefusal{Reason: RefusalQueryNotAllow, Message: message}
 		}
 		if len(values) != 1 || len(values[0]) > 256 {
 			return &CloudflareRefusal{Reason: RefusalQueryNotAllow, Message: "query parameter " + key + " takes one value of at most 256 characters"}

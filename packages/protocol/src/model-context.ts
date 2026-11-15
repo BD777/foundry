@@ -39,6 +39,8 @@ const claudeWindows: Readonly<Record<string, number>> = {
   "claude-opus-5-5": 1_000_000,
   "claude-fable-5": 1_000_000,
   "claude-fable-5-1": 1_000_000,
+  // Not in 2.1.295's table; Claude Code 2.1.323 catalogs it at 1M.
+  "claude-fable-5-2": 1_000_000,
   "claude-mythos-5": 1_000_000,
   "claude-mythos-5-1": 1_000_000,
 };
@@ -97,6 +99,11 @@ const claudeOneMillionOptIns = new Set([
   "claude-sonnet-4-5",
   "claude-sonnet-4-6",
   "claude-opus-4-6",
+  // 1M models newer than the stable Claude Code Foundry runs. 2.1.311 counts
+  // claude-fable-5-2 as 200K and ignores CLAUDE_CODE_MAX_CONTEXT_TOKENS for
+  // it; named claude-fable-5-2[1m] it runs 1M (checked through the Limen
+  // gateway, 2026-11-13).
+  "claude-fable-5-2",
 ]);
 
 /** The Claude Code catalog id a Claude model name stands for. */

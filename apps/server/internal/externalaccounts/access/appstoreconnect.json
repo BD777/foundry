@@ -1,0 +1,22 @@
+{
+  "levels": [
+    {
+      "name": "read",
+      "label": "Read",
+      "labels": { "zh-CN": "只读" },
+      "description": "GET requests for the bound apps: apps, subscription groups, subscriptions, prices and localized metadata. Changes nothing. Choose it when sessions only need to look things up.",
+      "descriptions": {
+        "zh-CN": "对所绑定 App 只发 GET 请求：App、订阅组、订阅、价格与本地化元数据。不做任何修改。会话只需要查询时选这一档。"
+      }
+    },
+    {
+      "name": "commerce",
+      "label": "Read + commerce",
+      "labels": { "zh-CN": "只读 + commerce" },
+      "description": "Also creates and updates subscription groups, subscriptions, introductory offers, localizations and review screenshots of the bound apps. Price changes and review submission stay in App Store Connect. Choose it when sessions set up in-app subscriptions.",
+      "descriptions": {
+        "zh-CN": "还可为所绑定 App 创建和更新订阅组、订阅、推介优惠、本地化与审核截图。修改价格和提交审核仍需在 App Store Connect 中操作。需要让会话配置 App 内订阅时选这一档。"
+      }
+    }
+  ]
+}

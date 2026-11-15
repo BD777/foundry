@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Foundry assistant workspace files
+  version: 1.0.0
+  description:
+    The files of the workspaces an assistant runs in (DEV-223), browsed and edited by the person.
+    Part of the Foundry contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts`
+    generates its TypeScript types and Go models (apps/server/internal/store/assistant_files_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    AssistantWorkspaceKind:
+      description: "home: the assistant's own folder; channel: a message channel's workspace."
+      type: string
+      enum: [home, channel]
+    AssistantWorkspace:
+      description: A workspace the assistant runs in, and who may change its files.
+      type: object
+      required:
+        [
+          id,
+          kind,
+          name,
+          deviceId,
+          deviceName,
+          path,
+          connected,
+          canWrite,
+          canManage,
+        ]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/AssistantWorkspaceKind"
+        name:
+          type: string
+        channelId:
+          type: string
+        channelName:
+          type: string
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+        path:
+          description: The folder on the device.
+          type: string
+        connected:
+          description: The device is connected now; files are read from it.
+          type: boolean
+        canWrite:
+          description: The device's Worker writes files for the Web (workspace_file_write).
+          type: boolean
+        canManage:
+          description: The device's Worker renames and deletes files (workspace_file_manage).
+          type: boolean
+    AssistantWorkspaceList:
+      type: object
+      required: [workspaces]
+      additionalProperties: false
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantWorkspace"
+    WorkspaceFileRevision:
+      description: A saved version of a file, newest first.
+      type: object
+      required: [id, at, sha256, bytes, source, current]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+        sha256:
+          type: string
+        bytes:
+          type: integer
+        source:
+          description:
+            "seed, web, revert, default (the person took Foundry's newer default), deleted, renamed,
+            or outside (found on the device as it was before a save)."
+          type: string
+        current:
+          description: The file holds this version now.
+          type: boolean
+    AssistantFileReadOnly:
+      description: >-
+        Why the file can't be edited here. generated: Foundry rewrites it before each run; binary;
+        too_large; worker: the device's Worker can't write it; whole_file: an older Worker rewrites
+        the whole AGENTS.md before each run; foundry_skill: a file of a skill Foundry linked in from
+        its own snapshots, outside the workspace.
+      type: string
+      enum: [generated, binary, too_large, worker, whole_file, foundry_skill]
+    AssistantInstructions:
+      description: >-
+        The assistant's AGENTS.md (home workspace). The file's content is the person's instructions,
+        the part below Foundry's managed block, which is shown read-only.
+      type: object
+      required:
+        [
+          managedBlock,
+          managedPresent,
+          bytes,
+          maxBytes,
+          defaultContent,
+          newDefault,
+        ]
+      additionalProperties: false
+      properties:
+        managedBlock:
+          description: The block as Foundry writes it before the next conversation.
+          type: string
+        managedPresent:
+          description: The file holds a managed block now (else Foundry adds it on top before the next conversation).
+          type: boolean
+        bytes:
+          description: The whole file's size with the current block.
+          type: integer
+        maxBytes:
+          description: The most AGENTS.md may hold (Codex reads at most 32 KiB of AGENTS.md files).
+          type: integer
+        defaultContent:
+          description: Foundry's current default instructions.
+          type: string
+        newDefault:
+          description: Foundry ships a newer default than the one these instructions started from.
+          type: boolean
+    AssistantFile:
+      description: One file of an assistant's workspace as the device has it now.
+      type: object
+      required: [workspaceId, path, content, sha256, missing, bytes, revisions]
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+        content:
+          description: The text to edit (for the home AGENTS.md, the part below the managed block).
+          type: string
+        sha256:
+          description: SHA-256 of the whole file on the device, the base of the next save ("" when missing).
+          type: string
+        missing:
+          type: boolean
+        bytes:
+          type: integer
+        readOnly:
+          $ref: "#/components/schemas/AssistantFileReadOnly"
+        instructions:
+          x-go-type-skip-optional-pointer: false
+          $ref: "#/components/schemas/AssistantInstructions"
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceFileRevision"
+    AssistantFileWrite:
+      description:
+        New content of a text file; baseSha256 is the sha256 the editor started from ("" to create a
+        file that must not exist yet). Refused with 409 when the file changed since.
+      type: object
+      required: [workspaceId, path, content, baseSha256]
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        baseSha256:
+          type: string
+    AssistantFileRevert:
+      type: object
+      required: [workspaceId, path, revisionId, baseSha256]
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+        revisionId:
+          type: string
+        baseSha256:
+          type: string
+    AssistantFileMove:
+      description: Renames a file (toPath set) or deletes it; baseSha256 is the content the person saw.
+      type: object
+      required: [workspaceId, path, baseSha256]
+      additionalProperties: false
+      properties:
+        workspaceId:
+          type: string
+        path:
+          type: string
+        toPath:
+          type: string
+        baseSha256:
+          type: string
+    AssistantInstructionsDefault:
+      description: "adopt: replace the instructions with Foundry's current default; else keep them and stop offering it."
+      type: object
+      required: [adopt, baseSha256]
+      additionalProperties: false
+      properties:
+        adopt:
+          type: boolean
+        baseSha256:
+          type: string

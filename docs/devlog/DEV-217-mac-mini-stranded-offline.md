@@ -2,7 +2,7 @@
 
 ## 状态
 
-已合入 main（PR #267）。
+已合入 main（PR #267，squash 602765a0）。
 
 根因已用 Mac 本机日志确认（见「确认的根因」）。修复 1–4 已上线：Server `61f14d85234f4fb5…`（12:28Z），Worker `0.5.7-dev.357.g8f394c91.local.1794572421`。Mac mini 12:18Z 自己恢复，12:29Z 已更新到新 Worker。2026-11-13 08:57:32Z 起 CanWendeMac-mini（`dev_d783b240-…`）离线，30 分钟以上没有任何重连尝试；没有远程通路，无法远程恢复。
 
@@ -138,7 +138,12 @@ Mac 回来后，通过 compute lease 读了 `daemon.out.log` / `daemon.err.log`�
 - 提示正文去掉了 CLI 命令，改成两个按钮：「不再使用这个代理」和「改用别的代理…」（小对话框，填地址，先在页面上校验，再由 Worker 校验）。
 - 链路：只有设备所有者能调用 `PUT /api/devices/{deviceId}/worker/proxy`（`{clear:true}` 或 `{url}`），Server 经守护连接发 `set_worker_proxy` → Worker 用 `applyWorkerProxySetting` 写入或清除 `worker-proxy.json`，原有的 no-proxy 设置保留，回复里不带凭据。之后代理监视器发现配置变化，自动重连到新路线，fallback 随之作废。旧 Worker 没有 `worker_proxy_settings` 能力时，Server 直接回 409「先更新 Worker」，不会等到超时。Server 不保存也不记录这个地址。
 - 测试：Go `TestSetDeviceWorkerProxyGoesThroughTheWorker`（无能力时 409、参数不合法时 400、清除、设置时去掉首尾空格且回复不含凭据、Worker 拒绝时原因能传到页面）；Worker `worker-proxy-setting.test.mjs`；Web `devices-feature.test.mjs` 新增用例（提示出现在页面上、页面里不出现 CLI 命令、按钮发出正确的请求、不合法地址不发送并就地提示）。全部 14 个通过；web typecheck 通过；`audit:ui` 各项通过（`feature-architecture` 只因别的会话的 `server-held-connector.tsx` 超过 1000 行而失败，与本改动无关）。
-- 改动以 `/tmp/dev217-patch/dev217-proxy-actions.diff`（16 个文件，相对线上）交给 conductor；上线后补中英文截图。
+- 部署（conductor，2026-11-13 13:58Z）：Server `5728740e64991f95…`，Web `8c2633b20062aac0`，Worker `0.5.7-dev.357.g8f394c91.local.1794578036`（带 `worker_proxy_settings` 能力）。update_worker 已更新除 macbook（离线）外的所有设备。
+- 上线后验证（14:06–14:10Z）：线上 Server 二进制和线上 Web dist（`/var/www/foundryapp-dev`）跑在空的合成 DB 上（集成关闭、外部流量走死代理），配对已安装的线上 Worker，代理设为 `http://127.0.0.1:1`。
+  - 9 s 后改为直连，设备页头部出现提示和两个按钮。
+  - 中英文、亮色暗色都在 1280 宽下截了图；对话框里填 `proxy:3128` 会就地报错。
+  - 真实执行了「不再使用这个代理」的请求：`PUT …/worker/proxy {"clear":true}` 返回 200。Worker 删除了 `worker-proxy.json` 和 `server-route-fallback.json`，以 1000 `Worker proxy configuration changed` 关闭并在 2 s 内直连回来，提示消失。Server 日志记下了 `closed (device closed the connection): websocket: close 1000 (normal): Worker proxy configuration changed`。
+  - 截图在 sg-chaos 的 `/tmp/dev217-patch/shots/`。
 
 ## 验收
 

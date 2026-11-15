@@ -43,7 +43,7 @@ func (r pendingReactions) recordTurnFailure(ctx context.Context, session store.A
 		return
 	}
 	detail := strings.TrimSpace(failure)
-	if detail == "" || strings.Contains(strings.ToLower(detail), "session was canceled") {
+	if detail == "" || store.IsCanceledTurnFailure(detail) {
 		return
 	}
 	classified := classifyTurnFailure(code, detail, time.Now().UTC())

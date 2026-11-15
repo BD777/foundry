@@ -41,15 +41,19 @@ import { FileDetail, SessionFileView } from "./chat-detail-files";
 import { TimerDetail } from "./chat-detail-timer";
 import { ScreenDetail } from "./chat-detail-screen";
 import type { ParsedImageTag } from "../../../components/conversation/conversation-types";
-import { WorkspaceDirectoryBrowser } from "../../../components/workspace/workspace-directory-browser";
+import {
+  unopenableLink,
+  WorkspaceDirectoryBrowser,
+  type WorkspaceTreeSelection,
+} from "../../../components/workspace/workspace-directory-browser";
 import {
   ChatFileDownloadButton,
   ChatFileDownloadStatus,
   useChatFileDownload,
 } from "./chat-file-download";
 import { DeviceFileDetail } from "./chat-device-file";
-import { FileReadFeedback } from "./chat-file-read-feedback";
-import { requestDeviceFile } from "./device-file-request";
+import { FileReadFeedback } from "../../../components/workspace/file-read-feedback";
+import { requestDeviceFile } from "../../../components/workspace/device-file-request";
 import { i18n } from "../../../i18n";
 import { LoadingState } from "../../../components/ui/loading";
 
@@ -247,7 +251,7 @@ export function ChatDetailPanel({
   const { t } = useTranslation(["chat", "common"]);
   const pathView = workspacePathView(selection);
   const [browsedFile, setBrowsedFile] = useState<
-    { name: string; path: string } | undefined
+    WorkspaceTreeSelection | undefined
   >(() => pathView?.file);
   const [browsedFileRead, setBrowsedFileRead] = useState<WorkspaceFileRead>();
   const [browsedFileLoading, setBrowsedFileLoading] = useState(false);
@@ -263,7 +267,7 @@ export function ChatDetailPanel({
   }, [selection]);
 
   useEffect(() => {
-    if (!browsedFile || !selection.workspaceId) {
+    if (!browsedFile || !selection.workspaceId || unopenableLink(browsedFile)) {
       setBrowsedFileRead(undefined);
       setBrowsedFileLoading(false);
       return undefined;
@@ -364,7 +368,26 @@ export function ChatDetailPanel({
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
         {selection.kind === "source" || pathView ? (
           browsedFile ? (
-            browsedFileLoading ? (
+            unopenableLink(browsedFile) ? (
+              <DetailFeedback>
+                <Alert
+                  size="compact"
+                  title={t(
+                    browsedFile.link === "missing"
+                      ? "directory.linkNotice.missingTitle"
+                      : "directory.linkNotice.outsideTitle",
+                  )}
+                  tone={browsedFile.link === "missing" ? "warning" : "info"}
+                >
+                  {t(
+                    browsedFile.link === "missing"
+                      ? "directory.linkNotice.missingBody"
+                      : "directory.linkNotice.outsideBody",
+                    { name: browsedFile.name },
+                  )}
+                </Alert>
+              </DetailFeedback>
+            ) : browsedFileLoading ? (
               <LoadingState
                 label={t(
                   browseRetrying

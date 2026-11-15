@@ -39,6 +39,7 @@ export const skillsViewFields: readonly FoundryDataField[] = [
   "providerHealth",
   "builtinSkills",
   "workspaceSkills",
+  "connectorSkills",
   "defaultSkillIds",
   "deviceTools",
   "skillBundles",

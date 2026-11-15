@@ -1,5 +1,11 @@
 import type {
   AddMemoryEntryInput,
+  AssistantFile,
+  AssistantFileMove,
+  AssistantFileRevert,
+  AssistantFileWrite,
+  AssistantInstructionsDefault,
+  AssistantWorkspaceList,
   AgentSession,
   AssistantList,
   AssistantMemoryLayers,
@@ -14,7 +20,6 @@ import type {
   MemorySortRecord,
   MessageChannelDeliveryList,
   MessageChannelInput,
-  MessageChannelInstructions,
   MessageChannelList,
   MessageChannelPeers,
   MessageChannelPrerequisites,
@@ -39,7 +44,7 @@ import type {
   PersonalAgentTask,
   UpdateAssistantInput,
 } from "@bd777/foundry-protocol";
-import { request } from "./http";
+import { request, type RequestOptions } from "./http";
 
 // The Personal Agent ("assistant", docs/personal-agent.md §10–§11). Every
 // call here is the signed-in person's own: the server refuses session tokens
@@ -407,7 +412,6 @@ export function cancelPendingPersonalAgentOperation(
 export type {
   MessageChannelDeliveryList,
   MessageChannelInput,
-  MessageChannelInstructions,
   MessageChannelList,
   MessageChannelPeers,
   MessageChannelPrerequisites,
@@ -503,41 +507,68 @@ export function grantMessageChannelSource(
   });
 }
 
+// The files of the assistant's workspaces (DEV-223). The tree and binary
+// previews use the workspace file routes (listWorkspaceTree, downloads).
+
+const filesPath = (assistantId: string | undefined) =>
+  `${personalAgentApiBase(assistantId)}/files`;
+
+/** The assistant's home, then each message channel's workspace. */
+export function listAssistantWorkspaces(
+  assistantId: string | undefined,
+): Promise<AssistantWorkspaceList> {
+  return request("GET", `${filesPath(assistantId)}/workspaces`);
+}
+
 /**
- * The AGENTS.md of the channel's workspace and its saved versions, newest
- * first. 409 while the channel has no workspace yet.
+ * One file for the editor, with its saved versions; for the home AGENTS.md
+ * the content is the person's instructions, beside Foundry's block.
  */
-export function getMessageChannelInstructions(
+export function readAssistantFile(
   assistantId: string | undefined,
-  channelId: string,
-): Promise<MessageChannelInstructions> {
-  return request("GET", `${channelPath(assistantId, channelId)}/instructions`);
+  workspaceId: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<AssistantFile> {
+  const params = new URLSearchParams({ path, workspaceId });
+  return request("GET", `${filesPath(assistantId)}?${params}`, options);
 }
 
-/** Saves AGENTS.md; 409 when it changed since `baseSha256` was read. */
-export function saveMessageChannelInstructions(
+/**
+ * Saves a text file over the version `baseSha256` names ("" creates one);
+ * 409 when it changed on the device since.
+ */
+export function saveAssistantFile(
   assistantId: string | undefined,
-  channelId: string,
-  content: string,
-  baseSha256: string,
-): Promise<MessageChannelInstructions> {
-  return request("PUT", `${channelPath(assistantId, channelId)}/instructions`, {
-    body: { content, baseSha256 },
+  input: AssistantFileWrite,
+): Promise<AssistantFile> {
+  return request("PUT", filesPath(assistantId), { body: input });
+}
+
+/** Puts a saved version back, as a new version. */
+export function revertAssistantFile(
+  assistantId: string | undefined,
+  input: AssistantFileRevert,
+): Promise<AssistantFile> {
+  return request("POST", `${filesPath(assistantId)}/revert`, { body: input });
+}
+
+/** Renames a file (`toPath`) or deletes it (no `toPath`). */
+export function moveAssistantFile(
+  assistantId: string | undefined,
+  input: AssistantFileMove,
+): Promise<{ op: string; path: string; toPath: string }> {
+  return request("POST", `${filesPath(assistantId)}/move`, { body: input });
+}
+
+/** Takes Foundry's newer default instructions, or keeps the person's. */
+export function answerAssistantInstructionsDefault(
+  assistantId: string | undefined,
+  input: AssistantInstructionsDefault,
+): Promise<AssistantFile> {
+  return request("POST", `${filesPath(assistantId)}/instructions-default`, {
+    body: input,
   });
-}
-
-/** Puts a saved version of AGENTS.md back, as a new version. */
-export function revertMessageChannelInstructions(
-  assistantId: string | undefined,
-  channelId: string,
-  revisionId: string,
-  baseSha256: string,
-): Promise<MessageChannelInstructions> {
-  return request(
-    "POST",
-    `${channelPath(assistantId, channelId)}/instructions/revert`,
-    { body: { revisionId, baseSha256 } },
-  );
 }
 
 /** The conversation's next message starts a new session. */

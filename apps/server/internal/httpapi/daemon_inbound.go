@@ -70,6 +70,7 @@ var inboundHandlers = map[string]inboundHandler{
 	// Answers to the server's requests.
 	wsFileReadType:                     answer[wsFileReadPayload],
 	wsFileWrittenType:                  answer[wsFileWrittenPayload],
+	wsFileManagedType:                  answer[wsFileManagedPayload],
 	wsDeviceFileReadType:               answer[wsDeviceFileRead],
 	wsContextPatchedType:               answer[wsContextPatchReply],
 	wsKnowledgeResultType:              answer[wsKnowledgeReply],

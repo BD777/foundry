@@ -12,6 +12,8 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		40: "fa338753e16dd2eec829646a744160e795fa66b16bffc0659c86840bf91f7292", // Cloudflare: name the level a refusal needs; Zero Trust reads Tunnel connections
+		39: "a8d8ddabd8fe51288fd29c336e112a8eb1bf12dfc3484359cbd7348b2c923558", // worker_groups: edit worker group members from a chat or assistant
 		38: "140ba5d0bebacf1e00caf7c24ff66f3d6dd5acd169fea9e235495a6a083e0e36", // DEV-215 + DEV-219: connector access lasts the session; compute leases are shared by default
 		36: "134f23c7f7fb2e6c9ee90937f8ca3ffa775e034818357a95fbba0da8d41ed12f", // DEV-197 B1 + DEV-201: blocker reporting and generic-surface guidance
 		31: "3e6b99a0b26d81f8f2ebdfa1e4295966f13107af788fae76b6098a5da67fede8", // session system alerts; MCP result budgets (paged session work, chat-capable models)

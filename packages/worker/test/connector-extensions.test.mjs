@@ -80,6 +80,13 @@ function bundledExtensionSource(id, version) {
   return dir;
 }
 
+const bundledLimenVersion = JSON.parse(
+  readFileSync(
+    join(here, "../../../extensions/limen/foundry-extension.json"),
+    "utf8",
+  ),
+).version;
+
 function removeIfInstalled(id) {
   try {
     removeExtension(id);
@@ -969,14 +976,14 @@ const limenModelProvider = {
 test("a local folder extension is replaced by the bundled newer copy, keeping its data and models", () => {
   removeIfInstalled("limen");
   try {
-    addExtension(bundledExtensionSource("limen", "0.2.0"), ["aws"]);
+    addExtension(bundledExtensionSource("limen", "0.0.1"), ["aws"]);
     mkdirSync(extensionDataDir("limen"), { recursive: true });
     writeFileSync(join(extensionDataDir("limen"), "profile.json"), "profile");
     saveConnectorModelProviders([limenModelProvider]);
 
     assert.deepEqual(syncBundledExtensions(["aws"]), ["updated"]);
     const installed = listExtensions().find((item) => item.id === "limen");
-    assert.equal(installed.version, "0.2.1");
+    assert.equal(installed.version, bundledLimenVersion);
     assert.equal(installed.bundled, true);
     assert.equal(installed.source, undefined);
     assert.equal(
@@ -998,18 +1005,18 @@ test("a local folder extension is replaced by the bundled newer copy, keeping it
 test("a newer local folder extension is kept, with the bundled version shown", () => {
   removeIfInstalled("limen");
   try {
-    addExtension(bundledExtensionSource("limen", "0.2.2"), ["aws"]);
+    addExtension(bundledExtensionSource("limen", "99.0.0"), ["aws"]);
     assert.deepEqual(syncBundledExtensions(["aws"]), []);
     const installed = listExtensions().find((item) => item.id === "limen");
-    assert.equal(installed.version, "0.2.2");
+    assert.equal(installed.version, "99.0.0");
     assert.equal(installed.bundled, undefined);
     assert.equal(installed.source, undefined);
     const descriptor = extensionConnectorDescriptors().find(
       (connector) => connector.kind === "limen",
     );
-    assert.equal(descriptor.extension.version, "0.2.2");
+    assert.equal(descriptor.extension.version, "99.0.0");
     assert.equal(descriptor.extension.bundled, undefined);
-    assert.equal(descriptor.extension.bundledVersion, "0.2.1");
+    assert.equal(descriptor.extension.bundledVersion, bundledLimenVersion);
   } finally {
     removeIfInstalled("limen");
   }

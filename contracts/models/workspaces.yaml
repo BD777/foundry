@@ -506,6 +506,17 @@ components:
           format: int64
         extension:
           type: string
+        link:
+          description: >-
+            Set when the entry is a symbolic link, by where it leads. workspace: a file or folder
+            in this workspace, listed and opened as it. foundry: a skill folder Foundry linked
+            in from its own skill snapshots, shown read-only. outside: somewhere outside this
+            workspace, never followed. missing: its target does not exist.
+          type: string
+          enum: [workspace, foundry, outside, missing]
+        readOnly:
+          description: The entry can't be changed through Foundry (a link out of the workspace or a file in one).
+          type: boolean
     AssetProjection:
       type: object
       required:

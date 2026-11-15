@@ -733,6 +733,15 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 			if action != "run" {
 				item.Spec.ManualRunAt = ""
 			}
+			// A turn never cancels itself: a schedule's run that stops or
+			// removes its own schedule ends on its own, and only then is the
+			// control confirmed. Anyone else's stop cancels the run.
+			item.FinishRunID = ""
+			if (action == "stop" || action == "remove") && item.Kind == "schedule" &&
+				item.Observation.Status == "running" && item.Observation.RunID != "" &&
+				input.RequestedBySessionID != "" && item.Observation.ExecutionSessionID == input.RequestedBySessionID {
+				item.FinishRunID = item.Observation.RunID
+			}
 			item.Revision++
 			if exitedIdentity && (action == "stop" || action == "remove") {
 				item.Observation.ConfirmedRevision = item.Revision

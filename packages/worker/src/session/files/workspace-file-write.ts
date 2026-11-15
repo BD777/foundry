@@ -11,12 +11,16 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
+  unlinkSync,
   type Stats,
 } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type {
+  FileManagedPayload,
   FileWrittenPayload,
+  ManageFilePayload,
   WriteFilePayload,
 } from "@bd777/foundry-protocol";
 import { within } from "../../platform/paths.js";
@@ -26,7 +30,7 @@ import { writeFileAtomic } from "../../platform/storage.js";
 export const maxWorkspaceFileWriteBytes = 512 * 1024;
 
 export type WorkspaceFileWriteErrorCode =
-  "conflict" | "invalid_path" | "too_large";
+  "conflict" | "invalid_path" | "too_large" | "exists" | "missing";
 
 export class WorkspaceFileWriteError extends Error {
   constructor(
@@ -53,7 +57,7 @@ function isGitInternal(root: string, path: string): boolean {
 /** The path's segments, refused unless a plain relative path. */
 function segments(path: unknown): string[] {
   if (typeof path !== "string" || !path.trim())
-    throw invalid("write_file needs a path");
+    throw invalid("the request needs a path");
   if (
     isAbsolute(path) ||
     path.startsWith("/") ||
@@ -178,5 +182,78 @@ export function writeWorkspaceFile(
     path: payload.path,
     sha256: sha256(data),
     bytes: data.byteLength,
+  };
+}
+
+/** The regular file at `path` (never a link), refused unless there. */
+function plainFile(root: string, parts: string[]): string {
+  const parent = parentFolder(root, parts.slice(0, -1), false);
+  const path = parent ? join(parent, parts[parts.length - 1]!) : undefined;
+  let stat: Stats | undefined;
+  try {
+    stat = path ? lstatSync(path) : undefined;
+  } catch {
+    stat = undefined;
+  }
+  if (!path || !stat)
+    throw new WorkspaceFileWriteError("missing", "the file does not exist");
+  if (stat.isSymbolicLink())
+    throw invalid("links are not renamed or deleted through Foundry");
+  if (!stat.isFile()) throw invalid("only files are renamed or deleted");
+  return path;
+}
+
+/**
+ * manage_file: one file of a workspace renamed or deleted from the Web,
+ * under write_file's path rules and only over the content the person last
+ * saw.
+ */
+export function manageWorkspaceFile(
+  workspacePath: string,
+  payload: ManageFilePayload,
+): FileManagedPayload {
+  if (payload.op !== "rename" && payload.op !== "delete")
+    throw invalid("manage_file renames or deletes");
+  const root = realpathSync(workspacePath);
+  const source = plainFile(root, segments(payload.path));
+  const expected = payload.expectedSha256;
+  if (
+    expected !== undefined &&
+    sha256(readFileSync(source)) !== expected.trim().toLowerCase()
+  )
+    throw new WorkspaceFileWriteError(
+      "conflict",
+      "the file changed since it was read",
+    );
+  if (payload.op === "delete") {
+    unlinkSync(source);
+    return {
+      workspaceId: payload.workspaceId,
+      op: "delete",
+      path: payload.path,
+    };
+  }
+  const parts = segments(payload.toPath);
+  const known = parentFolder(root, parts.slice(0, -1), false);
+  if (known) {
+    let exists = true;
+    try {
+      lstatSync(join(known, parts[parts.length - 1]!));
+    } catch {
+      exists = false;
+    }
+    if (exists)
+      throw new WorkspaceFileWriteError(
+        "exists",
+        "a file or folder with that name already exists",
+      );
+  }
+  const parent = known ?? parentFolder(root, parts.slice(0, -1), true) ?? root;
+  renameSync(source, join(parent, parts[parts.length - 1]!));
+  return {
+    workspaceId: payload.workspaceId,
+    op: "rename",
+    path: payload.path,
+    toPath: payload.toPath,
   };
 }

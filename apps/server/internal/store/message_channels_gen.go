@@ -135,39 +135,6 @@ type MessageChannelInput struct {
 	Session *MessageChannelSessionRule `json:"session,omitempty"`
 }
 
-// MessageChannelInstructions The AGENTS.md of the channel's workspace as it is on the device now, and its saved revisions.
-type MessageChannelInstructions struct {
-	WorkspaceID string                                             `json:"workspaceId"`
-	Path        string                                             `json:"path"`
-	Content     string                                             `json:"content"`
-	Sha256      string                                             `json:"sha256"`
-	Missing     bool                                               `json:"missing"`
-	Revisions   jsonempty.List[MessageChannelInstructionsRevision] `json:"revisions"`
-}
-
-// MessageChannelInstructionsInput New content; baseSha256 is the sha256 the editor started from (refused when the file changed since).
-type MessageChannelInstructionsInput struct {
-	Content    string `json:"content"`
-	BaseSha256 string `json:"baseSha256"`
-}
-
-// MessageChannelInstructionsRevert defines model for MessageChannelInstructionsRevert.
-type MessageChannelInstructionsRevert struct {
-	RevisionID string `json:"revisionId"`
-	BaseSha256 string `json:"baseSha256"`
-}
-
-// MessageChannelInstructionsRevision defines model for MessageChannelInstructionsRevision.
-type MessageChannelInstructionsRevision struct {
-	ID     string `json:"id"`
-	At     string `json:"at"`
-	Sha256 string `json:"sha256"`
-	Bytes  int    `json:"bytes"`
-
-	// Source seed, web, revert, or outside (changed on the device, found when read).
-	Source string `json:"source"`
-}
-
 // MessageChannelLimits defines model for MessageChannelLimits.
 type MessageChannelLimits struct {
 	PerHour     int `json:"perHour"`

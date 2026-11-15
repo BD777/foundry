@@ -104,37 +104,24 @@ func (c *Cloudflare) Describe() store.ExternalProvider {
 // Cloudflare access levels of a workspace binding (DEV-092): read (the
 // default), read plus DNS record changes in the bound zones, or account-level
 // Zero Trust Access and Tunnel management for the accounts those zones
-// belong to. The gateway (connectors.CloudflareGateway) holds what each one
-// allows.
+// belong to. access/cloudflare.json lists the routes each one allows; the
+// gateway (connectors.CloudflareGateway) applies them.
 const (
 	CloudflareAccessRead      = "read"
 	CloudflareAccessDNSEdit   = "dns_edit"
 	CloudflareAccessZeroTrust = "zero_trust"
 )
 
-var CloudflareAccessLevels = []store.ExternalAccessLevel{
-	{Name: CloudflareAccessRead},
-	{Name: CloudflareAccessDNSEdit, Scopes: []string{"dns.write"}},
-	{Name: CloudflareAccessZeroTrust, Scopes: []string{
-		"zone.read", "dns.read", "dns.write", "ssl-and-certificates.read",
-		"access-app.read", "access-app.write",
-		"access-policy.read", "access-policy.write",
-		"access-service-token.read", "access-service-token.write",
-		"argotunnel.read", "argotunnel.write",
-	}},
-}
+// CloudflareAccess is access/cloudflare.json: the levels and the routes
+// each one allows.
+var CloudflareAccess = mustAccessCatalog("cloudflare")
+
+// CloudflareAccessLevels are the levels, read first.
+var CloudflareAccessLevels = CloudflareAccess.Levels
 
 // CloudflareAccessLevel is the named level; "" is the default.
 func CloudflareAccessLevel(name string) (store.ExternalAccessLevel, bool) {
-	if name == "" {
-		name = CloudflareAccessRead
-	}
-	for _, level := range CloudflareAccessLevels {
-		if level.Name == name {
-			return level, true
-		}
-	}
-	return store.ExternalAccessLevel{}, false
+	return CloudflareAccess.Level(name)
 }
 
 // MissingScopes are the level's scopes the grant does not hold.

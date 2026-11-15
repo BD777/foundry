@@ -440,7 +440,7 @@ func (s *Server) setConnectorPackageDeviceSelection(
 	if err := s.selectConnectorPackageDevices(ctx, ownerUserID, descriptor, wanted); err != nil {
 		return store.ConnectorPackageView{}, err
 	}
-	s.projectionsChanged("", fieldConnectorPackages)
+	s.projectionsChanged("", append([]string{fieldConnectorPackages}, workspaceSkillFields...)...)
 	s.startConnectorPackageApply(ownerUserID, descriptor.Kind)
 	return s.connectorPackageView(context.WithoutCancel(ctx), ownerUserID, descriptor, devices)
 }

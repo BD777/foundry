@@ -182,7 +182,7 @@ func TestCloudflareReadLevelRefusesChangesWithTheLevelThatAllowsThem(t *testing.
 	if !errors.As(err, &refusal) || !errors.Is(err, ErrCloudflareAccess) {
 		t.Fatalf("read level let a change through: %v", err)
 	}
-	for _, want := range []string{"dns_edit", "read access", "Connectors → this workspace → Cloudflare"} {
+	for _, want := range []string{`"Read + DNS edit" (dns_edit)`, `has "Read" (read)`, "Connectors → this workspace → Cloudflare"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}

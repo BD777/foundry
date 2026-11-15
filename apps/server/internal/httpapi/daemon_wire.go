@@ -26,6 +26,8 @@ const (
 	wsReadFileType                 = "read_file"
 	wsWriteFileType                = "write_file"
 	wsFileWrittenType              = "file_written"
+	wsManageFileType               = "manage_file"
+	wsFileManagedType              = "file_managed"
 	wsFileReadType                 = "file_read"
 	wsReadDeviceFileType           = "read_device_file"
 	wsDeviceFileReadType           = "device_file_read"
@@ -209,6 +211,8 @@ type wsFileReadPayload struct {
 	Path          string               `json:"path"`
 	Content       string               `json:"content"`
 	Truncated     bool                 `json:"truncated"`
+	RealPath      string               `json:"realPath,omitempty"`
+	ReadOnly      bool                 `json:"readOnly,omitempty"`
 	wsReplyError
 }
 
@@ -326,8 +330,10 @@ type wsSetupWorkspaceCreate struct {
 
 // wsSetupWorkspaceFile is one file of a new folder, Path relative to it.
 type wsSetupWorkspaceFile struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path         string `json:"path"`
+	Content      string `json:"content"`
+	ManagedBlock bool   `json:"managedBlock,omitempty"`
+	Seed         string `json:"seed,omitempty"`
 }
 
 type wsWorkspaceReadyPayload struct {
@@ -545,6 +551,11 @@ type wsSessionCompletedPayload struct {
 	IssueResult *store.CompleteIssueInput `json:"issueResult,omitempty"`
 	// ClarificationResult is an issue_clarification session's reply.
 	ClarificationResult *store.ClarificationResponse `json:"clarificationResult,omitempty"`
+	// NativeWork: the session's agent goes on working on its own past this
+	// turn (background tasks, timers…), as the next heartbeats will claim.
+	// Claimed here too, so a background command never meets the moment
+	// between the turn's end and the next heartbeat.
+	NativeWork bool `json:"nativeWork,omitempty"`
 }
 
 // wsRecoverSessionPayload asks a device about an input it no longer runs. The

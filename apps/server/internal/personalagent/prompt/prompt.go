@@ -45,7 +45,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-13.3"
+const Version = "2026-11-13.4"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -162,15 +162,45 @@ func ContentDigest() string {
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
-// AgentsFile is the AGENTS.md Foundry writes into the assistant's folder
-// before each run: system.md filled with the assistant's settings, without
-// the worked examples (ExamplesFile), then the person's rules, the facts they
-// confirmed and the pages they can open. It changes with those, not with
-// live state, so a conversation's runtime loads it once, natively.
-func AgentsFile(in Input) string {
-	body, _, _ := strings.Cut(filled(in), examplesHeading)
+// The assistant's AGENTS.md is two parts (DEV-223). On top, Foundry's
+// managed block (ManagedBlock): who the assistant is for (from its
+// settings), the person's rules, the facts they confirmed and the pages
+// they can open, rewritten before each run. Below it, the instructions,
+// which are the person's: seeded once from DefaultInstructions, then edited
+// by them in the Web or by the assistant when they ask; Foundry never
+// rewrites them. A newer DefaultInstructions is offered to the person, not
+// applied.
+const (
+	ManagedBlockStart = "<!-- foundry:managed:start (Foundry rewrites this block before each conversation; the rest is the person's) -->"
+	ManagedBlockEnd   = "<!-- foundry:managed:end -->"
+)
+
+// DefaultInstructions are the instructions an assistant's AGENTS.md starts
+// with below the managed block: system.md after its opening lines, without
+// the worked examples (ExamplesFile).
+func DefaultInstructions() string {
+	_, rest, _ := strings.Cut(system, "\n\n")
+	body, _, _ := strings.Cut(rest, examplesHeading)
+	return strings.TrimSpace(body) + "\n"
+}
+
+// DefaultInstructionsSha256 names DefaultInstructions, to tell the person
+// when a newer default is there.
+func DefaultInstructionsSha256() string {
+	sum := sha256.Sum256([]byte(DefaultInstructions()))
+	return hex.EncodeToString(sum[:])
+}
+
+// ManagedBlock is Foundry's block of AGENTS.md, markers included: the
+// assistant's identity filled from its settings, then the person's rules,
+// the facts they confirmed and the pages they can open. It changes with
+// those, not with live state, so a conversation's runtime loads it once,
+// natively.
+func ManagedBlock(in Input) string {
+	identity, _, _ := strings.Cut(filled(in), "\n\n")
 	var out strings.Builder
-	out.WriteString(strings.TrimRight(body, "\n"))
+	out.WriteString(ManagedBlockStart + "\n")
+	out.WriteString(strings.TrimRight(identity, "\n"))
 	out.WriteString("\n")
 	writeRules(&out, in)
 	out.WriteString("\n# What the person confirmed (newest first)\n\n")
@@ -194,15 +224,54 @@ func AgentsFile(in Input) string {
 			fmt.Fprintf(&out, "- Your settings, limits and what you remember: %s\n", in.SettingsURL)
 		}
 	}
+	out.WriteString(ManagedBlockEnd)
 	return out.String()
 }
+
+// AgentsFile is the whole AGENTS.md of an assistant whose instructions are
+// still the default: the managed block, then DefaultInstructions. A Worker
+// without assistant_instructions_block gets it whole before each run.
+func AgentsFile(in Input) string {
+	return ManagedBlock(in) + "\n\n" + DefaultInstructions()
+}
+
+// InitialAgentsFile is the AGENTS.md a new assistant folder starts with:
+// an empty managed block, which its first run fills, and the default
+// instructions.
+func InitialAgentsFile() string {
+	return JoinAgentsFile(ManagedBlockStart+"\n"+ManagedBlockEnd, DefaultInstructions())
+}
+
+// SplitAgentsFile parses an AGENTS.md into the managed block (markers
+// included; "" when it has none) and the rest, the person's instructions.
+func SplitAgentsFile(content string) (block, instructions string) {
+	start := strings.Index(content, managedBlockMarker)
+	if start < 0 {
+		return "", content
+	}
+	end := strings.Index(content[start:], ManagedBlockEnd)
+	if end < 0 {
+		return "", content
+	}
+	end += start + len(ManagedBlockEnd)
+	rest := content[:start] + strings.TrimLeft(content[end:], "\n")
+	return content[start:end], rest
+}
+
+// JoinAgentsFile is AGENTS.md with the block on top of the instructions.
+func JoinAgentsFile(block, instructions string) string {
+	return strings.TrimRight(block, "\n") + "\n\n" + strings.TrimLeft(instructions, "\n")
+}
+
+// managedBlockMarker starts every version of the block's start marker.
+const managedBlockMarker = "<!-- foundry:managed:start"
 
 // writeRules is the person's own requests from the settings and when
 // Foundry asks them first, grouped by decision.
 func writeRules(out *strings.Builder, in Input) {
 	out.WriteString("\n# The person's rules\n\n")
 	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
-		out.WriteString("Their own requests, from your settings (they apply unless they conflict with the rules\nabove or with privacy and safety):\n\n")
+		out.WriteString("Their own requests, from your settings (they apply unless they conflict with your\ninstructions below or with privacy and safety):\n\n")
 		out.WriteString(textcut.Excerpt(extra, extraMaxChars))
 		out.WriteString("\n\n")
 	}
@@ -245,7 +314,7 @@ func ExamplesFile(in Input) string {
 // .claude/skills and .agents/skills for native runtime discovery.
 func RunFiles(in Input) []personalagent.WorkspaceFile {
 	files := []personalagent.WorkspaceFile{
-		{Path: "AGENTS.md", Content: AgentsFile(in)},
+		{Path: "AGENTS.md", Content: ManagedBlock(in), ManagedBlock: true, Seed: DefaultInstructions(), Whole: AgentsFile(in)},
 		{Path: ExamplesPath, Content: ExamplesFile(in)},
 		{Path: ProjectIndexPath, Content: ProjectIndexFile(in)},
 	}

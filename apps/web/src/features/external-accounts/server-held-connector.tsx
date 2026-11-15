@@ -9,15 +9,15 @@ import type {
   ConnectorServerHeldNetworkPath,
   ConnectorServerHeldProbeResult,
   EdgeAccessRequired,
-  ExternalAccountStatus,
 } from "@bd777/foundry-protocol";
-import { ArrowLeft, Pencil, Plus, RefreshCw, ShieldOff } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ApiError,
   checkServerHeldInstance,
   createServerHeldInstance,
+  deleteServerHeldInstance,
   getExternalAccounts,
   getServerHeldInstances,
   probeServerHeldInstance,
@@ -26,7 +26,6 @@ import {
 } from "../../api";
 import { MarkdownContent } from "../../components/conversation/markdown-content";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ButtonRow } from "../../components/ui/button-row";
 import { Dialog } from "../../components/ui/dialog";
@@ -40,9 +39,8 @@ import { Skeleton } from "../../components/ui/loading";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { MutedText } from "../../components/ui/text";
-import { fullWhen, relativeWhen } from "../../lib/time-format";
 import type { ToastTone } from "../../components/ui/toast";
-import { errorText, statusLabel, statusTone } from "./account-format";
+import { errorText } from "./account-format";
 import { ConnectorSection } from "./connector-section";
 import {
   connectorDescription,
@@ -50,15 +48,12 @@ import {
   localized,
 } from "./connector-text";
 import { CredentialHolding } from "./credential-holding";
-import { DividedList } from "../../components/ui/divided-list";
 import {
   EdgeAccessRequiredNotice,
   edgeAccessRequiredOf,
 } from "./edge-access-required";
-import {
-  DeviceAvailability,
-  InstancePackageState,
-} from "./server-held-device-state";
+import { DeviceAvailability } from "./server-held-device-state";
+import { ServerHeldInstanceList } from "./server-held-instance-list";
 
 type FailureCategory =
   "credential" | "input" | "network" | "response" | "service";
@@ -77,13 +72,6 @@ export interface ServerHeldConnectorProps {
   onPackageChanged?: (view: ConnectorPackageView) => void;
   /** Called after instances were added, changed or revoked, so the package view can follow. */
   onInstancesChanged?: () => void;
-}
-
-/** A server-held instance uses the ordinary external-account status vocabulary. */
-function instanceStatus(status: string): ExternalAccountStatus {
-  return status === "expiring" || status === "revoked" || status === "ready"
-    ? status
-    : "needs_reauth";
 }
 
 /**
@@ -227,6 +215,8 @@ export function ServerHeldConnector({
   const [checking, setChecking] = useState<string>();
   const [revoking, setRevoking] = useState<ConnectorServerHeldInstance>();
   const [revokeBusy, setRevokeBusy] = useState(false);
+  const [deleting, setDeleting] = useState<ConnectorServerHeldInstance>();
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   async function refresh() {
     const [view, external] = await Promise.all([
@@ -296,6 +286,27 @@ export function ServerHeldConnector({
     }
   }
 
+  async function remove() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setActionFailure(undefined);
+    setActionEdgeAccess(undefined);
+    try {
+      await deleteServerHeldInstance(connector.kind, deleting.id);
+      setInstances((current) =>
+        current.filter((entry) => entry.id !== deleting.id),
+      );
+      onNotice(t("serverHeld.deletedNotice", { name: deleting.label }));
+      setDeleting(undefined);
+      onInstancesChanged?.();
+    } catch (cause) {
+      setActionFailure(failureOf(cause));
+      await refresh().catch(() => undefined);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function saved(instance: ConnectorServerHeldInstance) {
     const replacing = Boolean(editor);
     setInstances((current) =>
@@ -357,135 +368,20 @@ export function ServerHeldConnector({
         />
       ) : instances.length === 0 ? (
         <MutedText>{t("serverHeld.empty", { connector: name })}</MutedText>
-      ) : (
-        <DividedList>
-          {instances.map((instance) => {
-            const baseURL = serverHeld
-              ? instance.values[serverHeld.upstream.baseField]
-              : undefined;
-            const checkedAt = instance.updatedAt;
-            return (
-              <li
-                className="fdy-xacc-row grid gap-2.5 py-3"
-                data-instance-id={instance.id}
-                key={instance.id}
-              >
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                  <strong className="min-w-0 wrap-anywhere">
-                    {instance.label}
-                  </strong>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge tone="neutral">
-                      {t(
-                        instance.network === "device"
-                          ? "serverHeld.networkDevice"
-                          : "serverHeld.networkServer",
-                      )}
-                    </Badge>
-                    <Badge tone={statusTone(instanceStatus(instance.status))}>
-                      {statusLabel(instanceStatus(instance.status))}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="grid min-w-0 gap-1 text-xs text-ink-muted">
-                  {baseURL ? (
-                    <span className="wrap-anywhere">{baseURL}</span>
-                  ) : null}
-                  <span>
-                    {[
-                      instance.access === "write"
-                        ? t("serverHeld.accessWrite")
-                        : instance.access === "read"
-                          ? t("serverHeld.accessRead")
-                          : null,
-                      instance.version
-                        ? t("serverHeld.version", {
-                            version: instance.version,
-                          })
-                        : null,
-                      typeof instance.routeCount === "number" &&
-                      instance.routeCount >= 0
-                        ? t("serverHeld.routeCount", {
-                            count: instance.routeCount,
-                          })
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  {checkedAt ? (
-                    <time dateTime={checkedAt} title={fullWhen(checkedAt)}>
-                      {t("serverHeld.checkedAt", {
-                        when: relativeWhen(checkedAt),
-                      })}
-                    </time>
-                  ) : null}
-                  {instance.network === "device" ? (
-                    <>
-                      <DeviceAvailability
-                        devices={instance.availableDevices}
-                        probeDeviceId={instance.probeDeviceId}
-                      />
-                    </>
-                  ) : null}
-                  {packageView ? (
-                    <InstancePackageState
-                      instance={instance}
-                      onChanged={onPackageChanged}
-                      onNotice={onNotice}
-                      view={packageView}
-                    />
-                  ) : null}
-                  {instance.statusDetail && instance.statusDetail !== "ok" ? (
-                    <span className="wrap-anywhere">
-                      {t("serverHeld.resultDetail", {
-                        detail: instance.statusDetail,
-                      })}
-                    </span>
-                  ) : null}
-                </div>
-                <ButtonRow align="end">
-                  <Button
-                    disabled={
-                      checking === instance.id || instance.status === "revoked"
-                    }
-                    onClick={() => void check(instance)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <RefreshCw
-                      aria-hidden="true"
-                      className={checking === instance.id ? "animate-spin" : ""}
-                      size={14}
-                    />
-                    {checking === instance.id
-                      ? t("serverHeld.checking")
-                      : t("serverHeld.check")}
-                  </Button>
-                  <Button
-                    disabled={instance.status === "revoked"}
-                    onClick={() => setEditor(instance)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <Pencil aria-hidden="true" size={14} />
-                    {t("serverHeld.replaceToken")}
-                  </Button>
-                  <Button
-                    disabled={instance.status === "revoked"}
-                    onClick={() => setRevoking(instance)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <ShieldOff aria-hidden="true" size={14} />
-                    {t("serverHeld.revoke")}
-                  </Button>
-                </ButtonRow>
-              </li>
-            );
-          })}
-        </DividedList>
-      )}
+      ) : serverHeld ? (
+        <ServerHeldInstanceList
+          checking={checking}
+          instances={instances}
+          onCheck={(instance) => void check(instance)}
+          onDelete={setDeleting}
+          onEdit={setEditor}
+          onNotice={onNotice}
+          onPackageChanged={onPackageChanged}
+          onRevoke={setRevoking}
+          packageView={packageView}
+          serverHeld={serverHeld}
+        />
+      ) : null}
       {adding || editor ? (
         <ServerHeldInstanceDialog
           descriptor={descriptor}
@@ -529,6 +425,38 @@ export function ServerHeldConnector({
           title={t("serverHeld.revokeTitle", { name: revoking.label })}
         >
           <MutedText>{t("serverHeld.revokeBody")}</MutedText>
+        </Dialog>
+      ) : null}
+      {deleting ? (
+        <Dialog
+          busy={deleteBusy}
+          description={t("serverHeld.deleteDescription", {
+            name: deleting.label,
+          })}
+          footer={
+            <ButtonRow align="end">
+              <Button
+                disabled={deleteBusy}
+                onClick={() => setDeleting(undefined)}
+                size="sm"
+                variant="ghost"
+              >
+                {tCommon("actions.cancel")}
+              </Button>
+              <Button
+                busy={deleteBusy}
+                onClick={() => void remove()}
+                size="sm"
+                variant="danger"
+              >
+                {t("serverHeld.deleteConfirm")}
+              </Button>
+            </ButtonRow>
+          }
+          onClose={() => setDeleting(undefined)}
+          title={t("serverHeld.deleteTitle", { name: deleting.label })}
+        >
+          <MutedText>{t("serverHeld.deleteBody")}</MutedText>
         </Dialog>
       ) : null}
     </ConnectorSection>

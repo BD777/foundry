@@ -63,6 +63,11 @@ export interface SessionWork {
   title: string;
   management: "managed" | "observed";
   desiredState: WorkState;
+  /**
+   * A schedule's run that asked, from its own turn, for this stop or removal:
+   * the turn is not canceled, and the control is confirmed once it ends.
+   */
+  finishRunId?: string;
   revision: number;
   generation: number;
   createdAt: string;

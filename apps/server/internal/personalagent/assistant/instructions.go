@@ -3,6 +3,7 @@ package assistant
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -72,6 +73,15 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 	// instructions are the person's (DEV-203): Foundry writes nothing there.
 	if session.WorkspaceID != agent.WorkspaceID {
 		return Run{TurnContext: turnContext}, true, nil
+	}
+	// The default instructions an AGENTS.md first starts from, so a newer
+	// default is offered to the person, never applied (DEV-223).
+	if st, ok := s.store.(store.WorkspaceFileStore); ok {
+		if _, err := st.AssistantInstructionsDefault(ctx, agent.ID); errors.Is(err, store.ErrNotFound) {
+			if err := st.SetAssistantInstructionsDefault(ctx, agent.ID, prompt.DefaultInstructionsSha256()); err != nil {
+				log.Printf("assistant %s: keep its default instructions: %v", agent.ID, err)
+			}
+		}
 	}
 	return Run{Files: prompt.RunFiles(input), TurnContext: turnContext}, true, nil
 }

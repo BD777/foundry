@@ -1,125 +1,24 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type {
   SessionFileRead,
   WorkspaceFileRead,
 } from "@bd777/foundry-protocol";
-import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../../components/ui/alert";
 import { detailDocument } from "./chat-detail-parts";
 import { Button } from "../../../components/ui/button";
 import { CopyButton } from "../../../components/ui/copy-button";
-import { SegmentedControl } from "../../../components/ui/segmented-control";
-import { MarkdownContent } from "../../../components/conversation/markdown-content";
-import { formatBytes } from "../../../lib/format";
+import {
+  formatFileSize,
+  TextFileView,
+} from "../../../components/workspace/workspace-file-view";
 import type { ChatSessionFileItem } from "../chat-types";
-import { WorkspaceImagePreview } from "./chat-image-file-preview";
-import { isInlineImageCandidate } from "./chat-image-preview-model";
-
-export const markdownExtensions = new Set(["md", "markdown", "mdx"]);
-export const htmlExtensions = new Set(["html", "htm"]);
-
-export function extensionOf(path: string): string {
-  const name = path.split("/").pop() ?? "";
-  return name.includes(".")
-    ? name.slice(name.lastIndexOf(".") + 1).toLowerCase()
-    : "";
-}
-
-export function formatFileSize(bytes: number): string {
-  return formatBytes(bytes, { kbDigits: 1, trimZeros: true });
-}
+import { WorkspaceImagePreview } from "../../../components/workspace/workspace-image-preview";
+import { isInlineImageCandidate } from "../../../components/workspace/image-preview-model";
 
 /** What a file read shows at most: workspace browsing and session files. */
 const workspaceReadLimit = 128 * 1024;
 const sessionReadLimit = 256 * 1024;
-
-/** HTML file with live preview and source code switcher. */
-export function HtmlFileView({
-  content,
-  path,
-}: {
-  content: string;
-  path: string;
-}) {
-  const { t } = useTranslation("chat");
-  const [mode, setMode] = useState<"preview" | "code">("preview");
-
-  const openInNewWindow = () => {
-    const blob = new Blob([content], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener");
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  };
-
-  return (
-    <div className="flex w-full flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <SegmentedControl
-          aria-label={t("detail.htmlModeLabel")}
-          onValueChange={(val) => setMode(val as "preview" | "code")}
-          options={[
-            { label: t("detail.htmlPreview"), value: "preview" },
-            { label: t("detail.htmlCode"), value: "code" },
-          ]}
-          size="sm"
-          value={mode}
-        />
-        <Button
-          className="inline-flex items-center gap-1.5 text-ink-muted"
-          onClick={openInNewWindow}
-          size="sm"
-          variant="ghost"
-        >
-          <ExternalLink aria-hidden="true" size={14} />
-          {t("detail.openInNewWindow")}
-        </Button>
-      </div>
-
-      {mode === "preview" ? (
-        <div className="h-[600px] min-h-[400px] w-full overflow-hidden rounded-lg border border-line bg-surface">
-          <iframe
-            className="block h-full w-full border-0 bg-surface"
-            sandbox="allow-scripts allow-forms allow-popups"
-            srcDoc={content}
-            title={path}
-          />
-        </div>
-      ) : (
-        <div className="fdy-markdown">
-          <pre className="text-xs">
-            <code>{content}</code>
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Text by its type: Markdown rendered, HTML with preview, anything else as code. */
-export function TextFileView({
-  content,
-  path,
-}: {
-  content: string;
-  path: string;
-}) {
-  const ext = extensionOf(path);
-  if (htmlExtensions.has(ext)) {
-    return <HtmlFileView content={content} path={path} />;
-  }
-  return markdownExtensions.has(ext) ? (
-    <div className="fdy-markdown">
-      <MarkdownContent>{content}</MarkdownContent>
-    </div>
-  ) : (
-    <div className="fdy-markdown">
-      <pre className="text-xs">
-        <code>{content}</code>
-      </pre>
-    </div>
-  );
-}
 
 /** A file browsed in the workspace folder. */
 export function FileDetail({ file }: { file: WorkspaceFileRead }) {

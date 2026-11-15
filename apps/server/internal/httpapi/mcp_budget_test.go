@@ -271,22 +271,54 @@ func TestListModelsPagesOnlyChatModels(t *testing.T) {
 	}
 }
 
-func TestChatModelForRuntimeUsesTheRuntimeAndModality(t *testing.T) {
+func TestChatModelKeepsEveryChatModelAndDropsOtherModalities(t *testing.T) {
 	for _, tc := range []struct {
-		runtime string
-		model   store.AgentModelOption
-		want    bool
+		model store.AgentModelOption
+		want  bool
 	}{
-		{"claude", store.AgentModelOption{ID: "us.anthropic.claude-sonnet-5"}, true},
-		{"claude", store.AgentModelOption{ID: "gpt-6"}, false},
-		{"codex", store.AgentModelOption{ID: "deepseek-chat"}, true},
-		{"codex", store.AgentModelOption{ID: "gpt-image-1"}, false},
-		{"codex", store.AgentModelOption{ID: "text-embedding-4"}, false},
-		{"codex", store.AgentModelOption{ID: "vendor-tts"}, false},
-		{"codex", store.AgentModelOption{ID: "vendor-video"}, false},
+		{store.AgentModelOption{ID: "us.anthropic.claude-sonnet-5"}, true},
+		// Claude Code aliases and a compatible endpoint's ids carry no "claude".
+		{store.AgentModelOption{ID: "sonnet"}, true},
+		{store.AgentModelOption{ID: "opus[1m]"}, true},
+		{store.AgentModelOption{ID: "default", Label: "Default (recommended)"}, true},
+		{store.AgentModelOption{ID: "deepseek-chat"}, true},
+		{store.AgentModelOption{ID: "auto_model/alwaysday1_max"}, true},
+		{store.AgentModelOption{ID: "gpt-image-1"}, false},
+		{store.AgentModelOption{ID: "text-embedding-4"}, false},
+		{store.AgentModelOption{ID: "vendor-tts"}, false},
+		{store.AgentModelOption{ID: "vendor-video"}, false},
 	} {
-		if got := chatModelForRuntime(tc.runtime, tc.model); got != tc.want {
-			t.Errorf("%s %s = %v, want %v", tc.runtime, tc.model.ID, got, tc.want)
+		if got := chatModel(tc.model); got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.model.ID, got, tc.want)
 		}
+	}
+}
+
+// A connector's Claude profile (Limen) declares CLI aliases next to full ids;
+// list_models answers every one of them, in the declared order.
+func TestListModelsAnswersEveryModelAConnectorProfileDeclares(t *testing.T) {
+	profile := store.AgentProfileProjection{
+		ID: "limen_default", Runtime: "claude",
+		Connector: &store.ProfileConnector{Kind: "limen", Label: "Limen"},
+	}
+	declared := []string{"sonnet", "opus", "haiku", "claude-fable-5-2"}
+	models := make([]store.AgentModelOption, 0, len(declared))
+	for _, id := range declared {
+		models = append(models, store.AgentModelOption{ID: id})
+	}
+	text, err := pageAgentModelsForMCP(profile, models, map[string]json.RawMessage{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page mcpModelPage
+	if err := json.Unmarshal([]byte(text), &page); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(page.Models))
+	for _, model := range page.Models {
+		got = append(got, model.ID)
+	}
+	if strings.Join(got, ",") != strings.Join(declared, ",") || page.Total != len(declared) {
+		t.Fatalf("models = %v (total %d), want %v", got, page.Total, declared)
 	}
 }

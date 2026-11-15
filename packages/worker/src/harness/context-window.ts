@@ -124,6 +124,17 @@ export async function resolveSessionContextWindow(
     const tokens = officialContextWindow(id);
     return tokens ? { model: id, tokens, source: "official" } : undefined;
   }
+  // A native login or a connector's connection (Limen) keeps the window
+  // Claude Code gives a model it knows. A model it runs at 1M only as
+  // `<model>[1m]` gets its official window, so the run is named that way.
+  if (profile.runtime === "claude" && !appliesTo(profile)) {
+    const tokens = officialContextWindow(id);
+    return tokens !== undefined &&
+      tokens >= 1_000_000 &&
+      claudeOneMillionOptIn(id)
+      ? { model: id, tokens, source: "official" }
+      : undefined;
+  }
   if (!appliesTo(profile)) return undefined;
   const setting = profile.contextWindows?.[id];
   let endpoint: number | undefined;

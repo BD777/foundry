@@ -352,6 +352,15 @@ test(
     await running;
     assert.equal(state.pending, 0);
     assert.ok(sent.some((x) => x.payload?.event?.label === "Session canceled"));
+    // The server hears that the input ended canceled, whoever canceled it.
+    assert.ok(
+      sent.some(
+        (x) =>
+          x.type === "session_completed" &&
+          x.payload.inputId === "input" &&
+          /session was canceled/i.test(x.payload.error),
+      ),
+    );
     assert.ok(
       !sent.some((x) =>
         /Started Codex|Loaded skills/.test(x.payload?.event?.label ?? ""),

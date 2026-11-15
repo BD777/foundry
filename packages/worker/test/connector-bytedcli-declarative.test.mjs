@@ -356,6 +356,21 @@ test("Meego and lark status map the adapter's states", async (t) => {
       reason: "cli_upgrade",
     },
   ]);
+
+  // bytedcli without its lark runtime answers LARK_CLI_NOT_FOUND: the
+  // capability needs setting up, not a failed check.
+  patch({ meego: "ready", lark: "missing" });
+  status = await host.call(
+    "bytedance",
+    "connector.status",
+    { kind: "bytedcli" },
+    30000,
+  );
+  assert.deepEqual(status.authorizations.at(-1), {
+    id: "lark_cli",
+    revision: 1,
+    status: "needs_auth",
+  });
 });
 
 test("the web-session authorization keeps continuation on device and falls back once", async (t) => {

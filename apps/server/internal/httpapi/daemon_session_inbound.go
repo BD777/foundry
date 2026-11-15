@@ -153,7 +153,9 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 	if existingErr == nil && !store.IsActiveSessionStatus(existing.Status) {
 		if payload.InputID != "" {
 			status := "completed"
-			if payload.Error != "" {
+			if store.IsCanceledTurnFailure(payload.Error) {
+				status = "canceled"
+			} else if payload.Error != "" {
 				status = "failed"
 			}
 			if err := c.hub.store.NotePersonalAgentNativeEnd(ctx, payload.SessionID, payload.InputID, status); err != nil {
@@ -174,7 +176,8 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.hub.sessions.EndReported(ctx, existing)
 		return nil
 	}
-	if payload.Error != "" && existingErr == nil && c.hub.retrySessionFailure != nil {
+	// A canceled input ended as asked; there is nothing to retry.
+	if payload.Error != "" && !store.IsCanceledTurnFailure(payload.Error) && existingErr == nil && c.hub.retrySessionFailure != nil {
 		scheduled, err := c.hub.retrySessionFailure(ctx, existing, payload.Error)
 		if err != nil {
 			return err

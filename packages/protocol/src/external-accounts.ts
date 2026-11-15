@@ -1,3 +1,4 @@
+import type { LocalizedText } from "./connectors.js";
 export type {
   AppStoreConnectApp,
   AppStoreConnectConnection,
@@ -38,10 +39,21 @@ export interface ExternalProvider {
   registersApps?: boolean;
 }
 
-/** One access level of a workspace binding ("read", "dns_edit"). */
+/** One access level of a workspace binding ("read", "dns_edit"). Levels
+ * are ranked: each allows what the ones before it allow. The words come
+ * from the connector's access file on the server (English, with
+ * translations by language). */
 export interface ExternalAccessLevel {
   name: string;
   scopes?: string[];
+  label?: string;
+  labels?: LocalizedText;
+  /** What it adds to the level before, what it still does not, when to choose it. */
+  description?: string;
+  descriptions?: LocalizedText;
+  /** Which provider permissions to allow when re-authorizing for `scopes`. */
+  grantHint?: string;
+  grantHints?: LocalizedText;
 }
 
 /** A provider's default scope list and where it comes from. */

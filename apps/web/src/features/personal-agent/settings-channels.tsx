@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type {
   MessageChannelList,
@@ -35,7 +42,6 @@ import {
 } from "./channel-model";
 import { ChannelDeliveries } from "./settings-channel-deliveries";
 import { ChannelEditor } from "./settings-channel-editor";
-import { ChannelEnvironment } from "./settings-channel-environment";
 import { PaMuted } from "./pa-muted";
 import { PrerequisiteNotice } from "./settings-channel-prerequisites";
 
@@ -62,6 +68,7 @@ export function ChannelsSection({
   homeWorkspaceId,
   workspaces,
   onNotice,
+  onOpenFiles,
 }: {
   assistantId?: string;
   /** The assistant's computer, where a channel's workspace must be. */
@@ -71,6 +78,8 @@ export function ChannelsSection({
   /** The person's workspaces, for a new channel's workspace choice. */
   workspaces: WorkspaceProjection[];
   onNotice: (message: string) => void;
+  /** Opens the workspace files on a channel's workspace. */
+  onOpenFiles: (workspaceId: string) => void;
 }) {
   const { t } = useTranslation("personalAgent");
   const [list, setList] = useState<MessageChannelList>();
@@ -181,6 +190,7 @@ export function ChannelsSection({
                 assistantId={assistantId}
                 homeWorkspaceId={homeWorkspaceId}
                 key={view.channel.id}
+                onOpenFiles={onOpenFiles}
                 onChanged={replace}
                 onDeleted={() => {
                   setList((current) =>
@@ -235,6 +245,7 @@ function ChannelRow({
   onDeleted,
   onEdit,
   onNotice,
+  onOpenFiles,
   onReload,
   sources,
 }: {
@@ -246,6 +257,7 @@ function ChannelRow({
   onDeleted: () => void;
   onEdit: () => void;
   onNotice: (message: string) => void;
+  onOpenFiles: (workspaceId: string) => void;
   onReload: () => void;
 }) {
   const { t } = useTranslation("personalAgent");
@@ -253,8 +265,8 @@ function ChannelRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
-  const [open, setOpen] = useState<"deliveries" | "environment">();
-  const toggle = (panel: "deliveries" | "environment") =>
+  const [open, setOpen] = useState<"deliveries">();
+  const toggle = (panel: "deliveries") =>
     setOpen((current) => (current === panel ? undefined : panel));
   const source = channel.source.label || channel.source.kind;
   const counts = status.counts;
@@ -387,14 +399,18 @@ function ChannelRow({
             ? t("settings.channels.deliveries.hide")
             : t("settings.channels.deliveries.show")}
         </PanelToggle>
-        <PanelToggle
-          onToggle={() => toggle("environment")}
-          open={open === "environment"}
+        <Button
+          disabled={!view.workspace}
+          onClick={() => view.workspace && onOpenFiles(view.workspace.id)}
+          size="sm"
+          title={
+            view.workspace ? undefined : t("settings.channels.files.pending")
+          }
+          variant="ghost"
         >
-          {open === "environment"
-            ? t("settings.channels.environment.hide")
-            : t("settings.channels.environment.show")}
-        </PanelToggle>
+          <FolderOpen aria-hidden="true" size={14} />
+          {t("settings.channels.files.open")}
+        </Button>
         <Button disabled={busy} onClick={onEdit} size="sm" variant="ghost">
           <Pencil aria-hidden="true" size={14} />
           {t("settings.channels.edit")}
@@ -428,13 +444,6 @@ function ChannelRow({
           onNotice={onNotice}
           onReleased={onReload}
           workspaceId={view.workspace?.id || homeWorkspaceId}
-        />
-      ) : open === "environment" ? (
-        <ChannelEnvironment
-          assistantId={assistantId}
-          channelId={channel.id}
-          onNotice={onNotice}
-          workspace={view.workspace}
         />
       ) : null}
       <Dialog

@@ -1392,6 +1392,15 @@ export class WorkSupervisor {
           throw new Error(
             "Scheduled execution outcome is unknown; stop cannot yet be verified",
           );
+        // The run asked for this control from its own turn: it is not
+        // canceled; the control is confirmed once the server settles its end.
+        if (
+          item.desiredState !== "paused" &&
+          item.observation.status === "running" &&
+          item.finishRunId &&
+          item.finishRunId === item.observation.runId
+        )
+          return { ...item.observation, at };
         if (
           item.desiredState !== "paused" &&
           item.observation.status === "running"

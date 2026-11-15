@@ -205,6 +205,7 @@ function WorkspaceSkills({
       )}
       builtinSkills={data.builtinSkills}
       workspaceSkills={data.workspaceSkills ?? []}
+      connectorSkills={data.connectorSkills ?? []}
       defaultSkillIds={data.defaultSkillIds}
       deviceTools={data.deviceTools}
       skillBundles={data.skillBundles}

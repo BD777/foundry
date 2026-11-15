@@ -82,10 +82,23 @@ type ExternalProvider struct {
 	RegistersApps bool `json:"registersApps,omitempty"`
 }
 
-// ExternalAccessLevel is one access level of a workspace binding.
+// ExternalAccessLevel is one access level of a workspace binding. Levels
+// are ranked: each allows what the ones before it allow. The texts are the
+// connector's own words for the person (English, with Labels/Descriptions/
+// GrantHints by language, as connector descriptors carry them).
 type ExternalAccessLevel struct {
-	Name   string   `json:"name"`
-	Scopes []string `json:"scopes,omitempty"`
+	Name   string            `json:"name"`
+	Scopes []string          `json:"scopes,omitempty"`
+	Label  string            `json:"label,omitempty"`
+	Labels map[string]string `json:"labels,omitempty"`
+	// Description: what the level allows on top of the one before, what it
+	// still does not, and when to choose it.
+	Description  string            `json:"description,omitempty"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	// GrantHint: which provider permissions to allow when re-authorizing
+	// for Scopes.
+	GrantHint  string            `json:"grantHint,omitempty"`
+	GrantHints map[string]string `json:"grantHints,omitempty"`
 }
 
 // ExternalScopePreset is a provider's default scope list and its source.

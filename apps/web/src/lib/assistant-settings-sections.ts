@@ -7,6 +7,7 @@ export const assistantSettingsSections = [
   "style",
   "memory",
   "rules",
+  "files",
   "places",
   "models",
   "connectors",
@@ -22,7 +23,7 @@ export type AssistantSettingsSection =
 export const assistantSettingsGroups = [
   {
     id: "assistant",
-    sections: ["status", "style", "memory", "rules"],
+    sections: ["status", "style", "memory", "rules", "files"],
   },
   {
     id: "work",

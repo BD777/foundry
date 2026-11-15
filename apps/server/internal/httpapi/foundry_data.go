@@ -28,6 +28,7 @@ const (
 	fieldDeviceSkillRoots       = "deviceSkillRoots"
 	fieldPromotedSkills         = "promotedSkills"
 	fieldWorkspaceSkills        = "workspaceSkills"
+	fieldConnectorSkills        = "connectorSkills"
 	fieldBuiltinSkills          = "builtinSkills"
 	fieldWorkspaceSkillBindings = "workspaceSkillBindings"
 	fieldDefaultSkillIDs        = "defaultSkillIds"
@@ -52,7 +53,7 @@ const fieldWorkspace = "workspace"
 var foundryDataFields = []string{
 	fieldWorkspaces, fieldDevices, fieldProviderHealth, fieldAgentProfiles,
 	fieldProfiles, fieldDeviceProfiles, fieldDeviceSkillRoots, fieldPromotedSkills,
-	fieldWorkspaceSkills, fieldBuiltinSkills, fieldWorkspaceSkillBindings,
+	fieldWorkspaceSkills, fieldConnectorSkills, fieldBuiltinSkills, fieldWorkspaceSkillBindings,
 	fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldSkillBundles,
 	fieldWorkspaceBundleIDs, fieldDefaultBundleIDs, fieldDeviceTools, fieldConnectorPackages, fieldAgents,
 	fieldWorkspaceFiles, fieldAgentSessions, fieldIssues, fieldChats, fieldAssets,
@@ -68,7 +69,7 @@ var (
 	// What a workspace's skill choices derive: its bindings, the skills it
 	// gets by default or through bundles, and the composer's menu.
 	workspaceSkillFields = []string{fieldWorkspaceSkillBindings, fieldDefaultSkillIDs,
-		fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills}
+		fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills, fieldConnectorSkills}
 	// What the library's catalog and bundles derive.
 	skillLibraryFields = append([]string{fieldPromotedSkills, fieldSkillBundles,
 		fieldWorkspaceBundleIDs, fieldDefaultBundleIDs, fieldDevices}, workspaceSkillFields...)
@@ -94,6 +95,20 @@ type foundryDataAnswer struct {
 	// (selected, from its bundles or its owner's defaults), as the
 	// composer's "/" menu lists them.
 	WorkspaceSkills []workspaceSkillSummary `json:"workspaceSkills,omitempty"`
+	// ConnectorSkills: the Skills the workspace's sessions get from the
+	// connectors granted there, by connector. They are among
+	// inheritedSkillIds, and among offSkillIds when the workspace turned
+	// them off.
+	ConnectorSkills []connectorSkillGroup `json:"connectorSkills,omitempty"`
+}
+
+// connectorSkillGroup is one connector's Skills in a workspace.
+type connectorSkillGroup struct {
+	Kind     string   `json:"kind"`
+	Label    string   `json:"label"`
+	SkillIDs []string `json:"skillIds"`
+	// BundleIDs are the library bundles these Skills come from.
+	BundleIDs []string `json:"bundleIds"`
 }
 
 // workspaceSkillSummary is a library or workspace draft skill as the composer offers it.
@@ -417,21 +432,24 @@ func (s *Server) workspaceSections(ctx context.Context, workspace store.Workspac
 			data.WorkspaceSkillBindings, err = s.store.ListWorkspaceSkillBindings(ctx, workspaceID)
 			return err
 		}},
-		{[]string{fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills}, "", func() error {
+		{[]string{fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills, fieldConnectorSkills}, "", func() error {
 			sources, err := resolveWorkspaceSkills(ctx, s.store, workspaceID)
 			if err != nil {
 				return err
 			}
-			data.DefaultSkillIDs, data.InheritedSkillIDs, data.OffSkillIDs = sources.DefaultIDs, sources.InheritedIDs, sources.OffIDs
-			resolved = sources.Refs
-			return nil
-		}},
-		{[]string{fieldWorkspaceSkills}, "", func() error {
-			withPackages, err := s.withPackageSkills(ctx, workspace, userID, resolved)
+			connector, err := s.workspaceConnectorSkillView(ctx, workspace, userID, sources.Refs)
 			if err != nil {
 				return err
 			}
-			data.WorkspaceSkills = workspaceSkillSummaries(catalog, withPackages)
+			data.DefaultSkillIDs = sources.DefaultIDs
+			data.InheritedSkillIDs = appendNew(sources.InheritedIDs, connector.Inherited)
+			data.OffSkillIDs = appendNew(sources.OffIDs, connector.Off)
+			data.ConnectorSkills = connector.Connectors
+			resolved = connector.Refs
+			return nil
+		}},
+		{[]string{fieldWorkspaceSkills}, "", func() error {
+			data.WorkspaceSkills = workspaceSkillSummaries(catalog, resolved)
 			if drafts, err := s.store.WorkspaceDrafts(ctx, workspaceID, workspaceID); err == nil && drafts.Enabled {
 				taken := make(map[string]bool, len(data.WorkspaceSkills))
 				for _, item := range data.WorkspaceSkills {
@@ -505,18 +523,30 @@ func withoutRepeatedPrompts(sessions []store.AgentSession) []store.AgentSession 
 	return sessions
 }
 
-// withPackageSkills adds the Skills a new session in the workspace would get
-// from connector packages, resolved as session dispatch does
-// (workspacePackageSkills). Only package Skills carry a Bundle here: a
-// Workspace's own choices stay as selected, even from a bundle.
-func (s *Server) withPackageSkills(ctx context.Context, workspace store.WorkspaceProjection, userID string, refs []store.SessionSkillRef) ([]store.SessionSkillRef, error) {
+// workspaceConnectorView is what the Skills page and the composer read of
+// the connector Skills a new session in the workspace would get.
+type workspaceConnectorView struct {
+	// Refs is the workspace's refs with the connector Skills added; only
+	// those carry a Bundle: a Workspace's own choices stay as selected, even
+	// from a bundle.
+	Refs       []store.SessionSkillRef
+	Inherited  []string
+	Off        []string
+	Connectors []connectorSkillGroup
+}
+
+// workspaceConnectorSkillView resolves the connector Skills of a new session
+// in the workspace as session dispatch does (workspaceConnectorSkills), with
+// the connectors granted to the workspace for userID.
+func (s *Server) workspaceConnectorSkillView(ctx context.Context, workspace store.WorkspaceProjection, userID string, refs []store.SessionSkillRef) (workspaceConnectorView, error) {
+	view := workspaceConnectorView{Refs: refs}
 	deviceID := strings.TrimSpace(workspace.DeviceID)
-	if deviceID == "" || userID == "" {
-		return refs, nil
+	if deviceID == "" || userID == "" || s.connectors == nil {
+		return view, nil
 	}
 	deviceOwner, err := s.store.DeviceOwner(ctx, deviceID)
 	if err != nil {
-		return refs, nil
+		return view, nil
 	}
 	request := connectors.SessionRequest{
 		Session:     store.AgentSession{WorkspaceID: workspace.ID, DeviceID: deviceID, CreatedByUserID: userID},
@@ -524,7 +554,7 @@ func (s *Server) withPackageSkills(ctx context.Context, workspace store.Workspac
 	}
 	kinds, err := s.connectors.BoundKinds(ctx, request)
 	if err != nil {
-		return refs, nil
+		return view, nil
 	}
 	plain := make([]store.SessionSkillRef, len(refs))
 	for i, ref := range refs {
@@ -533,15 +563,68 @@ func (s *Server) withPackageSkills(ctx context.Context, workspace store.Workspac
 	}
 	toolBundles, err := connectorToolBundles(ctx, s.store, s.connectors.Devices, deviceID, kinds)
 	if err != nil {
-		return nil, err
+		return view, err
 	}
 	deviceOwn, err := deviceOwnSkillNames(ctx, s.store, deviceID, workspace.LocalPath, "")
 	if err != nil {
-		return nil, err
+		return view, err
 	}
-	merged, _, err := workspacePackageSkills(ctx, s.store, deviceOwner, workspace.ID, deviceID, kinds, toolBundles, deviceOwn, plain)
+	resolved, err := workspaceConnectorSkills(ctx, s.store, deviceOwner, workspace.ID, deviceID, kinds, toolBundles, deviceOwn, plain)
 	if err != nil {
-		return nil, err
+		return view, err
 	}
-	return merged, nil
+	view.Refs, view.Off = resolved.Refs, resolved.Off
+	byKind := map[string]*connectorSkillGroup{}
+	var order []string
+	for skillID, origin := range resolved.Contributed {
+		view.Inherited = append(view.Inherited, skillID)
+		entry := byKind[origin.Kind]
+		if entry == nil {
+			entry = &connectorSkillGroup{Kind: origin.Kind, Label: s.connectorKindLabel(ctx, deviceOwner, deviceID, origin.Kind)}
+			byKind[origin.Kind] = entry
+			order = append(order, origin.Kind)
+		}
+		entry.SkillIDs = append(entry.SkillIDs, skillID)
+		if !slices.Contains(entry.BundleIDs, origin.BundleID) {
+			entry.BundleIDs = append(entry.BundleIDs, origin.BundleID)
+		}
+	}
+	sort.Strings(view.Inherited)
+	sort.Strings(view.Off)
+	sort.Strings(order)
+	for _, kind := range order {
+		entry := byKind[kind]
+		sort.Strings(entry.SkillIDs)
+		view.Connectors = append(view.Connectors, *entry)
+	}
+	return view, nil
+}
+
+// connectorKindLabel is the name the person knows a connector by.
+func (s *Server) connectorKindLabel(ctx context.Context, ownerUserID, deviceID, kind string) string {
+	if descriptor, ok := s.connectors.Lookup(kind); ok && descriptor.Label != "" {
+		return descriptor.Label
+	}
+	if descriptor, err := s.connectors.Devices.ServerHeldDescriptorForOwner(ctx, ownerUserID, kind); err == nil && descriptor.Label != "" {
+		return descriptor.Label
+	}
+	if descriptor, err := s.connectors.Devices.ConnectorOn(ctx, deviceID, kind); err == nil && descriptor.Label != "" {
+		return descriptor.Label
+	}
+	return kind
+}
+
+// appendNew appends the ids not yet in ids.
+func appendNew(ids, more []string) []string {
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		seen[id] = true
+	}
+	for _, id := range more {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }

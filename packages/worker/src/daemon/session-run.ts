@@ -7,9 +7,11 @@ import type { SessionAmbientEnv } from "../session/session-ambient.js";
 import type { SessionRole } from "../session/session-role.js";
 import { writePersonalAgentFiles } from "../session/personal-agent-files.js";
 import {
+  isReadOnlyWorkspaceSession,
   isUtilitySession,
   isVerificationSession,
 } from "../session/session-roles.js";
+import { readOnlySessionHome } from "../session/read-only-workspace-session.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
 import { attachSessionWork } from "../session-work/supervisor.js";
@@ -67,6 +69,11 @@ export async function runAgentSession(
     },
     {
       serverURL: serverURL,
+      // Profiles a tool reads from its home (feishu-cli's) go where the
+      // session's processes have it: a read-only session's private home.
+      home: isReadOnlyWorkspaceSession(session)
+        ? readOnlySessionHome(session.workspaceId, session.id)
+        : undefined,
       log: (message) => console.log(message),
     },
   );

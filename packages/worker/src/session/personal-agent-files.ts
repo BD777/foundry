@@ -71,6 +71,13 @@ export function writePersonalAgentFiles(
       throw new Error(
         `Foundry does not write ${file.path} into the assistant's folder`,
       );
+    if (
+      file.managedBlock &&
+      (file.path !== "AGENTS.md" ||
+        !file.content.startsWith(managedBlockStart) ||
+        !file.content.trimEnd().endsWith(managedBlockEnd))
+    )
+      throw new Error("Foundry sent a malformed managed block for AGENTS.md");
   }
   const skills = files.flatMap((file): AssistantSkillFile[] => {
     const name = assistantSkillPath.exec(file.path)?.[1];
@@ -82,10 +89,16 @@ export function writePersonalAgentFiles(
 
   const revision = createHash("sha256");
   for (const file of files) {
-    revision.update(`${file.path}\0${file.content}\0`);
     const target = join(workspacePath, file.path);
-    if (readIfPresent(target) === file.content) continue;
-    writeFileAtomic(target, file.content, {
+    const current = readIfPresent(target);
+    const content = file.managedBlock
+      ? withManagedBlock(current, file.content, file.seed ?? "")
+      : file.content;
+    // The whole file as written: an edit of the person's part of AGENTS.md
+    // starts a new runtime too, which reads it.
+    revision.update(`${file.path}\0${content}\0`);
+    if (current === content) continue;
+    writeFileAtomic(target, content, {
       mode: 0o644,
       directoryMode: 0o755,
       hardenParent: false,
@@ -108,6 +121,46 @@ export function personalAgentFilesRevision(
 export function forgetPersonalAgentFiles(workspaceId: string): void {
   for (const [sessionId, kept] of revisionBySession)
     if (kept.workspaceId === workspaceId) revisionBySession.delete(sessionId);
+}
+
+/** Where Foundry's managed block of AGENTS.md starts and ends (DEV-223). */
+export const managedBlockStart = "<!-- foundry:managed:start";
+export const managedBlockEnd = "<!-- foundry:managed:end -->";
+
+/**
+ * Headings only an AGENTS.md Foundry wrote whole has outside a managed
+ * block (before DEV-223): such a file is Foundry's, not the person's.
+ */
+const wholeFileHeadings = [
+  "\n# The person's rules\n",
+  "\n# What the person confirmed (newest first)\n",
+];
+
+/**
+ * AGENTS.md with Foundry's managed `block` in place of the one it holds and
+ * everything else kept. A missing file, or one Foundry wrote whole, becomes
+ * the block and `seed`; a file without a block (the person removed it) gets
+ * it on top.
+ */
+export function withManagedBlock(
+  current: string | undefined,
+  block: string,
+  seed: string,
+): string {
+  const fresh = () =>
+    `${block.trimEnd()}\n\n${seed.trimStart()}`.trimEnd() + "\n";
+  if (current === undefined) return fresh();
+  const start = current.indexOf(managedBlockStart);
+  const end = start < 0 ? -1 : current.indexOf(managedBlockEnd, start);
+  if (start >= 0 && end >= 0)
+    return (
+      current.slice(0, start) +
+      block.trimEnd() +
+      current.slice(end + managedBlockEnd.length)
+    );
+  if (wholeFileHeadings.every((heading) => current.includes(heading)))
+    return fresh();
+  return `${block.trimEnd()}\n\n${current.trimStart()}`;
 }
 
 function readIfPresent(path: string): string | undefined {

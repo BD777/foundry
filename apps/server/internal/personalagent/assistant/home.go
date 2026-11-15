@@ -147,6 +147,11 @@ func (s *Service) carriedFiles(ctx context.Context, workspace store.WorkspacePro
 			}
 		}
 	}
+	// AGENTS.md below Foundry's block is the person's instructions (DEV-223).
+	if read, err := s.devices.ReadWorkspaceFile(ctx, workspace, "AGENTS.md"); err == nil && !read.Truncated {
+		files = append(files, personalagent.WorkspaceFile{Path: "AGENTS.md", Content: read.Content})
+		total += len(read.Content)
+	}
 	for _, folder := range personalagent.HomeFolders {
 		walk(folder, 1)
 	}

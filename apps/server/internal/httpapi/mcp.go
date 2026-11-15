@@ -485,6 +485,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"sign_in_subscription":  mcpTextTool((*Server).signInSubscriptionForMCP),
 	"model_guides":          mcpTextTool((*Server).modelGuidesForMCP),
 	"get_execution_default": mcpTextTool((*Server).getExecutionDefaultForMCP),
+	"worker_groups":         mcpTextTool((*Server).workerGroupsForMCP),
 	"connector_instances":   mcpTextTool((*Server).connectorInstancesForMCP),
 	"connector_packages":    mcpTextTool((*Server).connectorPackagesForMCP),
 	"edge_access":           mcpTextTool((*Server).edgeAccessForMCP),

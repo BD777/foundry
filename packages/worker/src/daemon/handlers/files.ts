@@ -33,6 +33,7 @@ import {
   type ReadSessionFilePayload,
   type ReadSubagentTranscriptPayload,
   type ReadNativeHistoryPayload,
+  type ManageFilePayload,
   type WriteFilePayload,
 } from "@bd777/foundry-protocol";
 import { nativeChatHistory } from "../../session/chat/native-chat.js";
@@ -71,6 +72,7 @@ import {
 import {
   WorkspaceFileWriteError,
   writeWorkspaceFile,
+  manageWorkspaceFile,
 } from "../../session/files/workspace-file-write.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
@@ -109,6 +111,7 @@ export function registerFileHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.attachmentRead, onAttachmentRead)
     .on(daemonMessageTypes.readFile, onReadFile)
     .on(daemonMessageTypes.writeFile, onWriteFile)
+    .on(daemonMessageTypes.manageFile, onManageFile)
     .on(daemonMessageTypes.readDeviceFile, onReadDeviceFile)
     .on(daemonMessageTypes.readSessionFile, onReadSessionFile)
     .on(daemonMessageTypes.readSessionFileDiff, onReadSessionFileDiff)
@@ -252,6 +255,34 @@ function onWriteFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       path: payload.path ?? "",
       sha256: "",
       bytes: 0,
+      error: message,
+      ...(error instanceof WorkspaceFileWriteError ? { code: error.code } : {}),
+    }),
+  );
+}
+
+/** One file of a workspace renamed or deleted; answered file_managed. */
+function onManageFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = (envelope.payload ?? {}) as Partial<ManageFilePayload>;
+  const op = payload.op === "rename" ? "rename" : "delete";
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.fileManaged,
+    () =>
+      manageWorkspaceFile(ctx.roster.folderFor(payload.workspaceId ?? ""), {
+        workspaceId: payload.workspaceId ?? "",
+        op: payload.op as ManageFilePayload["op"],
+        path: payload.path ?? "",
+        ...(payload.toPath !== undefined ? { toPath: payload.toPath } : {}),
+        ...(payload.expectedSha256 !== undefined
+          ? { expectedSha256: payload.expectedSha256 }
+          : {}),
+      }),
+    (message, error) => ({
+      workspaceId: payload.workspaceId ?? "",
+      op,
+      path: payload.path ?? "",
       error: message,
       ...(error instanceof WorkspaceFileWriteError ? { code: error.code } : {}),
     }),

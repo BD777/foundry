@@ -64,6 +64,10 @@ type Store interface {
 	ClearFeishuAppRotation(ctx context.Context, appID string) error
 }
 
+type extensionInstanceDeleteStore interface {
+	DeleteExternalAccountAndProviderApp(ctx context.Context, accountID, appID string) error
+}
+
 // AppSecretID is the secret record of a provider app's client secret.
 func AppSecretID(appID string) string { return "external-app:" + appID }
 
