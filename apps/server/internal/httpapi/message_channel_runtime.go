@@ -13,7 +13,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-
 	"github.com/foundry-dev/foundry/apps/server/internal/channels"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
