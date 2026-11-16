@@ -19,6 +19,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -112,8 +113,9 @@ func (s *Server) checkMessageChannelWorkspace(ctx context.Context, r *http.Reque
 	return nil
 }
 
-// createMessageChannelWorkspace makes the channel's workspace beside the
-// assistant's home, its AGENTS.md seeded from the channel's settings.
+// createMessageChannelWorkspace makes the channel's workspace inside the
+// assistant's home, channels/<slug>/ (DEV-251), its AGENTS.md seeded from
+// the channel's settings and the generated CLAUDE.md beside it.
 func (s *Server) createMessageChannelWorkspace(ctx context.Context, agent store.PersonalAgent, channel store.MessageChannelRecord) (string, error) {
 	label, hint := s.messageChannelSourceLabel(ctx, channel), s.messageChannelContextHint(ctx, channel)
 	seed := channels.SeedInstructions(channel.MessageChannel, label, hint)
@@ -121,15 +123,18 @@ func (s *Server) createMessageChannelWorkspace(ctx context.Context, agent store.
 	if name == "" {
 		name = "助理"
 	}
-	folder := "message-channel-" + strings.TrimPrefix(channel.ID, "mch_")
-	if len(folder) > 40 {
-		folder = folder[:40]
+	path, err := s.channelWorkspacePath(ctx, agent, channel)
+	if err != nil {
+		return "", err
 	}
 	workspace, err := paWorkspaces{s}.CreateWorkspace(ctx, personalagent.WorkspaceActor{UserID: agent.UserID}, personalagent.NewWorkspace{
-		DeviceID: agent.HomeDeviceID, FolderName: folder,
+		DeviceID: agent.HomeDeviceID, Path: path,
 		Name:    name + " · 消息通道 · " + clipRunes(channel.Name, 40),
 		Purpose: "Message channel " + channel.ID + ": its sessions run here, read-only; AGENTS.md holds the person's instructions for it.",
-		Create:  &personalagent.WorkspaceSource{Kind: personalagent.WorkspaceCreateEmpty, Files: []personalagent.WorkspaceFile{{Path: channelInstructionsPath, Content: seed}}},
+		Create: &personalagent.WorkspaceSource{Kind: personalagent.WorkspaceCreateEmpty, Files: []personalagent.WorkspaceFile{
+			{Path: channelInstructionsPath, Content: seed},
+			prompt.ChannelClaudeFile(),
+		}},
 	})
 	if err != nil {
 		return "", err
@@ -138,6 +143,52 @@ func (s *Server) createMessageChannelWorkspace(ctx context.Context, agent store.
 		return "", err
 	}
 	return workspace.ID, nil
+}
+
+// channelWorkspacePath is where a channel's workspace lives: the assistant
+// home's channels/<slug> (DEV-251). A slug another channel already uses
+// gets -2, -3, …
+func (s *Server) channelWorkspacePath(ctx context.Context, agent store.PersonalAgent, channel store.MessageChannelRecord) (string, error) {
+	home, err := s.store.GetWorkspace(ctx, agent.WorkspaceID)
+	if err != nil {
+		return "", err
+	}
+	taken := map[string]bool{}
+	if st, ok := s.store.(store.MessageChannelStore); ok {
+		records, err := st.ListMessageChannels(ctx, agent.UserID, agent.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, record := range records {
+			if record.ID == channel.ID || record.WorkspaceID == "" {
+				continue
+			}
+			if workspace, err := s.store.GetWorkspace(ctx, record.WorkspaceID); err == nil {
+				taken[strings.ToLower(workspace.LocalPath)] = true
+			}
+		}
+	}
+	// A folder already in channels/ that no channel uses (a leftover) would
+	// make the device refuse a new folder with the same name; leave it alone.
+	if s.hub != nil && s.hub.HasConnection(home.DeviceID) {
+		if entries, err := s.hub.ListWorkspaceTree(ctx, home, "channels"); err == nil {
+			for _, entry := range entries {
+				if entry.IsDirectory {
+					taken[strings.ToLower(store.JoinDevicePath(home.LocalPath, "channels", entry.Name))] = true
+				}
+			}
+		}
+	}
+	for n := 1; ; n++ {
+		slug := channels.FolderSlug(channel.MessageChannel)
+		if n > 1 {
+			slug = fmt.Sprintf("%s-%d", slug, n)
+		}
+		path := store.JoinDevicePath(home.LocalPath, "channels", slug)
+		if !taken[strings.ToLower(path)] {
+			return path, nil
+		}
+	}
 }
 
 // seedMessageChannelInstructions writes the seed AGENTS.md into a chosen
@@ -174,8 +225,9 @@ func (s *Server) addChannelInstructionsRevision(ctx context.Context, workspaceID
 }
 
 // ensureMessageChannelWorkspaces gives every channel without a workspace
-// one (channels made before DEV-203 phase 2), when the assistant's computer
-// is online; its AGENTS.md carries the channel's earlier guidance.
+// one (channels made before DEV-203 phase 2), and keeps each channel's
+// workspace inside the assistant home under channels/<slug>/ (DEV-251),
+// moving one made before the nested layout when no channel turn is running.
 func (s *Server) ensureMessageChannelWorkspaces(ctx context.Context) {
 	st, ok := s.store.(store.MessageChannelStore)
 	if !ok {
@@ -186,23 +238,102 @@ func (s *Server) ensureMessageChannelWorkspaces(ctx context.Context) {
 		return
 	}
 	for _, record := range records {
-		if record.WorkspaceID != "" {
-			continue
-		}
 		agent, err := s.store.GetAssistant(ctx, record.AssistantID)
 		if err != nil || s.hub == nil || !s.hub.HasConnection(agent.HomeDeviceID) {
 			continue
 		}
-		workspaceID, err := s.createMessageChannelWorkspace(ctx, agent, record)
-		if err != nil {
-			s.connectors.ServerHeld.Logf("message channel %s: create its workspace: %v", record.ID, err)
+		if record.WorkspaceID == "" {
+			workspaceID, err := s.createMessageChannelWorkspace(ctx, agent, record)
+			if err != nil {
+				s.connectors.ServerHeld.Logf("message channel %s: create its workspace: %v", record.ID, err)
+				continue
+			}
+			record.WorkspaceID, record.UpdatedAt = workspaceID, time.Now().UTC().Format(time.RFC3339Nano)
+			if err := st.SaveMessageChannel(ctx, record); err != nil {
+				s.connectors.ServerHeld.Logf("message channel %s: save its workspace: %v", record.ID, err)
+			}
 			continue
 		}
-		record.WorkspaceID, record.UpdatedAt = workspaceID, time.Now().UTC().Format(time.RFC3339Nano)
-		if err := st.SaveMessageChannel(ctx, record); err != nil {
-			s.connectors.ServerHeld.Logf("message channel %s: save its workspace: %v", record.ID, err)
+		s.relocateMessageChannelWorkspace(ctx, agent, record)
+	}
+}
+
+// relocateMessageChannelWorkspace moves a channel workspace left at the
+// old top-level location into the assistant home (DEV-251), keeping its id,
+// chats and file versions. A queued or running channel turn defers the move
+// to a later pass; the existing relink then updates the workspace record and
+// makes the chats resumable in the new folder.
+func (s *Server) relocateMessageChannelWorkspace(ctx context.Context, agent store.PersonalAgent, record store.MessageChannelRecord) {
+	workspace, err := s.store.GetWorkspace(ctx, record.WorkspaceID)
+	if err != nil || workspace.DeviceID != agent.HomeDeviceID {
+		return
+	}
+	// Only the folder Foundry made for the channel moves. A workspace the
+	// person chose for it is their project, and its folder stays where it is.
+	if !strings.HasPrefix(store.LastDevicePathElement(workspace.LocalPath), "message-channel-") {
+		s.ensureChannelClaudeFile(ctx, record, workspace)
+		return
+	}
+	desired, err := s.channelWorkspacePath(ctx, agent, record)
+	if err != nil {
+		return
+	}
+	if !sameDevicePath(workspace.LocalPath, desired) {
+		if !s.workspaceIdle(ctx, workspace) {
+			return
+		}
+		if refuseWhileMoving(ctx, s.store, workspace.ID, "moved") != nil {
+			return
+		}
+		refs, err := s.store.WorkspaceNativeSessions(ctx, workspace.ID)
+		if err != nil {
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+		if _, err := s.relinkFolder(runCtx, workspace, desired, refs, true); err != nil {
+			s.connectors.ServerHeld.Logf("message channel %s: move its workspace to %s: %v", record.ID, desired, err)
+			return
+		}
+		s.connectors.ServerHeld.Logf("message channel %s: workspace moved to %s", record.ID, desired)
+		if workspace, err = s.store.GetWorkspace(ctx, workspace.ID); err != nil {
+			return
 		}
 	}
+	s.ensureChannelClaudeFile(ctx, record, workspace)
+}
+
+// ensureChannelClaudeFile puts the generated CLAUDE.md into a channel
+// workspace made before DEV-251. Its run supplies one anyway; this makes the
+// file visible in the Web.
+func (s *Server) ensureChannelClaudeFile(ctx context.Context, record store.MessageChannelRecord, workspace store.WorkspaceProjection) {
+	missing := ""
+	if _, err := s.writeWorkspaceTextFile(ctx, workspace, prompt.ChannelClaudePath, prompt.ChannelClaudeFile().Content, &missing); err != nil {
+		var status *statusError
+		if !errors.As(err, &status) || status.status != http.StatusConflict {
+			s.connectors.ServerHeld.Logf("message channel %s: write its CLAUDE.md: %v", record.ID, err)
+		}
+	}
+}
+
+// workspaceIdle reports that no session of the workspace is queued or
+// running, so its folder may be moved.
+func (s *Server) workspaceIdle(ctx context.Context, workspace store.WorkspaceProjection) bool {
+	sessions, err := s.store.UnsettledAgentSessionsOnDevice(ctx, workspace.DeviceID)
+	if err != nil {
+		return false
+	}
+	for _, session := range sessions {
+		if session.WorkspaceID == workspace.ID {
+			return false
+		}
+	}
+	return true
+}
+
+// sameDevicePath compares two device paths ignoring a trailing separator.
+func sameDevicePath(left, right string) bool {
+	return strings.TrimRight(left, store.DevicePathSeparators) == strings.TrimRight(right, store.DevicePathSeparators)
 }
 
 // parseChannelInbox reads mc:<channel>:<conversation hash>[:<segment>].

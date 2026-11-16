@@ -188,6 +188,10 @@ export const serverPackages = {
   // Session system alerts: failed, canceled or stuck children, told to the
   // session that started the turn.
   sessionalerts: ["store", "sessions", "textcut"],
+  // Session progress: pull-only facts (last event, plan step, open question,
+  // running background tasks, detector flags, recent tool calls) computed from
+  // the stored event log; nothing is pushed into a session.
+  sessionprogress: ["store", "textcut"],
   // The session lifecycle; httpapi implements its ports and never the
   // reverse.
   sessions: ["store", "eventstream", "browserevent"],
@@ -230,7 +234,7 @@ export const serverPackages = {
  */
 export const sealedServerPackages = {
   externalaccounts:
-    /^(appstoreconnect_connectors|connector_extension_instances|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+    /^(appstoreconnect_connectors|connector_extension_instances|connectors|cloudflare_connectors|external_accounts|feishu|message_channel_ack)[a-z_]*\.go$/,
   gateway:
     /^(appstoreconnect_connectors|connector_extension_instances|connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,

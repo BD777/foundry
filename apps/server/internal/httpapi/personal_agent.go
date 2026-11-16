@@ -402,7 +402,13 @@ func (s *Server) handlePersonalAgentInboxAction(w http.ResponseWriter, r *http.R
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	entry, err := s.assistant.RetryInbox(r.Context(), agent, r.PathValue("id"), input)
+	var entry store.PersonalAgentInboxEntry
+	var err error
+	if input.Action == "dismiss" {
+		entry, err = s.assistant.DismissInbox(r.Context(), agent, r.PathValue("id"), input)
+	} else {
+		entry, err = s.assistant.RetryInbox(r.Context(), agent, r.PathValue("id"), input)
+	}
 	writeResultWithStatus(w, http.StatusAccepted, entry, err)
 }
 

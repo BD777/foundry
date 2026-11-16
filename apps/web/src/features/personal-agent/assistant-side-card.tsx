@@ -8,9 +8,11 @@ import {
   MessageCircleQuestion,
   MessagesSquare,
   RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react";
 import type {
   PersonalAgentInboxEntry,
+  PersonalAgentMaintenanceWaiting,
   PersonalAgentNeedsYou,
   PersonalAgentNeedsYouItem,
 } from "@bd777/foundry-protocol";
@@ -19,6 +21,7 @@ import { Button } from "../../components/ui/button";
 import {
   ContextEmpty,
   ContextHeading,
+  ContextLinkRow,
   ContextList,
   ContextRow,
   ContextRowCopy,
@@ -27,7 +30,7 @@ import {
 } from "../../components/ui/context-card";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import type { IconBoxProps } from "../../components/ui/icon-box";
-import { navigateToChat } from "../../lib/in-app-navigation";
+import { navigateToChat, pendingHref } from "../../lib/in-app-navigation";
 import { pendingTitle } from "../../lib/pending-display";
 import { clockTime } from "../../lib/time-format";
 import { inboxReason, inboxSummaryReason } from "./assistant-model";
@@ -83,6 +86,39 @@ export function needsYouFromLine(
     default:
       return name;
   }
+}
+
+/**
+ * 「维护」: suggested changes waiting for the person, in one quiet row that
+ * opens that assistant's maintenance settings. Nothing at zero: the card
+ * never shows an empty section for it (DEV-252).
+ */
+export function MaintenanceWaitingSection({
+  waiting,
+  onOpen,
+}: {
+  waiting: PersonalAgentMaintenanceWaiting;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation("personalAgent");
+  if (waiting.proposals <= 0) return null;
+  return (
+    <ContextSection aria-label={t("home.maintenance.label")}>
+      <ContextRow onClick={onOpen} title={t("home.maintenance.open")}>
+        <ContextRowIcon tone="warn">
+          <SlidersHorizontal aria-hidden="true" size={15} />
+        </ContextRowIcon>
+        <ContextRowCopy
+          title={t("home.maintenance.waiting", { count: waiting.proposals })}
+        />
+        <ChevronRight
+          aria-hidden="true"
+          className="flex-none text-ink-faint"
+          size={14}
+        />
+      </ContextRow>
+    </ContextSection>
+  );
 }
 
 /** 「等你处理」: the count, the newest rows, and the whole list. */
@@ -150,17 +186,19 @@ export function NeedsYouSection({
           const headline = pendingTitle(item, tp);
           const from = needsYouFromLine(item.from, t);
           return (
-            <ContextRow
+            <ContextLinkRow
               data-source={item.source}
+              href={pendingHref()}
               key={item.id}
-              onClick={onOpenAll}
+              rel="noopener"
+              target="_blank"
               title={from ? `${headline}\n${from}` : headline}
             >
               <ContextRowIcon tone={tone}>
                 <Icon aria-hidden="true" size={15} />
               </ContextRowIcon>
               <ContextRowCopy detail={from || undefined} title={headline} />
-            </ContextRow>
+            </ContextLinkRow>
           );
         })}
       </ContextList>
@@ -179,13 +217,17 @@ export function UnprocessedSection({
   failed,
   waiting,
   retrying,
+  dismissing,
   onRetry,
+  onDismiss,
 }: {
   error: string;
   failed: PersonalAgentInboxEntry[];
   waiting: PersonalAgentInboxEntry[];
   retrying: boolean;
+  dismissing: boolean;
   onRetry: (entry: PersonalAgentInboxEntry) => void;
+  onDismiss: (entry: PersonalAgentInboxEntry) => void;
 }) {
   const { t } = useTranslation("personalAgent");
   const count = failed.length + waiting.length;
@@ -229,13 +271,21 @@ export function UnprocessedSection({
               </p>
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <Button
-                  disabled={retrying}
+                  disabled={retrying || dismissing}
                   onClick={() => onRetry(entry)}
                   size="sm"
                   variant="secondary"
                 >
                   <RotateCcw aria-hidden="true" size={13} />
                   {t("inbox.retry")}
+                </Button>
+                <Button
+                  disabled={retrying || dismissing}
+                  onClick={() => onDismiss(entry)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("inbox.dismiss")}
                 </Button>
                 {entry.sessionId ? (
                   <Button
@@ -267,15 +317,23 @@ export function UnprocessedSection({
                 {t(waitingReasonKey(entry.waitingReason))}
               </span>
             </p>
-            <div>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <Button
-                disabled={retrying}
+                disabled={retrying || dismissing}
                 onClick={() => onRetry(entry)}
                 size="sm"
                 variant="secondary"
               >
                 <RotateCcw aria-hidden="true" size={13} />
                 {t("inbox.retryWithSettings")}
+              </Button>
+              <Button
+                disabled={retrying || dismissing}
+                onClick={() => onDismiss(entry)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("inbox.dismiss")}
               </Button>
             </div>
           </li>

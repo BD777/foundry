@@ -558,7 +558,7 @@ test("the conversation shows what was said, not the steps", () => {
   assert.ok("proposal" in placed[2]);
 });
 
-test("server notices are not shown as the person's words; a missed input still shows before its answer", () => {
+test("server notices keep their source; a missed input still shows before its answer", () => {
   const session = {
     ...assistantSession,
     input: {
@@ -591,15 +591,61 @@ test("server notices are not shown as the person's words; a missed input still s
       },
     ],
   };
+  // The notice stays in the transcript; its [Foundry] marker (or the
+  // server's inputSource) makes the conversation render it as a source row,
+  // never as the person's bubble (DEV-252).
+  const lines = model.assistantLines([session]);
   assert.deepEqual(
-    model.assistantLines([session]).map((line) => [line.role, line.text]),
+    lines.map((line) => [line.role, line.text]),
     [
       ["person", "help me make a small web page to track family spending"],
       ["assistant", "Good idea — I've started building it in “Family budget”."],
+      [
+        "person",
+        '[Foundry] The person accepted and it is done.\n{"status": "applied"}',
+      ],
       ["person", "what can you help with?"],
       ["assistant", "Anything you want done."],
     ],
   );
+  const notice = lines.find((line) => line.text.startsWith("[Foundry]"));
+  assert.equal(notice.inputSource, undefined);
+});
+
+test("a structured source travels with the assistant's turn", () => {
+  const session = {
+    ...assistantSession,
+    events: [
+      ...assistantSession.events,
+      {
+        id: "evt_report",
+        sessionId: "sess_pa",
+        at: iso(-1 * minute),
+        label: "User message",
+        detail: "Foundry report: done",
+        level: "info",
+        metadata: {
+          inputSource: {
+            kind: "child_report",
+            sessionId: "sess_helper",
+            title: "dev8",
+            status: "completed",
+            response: "The page is deployed.",
+          },
+        },
+        message: {
+          id: "in_report",
+          kind: "user",
+          text: "Foundry report: done",
+        },
+      },
+    ],
+  };
+  const report = model
+    .assistantLines([session])
+    .find((line) => line.inputSource?.kind === "child_report");
+  assert.equal(report.inputSource.title, "dev8");
+  assert.equal(report.inputSource.response, "The page is deployed.");
 });
 
 test("a quiet conversation starts a new session; the home computer picks the runtime", () => {

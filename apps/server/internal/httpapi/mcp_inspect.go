@@ -258,6 +258,10 @@ type sessionDigest struct {
 	Events          inspectCounts    `json:"events"`
 	LastAnswer      string           `json:"lastAnswer,omitempty"`
 	LastError       *inspectEventRef `json:"lastError,omitempty"`
+	// Progress is the compact state an orchestrator pulls: the last event,
+	// the error line, the plan step, the open question, running tasks and
+	// the deterministic detector flags.
+	Progress *sessionProgress `json:"progress,omitempty"`
 	// OpenBackgroundTasks were started in the latest turn and not reported
 	// finished: what a turn that never ended may have been waiting on.
 	OpenBackgroundTasks []inspectTask `json:"openBackgroundTasks,omitempty"`
@@ -268,7 +272,7 @@ type sessionDigest struct {
 	Messages *sessions.InboxSummary `json:"messages,omitempty"`
 }
 
-const inspectMoreHint = `read_context scope=events reads events (levels=["error"] tail=20, query="text", after/before cursors); scope=thread reads the conversation a page at a time.`
+const inspectMoreHint = `read_context scope=progress reads the latest tool calls and detector flags; scope=events reads events (levels=["error"] tail=20, query="text", after/before cursors); scope=thread reads the conversation a page at a time.`
 
 func (s *Server) sessionDigestForMCP(ctx context.Context, actor Actor, raw string) (string, error) {
 	target, err := s.resolveInspectTarget(ctx, actor, raw, true)
@@ -292,6 +296,7 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 		digest.Messages = s.sessionService.InboxSummary(ctx, *target.session)
 	}
 	digest.countEvents(events)
+	digest.Progress = s.progressFacts(ctx, target)
 	s.placeDigest(ctx, &digest, workspaceID, deviceID)
 	return digest
 }
@@ -684,6 +689,7 @@ func readEvents(id string, events []inspectEvent, query eventQuery) (string, err
 var readContextScopes = map[string]func(s *Server, call mcpCall) (string, error){
 	"":           (*Server).readSummaryForMCP,
 	"summary":    (*Server).readSummaryForMCP,
+	"progress":   (*Server).readProgressForMCP,
 	"events":     (*Server).sessionEventsForMCP,
 	"thread":     (*Server).readThreadForMCP,
 	"transcript": (*Server).readTranscriptForMCP,
@@ -697,7 +703,7 @@ func (s *Server) readContextForMCP(call mcpCall) (string, error) {
 	scope := mcpArgString(call.args, "scope")
 	read, ok := readContextScopes[scope]
 	if !ok {
-		return "", &statusError{http.StatusBadRequest, errors.New("unknown scope " + scope + ": use summary, events, thread, transcript, subagents, changes, file or background")}
+		return "", &statusError{http.StatusBadRequest, errors.New("unknown scope " + scope + ": use summary, progress, events, thread, transcript, subagents, changes, file or background")}
 	}
 	return read(s, call)
 }

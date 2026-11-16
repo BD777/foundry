@@ -10,8 +10,10 @@ import {
   foundryClaudeSettings,
   resolvedClaudeCredential,
   codexSessionSecretsConfig,
+  personalAgentChannelInstructionFileSettings,
 } from "../dist/session/session-launch-options.js";
 import { claudeRootBypassRefusal } from "../dist/session/runner/claude-options.js";
+import { codexRoleOptions } from "../dist/session/session-roles.js";
 
 const session = { id: "sess_1", prompt: "hello", workspaceId: "ws_1" };
 
@@ -30,6 +32,44 @@ const compatibleProfile = (overrides = {}) => ({
   baseUrl: "https://relay.example.invalid",
   model: "model_hub/example",
   ...overrides,
+});
+
+// A channel's session follows only its own AGENTS.md, not the assistant
+// home's above it; a home session keeps what it loads today (DEV-251).
+test("only a channel's Claude run loads CLAUDE.md alone", () => {
+  const channel = { id: "s", role: "personal_agent", workspaceAccess: "read" };
+  assert.deepEqual(personalAgentChannelInstructionFileSettings(channel), {
+    pluginConfigs: {
+      "cc-plugin-agents-md@builtin": {
+        options: { instructionFiles: "claude-md" },
+      },
+    },
+  });
+  for (const session of [
+    { id: "s", role: "personal_agent" },
+    { id: "s", role: "personal_agent", workspaceAccess: "write" },
+    { id: "s", workspaceAccess: "read" },
+  ]) {
+    assert.deepEqual(personalAgentChannelInstructionFileSettings(session), {});
+  }
+});
+
+// Codex reads from a project root down; the channel folder has none above
+// it, so the home's AGENTS.md never comes with the channel's (DEV-251).
+test("a channel's Codex thread has no project root above it", () => {
+  assert.equal(
+    codexRoleOptions({ id: "s", role: "personal_agent" }),
+    undefined,
+  );
+  const channel = codexRoleOptions({
+    id: "s",
+    role: "personal_agent",
+    workspaceAccess: "read",
+  });
+  assert.deepEqual(channel.config.project_root_markers, [
+    ".foundry-channel-root",
+  ]);
+  assert.equal(channel.thread.sandboxMode, "danger-full-access");
 });
 
 test("Foundry flag settings pin auto-compaction on regardless of local user config", () => {

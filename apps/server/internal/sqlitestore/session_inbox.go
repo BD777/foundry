@@ -53,25 +53,40 @@ func (s *Store) setupSessionInbox(ctx context.Context) error {
 			return fmt.Errorf("migrate session inbox: %w", err)
 		}
 	}
+	// input_source_json (DEV-246) joined the table after it was first made.
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('session_inbox') WHERE name = 'input_source_json'`).Scan(&present); err != nil {
+		return fmt.Errorf("migrate session inbox: %w", err)
+	}
+	if present == 0 {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE session_inbox ADD COLUMN input_source_json TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate session inbox: %w", err)
+		}
+	}
 	return nil
 }
 
 const sessionInboxColumns = `session_id, input_id, sender_session_id, prompt, attachments_json, requested_delivery,
-	delivery, state, reason, delivered_as, delivered_input_id, text_hash, attempts, created_at, updated_at,
+	delivery, state, reason, delivered_as, delivered_input_id, input_source_json, text_hash, attempts, created_at, updated_at,
 	delivered_at, consumed_at`
 
 func scanSessionInboxItem(row interface{ Scan(...any) error }) (store.SessionInboxItem, error) {
 	var item store.SessionInboxItem
-	var attachments, createdAt, updatedAt string
+	var attachments, inputSource, createdAt, updatedAt string
 	var deliveredAt, consumedAt sql.NullString
 	if err := row.Scan(&item.SessionID, &item.InputID, &item.SenderSessionID, &item.Prompt, &attachments,
 		&item.RequestedDelivery, &item.Delivery, &item.State, &item.Reason, &item.DeliveredAs, &item.DeliveredInputID,
-		&item.TextHash, &item.Attempts, &createdAt, &updatedAt, &deliveredAt, &consumedAt); err != nil {
+		&inputSource, &item.TextHash, &item.Attempts, &createdAt, &updatedAt, &deliveredAt, &consumedAt); err != nil {
 		return store.SessionInboxItem{}, err
 	}
 	if attachments != "" {
 		if err := json.Unmarshal([]byte(attachments), &item.Attachments); err != nil {
 			return store.SessionInboxItem{}, fmt.Errorf("decode inbox attachments: %w", err)
+		}
+	}
+	if inputSource != "" {
+		if err := json.Unmarshal([]byte(inputSource), &item.InputSource); err != nil {
+			return store.SessionInboxItem{}, fmt.Errorf("decode inbox input source: %w", err)
 		}
 	}
 	item.CreatedAt = parseStoredTime(createdAt)
@@ -155,12 +170,20 @@ func (s *Store) AdmitSessionInboxItem(ctx context.Context, item store.SessionInb
 		if err != nil {
 			return fmt.Errorf("encode inbox attachments: %w", err)
 		}
+		inputSource := ""
+		if item.InputSource != nil {
+			encoded, err := json.Marshal(item.InputSource)
+			if err != nil {
+				return fmt.Errorf("encode inbox input source: %w", err)
+			}
+			inputSource = string(encoded)
+		}
 		item.State = store.InboxHeld
 		item.CreatedAt, item.UpdatedAt = now, now
 		if _, err := db.ExecContext(ctx, `INSERT INTO session_inbox (`+sessionInboxColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, 0, ?, ?, NULL, NULL)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, 0, ?, ?, NULL, NULL)`,
 			item.SessionID, item.InputID, item.SenderSessionID, item.Prompt, string(attachments), item.RequestedDelivery,
-			item.Delivery, item.State, item.Reason, item.TextHash, formatTime(now), formatTime(now)); err != nil {
+			item.Delivery, item.State, item.Reason, inputSource, item.TextHash, formatTime(now), formatTime(now)); err != nil {
 			return fmt.Errorf("hold inbox message: %w", err)
 		}
 		admission = store.SessionInboxAdmission{Item: item}

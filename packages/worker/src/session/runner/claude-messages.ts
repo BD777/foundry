@@ -10,6 +10,7 @@ import {
   processLabels,
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
+  type AgentSessionTimerFireTask,
   type SessionFileReference,
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
@@ -55,6 +56,7 @@ import {
   type ActiveClaudeTurn,
   type AgentSessionRunResult,
   type ClaudeSDKQuery,
+  type ClaudeTaskNotification,
 } from "../session-state.js";
 import {
   addTurnUsage,
@@ -309,23 +311,55 @@ async function finishClaudeContinuation(
     });
     return;
   }
+  const summaries = notifications.map(({ summary }) => summary).filter(Boolean);
+  const tasks = backgroundTurnTasks(runtime, notifications);
   emitForClaudeRuntime(runtime, {
     label: processLabels.backgroundTurn,
     detail:
-      notifications[0] ??
+      summaries[0] ??
       (error ? error.message : "Claude continued after background work."),
     level: error ? "error" : "info",
     metadata: {
       timerFire: {
         origin: "background",
-        prompt: notifications.join("\n"),
+        prompt: summaries.join("\n"),
         response: answer,
         startedAt: new Date(startedAt).toISOString(),
         completedAt,
+        ...(tasks.length > 0 ? { tasks } : {}),
       },
       ...metadata,
     },
   });
+}
+
+/**
+ * The background tasks a continuation followed, as their public snapshot
+ * holds them: enough for a source row to name each without reading the
+ * prompt. Their command and output stay out of events (member reads only).
+ */
+function backgroundTurnTasks(
+  runtime: ActiveClaudeRuntime,
+  notifications: ClaudeTaskNotification[],
+): AgentSessionTimerFireTask[] {
+  if (notifications.length === 0) return [];
+  const tasks = runtime.background?.snapshot() ?? [];
+  const seen = new Set<string>();
+  const result: AgentSessionTimerFireTask[] = [];
+  for (const { taskId } of notifications) {
+    if (!taskId || seen.has(taskId)) continue;
+    seen.add(taskId);
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) continue;
+    result.push({
+      id: task.id,
+      kind: task.kind,
+      description: task.description,
+      status: task.status,
+      ...(task.exitCode !== undefined ? { exitCode: task.exitCode } : {}),
+    });
+  }
+  return result;
 }
 
 /** A message no Foundry turn answers: Claude working on its own. */
@@ -342,11 +376,13 @@ async function handleClaudeContinuationMessage(
     // Subagent lifecycle drives the side panel; it is not transcript text.
     const processEvent = claudeProcessEvent(message);
     if (processEvent) emitForClaudeRuntime(runtime, processEvent);
-    const summary = sdkString(record.summary);
-    if (subtype === "task_notification" && summary) {
+    if (subtype === "task_notification") {
       runtime.notifications = [
         ...(runtime.notifications ?? []),
-        redactSecrets(summary),
+        {
+          taskId: sdkString(record.task_id),
+          summary: redactSecrets(sdkString(record.summary)),
+        },
       ].slice(-10);
     }
     return;
@@ -436,6 +472,69 @@ async function emitClaudeToolFrames(
   } catch {
     // A frame is an aid to the person watching; the turn goes on without it.
   }
+}
+
+/** The Foundry MCP calls whose result a transcript needs (DEV-250). */
+const handoffResultTools = new Set([
+  "mcp__foundry__create_session",
+  "mcp__foundry__send_message",
+  "mcp__foundry__dispatch_item",
+]);
+const handoffResultLimit = 2_048;
+
+/** A tool result's text, whether Claude sends a string or content blocks. */
+function handoffResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object") {
+          const text = (block as Record<string, unknown>).text;
+          if (typeof text === "string") return text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (content && typeof content === "object") {
+    const text = (content as Record<string, unknown>).text;
+    if (typeof text === "string") return text;
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+/** At most `handoffResultLimit` UTF-8 bytes, ending with the truncation mark. */
+function boundedHandoffResult(text: string): string {
+  if (Buffer.byteLength(text, "utf8") <= handoffResultLimit) return text;
+  let end = text.length;
+  while (
+    end > 0 &&
+    Buffer.byteLength(text.slice(0, end), "utf8") > handoffResultLimit
+  )
+    end -= 1;
+  return `${text.slice(0, end)}\n\n... truncated ...`;
+}
+
+/**
+ * A finished tool's transcript text: its call detail, plus the bounded MCP
+ * result for the Foundry calls that hand work to another session or project
+ * (DEV-250). The existing Used-tool event carries both, so a viewer reads
+ * the new session id and status without a parallel event or parsing the
+ * answer. Other tools keep the call detail they always had.
+ */
+export function claudeToolTranscriptDetail(tool: FinishedClaudeTool): string {
+  if (!handoffResultTools.has(tool.name)) return tool.detail;
+  const result = handoffResultText(tool.content).trim();
+  if (!result) return tool.detail;
+  const fence = /^[\[{]/.test(result) ? "json" : "";
+  return `${tool.detail}\n\nResult\n\n\`\`\`${fence}\n${boundedHandoffResult(result)}\n\`\`\``;
 }
 
 /** When the summary of a compaction is looked for in the transcript. */
@@ -580,13 +679,14 @@ async function routeActiveClaudeMessage(
     const title = tool.failed
       ? processLabels.toolFailed
       : processLabels.usedTool;
-    await turn.emit(title, tool.detail, undefined, undefined, {
+    const text = claudeToolTranscriptDetail(tool);
+    await turn.emit(title, text, undefined, undefined, {
       id: tool.id,
       kind: "tool",
       callId: tool.id,
       status: tool.failed ? "failed" : "completed",
       title,
-      text: tool.detail,
+      text,
     });
   }
   if (runtime.readOnlyWorkspace && runtime.workspacePath)

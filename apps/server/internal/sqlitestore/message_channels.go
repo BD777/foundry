@@ -494,10 +494,16 @@ func (s *Store) MessageChannelSessionOrigin(ctx context.Context, sessionID strin
 	return summary, nil
 }
 
-func (s *Store) CountMessageChannelConversations(ctx context.Context, channelID string) (int, error) {
+func (s *Store) CountMessageChannelConversations(ctx context.Context, channelID, since string) (int, error) {
+	// Only messages that reached the assistant count: a dropped record or a
+	// bare new-session command left no conversation in the channel's
+	// workspace. Records older than `since` are outside retention (their
+	// text is cleared), so their conversations are no longer listed.
 	var count int
 	err := s.reader().QueryRowContext(ctx, `SELECT COUNT(DISTINCT session_key) FROM message_channel_deliveries
-		WHERE channel_id = ? AND session_key <> ''`, channelID).Scan(&count)
+		WHERE channel_id = ? AND session_key <> '' AND created_at >= ?
+		AND (status = ? OR (status = ? AND reason <> ?))`,
+		channelID, since, store.MessageDeliveryDelivered, store.MessageDeliveryDone, "reset_command").Scan(&count)
 	return count, err
 }
 

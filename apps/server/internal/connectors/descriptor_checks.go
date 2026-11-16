@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -396,6 +397,41 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 		if write.CreatedMessageID == "" || !jsonPointer(write.CreatedMessageID) {
 			return fmt.Errorf("serverHeld.writes.createdMessageId is a JSON pointer")
 		}
+		if footer := write.Footer; footer != nil {
+			if footer.Text == "" || !jsonPointer(footer.Text) {
+				return fmt.Errorf("serverHeld.writes.footer.text is a JSON pointer")
+			}
+			if format := footer.Format; format != nil {
+				if !footer.Markdown {
+					return fmt.Errorf("serverHeld.writes.footer.format requires footer.markdown")
+				}
+				if format.Field == "" || !jsonPointer(format.Field) {
+					return fmt.Errorf("serverHeld.writes.footer.format.field is a JSON pointer")
+				}
+				if format.Field == footer.Text {
+					return fmt.Errorf("serverHeld.writes.footer.format.field is not the footer text")
+				}
+				if err := checkText("serverHeld.writes.footer.format.value", string(format.Value), 64, true); err != nil {
+					return err
+				}
+				if format.Escape != store.ConnectorServerHeldWriteFooterFormatEscapeMarkdown {
+					return fmt.Errorf("serverHeld.writes.footer.format.escape is markdown")
+				}
+				if len(format.Plain) > 8 {
+					return fmt.Errorf("serverHeld.writes.footer.format.plain lists at most 8 values")
+				}
+				plain := make(map[string]bool, len(format.Plain))
+				for _, value := range format.Plain {
+					if err := checkText("serverHeld.writes.footer.format.plain", value, 64, true); err != nil {
+						return err
+					}
+					if value == string(format.Value) || plain[value] {
+						return fmt.Errorf("serverHeld.writes.footer.format.plain lists a distinct non-markdown value")
+					}
+					plain[value] = true
+				}
+			}
+		}
 	}
 	if len(serverHeld.Network.Holdings) == 0 || len(serverHeld.Network.Holdings) > 2 {
 		return fmt.Errorf("serverHeld.network.holdings lists server, device or both")
@@ -522,8 +558,67 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 			return fmt.Errorf("serverHeld.events.reply.kinds.%s may only use {message.id}, {conversation.id} and {thread.id}", kind)
 		}
 	}
+	if ack := events.Ack; ack != nil {
+		if err := checkText("serverHeld.events.ack.reaction", ack.Reaction, 64, true); err != nil {
+			return err
+		}
+		if strings.ContainsAny(ack.Reaction, "{}") {
+			return fmt.Errorf("serverHeld.events.ack.reaction names one reaction key")
+		}
+		if err := checkEventsAckCall("serverHeld.events.ack.add", ack.Add, prefix); err != nil {
+			return err
+		}
+		if ack.Remove.Method != "" || ack.Remove.Path != "" || ack.Remove.Body != "" {
+			if err := checkEventsAckCall("serverHeld.events.ack.remove", ack.Remove, prefix); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
+
+// checkEventsAckCall checks one acknowledgement request: a catalogued write
+// route below the upstream prefix, with only the two ack placeholders.
+func checkEventsAckCall(what string, call store.ConnectorEventsAckCall, prefix string) error {
+	switch strings.ToUpper(strings.TrimSpace(call.Method)) {
+	case "POST", "PUT", "PATCH", "DELETE":
+	default:
+		return fmt.Errorf("%s.method is a write method", what)
+	}
+	if err := checkExtensionPath(what+".path", call.Path); err != nil {
+		return err
+	}
+	if call.Path != prefix && !strings.HasPrefix(call.Path, strings.TrimRight(prefix, "/")+"/") {
+		return fmt.Errorf("%s.path must be at or below the upstream prefix %s", what, prefix)
+	}
+	if len(call.Body) > 1000 {
+		return fmt.Errorf("%s.body is at most 1000 characters", what)
+	}
+	rest := call.Path
+	for _, match := range ackPlaceholderPattern.FindAllString(rest, -1) {
+		if match != "{message.id}" && match != "{reaction}" {
+			return fmt.Errorf("%s.path may only use {message.id} and {reaction}", what)
+		}
+		rest = strings.ReplaceAll(rest, match, "")
+	}
+	if strings.ContainsAny(rest, "{}") {
+		return fmt.Errorf("%s.path may only use {message.id} and {reaction}", what)
+	}
+	if call.Body != "" {
+		for _, match := range ackPlaceholderPattern.FindAllString(call.Body, -1) {
+			if match != "{message.id}" && match != "{reaction}" {
+				return fmt.Errorf("%s.body may only use {message.id} and {reaction}", what)
+			}
+		}
+		filled := strings.NewReplacer("{message.id}", "x", "{reaction}", "OnIt").Replace(call.Body)
+		if !json.Valid([]byte(filled)) {
+			return fmt.Errorf("%s.body must be JSON", what)
+		}
+	}
+	return nil
+}
+
+var ackPlaceholderPattern = regexp.MustCompile(`\{[^{}]*\}`)
 
 // checkEventsCondition: a JSON pointer, and a bounded value or a second
 // pointer to compare with.

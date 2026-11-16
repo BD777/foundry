@@ -254,6 +254,26 @@ function personChoseInstructionFiles(configDir: string): boolean {
 }
 
 /**
+ * A message channel's session runs in a folder nested inside the assistant
+ * home (DEV-251). The agents-md plugin loads AGENTS.md where CLAUDE.md would
+ * load, ancestors included, so it would take the home's AGENTS.md along with
+ * the channel's. A channel follows only its own rules: its run loads
+ * CLAUDE.md alone, and the channel workspace's generated CLAUDE.md imports
+ * its own AGENTS.md.
+ */
+export function personalAgentChannelInstructionFileSettings(
+  session: Pick<AgentSession, "role" | "workspaceAccess">,
+): Record<string, unknown> {
+  if (session.role !== "personal_agent" || session.workspaceAccess !== "read")
+    return {};
+  return {
+    pluginConfigs: {
+      [agentsMdPluginId]: { options: { instructionFiles: "claude-md" } },
+    },
+  };
+}
+
+/**
  * Resolve the credential a launch will actually present, from the fully
  * assembled spawn environment. Returns "" for official logins and for custom
  * endpoints that intentionally authenticate themselves.
@@ -388,6 +408,8 @@ export function buildClaudeLaunchPlan(input: {
   const settings = {
     ...foundryClaudeSettings(profile, session, managedSkills),
     ...nativeInstructionFileSettings(workspacePath, env),
+    // A channel's own rules replace the assistant home's above it (DEV-251).
+    ...personalAgentChannelInstructionFileSettings(session),
   };
   const role = claudeRoleOptions(session);
   const tools = foundryToolsEndpoint(session);

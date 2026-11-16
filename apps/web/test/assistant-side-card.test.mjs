@@ -45,8 +45,12 @@ Object.assign(globalThis, {
 const { createRoot } = await import("react-dom/client");
 const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
-const { NeedsYouSection, UnprocessedSection, needsYouFromLine } =
-  await import("../src/features/personal-agent/assistant-side-card.tsx");
+const {
+  MaintenanceWaitingSection,
+  NeedsYouSection,
+  UnprocessedSection,
+  needsYouFromLine,
+} = await import("../src/features/personal-agent/assistant-side-card.tsx");
 const { inboxReason, inboxSummaryReason, sideSummary } =
   await import("../src/features/personal-agent/assistant-model.ts");
 
@@ -63,6 +67,49 @@ async function render(component, props) {
     },
   };
 }
+
+test("the maintenance line shows only waiting changes and opens settings", async () => {
+  let opened = 0;
+  const empty = await render(MaintenanceWaitingSection, {
+    waiting: { proposals: 0, projects: 0 },
+    onOpen: () => opened++,
+  });
+  assert.equal(empty.container.textContent.trim(), "");
+  await empty.unmount();
+  const page = await render(MaintenanceWaitingSection, {
+    waiting: { proposals: 8, projects: 2 },
+    onOpen: () => opened++,
+  });
+  assert.match(
+    page.container.textContent,
+    /Maintenance: 8 suggested changes waiting for you/,
+  );
+  const row = page.container.querySelector("button");
+  assert.ok(row);
+  await act(async () => row.click());
+  assert.equal(opened, 1);
+  await page.unmount();
+});
+
+test("a Foundry notice renders as its source row, not the person's words", async () => {
+  const { turnSource } =
+    await import("../src/components/conversation/turn-source.ts");
+  const { TurnSourceRow } =
+    await import("../src/components/conversation/turn-source-row.tsx");
+  const message = {
+    id: "notice",
+    role: "user",
+    text: "[Foundry] Two reviews failed.",
+    inputSource: { kind: "foundry_notice" },
+  };
+  const source = turnSource(message);
+  assert.equal(source.kind, "notice");
+  const page = await render(TurnSourceRow, { message, source });
+  assert.match(page.container.textContent, /Foundry notice/);
+  assert.match(page.container.textContent, /Two reviews failed\./);
+  assert.doesNotMatch(page.container.textContent, /\[Foundry\]/);
+  await page.unmount();
+});
 
 function needs(id, fields) {
   return {
@@ -125,11 +172,13 @@ test("needs-you rows say what is needed and where, without ids", async () => {
   assert.doesNotMatch(text, /sess_|xacc_/);
   const rows = page.container.querySelectorAll(".fdy-chat-context-row");
   assert.equal(rows.length, 3);
-  await act(async () => rows[0].click());
+  // DEV-248: a row opens its own link in a new tab; only "All" asks the
+  // card's owner to open the list.
+  assert.equal(rows[0].getAttribute("target"), "_blank");
   page.container
     .querySelector('button[aria-label="See everything that needs you"]')
     .click();
-  assert.equal(opened, 2);
+  assert.equal(opened, 1);
   await page.unmount();
 });
 

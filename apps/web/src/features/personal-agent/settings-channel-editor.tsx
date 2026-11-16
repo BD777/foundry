@@ -50,6 +50,7 @@ import {
 } from "./settings-channel-prerequisites";
 import {
   ChannelFollowUpFields,
+  ChannelHandoverFields,
   ChannelSessionFields,
   ChannelWorkspaceChoice,
 } from "./settings-channel-session";
@@ -324,6 +325,20 @@ export function ChannelEditor({
               commandsProblem={problemOf("endCommands")}
               followUps={draft.followUps}
               onChange={(followUps) => change({ followUps })}
+            />
+          </SettingsGroup>
+        ) : null}
+
+        {capabilities.ack || capabilities.footer ? (
+          <SettingsGroup title={t("settings.channels.editor.handoverTitle")}>
+            <ChannelHandoverFields
+              ack={draft.ack}
+              footer={draft.footer}
+              footerProblem={problemOf("footer")}
+              onAckChange={(ack) => change({ ack })}
+              onFooterChange={(footer) => change({ footer })}
+              showAck={capabilities.ack}
+              showFooter={capabilities.footer}
             />
           </SettingsGroup>
         ) : null}

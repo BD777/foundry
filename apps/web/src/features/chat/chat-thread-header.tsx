@@ -17,7 +17,7 @@ import { WaitingChildrenStatus } from "./waiting-children-status";
 export function ChatThreadHeader({
   contextOpen,
   goal,
-  foldedTurns,
+  hiddenTurns,
   onBack,
   onlyMine,
   onOnlyMineChange,
@@ -32,8 +32,8 @@ export function ChatThreadHeader({
    * chat, the header names its status and opens the panel.
    */
   goal?: ChatGoalItem;
-  /** Turns the person did not start, folded or hidden now. */
-  foldedTurns: number;
+  /** Turns the person did not start, hidden by "only my conversation" now. */
+  hiddenTurns: number;
   onlyMine: boolean;
   onOnlyMineChange: (onlyMine: boolean) => void;
   onBack: () => void;
@@ -73,24 +73,22 @@ export function ChatThreadHeader({
             <GoalStatusBadge goal={goal} />
           </Button>
         ) : null}
-        {foldedTurns > 0 || onlyMine ? (
-          <Button
-            aria-pressed={onlyMine}
-            className="data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
-            data-active={onlyMine ? "true" : "false"}
-            onClick={() => onOnlyMineChange(!onlyMine)}
-            size="sm"
-            title={t(onlyMine ? "onlyMine.offHint" : "onlyMine.onHint")}
-            variant="ghost"
-          >
-            <MessagesSquare aria-hidden="true" size={14} />
-            <span className="max-[600px]:sr-only">
-              {onlyMine && foldedTurns > 0
-                ? t("onlyMine.hidden", { count: foldedTurns })
-                : t("onlyMine.label")}
-            </span>
-          </Button>
-        ) : null}
+        <Button
+          aria-pressed={onlyMine}
+          className="data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
+          data-active={onlyMine ? "true" : "false"}
+          onClick={() => onOnlyMineChange(!onlyMine)}
+          size="sm"
+          title={t(onlyMine ? "onlyMine.offHint" : "onlyMine.onHint")}
+          variant="ghost"
+        >
+          <MessagesSquare aria-hidden="true" size={14} />
+          <span className="max-[600px]:sr-only">
+            {onlyMine && hiddenTurns > 0
+              ? t("onlyMine.hidden", { count: hiddenTurns })
+              : t("onlyMine.label")}
+          </span>
+        </Button>
         {contextOpen !== undefined ? (
           <Button
             aria-label={

@@ -76,6 +76,10 @@ export function useAssistantConversation(
   const [sessions, setSessions] = useState<Map<string, AgentSession>>(
     () => new Map(),
   );
+  // Every session of the assistant's projects, not only the three whose
+  // transcripts the home shows: handoff rows name the helpers it started
+  // and messaged (DEV-250).
+  const [knownSessions, setKnownSessions] = useState<AgentSession[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<PendingLine[]>([]);
@@ -95,6 +99,7 @@ export function useAssistantConversation(
   );
   const [inboxError, setInboxError] = useState("");
   const [retryingInboxId, setRetryingInboxId] = useState<string>();
+  const [dismissingInboxId, setDismissingInboxId] = useState<string>();
   const retryKeys = useRef(new Map<string, string>());
   const held = useRef(sessions);
   held.current = sessions;
@@ -110,6 +115,13 @@ export function useAssistantConversation(
         session.id,
         mergeLoadedAgentSession(current.get(session.id), session),
       );
+      return next;
+    });
+    setKnownSessions((current) => {
+      const index = current.findIndex((entry) => entry.id === session.id);
+      if (index < 0) return [...current, session];
+      const next = [...current];
+      next[index] = mergeLoadedAgentSession(current[index], session);
       return next;
     });
   }, []);
@@ -130,6 +142,7 @@ export function useAssistantConversation(
       setInbox(received);
       setChannelSessions(channels);
       const listed = [...current!, ...earlier.flat()];
+      setKnownSessions(listed);
       const recent = recentAssistantSessions(
         listed,
         shownSessions,
@@ -307,12 +320,15 @@ export function useAssistantConversation(
     state,
     error,
     lines,
+    /** Every session of the assistant's projects, for handoff rows. */
+    knownSessions,
     waitingInbox,
     failedInbox,
     inboxError,
     retryingInboxId,
+    dismissingInboxId,
     async retryInbox(entry: PersonalAgentInboxEntry): Promise<void> {
-      if (retryingInboxId) return;
+      if (retryingInboxId || dismissingInboxId) return;
       const requestId = retryKeys.current.get(entry.id) ?? crypto.randomUUID();
       retryKeys.current.set(entry.id, requestId);
       setRetryingInboxId(entry.id);
@@ -334,6 +350,27 @@ export function useAssistantConversation(
         setInboxError(serverErrorText(reason));
       } finally {
         setRetryingInboxId(undefined);
+      }
+    },
+    /** Abandons a held message: the person will not process it. */
+    async dismissInbox(entry: PersonalAgentInboxEntry): Promise<void> {
+      if (retryingInboxId || dismissingInboxId) return;
+      setDismissingInboxId(entry.id);
+      setInboxError("");
+      try {
+        const saved = await actOnPersonalAgentInbox(assistantId, entry.id, {
+          action: "dismiss",
+          revision: entry.revision,
+          requestId: crypto.randomUUID(),
+        });
+        setInbox((items) => [
+          ...items.filter((item) => item.id !== entry.id),
+          saved,
+        ]);
+      } catch (reason) {
+        setInboxError(serverErrorText(reason));
+      } finally {
+        setDismissingInboxId(undefined);
       }
     },
     working: assistantWorking(ordered),

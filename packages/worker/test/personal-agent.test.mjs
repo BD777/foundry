@@ -496,6 +496,42 @@ test("project summary changes keep the runtime key and remove stale files", (t) 
   );
 });
 
+// The upkeep facts are refreshed whenever upkeep changes; the runtime reads
+// them on demand, so a refresh never restarts the native conversation
+// (DEV-252).
+test("the upkeep facts file keeps the runtime key", (t) => {
+  const dir = scratch(t);
+  const session = {
+    id: "sess_pa_upkeep",
+    prompt: "hello",
+    workspaceId: "ws_pa_upkeep",
+    role: "personal_agent",
+  };
+  t.after(() => forgetPersonalAgentFiles("ws_pa_upkeep"));
+  const key = () => activeRuntimeKey("claude", dir, session, claudeProfile, {});
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo.\n" },
+    {
+      path: ".foundry/upkeep.md",
+      content: "# Upkeep\n\nNothing needs attention.\n",
+    },
+  ]);
+  const first = key();
+  // Every home run carries AGENTS.md too; only the facts file changed.
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo.\n" },
+    {
+      path: ".foundry/upkeep.md",
+      content: "# Upkeep\n\n- Budget: 2 changes.\n",
+    },
+  ]);
+  assert.equal(key(), first);
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "upkeep.md"), "utf8"),
+    "# Upkeep\n\n- Budget: 2 changes.\n",
+  );
+});
+
 // A message channel's workspace is read-only for its sessions, yet Foundry
 // writes its own facts there: the project index and summaries, never the
 // person's AGENTS.md or the assistant's skills. A digest change to those

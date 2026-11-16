@@ -44,6 +44,11 @@ import {
   chatMessageItems,
   chatViewMessages,
 } from "./thread/chat-message-items";
+import {
+  viewHandoff,
+  type TurnHandoff,
+  type TurnHandoffLookups,
+} from "../../components/conversation/turn-handoffs";
 import { ChatSurface } from "./chat-surface";
 import {
   chatContextCardForSessions,
@@ -417,19 +422,27 @@ export function useChatFeature({
   const viewMessages = projection.messages;
   usePruneDeliveredOutbox(outbox, projection.delivered);
   const agentActive = Boolean(activeSession);
-  // The sessions the chats name: those that started them, and those that
-  // sent the open chat a message; the list names those it holds.
-  const senderIds = useMemo(
-    () =>
-      viewMessages.flatMap((message) =>
+  // The sessions the chats name: those that started them, those that sent
+  // the open chat a message, and those a turn handed work to (DEV-250); the
+  // list names those it holds.
+  const linkedIds = useMemo(
+    () => [
+      ...viewMessages.flatMap((message) =>
         message.sentBySessionId ? [message.sentBySessionId] : [],
       ),
+      ...viewMessages.flatMap(
+        (message) =>
+          message.handoffs?.flatMap((handoff) =>
+            handoff.sessionId ? [handoff.sessionId] : [],
+          ) ?? [],
+      ),
+    ],
     [viewMessages],
   );
   const namedSessions = useSessionLinks(
     useMemo(
-      () => unlistedLinkedSessionIds(threads, senderIds),
-      [senderIds, threads],
+      () => unlistedLinkedSessionIds(threads, linkedIds),
+      [linkedIds, threads],
     ),
   );
   // The side panel follows the transcript a moment later, and only renders
@@ -507,10 +520,62 @@ export function useChatFeature({
       ),
     [listTitles, namedSessions, threads, activeI18n.language],
   );
+  // A handoff's names come from the sessions the chats hold (a created
+  // session is its parent's child with the call's title) and the project
+  // list; a session held only as a link was named by useSessionLinks.
+  const handoffOf = useCallback(
+    (handoff: TurnHandoff) => {
+      const sessionsById = new Map(
+        threads.flatMap((thread) =>
+          thread.sessions.map((session) => [session.id, session] as const),
+        ),
+      );
+      const lookups: TurnHandoffLookups = {
+        session: (sessionId) => {
+          const listed = sessionsById.get(sessionId);
+          const link = linkOf(sessionId);
+          if (!listed && !link) return undefined;
+          return {
+            title: link?.title ?? listed?.title,
+            workspaceId: listed?.workspaceId ?? link?.workspaceId,
+            status: listed?.status,
+          };
+        },
+        childSession: (parentId, title, workspaceId) => {
+          const child = [...sessionsById.values()]
+            .filter(
+              (session) =>
+                session.parentSessionId === parentId &&
+                session.title.trim() === title.trim() &&
+                (!workspaceId || session.workspaceId === workspaceId),
+            )
+            .sort(
+              (left, right) =>
+                Date.parse(left.startedAt ?? left.lastActivityAt ?? "") -
+                Date.parse(right.startedAt ?? right.lastActivityAt ?? ""),
+            )
+            .at(-1);
+          return child
+            ? {
+                sessionId: child.id,
+                title: child.title,
+                workspaceId: child.workspaceId,
+                status: child.status,
+              }
+            : undefined;
+        },
+        workspace: (workspaceId) =>
+          workspaces?.find((entry) => entry.id === workspaceId)?.name,
+      };
+      return viewHandoff(handoff, lookups);
+    },
+    [linkOf, threads, workspaces],
+  );
   const messages = useMemo(
     () =>
       chatMessageItems(viewMessages, {
         agentActive,
+        handoffOf,
         onTurnIntoIssue: issuesEnabled
           ? (source) => void emit({ source, type: "issue.draft.requested" })
           : undefined,
@@ -523,7 +588,15 @@ export function useChatFeature({
                 stopBackgroundTask(sessionId, taskId).then(() => undefined)
             : undefined,
       }),
-    [agentActive, deviceOnline, emit, linkOf, viewMessages, workspace],
+    [
+      agentActive,
+      deviceOnline,
+      emit,
+      handoffOf,
+      linkOf,
+      viewMessages,
+      workspace,
+    ],
   );
   // The side panel links the session that started the open chat.
   const parentSessionId = selectedThread?.sessions[0]?.parentSessionId;

@@ -339,6 +339,11 @@ export interface RelinkWorkspacePayload {
   previousPath: string;
   /** Its chats' native sessions, to make them resumable in path. */
   nativeSessions: NativeSessionRef[];
+  /**
+   * The device moves the folder itself first (DEV-251): it must be the
+   * workspace's registered folder, and `path` must not exist yet.
+   */
+  moveFrom?: string;
 }
 
 /** find_moved_workspace: look for the moved folder near previousPath. */

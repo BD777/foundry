@@ -9,7 +9,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,8 +19,7 @@ import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { turnRailVars } from "./conversation-layout";
 import { ChatMessageRow } from "./chat-message-list";
-import { foldSessionTurns } from "./session-turn-folds";
-import { SessionTurnsFoldRow } from "./session-turns-fold";
+import { visibleSessionTurns } from "./session-turns";
 import type {
   ChatMessageItem,
   ConversationFileActions,
@@ -81,8 +79,6 @@ const CHAT_VIRTUOSO_COMPONENTS = {
   Header: ChatListHeader,
 } satisfies Components<ChatMessageItem, ChatListContext>;
 
-const NO_FOLDS_OPEN: ReadonlySet<string> = new Set();
-
 function chatMessageKey(_index: number, message: ChatMessageItem): string {
   return message.id;
 }
@@ -94,7 +90,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   onReachHistoryStart,
   messages,
   onlyMine = false,
-  onFoldedTurnsChange,
+  onHiddenTurnsChange,
   onAnswerQuestion,
   onEditMessage,
   onImagePreview,
@@ -114,8 +110,8 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   messages: ChatMessageItem[];
   /** "Only my conversation": turns the person did not start are hidden. */
   onlyMine?: boolean;
-  /** How many turns the person did not start are folded or hidden now. */
-  onFoldedTurnsChange?: (count: number) => void;
+  /** How many turns the person did not start are hidden now. */
+  onHiddenTurnsChange?: (count: number) => void;
   onAnswerQuestion?: (text: string, key: string) => Promise<string | undefined>;
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -145,35 +141,16 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       onReachHistoryStart?.();
   }, [atHistoryStart, onReachHistoryStart, readingHistory, showScrollToLatest]);
   const renderedRef = useRef<readonly ListItem<ChatMessageItem>[]>([]);
-  // Turns the person did not start fold into a row; the folds the person
-  // opened stay open while the chat is shown.
-  const [openFolds, setOpenFolds] = useState<{
-    threadKey: string;
-    ids: ReadonlySet<string>;
-  }>({ threadKey, ids: NO_FOLDS_OPEN });
-  const openFoldIds =
-    openFolds.threadKey === threadKey ? openFolds.ids : NO_FOLDS_OPEN;
-  const folded = useMemo(
-    () => foldSessionTurns(messages, openFoldIds, { onlyMine }),
-    [messages, openFoldIds, onlyMine],
+  // Every turn stays inline under its own source row; "only my conversation"
+  // hides the turns the person did not start.
+  const visible = useMemo(
+    () => visibleSessionTurns(messages, { onlyMine }),
+    [messages, onlyMine],
   );
-  const rows = folded.rows;
+  const rows = visible.rows;
   useEffect(() => {
-    onFoldedTurnsChange?.(folded.foldedTurns);
-  }, [folded.foldedTurns, onFoldedTurnsChange]);
-  const toggleFold = useCallback(
-    (id: string, open?: boolean): void => {
-      setOpenFolds((current) => {
-        const ids = new Set(
-          current.threadKey === threadKey ? current.ids : NO_FOLDS_OPEN,
-        );
-        if (open ?? !ids.has(id)) ids.add(id);
-        else ids.delete(id);
-        return { threadKey, ids };
-      });
-    },
-    [threadKey],
-  );
+    onHiddenTurnsChange?.(visible.hiddenTurns);
+  }, [visible.hiddenTurns, onHiddenTurnsChange]);
   const anchors = useMemo(() => buildChatTurnAnchors(rows), [rows]);
   const heightEstimates = useMemo(
     () => rows.map(estimateChatMessageHeight),
@@ -226,37 +203,6 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   });
   const { navigateTo } = navigation;
   const { listResized, release: releasePrependAnchor } = prependAnchor;
-  // A fold the person opens or closes stays where it was on screen: its
-  // turns unfold below it, even while the transcript follows the latest.
-  const foldInPlace = useRef<{ id: string; offset: number } | null>(null);
-  const toggleFoldInPlace = useCallback(
-    (id: string, trigger: HTMLElement): void => {
-      const viewport = viewportRef.current;
-      if (viewport)
-        foldInPlace.current = {
-          id,
-          offset:
-            trigger.getBoundingClientRect().top -
-            viewport.getBoundingClientRect().top,
-        };
-      readHistory();
-      releasePrependAnchor();
-      toggleFold(id);
-    },
-    [readHistory, releasePrependAnchor, toggleFold, viewportRef],
-  );
-  useLayoutEffect(() => {
-    const pending = foldInPlace.current;
-    if (!pending) return;
-    foldInPlace.current = null;
-    const index = rows.findIndex((row) => row.id === pending.id);
-    if (index >= 0)
-      virtuosoRef.current?.scrollToIndex({
-        align: "start",
-        index,
-        offset: -pending.offset,
-      });
-  }, [rows]);
   const navigateToTurn = useCallback(
     (anchor: ChatTurnAnchor, align?: "start" | "center"): void => {
       releasePrependAnchor();
@@ -276,10 +222,9 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       message.id.endsWith(`:${focusMessageId}`);
     const messageIndex = rows.findIndex(named);
     if (messageIndex < 0) {
-      // A folded message: its fold opens, and the next pass scrolls to it.
-      const hidden = messages.find(named);
-      const fold = hidden ? folded.foldOf.get(hidden.id) : undefined;
-      if (fold) toggleFold(fold, true);
+      // Hidden by "only my conversation": the person turns the filter off.
+      // A message the transcript has not loaded yet keeps the request.
+      if (messages.some(named)) onMessageFocused?.();
       return;
     }
     const row = rows[messageIndex]!;
@@ -289,15 +234,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     );
     setFocusedId(row.id);
     onMessageFocused?.();
-  }, [
-    focusMessageId,
-    folded,
-    messages,
-    navigateToTurn,
-    onMessageFocused,
-    rows,
-    toggleFold,
-  ]);
+  }, [focusMessageId, messages, navigateToTurn, onMessageFocused, rows]);
   useEffect(() => {
     if (!focusedId) return;
     const timer = window.setTimeout(() => setFocusedId(""), 2400);
@@ -319,21 +256,14 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         className="mx-auto w-full max-w-[calc(var(--fdy-chat-content-max)_+_2*var(--fdy-chat-content-padding))] min-w-0 px-(--fdy-chat-content-padding) pb-[22px] data-[focused=true]:rounded-lg data-[focused=true]:bg-accent-soft data-[focused=true]:transition-[background-color] data-[focused=true]:duration-[600ms]"
         data-focused={message.id === focusedId ? "true" : undefined}
       >
-        {message.kind === "session-turns" && message.sessionTurns ? (
-          <SessionTurnsFoldRow
-            fold={message.sessionTurns}
-            onToggle={(trigger) => toggleFoldInPlace(message.id, trigger)}
-          />
-        ) : (
-          <ChatMessageRow
-            active={active}
-            fileActions={fileActions}
-            message={message}
-            onAnswerQuestion={onAnswerQuestion}
-            onEditMessage={onEditMessage}
-            onImagePreview={onImagePreview}
-          />
-        )}
+        <ChatMessageRow
+          active={active}
+          fileActions={fileActions}
+          message={message}
+          onAnswerQuestion={onAnswerQuestion}
+          onEditMessage={onEditMessage}
+          onImagePreview={onImagePreview}
+        />
       </div>
     ),
     [
@@ -343,7 +273,6 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       onAnswerQuestion,
       onEditMessage,
       onImagePreview,
-      toggleFoldInPlace,
     ],
   );
 

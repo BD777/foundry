@@ -55,8 +55,8 @@ type PersonalAgentMaintenanceStore interface {
 	ListPersonalAgentMaintenanceForUser(context.Context, string) ([]PersonalAgentMaintenance, error)
 	DuePersonalAgentMaintenance(context.Context, string) ([]PersonalAgentMaintenance, error)
 	SavePersonalAgentMaintenance(context.Context, PersonalAgentMaintenance) (PersonalAgentMaintenance, error)
-	// UpkeepNoticeSignature is the last upkeep state announced to an
-	// assistant ("" when none).
+	// UpkeepNoticeSignature is the last upkeep state written into an
+	// assistant's folder ("" when none).
 	UpkeepNoticeSignature(context.Context, string) (string, error)
 	SaveUpkeepNoticeSignature(context.Context, string, string, string) error
 }

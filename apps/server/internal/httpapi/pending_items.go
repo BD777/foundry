@@ -498,9 +498,12 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	}
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
 	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
-	items, err := s.store.ListPendingItems(ctx, user, states, since, 300)
+	// The same visible set the assistant's card counts: an item whose
+	// conversation was archived or deleted is not shown here either, so the
+	// card's count and "All" can never disagree.
+	items, err := s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
 	if err == nil && s.reconcilePersonalPending(ctx, user, items) {
-		items, err = s.store.ListPendingItems(ctx, user, states, since, 300)
+		items, err = s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list pending items")

@@ -49,6 +49,20 @@ const channelNoticePrefix = "[Message channel:"
 // message channel's notice yields only the messages whose sender is the
 // person. What the person attached is never in the text, only its marker.
 func PersonWords(input store.SessionInput) (string, bool) {
+	if input.InputSource != nil {
+		switch input.InputSource.Kind {
+		case "person":
+			if strings.TrimSpace(input.Prompt) == "" {
+				return "", false
+			}
+			return input.Prompt, true
+		case "channel":
+			return channelPersonWords(input.Prompt)
+		default:
+			return "", false
+		}
+	}
+	// Inputs stored before inputSource (DEV-246).
 	if input.SentBySessionID != "" || input.TimerFire != nil || IsNotice(input.Prompt) || strings.TrimSpace(input.Prompt) == "" {
 		return "", false
 	}

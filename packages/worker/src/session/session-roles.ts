@@ -60,6 +60,19 @@ export function isReadOnlyWorkspaceSession(
 }
 
 /**
+ * The assistant's message channel session (DEV-251): its workspace is a
+ * channel folder nested inside the assistant home, and it follows only that
+ * channel's rules.
+ */
+export function isPersonalAgentChannelSession(
+  session: Pick<AgentSession, "role" | "workspaceAccess">,
+): boolean {
+  return (
+    session.role === "personal_agent" && session.workspaceAccess === "read"
+  );
+}
+
+/**
  * A verifier's tools: Claude Code's own, which its sandbox keeps from
  * changing the workspace (writes land only in its scratch directory), its
  * skills, and the Foundry tools, of which the server lists it only those
@@ -159,7 +172,15 @@ export function codexRoleOptions(session: AgentSession):
     // Codex's own cannot nest inside it (see the verifier above), so Codex
     // runs its commands unsandboxed there. Everything else is its role's.
     return isReadOnlyWorkspaceSession(session)
-      ? { config: {}, thread: { sandboxMode: "danger-full-access" } }
+      ? {
+          config: isPersonalAgentChannelSession(session)
+            ? // The channel folder is nested in the assistant home: no
+              // project-root marker means no root above it, so Codex reads
+              // the channel's AGENTS.md and not the home's (DEV-251).
+              { project_root_markers: [".foundry-channel-root"] }
+            : {},
+          thread: { sandboxMode: "danger-full-access" },
+        }
       : undefined;
   return {
     // Its read-only shell stays: Codex reads files through it, inside a

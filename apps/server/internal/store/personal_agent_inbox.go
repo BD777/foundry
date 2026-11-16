@@ -34,6 +34,11 @@ type PersonalAgentInboxEntry struct {
 	ResultError         string                    `json:"resultError,omitempty"`
 	ResultTruncated     bool                      `json:"resultTruncated,omitempty"`
 	NotificationPending bool                      `json:"-"`
+	// DismissedBy and DismissedAt record the person who gave up on the
+	// message ("不再处理"): its state is cancelled, and it no longer counts
+	// as unprocessed. Empty until then.
+	DismissedBy string `json:"dismissedBy,omitempty"`
+	DismissedAt string `json:"dismissedAt,omitempty"`
 }
 
 // Channel routing and resource references are server-owned provenance, never
@@ -78,4 +83,5 @@ type PersonalAgentInboxStore interface {
 	PendingPersonalAgentInboxNotifications(context.Context, string, int) ([]PersonalAgentInboxEntry, error)
 	UnresolvedPersonalAgentInboxResults(context.Context, int) ([]PersonalAgentInboxEntry, error)
 	RetryPersonalAgentInbox(context.Context, string, string, int64, PersonalAgentInboxEntry) (PersonalAgentInboxEntry, error)
+	DismissPersonalAgentInbox(context.Context, string, string, int64, string) (PersonalAgentInboxEntry, error)
 }

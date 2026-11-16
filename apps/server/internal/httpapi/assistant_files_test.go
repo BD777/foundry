@@ -254,6 +254,21 @@ func TestOpeningChangedInstructionsRecordsTheInstructions(t *testing.T) {
 	}
 }
 
+// A channel's CLAUDE.md is Foundry's import of its own AGENTS.md, not the
+// person's file; the channel's AGENTS.md and the home's CLAUDE.md are theirs
+// (DEV-251).
+func TestOnlyAChannelsClaudeFileIsGenerated(t *testing.T) {
+	if !generatedAssistantPath(store.AssistantWorkspaceKindChannel, prompt.ChannelClaudePath) {
+		t.Fatal("a channel's CLAUDE.md is Foundry's")
+	}
+	if generatedAssistantPath(store.AssistantWorkspaceKindChannel, "AGENTS.md") {
+		t.Fatal("a channel's AGENTS.md is the person's")
+	}
+	if generatedAssistantPath(store.AssistantWorkspaceKindHome, prompt.ChannelClaudePath) {
+		t.Fatal("the home's CLAUDE.md is the person's")
+	}
+}
+
 // Foundry's generated files are read-only; ordinary files are created,
 // renamed and deleted, a deleted file's content staying among its versions.
 func TestAssistantWorkspaceFilesCreateRenameDelete(t *testing.T) {

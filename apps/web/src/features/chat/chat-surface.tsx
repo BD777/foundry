@@ -162,7 +162,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   );
   const showList = () => setNarrowPane("list");
   const [onlyMine, setOnlyMine] = useOnlyMine();
-  const [foldedTurns, setFoldedTurns] = useState(0);
+  const [hiddenTurns, setHiddenTurns] = useState(0);
   return (
     <ChatScreen className="group/chat" data-narrow-pane={narrowPane}>
       <ChatArchiveFeedback archiveToast={props.archiveToast} />
@@ -183,7 +183,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
         <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
           <ChatThreadHeader
             goal={contextCard?.goal}
-            foldedTurns={foldedTurns}
+            hiddenTurns={hiddenTurns}
             onlyMine={onlyMine}
             onOnlyMineChange={setOnlyMine}
             contextOpen={contextCard ? panel.open : undefined}
@@ -227,7 +227,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
               threadKey={props.threadKey}
               messages={props.messages}
               onlyMine={onlyMine}
-              onFoldedTurnsChange={setFoldedTurns}
+              onHiddenTurnsChange={setHiddenTurns}
               attention={props.threadAttention}
               active={props.agentActive}
               activeExecutionId={props.agentActiveSessionId}

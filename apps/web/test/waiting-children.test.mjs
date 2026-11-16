@@ -173,7 +173,7 @@ test("the open-chat capsule reveals the same child sessions in Agents", async (t
       null,
       createElement(ChatThreadHeader, {
         contextOpen: false,
-        foldedTurns: 0,
+        hiddenTurns: 0,
         onlyMine: false,
         onOnlyMineChange() {},
         onBack() {},

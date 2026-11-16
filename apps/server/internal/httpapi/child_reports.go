@@ -126,7 +126,25 @@ func (s *Server) childReport(ctx context.Context, child store.AgentSession) (ite
 	return store.SessionInboxItem{
 		SessionID: parentID, InputID: childReportInputID(child), SenderSessionID: child.ID,
 		Prompt: s.childReportText(child), RequestedDelivery: store.DeliveryTurnEnd,
+		// The report's structure travels with it (DEV-246): its row names the
+		// child and shows its final answer, without reading the report prose.
+		InputSource: childReportSource(child, true),
 	}, parentID, ""
+}
+
+// childReportSource is the structured source of a child's report: who
+// reported, its turn status, and (with answer) the final answer the report
+// carries. Released outdated reports have no single answer.
+func childReportSource(child store.AgentSession, answer bool) *store.AgentSessionInputSource {
+	source := &store.AgentSessionInputSource{
+		Kind: "child_report", SessionID: child.ID, Title: child.Title, Status: child.Status,
+	}
+	if final := strings.TrimSpace(child.Response); answer && final != "" {
+		source.Response = textcut.Excerpt(final, childReportAnswerLimit)
+	} else if failure := strings.TrimSpace(child.Error); answer && failure != "" {
+		source.Response = textcut.Excerpt("Error: "+failure, childReportAnswerLimit)
+	}
+	return source
 }
 
 // childReportText is a compact handoff of the child's turn.
@@ -208,6 +226,7 @@ func (s *Server) releaseSupersededReports(ctx context.Context, child store.Agent
 	s.admitChildReport(ctx, child, store.SessionInboxItem{
 		SessionID: parentID, InputID: uuid.NewSHA1(childReportSpace, []byte(child.ID+"\x00release\x00"+child.Input.ID)).String(),
 		SenderSessionID: child.ID, Prompt: builder.String(), RequestedDelivery: store.DeliveryTurnEnd,
+		InputSource: childReportSource(child, false),
 	})
 }
 

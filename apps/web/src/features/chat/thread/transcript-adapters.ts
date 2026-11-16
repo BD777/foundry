@@ -289,12 +289,33 @@ export function sessionTranscriptEntries(
           : "";
       const background = timerFire.origin === "background";
       const agent = session.provider === "codex" ? "Codex" : "Claude";
+      // The timer's prompt or the finished work, for the turn's source row.
+      const detail = (timerFire.prompt ?? "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean)
+        ?.slice(0, 200);
+      const body = (timerFire.prompt ?? "").trim().slice(0, 8 * 1024);
       entries.push({
         id: `${id}:timer-fire-boundary`,
         at: event.at,
         kind: "boundary",
         // A turn the agent ran on its own: the person did not start it.
         continuation: background ? "background" : "scheduled",
+        ...(detail ? { continuationDetail: detail } : {}),
+        ...(body ? { continuationBody: body } : {}),
+        ...(timerFire.catchUp ? { continuationCatchUp: true } : {}),
+        ...(timerFire.tasks?.length
+          ? {
+              backgroundTasks: timerFire.tasks.map((task) => ({
+                ...task,
+                sessionId: session.id,
+              })),
+            }
+          : {}),
+        ...(event.metadata?.inputSource
+          ? { inputSource: event.metadata.inputSource }
+          : {}),
         text: caughtUp
           ? caughtUp
           : when
@@ -356,6 +377,9 @@ export function sessionTranscriptEntries(
         stepId: `agent-session:${session.id}:${event.id}`,
         at: event.message.at ?? event.at,
         ...(sentBySessionId ? { sentBySessionId } : {}),
+        ...(event.metadata?.inputSource
+          ? { inputSource: event.metadata.inputSource }
+          : {}),
         ...(steered ? { steered } : {}),
         ...(event.label === sessionEventLabels.userMessage &&
         event.metadata?.channelOrigin
@@ -383,6 +407,9 @@ export function sessionTranscriptEntries(
         title: event.label,
         text: event.detail,
         ...(sentBySessionId ? { sentBySessionId } : {}),
+        ...(event.metadata?.inputSource
+          ? { inputSource: event.metadata.inputSource }
+          : {}),
         ...(steered ? { steered } : {}),
       });
     }

@@ -12,7 +12,7 @@ function storedOnlyMine(): boolean {
 
 /**
  * "Only my conversation", this browser's choice for every chat: turns the
- * person did not start are hidden rather than folded.
+ * person did not start are hidden.
  */
 export function useOnlyMine(): [boolean, (next: boolean) => void] {
   const [onlyMine, setOnlyMine] = useState(storedOnlyMine);

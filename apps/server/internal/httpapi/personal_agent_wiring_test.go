@@ -85,6 +85,16 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if _, ok := files[prompt.ExamplesPath]; !ok {
 		t.Fatalf("the assistant's files lack %s: %+v", prompt.ExamplesPath, first.PersonalAgentFiles)
 	}
+	// The home's run loads only the home's instructions; a channel's own
+	// files never come with it (DEV-251).
+	if _, ok := files[prompt.ChannelClaudePath]; ok {
+		t.Fatalf("the home's run carries a channel CLAUDE.md: %+v", first.PersonalAgentFiles)
+	}
+	for path := range files {
+		if strings.HasPrefix(path, "channels/") {
+			t.Fatalf("the home's run carries channel files: %s", path)
+		}
+	}
 	for _, skill := range prompt.AssistantSkills() {
 		if files[prompt.AssistantSkillPath(skill.Name)] != skill.Content {
 			t.Fatalf("the assistant's files lack %s: %+v", skill.Name, first.PersonalAgentFiles)

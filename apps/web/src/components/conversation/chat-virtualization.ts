@@ -70,8 +70,9 @@ export function estimateChatMessageHeight(
   if (!message) {
     return 80;
   }
-  // Collapsed rows have one height, row spacing included (measured).
-  if (message.kind === "boundary") {
+  // A plain divider has one height, row spacing included (measured). A
+  // boundary that starts a turn is a source row with a label and maybe text.
+  if (message.kind === "boundary" && !message.continuation) {
     return 43;
   }
   if (message.kind === "process") {
@@ -79,9 +80,6 @@ export function estimateChatMessageHeight(
   }
   if (message.kind === "tool") {
     return 38;
-  }
-  if (message.kind === "session-turns") {
-    return 54;
   }
   if (message.kind === "failure") {
     return 76;
@@ -95,12 +93,14 @@ export function estimateChatMessageHeight(
     text.match(/^(?:\s*$|#{1,6}\s|[-*+]\s|\d+\.\s|```|\|)/gm) ?? []
   ).length;
   const attachmentHeight = message.attachments?.length ? 180 : 0;
+  const handoffHeight = (message.handoffs?.length ?? 0) * 20;
 
   return Math.max(
     64,
     48 +
       Math.max(explicitLines, wrappedLines) * 24 +
       structuralBlocks * 6 +
-      attachmentHeight,
+      attachmentHeight +
+      handoffHeight,
   );
 }

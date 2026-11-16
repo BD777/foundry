@@ -3,6 +3,7 @@ import {
   type AgentProfileProjection,
   type AgentSession,
   type AgentSessionEvent,
+  type AgentSessionInputSource,
   type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
@@ -19,6 +20,11 @@ import {
 import { agentSessionDisplayEvents } from "../../lib/agent-session-events";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isSessionLive } from "../../lib/session-status";
+import {
+  toolHandoffs,
+  type TurnHandoff,
+  type TurnHandoffToolStep,
+} from "../../components/conversation/turn-handoffs";
 
 /** This browser's IANA time zone, "" when it reports none. */
 export function browserTimezone(): string {
@@ -248,17 +254,15 @@ export interface AssistantLine {
   streaming?: boolean;
   /** The first line of a later session: a new conversation began. */
   startsConversation?: boolean;
-}
-
-/**
- * Starts every input the server, not the person, sends the assistant: a
- * task's event, a proposal's answer (personalagent.NoticePrefix). The
- * person never said it, so the conversation does not show it.
- */
-const serverNoticePrefix = "[Foundry]";
-
-function isServerNotice(text: string): boolean {
-  return text.trimStart().startsWith(serverNoticePrefix);
+  /** Work this turn handed to another session or project (DEV-250). */
+  handoffs?: TurnHandoff[];
+  /**
+   * Who or what started the turn, when it was not the person. The
+   * conversation renders such a line as its source row, not the person's
+   * bubble (DEV-246): a helper's report, another session's message, or a
+   * Foundry notice.
+   */
+  inputSource?: AgentSessionInputSource;
 }
 
 /**
@@ -291,9 +295,15 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
     detail: input.prompt,
     level: "info",
     message: { id: input.id, kind: "user", text: input.prompt, at },
-    metadata: input.sentBySessionId
-      ? { sentBySessionId: input.sentBySessionId }
-      : undefined,
+    metadata:
+      input.sentBySessionId || input.inputSource
+        ? {
+            ...(input.sentBySessionId
+              ? { sentBySessionId: input.sentBySessionId }
+              : {}),
+            ...(input.inputSource ? { inputSource: input.inputSource } : {}),
+          }
+        : undefined,
   };
   return [...events.slice(0, index), event, ...events.slice(index)];
 }
@@ -308,24 +318,44 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
   sessions.forEach((session, index) => {
     const start = lines.length;
     let answer: AssistantLine | undefined;
+    // The turn's handoffs are shown under its answer, outside the steps the
+    // home does not show at all (DEV-250).
+    let steps: TurnHandoffToolStep[] = [];
     const flush = () => {
+      if (answer) {
+        const handoffs = toolHandoffs(steps, session.id);
+        if (handoffs.length) answer.handoffs = handoffs;
+      }
       if (answer?.text.trim()) lines.push(answer);
       answer = undefined;
+      steps = [];
     };
     for (const event of withInputEvent(session)) {
+      if (event.message?.kind === "tool" && event.message.text)
+        steps.push({
+          id: event.message.id,
+          callId: event.message.callId,
+          status: event.message.status,
+          text: event.message.text,
+          title: event.message.title,
+        });
       if (event.label === sessionEventLabels.userMessage) {
         flush();
         const text = event.message?.text ?? event.detail;
-        if (
-          text.trim() &&
-          !event.metadata?.sentBySessionId &&
-          !isServerNotice(text)
-        )
+        const inputSource = event.metadata?.inputSource;
+        // Another session's input with no structured source cannot be named,
+        // and must not read as the person's. A Foundry notice is kept: its
+        // source row says what started the turn, and its marker or
+        // inputSource keeps it out of the person's bubble (DEV-246).
+        const unattributable =
+          Boolean(event.metadata?.sentBySessionId) && !inputSource;
+        if (text.trim() && !unattributable)
           lines.push({
             id: `${session.id}:${event.message?.id ?? event.id}`,
             role: "person",
             text,
             at: event.message?.at ?? event.at,
+            ...(inputSource ? { inputSource } : {}),
           });
         continue;
       }

@@ -56,17 +56,9 @@ func (s *Server) openMessageChannelSource(ctx context.Context, channel store.Mes
 	if !ok || strings.ToLower(route.Access) != "read" || !externalaccounts.ExtensionAccessAllowsRoute(data.Descriptor.ServerHeld.Access, data.ProbeValues, route) {
 		return nil, fmt.Errorf("%w: the instance's route directory does not list GET %s as read; check the instance again", channels.ErrUnsupported, spec.Poll.Path)
 	}
-	deviceID := ""
-	if data.Network == externalaccounts.ExtensionNetworkDevice {
-		for _, check := range data.AvailableDevices {
-			if check.Status == "ok" && s.hub != nil && s.hub.HasConnection(check.DeviceID) {
-				deviceID = check.DeviceID
-				break
-			}
-		}
-		if deviceID == "" {
-			return nil, channels.ErrWaitingDevice{Detail: "no device that reaches this connector is online"}
-		}
+	deviceID, err := s.messageChannelDevice(data)
+	if err != nil {
+		return nil, err
 	}
 	return channels.LongPoll{Spec: *spec, Upstream: messageChannelUpstream{s: s, app: app, deviceID: deviceID}}, nil
 }

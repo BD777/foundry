@@ -1,4 +1,10 @@
-import { forwardRef, useId, type HTMLAttributes, type ReactNode } from "react";
+import {
+  forwardRef,
+  useId,
+  type ComponentPropsWithoutRef,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 import { Button, type ButtonProps } from "./button";
 import { IconBox, type IconBoxProps } from "./icon-box";
 import { cn } from "../../lib/cn";
@@ -153,6 +159,24 @@ export const ContextRow = forwardRef<
       data-selected={selected === undefined ? undefined : String(selected)}
       ref={ref}
       variant="ghost"
+      {...props}
+    />
+  );
+});
+
+/** A row that is a real link: a new tab, a copy or a modified click works as any link's. */
+export const ContextLinkRow = forwardRef<
+  HTMLAnchorElement,
+  ComponentPropsWithoutRef<"a">
+>(function ContextLinkRow({ className, ...props }, ref) {
+  return (
+    <a
+      className={cn(
+        rowLayout,
+        "hover:bg-control-ghost-hover focus-visible:outline-accent-line focus-visible:outline-offset-1",
+        className,
+      )}
+      ref={ref}
       {...props}
     />
   );

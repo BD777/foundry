@@ -374,6 +374,18 @@ test("a chat's turn ends with Claude's answer while its background command keeps
       continued.metadata.timerFire.prompt,
       /completed \(exit code 0\)/,
     );
+    // A source row names the task without reading the prompt (DEV-249); its
+    // command stays in the member-only output read.
+    assert.deepEqual(continued.metadata.timerFire.tasks, [
+      {
+        id: "bsleep",
+        kind: "command",
+        description: "Sleep 12 minutes",
+        status: "completed",
+        exitCode: 0,
+      },
+    ]);
+    assert.equal(continued.metadata.timerFire.tasks[0].command, undefined);
     assert.equal(continued.metadata.turnUsage.outputTokens, 5);
     const finished = outOfBand.findLast(
       (event) => event.metadata?.backgroundTaskSnapshot,

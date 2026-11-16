@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-16.6": "a6d61c3bda9858a6856648e3c105c1ad98071d06a209114b7608a228250f4ed7", // DEV-251 + DEV-253 merged: a channel's rules stay with the channel and the home names each folder; read a helper's progress; the foundry-orchestration skill says when
 	"2026-11-16.5": "1b71d1d598f8c0bada0e5a26a907f6f036f95252661373d67bf935f5e0e5f8b9", // DEV-240: a person's decision is recorded with needs_you and, in a channel, also said briefly
 	"2026-11-16.4": "21f6214c58c8e218d95451636958e8112530ecd44776c305bd02e709755c526f", // DEV-240: assistant-handoff keeps only the list, needs_you, permissions and channels; orchestration guidance lives in the foundry skill
 	"2026-11-16.3": "571c4a88dcf05971d44c6608b94d2a141417dcd0a395257534a34efc843a31a9", // DEV-239: create_session/send_message like any orchestrator; dispatch_item ties work to a list item
@@ -257,6 +258,45 @@ func TestRunFilesIncludeTheAssistantSkills(t *testing.T) {
 	}
 }
 
+// A channel workspace carries a generated CLAUDE.md that imports its own
+// AGENTS.md; the home's run files never carry it, and no channel's rules
+// enter the home's instructions (DEV-251).
+func TestChannelInstructionFilesStayWithTheChannel(t *testing.T) {
+	file := prompt.ChannelClaudeFile()
+	if file.Path != prompt.ChannelClaudePath || file.Content != "@AGENTS.md\n" {
+		t.Fatalf("the channel's CLAUDE.md: %+v", file)
+	}
+	for _, files := range [][]personalagent.WorkspaceFile{prompt.RunFiles(fullInput()), prompt.ProjectFilesAndIndex(fullInput())} {
+		for _, file := range files {
+			if file.Path == prompt.ChannelClaudePath || strings.Contains(file.Path, "channels/") {
+				t.Errorf("a channel's file in the home's run: %s", file.Path)
+			}
+		}
+	}
+}
+
+// The upkeep facts are a file of the home run, pointed to by the managed
+// block; a channel workspace gets only the project facts (DEV-252).
+func TestRunFilesCarryTheUpkeepFacts(t *testing.T) {
+	in := fullInput()
+	in.Upkeep = "# Upkeep\n\nNothing needs attention.\n"
+	got := map[string]string{}
+	for _, file := range prompt.RunFiles(in) {
+		got[file.Path] = file.Content
+	}
+	if got[prompt.UpkeepPath] != in.Upkeep {
+		t.Fatalf("the run files lack the upkeep facts: %+v", got)
+	}
+	if !strings.Contains(prompt.AgentsFile(in), prompt.UpkeepPath) {
+		t.Fatal("the managed block does not say where the upkeep facts are")
+	}
+	for _, file := range prompt.ProjectFilesAndIndex(in) {
+		if file.Path == prompt.UpkeepPath {
+			t.Fatal("a channel workspace received the upkeep facts")
+		}
+	}
+}
+
 func TestTurnContextGolden(t *testing.T) {
 	golden(t, "turn_context_full", prompt.TurnContext(fullInput()))
 }
@@ -298,6 +338,8 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 		"# What the person confirmed (newest first)", "有两个孩子", "Works at a bank. (they wrote it in settings",
 		"Before you took over their Feishu direct chat it went to \"家庭记账\" (ws_budget)",
 		prompt.ProjectIndexPath, prompt.ExamplesPath,
+		"# Message channels", "- 「Lark /fd」: /home/me/Foundry/personal-agent/channels/lark-fd",
+		"separate from this file",
 	} {
 		if !strings.Contains(file, shown) {
 			t.Errorf("AGENTS.md lacks %q", shown)
@@ -322,8 +364,9 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 // agentsFileBudget is the size of the typical AGENTS.md (fullInput) before
 // the rules and confirmed facts moved into it (DEV-196, 7840 bytes): moving
 // them must not make the file larger. DEV-223 adds the managed block's two
-// markers and who owns which part (about 250 bytes).
-const agentsFileBudget = 8100
+// markers and who owns which part (about 250 bytes); DEV-251 adds the
+// message channels' facts (about 200 bytes).
+const agentsFileBudget = 8400
 
 func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	size := len(prompt.AgentsFile(fullInput()))
@@ -468,6 +511,9 @@ func fullInput() prompt.Input {
 		Devices: []store.DeviceDigest{
 			{DeviceID: "dev_nas", Label: "Home server", System: "Linux", Online: false, Runtimes: []string{"Codex"}},
 			{DeviceID: "dev_mac", Label: "MacBook", System: "macOS", Online: true, Runtimes: []string{"Claude Code", "Codex"}},
+		},
+		Channels: []prompt.ChannelPlace{
+			{Name: "Lark /fd", Path: "/home/me/Foundry/personal-agent/channels/lark-fd"},
 		},
 		Places: map[string]store.DevicePlacement{
 			"dev_mac": {DeviceID: "dev_mac",

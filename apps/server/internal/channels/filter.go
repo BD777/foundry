@@ -188,9 +188,15 @@ func Explain(rules []store.MessageChannelRule, envelope store.MessageEnvelope) (
 
 // Capabilities are what a feed's envelope mapping can tell apart: the
 // conversation kinds it produces (nil: it does not say), and whether it
-// marks mentions of the person and the person's own messages.
-func Capabilities(spec store.ConnectorEventsEnvelope) store.MessageChannelCapabilities {
-	capabilities := store.MessageChannelCapabilities{ConversationKinds: []string{}}
+// marks mentions of the person and the person's own messages. The events
+// declare the acknowledgement reaction, and writes the message routes the
+// channel's AI footer may go into.
+func Capabilities(events store.ConnectorEventsSpec, writes []store.ConnectorServerHeldWrite) store.MessageChannelCapabilities {
+	capabilities := store.MessageChannelCapabilities{ConversationKinds: []string{}, Ack: events.Ack != nil}
+	for _, write := range writes {
+		capabilities.Footer = capabilities.Footer || write.Footer != nil
+	}
+	spec := events.Envelope
 	if field, ok := spec.Fields["conversation.kind"]; ok {
 		seen := map[string]bool{}
 		values := []string{field.Otherwise}

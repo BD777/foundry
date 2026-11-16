@@ -423,6 +423,7 @@ export const personalAgent: Translation<typeof en> = {
     },
     detail: "详情",
     retry: "重试",
+    dismiss: "不再处理",
     openAttempt: "查看上次尝试",
   },
   home: {
@@ -436,6 +437,11 @@ export const personalAgent: Translation<typeof en> = {
     },
     side: "助理概览",
     channelConversations: "{{source}} 通道 · {{count}} 个对话",
+    maintenance: {
+      label: "维护",
+      waiting: "维护：{{count}} 条修改建议待你确认",
+      open: "打开维护设置",
+    },
     needsYou: {
       label: "等你处理",
       title: "等你处理",
@@ -1295,7 +1301,7 @@ export const personalAgent: Translation<typeof en> = {
         recentIfTrigger: "正文如果以触发词开头，就会送达：{{rule}}",
         recentNoText: "没有文本",
         instructionsNote:
-          "助理怎么处理这个通道，写在通道工作区的 AGENTS.md 里：保存后在通道的「运行环境」里查看和编辑。",
+          "助理怎么处理这个通道，写在通道工作区的 AGENTS.md 里，保存后可在「工作区文件」里查看和编辑。",
         sessionTitle: "会话",
         sessionKey: "按什么分会话",
         sessionKeys: {
@@ -1341,6 +1347,14 @@ export const personalAgent: Translation<typeof en> = {
         endCommandsHint:
           "消息只有这个命令，或命令紧跟在触发词后时，结束续聊；不会在聊天里回复。",
         removeEndCommand: "删除 {{word}}",
+        handoverTitle: "聊天里的标记",
+        ack: "处理中给消息加表情",
+        ackHint:
+          "助理接手每条消息时，在来源的聊天里给它加上「处理中」表情；这一轮结束时移除，无论成功、失败还是取消。",
+        footer: "AI 回复说明",
+        footerPlaceholder: "> 来自AI",
+        footerHint:
+          "助理及其派出的会话通过这个来源发出的消息，末尾会加上这一行。留空则不加。",
         workspaceTitle: "工作区",
         workspaceModes: {
           new: "新建工作区（推荐）",
@@ -1373,6 +1387,7 @@ export const personalAgent: Translation<typeof en> = {
           idle: "请选择多久后开新会话。",
           resetCommands: "最多 5 个命令，每个是一个不超过 40 个字符的词。",
           endCommands: "最多 5 个结束命令，每个是一个不超过 40 个字符的词。",
+          footer: "回复说明只能是一行，最多 200 个字符。",
           tooManyRules: "地方和规则加起来最多 20 条。",
           noTriggers: "填一个触发词，例如 /ai",
           noPlace: "至少开启一个地方",

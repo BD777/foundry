@@ -1,5 +1,5 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -23,6 +23,10 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Conversation } from "../../components/conversation/conversation";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
+import {
+  viewHandoff,
+  type TurnHandoff,
+} from "../../components/conversation/turn-handoffs";
 import { Alert } from "../../components/ui/alert";
 import { AppLink } from "../../components/ui/app-link";
 import { Badge } from "../../components/ui/badge";
@@ -56,6 +60,7 @@ import { AssistantCreateDialog } from "./assistant-list";
 import { PersonList } from "./person-list";
 import { ProposalCard } from "./proposal-card";
 import {
+  MaintenanceWaitingSection,
   NeedsYouSection,
   UnprocessedSection,
   waitingReasonKey,
@@ -116,6 +121,7 @@ export function AssistantHome({
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
+            maintenance={overview.maintenance}
             needsYou={overview.needsYou}
             needsYouTotal={needsYouTotal}
             onEvent={onEvent}
@@ -134,6 +140,7 @@ function AssistantHomeReady({
   devices,
   home,
   homeOnline,
+  maintenance,
   needsYou,
   needsYouTotal,
   onEvent,
@@ -145,6 +152,7 @@ function AssistantHomeReady({
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
+  maintenance: PersonalAgentOverview["maintenance"];
   needsYou: PersonalAgentOverview["needsYou"];
   needsYouTotal: number | undefined;
   onEvent: (event: AssistantFeatureEvent) => void;
@@ -155,6 +163,56 @@ function AssistantHomeReady({
     agent.id,
     agent.workspaceId,
     agent.formerWorkspaceIds,
+  );
+  // A handoff names a helper the assistant started or messaged: its project
+  // list holds that session's title and status, and its list holds the item
+  // a dispatch works on (DEV-250).
+  const handoffOf = useCallback(
+    (handoff: TurnHandoff) => {
+      const sessionsById = new Map(
+        conversation.knownSessions.map((session) => [session.id, session]),
+      );
+      return viewHandoff(handoff, {
+        session: (sessionId) => {
+          const session = sessionsById.get(sessionId);
+          return session
+            ? {
+                title: session.title,
+                workspaceId: session.workspaceId,
+                status: session.status,
+              }
+            : undefined;
+        },
+        childSession: (parentId, title, workspaceId) => {
+          const child = conversation.knownSessions
+            .filter(
+              (session) =>
+                session.parentSessionId === parentId &&
+                session.title.trim() === title.trim() &&
+                (!workspaceId || session.workspaceId === workspaceId),
+            )
+            .sort(
+              (left, right) =>
+                Date.parse(left.startedAt ?? left.lastActivityAt ?? "") -
+                Date.parse(right.startedAt ?? right.lastActivityAt ?? ""),
+            )
+            .at(-1);
+          return child
+            ? {
+                sessionId: child.id,
+                title: child.title,
+                workspaceId: child.workspaceId,
+                status: child.status,
+              }
+            : undefined;
+        },
+        workspace: (workspaceId) =>
+          workspaces.find((entry) => entry.id === workspaceId)?.name,
+        item: (itemId) =>
+          assistant.listItems.find((item) => item.id === itemId)?.text,
+      });
+    },
+    [assistant.listItems, conversation.knownSessions, workspaces],
   );
   // The channels this assistant reads: a quiet way into each channel
   // workspace's conversations (DEV-234).
@@ -288,6 +346,8 @@ function AssistantHomeReady({
         copyText: line.text,
         at: line.at,
         streaming: line.streaming,
+        handoffs: line.handoffs?.map(handoffOf),
+        inputSource: line.inputSource,
       });
     }
     const last = conversation.lines[conversation.lines.length - 1];
@@ -333,6 +393,7 @@ function AssistantHomeReady({
     conversation.latestSession,
     conversation.waitingInbox,
     devices,
+    handoffOf,
     assistant.proposals,
     t,
   ]);
@@ -365,6 +426,13 @@ function AssistantHomeReady({
   // there is not.
   const sideSections = (
     <>
+      {maintenance && maintenance.proposals > 0 ? (
+        // The maintenance panel is on the settings' activity section.
+        <MaintenanceWaitingSection
+          onOpen={() => onEvent({ type: "settings.open", section: "activity" })}
+          waiting={maintenance}
+        />
+      ) : null}
       {needsYou ? (
         <NeedsYouSection
           needsYou={needsYou}
@@ -373,8 +441,10 @@ function AssistantHomeReady({
         />
       ) : null}
       <UnprocessedSection
+        dismissing={Boolean(conversation.dismissingInboxId)}
         error={conversation.inboxError}
         failed={conversation.failedInbox}
+        onDismiss={(entry) => void conversation.dismissInbox(entry)}
         onRetry={(entry) => void conversation.retryInbox(entry)}
         retrying={Boolean(conversation.retryingInboxId)}
         waiting={conversation.waitingInbox.filter(

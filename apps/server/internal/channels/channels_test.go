@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -232,6 +233,11 @@ func (i *inbox) all() map[string]string {
 	return out
 }
 
+type ackCall struct {
+	add bool
+	ids []string
+}
+
 type fixture struct {
 	st           *sqlitestore.Store
 	feed         *feed
@@ -243,6 +249,8 @@ type fixture struct {
 	sessions     map[string]channels.SessionState
 	ownWrites    map[string]bool
 	ownWritesErr error
+	acks         []ackCall
+	ackErr       error
 }
 
 func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
@@ -269,6 +277,10 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 		},
 		OwnWrites: func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error) {
 			return f.ownWrites, f.ownWritesErr
+		},
+		Ack: func(ctx context.Context, channel store.MessageChannelRecord, add bool, ids []string) error {
+			f.acks = append(f.acks, ackCall{add: add, ids: append([]string(nil), ids...)})
+			return f.ackErr
 		},
 		Tell: func(ctx context.Context, channel store.MessageChannelRecord, key, title, detail string) {
 			f.told = append(f.told, key)
@@ -555,11 +567,16 @@ func TestSeedInstructionsCarryTheGuideAndHowToReadTheFacts(t *testing.T) {
 }
 
 func TestCapabilitiesComeFromTheEnvelopeMapping(t *testing.T) {
-	capabilities := channels.Capabilities(openLarkEvents(t).Envelope)
-	if strings.Join(capabilities.ConversationKinds, ",") != "direct,group,self" || !capabilities.MentionsMe || !capabilities.FromSelf || !capabilities.Threads {
+	events := openLarkEvents(t)
+	writes := []store.ConnectorServerHeldWrite{{Method: "POST", Path: "/agent/v1/x", CreatedMessageID: "/id",
+		Footer: &store.ConnectorServerHeldWriteFooter{Text: "/text"}}}
+	capabilities := channels.Capabilities(events, writes)
+	if strings.Join(capabilities.ConversationKinds, ",") != "direct,group,self" || !capabilities.MentionsMe || !capabilities.FromSelf ||
+		!capabilities.Threads || !capabilities.Ack || !capabilities.Footer {
 		t.Fatalf("capabilities: %+v", capabilities)
 	}
-	if empty := channels.Capabilities(store.ConnectorEventsEnvelope{Fields: map[string]store.ConnectorEventsValue{"id": {Pointer: "/id"}}}); len(empty.ConversationKinds) != 0 || empty.MentionsMe || empty.FromSelf || empty.Threads {
+	empty := channels.Capabilities(store.ConnectorEventsSpec{Envelope: store.ConnectorEventsEnvelope{Fields: map[string]store.ConnectorEventsValue{"id": {Pointer: "/id"}}}}, nil)
+	if len(empty.ConversationKinds) != 0 || empty.MentionsMe || empty.FromSelf || empty.Threads || empty.Ack || empty.Footer {
 		t.Fatalf("a feed that marks nothing: %+v", empty)
 	}
 }
@@ -1059,5 +1076,124 @@ func TestOwnWriteCheckFailureHoldsTheBatch(t *testing.T) {
 	}
 	if runtime, _ := f.st.GetMessageChannelRuntime(context.Background(), f.channel.ID); runtime.Cursor != "c1" {
 		t.Fatalf("the cursor moved: %+v", runtime)
+	}
+}
+
+// The acknowledgement reaction follows the hand-over: it goes on every
+// message of a handed batch (not on dropped ones), and comes off when the
+// turn ends, however it ended.
+func joinedAckIDs(ids []string) string {
+	sorted := append([]string(nil), ids...)
+	slices.Sort(sorted)
+	return strings.Join(sorted, ",")
+}
+
+func TestAckFollowsTheHandOverAndTheTurn(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	f.feed.answers = []feedAnswer{changes("c1",
+		larkChange("m1", "oc_a", "p2p", "/fd one", false, false),
+		larkChange("m2", "oc_a", "p2p", "/fd two", false, false),
+		larkChange("m9", "oc_b", "p2p", "hello", false, false),
+	)}
+	f.poll(t)
+	ctx := context.Background()
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 0 {
+		t.Fatalf("no reaction before the turn is handed over: %+v", f.acks)
+	}
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 1 || !f.acks[0].add || joinedAckIDs(f.acks[0].ids) != "m1,m2" {
+		t.Fatalf("a reaction on the handed batch: %+v", f.acks)
+	}
+	var conversationA string
+	for id := range f.inbox.all() {
+		if f.inbox.keys[id] == "c:oc_a" {
+			conversationA = id
+		}
+	}
+	if conversationA == "" {
+		t.Fatal("no turn for oc_a")
+	}
+	f.inbox.set(conversationA, channels.InboxStatus{Status: "delivered", SessionID: "sess_a"})
+	f.runner.Dispatch(ctx)
+	f.inbox.set(conversationA, channels.InboxStatus{Status: "resolved", SessionID: "sess_a", ResultStatus: "completed"})
+	f.runner.Dispatch(ctx)
+	if last := f.acks[len(f.acks)-1]; last.add || joinedAckIDs(last.ids) != "m1,m2" {
+		t.Fatalf("a completed turn takes the reaction off: %+v", f.acks)
+	}
+
+	// A failed turn takes it off too.
+	f.feed.answers = []feedAnswer{changes("c2", larkChange("m3", "oc_a", "p2p", "/fd three", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	if last := f.acks[len(f.acks)-1]; !last.add || joinedAckIDs(last.ids) != "m3" {
+		t.Fatalf("a reaction on the next batch: %+v", f.acks)
+	}
+	var nextInbox string
+	for id := range f.inbox.all() {
+		if f.inbox.keys[id] == "c:oc_a" && id != conversationA {
+			nextInbox = id
+		}
+	}
+	if nextInbox == "" {
+		t.Fatal("no turn for the next batch of oc_a")
+	}
+	f.inbox.set(nextInbox, channels.InboxStatus{Status: "delivered", SessionID: "sess_b"})
+	f.runner.Dispatch(ctx)
+	f.inbox.set(nextInbox, channels.InboxStatus{Status: "resolved", SessionID: "sess_b", ResultStatus: "failed"})
+	f.runner.Dispatch(ctx)
+	if last := f.acks[len(f.acks)-1]; last.add || joinedAckIDs(last.ids) != "m3" {
+		t.Fatalf("a failed turn takes the reaction off: %+v", f.acks)
+	}
+}
+
+func TestAnAckFailureDoesNotBlockTheHandOver(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	f.ackErr = errors.New("the connector would not take the reaction")
+	f.feed.answers = []feedAnswer{changes("c1", larkChange("m1", "oc_a", "p2p", "/fd one", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(context.Background())
+	if len(f.inbox.all()) != 1 {
+		t.Fatal("the turn is handed over even when the reaction fails")
+	}
+}
+
+// A source's reaction change is not a message, even when its text would
+// match a rule or continue a thread.
+func TestAReactionChangeIsNotAMessage(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	reaction := larkChange("m1", "oc_a", "p2p", "/fd hi", false, false)
+	reaction["kind"], reaction["op"] = "reaction", "update"
+	reaction["item"].(map[string]any)["kind"] = "reaction"
+	f.feed.answers = []feedAnswer{changes("c1", reaction)}
+	f.poll(t)
+	if all := f.records(t); len(all) != 0 {
+		t.Fatalf("a reaction change makes no delivery record: %+v", all)
+	}
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(context.Background())
+	if len(f.inbox.all()) != 0 || len(f.acks) != 0 {
+		t.Fatalf("a reaction change starts no turn: %d %+v", len(f.inbox.all()), f.acks)
+	}
+}
+
+// A channel's folder is its name as a path segment under the assistant
+// home's channels/ (DEV-251).
+func TestChannelFolderSlug(t *testing.T) {
+	for name, want := range map[string]string{
+		"Lark /fd":      "lark-fd",
+		" ByteWork 通道 ": "bytework-通道",
+		"财经 日报":         "财经-日报",
+	} {
+		channel := store.MessageChannel{ID: "mch_0e47207b", Name: name}
+		if got := channels.FolderSlug(channel); got != want {
+			t.Errorf("FolderSlug(%q) = %q, want %q", name, got, want)
+		}
+	}
+	if got := channels.FolderSlug(store.MessageChannel{ID: "mch_0e47207b6ad14d91", Name: "!!!"}); got != "channel-0e47207b" {
+		t.Errorf("a name with nothing usable: %q", got)
 	}
 }

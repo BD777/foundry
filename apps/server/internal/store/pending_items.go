@@ -204,6 +204,10 @@ type PendingItemStore interface {
 	// ListPendingItems returns the person's items in the given states,
 	// those resolved only if resolved since resolvedSince, newest first.
 	ListPendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]PendingItem, error)
+	// ListVisiblePendingItems is ListPendingItems without the items whose
+	// session was archived or deleted: the one rule for what the assistant's
+	// card and the Needs-you page both call "needs the person".
+	ListVisiblePendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]PendingItem, error)
 	// ListOpenPendingItemsBySource returns every person's open items of one
 	// source, for maintenance that must not guess which person is active.
 	ListOpenPendingItemsBySource(ctx context.Context, source string) ([]PendingItem, error)

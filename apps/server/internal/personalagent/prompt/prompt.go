@@ -46,7 +46,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-16.5"
+const Version = "2026-11-16.6"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -85,6 +85,11 @@ const ExamplesPath = ".foundry/assistant-examples.md"
 // device index as of the run; AGENTS.md points there.
 const ProjectIndexPath = ".foundry/project-index.md"
 
+// UpkeepPath is where Foundry writes UpkeepFile, the upkeep facts as of the
+// run (proposals waiting for the person, failed or stalled reviews, due
+// summaries); the managed block points there.
+const UpkeepPath = ".foundry/upkeep.md"
+
 // AgentsFileMaxBytes bounds AgentsFile: Codex reads at most 32 KiB of
 // AGENTS.md files in all (project_doc_max_bytes), the person's own global
 // one included.
@@ -115,12 +120,19 @@ type Input struct {
 	Workspaces []store.WorkspaceDigest
 	// Devices are the digests of the devices the person owns.
 	Devices []store.DeviceDigest
+	// Channels are the assistant's message channels whose workspace is on
+	// its home device: each has its own folder and its own AGENTS.md, whose
+	// rules its sessions follow (DEV-251).
+	Channels []ChannelPlace
 	// L0Index is the current project and device index, already limited by
 	// personalagent.L0IndexMaxEntries and personalagent.L0IndexMaxTokens.
 	L0Index string
 	// ProjectFiles are one summary file per project, .foundry/projects/,
 	// with their manifest; the runtime reads them natively.
 	ProjectFiles []personalagent.WorkspaceFile
+	// Upkeep is the content of UpkeepPath for this run; empty when the run
+	// writes no such file (a channel workspace).
+	Upkeep string
 	// Places are those devices' labels and detected facts, by device id.
 	Places map[string]store.DevicePlacement
 	// MemoryPublications are the ids of the confirmed-memory publications
@@ -135,6 +147,14 @@ type Input struct {
 	// went before the assistant took it over (§14): the routing prior when
 	// nothing else points elsewhere. Empty: none.
 	DirectChatPreviousWorkspaceID string
+}
+
+// ChannelPlace is one of the assistant's message channels as its
+// instructions name it: the person's name for it and the folder its
+// sessions run in, on the assistant's home device.
+type ChannelPlace struct {
+	Name string
+	Path string
 }
 
 // System is system.md as embedded, placeholders unfilled.
@@ -206,12 +226,21 @@ func ManagedBlock(in Input) string {
 	out.WriteString(ManagedBlockStart + "\n")
 	out.WriteString(strings.TrimRight(identity, "\n"))
 	out.WriteString("\n")
+	if len(in.Channels) > 0 {
+		out.WriteString("\n# Message channels\n\n")
+		out.WriteString("Each channel's folder has its own AGENTS.md, whose rules its sessions follow; those rules are separate from this file.\n\n")
+		for _, channel := range in.Channels {
+			fmt.Fprintf(&out, "- 「%s」: %s\n", channel.Name, channel.Path)
+		}
+	}
 	writeRules(&out, in)
 	out.WriteString("\n# What the person confirmed (newest first)\n\n")
 	writeMemory(&out, in.Memory, timeLocation(in))
 	for _, id := range in.MemoryPublications {
 		fmt.Fprintf(&out, "Their confirmed memory is also a publication: read_knowledge publicationId %s.\n", id)
 	}
+	out.WriteString("\n# Where the upkeep facts are\n\n")
+	fmt.Fprintf(&out, "- %s: suggested changes waiting for them, failed or stalled reviews, and summaries that are due.\n", UpkeepPath)
 	names := map[string]string{}
 	for _, digest := range in.Workspaces {
 		names[digest.WorkspaceID] = digest.Name
@@ -314,6 +343,18 @@ func ExamplesFile(in Input) string {
 	return "# Examples\n" + examples
 }
 
+// ChannelClaudePath is the generated CLAUDE.md of a channel workspace.
+// Claude Code runs a channel session with instructionFiles "claude-md", so
+// it loads CLAUDE.md only and not the assistant home's AGENTS.md above it;
+// this file imports the channel's own AGENTS.md (DEV-251).
+const ChannelClaudePath = "CLAUDE.md"
+
+// ChannelClaudeFile is the one-line CLAUDE.md a channel workspace runs
+// with: the channel's rules stay in AGENTS.md, the file the person edits.
+func ChannelClaudeFile() personalagent.WorkspaceFile {
+	return personalagent.WorkspaceFile{Path: ChannelClaudePath, Content: "@AGENTS.md\n"}
+}
+
 // ProjectFilesAndIndex are the facts Foundry writes into every workspace the
 // assistant runs in, its home and each message channel's workspace: the
 // project index and one summary file per project. The content is the same in
@@ -332,6 +373,9 @@ func RunFiles(in Input) []personalagent.WorkspaceFile {
 		{Path: ExamplesPath, Content: ExamplesFile(in)},
 	}
 	files = append(files, ProjectFilesAndIndex(in)...)
+	if in.Upkeep != "" {
+		files = append(files, personalagent.WorkspaceFile{Path: UpkeepPath, Content: in.Upkeep})
+	}
 	for _, skill := range assistantSkills {
 		files = append(files, personalagent.WorkspaceFile{
 			Path:    AssistantSkillPath(skill.Name),

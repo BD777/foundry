@@ -51,9 +51,10 @@ func (s *Service) drainMaintenance(ctx context.Context) {
 	// A target archived or removed while a review waited or waited for
 	// approval can never be acted on: settle it, never leave it waiting.
 	s.FinalizeGoneTargets(ctx)
-	// A stalled, failed or waiting review and a ready patch are facts the
-	// assistant should see; announce them once, coalesced (DEV-238).
-	s.AnnounceUpkeep(ctx)
+	// A stalled, failed or waiting review, a ready patch and a due summary
+	// are facts the assistant reads in its own folder, never turns of its
+	// conversation (DEV-238, DEV-252).
+	s.RefreshUpkeep(ctx)
 }
 
 // GovernanceEventKey is the key of a governance review's event for a
@@ -575,157 +576,6 @@ func (s *Service) goneTargetReason(ctx context.Context, job store.PersonalAgentM
 		}
 	}
 	return ""
-}
-
-// upkeepState is what one person's upkeep needs the assistant to know: a
-// review ready for approval, a failure, a job waiting too long, or project
-// summaries waiting for the default assistant's machine.
-type upkeepState struct {
-	Signature string
-	Approvals int
-	Patches   int
-	Failed    int
-	Stalled   int
-	Digests   int
-}
-
-// AnnounceUpkeep tells each active assistant once per distinct upkeep
-// state, as one factual notice it can decide to raise with the person.
-// Foundry does not create "needs you" items: that list is the assistant's.
-func (s *Service) AnnounceUpkeep(ctx context.Context) {
-	now := time.Now()
-	if now.Sub(s.lastUpkeepNotice) < UpkeepSweepInterval {
-		return
-	}
-	s.lastUpkeepNotice = now
-	owners, err := s.store.ListPersonalAgents(ctx)
-	if err != nil {
-		return
-	}
-	for _, owner := range owners {
-		if !owner.IsDefault {
-			continue
-		}
-		if user, e := s.store.GetUser(ctx, owner.UserID); e != nil || !user.Active() {
-			continue
-		}
-		jobs, err := s.store.ListPersonalAgentMaintenanceForUser(ctx, owner.UserID)
-		if err != nil {
-			continue
-		}
-		state := s.upkeepStateOf(ctx, owner, jobs, now)
-		if state.Signature == "" {
-			continue
-		}
-		assistants, err := s.store.ListAssistants(ctx, owner.UserID)
-		if err != nil {
-			continue
-		}
-		for _, agent := range assistants {
-			if agent.State != store.PersonalAgentActive {
-				continue
-			}
-			last, err := s.store.UpkeepNoticeSignature(ctx, agent.ID)
-			if err != nil || last == state.Signature {
-				continue
-			}
-			conversation := s.latestConversation(ctx, agent)
-			if conversation == "" {
-				continue
-			}
-			line := s.upkeepNoticeText(ctx, agent, owner, state)
-			language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
-			assistantID := agent.ID
-			s.notices.add(conversation, language, line, now, func(text string) {
-				current, err := s.store.GetAssistant(context.Background(), assistantID)
-				if err != nil || current.State != store.PersonalAgentActive {
-					return
-				}
-				s.tell(context.Background(), conversation, text)
-			})
-			_ = s.store.SaveUpkeepNoticeSignature(ctx, agent.ID, state.Signature, formatPATime(now))
-		}
-	}
-}
-
-// upkeepStateOf reads the person's jobs and returns a stable signature of
-// what needs attention. Repeatedly deferred jobs keep the same signature.
-func (s *Service) upkeepStateOf(ctx context.Context, owner store.PersonalAgent, jobs []store.PersonalAgentMaintenance, now time.Time) upkeepState {
-	state := upkeepState{}
-	parts := []string{}
-	for _, job := range jobs {
-		switch job.Status {
-		case "review":
-			if job.Result != nil && len(job.Result.Patches) > 0 {
-				state.Approvals++
-				state.Patches += len(job.Result.Patches)
-				parts = append(parts, fmt.Sprintf("review:%s:%d", job.ID, len(job.Result.Patches)))
-			}
-		case "failed":
-			state.Failed++
-			parts = append(parts, "failed:"+job.ID)
-		case "waiting", "starting", "running":
-			since, err := time.Parse(time.RFC3339Nano, job.WaitingSince)
-			if err == nil && now.Sub(since) >= upkeepStallAfter {
-				state.Stalled++
-				parts = append(parts, "stalled:"+job.ID+":"+job.Status+":"+job.Reason)
-			}
-		}
-	}
-	if !s.devices.Connected(owner.HomeDeviceID) {
-		if records, err := s.store.ListWorkspaceDigests(ctx, owner.UserID); err == nil {
-			for _, record := range records {
-				if record.SummaryDueAt != "" {
-					state.Digests++
-				}
-			}
-		}
-	}
-	if state.Digests > 0 {
-		parts = append(parts, fmt.Sprintf("digests:%d", state.Digests))
-	}
-	if len(parts) == 0 {
-		return state
-	}
-	slices.Sort(parts)
-	state.Signature = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(parts, "|"))))
-	return state
-}
-
-var upkeepNoticeTexts = map[string][2]string{
-	"approvals": {"项目维护：%d 个项目共 %d 条修改建议等本人确认（设置 → 维护，或打开 %s）。",
-		"Project upkeep: %d projects have %d suggested changes waiting for the person's approval (Settings → Maintenance, or open %s)."},
-	"failed": {"项目维护：%d 项失败（设置 → 维护里可以重试）。",
-		"Project upkeep: %d failed (they can be retried in Settings → Maintenance)."},
-	"stalled": {"项目维护：%d 项在等待，已经超过 %d 分钟（设置 → 维护里可查看原因）。",
-		"Project upkeep: %d have been waiting for more than %d minutes (see why in Settings → Maintenance)."},
-	"digests": {"项目摘要：%d 个项目的摘要等着「%s」上线。",
-		"Project summaries: %d are waiting for %q to come online."},
-}
-
-// upkeepNoticeText is the one sentence (or few) an assistant gets.
-func (s *Service) upkeepNoticeText(ctx context.Context, agent, owner store.PersonalAgent, state upkeepState) string {
-	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
-	index := languageIndex(language)
-	lines := []string{}
-	if state.Approvals > 0 {
-		settings := s.WebURL(personalagent.AssistantSettingsPath(owner.ID))
-		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["approvals"][index], state.Approvals, state.Patches, settings))
-	}
-	if state.Failed > 0 {
-		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["failed"][index], state.Failed))
-	}
-	if state.Stalled > 0 {
-		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["stalled"][index], state.Stalled, int(upkeepStallAfter/time.Minute)))
-	}
-	if state.Digests > 0 {
-		label := s.devices.Label(ctx, owner.HomeDeviceID)
-		if label == "" {
-			label = owner.HomeDeviceID
-		}
-		lines = append(lines, fmt.Sprintf(upkeepNoticeTexts["digests"][index], state.Digests, label))
-	}
-	return strings.Join(lines, " ")
 }
 
 // sortMemoryLayer applies a memory review's placements to its layer.

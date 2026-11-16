@@ -31,9 +31,15 @@ type MessageChannel struct {
 
 	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
 	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
-	SkillName string                   `json:"skillName,omitempty"`
-	CreatedAt string                   `json:"createdAt"`
-	UpdatedAt string                   `json:"updatedAt"`
+
+	// Ack Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one.
+	Ack *bool `json:"ack,omitempty"`
+
+	// Footer Appended to the assistant's own replies in this channel as the channel's AI footer. Missing means `> 来自AI`; empty turns it off.
+	Footer    *string `json:"footer,omitempty"`
+	SkillName string  `json:"skillName,omitempty"`
+	CreatedAt string  `json:"createdAt"`
+	UpdatedAt string  `json:"updatedAt"`
 }
 
 // MessageChannelAction Something the channel's session did after the message arrived.
@@ -51,6 +57,12 @@ type MessageChannelCapabilities struct {
 
 	// Threads The source gives a thread id, so follow-ups can ride threads.
 	Threads bool `json:"threads"`
+
+	// Ack The source declares a reaction its channel puts on messages while the assistant works on them.
+	Ack bool `json:"ack"`
+
+	// Footer A message write route of the source declares where the channel's AI footer goes.
+	Footer bool `json:"footer"`
 }
 
 // MessageChannelConnectorScope One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card.
@@ -195,6 +207,12 @@ type MessageChannelInput struct {
 
 	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
 	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
+
+	// Ack Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one.
+	Ack *bool `json:"ack,omitempty"`
+
+	// Footer Appended to the assistant's own replies in this channel as the channel's AI footer. Missing means `> 来自AI`; empty turns it off.
+	Footer *string `json:"footer,omitempty"`
 }
 
 // MessageChannelLimits defines model for MessageChannelLimits.

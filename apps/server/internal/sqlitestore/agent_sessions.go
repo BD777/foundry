@@ -526,6 +526,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 			// The session that started it wrote its first message.
 			SentBySessionID: start.parent.ID,
 			ChannelOrigin:   input.ChannelOrigin,
+			InputSource:     input.FirstInputSource(),
 		},
 		CreatedLabel: "just now",
 		UpdatedLabel: "queued",
@@ -827,6 +828,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			TimerFire:             input.TimerFire,
 			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),
 			ChannelOrigin:         input.ChannelOrigin,
+			InputSource:           input.InputSourceOf(),
 		}
 		session.DispatchID = inputID
 		// What the native session missed is the server's to tell, never the

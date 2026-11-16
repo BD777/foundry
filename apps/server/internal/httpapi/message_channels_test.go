@@ -294,11 +294,29 @@ func TestChannelSessionInItsWorkspaceIsTheAssistantsConversation(t *testing.T) {
 	for _, file := range run.Files {
 		paths[file.Path] = true
 	}
-	if !paths[prompt.ProjectIndexPath] || !paths[workspacedigest.ProjectManifestPath] || paths["AGENTS.md"] {
-		t.Fatalf("a channel run takes Foundry's facts and not the person's instructions: %+v", run.Files)
+	if !paths[prompt.ProjectIndexPath] || !paths[workspacedigest.ProjectManifestPath] || paths["AGENTS.md"] || !paths[prompt.ChannelClaudePath] {
+		t.Fatalf("a channel run takes Foundry's facts and its own CLAUDE.md, not the person's instructions: %+v", run.Files)
+	}
+	for _, file := range run.Files {
+		if file.Path == prompt.ChannelClaudePath && file.Content != prompt.ChannelClaudeFile().Content {
+			t.Fatalf("the channel's CLAUDE.md: %q", file.Content)
+		}
 	}
 	if got, ok := f.server.messageChannelSessionAssistant(ctx, session.ID); !ok || got != f.agent.ID {
 		t.Fatalf("channel of session: %s %v", got, ok)
+	}
+}
+
+// A channel's workspace lives inside the assistant home, channels/<slug>
+// (DEV-251); the person's file tree shows it there.
+func TestAChannelsWorkspaceIsNestedInTheAssistantHome(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	path, err := f.server.channelWorkspacePath(context.Background(), f.agent, f.channel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/home/me/Foundry/personal-agent/channels/lark-fd" {
+		t.Fatalf("channel workspace path = %q", path)
 	}
 }
 

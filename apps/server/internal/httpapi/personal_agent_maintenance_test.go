@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
@@ -513,57 +515,110 @@ func TestFailedReviewsRetryWithBackoff(t *testing.T) {
 	}
 }
 
-// Upkeep that needs the person or is stuck is announced once, coalesced, to
-// the active assistant; Foundry does not create "needs you" items (DEV-238).
-func TestUpkeepStateIsAnnouncedOnceToTheActiveAssistant(t *testing.T) {
+// Upkeep facts live in the assistant's own folder and never become a turn
+// of its conversation, even as the state changes (DEV-252).
+func TestUpkeepFactsAreWrittenNotSent(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	job, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{
-		ID: "maint-notice", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
-		WorkspaceID: "ws_budget", EventKey: "notice-event",
+		ID: "maint-facts", AssistantID: agent.ID, UserID: f.aliceID, Role: "governance",
+		WorkspaceID: "ws_budget", EventKey: "facts-event",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	job.Status = "review"
 	job.Result = &store.MaintenanceResult{Summary: "change", Patches: []store.MaintenancePatch{{Path: "AGENTS.md", Content: "# x", Reason: "y"}}}
-	if _, err := f.server.store.SavePersonalAgentMaintenance(ctx, job); err != nil {
+	if saved, err := f.server.store.SavePersonalAgentMaintenance(ctx, job); err != nil {
 		t.Fatal(err)
-	}
-	conversation, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Prompt: "hello",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.db.CompleteAgentSession(ctx, conversation.ID, "hello", "native_"+conversation.ID); err != nil {
-		t.Fatal(err)
+	} else {
+		job = saved
 	}
 	saved := assistant.UpkeepSweepInterval
 	assistant.UpkeepSweepInterval = 0
 	defer func() { assistant.UpkeepSweepInterval = saved }()
-	f.server.assistant.AnnounceUpkeep(ctx)
-	notice := f.daemon.nextUpkeepNotice()
-	if !strings.Contains(notice.Session.Input.Prompt, "approval") && !strings.Contains(notice.Session.Input.Prompt, "确认") {
-		t.Fatalf("notice lacked the approval fact:\n%s", notice.Session.Input.Prompt)
+	f.server.assistant.RefreshUpkeep(ctx)
+	facts := f.daemon.workspaceFiles("ws_pa")[prompt.UpkeepPath]
+	for _, want := range []string{"Budget", "1 suggested change", "/assistants/" + agent.ID + "/settings"} {
+		if !strings.Contains(facts, want) {
+			t.Fatalf("the upkeep file lacks %q:\n%s", want, facts)
+		}
 	}
-	f.daemon.complete(notice.Session, "noted")
-	waitForStatus(t, f.db, notice.Session.ID, "completed")
-	// The same state is not announced again (automatic chat naming is not a
-	// second announcement).
-	f.server.assistant.AnnounceUpkeep(ctx)
+	// Count churn rewrites the facts, and still sends nothing.
+	job.Result = &store.MaintenanceResult{Summary: "change", Patches: []store.MaintenancePatch{
+		{Path: "AGENTS.md", Content: "# x", Reason: "y"},
+		{Path: "README.md", Content: "# y", Reason: "z"},
+	}}
+	if _, err := f.server.store.SavePersonalAgentMaintenance(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.RefreshUpkeep(ctx)
+	if facts := f.daemon.workspaceFiles("ws_pa")[prompt.UpkeepPath]; !strings.Contains(facts, "2 suggested changes") {
+		t.Fatalf("the upkeep file did not follow the state:\n%s", facts)
+	}
 	deadline := time.After(300 * time.Millisecond)
 	for {
 		select {
-		case duplicate := <-f.daemon.runs:
-			if duplicate.Session.Source == "naming" {
+		case run := <-f.daemon.runs:
+			if run.Session.Source == "naming" {
 				continue
 			}
-			t.Fatalf("upkeep announced twice: %+v", duplicate.Session)
+			t.Fatalf("upkeep sent a turn: %+v", run.Session)
 		case <-deadline:
 			return
 		}
+	}
+}
+
+// Only the assistant the upkeep belongs to gets it, with its own settings
+// link: a second assistant's review never appears in the default's file.
+func TestUpkeepFactsGoOnlyToTheOwningAssistant(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	owner := defaultAssistantOf(t, f.server, f.aliceID)
+	if err := f.db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_second", Name: "Second", LocalPath: "/home/me/second"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.SetWorkspaceMember(ctx, "ws_second", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.db.CreatePersonalAgent(ctx, store.PersonalAgent{
+		UserID: f.aliceID, WorkspaceID: "ws_second", HomeDeviceID: "dev_home", Settings: personalagent.DefaultSettings(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []store.PersonalAgentMaintenance{
+		{ID: "maint-owner", AssistantID: owner.ID, UserID: f.aliceID, Role: "governance", WorkspaceID: "ws_budget", EventKey: "owner"},
+		{ID: "maint-second", AssistantID: second.ID, UserID: f.aliceID, Role: "memory", WorkspaceID: "ws_second", VaultID: "v", EventKey: "second"},
+	} {
+		stored, err := f.server.store.EnqueuePersonalAgentMaintenance(ctx, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored.Status = "review"
+		stored.Result = &store.MaintenanceResult{Patches: []store.MaintenancePatch{{Path: "AGENTS.md", Content: "# x", Reason: "y"}}}
+		if _, err := f.server.store.SavePersonalAgentMaintenance(ctx, stored); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := assistant.UpkeepSweepInterval
+	assistant.UpkeepSweepInterval = 0
+	defer func() { assistant.UpkeepSweepInterval = saved }()
+	f.server.assistant.RefreshUpkeep(ctx)
+	ownerFacts := f.daemon.workspaceFiles("ws_pa")[prompt.UpkeepPath]
+	secondFacts := f.daemon.workspaceFiles("ws_second")[prompt.UpkeepPath]
+	if !strings.Contains(ownerFacts, "Budget") || strings.Contains(ownerFacts, "ws_second") ||
+		!strings.Contains(ownerFacts, "/assistants/"+owner.ID+"/settings") {
+		t.Fatalf("the default assistant's upkeep file = %q", ownerFacts)
+	}
+	if !strings.Contains(secondFacts, "Second") || strings.Contains(secondFacts, "ws_budget") ||
+		!strings.Contains(secondFacts, "/assistants/"+second.ID+"/settings") {
+		t.Fatalf("the second assistant's upkeep file = %q", secondFacts)
 	}
 }
 

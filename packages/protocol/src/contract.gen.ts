@@ -701,6 +701,29 @@ interface components {
       path: string;
       /** @description JSON pointer to the created message's id in the response. */
       createdMessageId: string;
+      footer?: components["schemas"]["ConnectorServerHeldWriteFooter"];
+    };
+    /** @description The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it. */
+    ConnectorServerHeldWriteFooter: {
+      /** @description JSON pointer into the request body to the string holding the text or markdown. */
+      text: string;
+      /** @description Whether the endpoint renders that field as markdown, so a `>` line shows as a quote; false sends it as plain text, where the line still reads fine. */
+      markdown?: boolean;
+      format?: components["schemas"]["ConnectorServerHeldWriteFooterFormat"];
+    };
+    /** @description How to make a write that is not already markdown render the footer as a quote. When the write selects another format there, its text is escaped as literal markdown and the format field is set to `value` before the footer is appended. */
+    ConnectorServerHeldWriteFooterFormat: {
+      /** @description JSON pointer into the request body to the field that selects how `text` is rendered. */
+      field: string;
+      /** @description The value `field` must take for `text` to be rendered as markdown. */
+      value: string;
+      /** @description Values of `field` that render `text` literally; a write with no such field also counts as literal. Other values (a structured rich format, say) are left alone. */
+      plain?: string[];
+      /**
+       * @description How to escape literal text before it is sent as markdown.
+       * @enum {string}
+       */
+      escape: "markdown";
     };
     /** @description How a message channel (DEV-203) reads this connector's event feed, as pure data. The server long-polls one catalogued read route through the instance's gateway path and maps every item of the answer to a message envelope; extension code never runs on the server. */
     ConnectorEventsSpec: {
@@ -708,6 +731,20 @@ interface components {
       envelope: components["schemas"]["ConnectorEventsEnvelope"];
       context?: components["schemas"]["ConnectorEventsContext"];
       reply?: components["schemas"]["ConnectorEventsReply"];
+      ack?: components["schemas"]["ConnectorEventsAck"];
+    };
+    /** @description How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server. */
+    ConnectorEventsAck: {
+      /** @description The reaction key, e.g. Feishu's OnIt. */
+      reaction: string;
+      add: components["schemas"]["ConnectorEventsAckCall"];
+      remove?: components["schemas"]["ConnectorEventsAckCall"];
+    };
+    /** @description One reaction request. method and path name a catalogued write route at or below the upstream prefix; `{message.id}` and `{reaction}` are replaced with the message id and the reaction key. body is an optional request body template over the same two values. */
+    ConnectorEventsAckCall: {
+      method: string;
+      path: string;
+      body?: string;
     };
     /** @description How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice. */
     ConnectorEventsReply: {
@@ -2670,6 +2707,10 @@ interface components {
       fromSelf: boolean;
       /** @description The source gives a thread id, so follow-ups can ride threads. */
       threads: boolean;
+      /** @description The source declares a reaction its channel puts on messages while the assistant works on them. */
+      ack: boolean;
+      /** @description A message write route of the source declares where the channel's AI footer goes. */
+      footer: boolean;
     };
     /** @description A message the person makes up to try the rules on. */
     MessageChannelSample: {
@@ -2738,6 +2779,10 @@ interface components {
       workspaceId?: string;
       session?: components["schemas"]["MessageChannelSessionRule"];
       followUps?: components["schemas"]["MessageChannelFollowUps"];
+      /** @description Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one. */
+      ack?: boolean;
+      /** @description Appended to the assistant's own replies in this channel as the channel's AI footer. Missing means `> 来自AI`; empty turns it off. */
+      footer?: string;
     };
     MessageChannel: {
       id: string;
@@ -2755,6 +2800,10 @@ interface components {
       workspaceId?: string;
       session?: components["schemas"]["MessageChannelSessionRule"];
       followUps?: components["schemas"]["MessageChannelFollowUps"];
+      /** @description Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one. */
+      ack?: boolean;
+      /** @description Appended to the assistant's own replies in this channel as the channel's AI footer. Missing means `> 来自AI`; empty turns it off. */
+      footer?: string;
       skillName?: string;
       createdAt: string;
       updatedAt: string;
@@ -4174,6 +4223,18 @@ interface components {
       /** @description `firstSeenAt` is when a snapshot first listed the timer: a recurring one ends ClaudeRecurringTimerMaxAge later. */
       firstSeenAt?: string;
     };
+    /** @description A background task whose end a continuation followed (DEV-249): the public fields a turn-source row names. Its command and output stay in the member-only output read, so events never carry them. */
+    AgentSessionTimerFireTask: {
+      /** @description The background task id its command and output are read by. */
+      id: string;
+      /** @enum {string} */
+      kind: "command" | "monitor" | "workflow" | "subagent" | "other";
+      description: string;
+      /** @enum {string} */
+      status: "running" | "completed" | "failed" | "stopped" | "ended";
+      /** Format: int64 */
+      exitCode?: number;
+    };
     /** @description One automatic, timer-driven turn that ran without a Foundry turn open. */
     AgentSessionTimerFire: {
       /** @description Scheduled task id when the firing task could be correlated. */
@@ -4188,6 +4249,8 @@ interface components {
       scheduledFor?: string;
       /** @description `catchUp` marks a fire the device delivered late: no process held the session when the timer came due (its worker was down), so it fires once now, however many times it was missed. */
       catchUp?: boolean;
+      /** @description Background tasks whose end this continuation followed (DEV-249), in the order their notifications arrived; a row names each without reading the prompt. */
+      tasks?: components["schemas"]["AgentSessionTimerFireTask"][];
     };
     /**
      * @description Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.
@@ -4256,6 +4319,26 @@ interface components {
       /** @description Bind diagnostics to a dispatch, never to an earlier turn of the chat. */
       inputId?: string;
     };
+    /** @description Who or what started a session input (DEV-246), structured so viewers label a turn without parsing Foundry's own prompt text. */
+    AgentSessionInputSource: {
+      /** @enum {string} */
+      kind:
+        | "person"
+        | "session"
+        | "child_report"
+        | "background"
+        | "scheduled"
+        | "foundry_notice"
+        | "channel";
+      /** @description The session that sent it (session, child_report). */
+      sessionId?: string;
+      /** @description The sender's title at send time (child_report), for its source row. */
+      title?: string;
+      /** @description A child report's turn status (completed, failed, canceled). */
+      status?: string;
+      /** @description A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose. */
+      response?: string;
+    };
     AgentSessionEventMetadata: {
       workerFailure?: components["schemas"]["WorkerFailure"];
       /** @enum {string} */
@@ -4280,6 +4363,8 @@ interface components {
       backgroundTaskSnapshot?: components["schemas"]["AgentBackgroundTask"][];
       /** @description Present on events marking an automatic timer-triggered background turn. */
       timerFire?: components["schemas"]["AgentSessionTimerFire"];
+      /** @description `inputSource` is on a message's input event: who or what started its turn (DEV-246). Devices and viewers label the turn from this, never from prompt text. */
+      inputSource?: components["schemas"]["AgentSessionInputSource"];
       /** @description The session's goal changed (set, progressed, paused, cleared or met). */
       goalSnapshot?: components["schemas"]["AgentSessionGoalSnapshot"];
       /** @description Present on the event that ends a turn the provider reported usage for. */
@@ -4315,6 +4400,8 @@ interface components {
       at?: string;
       /** @description `timerFire` is set when the input is a timer's prompt: its device resumed the session because the timer was due while no agent process ran it. Its transcript event shows the timer firing. */
       timerFire?: components["schemas"]["AgentSessionTimerFire"];
+      /** @description `inputSource` is who or what started this input's turn (DEV-246): the person, another session, a child's report, a timer, a Foundry notice or a message channel. */
+      inputSource?: components["schemas"]["AgentSessionInputSource"];
       /** @description `sentBySessionId` is the session that sent the input (create_session's first message, send_message); its transcript event names it. */
       sentBySessionId?: string;
       /** @description `channelOrigin` is a message channel turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. The prompt still carries the facts block; clients render this instead of parsing it. */
@@ -4980,7 +5067,14 @@ export type ConnectorServerHeldSpec =
   components["schemas"]["ConnectorServerHeldSpec"];
 export type ConnectorServerHeldWrite =
   components["schemas"]["ConnectorServerHeldWrite"];
+export type ConnectorServerHeldWriteFooter =
+  components["schemas"]["ConnectorServerHeldWriteFooter"];
+export type ConnectorServerHeldWriteFooterFormat =
+  components["schemas"]["ConnectorServerHeldWriteFooterFormat"];
 export type ConnectorEventsSpec = components["schemas"]["ConnectorEventsSpec"];
+export type ConnectorEventsAck = components["schemas"]["ConnectorEventsAck"];
+export type ConnectorEventsAckCall =
+  components["schemas"]["ConnectorEventsAckCall"];
 export type ConnectorEventsReply =
   components["schemas"]["ConnectorEventsReply"];
 export type ConnectorEventsPoll = components["schemas"]["ConnectorEventsPoll"];
@@ -5454,6 +5548,8 @@ export type AgentSessionSchedule =
   components["schemas"]["AgentSessionSchedule"];
 export type AgentSessionScheduledTimer =
   components["schemas"]["AgentSessionScheduledTimer"];
+export type AgentSessionTimerFireTask =
+  components["schemas"]["AgentSessionTimerFireTask"];
 export type AgentSessionTimerFire =
   components["schemas"]["AgentSessionTimerFire"];
 export type AgentSessionGoalStatus =
@@ -5464,6 +5560,8 @@ export type AgentSessionGoalSnapshot =
 export type AgentSessionEvent = components["schemas"]["AgentSessionEvent"];
 export type WorkerFailureCode = components["schemas"]["WorkerFailureCode"];
 export type WorkerFailure = components["schemas"]["WorkerFailure"];
+export type AgentSessionInputSource =
+  components["schemas"]["AgentSessionInputSource"];
 export type AgentSessionEventMetadata =
   components["schemas"]["AgentSessionEventMetadata"];
 export type SessionExecutionBudget =

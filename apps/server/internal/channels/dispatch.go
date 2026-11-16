@@ -76,6 +76,7 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 	// Follow what was handed over.
 	inFlight := map[string]bool{}
 	statuses := map[string]InboxStatus{}
+	var endedAcks []string
 	for i := range open {
 		record := &open[i]
 		if record.InboxID == "" {
@@ -95,7 +96,14 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 			statuses[record.InboxID] = status
 		}
 		hadSession := record.SessionID != ""
+		wasOpen := record.Status == store.MessageDeliveryQueued || record.Status == store.MessageDeliveryDelivered
 		changed := applyInboxStatus(record, status, r.ports.Now())
+		if changed && wasOpen && record.InboxID != "" && record.Envelope.MessageID != "" &&
+			(record.Status == store.MessageDeliveryDone || record.Status == store.MessageDeliveryFailed) {
+			// The turn this message was handed to ended, whatever the
+			// outcome; take the acknowledgement off it.
+			endedAcks = append(endedAcks, record.Envelope.MessageID)
+		}
 		// The inbox started another session for the same segment (the last
 		// one failed, or the model changed): say so on the record.
 		if !hadSession && record.SessionID != "" && !record.SessionNew {
@@ -112,6 +120,7 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 			inFlight[record.SessionKey] = true
 		}
 	}
+	r.ack(ctx, channel, false, endedAcks)
 	if !channel.Enabled {
 		return nil
 	}
@@ -332,7 +341,36 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 			return false, err
 		}
 	}
+	r.ack(ctx, channel, true, batchMessageIDs(batch))
 	return true, nil
+}
+
+// batchMessageIDs are the source message ids of a handed batch.
+func batchMessageIDs(batch []store.MessageChannelDeliveryRecord) []string {
+	ids := make([]string, 0, len(batch))
+	seen := map[string]bool{}
+	for _, record := range batch {
+		if id := record.Envelope.MessageID; id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// ack marks or clears the source's acknowledgement reaction; a failure is
+// logged and never stops the batch.
+func (r *Runner) ack(ctx context.Context, channel store.MessageChannelRecord, add bool, messageIDs []string) {
+	if r.ports.Ack == nil || len(messageIDs) == 0 || !AckEnabled(channel.MessageChannel) {
+		return
+	}
+	if err := r.ports.Ack(ctx, channel, add, messageIDs); err != nil {
+		action := "remove"
+		if add {
+			action = "add"
+		}
+		log.Printf("message channel %s: %s reaction: %v", channel.ID, action, err)
+	}
 }
 
 // applyInboxStatus moves a record along with its inbox entry; it reports

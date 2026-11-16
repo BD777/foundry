@@ -128,6 +128,11 @@ func generatedAssistantPath(kind store.AssistantWorkspaceKind, path string) bool
 	if path == ".foundry" || strings.HasPrefix(path, ".foundry/") {
 		return true
 	}
+	// A channel workspace's CLAUDE.md is Foundry's one-line import of its
+	// own AGENTS.md (DEV-251); the person's file is AGENTS.md.
+	if kind != store.AssistantWorkspaceKindHome && path == "CLAUDE.md" {
+		return true
+	}
 	if kind != store.AssistantWorkspaceKindHome {
 		return false
 	}

@@ -1,7 +1,9 @@
 import type { ReactNode, Ref } from "react";
 import type {
+  AgentBackgroundTask,
   AgentContextCompaction,
   AgentQuestion,
+  AgentSessionInputSource,
   AgentTurnUsage,
   ChatAttachment,
   MessageChannelOrigin,
@@ -9,6 +11,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../agent-runtime/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
+import type { TurnHandoffView } from "./turn-handoffs";
 import type { AgentComposerProps } from "../agent-runtime/agent-composer";
 import type { ConversationStoragePrefix } from "./conversation-storage";
 
@@ -35,8 +38,8 @@ export interface ConversationProps {
   onlyMine?: boolean;
   /** Pinned at the top of the composer: what the conversation waits for. */
   attention?: ReactNode;
-  /** How many turns the person did not start are folded or hidden now. */
-  onFoldedTurnsChange?: (count: number) => void;
+  /** How many turns the person did not start are hidden now. */
+  onHiddenTurnsChange?: (count: number) => void;
   composer: ConversationComposer;
   active?: boolean;
   activeExecutionId?: string;
@@ -225,6 +228,16 @@ export interface ConversationServerQueue {
   retry: (chatId: string, id: string) => Promise<ConversationQueueOutcome>;
 }
 
+/** A finished background task a turn followed: its public fields, and the session whose output read names its command. */
+export interface ConversationBackgroundTask {
+  id: string;
+  kind: AgentBackgroundTask["kind"];
+  description: string;
+  status: AgentBackgroundTask["status"];
+  exitCode?: number;
+  sessionId: string;
+}
+
 export interface ChatMessageItem {
   at?: string;
   /**
@@ -250,17 +263,8 @@ export interface ChatMessageItem {
   id: string;
   idea?: string;
   /** "waiting": queued work that waits for its offline device, without a timer. */
-  kind?:
-    | "boundary"
-    | "failure"
-    | "message"
-    | "process"
-    | "session-turns"
-    | "tool"
-    | "waiting";
+  kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
   processItems?: ProcessDisplayItem[];
-  /** On a "session-turns" row: the turns other sessions started that it folds. */
-  sessionTurns?: SessionTurnsFold;
   onTurnIntoIssue?: () => void;
   recoverable?: boolean;
   failureDiagnostic?: FailureDiagnostic;
@@ -279,6 +283,8 @@ export interface ChatMessageItem {
    * it, opened by `onOpen` (absent: the viewer cannot open it).
    */
   sentBy?: { sessionId: string; label: string; onOpen?: () => void };
+  /** Who or what started this input's turn, from the server (DEV-246). */
+  inputSource?: AgentSessionInputSource;
   /** A user message steered into a running turn, not a turn's input. */
   steered?: boolean;
   /**
@@ -286,6 +292,17 @@ export interface ChatMessageItem {
    * ("scheduled") or after its background work ended ("background").
    */
   continuation?: "scheduled" | "background";
+  /** On a boundary: the timer's prompt or the finished work, for its row. */
+  continuationDetail?: string;
+  /**
+   * On a boundary: the whole prompt the event carried (a timer's or a
+   * background task's), shown under the row's expansion (DEV-249).
+   */
+  continuationBody?: string;
+  /** On a boundary: the timer was delivered late (catchUp), and `text` says so. */
+  continuationCatchUp?: boolean;
+  /** On a boundary: the background tasks whose end the turn followed. */
+  backgroundTasks?: ConversationBackgroundTask[];
   streaming?: boolean;
   text: ReactNode;
   title?: ReactNode;
@@ -295,9 +312,13 @@ export interface ChatMessageItem {
   fileReferences?: ConversationFileReference[];
   /** The files the answer's turn wrote or named, on the answer ending it. */
   turnFiles?: { turnId: string; count: number };
+  /**
+   * Work this turn handed to other sessions or projects, shown as compact
+   * rows after its answer (DEV-250). Absent when it handed nothing off.
+   */
+  handoffs?: TurnHandoffView[];
   /** Questions the answer asks the person without waiting (Codex). */
-  questions?: AgentQuestion[];
-  /** The native item the questions came in; the answer names it. */
+  questions?: AgentQuestion[]; /** The native item the questions came in; the answer names it. */
   questionItemId?: string;
   /**
    * "next_turn": the questions ended the turn and wait for the next message
@@ -325,21 +346,6 @@ export interface ChatMessageItem {
    * reads it now; offered only where it can be stopped.
    */
   onStopSteerBlocker?: () => Promise<void>;
-}
-
-/**
- * Consecutive turns other sessions started (their input came from a session,
- * and the person said nothing in them), folded into one row.
- */
-export interface SessionTurnsFold {
-  turnCount: number;
-  /** The folded turns by who started them; they add up to turnCount. */
-  origins: { session: number; scheduled: number; background: number };
-  /** The sessions that sent their inputs, in order, each once. */
-  senders: NonNullable<ChatMessageItem["sentBy"]>[];
-  firstAt?: string;
-  lastAt?: string;
-  expanded: boolean;
 }
 
 /** A tool call that runs now: its step's label, what it runs, since when. */

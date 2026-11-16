@@ -1266,7 +1266,7 @@
   },
   {
     "name": "list_sessions",
-    "description": "List a workspace's sessions, newest activity first, one line each (id, title, status, runtime, profile, device, parent, activity). Yours by default, or workspaceId; parentSessionId lists the sessions one session started; parentOnly the ones you started. Pages of limit with the nextCursor a page returns; pass nextCursor to continue.",
+    "description": "List a workspace's sessions, newest activity first, one line each (id, title, status, runtime, profile, device, parent, activity). A running or blocked session also carries progress: its last event and the deterministic flags repeatedFailure, rateLimitStorm and quiet. Yours by default, or workspaceId; parentSessionId lists the sessions one session started; parentOnly the ones you started. Pages of limit with the nextCursor a page returns; pass nextCursor to continue.",
     "summary": "Lists a workspace's sessions, newest activity first, one line each.",
     "limits": ["Pages of at most 100 sessions, 20 by default."],
     "inputSchema": {
@@ -1327,10 +1327,11 @@
   },
   {
     "name": "get_session",
-    "description": "A session's or native chat's summary: the same as read_context scope=summary.",
-    "summary": "Reads one session's or native chat's summary: status, runtime, lineage, last input and answer, last error.",
+    "description": "A session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and a compact progress object (last event, plan step, open question, running background tasks and detector flags): the same as read_context scope=summary.",
+    "summary": "Reads one session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and progress (last event, plan step, open question, running background tasks, detector flags).",
     "limits": [
-      "The last input is cut to 300 characters and the answer to 1000."
+      "The last input is cut to 300 characters and the answer to 1000.",
+      "Progress flags come from the stored event log: repeatedFailure (3 or more of the same tool failure in the current turn), rateLimitStorm (5 or more rate limits in 10 minutes), quiet (25 or more minutes without activity while running), budget (80% and 95% of the token or time budget)."
     ],
     "inputSchema": {
       "type": "object",
@@ -1348,12 +1349,13 @@
   },
   {
     "name": "read_context",
-    "description": "Read a session or native chat you can read, in any workspace you reach. scope: summary (default: status, places, lineage, last input and answer, open work, last error); events (one line each; filter by levels, labels, query; the newest with tail, or pages of limit with after/before cursors; labels [\"User message\"] lists the person's own messages); thread (the conversation: messages and answers without tool calls; the newest page, or from offset; at most limit messages, each cut at maxChars; transcript is the same for a native chat); changes (the files it wrote or named, with lines added and removed; with path, that file's diff, one turn's with inputId); file (path: the file as it is now on the session's device); background (commands it left running; taskId: the end of one's output); subagents (its native subagents; taskId: one's transcript). file and a diff are read in lines: from offset, at most limit. Every answer stays within maxBytes and says how to read on.",
+    "description": "Read a session or native chat you can read, in any workspace you reach. scope: summary (default: status, places, lineage, last input and answer, open work, last error); progress (status, last event, last error, plan step, open question, running background tasks, detector flags, and the last tool calls with name, short detail, ok/fail and duration: the newest 10 by default, paged with offset and limit); events (one line each; filter by levels, labels, query; the newest with tail, or pages of limit with after/before cursors; labels [\"User message\"] lists the person's own messages); thread (the conversation: messages and answers without tool calls; the newest page, or from offset; at most limit messages, each cut at maxChars; transcript is the same for a native chat); changes (the files it wrote or named, with lines added and removed; with path, that file's diff, one turn's with inputId); file (path: the file as it is now on the session's device); background (commands it left running; taskId: the end of one's output); subagents (its native subagents; taskId: one's transcript). file and a diff are read in lines: from offset, at most limit. Every answer stays within maxBytes and says how to read on.",
     "summary": "Reads a session in depth: its events, transcript, native subagents, the files it changed and the commands it left running.",
     "maxBytes": 32000,
     "limits": [
       "Output is cut at maxBytes, 12000 by default and at most 32000.",
       "Pages of at most 500 events, with up to 5 events of context each.",
+      "Progress tool calls: 10 by default and at most 50; offset pages from the start.",
       "A background command's output needs Member in the session's workspace."
     ],
     "inputSchema": {
@@ -1367,6 +1369,7 @@
           "type": "string",
           "enum": [
             "summary",
+            "progress",
             "events",
             "thread",
             "transcript",
@@ -1402,7 +1405,7 @@
         },
         "limit": {
           "type": "number",
-          "description": "Page size: events (default 50, at most 500), thread messages (default 20, at most 200), file or diff lines (default 400, at most 2000)."
+          "description": "Page size: progress tool calls (default 10, at most 50); events (default 50, at most 500); thread messages (default 20, at most 200); file or diff lines (default 400, at most 2000)."
         },
         "after": {
           "type": "string",
@@ -1434,7 +1437,7 @@
         },
         "offset": {
           "type": "number",
-          "description": "Where a page starts: thread, the message index (from 0); file or diff, the line (from 1). Without it thread reads the newest page."
+          "description": "Where a page starts: progress, the tool-call index (from 0); thread, the message index (from 0); file or diff, the line (from 1). Without it progress reads the newest calls and thread the newest page."
         },
         "maxChars": {
           "type": "number",

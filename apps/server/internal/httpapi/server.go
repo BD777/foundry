@@ -307,6 +307,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.chatQueueKicks = newWorkGroup(server.hub.work)
 	server.initAccounts()
 	server.connectors = connectors.New(store, store, options.Integrations, personalagent.ProposalTTL)
+	server.connectors.Extensions.UseWriteFooter(server.messageChannelWriteFooter)
 	server.connectors.ServerHeld.ExtensionDeviceRequest = server.extensionDeviceRequest
 	server.connectors.ServerHeld.ExtensionDevices = server.extensionDevices
 	if server.connectors.Confirmations != nil {

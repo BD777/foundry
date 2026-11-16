@@ -238,6 +238,16 @@ export interface PersonalAgentOverview {
   usage?: PersonalAgentUsage;
   /** Open items this assistant may see, for its home card. */
   needsYou?: PersonalAgentNeedsYou;
+  /** Suggested changes this assistant's upkeep waits on the person for. */
+  maintenance?: PersonalAgentMaintenanceWaiting;
+}
+
+/** The part of one assistant's upkeep that waits for the person. */
+export interface PersonalAgentMaintenanceWaiting {
+  /** The number of suggested changes across review jobs. */
+  proposals: number;
+  /** How many projects have such changes. */
+  projects: number;
 }
 
 /** The assistant-scoped part of the person's "needs you" list. */
