@@ -137,6 +137,44 @@ func TestInboxExplicitRetryKeepsRootAndDoesNotRaceUnknownDispatch(t *testing.T) 
 	}
 }
 
+func TestInboxDismissCancelsAHeldMessageAndRecordsWho(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	entry, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "web", "dismiss-me"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry.Status, entry.SessionID, entry.ResultStatus = "resolved", "failed-session", "failed"
+	entry, err = db.SavePersonalAgentInbox(ctx, entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dismissed, err := db.DismissPersonalAgentInbox(ctx, entry.AssistantID, entry.ID, entry.Revision, entry.UserID)
+	if err != nil || dismissed.Status != "cancelled" || dismissed.DismissedBy != entry.UserID ||
+		dismissed.DismissedAt == "" || dismissed.Revision != entry.Revision+1 {
+		t.Fatalf("dismiss = %+v (%v)", dismissed, err)
+	}
+	again, err := db.DismissPersonalAgentInbox(ctx, entry.AssistantID, entry.ID, dismissed.Revision, entry.UserID)
+	if err != nil || again.Revision != dismissed.Revision || again.Status != "cancelled" {
+		t.Fatalf("dismiss was not idempotent: %+v (%v)", again, err)
+	}
+	if _, err := db.DismissPersonalAgentInbox(ctx, entry.AssistantID, entry.ID, entry.Revision, entry.UserID); !errors.Is(err, store.ErrPersonalAgentRevision) {
+		t.Fatalf("stale revision dismissed: %v", err)
+	}
+
+	dispatching, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "web", "dispatching"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatching.Status = "dispatching"
+	dispatching, err = db.SavePersonalAgentInbox(ctx, dispatching)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DismissPersonalAgentInbox(ctx, dispatching.AssistantID, dispatching.ID, dispatching.Revision, dispatching.UserID); err == nil {
+		t.Fatal("a message being dispatched was dismissed")
+	}
+}
+
 func TestInboxResolvedFailureCanRetryWithoutReplayingASuccess(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	entry, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "web", "failed-original"))

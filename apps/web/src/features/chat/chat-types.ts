@@ -8,6 +8,7 @@ import type {
   SessionFileRecord,
   AgentScheduledTask,
   AgentSessionGoal,
+  AgentSessionInputSource,
   AgentSessionScheduledTimer,
   AgentTurnUsage,
   ChatAttachment,
@@ -24,7 +25,9 @@ import type {
   ConfiguredContextWindow,
 } from "@bd777/foundry-protocol";
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
+import type { TurnHandoff } from "../../components/conversation/turn-handoffs";
 import type {
+  ConversationBackgroundTask,
   ConversationFileReference,
   ConversationLiveActivity,
   ConversationSteerState,
@@ -73,6 +76,8 @@ export interface ChatViewMessage {
   runtime?: Exclude<WorkerRuntimeId, "mock">;
   /** A user message another session sent: that session's id. */
   sentBySessionId?: string;
+  /** Who or what started this input's turn, from the server (DEV-246). */
+  inputSource?: AgentSessionInputSource;
   /** A user message steered into a running turn, not a turn's input. */
   steered?: boolean;
   /** A message channel turn: its channel, conversation and messages. */
@@ -82,6 +87,14 @@ export interface ChatViewMessage {
    * ("scheduled") or after its background work ended ("background").
    */
   continuation?: "scheduled" | "background";
+  /** On a boundary: the timer's prompt or the finished work, for its row. */
+  continuationDetail?: string;
+  /** On a boundary: the whole prompt the event carried, for its expansion. */
+  continuationBody?: string;
+  /** On a boundary: the timer was delivered late (catchUp). */
+  continuationCatchUp?: boolean;
+  /** On a boundary: the background tasks whose end the turn followed. */
+  backgroundTasks?: ConversationBackgroundTask[];
   statusLabel?: string;
   streaming?: boolean;
   text: string;
@@ -92,6 +105,8 @@ export interface ChatViewMessage {
   fileReferences?: ConversationFileReference[];
   /** The files the answer's turn wrote or named, on the answer ending it. */
   turnFiles?: { turnId: string; count: number };
+  /** Work the turn handed to other sessions or projects (DEV-250). */
+  handoffs?: TurnHandoff[];
   /** Questions the answer asks the person without waiting (Codex). */
   questions?: AgentQuestion[];
   /** The native item the questions came in; the answer names it. */

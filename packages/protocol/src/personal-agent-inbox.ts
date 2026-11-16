@@ -19,6 +19,9 @@ export interface PersonalAgentInboxEntry {
   resultTruncated?: boolean;
   /** A failed attempt's error, classified as a failed turn's is. */
   resultFailure?: PersonalAgentInboxFailure;
+  /** Who gave up on the message ("不再处理"); empty until then. */
+  dismissedBy?: string;
+  dismissedAt?: string;
 }
 
 export interface PersonalAgentInboxFailure {

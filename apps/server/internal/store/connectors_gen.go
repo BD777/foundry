@@ -81,6 +81,21 @@ func (e ConnectorServerHeldInstanceAccess) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorServerHeldWriteFooterFormatEscape.
+const (
+	ConnectorServerHeldWriteFooterFormatEscapeMarkdown ConnectorServerHeldWriteFooterFormatEscape = "markdown"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorServerHeldWriteFooterFormatEscape enum.
+func (e ConnectorServerHeldWriteFooterFormatEscape) Valid() bool {
+	switch e {
+	case ConnectorServerHeldWriteFooterFormatEscapeMarkdown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorVersionCheckCommandResult.
 const (
 	ConnectorVersionCheckCommandResultRead    ConnectorVersionCheckCommandResult = "read"
@@ -254,6 +269,25 @@ type ConnectorDescriptor struct {
 	ServerHeld *ConnectorServerHeldSpec `json:"serverHeld,omitempty"`
 }
 
+// ConnectorEventsAck How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server.
+type ConnectorEventsAck struct {
+	// Reaction The reaction key, e.g. Feishu's OnIt.
+	Reaction string `json:"reaction"`
+
+	// Add One reaction request. method and path name a catalogued write route at or below the upstream prefix; `{message.id}` and `{reaction}` are replaced with the message id and the reaction key. body is an optional request body template over the same two values.
+	Add ConnectorEventsAckCall `json:"add"`
+
+	// Remove One reaction request. method and path name a catalogued write route at or below the upstream prefix; `{message.id}` and `{reaction}` are replaced with the message id and the reaction key. body is an optional request body template over the same two values.
+	Remove ConnectorEventsAckCall `json:"remove,omitempty"`
+}
+
+// ConnectorEventsAckCall One reaction request. method and path name a catalogued write route at or below the upstream prefix; `{message.id}` and `{reaction}` are replaced with the message id and the reaction key. body is an optional request body template over the same two values.
+type ConnectorEventsAckCall struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Body   string `json:"body,omitempty"`
+}
+
 // ConnectorEventsCase defines model for ConnectorEventsCase.
 type ConnectorEventsCase struct {
 	When  jsonempty.List[ConnectorEventsCondition] `json:"when"`
@@ -319,6 +353,9 @@ type ConnectorEventsSpec struct {
 
 	// Reply How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.
 	Reply ConnectorEventsReply `json:"reply,omitempty"`
+
+	// Ack How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server.
+	Ack *ConnectorEventsAck `json:"ack,omitempty"`
 }
 
 // ConnectorEventsValue One envelope field, the value at pointer, or template with `{/pointer}` parts. map translates the value (otherwise for values map does not name); unit reads a time (ms or s since the epoch, or rfc3339).
@@ -849,7 +886,40 @@ type ConnectorServerHeldWrite struct {
 
 	// CreatedMessageID JSON pointer to the created message's id in the response.
 	CreatedMessageID string `json:"createdMessageId"`
+
+	// Footer The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it.
+	Footer *ConnectorServerHeldWriteFooter `json:"footer,omitempty"`
 }
+
+// ConnectorServerHeldWriteFooter The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it.
+type ConnectorServerHeldWriteFooter struct {
+	// Text JSON pointer into the request body to the string holding the text or markdown.
+	Text string `json:"text"`
+
+	// Markdown Whether the endpoint renders that field as markdown, so a `>` line shows as a quote; false sends it as plain text, where the line still reads fine.
+	Markdown bool `json:"markdown,omitempty"`
+
+	// Format How to make a write that is not already markdown render the footer as a quote. When the write selects another format there, its text is escaped as literal markdown and the format field is set to `value` before the footer is appended.
+	Format *ConnectorServerHeldWriteFooterFormat `json:"format,omitempty"`
+}
+
+// ConnectorServerHeldWriteFooterFormat How to make a write that is not already markdown render the footer as a quote. When the write selects another format there, its text is escaped as literal markdown and the format field is set to `value` before the footer is appended.
+type ConnectorServerHeldWriteFooterFormat struct {
+	// Field JSON pointer into the request body to the field that selects how `text` is rendered.
+	Field string `json:"field"`
+
+	// Value The value `field` must take for `text` to be rendered as markdown.
+	Value string `json:"value"`
+
+	// Plain Values of `field` that render `text` literally; a write with no such field also counts as literal. Other values (a structured rich format, say) are left alone.
+	Plain []string `json:"plain,omitempty"`
+
+	// Escape How to escape literal text before it is sent as markdown.
+	Escape ConnectorServerHeldWriteFooterFormatEscape `json:"escape"`
+}
+
+// ConnectorServerHeldWriteFooterFormatEscape How to escape literal text before it is sent as markdown.
+type ConnectorServerHeldWriteFooterFormatEscape string
 
 // ConnectorSetup ConnectorSetup is how to set an extension connector up on another device.
 type ConnectorSetup struct {

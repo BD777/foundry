@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,11 @@ import (
 // assistant's home.
 
 const maxMessageChannelsPerAssistant = 20
+
+// messageChannelRetention is how long a delivery's text is kept. Older rows
+// stay (they tie a session to its channel) but their conversation is no
+// longer listed or counted.
+const messageChannelRetention = 30 * 24 * time.Hour
 
 // messageChannelStoreOf is st's message channel store, nil without one.
 func messageChannelStoreOf(st store.Store) store.MessageChannelStore {
@@ -52,6 +58,7 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
 		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
 		OwnWrites: s.messageChannelOwnWrites, Session: s.messageChannelSessionState,
+		Ack: s.messageChannelAck,
 	})
 }
 
@@ -115,6 +122,8 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	record := store.MessageChannelRecord{UserID: agent.UserID}
 	wasEnabled := false
+	var previousAck *bool
+	var previousFooter *string
 	if id == "" {
 		existing, err := st.ListMessageChannels(ctx, agent.UserID, agent.ID)
 		if err != nil {
@@ -132,7 +141,7 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		wasEnabled = record.Enabled
+		wasEnabled, previousAck, previousFooter = record.Enabled, record.Ack, record.Footer
 	}
 	channel, err := s.cleanMessageChannelInput(ctx, r, agent, input)
 	if err != nil {
@@ -142,6 +151,16 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	record.Name, record.Enabled, record.Source, record.Filters = channel.Name, channel.Enabled, channel.Source, channel.Filters
 	record.Guide, record.SessionKey, record.Scope, record.Limits = channel.Guide, channel.SessionKey, channel.Scope, channel.Limits
 	record.Session, record.FollowUps = channel.Session, channel.FollowUps
+	record.Ack, record.Footer = channel.Ack, channel.Footer
+	if id != "" {
+		// An older client that omits them keeps what the channel had.
+		if record.Ack == nil {
+			record.Ack = previousAck
+		}
+		if record.Footer == nil {
+			record.Footer = previousFooter
+		}
+	}
 	record.SkillName, record.UpdatedAt = channels.SkillName(record.MessageChannel), now
 	if channel.WorkspaceID != "" && channel.WorkspaceID != record.WorkspaceID {
 		if err := s.checkMessageChannelWorkspace(ctx, r, agent, channel.WorkspaceID); err != nil {
@@ -341,7 +360,7 @@ func (s *Server) messageChannelView(ctx context.Context, agent store.PersonalAge
 	if err != nil {
 		return view, err
 	}
-	view.ConversationCount, err = st.CountMessageChannelConversations(ctx, record.ID)
+	view.ConversationCount, err = st.CountMessageChannelConversations(ctx, record.ID, time.Now().Add(-messageChannelRetention).UTC().Format(time.RFC3339Nano))
 	return view, err
 }
 
@@ -386,11 +405,15 @@ func (s *Server) messageChannelSources(ctx context.Context, userID string) ([]st
 		if err != nil {
 			continue
 		}
-		spec, _ := s.messageChannelFeed(ctx, userID, app, data)
+		spec, descriptor := s.messageChannelFeed(ctx, userID, app, data)
 		if spec == nil {
 			continue
 		}
-		capabilities := channels.Capabilities(spec.Envelope)
+		var writes []store.ConnectorServerHeldWrite
+		if descriptor.ServerHeld != nil {
+			writes = descriptor.ServerHeld.Writes
+		}
+		capabilities := channels.Capabilities(*spec, writes)
 		sources = append(sources, store.MessageChannelSource{Kind: account.Provider, AccountID: account.ID, InstanceID: app.ID, Label: app.Label, Capabilities: &capabilities})
 	}
 	return sources, nil
@@ -565,6 +588,14 @@ func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, 
 		}
 	}
 	channel.FollowUps = &followUps
+	channel.Ack = input.Ack
+	if input.Footer != nil {
+		footer, ok := channels.CleanFooter(*input.Footer)
+		if !ok {
+			return channel, bad("the AI footer is one line of at most %d characters", channels.MaxFooter)
+		}
+		channel.Footer = &footer
+	}
 	channel.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	scope := input.Scope
 	if scope.ConnectorDefault == "" {
@@ -643,7 +674,7 @@ func cleanIDList(ids []string) []string {
 // through the channel's source account (the gateway's audit) and the items
 // it handed to the person, by delivery id.
 func (s *Server) messageChannelActions(ctx context.Context, agent store.PersonalAgent, channel store.MessageChannelRecord, records []store.MessageChannelDeliveryRecord) map[string][]store.MessageChannelAction {
-	out := map[string][]store.MessageChannelAction{}
+	out := s.messageChannelAckFailures(ctx, channel, records)
 	bySession := map[string][]store.MessageChannelDeliveryRecord{}
 	for _, record := range records {
 		if record.SessionID != "" && record.DeliveredAt != "" {
@@ -746,6 +777,51 @@ func extensionRequestSummary(raw string) extensionRequestLine {
 	return extensionRequestLine{write: detail.Write, outcome: detail.Outcome, text: text}
 }
 
+// messageChannelAckFailures are the acknowledgement reaction calls that
+// failed for messages of this page, by delivery id: the channel's recent
+// activity says when the source would not take or clear its reaction.
+func (s *Server) messageChannelAckFailures(ctx context.Context, channel store.MessageChannelRecord, records []store.MessageChannelDeliveryRecord) map[string][]store.MessageChannelAction {
+	out := map[string][]store.MessageChannelAction{}
+	byMessage := map[string]string{}
+	since := ""
+	for _, record := range records {
+		if id := record.Envelope.MessageID; id != "" {
+			byMessage[id] = record.ID
+		}
+		if record.CreatedAt != "" && (since == "" || record.CreatedAt < since) {
+			since = record.CreatedAt
+		}
+	}
+	if since == "" {
+		return out
+	}
+	events, err := s.store.ListExternalAccountEventsByKind(ctx, channel.Source.AccountID, ExtensionAckFailed, since, 500)
+	if err != nil {
+		return out
+	}
+	for _, event := range events {
+		var detail struct {
+			ChannelID string `json:"channelId"`
+			MessageID string `json:"messageId"`
+			Action    string `json:"action"`
+			Error     string `json:"error"`
+		}
+		if json.Unmarshal([]byte(event.Detail), &detail) != nil || detail.ChannelID != channel.ID {
+			continue
+		}
+		id := byMessage[detail.MessageID]
+		if id == "" {
+			continue
+		}
+		summary := "reaction " + detail.Action + " failed"
+		if detail.Error != "" {
+			summary += ": " + detail.Error
+		}
+		out[id] = append(out[id], store.MessageChannelAction{At: event.CreatedAt, Kind: "channel_ack_failed", Summary: clipRunes(summary, 300)})
+	}
+	return out
+}
+
 // --- the runner's ports ---
 
 func (s *Server) messageChannelSourceLabel(ctx context.Context, channel store.MessageChannelRecord) string {
@@ -806,14 +882,14 @@ func (s *Server) channelSessionOfAssistant(ctx context.Context, agent store.Pers
 }
 
 // pruneMessageChannels drops records of filtered-out messages after a day
-// and the text of the others after 30 days.
+// and the text of the others after the retention window.
 func (s *Server) pruneMessageChannels(ctx context.Context) {
 	st, ok := s.store.(store.MessageChannelStore)
 	if !ok {
 		return
 	}
 	now := time.Now().UTC()
-	if err := st.PruneMessageChannelDeliveries(ctx, now.Add(-24*time.Hour).Format(time.RFC3339Nano), now.Add(-30*24*time.Hour).Format(time.RFC3339Nano)); err != nil && ctx.Err() == nil {
+	if err := st.PruneMessageChannelDeliveries(ctx, now.Add(-24*time.Hour).Format(time.RFC3339Nano), now.Add(-messageChannelRetention).Format(time.RFC3339Nano)); err != nil && ctx.Err() == nil {
 		s.connectors.ServerHeld.Logf("message channels: prune: %v", err)
 	}
 }

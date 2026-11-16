@@ -95,6 +95,27 @@ test("a run writes the block into AGENTS.md and an edit of the rest renews the r
   assert.notEqual(personalAgentFilesRevision("sess_1"), first);
 });
 
+// A channel workspace takes Foundry's own facts and its generated
+// CLAUDE.md; the person's AGENTS.md and anything else stay the channel
+// sessions' read-only workspace (DEV-251).
+test("a channel workspace takes its CLAUDE.md and never the home's files", () => {
+  const ws = workspace();
+  const session = {
+    id: "sess_ch",
+    role: "personal_agent",
+    workspaceId: "ws_ch",
+    workspaceAccess: "read",
+  };
+  writePersonalAgentFiles(session, ws, [
+    { path: "AGENTS.md", content: "the person's channel rules\n" },
+    { path: "CLAUDE.md", content: "@AGENTS.md\n" },
+    { path: "notes.md", content: "not Foundry's\n" },
+  ]);
+  assert.equal(readFileSync(join(ws, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
+  assert.equal(existsSync(join(ws, "AGENTS.md")), false);
+  assert.equal(existsSync(join(ws, "notes.md")), false);
+});
+
 test("a malformed managed block is refused", () => {
   const ws = workspace();
   const session = { id: "sess_2", role: "personal_agent", workspaceId: "ws_1" };

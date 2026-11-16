@@ -287,6 +287,9 @@ type AgentSessionEventMetadata struct {
 	// TimerFire Present on events marking an automatic timer-triggered background turn.
 	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
 
+	// InputSource `inputSource` is on a message's input event: who or what started its turn (DEV-246). Devices and viewers label the turn from this, never from prompt text.
+	InputSource *AgentSessionInputSource `json:"inputSource,omitempty"`
+
 	// GoalSnapshot The session's goal changed (set, progressed, paused, cleared or met).
 	GoalSnapshot *AgentSessionGoalSnapshot `json:"goalSnapshot,omitempty"`
 
@@ -347,6 +350,23 @@ type AgentSessionGoalSnapshot struct {
 // AgentSessionGoalStatus Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.
 type AgentSessionGoalStatus = string
 
+// AgentSessionInputSource Who or what started a session input (DEV-246), structured so viewers label a turn without parsing Foundry's own prompt text.
+type AgentSessionInputSource struct {
+	Kind string `json:"kind"`
+
+	// SessionID The session that sent it (session, child_report).
+	SessionID string `json:"sessionId,omitempty"`
+
+	// Title The sender's title at send time (child_report), for its source row.
+	Title string `json:"title,omitempty"`
+
+	// Status A child report's turn status (completed, failed, canceled).
+	Status string `json:"status,omitempty"`
+
+	// Response A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose.
+	Response string `json:"response,omitempty"`
+}
+
 // AgentSessionSchedule AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest input completed (Status still describes that input). Derived from the latest timer snapshot its device reported (SessionScheduleFromSnapshot).
 type AgentSessionSchedule struct {
 	// ReportedAt `reportedAt` is when the device reported these timers.
@@ -384,6 +404,19 @@ type AgentSessionTimerFire struct {
 
 	// CatchUp `catchUp` marks a fire the device delivered late: no process held the session when the timer came due (its worker was down), so it fires once now, however many times it was missed.
 	CatchUp bool `json:"catchUp,omitempty"`
+
+	// Tasks Background tasks whose end this continuation followed (DEV-249), in the order their notifications arrived; a row names each without reading the prompt.
+	Tasks []AgentSessionTimerFireTask `json:"tasks,omitempty"`
+}
+
+// AgentSessionTimerFireTask A background task whose end a continuation followed (DEV-249): the public fields a turn-source row names. Its command and output stay in the member-only output read, so events never carry them.
+type AgentSessionTimerFireTask struct {
+	// ID The background task id its command and output are read by.
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	ExitCode    *int64 `json:"exitCode,omitempty"`
 }
 
 // AgentSubagentTranscript defines model for AgentSubagentTranscript.
@@ -596,6 +629,9 @@ type SessionInput struct {
 
 	// TimerFire `timerFire` is set when the input is a timer's prompt: its device resumed the session because the timer was due while no agent process ran it. Its transcript event shows the timer firing.
 	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
+
+	// InputSource `inputSource` is who or what started this input's turn (DEV-246): the person, another session, a child's report, a timer, a Foundry notice or a message channel.
+	InputSource *AgentSessionInputSource `json:"inputSource,omitempty"`
 
 	// SentBySessionID `sentBySessionId` is the session that sent the input (create_session's first message, send_message); its transcript event names it.
 	SentBySessionID string `json:"sentBySessionId,omitempty"`

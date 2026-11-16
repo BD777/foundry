@@ -22,9 +22,12 @@ import (
 // PendingFor is the one visibility rule for an assistant's "needs you"
 // view. It returns open items assigned to it, visible workspace items, and
 // personal account items it may use. An item with neither a workspace nor
-// an account belongs only to the default assistant.
+// an account belongs only to the default assistant. Items whose session was
+// archived or deleted are not "needs you" anywhere: the same
+// ListVisiblePendingItems the person's Needs-you page reads is what this
+// card counts.
 func (s *Service) PendingFor(ctx context.Context, agent store.PersonalAgent, limit int) ([]store.PendingItem, error) {
-	items, err := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", limit)
+	items, err := s.store.ListVisiblePendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", limit)
 	if err != nil {
 		return nil, err
 	}

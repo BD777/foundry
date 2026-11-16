@@ -423,3 +423,17 @@ func (s *Service) RetryInbox(ctx context.Context, agent store.PersonalAgent, ent
 	}
 	return entry, err
 }
+
+// DismissInbox abandons one of the person's inbox entries: they will not
+// process it, so it is cancelled with who dismissed it and when. Nothing
+// new is dispatched and the original text stays as the durable record.
+func (s *Service) DismissInbox(ctx context.Context, agent store.PersonalAgent, entryID string, input store.PersonalAgentInboxAction) (store.PersonalAgentInboxEntry, error) {
+	if input.Action != "dismiss" || input.Revision < 1 {
+		return store.PersonalAgentInboxEntry{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("dismiss requires the current revision")}
+	}
+	entry, err := s.store.DismissPersonalAgentInbox(ctx, agent.ID, entryID, input.Revision, agent.UserID)
+	if err != nil {
+		err = &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+	}
+	return entry, err
+}

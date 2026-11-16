@@ -16,6 +16,11 @@ import {
 } from "../composer/chat-outbox";
 import type { ChatMessageItem } from "../chat-surface-types";
 import type { ChatSessionThread, ChatViewMessage } from "../chat-types";
+import {
+  viewHandoff,
+  type TurnHandoff,
+  type TurnHandoffView,
+} from "../../../components/conversation/turn-handoffs";
 
 /** The transcript the chat shows: its sessions' or stored messages, plus the outbox. */
 export function chatViewMessages({
@@ -73,11 +78,14 @@ export function chatMessageItems(
   messages: ChatViewMessage[],
   {
     agentActive,
+    handoffOf,
     onTurnIntoIssue,
     senderOf,
     stopTask,
   }: {
     agentActive: boolean;
+    /** Names and links a handoff's session, project or list item (DEV-250). */
+    handoffOf?: (handoff: TurnHandoff) => TurnHandoffView;
     /** Absent: an idea is not offered as an Issue. */
     onTurnIntoIssue?: (source: string) => void;
     senderOf?: (sessionId: string) => ChatMessageItem["sentBy"];
@@ -88,6 +96,11 @@ export function chatMessageItems(
   const editableIndex = agentActive ? -1 : latestEditableUserIndex(messages);
   return messages.map((message, index) => ({
     ...message,
+    handoffs: message.handoffs?.length
+      ? message.handoffs.map((handoff) =>
+          handoffOf ? handoffOf(handoff) : viewHandoff(handoff),
+        )
+      : undefined,
     copyAlways: index === latestResponseIndex,
     copyText: isPlainMessage(message) ? message.text : undefined,
     editable: index === editableIndex,

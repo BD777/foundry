@@ -314,6 +314,10 @@ func TestInboxStartsTheNextTurnAndAdmitsOnce(t *testing.T) {
 	if session.Input.ID != one.DeliveredInputID || !strings.Contains(session.Input.Prompt, "Message 3 of 3") {
 		t.Fatalf("next turn input = %s %q, want the three held messages", session.Input.ID, session.Input.Prompt)
 	}
+	// The merged turn says it came from another session (DEV-246).
+	if source := session.Input.InputSource; source == nil || source.Kind != "session" || source.SessionID != "sess_a" {
+		t.Fatalf("merged input source = %+v, want the sending session", source)
+	}
 	fixture.server.sessionService.InboxObserver().SessionChanged(ctx, sessions.Started, session)
 	if got := fixture.item(first.InputID).State; got != store.InboxConsumed {
 		t.Fatalf("state after the turn started = %s, want consumed", got)

@@ -11,6 +11,8 @@ const {
   availablePlaces,
   channelInput,
   channelProblems,
+  defaultFooter,
+  footerValid,
   channelSessionIds,
   draftFromChannel,
   filterFromRules,
@@ -42,6 +44,8 @@ const full = {
   mentionsMe: true,
   fromSelf: true,
   threads: true,
+  ack: false,
+  footer: false,
 };
 const source = {
   kind: "chat",
@@ -589,4 +593,48 @@ test("session reasons and revision sources read as known words", () => {
   assert.equal(revisionSource("default"), "default");
   assert.equal(revisionSource("deleted"), "deleted");
   assert.equal(revisionSource("device"), "outside");
+});
+
+test("the acknowledgement reaction and the AI footer are channel settings", () => {
+  const draft = newChannelDraft("acct_chat");
+  draft.name = "Chat";
+  draft.filter.triggers = ["/ai"];
+  assert.equal(draft.ack, true);
+  assert.equal(draft.footer, defaultFooter);
+  assert.equal(defaultFooter, "> 来自AI");
+  assert.equal(channelInput(draft, [source]).ack, true);
+  assert.equal(channelInput(draft, [source]).footer, "> 来自AI");
+  draft.ack = false;
+  draft.footer = "  -- AI  ";
+  assert.equal(channelInput(draft, [source]).ack, false);
+  assert.equal(channelInput(draft, [source]).footer, "-- AI");
+  draft.footer = "";
+  assert.equal(channelInput(draft, [source]).footer, "");
+  assert.deepEqual(channelProblems(draft, full), []);
+  draft.footer = "one\ntwo";
+  assert.deepEqual(
+    channelProblems(draft, full).map((problem) => problem.kind),
+    ["footer"],
+  );
+  assert.equal(footerValid("one\ntwo"), false);
+  assert.equal(footerValid("x".repeat(201)), false);
+  assert.equal(footerValid("x".repeat(200)), true);
+
+  // A channel saved before these settings was on with the default footer.
+  const saved = {
+    ...channelInput(draft, [source]),
+    id: "mch_1",
+    assistantId: "asst_1",
+    skillName: "",
+    createdAt: "",
+    updatedAt: "",
+  };
+  delete saved.ack;
+  delete saved.footer;
+  const back = draftFromChannel(saved, [source]);
+  assert.equal(back.ack, true);
+  assert.equal(back.footer, defaultFooter);
+  const toggled = inputFromChannel(saved);
+  assert.equal(toggled.ack, true);
+  assert.equal(toggled.footer, defaultFooter);
 });

@@ -129,8 +129,11 @@ func TestMemoryOriginComesFromThePersonsWords(t *testing.T) {
 		{"the person's words", store.SessionInput{Prompt: "I'm vegetarian"}, true},
 		{"words with a file", store.SessionInput{Prompt: "I'm vegetarian [file: menu.pdf]", Attachments: []store.ChatAttachment{{ID: "a"}}}, true},
 		{"a server notice", store.SessionInput{Prompt: Notice("a helper finished")}, false},
+		{"a structured server notice", store.SessionInput{Prompt: "a helper finished", InputSource: &store.AgentSessionInputSource{Kind: "foundry_notice"}}, false},
+		{"a structured child report", store.SessionInput{Prompt: "report", InputSource: &store.AgentSessionInputSource{Kind: "child_report"}}, false},
 		{"a timer", store.SessionInput{Prompt: "remind", TimerFire: &store.AgentSessionTimerFire{}}, false},
 		{"a channel notice from other people", store.SessionInput{Prompt: channelNotice("no")}, false},
+		{"a structured channel notice from the person", store.SessionInput{Prompt: channelNotice("yes"), InputSource: &store.AgentSessionInputSource{Kind: "channel"}}, true},
 		{"a channel notice from the person", store.SessionInput{Prompt: channelNotice("yes")}, true},
 		{"nothing", store.SessionInput{Prompt: "  "}, false},
 	} {

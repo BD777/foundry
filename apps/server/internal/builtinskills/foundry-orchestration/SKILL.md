@@ -33,6 +33,15 @@ person's next task waits while you work.
 - While workers run, take the person's next task instead of waiting on one
   child.
 
+## Watch a running child
+
+- Look before briefing the next step, after any alert, and when a child runs
+  unusually long; with many children, one `list_sessions` call carries each
+  running child's `progress`.
+- Read `progress` first, then a filtered event tail.
+- Steer only on a decision or a blocker, `boundary` by default.
+- Never react to a signal the child can resolve itself; do not micro-manage.
+
 ## Before planning
 
 - Read the repository instructions, current changes and active sessions.

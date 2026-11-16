@@ -68,6 +68,7 @@ func TestFoundryOrchestrationSkillPackageHasARecordedRevision(t *testing.T) {
 		4: "b626a2ab3574e548258b1564f342033dc752d2e6f9b86a7e915be15ad01d1ad8", // orchestrator stays out of the work: delegate by default; tighter trigger description
 		5: "ed6674cbf74a097c599d4ba07dc10b03017b9f4dc63f5e78fa26742addc93f80", // explicit invocation only
 		6: "845dd9654a2a0cd9cc86564797d82b4cfe341b59d8ba34bb98cecb4a165b537c", // execution models: default plus alternatives; guides describe their own model only
+		7: "d7c78c57935e8cbf3d00d161b423e3395abf7497551984461173fc00fee62616", // DEV-253: watch a running child through pull progress; steer only on a decision or blocker
 	}
 	claude, _ := Lookup("builtin-claude-foundry-orchestration")
 	codex, _ := Lookup("builtin-codex-foundry-orchestration")

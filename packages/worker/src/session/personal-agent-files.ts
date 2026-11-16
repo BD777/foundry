@@ -25,13 +25,16 @@ import { within } from "../platform/paths.js";
 
 /** The only files Foundry writes into the assistant's folder for a run. */
 const assistantFilePath =
-  /^(AGENTS\.md|\.foundry\/[A-Za-z0-9._-]+\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest|\.foundry\/assistant-skills\/[A-Za-z0-9][A-Za-z0-9_-]*\/SKILL\.md)$/u;
+  /^(AGENTS\.md|CLAUDE\.md|\.foundry\/[A-Za-z0-9._-]+\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest|\.foundry\/assistant-skills\/[A-Za-z0-9][A-Za-z0-9_-]*\/SKILL\.md)$/u;
 /** Foundry's own facts, which also go into a read-only channel workspace. */
 const foundryFactPath =
-  /^(\.foundry\/project-index\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest)$/u;
+  /^(CLAUDE\.md|\.foundry\/project-index\.md|\.foundry\/projects\/[\p{L}\p{N}][\p{L}\p{N}._-]*\.md|\.foundry\/projects\/\.manifest)$/u;
 /** Facts the runtime reads on demand, so changing them keeps its identity. */
 const foundryFactFile = (path: string) =>
-  path === ".foundry/project-index.md" || path.startsWith(".foundry/projects/");
+  path === "CLAUDE.md" ||
+  path === ".foundry/project-index.md" ||
+  path === ".foundry/upkeep.md" ||
+  path.startsWith(".foundry/projects/");
 const assistantSkillPath =
   /^\.foundry\/assistant-skills\/([A-Za-z0-9][A-Za-z0-9_-]*)\/SKILL\.md$/;
 const assistantSkillsRoot = [".foundry", "assistant-skills"];

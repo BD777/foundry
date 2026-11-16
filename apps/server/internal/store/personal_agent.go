@@ -214,6 +214,18 @@ type PersonalAgentOverview struct {
 	SuggestedHomeDeviceID string                 `json:"suggestedHomeDeviceId,omitempty"`
 	Usage                 *PersonalAgentUsage    `json:"usage,omitempty"`
 	NeedsYou              *PersonalAgentNeedsYou `json:"needsYou,omitempty"`
+	// Maintenance is what this assistant's upkeep waits on the person for;
+	// nil when there is nothing.
+	Maintenance *PersonalAgentMaintenanceWaiting `json:"maintenance,omitempty"`
+}
+
+// PersonalAgentMaintenanceWaiting is the part of one assistant's upkeep
+// that waits for the person: suggested changes they have not decided yet.
+type PersonalAgentMaintenanceWaiting struct {
+	// Proposals is the number of suggested changes across review jobs.
+	Proposals int `json:"proposals"`
+	// Projects is how many projects have such changes.
+	Projects int `json:"projects"`
 }
 
 // PersonalAgentNeedsYou is the part of the person's "needs you" list this

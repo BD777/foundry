@@ -1,5 +1,7 @@
 package store
 
+import "strings"
+
 // SessionTokenIdentity is the resolved actor behind a valid agent session
 // bearer token. AccountID is reserved for the upcoming accounts system.
 type SessionTokenIdentity struct {
@@ -74,11 +76,69 @@ type SendAgentSessionInput struct {
 	// ChannelOrigin is a message channel turn's structured origin (DEV-234),
 	// set by the server when it hands the turn to a session.
 	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
+	// InputSource is who or what started this input's turn (DEV-246), set
+	// by the server where it creates the input, never by clients. Absent
+	// derives from the timer, the channel origin or the sending session.
+	InputSource *AgentSessionInputSource `json:"-"`
+}
+
+// InputSourceOf is the input's structured source (DEV-246): what the server
+// set, else the kind the input's own fields already determine.
+func (input SendAgentSessionInput) InputSourceOf() *AgentSessionInputSource {
+	if input.InputSource != nil {
+		return input.InputSource
+	}
+	return SessionInputSourceOf(SessionInput{
+		TimerFire: input.TimerFire, ChannelOrigin: input.ChannelOrigin,
+		SentBySessionID: input.SentBySessionID,
+	})
+}
+
+// SessionInputSourceOf is a stored input's structured source (DEV-246): what
+// the server set, else the kind its own fields already determine.
+func SessionInputSourceOf(input SessionInput) *AgentSessionInputSource {
+	if input.InputSource != nil {
+		return input.InputSource
+	}
+	switch {
+	case input.TimerFire != nil:
+		if input.TimerFire.Origin == "background" {
+			return &AgentSessionInputSource{Kind: "background"}
+		}
+		return &AgentSessionInputSource{Kind: "scheduled"}
+	case input.ChannelOrigin != nil:
+		return &AgentSessionInputSource{Kind: "channel"}
+	case strings.TrimSpace(input.SentBySessionID) != "":
+		return &AgentSessionInputSource{
+			Kind:      "session",
+			SessionID: strings.TrimSpace(input.SentBySessionID),
+		}
+	default:
+		return &AgentSessionInputSource{Kind: "person"}
+	}
 }
 
 // SessionWorkspaceAccessRead: the session's workspace is read-only for it,
 // kept so by its worker's sandbox (a message channel's session, DEV-203).
 const SessionWorkspaceAccessRead = "read"
+
+// FirstInputSource is the first input's structured source (DEV-246).
+func (input CreateAgentSessionInput) FirstInputSource() *AgentSessionInputSource {
+	if input.InputSource != nil {
+		return input.InputSource
+	}
+	switch {
+	case input.ChannelOrigin != nil:
+		return &AgentSessionInputSource{Kind: "channel"}
+	case strings.TrimSpace(input.ParentSessionID) != "":
+		return &AgentSessionInputSource{
+			Kind:      "session",
+			SessionID: strings.TrimSpace(input.ParentSessionID),
+		}
+	default:
+		return &AgentSessionInputSource{Kind: "person"}
+	}
+}
 
 type CreateAgentSessionInput struct {
 	ExecutionBudget                *SessionExecutionBudget `json:"-"`
@@ -122,6 +182,10 @@ type CreateAgentSessionInput struct {
 	// ChannelOrigin is a message channel turn's structured origin (DEV-234),
 	// set by the server when it hands the turn to a session.
 	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
+	// InputSource is who or what started the first input (DEV-246), set by
+	// the server where it creates it. Absent derives from the channel or the
+	// parent session, else the person.
+	InputSource *AgentSessionInputSource `json:"-"`
 	// ReportBack false keeps an agent's child from reporting its ended
 	// turns to its parent's inbox; unset reports them (DEV-090).
 	ReportBack *bool `json:"reportBack,omitempty"`

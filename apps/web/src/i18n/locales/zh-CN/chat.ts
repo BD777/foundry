@@ -558,7 +558,7 @@ export const chat: Translation<typeof en> = {
     hidden_one: "只看我的对话 · 已隐藏 {{count}} 个回合",
     hidden_other: "只看我的对话 · 已隐藏 {{count}} 个回合",
     onHint: "隐藏不是你发起的回合：其他会话的消息、定时器、后台任务",
-    offHint: "重新显示不是你发起的回合（折叠）",
+    offHint: "重新显示不是你发起的回合",
   },
   goal: {
     title: "目标",

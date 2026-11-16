@@ -91,6 +91,14 @@ func TestChildReportReachesItsParentOncePerInput(t *testing.T) {
 			t.Fatalf("report lacks %q:\n%s", want, report.Prompt)
 		}
 	}
+	// The report states its source structurally (DEV-246): the row names the
+	// child, its status and the final answer without reading the prose.
+	if report.InputSource == nil || report.InputSource.Kind != "child_report" ||
+		report.InputSource.SessionID != child.ID || report.InputSource.Title != child.Title ||
+		report.InputSource.Status != "completed" ||
+		!strings.Contains(report.InputSource.Response, "The build passes on main.") {
+		t.Fatalf("report source = %+v, want the child's structured report", report.InputSource)
+	}
 	// The same end told again reports nothing new.
 	childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(child))
 	if got := len(f.reports()); got != 1 {

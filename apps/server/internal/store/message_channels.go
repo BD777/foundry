@@ -147,8 +147,8 @@ type MessageChannelStore interface {
 	// belongs to; ErrNotFound for a session no channel delivered to.
 	MessageChannelSessionOrigin(ctx context.Context, sessionID string) (MessageChannelOriginSummary, error)
 	// CountMessageChannelConversations counts the source conversations the
-	// channel still has records of.
-	CountMessageChannelConversations(ctx context.Context, channelID string) (int, error)
+	// channel delivered a message from since (the retention window).
+	CountMessageChannelConversations(ctx context.Context, channelID, since string) (int, error)
 	SaveMessageChannelDelivery(ctx context.Context, record MessageChannelDeliveryRecord) error
 	// CountMessageChannelDeliveries counts a channel's records created since.
 	CountMessageChannelDeliveries(ctx context.Context, channelID, since string) (MessageChannelCounts, error)

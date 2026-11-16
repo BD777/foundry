@@ -59,10 +59,15 @@ export const channelBounds = {
   resetCommand: 40,
   endCommands: 5,
   endCommand: 40,
+  footer: 200,
   perHour: { min: 1, max: 1000, initial: 20 },
   perDay: { min: 1, max: 10000, initial: 100 },
   concurrency: { min: 1, max: 10, initial: 3 },
 } as const;
+
+/** The AI footer appended to the assistant's replies until the person changes it. */
+// i18n-ignore: channel default data, sent to the server as the footer
+export const defaultFooter = "> 来自AI";
 
 export type ChannelLimitKey = "perHour" | "perDay" | "concurrency";
 export const channelLimitKeys: readonly ChannelLimitKey[] = [
@@ -107,6 +112,10 @@ export interface ChannelDraft {
   sessionKey: "conversation" | "thread";
   session: MessageChannelSessionRule;
   followUps: MessageChannelFollowUps;
+  /** Mark handed messages with the source's acknowledgement reaction. */
+  ack: boolean;
+  /** The AI footer line; "" turns it off. */
+  footer: string;
   /** On create: a new workspace, or one the person works in. */
   workspace: { mode: "new" | "existing"; id: string };
   access: SourceAccess;
@@ -124,6 +133,8 @@ export function capabilitiesOf(
       mentionsMe: true,
       fromSelf: true,
       threads: true,
+      ack: false,
+      footer: false,
     }
   );
 }
@@ -462,6 +473,8 @@ export function newChannelDraft(sourceAccountId = ""): ChannelDraft {
     sessionKey: "thread",
     session: defaultSessionRule(),
     followUps: defaultFollowUpRule(),
+    ack: true,
+    footer: defaultFooter,
     workspace: { mode: "new", id: "" },
     access: "direct",
     inheritOtherConnectors: true,
@@ -519,6 +532,8 @@ export function draftFromChannel(
     sessionKey: channel.sessionKey === "thread" ? "thread" : "conversation",
     session: sessionRuleOf(channel),
     followUps: followUpRuleOf(channel),
+    ack: channel.ack ?? true,
+    footer: channel.footer ?? defaultFooter,
     workspace: channel.workspaceId
       ? { mode: "existing", id: channel.workspaceId }
       : { mode: "new", id: "" },
@@ -562,6 +577,8 @@ export function channelInput(
       from: draft.followUps.from,
       endCommands: cleanTriggers(draft.followUps.endCommands),
     },
+    ack: draft.ack,
+    footer: draft.footer.trim(),
     workspaceId: previous
       ? (previous.workspaceId ?? "")
       : draft.workspace.mode === "existing"
@@ -589,6 +606,7 @@ export type ChannelProblem =
   | { kind: "idle" }
   | { kind: "resetCommands" }
   | { kind: "endCommands" }
+  | { kind: "footer" }
   | { kind: "tooManyRules" }
   | { kind: "noTriggers" }
   | { kind: "noPlace" }
@@ -629,6 +647,7 @@ export function channelProblems(
     problems.push({ kind: "resetCommands" });
   if (!endCommandsValid(draft.followUps.endCommands))
     problems.push({ kind: "endCommands" });
+  if (!footerValid(draft.footer)) problems.push({ kind: "footer" });
   for (const key of channelLimitKeys) {
     const { min, max } = channelBounds[key];
     const value = draft.limits[key];
@@ -844,6 +863,8 @@ export function inputFromChannel(
     sessionKey: channel.sessionKey,
     session: sessionRuleOf(channel),
     followUps: followUpRuleOf(channel),
+    ack: channel.ack ?? true,
+    footer: channel.footer ?? defaultFooter,
     workspaceId: channel.workspaceId ?? "",
     scope: channel.scope,
     limits: channel.limits,
@@ -909,4 +930,10 @@ export function endCommandsValid(commands: readonly string[]): boolean {
       (word) => word.length <= channelBounds.endCommand && !/\s/.test(word),
     )
   );
+}
+
+/** The AI footer is one line of at most 200 characters; empty turns it off. */
+export function footerValid(footer: string): boolean {
+  const value = footer.trim();
+  return value.length <= channelBounds.footer && !/[\r\n]/.test(value);
 }

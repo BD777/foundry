@@ -18,6 +18,7 @@ import {
   closeActiveClaudeRuntime,
 } from "../dist/session/runner/active-runtimes.js";
 import {
+  claudeToolTranscriptDetail,
   handleActiveClaudeMessage,
   startActiveClaudePump,
 } from "../dist/session/runner/claude-messages.js";
@@ -477,6 +478,81 @@ test("a long foreground tool reads as running until its result, and its silence 
   } finally {
     rmSync(directory, { force: true, recursive: true });
   }
+});
+
+test("a Foundry handoff result joins its existing Used-tool event", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-liveness-"));
+  try {
+    const { runtime, events } = fixture(directory);
+    const result = JSON.stringify({
+      id: "sess_child",
+      title: "Helper",
+      status: "running",
+      workspaceId: "ws_alpha",
+    });
+    await handleActiveClaudeMessage(
+      runtime,
+      toolUse("toolu_handoff", "mcp__foundry__send_message", {
+        sessionId: "sess_child",
+        prompt: "Continue.",
+      }),
+    );
+    await handleActiveClaudeMessage(
+      runtime,
+      toolResult("toolu_handoff", {
+        content: [{ type: "text", text: result }],
+      }),
+    );
+    const finished = events.findLast(
+      (event) => event.message?.callId === "toolu_handoff",
+    );
+    assert.equal(finished.label, "Used tool");
+    assert.equal(finished.message.status, "completed");
+    assert.match(finished.detail, /Result/);
+    assert.match(finished.detail, /sess_child/);
+    assert.match(finished.detail, /"status":"running"/);
+    assert.equal(finished.message.text, finished.detail);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+test("a Foundry handoff result is bounded and a failed one still carries it", () => {
+  const detail = (name, content) =>
+    claudeToolTranscriptDetail({
+      id: "call_1",
+      name,
+      detail: `${name}\n\n\`\`\`json\n{}\n\`\`\``,
+      failed: false,
+      content,
+    });
+  for (const name of [
+    "mcp__foundry__create_session",
+    "mcp__foundry__send_message",
+    "mcp__foundry__dispatch_item",
+  ])
+    assert.match(
+      detail(name, { id: "sess_1", status: "running" }),
+      /Result[\s\S]*sess_1/,
+      name,
+    );
+  assert.equal(
+    detail("mcp__foundry__send_message", undefined),
+    "mcp__foundry__send_message\n\n```json\n{}\n```",
+  );
+  assert.doesNotMatch(detail("Bash", { id: "not_a_handoff" }), /Result/);
+  const long = JSON.stringify({ id: "sess_long", prompt: "x".repeat(8_000) });
+  const bounded = detail("mcp__foundry__create_session", long);
+  assert.ok(bounded.length < 2_200);
+  assert.match(bounded, /\.\.\. truncated \.\.\./);
+  const failed = claudeToolTranscriptDetail({
+    id: "call_2",
+    name: "mcp__foundry__create_session",
+    detail: "mcp__foundry__create_session",
+    failed: true,
+    content: [{ type: "text", text: "not allowed" }],
+  });
+  assert.match(failed, /Result[\s\S]*not allowed/);
 });
 
 test("an answered turn that waits for background work completes with its answer when stopped", async () => {

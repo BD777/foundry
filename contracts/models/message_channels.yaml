@@ -262,7 +262,7 @@ components:
         What the source's messages can tell apart, from its descriptor's envelope mapping. An
         empty conversationKinds means the source does not say.
       type: object
-      required: [conversationKinds, mentionsMe, fromSelf, threads]
+      required: [conversationKinds, mentionsMe, fromSelf, threads, ack, footer]
       additionalProperties: false
       properties:
         conversationKinds:
@@ -275,6 +275,12 @@ components:
           type: boolean
         threads:
           description: The source gives a thread id, so follow-ups can ride threads.
+          type: boolean
+        ack:
+          description: The source declares a reaction its channel puts on messages while the assistant works on them.
+          type: boolean
+        footer:
+          description: A message write route of the source declares where the channel's AI footer goes.
           type: boolean
     MessageChannelSample:
       description: A message the person makes up to try the rules on.
@@ -425,6 +431,18 @@ components:
         followUps:
           $ref: "#/components/schemas/MessageChannelFollowUps"
           x-go-type-skip-optional-pointer: false
+        ack:
+          description:
+            Put the source's acknowledgement reaction on each message handed to the assistant and
+            take it away when the turn ends. Missing means on when the source declares one.
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        footer:
+          description:
+            Appended to the assistant's own replies in this channel as the channel's AI footer.
+            Missing means `> 来自AI`; empty turns it off.
+          type: string
+          x-go-type-skip-optional-pointer: false
     MessageChannel:
       type: object
       required:
@@ -476,6 +494,18 @@ components:
           x-go-type-skip-optional-pointer: false
         followUps:
           $ref: "#/components/schemas/MessageChannelFollowUps"
+          x-go-type-skip-optional-pointer: false
+        ack:
+          description:
+            Put the source's acknowledgement reaction on each message handed to the assistant and
+            take it away when the turn ends. Missing means on when the source declares one.
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        footer:
+          description:
+            Appended to the assistant's own replies in this channel as the channel's AI footer.
+            Missing means `> 来自AI`; empty turns it off.
+          type: string
           x-go-type-skip-optional-pointer: false
         skillName:
           type: string

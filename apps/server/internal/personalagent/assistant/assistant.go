@@ -498,7 +498,11 @@ func (s *Service) tell(ctx context.Context, sessionID, text string) bool {
 	if sessionID == "" {
 		return false
 	}
-	if _, err := s.sessions.Send(ctx, sessionID, store.SendAgentSessionInput{Prompt: personalagent.Notice(text)}, nil); err != nil {
+	input := store.SendAgentSessionInput{
+		Prompt:      personalagent.Notice(text),
+		InputSource: &store.AgentSessionInputSource{Kind: "foundry_notice"},
+	}
+	if _, err := s.sessions.Send(ctx, sessionID, input, nil); err != nil {
 		log.Printf("tell assistant session %s: %v", sessionID, err)
 		return false
 	}
@@ -731,9 +735,35 @@ func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (st
 	for _, item := range persons[:shown] {
 		needsYou.Items = append(needsYou.Items, s.needsYouRow(ctx, item))
 	}
+	maintenance, err := s.maintenanceWaiting(ctx, agent)
+	if err != nil {
+		return store.PersonalAgentOverview{}, err
+	}
 	return store.PersonalAgentOverview{
 		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage, NeedsYou: needsYou,
+		Maintenance: maintenance,
 	}, nil
+}
+
+// maintenanceWaiting counts the suggested changes one assistant's upkeep
+// holds for the person: a quiet fact for its home's side card (DEV-252).
+func (s *Service) maintenanceWaiting(ctx context.Context, agent store.PersonalAgent) (*store.PersonalAgentMaintenanceWaiting, error) {
+	jobs, err := s.store.ListPersonalAgentMaintenance(ctx, agent.ID)
+	if err != nil {
+		return nil, err
+	}
+	waiting := &store.PersonalAgentMaintenanceWaiting{}
+	for _, job := range jobs {
+		if job.Status != "review" || job.Result == nil || len(job.Result.Patches) == 0 {
+			continue
+		}
+		waiting.Proposals += len(job.Result.Patches)
+		waiting.Projects++
+	}
+	if waiting.Proposals == 0 {
+		return nil, nil
+	}
+	return waiting, nil
 }
 
 // SaveSettings checks and stores what the panel saved.

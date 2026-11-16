@@ -79,7 +79,7 @@ export function Conversation(
         onReachHistoryStart={props.onReachHistoryStart}
         messages={messages}
         onlyMine={props.onlyMine}
-        onFoldedTurnsChange={props.onFoldedTurnsChange}
+        onHiddenTurnsChange={props.onHiddenTurnsChange}
         onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
         threadKey={props.threadKey}
         focusMessageId={props.focusMessageId}

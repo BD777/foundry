@@ -16,6 +16,10 @@ When Foundry asks them first (Foundry enforces this):
 # What the person confirmed (newest first)
 
 Nothing yet.
+
+# Where the upkeep facts are
+
+- .foundry/upkeep.md: suggested changes waiting for them, failed or stalled reviews, and summaries that are due.
 <!-- foundry:managed:end -->
 
 # What you are for

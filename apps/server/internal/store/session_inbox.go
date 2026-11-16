@@ -69,13 +69,18 @@ type SessionInboxItem struct {
 	// turn, or "turn" as (part of) the input of a turn it started.
 	DeliveredAs string `json:"deliveredAs,omitempty"`
 	// DeliveredInputID is the input of that turn.
-	DeliveredInputID string     `json:"deliveredInputId,omitempty"`
-	TextHash         string     `json:"-"`
-	Attempts         int        `json:"attempts,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	DeliveredAt      *time.Time `json:"deliveredAt,omitempty"`
-	ConsumedAt       *time.Time `json:"consumedAt,omitempty"`
+	DeliveredInputID string `json:"deliveredInputId,omitempty"`
+	// InputSource is who or what sent it (DEV-246): a child's report carries
+	// its status and final answer with it, so the turn it starts is labeled
+	// without reading the report's prompt text. A plain message from another
+	// session is "session"; empty on old rows.
+	InputSource *AgentSessionInputSource `json:"inputSource,omitempty"`
+	TextHash    string                   `json:"-"`
+	Attempts    int                      `json:"attempts,omitempty"`
+	CreatedAt   time.Time                `json:"createdAt"`
+	UpdatedAt   time.Time                `json:"updatedAt"`
+	DeliveredAt *time.Time               `json:"deliveredAt,omitempty"`
+	ConsumedAt  *time.Time               `json:"consumedAt,omitempty"`
 }
 
 // Pending reports whether Foundry still has to place the message.

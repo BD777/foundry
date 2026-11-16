@@ -596,7 +596,7 @@ export const chat = {
     hidden_other: "Only my conversation · {{count}} turns hidden",
     onHint:
       "Hide the turns you did not start: other sessions' messages, timers, background work",
-    offHint: "Show the turns you did not start again, folded",
+    offHint: "Show the turns you did not start again",
   },
   goal: {
     title: "Goal",

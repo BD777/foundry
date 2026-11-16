@@ -478,6 +478,7 @@ export const personalAgent = {
     },
     detail: "Details",
     retry: "Retry",
+    dismiss: "Don't process",
     openAttempt: "Open the last attempt",
   },
   home: {
@@ -491,6 +492,11 @@ export const personalAgent = {
     },
     side: "Your assistant at a glance",
     channelConversations: "{{source}} channel · {{count}} conversations",
+    maintenance: {
+      label: "Maintenance",
+      waiting: "Maintenance: {{count}} suggested changes waiting for you",
+      open: "Open maintenance settings",
+    },
     needsYou: {
       label: "Needs you",
       title: "Needs you",
@@ -1390,7 +1396,7 @@ export const personalAgent = {
           "Comes through if its text starts with a trigger word: {{rule}}",
         recentNoText: "No text",
         instructionsNote:
-          "How the assistant handles this channel lives in its workspace's AGENTS.md: after saving, read and edit it under the channel's Environment.",
+          "How the assistant handles this channel lives in its workspace's AGENTS.md; after saving, view and edit it under Workspace files.",
         sessionTitle: "Sessions",
         sessionKey: "What makes a session",
         sessionKeys: {
@@ -1441,6 +1447,14 @@ export const personalAgent = {
         endCommandsHint:
           "A message that is the command alone, or right after a trigger word, ends the follow-up; nothing is posted back to the chat.",
         removeEndCommand: "Remove {{word}}",
+        handoverTitle: "In the chat",
+        ack: "React while working",
+        ackHint:
+          "Puts the source’s acknowledgement reaction on each message the assistant takes on, and removes it when the turn ends, however it ends.",
+        footer: "AI reply footer",
+        footerPlaceholder: "> 来自AI",
+        footerHint:
+          "Added to the end of every message the assistant and the sessions it starts send through this source. Leave it empty to add nothing.",
         workspaceTitle: "Workspace",
         workspaceModes: {
           new: "New workspace (recommended)",
@@ -1478,6 +1492,7 @@ export const personalAgent = {
             "Use at most 5 commands, each one word of up to 40 characters.",
           endCommands:
             "Use at most 5 end commands, each one word of up to 40 characters.",
+          footer: "Keep the footer to one line of at most 200 characters.",
           tooManyRules: "Use at most 20 places and rules together.",
           noTriggers: "Fill in a trigger word, e.g. /ai",
           noPlace: "Turn on at least one place.",

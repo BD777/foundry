@@ -73,7 +73,7 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 3+len(prompt.AssistantSkills())+len(projectFiles) || !strings.HasPrefix(files["AGENTS.md"], prompt.ManagedBlockStart+"\nYou are ") ||
+	if len(files) != 4+len(prompt.AssistantSkills())+len(projectFiles) || !strings.HasPrefix(files["AGENTS.md"], prompt.ManagedBlockStart+"\nYou are ") ||
 		strings.Contains(files["AGENTS.md"], "ws_budget") || !strings.Contains(files[prompt.ProjectIndexPath], "(ws_budget)") {
 		t.Fatalf("the assistant's files: %+v", first.PersonalAgentFiles)
 	}
@@ -84,6 +84,20 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	}
 	if _, ok := files[prompt.ExamplesPath]; !ok {
 		t.Fatalf("the assistant's files lack %s: %+v", prompt.ExamplesPath, first.PersonalAgentFiles)
+	}
+	// DEV-252 adds the upkeep facts file to every home run.
+	if upkeep, ok := files[prompt.UpkeepPath]; !ok || !strings.HasPrefix(upkeep, "# Upkeep\n") {
+		t.Fatalf("the assistant's files lack the upkeep facts: %+v", first.PersonalAgentFiles)
+	}
+	// The home's run loads only the home's instructions; a channel's own
+	// files never come with it (DEV-251).
+	if _, ok := files[prompt.ChannelClaudePath]; ok {
+		t.Fatalf("the home's run carries a channel CLAUDE.md: %+v", first.PersonalAgentFiles)
+	}
+	for path := range files {
+		if strings.HasPrefix(path, "channels/") {
+			t.Fatalf("the home's run carries channel files: %s", path)
+		}
 	}
 	for _, skill := range prompt.AssistantSkills() {
 		if files[prompt.AssistantSkillPath(skill.Name)] != skill.Content {

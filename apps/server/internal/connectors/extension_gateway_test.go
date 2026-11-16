@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -807,5 +808,212 @@ func TestExtensionGatewayRecordsTheMessageAWriteCreates(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("the created message was not recorded: %+v", events)
+	}
+}
+
+func TestExtensionAppendFooter(t *testing.T) {
+	plain := store.ConnectorServerHeldWriteFooter{
+		Text: "/text", Markdown: true,
+		Format: &store.ConnectorServerHeldWriteFooterFormat{
+			Field: "/editorType", Value: "markdown", Plain: []string{"simple"},
+			Escape: store.ConnectorServerHeldWriteFooterFormatEscapeMarkdown,
+		},
+	}
+	body := []byte(`{"clientId":"c1","text":"hi"}`)
+	once, changed := extensionAppendFooter(body, plain, "> 来自AI")
+	if !changed {
+		t.Fatal("the footer is appended")
+	}
+	if got := footerDocument(t, once); got["editorType"] != "markdown" || got["text"] != "hi\n\n> 来自AI" {
+		t.Fatalf("plain write: %+v", got)
+	}
+	if _, again := extensionAppendFooter(once, plain, "> 来自AI"); again {
+		t.Fatal("the footer is idempotent")
+	}
+
+	// Already markdown: the body is appended to as it is.
+	markdown := []byte(`{"editorType":"markdown","text":"a*b"}`)
+	once, changed = extensionAppendFooter(markdown, plain, "> 来自AI")
+	if !changed {
+		t.Fatal("a markdown write gets the footer")
+	}
+	if got := footerDocument(t, once); got["editorType"] != "markdown" || got["text"] != "a*b\n\n> 来自AI" {
+		t.Fatalf("markdown write: %+v", got)
+	}
+
+	// A declared plain value is literal, so it is escaped and switched.
+	simple := []byte(`{"editorType":"simple","text":"a_b"}`)
+	once, changed = extensionAppendFooter(simple, plain, "> 来自AI")
+	if !changed {
+		t.Fatal("a simple write gets the footer")
+	}
+	if got := footerDocument(t, once); got["editorType"] != "markdown" || got["text"] != `a\_b`+"\n\n> 来自AI" {
+		t.Fatalf("simple write: %+v", got)
+	}
+
+	// A structured format the declaration does not name keeps its text.
+	rich := []byte(`{"editorType":"rich","text":"a*b"}`)
+	once, changed = extensionAppendFooter(rich, plain, "> 来自AI")
+	if !changed {
+		t.Fatal("a rich write gets the footer")
+	}
+	if got := footerDocument(t, once); got["editorType"] != "rich" || got["text"] != "a*b\n\n> 来自AI" {
+		t.Fatalf("rich write: %+v", got)
+	}
+
+	// A declaration without a format keeps the old behaviour.
+	legacy := store.ConnectorServerHeldWriteFooter{Text: "/text", Markdown: true}
+	once, changed = extensionAppendFooter(body, legacy, "> 来自AI")
+	if !changed {
+		t.Fatal("a legacy declaration appends the footer")
+	}
+	got := footerDocument(t, once)
+	if got["text"] != "hi\n\n> 来自AI" {
+		t.Fatalf("legacy write: %+v", got)
+	}
+	if _, ok := got["editorType"]; ok {
+		t.Fatalf("a legacy declaration switches no format: %+v", got)
+	}
+
+	nested := []byte(`{"body":{"text":"hi"}}`)
+	once, changed = extensionAppendFooter(nested, store.ConnectorServerHeldWriteFooter{Text: "/body/text"}, "> 来自AI")
+	if !changed || !strings.Contains(string(once), `"text":"hi\n\n> 来自AI"`) {
+		t.Fatalf("nested pointer: %s", once)
+	}
+	if _, changed := extensionAppendFooter([]byte(`{"clientId":"c1"}`), plain, "> 来自AI"); changed {
+		t.Fatal("a body without the text field is left alone")
+	}
+	if _, changed := extensionAppendFooter(body, store.ConnectorServerHeldWriteFooter{Text: "/body/text"}, "> 来自AI"); changed {
+		t.Fatal("a pointer the body cannot reach is left alone")
+	}
+}
+
+func footerDocument(t *testing.T, payload []byte) map[string]any {
+	t.Helper()
+	var document map[string]any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatalf("body: %s (%v)", payload, err)
+	}
+	return document
+}
+
+func TestExtensionEscapeMarkdown(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"现在是北京时间 2026-11-16（周一）11:07。", "现在是北京时间 2026-11-16（周一）11:07。"},
+		{"*bold* _x_ `code` ~gone~", "\\*bold\\* \\_x\\_ \\`code\\` \\~gone\\~"},
+		{"[a](b) | c |", "\\[a\\](b) \\| c \\|"},
+		{"# heading", "\\# heading"},
+		{"> quote", "\\> quote"},
+		{"- item", "\\- item"},
+		{"+ item", "\\+ item"},
+		{"1. one", "1\\. one"},
+		{"2) two", "2\\) two"},
+		{"---", "\\---"},
+		{"===", "\\==="},
+		{"https://example.test/a_b", "https\\://example.test/a\\_b"},
+		{"a@b.c", "a\\@b.c"},
+		{"<b> &amp;", "&lt;b> &amp;amp;"},
+		{"  indented", "  indented"},
+		{"a\nb", "a\nb"},
+		{"a\r\nb", "a\nb"},
+	}
+	for _, c := range cases {
+		if got := extensionEscapeMarkdown(c.in); got != c.want {
+			t.Errorf("%q: got %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A write whose descriptor marks it as a message gets the channel's footer at
+// its declared text field, but only for a session the channel names; another
+// write route or an empty footer is forwarded unchanged.
+func TestExtensionGatewayAppendsTheChannelsFooter(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlitestore.OpenWithOptions(filepath.Join(t.TempDir(), "db"), sqlitestore.Options{SecretKeyPath: filepath.Join(t.TempDir(), "key")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	var sent []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/capabilities":
+			_, _ = w.Write([]byte(`{"token":{"scope":"full"}}`))
+		case "/api/accounts":
+			_, _ = w.Write([]byte(`{"accounts":[{"id":"42","name":"Ada"}]}`))
+		case "/api/routes":
+			_, _ = w.Write([]byte(`{"version":"1","routes":[
+				{"method":"GET","path":"/api/read","access":"read","domain":"im"},
+				{"method":"POST","path":"/api/send","access":"write","domain":"im"},
+				{"method":"POST","path":"/api/publish","access":"write","domain":"docs"}
+			]}`))
+		default:
+			raw, _ := io.ReadAll(r.Body)
+			sent = append(sent, r.URL.Path+" "+string(raw))
+			_, _ = fmt.Fprintf(w, `{"messageId":"om_%d"}`, len(sent))
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	descriptor := acmeExtensionDescriptor()
+	footer := &store.ConnectorServerHeldWriteFooter{
+		Text: "/text", Markdown: true,
+		Format: &store.ConnectorServerHeldWriteFooterFormat{
+			Field: "/editorType", Value: "markdown", Plain: []string{"simple"},
+			Escape: store.ConnectorServerHeldWriteFooterFormatEscapeMarkdown,
+		},
+	}
+	descriptor.ServerHeld.Writes = []store.ConnectorServerHeldWrite{
+		{Method: "POST", Path: "/api/send", CreatedMessageID: "/messageId", Footer: footer},
+		{Method: "POST", Path: "/api/publish", CreatedMessageID: "/messageId"},
+	}
+	service := externalaccounts.NewService(st, st, externalaccounts.NewRegistry())
+	service.Extensions = externalaccounts.NewExtensionTestClient(upstream.Client())
+	instance, err := service.CreateExtensionInstance(ctx, "alice", descriptor, store.ConnectorServerHeldInstanceInput{
+		Label:  "Acme production",
+		Fields: map[string]string{"baseUrl": upstream.URL, "readToken": "fixture-secret", "account": "42"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{instance.AccountID}); err != nil {
+		t.Fatal(err)
+	}
+	session := store.AgentSession{ID: "session-alice", DeviceID: "device-alice", WorkspaceID: "workspace-a", CreatedByUserID: "alice", Status: "running"}
+	fake := &cfGatewayStore{Store: st, session: session}
+	extensionGateway := NewExtensionGateway(fake, service, func(context.Context, string, string) (store.ConnectorDescriptor, error) {
+		return descriptor, nil
+	})
+	extensionGateway.UseWriteFooter(func(_ context.Context, accountID, sessionID string) (string, bool) {
+		if sessionID == session.ID {
+			return "> 来自AI", true
+		}
+		return "", false
+	})
+	account, err := st.GetExternalAccount(ctx, instance.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := extensionGateway.IssueHandles(ctx, externalaccounts.HandleRequest{
+		SessionID: session.ID, DeviceID: session.DeviceID, WorkspaceID: session.WorkspaceID, UserID: "alice", Account: account,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/send", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("send: %d %s", response.Code, response.Body.String())
+	}
+	if sent[0] != `/api/send {"editorType":"markdown","text":"hi\n\n> 来自AI"}` {
+		t.Fatalf("the footer is appended at the declared field, as markdown: %s", sent[0])
+	}
+	response = serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/publish", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusOK || sent[1] != `/api/publish {"text":"hi"}` {
+		t.Fatalf("a route that is not a message is untouched: %d %s", response.Code, sent[1])
+	}
+	extensionGateway.UseWriteFooter(func(context.Context, string, string) (string, bool) { return "", true })
+	response = serveExtensionGateway(t, extensionGateway, "acme-api", handle.UserHandle, http.MethodPost, "/api/send", []byte(`{"text":"hi"}`))
+	if response.Code != http.StatusOK || sent[2] != `/api/send {"text":"hi"}` {
+		t.Fatalf("an empty footer writes nothing: %d %s", response.Code, sent[2])
 	}
 }

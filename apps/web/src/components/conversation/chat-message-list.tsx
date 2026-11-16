@@ -26,7 +26,10 @@ import type {
   StepUsage,
 } from "./conversation-types";
 import { displayProcessLabel } from "../../lib/process-labels";
+import { TurnHandoffRows } from "./turn-handoff-rows";
 import { TurnUsage } from "./turn-usage";
+import { TurnSourceRow } from "./turn-source-row";
+import { turnSource } from "./turn-source";
 
 /** Worker-recorded labels in the viewer's language; other content as is. */
 const displayTitle = (title: ReactNode) =>
@@ -107,12 +110,61 @@ function fileReferencesEqual(
   );
 }
 
+function backgroundTasksEqual(
+  left: ChatMessageItem["backgroundTasks"],
+  right: ChatMessageItem["backgroundTasks"],
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((task, index) => {
+    const other = right[index]!;
+    return (
+      task.id === other.id &&
+      task.kind === other.kind &&
+      task.description === other.description &&
+      task.status === other.status &&
+      task.exitCode === other.exitCode &&
+      task.sessionId === other.sessionId
+    );
+  });
+}
+
+function handoffsEqual(
+  left: ChatMessageItem["handoffs"],
+  right: ChatMessageItem["handoffs"],
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((handoff, index) => {
+    const other = right[index]!;
+    return (
+      handoff.id === other.id &&
+      handoff.kind === other.kind &&
+      handoff.sessionId === other.sessionId &&
+      handoff.workspaceId === other.workspaceId &&
+      handoff.workspace === other.workspace &&
+      handoff.title === other.title &&
+      handoff.itemTitle === other.itemTitle &&
+      handoff.delivery === other.delivery &&
+      handoff.status === other.status &&
+      Boolean(handoff.failed) === Boolean(other.failed) &&
+      handoff.failure === other.failure
+    );
+  });
+}
+
 function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
   return (
     left === right ||
     (left.id === right.id &&
       left.at === right.at &&
       left.kind === right.kind &&
+      left.continuation === right.continuation &&
+      left.continuationDetail === right.continuationDetail &&
+      left.continuationBody === right.continuationBody &&
+      Boolean(left.continuationCatchUp) ===
+        Boolean(right.continuationCatchUp) &&
+      backgroundTasksEqual(left.backgroundTasks, right.backgroundTasks) &&
       left.role === right.role &&
       left.text === right.text &&
       left.usage === right.usage &&
@@ -121,6 +173,7 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.turnFiles?.count === right.turnFiles?.count &&
       left.durationMs === right.durationMs &&
       left.startedAt === right.startedAt &&
+      handoffsEqual(left.handoffs, right.handoffs) &&
       stepUsageEqual(left.stepUsage, right.stepUsage) &&
       processItemsEqual(left.processItems, right.processItems) &&
       left.title === right.title &&
@@ -142,6 +195,11 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.questionAnswers?.join("\n") === right.questionAnswers?.join("\n") &&
       left.questionReply?.length === right.questionReply?.length &&
       left.sentBy?.sessionId === right.sentBy?.sessionId &&
+      left.inputSource?.kind === right.inputSource?.kind &&
+      left.inputSource?.sessionId === right.inputSource?.sessionId &&
+      left.inputSource?.title === right.inputSource?.title &&
+      left.inputSource?.status === right.inputSource?.status &&
+      left.inputSource?.response === right.inputSource?.response &&
       left.steer?.state === right.steer?.state &&
       left.steer?.readAt === right.steer?.readAt &&
       left.steer?.tool?.name === right.steer?.tool?.name &&
@@ -220,6 +278,12 @@ export const ChatMessageRow = memo(
   }) {
     const { t } = useTranslation(["conversation", "common"]);
     const user = message.role === "user";
+    // A turn the person did not start names its source above a compact row,
+    // never as their bubble. A channel turn keeps its own origin header.
+    const source = turnSource(message);
+    if (source && source.kind !== "channel") {
+      return <TurnSourceRow message={message} source={source} />;
+    }
     const messageTime = message.at ? new Date(message.at) : undefined;
     const validMessageTime =
       messageTime && !Number.isNaN(messageTime.getTime());
@@ -438,6 +502,7 @@ export const ChatMessageRow = memo(
             </MarkdownContent>
           )}
           {user ? null : attachments}
+          <TurnHandoffRows handoffs={message.handoffs} />
           {message.origin ? (
             <span className="mt-1 block text-2xs text-ink-faint">
               {message.origin}

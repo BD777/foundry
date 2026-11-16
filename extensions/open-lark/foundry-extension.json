@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.6.1",
+  "version": "1.6.3",
   "protocol": 1,
   "connectors": [
     {
@@ -295,6 +295,10 @@
               {
                 "pointer": "/gone",
                 "equals": "true"
+              },
+              {
+                "pointer": "/kind",
+                "equals": "reaction"
               }
             ]
           },
@@ -311,18 +315,50 @@
               "self": "olk im reply {message.id}",
               "other": "olk im reply {message.id}"
             }
+          },
+          "ack": {
+            "reaction": "OnIt",
+            "add": {
+              "method": "POST",
+              "path": "/agent/v1/messages/{message.id}/reactions",
+              "body": "{\"key\":\"{reaction}\"}"
+            },
+            "remove": {
+              "method": "DELETE",
+              "path": "/agent/v1/messages/{message.id}/reactions/{reaction}"
+            }
           }
         },
         "writes": [
           {
             "method": "POST",
             "path": "/agent/v1/messages/:messageId/replies",
-            "createdMessageId": "/messageId"
+            "createdMessageId": "/messageId",
+            "footer": {
+              "text": "/text",
+              "markdown": true,
+              "format": {
+                "field": "/editorType",
+                "value": "markdown",
+                "plain": ["simple"],
+                "escape": "markdown"
+              }
+            }
           },
           {
             "method": "POST",
             "path": "/agent/v1/conversations/:feedId/messages",
-            "createdMessageId": "/messageId"
+            "createdMessageId": "/messageId",
+            "footer": {
+              "text": "/text",
+              "markdown": true,
+              "format": {
+                "field": "/editorType",
+                "value": "markdown",
+                "plain": ["simple"],
+                "escape": "markdown"
+              }
+            }
           }
         ]
       }

@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,11 @@ type ExtensionGatewayStore interface {
 	DeviceRemoved(context.Context, string) (bool, error)
 }
 
+// ExtensionWriteFooter answers the line a message channel appends to a
+// session's message write through an account, and whether it applies; "" for
+// none. Only writes the descriptor marks as messages ask it.
+type ExtensionWriteFooter func(ctx context.Context, accountID, sessionID string) (string, bool)
+
 type ExtensionGateway struct {
 	store       ExtensionGatewayStore
 	accounts    *externalaccounts.Service
@@ -61,6 +67,7 @@ type ExtensionGateway struct {
 	Now         func() time.Time
 	permission  permission.Store
 	confirm     gateway.Confirmer
+	footer      ExtensionWriteFooter
 }
 
 type extensionCall struct {
@@ -132,6 +139,13 @@ func (g *ExtensionGateway) Serve(w http.ResponseWriter, r *http.Request, device 
 func (g *ExtensionGateway) UsePermission(st permission.Store, confirm gateway.Confirmer) {
 	g.permission = st
 	g.confirm = confirm
+}
+
+// UseWriteFooter sets how message writes by a channel assistant's session
+// get the channel's AI footer. A write from any other session of the same
+// account asks the same hook and gets no footer.
+func (g *ExtensionGateway) UseWriteFooter(footer ExtensionWriteFooter) {
+	g.footer = footer
 }
 
 func extensionHandleKind(handle string) string {
@@ -388,6 +402,15 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 		if err != nil || len(raw) > requestLimit {
 			return &gateway.Denial{Reason: gateway.ReasonBadRequest, Message: "the connector request body is larger than this instance accepts"}
 		}
+		if x.Need.Write && len(raw) > 0 && p.gateway.footer != nil && x.Lease != nil && x.Lease.Grant.SessionID != "" {
+			if footer, ok := extensionMessageFooter(data.Descriptor.ServerHeld.Writes, call.Method, call.Route); ok {
+				if line, add := p.gateway.footer(r.Context(), x.Lease.Grant.AccountID, x.Lease.Grant.SessionID); add && line != "" {
+					if rewritten, changed := extensionAppendFooter(raw, footer, line); changed {
+						raw = rewritten
+					}
+				}
+			}
+		}
 		body = bytes.NewReader(raw)
 	}
 	headers := make(http.Header)
@@ -479,6 +502,227 @@ func extensionCreatedMessagePointer(writes []store.ConnectorServerHeldWrite, met
 		}
 	}
 	return "", false
+}
+
+// extensionMessageFooter is the descriptor's footer declaration for this
+// write route, when it marks one.
+func extensionMessageFooter(writes []store.ConnectorServerHeldWrite, method, route string) (store.ConnectorServerHeldWriteFooter, bool) {
+	for _, write := range writes {
+		if write.Footer == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(write.Method), method) &&
+			externalaccounts.ExtensionRoutePathMatches(write.Path, route) {
+			return *write.Footer, true
+		}
+	}
+	return store.ConnectorServerHeldWriteFooter{}, false
+}
+
+// extensionAppendFooter appends the channel's footer to the write's text
+// once. A write the declaration marks as not yet markdown is first switched
+// to markdown, with its original text escaped so it still reads the same; a
+// structured format the declaration does not name is left as it is. A body
+// the pointers cannot reach is forwarded unchanged.
+func extensionAppendFooter(payload []byte, footer store.ConnectorServerHeldWriteFooter, line string) ([]byte, bool) {
+	if line == "" || footer.Text == "" || !strings.HasPrefix(footer.Text, "/") {
+		return payload, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var document any
+	if decoder.Decode(&document) != nil {
+		return payload, false
+	}
+	text, ok := extensionPointerString(document, footer.Text)
+	if !ok || text == "" || strings.HasSuffix(text, line) {
+		return payload, false
+	}
+	if format := footer.Format; format != nil {
+		current, present := extensionPointerString(document, format.Field)
+		switch {
+		case present && current == string(format.Value):
+			// Already markdown: append as it is.
+		case !present || current == "" || extensionPlainFormat(format, current):
+			text = extensionEscapeMarkdown(text)
+			if !extensionSetPointer(document, format.Field, string(format.Value)) {
+				return payload, false
+			}
+		default:
+			// A structured format (rich text, say) the declaration does not
+			// name: keep its text and append the footer as it is.
+		}
+	}
+	if !extensionSetPointer(document, footer.Text, text+"\n\n"+line) {
+		return payload, false
+	}
+	var rewritten bytes.Buffer
+	encoder := json.NewEncoder(&rewritten)
+	encoder.SetEscapeHTML(false)
+	if encoder.Encode(document) != nil {
+		return payload, false
+	}
+	return bytes.TrimRight(rewritten.Bytes(), "\n"), true
+}
+
+// extensionPlainFormat reports whether a format value names literal text.
+func extensionPlainFormat(format *store.ConnectorServerHeldWriteFooterFormat, value string) bool {
+	for _, plain := range format.Plain {
+		if value == plain {
+			return true
+		}
+	}
+	return false
+}
+
+// markdownEscaper neutralizes the inline markdown constructs a line could
+// hold. A backslash escapes any ASCII punctuation under CommonMark, and the
+// HTML references keep `<` and `&` literal where a renderer treats a
+// backslash before them loosely.
+var markdownEscaper = strings.NewReplacer(
+	"\\", "\\\\",
+	"`", "\\`",
+	"*", "\\*",
+	"_", "\\_",
+	"~", "\\~",
+	"[", "\\[",
+	"]", "\\]",
+	"|", "\\|",
+	"<", "&lt;",
+	"&", "&amp;",
+)
+
+// markdownEmailAutolink finds the `@` a GFM email autolink would bind.
+var markdownEmailAutolink = regexp.MustCompile(`([\w.+-])@([\w-])`)
+
+// extensionEscapeMarkdown makes literal text safe to send as markdown
+// without changing what it reads as: inline constructs are escaped, block
+// markers cannot open a heading, quote, list, fence, rule, table or indented
+// code at the start of a line, and a bare URL or email does not turn into a
+// link.
+func extensionEscapeMarkdown(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	for index, line := range lines {
+		lines[index] = extensionEscapeMarkdownLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func extensionEscapeMarkdownLine(line string) string {
+	// Leading whitespace becomes no-break spaces: the indent still shows,
+	// but no line can open an indented code block.
+	var lead strings.Builder
+	cursor := 0
+	for cursor < len(line) && (line[cursor] == ' ' || line[cursor] == '\t') {
+		if line[cursor] == '\t' {
+			lead.WriteString("\u00a0\u00a0\u00a0\u00a0")
+		} else {
+			lead.WriteString("\u00a0")
+		}
+		cursor++
+	}
+	rest := line[cursor:]
+	escaped := markdownEscaper.Replace(rest)
+	if rest != "" && strings.IndexByte("#>-+=:", rest[0]) >= 0 {
+		escaped = `\` + escaped
+	}
+	if digits := leadingDigits(rest); digits > 0 && digits < len(rest) && (rest[digits] == '.' || rest[digits] == ')') {
+		escaped = escaped[:digits] + `\` + escaped[digits:]
+	}
+	escaped = strings.ReplaceAll(escaped, "://", "\\://")
+	escaped = markdownEmailAutolink.ReplaceAllString(escaped, `$1\@$2`)
+	return lead.String() + escaped
+}
+
+func leadingDigits(text string) int {
+	digits := 0
+	for digits < len(text) && text[digits] >= '0' && text[digits] <= '9' {
+		digits++
+	}
+	return digits
+}
+
+// extensionPointerString reads a string at an RFC 6901 JSON pointer.
+func extensionPointerString(document any, pointer string) (string, bool) {
+	value, ok := extensionPointerValue(document, pointer)
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok
+}
+
+// extensionPointerValue walks an RFC 6901 JSON pointer.
+func extensionPointerValue(document any, pointer string) (any, bool) {
+	if !strings.HasPrefix(pointer, "/") {
+		return nil, false
+	}
+	value := document
+	for _, raw := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		name := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch parent := value.(type) {
+		case map[string]any:
+			next, ok := parent[name]
+			if !ok {
+				return nil, false
+			}
+			value = next
+		case []any:
+			index, err := strconv.Atoi(name)
+			if err != nil || index < 0 || index >= len(parent) {
+				return nil, false
+			}
+			value = parent[index]
+		default:
+			return nil, false
+		}
+	}
+	return value, true
+}
+
+// extensionSetPointer replaces the value at an RFC 6901 JSON pointer. The
+// parent must exist; the final name may be new in a map.
+func extensionSetPointer(document any, pointer string, value any) bool {
+	if !strings.HasPrefix(pointer, "/") {
+		return false
+	}
+	tokens := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
+	parent := document
+	for _, raw := range tokens[:len(tokens)-1] {
+		name := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch node := parent.(type) {
+		case map[string]any:
+			next, ok := node[name]
+			if !ok {
+				return false
+			}
+			parent = next
+		case []any:
+			index, err := strconv.Atoi(name)
+			if err != nil || index < 0 || index >= len(node) {
+				return false
+			}
+			parent = node[index]
+		default:
+			return false
+		}
+	}
+	last := strings.ReplaceAll(strings.ReplaceAll(tokens[len(tokens)-1], "~1", "/"), "~0", "~")
+	switch node := parent.(type) {
+	case map[string]any:
+		node[last] = value
+	case []any:
+		index, err := strconv.Atoi(last)
+		if err != nil || index < 0 || index >= len(node) {
+			return false
+		}
+		node[index] = value
+	default:
+		return false
+	}
+	return true
 }
 
 // extensionPointerText reads a scalar at an RFC 6901 JSON pointer.

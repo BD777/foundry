@@ -176,6 +176,9 @@ func (s *Service) SendInboxMessage(ctx context.Context, target store.AgentSessio
 	admission, err := s.store.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
 		SessionID: target.ID, InputID: inputID, SenderSessionID: senderSessionID,
 		Prompt: prompt, Attachments: store.NormalizeChatAttachments(attachments), RequestedDelivery: delivery,
+		// A message from another session says so structurally (DEV-246);
+		// a child's report sets its own, richer source.
+		InputSource: &store.AgentSessionInputSource{Kind: "session", SessionID: senderSessionID},
 	}, store.SessionInboxRules{
 		Now: time.Now().UTC(), DedupWindow: InboxDedupWindow,
 		InterruptLimit: inboxInterruptLimit, InterruptWindow: inboxInterruptWindow,
@@ -347,7 +350,9 @@ func (s *Service) steerInboxItem(ctx context.Context, session store.AgentSession
 	if err := s.policy.AdmitAssistantTurn(ctx, session); err != nil {
 		return s.ChangeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxHeld, Reason: err.Error(), CountAttempt: true})
 	}
-	input := store.SendAgentSessionInput{InputID: item.InputID, SentBySessionID: item.SenderSessionID}
+	input := store.SendAgentSessionInput{
+		InputID: item.InputID, SentBySessionID: item.SenderSessionID, InputSource: item.InputSource,
+	}
 	if err := s.RecordSteerSender(ctx, session.ID, &input); err != nil {
 		log.Printf("record sender of held message %s: %v", item.InputID, err)
 		return item
@@ -380,9 +385,10 @@ func (s *Service) steerInboxItem(ctx context.Context, session store.AgentSession
 func (s *Service) startTurnWithInboxItems(ctx context.Context, session store.AgentSession, items []store.SessionInboxItem) []store.SessionInboxItem {
 	from := []string{store.InboxHeld, store.InboxUnknown, store.InboxAccepted}
 	inputID := uuid.NewString()
-	prompt, attachments, sender := mergedInboxInput(items)
+	prompt, attachments, sender, source := mergedInboxInput(items)
 	_, err := s.Send(ctx, session.ID, store.SendAgentSessionInput{
-		Prompt: prompt, Attachments: attachments, InputID: inputID, SentBySessionID: sender, RequireIdle: true,
+		Prompt: prompt, Attachments: attachments, InputID: inputID, SentBySessionID: sender,
+		InputSource: source, RequireIdle: true,
 	}, nil)
 	placed := make([]store.SessionInboxItem, len(items))
 	for index, item := range items {
@@ -411,13 +417,13 @@ func (s *Service) startTurnWithInboxItems(ctx context.Context, session store.Age
 
 // mergedInboxInput is one turn's input for messages that waited for it. A
 // single message goes as it was sent.
-func mergedInboxInput(items []store.SessionInboxItem) (string, []store.ChatAttachment, string) {
+func mergedInboxInput(items []store.SessionInboxItem) (string, []store.ChatAttachment, string, *store.AgentSessionInputSource) {
 	var attachments []store.ChatAttachment
 	for _, item := range items {
 		attachments = append(attachments, item.Attachments...)
 	}
 	if len(items) == 1 {
-		return items[0].Prompt, attachments, items[0].SenderSessionID
+		return items[0].Prompt, attachments, items[0].SenderSessionID, items[0].InputSource
 	}
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "Foundry held %d messages from other sessions while this session could not take them. They follow in the order they were sent.\n", len(items))
@@ -425,7 +431,10 @@ func mergedInboxInput(items []store.SessionInboxItem) (string, []store.ChatAttac
 		fmt.Fprintf(&builder, "\n--- Message %d of %d, from session %s, sent %s (%s) ---\n%s\n",
 			index+1, len(items), item.SenderSessionID, item.CreatedAt.UTC().Format(time.RFC3339), item.Delivery, item.Prompt)
 	}
-	return builder.String(), store.NormalizeChatAttachments(attachments), items[0].SenderSessionID
+	// One turn from several messages: name the first sender and say the
+	// rest were messages from sessions, rather than pretend to one report.
+	source := &store.AgentSessionInputSource{Kind: "session", SessionID: items[0].SenderSessionID}
+	return builder.String(), store.NormalizeChatAttachments(attachments), items[0].SenderSessionID, source
 }
 
 func (s *Service) failInboxItems(ctx context.Context, items []store.SessionInboxItem, reason string) []store.SessionInboxItem {

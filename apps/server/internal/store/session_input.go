@@ -27,6 +27,12 @@ func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEven
 			ChannelOrigin: input.ChannelOrigin,
 		}
 	}
+	// Every input says who or what started it (DEV-246), so viewers never
+	// read Foundry's prompt text or markers to tell them apart.
+	if message.Metadata == nil {
+		message.Metadata = &AgentSessionEventMetadata{}
+	}
+	message.Metadata.InputSource = SessionInputSourceOf(input)
 	return append(events, message)
 }
 

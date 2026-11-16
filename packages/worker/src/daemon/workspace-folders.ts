@@ -13,6 +13,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   statSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -40,6 +41,8 @@ import {
   identifier,
   within,
 } from "../candidate-store/execution-storage.js";
+import { isInside } from "../platform/paths.js";
+import { managedRoots } from "../workspace/personal-agent-settings.js";
 import { findSessionLog } from "../session/usage/native-usage.js";
 import {
   claudeHomeCandidates,
@@ -341,6 +344,39 @@ export interface RelinkedWorkspace {
 }
 
 /**
+ * Moves a workspace's own registered folder (DEV-251): its channels move
+ * under the assistant home, and — unlike the person's "Locate folder" — the
+ * device performs the move itself. Same filesystem only; the source must be
+ * the registered folder, and the target must not exist.
+ */
+export function moveWorkspaceFolder(
+  workspaceId: string,
+  from: string,
+  to: string,
+  roots: readonly string[] = managedRoots(),
+): void {
+  const source = resolve(from);
+  const target = resolve(to);
+  if (source === target) return;
+  const registered = readRegistry().find((entry) => entry.id === workspaceId);
+  if (!registered || resolve(registered.path) !== source)
+    throw new Error("Only the workspace's own registered folder can be moved.");
+  if (!roots.some((root) => isInside(root, target)))
+    throw new Error(
+      roots.length
+        ? `A workspace folder must stay inside ${roots.join(" or ")} on this device.`
+        : "This device has no managed folders.",
+    );
+  if (!workspaceFolderPresent(source)) return;
+  if (workspaceFolderPresent(target))
+    throw new Error(
+      `${target} already exists; the workspace's folder was not moved.`,
+    );
+  mkdirSync(dirname(target), { recursive: true });
+  renameSync(source, target);
+}
+
+/**
  * Serves a workspace from another folder, keeping its identity: its
  * workspace file there names the same id (replacing one with another id, a
  * copy's), the registry points at the folder, and its Issue registration and
@@ -353,6 +389,11 @@ export async function relinkWorkspaceFolder(
   const workspaceId = payload.workspaceId?.trim() ?? "";
   if (!workspaceId) throw new Error("relink_workspace requires workspaceId");
   identifier(workspaceId);
+  if (payload.moveFrom) {
+    // A move by the device itself (DEV-251); then everything below serves
+    // the workspace from its new folder as usual.
+    moveWorkspaceFolder(workspaceId, payload.moveFrom, payload.path ?? "");
+  }
   const path = existingWorkspaceFolder(payload.path ?? "");
   const previousPath = payload.previousPath?.trim()
     ? resolve(payload.previousPath)

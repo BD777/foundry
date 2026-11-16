@@ -75,8 +75,14 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 	// facts there, the same project index and summary files as the home, so
 	// routing reads them from a channel too.
 	if session.WorkspaceID != agent.WorkspaceID {
-		return Run{Files: prompt.ProjectFilesAndIndex(input), TurnContext: turnContext}, true, nil
+		files := prompt.ProjectFilesAndIndex(input)
+		files = append(files, prompt.ChannelClaudeFile())
+		return Run{Files: files, TurnContext: turnContext}, true, nil
 	}
+	// Foundry's upkeep facts travel with the home's files, so a run also
+	// refreshes what the sweep last wrote (DEV-252). A channel workspace
+	// gets only the project facts above.
+	input.Upkeep = s.upkeepFileFor(ctx, agent, time.Now())
 	// The default instructions an AGENTS.md first starts from, so a newer
 	// default is offered to the person, never applied (DEV-223).
 	if st, ok := s.store.(store.WorkspaceFileStore); ok {
@@ -292,6 +298,10 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	channels, err := s.channelPlaces(ctx, agent)
+	if err != nil {
+		return prompt.Input{}, err
+	}
 	return prompt.Input{
 		Now:                           now,
 		PersonName:                    cmp.Or(user.DisplayName, user.Username),
@@ -301,6 +311,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Memory:                        memory,
 		Workspaces:                    workspaces,
 		Devices:                       devices,
+		Channels:                      channels,
 		L0Index:                       l0Index,
 		ProjectFiles:                  workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), now),
 		Places:                        places,
@@ -308,6 +319,32 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		ConnectorsURL:                 s.WebURL("/connectors"),
 		SettingsURL:                   s.WebURL(personalagent.AssistantSettingsPath(agent.ID)),
 	}, nil
+}
+
+// channelPlaces are the assistant's message channels whose workspace is on
+// its home device: the folders its home conversation may edit when the
+// person names that channel (DEV-251). A channel workspace on another
+// device is left out; its rules stay its own.
+func (s *Service) channelPlaces(ctx context.Context, agent store.PersonalAgent) ([]prompt.ChannelPlace, error) {
+	if s.messageChannels == nil {
+		return nil, nil
+	}
+	records, err := s.messageChannels.ListMessageChannels(ctx, agent.UserID, agent.ID)
+	if err != nil {
+		return nil, err
+	}
+	places := make([]prompt.ChannelPlace, 0, len(records))
+	for _, record := range records {
+		if record.WorkspaceID == "" || record.WorkspaceID == agent.WorkspaceID {
+			continue
+		}
+		workspace, err := s.store.GetWorkspace(ctx, record.WorkspaceID)
+		if err != nil || workspace.DeviceID != agent.HomeDeviceID {
+			continue
+		}
+		places = append(places, prompt.ChannelPlace{Name: record.Name, Path: workspace.LocalPath})
+	}
+	return places, nil
 }
 
 // ownDevicePlacements are the labels and detected facts of the person's

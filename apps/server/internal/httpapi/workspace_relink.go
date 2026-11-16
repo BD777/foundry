@@ -29,6 +29,9 @@ type wsRelinkWorkspacePayload struct {
 	Path           string               `json:"path"`
 	PreviousPath   string               `json:"previousPath"`
 	NativeSessions []wsNativeSessionRef `json:"nativeSessions"`
+	// MoveFrom makes the device move the folder itself: it must be the
+	// workspace's registered folder, and path must not exist (DEV-251).
+	MoveFrom string `json:"moveFrom,omitempty"`
 }
 
 type wsWorkspaceRelinkedPayload struct {
@@ -105,7 +108,7 @@ func (c *daemonConnection) findMovedWorkspace(ctx context.Context, workspaceID, 
 // relinkFolder asks the workspace's device to serve it from folder. Nothing
 // changes on the server when the device refuses.
 func (s *Server) relinkFolder(ctx context.Context, workspace store.WorkspaceProjection, folder string,
-	refs []store.NativeSessionRef) (store.WorkspaceRelinkResult, error) {
+	refs []store.NativeSessionRef, move bool) (store.WorkspaceRelinkResult, error) {
 	connection := s.hub.connectionFor(workspace.DeviceID)
 	if workspace.DeviceID == "" || connection == nil {
 		return store.WorkspaceRelinkResult{}, store.ErrNotFound
@@ -117,12 +120,16 @@ func (s *Server) relinkFolder(ctx context.Context, workspace store.WorkspaceProj
 	for _, ref := range refs {
 		sessions = append(sessions, wsNativeSessionRef{Provider: ref.Provider, ID: ref.NativeSessionID})
 	}
-	value, err := connection.relinkWorkspace(ctx, wsRelinkWorkspacePayload{
+	payload := wsRelinkWorkspacePayload{
 		WorkspaceID:    workspace.ID,
 		Path:           folder,
 		PreviousPath:   workspace.LocalPath,
 		NativeSessions: sessions,
-	})
+	}
+	if move {
+		payload.MoveFrom = workspace.LocalPath
+	}
+	value, err := connection.relinkWorkspace(ctx, payload)
 	if err != nil {
 		return store.WorkspaceRelinkResult{}, err
 	}
@@ -222,7 +229,7 @@ func (s *Server) handleRelinkWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
-	result, err := s.relinkFolder(ctx, workspace, folder, refs)
+	result, err := s.relinkFolder(ctx, workspace, folder, refs, false)
 	if err != nil {
 		writeRelinkError(w, err)
 		return

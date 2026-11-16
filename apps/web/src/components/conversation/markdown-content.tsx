@@ -529,6 +529,7 @@ function preserveLiteralListMarkers(text: string): string {
 
 export function MarkdownContent({
   children,
+  compact = false,
   controls,
   deviceFiles = false,
   fileReferences,
@@ -541,6 +542,8 @@ export function MarkdownContent({
   typedText = false,
 }: {
   children: ReactNode;
+  /** A quiet, small setting: tighter leading for a compact row's body. */
+  compact?: boolean;
   /** Streamdown's public controls config; omitted keeps Foundry's defaults. */
   controls?: StreamdownProps["controls"];
   /** Verified paths to link; nothing is linked while the text streams. */
@@ -593,7 +596,7 @@ export function MarkdownContent({
     <div
       className={cn(
         "fdy-markdown min-w-0 [overflow-wrap:anywhere]",
-        !typedText && "leading-[1.65]",
+        !typedText && (compact ? "leading-[1.45]" : "leading-[1.65]"),
       )}
     >
       {splitMarkdownImageTags(content).map((segment, index) =>

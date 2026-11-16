@@ -28,6 +28,7 @@ import {
 import {
   claudeProjectDirectoryName,
   findMovedWorkspaceFolders,
+  moveWorkspaceFolder,
   registryWorkspaceFolders,
   relinkWorkspaceFolder,
 } from "../dist/daemon/workspace-folders.js";
@@ -69,6 +70,40 @@ function registryEntry(id, path) {
     registeredAt: "2026-10-01T00:00:00.000Z",
   };
 }
+
+// A channel's folder moves under the assistant home when the server asks
+// (DEV-251); only the workspace's own registered folder, and only to a free
+// folder inside a managed root.
+test("a channel folder moves under the assistant home", (t) => {
+  const root = scratch(t, "move-");
+  const managed = join(root, "Foundry");
+  const from = join(managed, "message-channel-mch_1");
+  mkdirSync(from, { recursive: true });
+  workspaceFolder(from, "ws_ch");
+  writeRegistry([registryEntry("ws_ch", from)]);
+  const to = join(managed, "personal-agent", "channels", "lark-fd");
+  moveWorkspaceFolder("ws_ch", from, to, [managed]);
+  assert.equal(existsSync(from), false);
+  assert.ok(readFileSync(join(to, ".foundry", "workspace.json"), "utf8"));
+  // Running it again is a no-op, not an error (the relink that follows
+  // updates the registry and the workspace file).
+  moveWorkspaceFolder("ws_ch", from, to, [managed]);
+
+  const taken = join(managed, "personal-agent", "channels", "taken");
+  mkdirSync(taken, { recursive: true });
+  const second = join(managed, "ws_second");
+  mkdirSync(second);
+  workspaceFolder(second, "ws_second");
+  writeRegistry([registryEntry("ws_second", second)]);
+  assert.throws(
+    () => moveWorkspaceFolder("ws_second", second, taken, [managed]),
+    /already exists/,
+  );
+  assert.throws(
+    () => moveWorkspaceFolder("ws_second", from, join(managed, "x"), [managed]),
+    /registered folder/,
+  );
+});
 
 test("the worker names its folders in hello", () => {
   const hello = withServedWorkspaces(

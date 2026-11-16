@@ -161,6 +161,48 @@ func TestNeedsYouVisibilityFollowsAssistantScope(t *testing.T) {
 	}
 }
 
+// The home card and the person's Needs-you list read one visible set: an
+// item whose conversation is no longer visible (archived or deleted) is in
+// neither, though the raw query still has it. That raw item is what used to
+// make the card show 1 while "All" showed 0.
+func TestNeedsYouAndThePersonListHideItemsOfGoneSessions(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	title := "question in a conversation that is gone"
+	if _, _, err := f.db.RecordPendingItem(ctx, store.PendingItem{
+		UserID: f.aliceID, WorkspaceID: f.chat.WorkspaceID, SessionID: "sess_dev248-archived",
+		Source: store.PendingSourceQuestion, Key: "question:sess_dev248-archived:0",
+		Title: title, Excerpt: title, Handler: store.PendingHandlerPerson,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	overview, err := f.server.assistant.OverviewOf(ctx, agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.NeedsYou == nil {
+		t.Fatal("no needs-you part")
+	}
+	if overview.NeedsYou.Open != 0 {
+		t.Fatalf("card counts %d items of a gone conversation", overview.NeedsYou.Open)
+	}
+	visible, err := f.db.ListVisiblePendingItems(ctx, f.aliceID, []string{store.PendingOpen}, "", 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visible) != 0 {
+		t.Fatalf("visible list = %+v", visible)
+	}
+	raw, err := f.db.ListPendingItems(ctx, f.aliceID, []string{store.PendingOpen}, "", 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 1 || raw[0].Title != title {
+		t.Fatalf("raw list = %+v, want the gone item", raw)
+	}
+}
+
 func TestNeedsYouAssistantFirstWhenAssistantIsStopped(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	ctx := context.Background()

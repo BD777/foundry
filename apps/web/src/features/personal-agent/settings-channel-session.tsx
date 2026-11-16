@@ -7,8 +7,12 @@ import type {
 } from "@bd777/foundry-protocol";
 import { CheckLabel } from "../../components/ui/check-label";
 import { ChipInput } from "../../components/ui/chip-input";
-import { FieldHint, Radio } from "../../components/ui/field";
-import { FieldLabel, FormFieldGroup } from "../../components/ui/form-field";
+import { FieldHint, Radio, TextInput } from "../../components/ui/field";
+import {
+  FieldLabel,
+  FormField,
+  FormFieldGroup,
+} from "../../components/ui/form-field";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { Switch } from "../../components/ui/switch";
 import {
@@ -196,6 +200,63 @@ export function ChannelFollowUpFields({
             </FieldHint>
           </FormFieldGroup>
         </>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * How the channel marks its work in the source's conversation: a reaction
+ * while the assistant is on a message, and the AI footer of its replies.
+ */
+export function ChannelHandoverFields({
+  ack,
+  footer,
+  showAck,
+  showFooter,
+  footerProblem,
+  onAckChange,
+  onFooterChange,
+}: {
+  ack: boolean;
+  footer: string;
+  showAck: boolean;
+  showFooter: boolean;
+  footerProblem?: string;
+  onAckChange: (ack: boolean) => void;
+  onFooterChange: (footer: string) => void;
+}) {
+  const { t } = useTranslation("personalAgent");
+  const ids = useId();
+  return (
+    <>
+      {showAck ? (
+        <>
+          <label className="flex min-w-0 cursor-pointer items-center gap-2.5 text-sm text-ink">
+            <Switch checked={ack} onCheckedChange={onAckChange} />
+            <span>{t("settings.channels.editor.ack")}</span>
+          </label>
+          <FieldHint>{t("settings.channels.editor.ackHint")}</FieldHint>
+        </>
+      ) : null}
+      {showFooter ? (
+        <FormField data-channel-field="" htmlFor={`${ids}-footer`}>
+          <span>{t("settings.channels.editor.footer")}</span>
+          <TextInput
+            aria-describedby={`${ids}-footer-hint`}
+            aria-invalid={Boolean(footerProblem)}
+            id={`${ids}-footer`}
+            maxLength={channelBounds.footer}
+            onChange={(event) => onFooterChange(event.target.value)}
+            placeholder={t("settings.channels.editor.footerPlaceholder")}
+            tone="boxed"
+            value={footer}
+          />
+          <ProblemHint>{footerProblem}</ProblemHint>
+          <FieldHint id={`${ids}-footer-hint`}>
+            {t("settings.channels.editor.footerHint")}
+          </FieldHint>
+        </FormField>
       ) : null}
     </>
   );

@@ -280,6 +280,9 @@ function chatMessagesForSession(
       ...(session.input?.channelOrigin
         ? { channelOrigin: session.input.channelOrigin }
         : {}),
+      ...(session.input?.inputSource
+        ? { inputSource: session.input.inputSource }
+        : {}),
     });
   }
   const sessionActive = isSessionLive(session);
@@ -308,6 +311,7 @@ function chatMessagesForSession(
       awaitedDevice ? withoutPendingDeviceWait(session) : session,
       context.suppressedResponseFingerprints,
     ),
+    { sessionId: session.id },
   );
   // What the running turn runs now, and how far it got with the messages
   // steered into it (DEV-089).
@@ -328,6 +332,7 @@ function chatMessagesForSession(
         ...(segment.sentBySessionId
           ? { sentBySessionId: segment.sentBySessionId }
           : {}),
+        ...(segment.inputSource ? { inputSource: segment.inputSource } : {}),
         ...(segment.steered ? { steered: true } : {}),
         ...(segment.channelOrigin
           ? { channelOrigin: segment.channelOrigin }
@@ -408,6 +413,7 @@ function chatMessagesForSession(
         usage: segment.usage,
         fileReferences: segment.fileReferences,
         turnFiles: segment.turnFiles,
+        handoffs: segment.handoffs,
         ...(segment.questions?.length && segment.questionItemId
           ? {
               questions: segment.questions,

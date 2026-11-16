@@ -116,6 +116,10 @@ type Ports struct {
 	// never start or continue a session. An error means the check could not
 	// run: the batch is not delivered and is retried.
 	OwnWrites func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error)
+	// Ack puts the source's acknowledgement reaction on the messages of a
+	// handed batch (add) and takes it away when their turn ends (remove).
+	// Failures never block delivery; the runner logs them.
+	Ack func(ctx context.Context, channel store.MessageChannelRecord, add bool, messageIDs []string) error
 	// Session reads an earlier session of a conversation; ok false when it
 	// is gone.
 	Session func(ctx context.Context, sessionID string) (state SessionState, ok bool)
@@ -393,9 +397,10 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 	held := 0
 	records := make([]store.MessageChannelDeliveryRecord, 0, len(envelopes))
 	for i, envelope := range envelopes {
-		if envelope.Op != OpNew {
+		if envelope.Op != OpNew || envelope.Kind == "reaction" {
 			// v1 hands over new messages only; an edit or a thread change
-			// of one already seen would otherwise start another turn.
+			// of one already seen would otherwise start another turn. A
+			// reaction change is never a message, however the source maps it.
 			continue
 		}
 		record := store.MessageChannelDeliveryRecord{UserID: channel.UserID, AssistantID: channel.AssistantID}

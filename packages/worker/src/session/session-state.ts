@@ -165,6 +165,13 @@ export interface ActiveClaudeContinuation {
   partialResult: string;
 }
 
+/** A background task that ended, as its Claude Code notification stated. */
+export interface ClaudeTaskNotification {
+  taskId: string;
+  /** Its summary, redacted; empty when the notification carried none. */
+  summary: string;
+}
+
 /** The choices a Claude process was started with that a person can change. */
 export interface ClaudeRuntimeLaunch {
   profileId: string;
@@ -203,8 +210,8 @@ export interface ActiveClaudeRuntime {
    * follow-up after background work); see reportClaudeOwnTurn.
    */
   ownTurnSessionId?: string;
-  /** Summaries of background tasks that ended since the last answer. */
-  notifications?: string[];
+  /** Background tasks that ended since the last answer, as they reported. */
+  notifications?: ClaudeTaskNotification[];
   /** The CLI reports command lifecycle, so turns own exactly their stream. */
   commandLifecycle?: boolean;
   /** The latest turn's raw message log; messages between turns go there too. */

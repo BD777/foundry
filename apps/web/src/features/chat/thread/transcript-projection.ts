@@ -9,6 +9,10 @@ import type {
 import type { ChatViewMessage } from "../chat-types";
 import { i18n } from "../../../i18n";
 import { estimatedOutputTimingReliable } from "../../../lib/format";
+import {
+  toolHandoffs,
+  type TurnHandoff,
+} from "../../../components/conversation/turn-handoffs";
 
 type ModelRequestUsageWithTiming = ModelRequestUsage & {
   requestMs?: number;
@@ -31,11 +35,16 @@ export type TranscriptEntry = TranscriptMessage &
     | "fileReferences"
     | "turnFiles"
     | "sentBySessionId"
+    | "inputSource"
     | "steered"
     | "channelOrigin"
     | "questionItemId"
     | "questionDelivery"
     | "continuation"
+    | "continuationDetail"
+    | "continuationBody"
+    | "continuationCatchUp"
+    | "backgroundTasks"
   > & {
     /**
      * This step's own identity where `id` is shared: `id` names the provider
@@ -174,6 +183,7 @@ function summaryOnly(entry: TranscriptEntry): boolean {
 /** The only grouping policy, shared by every provider and transcript source. */
 export function projectTranscript(
   entries: TranscriptEntry[],
+  options: { sessionId?: string } = {},
 ): ChatViewMessage[] {
   const messages: ChatViewMessage[] = [];
   let pending: TranscriptEntry[] = [];
@@ -181,6 +191,15 @@ export function projectTranscript(
   // message or an answer. The group's time runs from there, so its first
   // step's wait counts and its live timer and final duration agree.
   let previousAt: string | undefined;
+  // Work this turn handed off, and its latest answer: the rows sit under the
+  // answer that ends the turn, outside the collapsed process group (DEV-250).
+  let handoffs: TurnHandoff[] = [];
+  let lastAnswer: ChatViewMessage | undefined;
+  const endTurn = () => {
+    if (lastAnswer && handoffs.length) lastAnswer.handoffs = handoffs;
+    lastAnswer = undefined;
+    handoffs = [];
+  };
   const flush = () => {
     const first = pending[0];
     if (!first) return;
@@ -193,6 +212,18 @@ export function projectTranscript(
     const endedAt = last.at ? Date.parse(last.at) : NaN;
     const durationMs = endedAt - startedAt;
     const usage = stepUsage(pending);
+    handoffs.push(
+      ...toolHandoffs(
+        pending.map((item) => ({
+          id: item.id,
+          callId: item.callId,
+          title: item.title,
+          status: item.status,
+          text: item.text,
+        })),
+        options.sessionId,
+      ),
+    );
     messages.push({
       ...(durationMs > 0 ? { durationMs } : {}),
       ...(begins ? { startedAt: begins } : {}),
@@ -249,6 +280,10 @@ export function projectTranscript(
       };
     }
     flush();
+    // A new input or a divider ends the turn before it: the rows belong to
+    // the answer just ended, never to the one the new turn may give.
+    if ((entry.kind === "user" && !entry.steered) || entry.kind === "boundary")
+      endTurn();
     previousAt = entry.at;
     const {
       kind,
@@ -257,15 +292,19 @@ export function projectTranscript(
       stepId: _stepId,
       ...rest
     } = entry;
-    messages.push({
+    const message: ChatViewMessage = {
       ...rest,
       role: kind === "user" ? "user" : "bot",
       kind:
         kind === "user" || kind === "assistant" || kind === "commentary"
           ? undefined
           : (kind as "boundary" | "failure"),
-    });
+    };
+    messages.push(message);
+    if (kind === "assistant") lastAnswer = message;
+    if (kind === "failure") endTurn();
   }
   flush();
+  endTurn();
   return messages;
 }

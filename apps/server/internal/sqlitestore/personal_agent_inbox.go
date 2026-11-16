@@ -32,18 +32,23 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 			result_error TEXT NOT NULL DEFAULT '',
 			result_truncated INTEGER NOT NULL DEFAULT 0,
 			notify_pending INTEGER NOT NULL DEFAULT 0,
+			dismissed_by TEXT NOT NULL DEFAULT '',
+			dismissed_at TEXT NOT NULL DEFAULT '',
 			UNIQUE(user_id, channel, message_id))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_user ON pa_inbox(user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_due ON pa_inbox(status, lease_until, created_at)`,
+		// A message the person gave up on keeps who dismissed it and when.
+		`ALTER TABLE pa_inbox ADD COLUMN dismissed_by TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE pa_inbox ADD COLUMN dismissed_at TEXT NOT NULL DEFAULT ''`,
 	} {
-		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+		if _, err := s.conn().ExecContext(ctx, statement); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate personal agent inbox: %w", err)
 		}
 	}
 	return nil
 }
 
-const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone`
+const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone,dismissed_by,dismissed_at`
 
 func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEntry, error) {
 	var entry store.PersonalAgentInboxEntry
@@ -51,7 +56,8 @@ func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEnt
 	err := row.Scan(&entry.ID, &entry.UserID, &entry.AssistantID, &entry.Channel, &entry.MessageID, &entry.Text,
 		&entry.Status, &entry.Revision, &entry.InputID, &entry.SessionID, &entry.WaitingReason,
 		&entry.LeaseUntil, &entry.CreatedAt, &entry.UpdatedAt, &origin, &entry.RootID,
-		&entry.ResultStatus, &entry.ResultText, &entry.ResultError, &entry.ResultTruncated, &entry.NotificationPending, &entry.Timezone)
+		&entry.ResultStatus, &entry.ResultText, &entry.ResultError, &entry.ResultTruncated, &entry.NotificationPending, &entry.Timezone,
+		&entry.DismissedBy, &entry.DismissedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = store.ErrNotFound
 	}
@@ -86,15 +92,16 @@ func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.Perso
 		}
 		entry.ResultStatus, entry.ResultText, entry.ResultError, entry.ResultTruncated, entry.NotificationPending = "", "", "", false, false
 		entry.SessionID, entry.WaitingReason, entry.LeaseUntil = "", "", ""
+		entry.DismissedBy, entry.DismissedAt = "", ""
 		entry.CreatedAt, entry.UpdatedAt = paNow(), paNow()
 		origin, err := json.Marshal(entry.Origin)
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			entry.ID, entry.UserID, entry.AssistantID, entry.Channel, entry.MessageID, entry.Text, entry.Status, entry.Revision,
 			entry.InputID, entry.SessionID, entry.WaitingReason, entry.LeaseUntil, entry.CreatedAt, entry.UpdatedAt, string(origin),
-			entry.RootID, "", "", "", false, false, entry.Timezone)
+			entry.RootID, "", "", "", false, false, entry.Timezone, entry.DismissedBy, entry.DismissedAt)
 		saved = entry
 		return err
 	})
@@ -261,6 +268,42 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 			return err
 		}
 		result, err = tx.CapturePersonalAgentInbox(ctx, next)
+		return err
+	})
+	return result, err
+}
+
+// DismissPersonalAgentInbox abandons one held message: the person will not
+// process it ("不再处理"). It records who dismissed it and when, and moves it
+// to the same cancelled state a retry leaves the old attempt in, so the
+// queue does not redeliver it and the home card stops showing it.
+func (s *Store) DismissPersonalAgentInbox(ctx context.Context, assistantID, id string, revision int64, userID string) (store.PersonalAgentInboxEntry, error) {
+	var result store.PersonalAgentInboxEntry
+	err := s.withTx(ctx, func(tx *Store) error {
+		current, err := tx.GetPersonalAgentInbox(ctx, assistantID, id)
+		if err != nil {
+			return err
+		}
+		if current.Revision != revision {
+			return store.ErrPersonalAgentRevision
+		}
+		if current.Status == "cancelled" {
+			result = current
+			return nil
+		}
+		switch {
+		case current.Status == "dispatching":
+			return errors.New("this message is being dispatched; wait for its attempt to end")
+		case current.SessionID != "" && current.ResultStatus != "failed" && current.ResultStatus != "canceled":
+			return errors.New("only a message that failed or was never dispatched can be dismissed")
+		}
+		now := paNow()
+		_, err = tx.conn().ExecContext(ctx, `UPDATE pa_inbox SET status='cancelled',revision=revision+1,lease_until='',notify_pending=0,dismissed_by=?,dismissed_at=?,updated_at=? WHERE assistant_id=? AND id=? AND revision=?`,
+			userID, now, now, assistantID, current.ID, current.Revision)
+		if err != nil {
+			return err
+		}
+		result, err = tx.GetPersonalAgentInbox(ctx, assistantID, id)
 		return err
 	})
 	return result, err

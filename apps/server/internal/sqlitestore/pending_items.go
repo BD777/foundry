@@ -479,6 +479,19 @@ func nativeMessageID(id string) string {
 }
 
 func (s *Store) ListPendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]store.PendingItem, error) {
+	return s.listPendingItems(ctx, userID, states, resolvedSince, limit, false)
+}
+
+// ListVisiblePendingItems is ListPendingItems for the items the person may
+// still see: one whose session was archived or deleted is left out, as the
+// conversation it came from is. An item without a session (an account, a
+// connector) stays. Every list of what "needs the person" reads this, so the
+// assistant's card and the Needs-you page never disagree.
+func (s *Store) ListVisiblePendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]store.PendingItem, error) {
+	return s.listPendingItems(ctx, userID, states, resolvedSince, limit, true)
+}
+
+func (s *Store) listPendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int, visible bool) ([]store.PendingItem, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 500
 	}
@@ -500,6 +513,10 @@ func (s *Store) ListPendingItems(ctx context.Context, userID string, states []st
 	if resolvedSince != "" {
 		query += ` AND (state = ? OR resolved_at >= ?)`
 		args = append(args, store.PendingOpen, resolvedSince)
+	}
+	if visible {
+		query += ` AND (session_id = '' OR EXISTS (SELECT 1 FROM agent_sessions
+			WHERE agent_sessions.id = pending_items.session_id AND ` + visibleAgentSessionSQL + ` AND NOT ` + archivedSessionSQL + `))`
 	}
 	query += ` ORDER BY updated_at DESC LIMIT ?`
 	args = append(args, limit)

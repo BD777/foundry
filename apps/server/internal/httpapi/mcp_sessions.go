@@ -81,6 +81,10 @@ type mcpSessionItem struct {
 	Role            string `json:"role,omitempty"`
 	Source          string `json:"source,omitempty"`
 	ActivityAt      string `json:"activityAt,omitempty"`
+	// Progress is the cheap glance for a running session: its last event and
+	// deterministic flags. get_session adds the plan step, question, tasks
+	// and budget.
+	Progress *listSessionProgress `json:"progress,omitempty"`
 }
 
 const defaultMCPSessionListLimit = 20
@@ -150,6 +154,7 @@ func (s *Server) listSessionsForMCP(call mcpCall) (string, error) {
 	for index, item := range page.Sessions {
 		items[index] = sessionListItem(item, devices)
 	}
+	s.attachListProgress(ctx, items)
 	fields := []string{`"sessions": ` + encodeLines(items)}
 	if page.NextCursor != "" {
 		cursor, _ := json.Marshal(page.NextCursor)
