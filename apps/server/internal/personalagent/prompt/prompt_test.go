@@ -365,8 +365,9 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 // the rules and confirmed facts moved into it (DEV-196, 7840 bytes): moving
 // them must not make the file larger. DEV-223 adds the managed block's two
 // markers and who owns which part (about 250 bytes); DEV-251 adds the
-// message channels' facts (about 200 bytes).
-const agentsFileBudget = 8400
+// message channels' facts (about 200 bytes); DEV-252 adds the pointer to the
+// upkeep facts file (about 160 bytes).
+const agentsFileBudget = 8500
 
 func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	size := len(prompt.AgentsFile(fullInput()))

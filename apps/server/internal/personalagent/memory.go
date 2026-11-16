@@ -52,7 +52,9 @@ func PersonWords(input store.SessionInput) (string, bool) {
 	if input.InputSource != nil {
 		switch input.InputSource.Kind {
 		case "person":
-			if strings.TrimSpace(input.Prompt) == "" {
+			// A server notice sent without an explicit source derives
+			// "person"; its text is still Foundry's, never the person's.
+			if strings.TrimSpace(input.Prompt) == "" || IsNotice(input.Prompt) {
 				return "", false
 			}
 			return input.Prompt, true

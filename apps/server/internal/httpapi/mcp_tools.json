@@ -1328,7 +1328,7 @@
   {
     "name": "get_session",
     "description": "A session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and a compact progress object (last event, plan step, open question, running background tasks and detector flags): the same as read_context scope=summary.",
-    "summary": "Reads one session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and progress (last event, plan step, open question, running background tasks, detector flags).",
+    "summary": "Reads a session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and progress (last event, plan step, open question, running background tasks, detector flags).",
     "limits": [
       "The last input is cut to 300 characters and the answer to 1000.",
       "Progress flags come from the stored event log: repeatedFailure (3 or more of the same tool failure in the current turn), rateLimitStorm (5 or more rate limits in 10 minutes), quiet (25 or more minutes without activity while running), budget (80% and 95% of the token or time budget)."
