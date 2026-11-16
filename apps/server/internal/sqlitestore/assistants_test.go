@@ -137,10 +137,10 @@ func TestSecondAssistantStartsWithNoWorkspacesAndCanBeDeleted(t *testing.T) {
 	}
 
 	for _, agent := range []store.PersonalAgent{first, second} {
-		if _, err := db.CreatePersonalAgentTask(ctx, store.PersonalAgentTask{UserID: "person", AssistantID: agent.ID, WorkspaceID: "ws_work", Title: "work"}); err != nil {
+		if _, err := db.CreatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentTask{UserID: "person", AssistantID: agent.ID, WorkspaceID: "ws_work", Title: "work"}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", AssistantID: agent.ID, Text: "an item"}); err != nil {
+		if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "person", AssistantID: agent.ID, Text: "an item"}); err != nil {
 			t.Fatal(err)
 		}
 	}

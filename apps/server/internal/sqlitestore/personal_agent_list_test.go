@@ -16,15 +16,15 @@ import (
 func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
-	wechat, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Reply on WeChat", When: "after work", At: past, Remind: true})
+	wechat, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Reply on WeChat", When: "after work", At: past, Remind: true})
 	if err != nil || wechat.Status != store.PersonalAgentItemOpen || wechat.ClosedAt != "" {
 		t.Fatalf("added %+v (%v)", wechat, err)
 	}
-	qa, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Talked to QA", Status: store.PersonalAgentItemDone})
+	qa, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "user_a", AssistantID: "asst_a", Text: "Talked to QA", Status: store.PersonalAgentItemDone})
 	if err != nil || qa.ClosedAt == "" {
 		t.Fatalf("a done item = %+v (%v)", qa, err)
 	}
-	if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "user_b", AssistantID: "asst_b", Text: "Someone else's"}); err != nil {
+	if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "user_b", AssistantID: "asst_b", Text: "Someone else's"}); err != nil {
 		t.Fatal(err)
 	}
 	if open, _ := db.ListPersonalAgentItems(ctx, "asst_a", ""); len(open) != 1 || open[0].ID != wechat.ID {
@@ -54,7 +54,7 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	}
 	reminded, _ := db.GetPersonalAgentItem(ctx, "asst_a", wechat.ID)
 	reminded.At = time.Now().Add(-time.Second).UTC().Format(time.RFC3339)
-	moved, err := db.SavePersonalAgentItem(ctx, reminded)
+	moved, err := db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, reminded)
 	if err != nil || moved.RemindedAt != "" {
 		t.Fatalf("a new time = %+v (%v)", moved, err)
 	}
@@ -63,7 +63,7 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 	}
 
 	moved.Status = store.PersonalAgentItemDone
-	done, err := db.SavePersonalAgentItem(ctx, moved)
+	done, err := db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, moved)
 	if err != nil || done.ClosedAt == "" || done.CreatedAt != wechat.CreatedAt {
 		t.Fatalf("done = %+v (%v)", done, err)
 	}
@@ -71,7 +71,7 @@ func TestPersonalAgentListKeepsItemsAndRemindersOnce(t *testing.T) {
 		t.Fatalf("a done item is due: %+v", due)
 	}
 	done.Status = store.PersonalAgentItemOpen
-	if reopened, _ := db.SavePersonalAgentItem(ctx, done); reopened.ClosedAt != "" {
+	if reopened, _ := db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, done); reopened.ClosedAt != "" {
 		t.Fatalf("reopened = %+v", reopened)
 	}
 	if err := db.DeletePersonalAgentItem(ctx, "asst_b", qa.ID); !errors.Is(err, store.ErrNotFound) {

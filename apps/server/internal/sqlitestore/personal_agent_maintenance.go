@@ -15,6 +15,9 @@ func (s *Store) setupPersonalAgentMaintenance(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS pa_maintenance(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',role TEXT NOT NULL,workspace_id TEXT NOT NULL,event_key TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,due_at TEXT NOT NULL,payload_json TEXT NOT NULL,UNIQUE(user_id,role,workspace_id,event_key))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_due ON pa_maintenance(status,due_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_user ON pa_maintenance(user_id)`,
+		// Project upkeep is reviewed on the project page, whoever last ran
+		// the review (DEV-256).
+		`CREATE INDEX IF NOT EXISTS idx_pa_maintenance_workspace ON pa_maintenance(workspace_id,role)`,
 		// What upkeep state each assistant was last told, so a stalled or
 		// failed review is announced once rather than every drain.
 		`CREATE TABLE IF NOT EXISTS pa_upkeep_notices(assistant_id TEXT PRIMARY KEY,signature TEXT NOT NULL,notified_at TEXT NOT NULL)`,
@@ -103,12 +106,51 @@ func (s *Store) listPAMaintenance(ctx context.Context, q string, args ...any) ([
 	}
 	return out, rows.Err()
 }
-func (s *Store) ListPersonalAgentMaintenance(ctx context.Context, assistantID string) ([]store.PersonalAgentMaintenance, error) {
-	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200`, assistantID)
+func (s *Store) ListAssistantMemoryMaintenance(ctx context.Context, assistantID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE assistant_id=? AND role='memory' ORDER BY rowid DESC LIMIT 200`, assistantID)
+}
+
+// ListWorkspaceMaintenance is a project's upkeep: its governance reviews,
+// newest first, whoever last ran them.
+func (s *Store) ListWorkspaceMaintenance(ctx context.Context, userID, workspaceID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND workspace_id=? AND role='governance' ORDER BY rowid DESC LIMIT 50`, userID, workspaceID)
+}
+
+func (s *Store) GetWorkspaceMaintenance(ctx context.Context, userID, workspaceID, id string) (store.PersonalAgentMaintenance, error) {
+	return scanPAMaintenance(s.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND workspace_id=? AND role='governance' AND id=?`, userID, workspaceID, id))
+}
+
+// ListReviewingWorkspaceMaintenance is every governance review of the
+// person's projects that holds suggested changes now, newest first.
+func (s *Store) ListReviewingWorkspaceMaintenance(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND role='governance' AND status='review' ORDER BY rowid DESC LIMIT 200`, userID)
+}
+
+// RebindPersonalAgentMaintenance gives a governance review its next
+// executor. The assistant is only where the run happens: the review and its
+// proposed file changes belong to the project, so this moves nothing else.
+func (s *Store) RebindPersonalAgentMaintenance(ctx context.Context, assistantID, id, nextAssistantID string) error {
+	if assistantID == nextAssistantID {
+		return nil
+	}
+	res, err := s.conn().ExecContext(ctx, `UPDATE pa_maintenance SET assistant_id=? WHERE assistant_id=? AND id=? AND role='governance'`, nextAssistantID, assistantID, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListPersonalAgentMaintenanceForUser(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
 	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? ORDER BY rowid DESC LIMIT 500`, userID)
+}
+
+// ListReviewingMemoryMaintenance is the person's memory reviews still waiting
+// on a decision, newest first, whichever assistant ran them.
+func (s *Store) ListReviewingMemoryMaintenance(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
+	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND role='memory' AND status='review' ORDER BY rowid DESC LIMIT 200`, userID)
 }
 
 func (s *Store) UpkeepNoticeSignature(ctx context.Context, assistantID string) (string, error) {

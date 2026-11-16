@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -122,7 +123,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 			return
 		}
 		if agent, e := s.store.GetAssistant(ctx, op.AssistantID); e == nil {
-			s.RecordTask(ctx, agent, op.SourceSessionID, session)
+			s.RecordTask(ctx, agent, op.SourceSessionID, session, "")
 		}
 		if op.Status == "delivered" && session.Input.ID == op.InputID {
 			switch session.Status {
@@ -240,7 +241,7 @@ func (s *Service) DeliverOperation(ctx context.Context, op store.PersonalAgentOp
 			return
 		}
 		if target, e := s.store.GetAgentSessionSummary(ctx, targetID); e == nil {
-			s.RecordTask(ctx, agent, op.SourceSessionID, target)
+			s.RecordTask(ctx, agent, op.SourceSessionID, target, "")
 		}
 		session, err = s.sessions.Send(ctx, targetID, store.SendAgentSessionInput{ExecutionBudget: run.ExecutionBudget(snapshot), Prompt: prompt, InputID: op.InputID, SentBySessionID: op.SourceSessionID, RequireIdle: true, PersonalAgentOperationID: op.ID, PersonalAgentOperationRevision: op.Revision}, nil)
 	} else {
@@ -322,7 +323,7 @@ func (s *Service) noticeOperation(ctx context.Context, agent store.PersonalAgent
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
 		}
-		s.tell(context.Background(), op.SourceSessionID, text)
+		s.tell(context.Background(), op.SourceSessionID, store.NoticeKindOperation, text)
 	})
 }
 
@@ -343,17 +344,20 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 	}
 	previous := *item.Plan
 	previous.WorkRefs = append([]store.PersonalAgentWorkReference(nil), item.Plan.WorkRefs...)
-	oldTask := item.TaskID
 	linked := false
 	for _, ref := range item.Plan.WorkRefs {
 		if ref.Kind == "session" && ref.ID == sessionID {
 			linked = true
 		}
 	}
-	if tasks, e := s.store.ListPersonalAgentTasks(ctx, op.AssistantID, nil); e == nil {
+	if tasks, e := s.store.ListPersonalAgentTasks(ctx, op.AssistantID, nil); e != nil {
+		log.Printf("personal agent %s: list tasks for item %s: %v", op.AssistantID, item.ID, e)
+	} else {
 		for _, task := range tasks {
 			if task.SessionID == sessionID {
-				item.TaskID = task.ID
+				if e := s.tieTaskToItem(ctx, task, item.ID); e != nil {
+					log.Printf("personal agent %s: tie task %s to item %s: %v", op.AssistantID, task.ID, item.ID, e)
+				}
 				break
 			}
 		}
@@ -376,8 +380,8 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 	default:
 		item.Plan.Progress = "working"
 	}
-	if oldTask == item.TaskID && reflect.DeepEqual(previous, *item.Plan) {
+	if reflect.DeepEqual(previous, *item.Plan) {
 		return
 	}
-	_, _ = s.store.SavePersonalAgentItem(ctx, item) // next reconciliation retries a concurrent edit
+	_, _ = s.store.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item) // next reconciliation retries a concurrent edit
 }

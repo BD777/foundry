@@ -162,7 +162,7 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
 		}
-		if !s.tell(context.Background(), conversationID, text) {
+		if !s.tell(context.Background(), conversationID, store.NoticeKindHelperQuestion, text) {
 			return
 		}
 		if err := s.store.MarkPendingItemNotified(context.Background(), agent.UserID, item.ID, formatPATime(time.Now())); err != nil {

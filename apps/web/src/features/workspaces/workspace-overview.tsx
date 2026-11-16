@@ -24,6 +24,7 @@ import {
 } from "../../components/workspace/workspace-migration";
 import { WorkspaceMoveDialog } from "../../components/workspace/workspace-move-dialog";
 import { WorkspaceMoveSummary } from "../../components/workspace/workspace-move-progress";
+import { WorkspaceUpkeep } from "./workspace-upkeep";
 
 const overviewPanel = "grid min-w-0 gap-[18px] p-5.5 max-[680px]:p-4";
 const repositoryNote = "m-0 mt-[5px] text-xs text-ink-muted";
@@ -264,6 +265,7 @@ export function WorkspaceOverview({
         ) : null}
         {error ? <Alert tone="error" size="compact" title={error} /> : null}
       </Panel>
+      <WorkspaceUpkeep workspace={workspace} />
       <WorkspaceServices
         workspaceId={workspace.id}
         canControl={!rescanDenial}

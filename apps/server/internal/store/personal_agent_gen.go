@@ -63,6 +63,36 @@ func (e MemorySortRecordKind) Valid() bool {
 	}
 }
 
+// Defines values for PersonalAgentItemPlanChoiceRoute.
+const (
+	PersonalAgentItemPlanChoiceRouteClarify  PersonalAgentItemPlanChoiceRoute = "clarify"
+	PersonalAgentItemPlanChoiceRouteContinue PersonalAgentItemPlanChoiceRoute = "continue"
+	PersonalAgentItemPlanChoiceRouteCreate   PersonalAgentItemPlanChoiceRoute = "create"
+	PersonalAgentItemPlanChoiceRouteExisting PersonalAgentItemPlanChoiceRoute = "existing"
+	PersonalAgentItemPlanChoiceRouteMultiple PersonalAgentItemPlanChoiceRoute = "multiple"
+	PersonalAgentItemPlanChoiceRouteRecord   PersonalAgentItemPlanChoiceRoute = "record"
+)
+
+// Valid indicates whether the value is a known member of the PersonalAgentItemPlanChoiceRoute enum.
+func (e PersonalAgentItemPlanChoiceRoute) Valid() bool {
+	switch e {
+	case PersonalAgentItemPlanChoiceRouteClarify:
+		return true
+	case PersonalAgentItemPlanChoiceRouteContinue:
+		return true
+	case PersonalAgentItemPlanChoiceRouteCreate:
+		return true
+	case PersonalAgentItemPlanChoiceRouteExisting:
+		return true
+	case PersonalAgentItemPlanChoiceRouteMultiple:
+		return true
+	case PersonalAgentItemPlanChoiceRouteRecord:
+		return true
+	default:
+		return false
+	}
+}
+
 // AddMemoryEntryInput POST /api/assistants/{id}/memory/layers/{scope}/entries. The person writes a fact into a layer, which is created the first time; requestId makes a retry the same write.
 type AddMemoryEntryInput struct {
 	RequestID string `json:"requestId"`
@@ -302,6 +332,202 @@ type PersonalAgentConnector struct {
 type PersonalAgentConnectorsView struct {
 	Connectors jsonempty.List[PersonalAgentConnector] `json:"connectors"`
 }
+
+// PersonalAgentItem One thing someone wants done or plans, in their words, as the side card and the items page show it. The assistant's list owns the content; Foundry fills times, derived helper state and archive.
+type PersonalAgentItem struct {
+	ID             string `json:"id"`
+	IntentRevision int    `json:"intentRevision,omitempty"`
+	Revision       int    `json:"revision"`
+
+	// Owner Who is to do the item (pa_items.owner).
+	Owner  PersonalAgentItemOwner `json:"owner"`
+	Text   string                 `json:"text"`
+	When   string                 `json:"when,omitempty"`
+	At     string                 `json:"at,omitempty"`
+	Remind bool                   `json:"remind"`
+
+	// Status An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+	Status PersonalAgentItemStatus `json:"status"`
+
+	// Summary The assistant's short running context in Markdown, at most 1500 characters: what was asked, what has been done, the result or answer, what is still open. Foundry never writes it.
+	Summary string `json:"summary,omitempty"`
+	Quote   string `json:"quote,omitempty"`
+
+	// Origin Where the item started and the message it rests on. Foundry records this mechanically; the assistant never writes it. A channel item names the channel and the requester whose message asked for it.
+	Origin *PersonalAgentItemOrigin `json:"origin,omitempty"`
+
+	// Plan The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references and the completion evidence. Operational state, not the person's intent; absent on items with none.
+	Plan       *PersonalAgentItemPlan                  `json:"plan,omitempty"`
+	ArchivedAt string                                  `json:"archivedAt,omitempty"`
+	RemindedAt string                                  `json:"remindedAt,omitempty"`
+	CreatedAt  string                                  `json:"createdAt"`
+	UpdatedAt  string                                  `json:"updatedAt"`
+	ClosedAt   string                                  `json:"closedAt,omitempty"`
+	Helpers    jsonempty.List[PersonalAgentItemHelper] `json:"helpers"`
+}
+
+// PersonalAgentItemDetail GET /api/personal-agent/items/{id}: the item, its timeline and its helpers.
+type PersonalAgentItemDetail struct {
+	// Item One thing someone wants done or plans, in their words, as the side card and the items page show it. The assistant's list owns the content; Foundry fills times, derived helper state and archive.
+	Item   PersonalAgentItem                      `json:"item"`
+	Events jsonempty.List[PersonalAgentItemEvent] `json:"events"`
+}
+
+// PersonalAgentItemEditInput PUT /api/personal-agent/items/{id} (the older /api/personal-agent/list/{id} is the same route during the Web transition). The person's own edit of their item; absent fields stay. Changing when clears at and the reminder. archived true archives the item (only when closed and no helper runs; otherwise 409), false restores it. DELETE on the same path removes the item, as before.
+type PersonalAgentItemEditInput struct {
+	Revision int    `json:"revision,omitempty"`
+	Text     string `json:"text,omitempty"`
+	When     string `json:"when,omitempty"`
+
+	// Status An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+	Status PersonalAgentItemStatus `json:"status,omitempty"`
+
+	// Owner Who is to do the item (pa_items.owner).
+	Owner    PersonalAgentItemOwner `json:"owner,omitempty"`
+	Archived *bool                  `json:"archived,omitempty"`
+
+	// Plan The person's choice of how an open item runs, sent as part of the edit. Only what the person can choose: the route, the project (workspaceId) and the items it depends on. Foundry merges it over the assistant's plan and keeps the rest (progress, next action, waiting, work refs, evidence). Absent fields stay. Dependencies are checked for cycles; a cycle is refused with 400.
+	Plan *PersonalAgentItemPlanChoice `json:"plan,omitempty"`
+}
+
+// PersonalAgentItemEvent One append-only fact in an item's timeline (pa_item_events).
+type PersonalAgentItemEvent struct {
+	ID     string `json:"id"`
+	ItemID string `json:"itemId"`
+	At     string `json:"at"`
+
+	// Actor Who caused the change an event records.
+	Actor PersonalAgentItemEventActor `json:"actor"`
+
+	// Kind The mechanical fact an event records.
+	Kind PersonalAgentItemEventKind `json:"kind"`
+
+	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item.
+	Detail *PersonalAgentItemEventDetail `json:"detail,omitempty"`
+}
+
+// PersonalAgentItemEventActor Who caused the change an event records.
+type PersonalAgentItemEventActor = string
+
+// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item.
+type PersonalAgentItemEventDetail struct {
+	From        string `json:"from,omitempty"`
+	To          string `json:"to,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Title       string `json:"title,omitempty"`
+	NeedsYouID  string `json:"needsYouId,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// PersonalAgentItemEventKind The mechanical fact an event records.
+type PersonalAgentItemEventKind = string
+
+// PersonalAgentItemHelper One helper session that works or worked on the item (pa_tasks.item_id). A helper started without an item is not here; it stays its own task.
+type PersonalAgentItemHelper struct {
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title,omitempty"`
+
+	// Project The workspace's name, when it still exists.
+	Project     string `json:"project,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+
+	// Status queued, running, asking, done, failed or cancelled.
+	Status    string `json:"status"`
+	ReadOnly  bool   `json:"readOnly"`
+	StartedAt string `json:"startedAt,omitempty"`
+	EndedAt   string `json:"endedAt,omitempty"`
+
+	// Archived The helper's session is archived.
+	Archived bool `json:"archived,omitempty"`
+}
+
+// PersonalAgentItemList GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report.
+type PersonalAgentItemList struct {
+	Items jsonempty.List[PersonalAgentItem] `json:"items"`
+
+	// Total How many items match the filters.
+	Total  int `json:"total"`
+	Offset int `json:"offset"`
+
+	// NextOffset Pass as offset for the next page; absent on the last one.
+	NextOffset *int `json:"nextOffset,omitempty"`
+}
+
+// PersonalAgentItemOrigin Where the item started and the message it rests on. Foundry records this mechanically; the assistant never writes it. A channel item names the channel and the requester whose message asked for it.
+type PersonalAgentItemOrigin struct {
+	// Kind Where an item started.
+	Kind PersonalAgentItemOriginKind `json:"kind"`
+
+	// Name The channel or conversation name the message came from.
+	Name string `json:"name,omitempty"`
+
+	// Source The channel's source kind, e.g. openlark.
+	Source string `json:"source,omitempty"`
+
+	// Requester Display name of the person whose message started the item.
+	Requester   string `json:"requester,omitempty"`
+	RequesterID string `json:"requesterId,omitempty"`
+
+	// SessionID The assistant conversation that received the message.
+	SessionID string `json:"sessionId,omitempty"`
+	MessageID string `json:"messageId,omitempty"`
+}
+
+// PersonalAgentItemOriginKind Where an item started.
+type PersonalAgentItemOriginKind = string
+
+// PersonalAgentItemOwner Who is to do the item (pa_items.owner).
+type PersonalAgentItemOwner = string
+
+// PersonalAgentItemPlanChoice The person's choice of how an open item runs, sent as part of the edit. Only what the person can choose: the route, the project (workspaceId) and the items it depends on. Foundry merges it over the assistant's plan and keeps the rest (progress, next action, waiting, work refs, evidence). Absent fields stay. Dependencies are checked for cycles; a cycle is refused with 400.
+type PersonalAgentItemPlanChoice struct {
+	// Route The route the person picked; Foundry records it as given.
+	Route PersonalAgentItemPlanChoiceRoute `json:"route,omitempty"`
+
+	// WorkspaceID The project the item runs in.
+	WorkspaceID  string   `json:"workspaceId,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+// PersonalAgentItemPlanChoiceRoute The route the person picked; Foundry records it as given.
+type PersonalAgentItemPlanChoiceRoute string
+
+// PersonalAgentItemReport GET /api/personal-agent/items/report?from=&to=: the deterministic review of a range, built only from items and their times; from and to are RFC 3339 instants, the range is [from, to). Archived items count. An item belongs to the range when it was created, updated or closed in it. counts.created: createdAt in range. counts.done and counts.dropped: closedAt in range with that status. counts.open: items open at to (createdAt before to, and not closed before to). groups hold the items in range by status (open, done, dropped). The person may ask the assistant to write prose from it; the report itself is data.
+type PersonalAgentItemReport struct {
+	From   string                                       `json:"from"`
+	To     string                                       `json:"to"`
+	Counts PersonalAgentItemReportCounts                `json:"counts"`
+	Groups jsonempty.List[PersonalAgentItemReportGroup] `json:"groups"`
+}
+
+// PersonalAgentItemReportCounts defines model for PersonalAgentItemReportCounts.
+type PersonalAgentItemReportCounts struct {
+	// Created Items created in the range.
+	Created int `json:"created"`
+
+	// Done Items completed in the range.
+	Done int `json:"done"`
+
+	// Dropped Items dropped in the range.
+	Dropped int `json:"dropped"`
+
+	// Open Items still open at the end of the range.
+	Open int `json:"open"`
+}
+
+// PersonalAgentItemReportGroup defines model for PersonalAgentItemReportGroup.
+type PersonalAgentItemReportGroup struct {
+	// Status An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+	Status PersonalAgentItemStatus           `json:"status"`
+	Items  jsonempty.List[PersonalAgentItem] `json:"items"`
+}
+
+// PersonalAgentItemRouteDecision The assistant's explainable routing decision for an item.
+type PersonalAgentItemRouteDecision = PersonalAgentRouteDecision
+
+// PersonalAgentItemStatus An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+type PersonalAgentItemStatus = string
 
 // SetPersonalAgentConnectorLevelsInput Replace the connector-account levels in the assistant's permission package. Omitted accounts return to the package's connectorDefault.
 type SetPersonalAgentConnectorLevelsInput struct {

@@ -12,31 +12,31 @@ import (
 func TestItemCaptureReturnsUpdatedItemAndRefusesChangedOriginal(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	input := store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Compare export formats", CaptureKey: "input-1:part-1", CaptureHash: "original", SourceInputID: "input-1"}
-	item, err := db.AddPersonalAgentItem(ctx, input)
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	item.Text = "Compare CSV and JSON"
-	changed, err := db.SavePersonalAgentItem(ctx, item)
+	changed, err := db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := db.AddPersonalAgentItem(ctx, input)
+	replayed, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, input)
 	if err != nil || replayed.ID != changed.ID || replayed.Text != changed.Text || replayed.Revision != 2 {
 		t.Fatalf("capture retry lost updates: %+v %v", replayed, err)
 	}
-	if _, err = db.SavePersonalAgentItem(ctx, item); !errors.Is(err, store.ErrPersonalAgentRevision) {
+	if _, err = db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item); !errors.Is(err, store.ErrPersonalAgentRevision) {
 		t.Fatalf("stale edit accepted: %v", err)
 	}
 	input.CaptureHash = "different-original"
-	if _, err = db.AddPersonalAgentItem(ctx, input); !errors.Is(err, store.ErrIdempotencyConflict) {
+	if _, err = db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, input); !errors.Is(err, store.ErrIdempotencyConflict) {
 		t.Fatalf("key reused with changed intent: %v", err)
 	}
 	input.CaptureHash = "original"
 	if err := db.DeletePersonalAgentItem(ctx, "asst_person", item.ID); err != nil {
 		t.Fatal(err)
 	}
-	removed, err := db.AddPersonalAgentItem(ctx, input)
+	removed, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, input)
 	if err != nil || removed.ID != item.ID || removed.Text != "" || removed.Status != "dropped" {
 		t.Fatalf("deleted item resurrected on retry: %+v %v", removed, err)
 	}
@@ -47,11 +47,11 @@ func TestItemCaptureReturnsUpdatedItemAndRefusesChangedOriginal(t *testing.T) {
 
 func TestConcurrentItemEdgesCannotCreateCycle(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	a, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Research"})
+	a, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Research"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Design"})
+	b, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "person", AssistantID: "asst_person", Text: "Design"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestConcurrentItemEdgesCannotCreateCycle(t *testing.T) {
 		wg.Add(1)
 		go func(item store.PersonalAgentListItem) {
 			defer wg.Done()
-			_, err := db.SavePersonalAgentItem(ctx, item)
+			_, err := db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
 			results <- err
 		}(item)
 	}

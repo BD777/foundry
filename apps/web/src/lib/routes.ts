@@ -12,6 +12,7 @@ import { providerTabFrom, type ProviderTab } from "./provider-tabs";
 export type NavView =
   | "assistants"
   | "assistant"
+  | "assistantItems"
   | "assistantSettings"
   | "pending"
   | "account"
@@ -47,6 +48,8 @@ export interface AppRoute {
   providerTab?: ProviderTab;
   /** The open section of the assistant's settings. */
   assistantSection?: AssistantSettingsSection;
+  /** The item whose detail the items page shows. */
+  selectedItemId?: string;
   chatView?: "active" | "archived";
   selectedChatId?: string;
   selectedIssueId?: string;
@@ -90,6 +93,14 @@ export function parseAppRoute(pathname: string): AppRoute {
     // Legacy aliases resolve to the default assistant in the app shell.
     case "assistant": {
       const assistantSection = assistantSettingsSectionValue(segments[2]);
+      // The items page and one item's detail; no sidebar entry of its own.
+      if (id === "items")
+        return {
+          view: "assistantItems",
+          ...(segments[2]
+            ? { selectedItemId: decodePathSegment(segments[2]) }
+            : {}),
+        };
       return id === "settings"
         ? {
             view: "assistantSettings",
@@ -196,6 +207,10 @@ export function pathForAppRoute(route: AppRoute): string {
         : route.assistantSection
           ? `/assistant/settings/${route.assistantSection}`
           : "/assistant/settings";
+    case "assistantItems":
+      return route.selectedItemId
+        ? `/assistant/items/${encodePathSegment(route.selectedItemId)}`
+        : "/assistant/items";
     case "assistants":
       return "/assistants";
     case "locations":

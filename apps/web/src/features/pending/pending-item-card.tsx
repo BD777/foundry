@@ -9,6 +9,7 @@ import {
   CornerDownLeft,
   Hand,
   Hourglass,
+  Inbox,
   KeyRound,
   MessageCircleQuestion,
   MessagesSquare,
@@ -17,10 +18,11 @@ import {
   ScrollText,
   X,
 } from "lucide-react";
-import type { PendingItem } from "../../api";
+import { ApiError, type PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ButtonRow } from "../../components/ui/button-row";
+import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { FieldHint, Textarea } from "../../components/ui/field";
 import { IconBox } from "../../components/ui/icon-box";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
@@ -30,6 +32,7 @@ import { navigateToConnectorGrant } from "../../lib/in-app-navigation";
 import {
   pendingFailure,
   pendingHeadline,
+  pendingInboxReason,
   pendingOptionLabel,
   pendingOrigin,
   pendingPersonal,
@@ -40,6 +43,7 @@ import {
   type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
+import { MemoryUpkeepItemCard, UpkeepItemCard } from "./upkeep-item-card";
 
 /** What kind of thing waits, by shape and tone: never by color alone. */
 const kindIcon = {
@@ -80,7 +84,7 @@ export function PendingItemCard({
   item: PendingItem;
   /** Opens the transcript at the item's message (or its Issue). */
   onOpenMessage: (item: PendingItem) => void;
-  pending: Pick<PendingItems, "changeState" | "reply">;
+  pending: Pick<PendingItems, "changeState" | "reply" | "retry">;
   density?: "comfortable" | "compact";
   where?: "page" | "chat";
   /** Shown, not acted on: an item the person's assistant handles. */
@@ -99,6 +103,21 @@ export function PendingItemCard({
   const [busy, setBusy] = useState<"" | "send" | "state">("");
   const [sendingOption, setSendingOption] = useState("");
   const [error, setError] = useState("");
+  // A saved message reads and acts differently from every other item
+  // (DEV-254): its words and why in one line, retry / not-process / attempt
+  // in one row, the error behind a disclosure below them.
+  if (item.source === "project_upkeep") return <UpkeepItemCard item={item} />;
+  if (item.source === "memory_upkeep")
+    return <MemoryUpkeepItemCard item={item} />;
+  if (item.source === "assistant_inbox")
+    return (
+      <InboxItemCard
+        item={item}
+        onOpenMessage={onOpenMessage}
+        pending={pending}
+        showOrigin={showOrigin}
+      />
+    );
   const resolved = pendingResolved(item);
   const own = pendingPersonal(item);
   const failure = pendingFailure(item);
@@ -512,6 +531,169 @@ export function PendingItemCard({
       />
     </article>
   );
+}
+
+/**
+ * A saved message the assistant did not process: its words and why on one
+ * line, then retry (the one thing to do), not-process (which closes it) and
+ * its last attempt in one row of equal-size actions; the attempt's error
+ * sits behind a disclosure on its own line, never among the buttons.
+ */
+function InboxItemCard({
+  item,
+  onOpenMessage,
+  pending,
+  showOrigin,
+}: {
+  item: PendingItem;
+  onOpenMessage: (item: PendingItem) => void;
+  pending: Pick<PendingItems, "changeState" | "retry">;
+  showOrigin: boolean;
+}) {
+  const { t } = useTranslation("pending");
+  const titleId = useId();
+  const [busy, setBusy] = useState<"" | "retry" | "dismiss">("");
+  const [error, setError] = useState("");
+  const resolved = pendingResolved(item);
+  const failed = Boolean(item.failureCategory) || item.rule === "canceled";
+  const reason = pendingInboxReason(item, t);
+  // The time the message was sent, not when its item was recorded (DEV-254).
+  const when = item.messageAt || item.createdAt;
+  const origin = pendingOrigin(
+    item,
+    t("page.untitled"),
+    t("page.personal"),
+    t("page.defaultAssistant"),
+  );
+  const run = async (action: "retry" | "dismiss") => {
+    if (busy) return;
+    setBusy(action);
+    setError("");
+    try {
+      if (action === "retry") await pending.retry(item);
+      else await pending.changeState(item, "dismissed");
+    } catch (reason) {
+      setError(
+        action === "retry"
+          ? inboxRetryMessage(reason, t)
+          : t("item.inboxDismissFailed"),
+      );
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <article
+      aria-labelledby={titleId}
+      className="fdy-pending-item fdy-pending-item-inbox grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 px-4 py-3.5 not-first:border-t not-first:border-line-soft max-[640px]:px-3"
+      data-source={item.source}
+      data-state={item.state}
+    >
+      <IconBox
+        aria-hidden="true"
+        className={resolved ? "opacity-60" : undefined}
+        size="chat"
+        tone={resolved ? "muted" : failed ? "error" : "warn"}
+      >
+        <Inbox size={15} />
+      </IconBox>
+      <div className="grid min-w-0 gap-1.5">
+        {/* One line: the message is cut with an ellipsis, the reason stays whole. */}
+        <p
+          className="flex min-w-0 items-baseline text-sm leading-[1.45]"
+          id={titleId}
+        >
+          <span
+            className={cn(
+              "min-w-0 truncate font-semibold",
+              resolved ? "text-ink-muted" : "text-ink",
+            )}
+            title={item.title}
+          >
+            “{item.title}”
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-ink-muted">
+            {" · "}
+            {reason}
+          </span>
+        </p>
+        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+          {showOrigin ? (
+            <>
+              <span className="text-ink">
+                {t(`item.origin.${origin.kind}`, { name: origin.name })}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
+          <time
+            className="tabular-nums"
+            dateTime={resolved ? item.resolvedAt : when}
+            title={resolved ? item.resolvedAt : when}
+          >
+            {resolved
+              ? t("item.resolved", {
+                  state: t(`state.${item.state}`),
+                  when: relativeWhen(item.resolvedAt || item.updatedAt),
+                })
+              : relativeWhen(when)}
+          </time>
+        </p>
+        {!resolved ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <Button
+              data-busy={busy === "retry" ? "true" : undefined}
+              disabled={Boolean(busy)}
+              onClick={() => void run("retry")}
+              size="sm"
+            >
+              <RotateCcw aria-hidden="true" size={14} />
+              {t("item.inboxRetry")}
+            </Button>
+            <Button
+              disabled={Boolean(busy)}
+              onClick={() => void run("dismiss")}
+              size="sm"
+              variant="ghost"
+            >
+              <X aria-hidden="true" size={14} />
+              {t("item.inboxDismiss")}
+            </Button>
+            {item.sessionId ? (
+              <Button
+                disabled={Boolean(busy)}
+                onClick={() => onOpenMessage(item)}
+                size="sm"
+                variant="ghost"
+              >
+                <ArrowUpRight aria-hidden="true" size={14} />
+                {t("item.inboxOpenAttempt")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {item.context ? (
+          <Disclosure>
+            <DisclosureSummary>{t("item.inboxDetail")}</DisclosureSummary>
+            <p className="max-h-[160px] overflow-auto text-2xs leading-[1.5] wrap-anywhere whitespace-pre-wrap text-ink-faint">
+              {item.context}
+            </p>
+          </Disclosure>
+        ) : null}
+        {error ? <Alert size="compact" title={error} tone="error" /> : null}
+      </div>
+    </article>
+  );
+}
+
+/** A refused retry says why in the person's words, never the server's (DEV-254). */
+function inboxRetryMessage(reason: unknown, t: TFunction<"pending">): string {
+  const code = reason instanceof ApiError ? reason.code : undefined;
+  if (code === "inbox_retry_not_settled")
+    return t("item.inboxRetryRefusal.notSettled");
+  if (code === "inbox_retry_changed")
+    return t("item.inboxRetryRefusal.changed");
+  return t("item.inboxRetryRefusal.failed");
 }
 
 function failureHint(failure: PendingFailure, t: TFunction<"pending">): string {

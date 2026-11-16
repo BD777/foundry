@@ -8,7 +8,6 @@ import {
   type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
-  type PersonalAgentInboxEntry,
   type PersonalAgentLimits,
   type PersonalAgentPolicy,
   type PersonalAgentPolicyPreset,
@@ -395,6 +394,38 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
   return lines;
 }
 
+/**
+ * The lines the assistant home shows, without the retired upkeep notices
+ * (DEV-252 stopped sending them) and the answer each one forced. The rule
+ * reads the input's structured noticeKind (DEV-260) and nothing else; the
+ * events stay. A hidden line that opened a conversation hands that mark on.
+ */
+export function withoutRetiredUpkeepTurns<T extends AssistantLine>(
+  lines: T[],
+): T[] {
+  const shown: T[] = [];
+  let hiding = false;
+  let startsConversation = false;
+  for (const line of lines) {
+    if (line.role === "person") hiding = isRetiredUpkeepInput(line.inputSource);
+    if (hiding) {
+      startsConversation ||= Boolean(line.startsConversation);
+      continue;
+    }
+    shown.push(
+      startsConversation && !line.startsConversation
+        ? { ...line, startsConversation: true }
+        : line,
+    );
+    startsConversation = false;
+  }
+  return shown;
+}
+
+function isRetiredUpkeepInput(source: AgentSessionInputSource | undefined) {
+  return source?.kind === "foundry_notice" && source.noticeKind === "upkeep";
+}
+
 /** The latest session is answering now. */
 export function assistantWorking(sessions: AgentSession[]): boolean {
   const latest = sessions[sessions.length - 1];
@@ -561,75 +592,9 @@ export function assistantRuntime(
   };
 }
 
-/** Why a saved message was not processed, as the home says it. */
-export type InboxReasonKind =
-  | "quota_exhausted"
-  | "rate_limited"
-  | "provider_unavailable"
-  | "provider_mismatch"
-  | "host_stopped"
-  | "other"
-  | "canceled";
-
-export interface InboxReason {
-  kind: InboxReasonKind;
-  /** When the model quota comes back, and whether that has passed. */
-  resetAt?: string;
-  resetPassed?: boolean;
-}
-
-const failureKinds: readonly InboxReasonKind[] = [
-  "quota_exhausted",
-  "rate_limited",
-  "provider_unavailable",
-  "provider_mismatch",
-  "host_stopped",
-];
-
-/** A failed attempt's reason, from the server's classification of its error. */
-export function inboxReason(
-  entry: PersonalAgentInboxEntry,
-  now: Date,
-): InboxReason {
-  // A stopped attempt was stopped on purpose; its error only says so.
-  if (entry.resultStatus === "canceled") return { kind: "canceled" };
-  const failure = entry.resultFailure;
-  if (!failure) return { kind: "other" };
-  const kind =
-    failureKinds.find((known) => known === failure.category) ?? "other";
-  const reset = failure.resetAt ? Date.parse(failure.resetAt) : NaN;
-  if (kind !== "quota_exhausted" || Number.isNaN(reset)) return { kind };
-  return {
-    kind,
-    resetAt: failure.resetAt,
-    resetPassed: reset <= now.getTime(),
-  };
-}
-
-/**
- * The one reason every failed message shares, for the card's summary line
- * (the latest reset when they name several); none when they differ.
- */
-export function inboxSummaryReason(
-  failed: readonly PersonalAgentInboxEntry[],
-  now: Date,
-): InboxReason | undefined {
-  const reasons = failed.map((entry) => inboxReason(entry, now));
-  const first = reasons[0];
-  if (!first || reasons.some((reason) => reason.kind !== first.kind))
-    return undefined;
-  return reasons.reduce((latest, reason) =>
-    (reason.resetAt ?? "") > (latest.resetAt ?? "") ? reason : latest,
-  );
-}
-
 /** One part of the narrow home's summary line, by its copy key. */
 export interface SideSummaryPart {
-  key:
-    | "home.summary.needsYou"
-    | "home.summary.unprocessed"
-    | "home.summary.list"
-    | "home.summary.tasks";
+  key: "home.summary.needsYou" | "home.summary.list" | "home.summary.tasks";
   count: number;
 }
 
@@ -639,15 +604,30 @@ export interface SideSummaryPart {
  */
 export function sideSummary(counts: {
   needsYou: number;
-  unprocessed: number;
   list: number;
   tasks: number;
 }): SideSummaryPart[] {
   const parts: SideSummaryPart[] = [
     { key: "home.summary.needsYou", count: counts.needsYou },
-    { key: "home.summary.unprocessed", count: counts.unprocessed },
     { key: "home.summary.list", count: counts.list },
     { key: "home.summary.tasks", count: counts.tasks },
   ];
   return parts.filter((part) => part.count > 0);
+}
+
+/**
+ * The i18n key of why a saved message waits, by the waiting reason the
+ * inbox records for it (the home's receipt line; the Needs you page reads
+ * the same reasons through pendingInboxReason).
+ */
+export function waitingReasonKey(reason: string | undefined) {
+  return reason === "device_offline"
+    ? "inbox.deviceOffline"
+    : reason === "worker_update_needed"
+      ? "inbox.workerUpdateRequired"
+      : reason === "account_unavailable"
+        ? "inbox.accountUnavailable"
+        : reason === "assistant_paused"
+          ? "inbox.paused"
+          : "inbox.pending";
 }

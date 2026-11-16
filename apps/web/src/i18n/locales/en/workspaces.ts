@@ -1,5 +1,14 @@
 /** Workspaces: the hub, overview, selection and editing. */
 export const workspaces = {
+  upkeep: {
+    title: "Project upkeep",
+    description:
+      "A suggested change is a complete rewrite of one of this project's instruction files (AGENTS.md, README, docs, skills). Nothing is written until you review and apply it.",
+    waiting_one: "{{count}} suggested change waiting",
+    waiting_other: "{{count}} suggested changes waiting",
+    empty: "No suggested changes are waiting.",
+    ended: "Ended ({{count}})",
+  },
   tunnels: {
     compatibility: "Compatibility",
     compatibilityNote:

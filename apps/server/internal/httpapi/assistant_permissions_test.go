@@ -123,7 +123,7 @@ func TestAssistantPackageGatesDispatchReadsAndCreatedWorkspaces(t *testing.T) {
 	f.editPackage(t, func(pkg *store.PermissionPackage) {
 		pkg.Workspaces = store.PermissionListRule{Scope: store.PermissionListScopeListed, Include: []string{"ws_bob"}}
 	})
-	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{
+	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
 		UserID: f.aliceID, AssistantID: agent.ID, Text: "Work outside the package",
 		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
 	})
@@ -197,7 +197,7 @@ func TestDefaultAssistantHelperLeasesIdentityResourcesOnItsDevices(t *testing.T)
 		t.Fatalf("default assistant identity resources = %+v", pkg.IdentityResources)
 	}
 	helper := f.startSession(t, "ws_alice", f.conversation.ID, "use the browser")
-	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
+	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper, "")
 	helperToken := f.mint(t, helper.ID)
 	ordinaryToken := f.mint(t, f.startSession(t, "ws_alice", "", "my own chat").ID)
 	compute, browser, screen := f.reportAliceResources(t)

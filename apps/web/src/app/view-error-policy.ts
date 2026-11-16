@@ -20,7 +20,9 @@ export function viewErrorResetKey({
   workspaceId,
 }: ViewErrorResetInput): string {
   const selection =
-    view === "assistant" || view === "assistantSettings"
+    view === "assistant" ||
+    view === "assistantSettings" ||
+    view === "assistantItems"
       ? (selectedAssistantId ?? "")
       : view === "chats"
         ? (selectedChatId ?? "")
@@ -32,6 +34,7 @@ export function viewErrorResetKey({
   return [
     view === "assistants" ||
     view === "assistant" ||
+    view === "assistantItems" ||
     view === "assistantSettings" ||
     view === "pending" ||
     view === "devices" ||

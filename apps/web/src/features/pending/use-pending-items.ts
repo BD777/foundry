@@ -4,6 +4,7 @@ import {
   enqueueChatMessage,
   isAbortError,
   listPendingItems,
+  retryPendingItem,
   setPendingItemState,
   type PendingItem,
   type PendingItemList,
@@ -25,6 +26,8 @@ export interface PendingItems {
   ) => Promise<void>;
   /** Sends the reply to the item's chat, or answers its Issue. */
   reply: (item: PendingItem, text: string) => Promise<void>;
+  /** Asks for one more attempt of an unprocessed assistant message. */
+  retry: (item: PendingItem) => Promise<void>;
 }
 
 /**
@@ -103,7 +106,15 @@ export function usePendingItems(enabled = true): PendingItems {
     [refresh],
   );
 
-  return { list, failed, refresh, changeState, reply };
+  const retry = useCallback<PendingItems["retry"]>(
+    async (item) => {
+      await retryPendingItem(item.id, crypto.randomUUID());
+      refresh();
+    },
+    [refresh],
+  );
+
+  return { list, failed, refresh, changeState, reply, retry };
 }
 
 /** The list the app shows: without Issues' items while Issues are off. */

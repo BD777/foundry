@@ -19,7 +19,15 @@ export type PendingSource =
    * A message channel hit its delivery limit or its feed had a gap
    * (DEV-203); it names the assistant and opens its channels.
    */
-  | "message_channel";
+  | "message_channel"
+  /**
+   * A saved message the person's assistant did not process (DEV-254): its
+   * attempt failed or it waits on something only the person can fix. Its
+   * rule is the waiting reason; a failed attempt names its category.
+   */
+  | "assistant_inbox"
+  | "project_upkeep"
+  | "memory_upkeep";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person
@@ -46,6 +54,15 @@ export type PendingOutcome =
 
 export type PendingState =
   "open" | "replied" | "superseded" | "done" | "dismissed";
+
+/** How a failed assistant attempt ended, as it was classified (DEV-254). */
+export type PendingFailureCategory =
+  | "quota_exhausted"
+  | "rate_limited"
+  | "provider_unavailable"
+  | "provider_mismatch"
+  | "host_stopped"
+  | "other";
 
 /**
  * Something in a session that waits for the person, in its source's own
@@ -81,6 +98,13 @@ export interface PendingItem {
   options?: string[];
   recommendation?: string;
   occurrences: number;
+  /** How many things wait for the person, for an item that counts them (DEV-256). */
+  count?: number;
+  /** An unprocessed message's failed attempt: its category and reset time. */
+  failureCategory?: PendingFailureCategory;
+  failureResetAt?: string;
+  /** When an unprocessed message was sent: its inbox entry's time (DEV-254). */
+  messageAt?: string;
   handler?: PendingHandler;
   /** What the assistant told the person when it handed the item over. */
   note?: string;
@@ -126,5 +150,18 @@ export function setPendingItemState(
 ): Promise<PendingItem> {
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/state`, {
     body: { state },
+  });
+}
+
+/**
+ * Asks for one more attempt of the saved message an unprocessed-message
+ * item stands for (DEV-254). Only that source can be retried.
+ */
+export function retryPendingItem(
+  id: string,
+  requestId: string,
+): Promise<PendingItem> {
+  return request("POST", `/api/pending-items/${encodeURIComponent(id)}/retry`, {
+    body: { requestId },
   });
 }

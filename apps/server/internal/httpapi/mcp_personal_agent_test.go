@@ -785,7 +785,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	helpers := []store.AgentSession{}
 	for _, workspace := range []string{"ws_alice", "ws_bob"} {
 		helper := f.startSession(t, workspace, f.conversation.ID, "work for the person")
-		f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
+		f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper, "")
 		helpers = append(helpers, helper)
 	}
 	unrelated := f.startSession(t, "ws_alice", "", "the person's own chat")
@@ -874,7 +874,7 @@ func TestAssistantLimits(t *testing.T) {
 		t.Fatalf("the helper is not followed up: %+v", tasks)
 	}
 	helper := f.startSession(t, "ws_alice", f.conversation.ID, "a running helper")
-	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
+	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper, "")
 	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err == nil || !strings.Contains(err.Error(), "running at once") {
 		t.Fatalf("past the concurrent limit: %v", err)
 	}

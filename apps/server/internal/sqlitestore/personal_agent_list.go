@@ -1,12 +1,15 @@
 package sqlitestore
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -47,30 +50,108 @@ func (s *Store) setupPersonalAgentList(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_user ON pa_items (user_id, status, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_reminders ON pa_items (status, remind, at)`,
 		// The capture key is unique per assistant (setupAssistantRecords).
+		`CREATE TABLE IF NOT EXISTS pa_item_events (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL DEFAULT '',
+			assistant_id TEXT NOT NULL DEFAULT '',
+			item_id TEXT NOT NULL,
+			at TEXT NOT NULL,
+			actor TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			detail_json TEXT NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_pa_item_events_item ON pa_item_events (assistant_id, item_id, at)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite personal agent list: %w", err)
 		}
 	}
-	return nil
+	return s.migratePersonalAgentItems(ctx)
 }
 
-const itemColumns = `id, user_id, assistant_id, text, when_text, at, remind, status, quote, task_id, source_session_id, created_at, updated_at, closed_at, reminded_at, revision,source_input_id,capture_key,capture_hash,plan_json,source_inbox_id,intent_revision`
+// migratePersonalAgentItems adds the 「事项」 columns to pa_items and item_id to
+// pa_tasks, and backfills them from the old single task link. A column is
+// backfilled only by the start that adds it, so a later start never undoes
+// what the person or the assistant changed since. The steps share one
+// transaction: a column is never left added without its backfill.
+func (s *Store) migratePersonalAgentItems(ctx context.Context) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		added, err := tx.addColumnIfMissing(ctx, "pa_items", "owner", `TEXT NOT NULL DEFAULT 'person'`)
+		if err != nil {
+			return err
+		}
+		if added {
+			if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_items SET owner = 'assistant' WHERE task_id <> ''`); err != nil {
+				return fmt.Errorf("migrate sqlite personal agent items: backfill owner: %w", err)
+			}
+		}
+		for _, column := range []struct{ name, definition string }{
+			{"summary", `TEXT NOT NULL DEFAULT ''`},
+			{"origin_json", `TEXT NOT NULL DEFAULT ''`},
+			{"archived_at", `TEXT NOT NULL DEFAULT ''`},
+		} {
+			if _, err := tx.addColumnIfMissing(ctx, "pa_items", column.name, column.definition); err != nil {
+				return err
+			}
+		}
+		added, err = tx.addColumnIfMissing(ctx, "pa_tasks", "item_id", `TEXT NOT NULL DEFAULT ''`)
+		if err != nil {
+			return err
+		}
+		if added {
+			if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_tasks SET item_id = (SELECT pa_items.id FROM pa_items WHERE pa_items.task_id = pa_tasks.id ORDER BY pa_items.rowid LIMIT 1)
+				WHERE EXISTS (SELECT 1 FROM pa_items WHERE pa_items.task_id = pa_tasks.id)`); err != nil {
+				return fmt.Errorf("migrate sqlite personal agent items: backfill task items: %w", err)
+			}
+		}
+		if _, err := tx.conn().ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_pa_tasks_item ON pa_tasks (assistant_id, item_id)`); err != nil {
+			return fmt.Errorf("migrate sqlite personal agent items: %w", err)
+		}
+		return nil
+	})
+}
+
+// addColumnIfMissing adds a column the table lacks and reports whether it did.
+func (s *Store) addColumnIfMissing(ctx context.Context, table, column, definition string) (bool, error) {
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&present); err != nil {
+		return false, fmt.Errorf("migrate sqlite personal agent items: check %s.%s: %w", table, column, err)
+	}
+	if present > 0 {
+		return false, nil
+	}
+	if _, err := s.conn().ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition)); err != nil {
+		return false, fmt.Errorf("migrate sqlite personal agent items: add %s.%s: %w", table, column, err)
+	}
+	return true, nil
+}
+
+const itemColumns = `id, user_id, assistant_id, text, when_text, at, remind, status, quote, source_session_id, created_at, updated_at, closed_at, reminded_at, revision, source_input_id, capture_key, capture_hash, plan_json, source_inbox_id, intent_revision, owner, summary, origin_json, archived_at`
 
 func scanItem(row interface{ Scan(...any) error }) (store.PersonalAgentListItem, error) {
 	var item store.PersonalAgentListItem
-	var plan string
+	var plan, origin string
 	err := row.Scan(&item.ID, &item.UserID, &item.AssistantID, &item.Text, &item.When, &item.At, &item.Remind, &item.Status, &item.Quote,
-		&item.TaskID, &item.SourceSessionID, &item.CreatedAt, &item.UpdatedAt, &item.ClosedAt, &item.RemindedAt,
-		&item.Revision, &item.SourceInputID, &item.CaptureKey, &item.CaptureHash, &plan, &item.SourceInboxID, &item.IntentRevision)
+		&item.SourceSessionID, &item.CreatedAt, &item.UpdatedAt, &item.ClosedAt, &item.RemindedAt,
+		&item.Revision, &item.SourceInputID, &item.CaptureKey, &item.CaptureHash, &plan, &item.SourceInboxID, &item.IntentRevision,
+		&item.Owner, &item.Summary, &origin, &item.ArchivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, store.ErrNotFound
 	}
-	if err == nil {
-		err = json.Unmarshal([]byte(plan), &item.Plan)
+	if err != nil {
+		return item, err
 	}
-	return item, err
+	if err := json.Unmarshal([]byte(plan), &item.Plan); err != nil {
+		return item, fmt.Errorf("read personal agent item plan: %w", err)
+	}
+	if origin != "" {
+		item.Origin = &store.PersonalAgentItemOrigin{}
+		if err := json.Unmarshal([]byte(origin), item.Origin); err != nil {
+			return item, fmt.Errorf("read personal agent item origin: %w", err)
+		}
+	}
+	return item, nil
 }
 
 func (s *Store) queryItems(ctx context.Context, query string, args ...any) ([]store.PersonalAgentListItem, error) {
@@ -102,7 +183,7 @@ func (s *Store) GetPersonalAgentItem(ctx context.Context, assistantID, id string
 	return scanItem(s.conn().QueryRowContext(ctx, `SELECT `+itemColumns+` FROM pa_items WHERE assistant_id = ? AND id = ?`, assistantID, id))
 }
 
-func (s *Store) AddPersonalAgentItem(ctx context.Context, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
+func (s *Store) AddPersonalAgentItem(ctx context.Context, actor string, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
 	if item.UserID == "" || item.AssistantID == "" || item.Text == "" {
 		return item, errors.New("a list item needs a person and a text")
 	}
@@ -122,43 +203,62 @@ func (s *Store) AddPersonalAgentItem(ctx context.Context, item store.PersonalAge
 			}
 		}
 		var err error
-		saved, err = tx.addPersonalAgentItem(ctx, item)
+		saved, err = tx.addPersonalAgentItem(ctx, actor, item)
 		return err
 	})
 	return saved, err
 }
 
-func (s *Store) addPersonalAgentItem(ctx context.Context, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
+func (s *Store) addPersonalAgentItem(ctx context.Context, actor string, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
+	if err := checkItemFields(actor, item); err != nil {
+		return item, err
+	}
 	now := paNow()
 	item.Revision = 1
 	item.IntentRevision = 1
-	item.ID, item.CreatedAt, item.UpdatedAt, item.RemindedAt = paID("pai"), now, now, ""
+	item.ID, item.CreatedAt, item.UpdatedAt, item.RemindedAt, item.ArchivedAt = paID("pai"), now, now, "", ""
 	if item.Status == "" {
 		item.Status = store.PersonalAgentItemOpen
 	}
 	if item.Status != store.PersonalAgentItemOpen && item.ClosedAt == "" {
 		item.ClosedAt = now
 	}
+	if item.Owner == "" {
+		item.Owner = store.PersonalAgentItemOwnerPerson
+	}
 	plan, err := json.Marshal(item.Plan)
 	if err != nil {
 		return item, err
 	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_items (`+itemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)`,
-		item.ID, item.UserID, item.AssistantID, item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.TaskID,
+	origin, err := encodeItemOrigin(item.Origin)
+	if err != nil {
+		return item, err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO pa_items (`+itemColumns+`) VALUES (`+sqlPlaceholders(25)+`)`,
+		item.ID, item.UserID, item.AssistantID, item.Text, item.When, item.At, item.Remind, item.Status, item.Quote,
 		item.SourceSessionID, item.CreatedAt, item.UpdatedAt, item.ClosedAt, item.RemindedAt,
-		item.Revision, item.SourceInputID, item.CaptureKey, item.CaptureHash, string(plan), item.SourceInboxID, item.IntentRevision)
+		item.Revision, item.SourceInputID, item.CaptureKey, item.CaptureHash, string(plan), item.SourceInboxID, item.IntentRevision,
+		item.Owner, item.Summary, origin, item.ArchivedAt)
 	if err != nil {
 		return item, fmt.Errorf("add personal agent item: %w", err)
 	}
 	if err := s.checkItemDependencies(ctx, item); err != nil {
 		return item, err
 	}
+	if err := s.recordItemEvent(ctx, item, now, actor, store.PersonalAgentItemEventCreated, store.PersonalAgentItemEventDetail{}); err != nil {
+		return item, err
+	}
 	return item, nil
 }
 
 // SavePersonalAgentItem stores the item's fields. Closing stamps ClosedAt
-// unless given, reopening clears it; a new At clears RemindedAt.
-func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
+// unless given, reopening clears it and restores an archived item; a new At
+// clears RemindedAt. Owner and origin that are left empty stay as they are,
+// and so does the archive unless reopening clears it.
+func (s *Store) SavePersonalAgentItem(ctx context.Context, actor string, item store.PersonalAgentListItem) (store.PersonalAgentListItem, error) {
+	if err := checkActor(actor); err != nil {
+		return store.PersonalAgentListItem{}, err
+	}
 	var saved store.PersonalAgentListItem
 	err := s.withTx(ctx, func(tx *Store) error {
 		previous, err := tx.GetPersonalAgentItem(ctx, item.AssistantID, item.ID)
@@ -178,6 +278,11 @@ func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAg
 		}
 		item.SourceInputID, item.CaptureKey, item.CaptureHash = previous.SourceInputID, previous.CaptureKey, previous.CaptureHash
 		item.SourceInboxID = previous.SourceInboxID
+		item.Owner = cmp.Or(item.Owner, previous.Owner)
+		item.Origin, item.ArchivedAt = previous.Origin, previous.ArchivedAt
+		if err := checkItemFields(actor, item); err != nil {
+			return err
+		}
 		plan, err := json.Marshal(item.Plan)
 		if err != nil {
 			return err
@@ -186,6 +291,7 @@ func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAg
 		switch {
 		case item.Status == store.PersonalAgentItemOpen:
 			item.ClosedAt = ""
+			item.ArchivedAt = ""
 		case item.Status != previous.Status || item.ClosedAt == "":
 			item.ClosedAt = now
 		}
@@ -195,20 +301,56 @@ func (s *Store) SavePersonalAgentItem(ctx context.Context, item store.PersonalAg
 			item.RemindedAt = previous.RemindedAt
 		}
 		item.CreatedAt, item.UpdatedAt = previous.CreatedAt, now
-		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_items SET text = ?, when_text = ?, at = ?, remind = ?, status = ?, quote = ?,
-			task_id = ?, updated_at = ?, closed_at = ?, reminded_at = ?,revision=?,plan_json=?,intent_revision=? WHERE assistant_id = ? AND id = ?`,
-			item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.TaskID, item.UpdatedAt, item.ClosedAt,
-			item.RemindedAt, item.Revision, string(plan), item.IntentRevision, item.AssistantID, item.ID); err != nil {
-			return fmt.Errorf("save personal agent item: %w", err)
-		}
 		item.SourceSessionID = previous.SourceSessionID
 		if err := tx.checkItemDependencies(ctx, item); err != nil {
+			return err
+		}
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_items SET text = ?, when_text = ?, at = ?, remind = ?, status = ?, quote = ?,
+			updated_at = ?, closed_at = ?, reminded_at = ?, revision = ?, plan_json = ?, intent_revision = ?, owner = ?, summary = ?, archived_at = ?
+			WHERE assistant_id = ? AND id = ?`,
+			item.Text, item.When, item.At, item.Remind, item.Status, item.Quote, item.UpdatedAt, item.ClosedAt,
+			item.RemindedAt, item.Revision, string(plan), item.IntentRevision, item.Owner, item.Summary, item.ArchivedAt, item.AssistantID, item.ID); err != nil {
+			return fmt.Errorf("save personal agent item: %w", err)
+		}
+		if err := tx.recordItemChanges(ctx, actor, now, previous, item); err != nil {
 			return err
 		}
 		saved = item
 		return nil
 	})
 	return saved, err
+}
+
+// recordItemChanges writes the timeline events of what a save changed: the
+// words or time, owner, status, summary, and an archive cleared by reopening.
+func (s *Store) recordItemChanges(ctx context.Context, actor, now string, previous, item store.PersonalAgentListItem) error {
+	record := func(kind string, detail store.PersonalAgentItemEventDetail) error {
+		return s.recordItemEvent(ctx, previous, now, actor, kind, detail)
+	}
+	if previous.Text != item.Text || previous.When != item.When || previous.At != item.At {
+		if err := record(store.PersonalAgentItemEventEdited, store.PersonalAgentItemEventDetail{}); err != nil {
+			return err
+		}
+	}
+	if previous.Owner != item.Owner {
+		if err := record(store.PersonalAgentItemEventOwnerChanged, store.PersonalAgentItemEventDetail{From: previous.Owner, To: item.Owner}); err != nil {
+			return err
+		}
+	}
+	if previous.Status != item.Status {
+		if err := record(store.PersonalAgentItemEventStatusChanged, store.PersonalAgentItemEventDetail{From: previous.Status, To: item.Status}); err != nil {
+			return err
+		}
+	}
+	if previous.Summary != item.Summary {
+		if err := record(store.PersonalAgentItemEventSummaryUpdated, store.PersonalAgentItemEventDetail{}); err != nil {
+			return err
+		}
+	}
+	if previous.ArchivedAt != "" && item.ArchivedAt == "" {
+		return record(store.PersonalAgentItemEventRestored, store.PersonalAgentItemEventDetail{})
+	}
+	return nil
 }
 
 // Runs inside the same write transaction as an item change. Two concurrent
@@ -228,9 +370,15 @@ func (s *Store) checkItemDependencies(ctx context.Context, changed store.Persona
 			graph[item.ID] = item.Plan.Dependencies
 		}
 	}
-	return flow.CheckItemDependencies(changed.ID, graph)
+	graph[changed.ID] = changed.Plan.Dependencies
+	if err := flow.CheckItemDependencies(changed.ID, graph); err != nil {
+		return fmt.Errorf("%w: %v", store.ErrPersonalAgentItemInvalid, err)
+	}
+	return nil
 }
 
+// DeletePersonalAgentItem is the person's delete. The item's timeline and its
+// helpers' link go with it; a helper still running keeps its session.
 func (s *Store) DeletePersonalAgentItem(ctx context.Context, assistantID, id string) error {
 	return s.withTx(ctx, func(tx *Store) error {
 		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
@@ -247,10 +395,16 @@ func (s *Store) DeletePersonalAgentItem(ctx context.Context, assistantID, id str
 		if used {
 			return fmt.Errorf("this item is a dependency; remove its links or mark it dropped instead")
 		}
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM pa_item_events WHERE assistant_id=? AND item_id=?`, assistantID, id); err != nil {
+			return fmt.Errorf("delete personal agent item events: %w", err)
+		}
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_tasks SET item_id='' WHERE assistant_id=? AND item_id=?`, assistantID, id); err != nil {
+			return fmt.Errorf("unlink personal agent item helpers: %w", err)
+		}
 		if item.CaptureKey != "" {
 			// Keep only the identity fence. A replay after a person's delete
 			// must not resurrect the original words or launch the work again.
-			_, err = tx.conn().ExecContext(ctx, `UPDATE pa_items SET text='',quote='',when_text='',at='',remind=0,task_id='',plan_json='null',status='dropped',revision=revision+1,closed_at=?,updated_at=? WHERE assistant_id=? AND id=?`, paNow(), paNow(), assistantID, id)
+			_, err = tx.conn().ExecContext(ctx, `UPDATE pa_items SET text='',quote='',when_text='',at='',remind=0,summary='',origin_json='',plan_json='null',status='dropped',revision=revision+1,closed_at=?,updated_at=? WHERE assistant_id=? AND id=?`, paNow(), paNow(), assistantID, id)
 		} else {
 			_, err = tx.conn().ExecContext(ctx, `DELETE FROM pa_items WHERE assistant_id=? AND id=?`, assistantID, id)
 		}
@@ -286,6 +440,55 @@ func (s *Store) ClaimPersonalAgentDigest(ctx context.Context, assistantID, day s
 	}
 	count, _ := result.RowsAffected()
 	return count == 1, nil
+}
+
+// checkItemFields refuses what a write would store that the contract does not allow:
+// an unknown owner or origin kind, a summary over its limit, and an unknown actor.
+func checkItemFields(actor string, item store.PersonalAgentListItem) error {
+	if err := checkActor(actor); err != nil {
+		return err
+	}
+	switch item.Owner {
+	case "", store.PersonalAgentItemOwnerPerson, store.PersonalAgentItemOwnerAssistant:
+	default:
+		return fmt.Errorf("%w: owner %q is neither person nor assistant", store.ErrPersonalAgentItemInvalid, item.Owner)
+	}
+	if utf8.RuneCountInString(item.Summary) > store.PersonalAgentItemSummaryMaxLength {
+		return fmt.Errorf("%w: summary is longer than %d characters", store.ErrPersonalAgentItemInvalid, store.PersonalAgentItemSummaryMaxLength)
+	}
+	if item.Origin != nil {
+		switch item.Origin.Kind {
+		case store.PersonalAgentItemOriginWeb, store.PersonalAgentItemOriginChannel, store.PersonalAgentItemOriginSelfChat:
+		default:
+			return fmt.Errorf("%w: origin kind %q is not web, channel or self_chat", store.ErrPersonalAgentItemInvalid, item.Origin.Kind)
+		}
+	}
+	return nil
+}
+
+// checkActor refuses an actor outside the three that may cause a change.
+func checkActor(actor string) error {
+	switch actor {
+	case store.PersonalAgentActorPerson, store.PersonalAgentActorAssistant, store.PersonalAgentActorFoundry:
+		return nil
+	}
+	return fmt.Errorf("unknown personal agent actor %q", actor)
+}
+
+func encodeItemOrigin(origin *store.PersonalAgentItemOrigin) (string, error) {
+	if origin == nil {
+		return "", nil
+	}
+	raw, err := json.Marshal(origin)
+	if err != nil {
+		return "", fmt.Errorf("encode personal agent item origin: %w", err)
+	}
+	return string(raw), nil
+}
+
+// sqlPlaceholders is "?, ?, …" for n values.
+func sqlPlaceholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // Operational progress and references do not mint a new authorization identity.

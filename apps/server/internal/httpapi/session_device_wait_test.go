@@ -159,7 +159,7 @@ func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	ctx := context.Background()
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	items := f.server.store.(store.PersonalAgentListStore)
-	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "tidy the synthetic photos", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"}})
+	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "tidy the synthetic photos", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"}})
 	if err != nil {
 		t.Fatal(err)
 	}

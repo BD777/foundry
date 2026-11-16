@@ -4,4 +4,5 @@ export {
   AssistantSettings,
   type AssistantSettingsProps,
 } from "./assistant-settings";
+export { AssistantItemsPage, type AssistantItemsPageProps } from "./items-page";
 export type { AssistantFeatureEvent } from "./assistant-events";

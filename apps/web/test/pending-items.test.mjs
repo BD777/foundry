@@ -48,6 +48,7 @@ const {
   pendingForSession,
   pendingFailure,
   pendingHeadline,
+  pendingInboxReason,
   pendingOptionLabel,
   pendingMatchesAssistant,
   pendingOrigin,
@@ -115,6 +116,73 @@ test("items group by chat or Issue, newest first, open apart from resolved", () 
     pendingForSession(items, "sess_1").map((x) => x.id),
     ["a", "c"],
   );
+});
+
+test("upkeep suggestions group under their project or assistant, never as an untitled chat", () => {
+  const upkeep = { sessionId: undefined, sessionTitle: undefined };
+  const items = [
+    item({
+      ...upkeep,
+      id: "pnd_project_a",
+      source: "project_upkeep",
+      workspaceId: "ws_dev148",
+      workspaceName: "dev148-synthetic-workspace",
+      updatedAt: "2026-10-29T08:00:00Z",
+    }),
+    item({
+      ...upkeep,
+      id: "pnd_project_b",
+      source: "project_upkeep",
+      workspaceId: "ws_dev148",
+      workspaceName: "dev148-synthetic-workspace",
+      updatedAt: "2026-10-29T09:00:00Z",
+    }),
+    item({
+      ...upkeep,
+      id: "pnd_memory",
+      source: "memory_upkeep",
+      assistantId: "asst_work",
+      assistantName: "Work assistant",
+      workspaceId: "ws_home",
+      workspaceName: "Home",
+      updatedAt: "2026-10-29T10:00:00Z",
+    }),
+    item({
+      ...upkeep,
+      id: "pnd_nameless",
+      source: "project_upkeep",
+      workspaceId: "ws_gone",
+      workspaceName: undefined,
+      updatedAt: "2026-10-29T07:00:00Z",
+    }),
+  ];
+  const groups = groupPendingItems(
+    items,
+    "open",
+    "Untitled chat",
+    "Your accounts and devices",
+    "Default assistant",
+    "Project",
+  );
+  assert.deepEqual(
+    groups.map((group) => [
+      group.key,
+      group.title,
+      group.workspaceName,
+      group.items.map((x) => x.id),
+    ]),
+    [
+      ["memory:asst_work", "Work assistant", "", ["pnd_memory"]],
+      [
+        "project:ws_dev148",
+        "dev148-synthetic-workspace",
+        "",
+        ["pnd_project_b", "pnd_project_a"],
+      ],
+      ["project:ws_gone", "Project", "", ["pnd_nameless"]],
+    ],
+  );
+  for (const group of groups) assert.notEqual(group.title, "Untitled chat");
 });
 
 test("an item names its assistant, chat or project and filters by that scope", () => {
@@ -908,4 +976,224 @@ test("a missing GitHub scope opens the session device's permission picker with i
   assert.equal(pendingPrimary({ ...gh, deviceId: undefined }), "open");
   assert.equal(pendingPrimary({ ...gh, state: "done" }), "none");
   assert.deepEqual(pendingGitHubScopes({ ...gh, rule: "login" }), []);
+});
+
+test("a project's suggested changes are one item in its own words that opens the project (DEV-256)", async () => {
+  const { host, root } = await render({
+    open: 1,
+    bySession: {},
+    items: [
+      item({
+        id: "pnd_upkeep_budget",
+        source: "project_upkeep",
+        workspaceId: "ws_budget",
+        workspaceName: "Budget",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        key: "upkeep:person:ws_budget",
+        title: "Budget",
+        excerpt: "Split the release notes",
+        count: 2,
+      }),
+    ],
+  });
+  const card = host.querySelector('[data-source="project_upkeep"]');
+  assert.ok(card, "the upkeep item has no card");
+  assert.match(card.textContent, /Budget: 2 suggested changes to confirm/);
+  assert.match(card.textContent, /Review each suggested file change/);
+  assert.equal(card.querySelectorAll("button").length, 1);
+  assert.ok(buttonNamed(host, "Open project"));
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an assistant's memory suggestions are one item that opens its memory upkeep (DEV-256)", async () => {
+  const { host, root } = await render({
+    open: 1,
+    bySession: {},
+    items: [
+      item({
+        id: "pnd_memory_ada",
+        source: "memory_upkeep",
+        workspaceId: "ws_home",
+        workspaceName: "Home",
+        assistantId: "asst_ada",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        key: "memory_upkeep:person:asst_ada",
+        title: "Ada",
+        excerpt: "Merge the two travel notes",
+        count: 3,
+      }),
+    ],
+  });
+  const card = host.querySelector('[data-source="memory_upkeep"]');
+  assert.ok(card, "the memory upkeep item has no card");
+  assert.match(card.textContent, /Ada: 3 memory suggestions to confirm/);
+  assert.match(card.textContent, /Review each memory suggestion/);
+  assert.ok(buttonNamed(host, "Open memory upkeep"));
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+const inboxItem = (fields) =>
+  item({
+    id: "pnd_inbox_1",
+    source: "assistant_inbox",
+    sessionId: undefined,
+    sessionTitle: undefined,
+    assistantId: "asst_1",
+    assistantName: "Ada",
+    key: "inbox:ibx_1",
+    title: "Draft the Q3 notes",
+    excerpt: "Draft the Q3 notes",
+    ...fields,
+  });
+
+test("an unprocessed message groups under its assistant and says why in one line", () => {
+  const t = i18n.getFixedT("en", "pending");
+  const failed = inboxItem({
+    sessionId: "sess_1",
+    failureCategory: "rate_limited",
+    context: "429 too many requests",
+  });
+  const waiting = inboxItem({
+    id: "pnd_inbox_2",
+    key: "inbox:ibx_2",
+    title: "Send the invoice",
+    rule: "device_offline",
+  });
+  const groups = groupPendingItems(
+    [failed, waiting],
+    "open",
+    "Untitled",
+    "Personal",
+    "Default assistant",
+  );
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].title, "Ada");
+  assert.equal(groups[0].items.length, 2);
+  // Its actions are its own: retry, not-process and the attempt.
+  assert.equal(pendingPrimary(failed), "none");
+  assert.equal(
+    pendingInboxReason(failed, t),
+    "too many model requests; try again shortly",
+  );
+  assert.equal(
+    pendingInboxReason(waiting, t),
+    "saved; waiting for the computer",
+  );
+  const now = new Date("2026-11-16T00:00:00Z");
+  assert.equal(
+    pendingInboxReason(
+      inboxItem({
+        failureCategory: "quota_exhausted",
+        failureResetAt: "2026-11-15T00:00:00Z",
+      }),
+      t,
+      now,
+    ),
+    "the model quota should be back; you can retry",
+  );
+});
+
+test("an unprocessed message's item: retry, not-process and the attempt in one row, the error behind Details", async () => {
+  const list = {
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      inboxItem({
+        sessionId: "sess_1",
+        failureCategory: "rate_limited",
+        context: "429 too many requests",
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list);
+  const card = host.querySelector('[data-source="assistant_inbox"]');
+  assert.ok(card, host.innerHTML);
+  assert.match(
+    card.textContent,
+    /“Draft the Q3 notes” · too many model requests; try again shortly/,
+  );
+  assert.ok(buttonNamed(card, "Retry"));
+  assert.ok(buttonNamed(card, "Don't process"));
+  assert.ok(buttonNamed(card, "Open the last attempt"));
+  // The error sits in a disclosure, never among the action buttons.
+  const details = card.querySelector("details");
+  assert.ok(details);
+  assert.equal(details.contains(buttonNamed(card, "Retry")), false);
+  assert.match(details.textContent, /429 too many requests/);
+  await act(async () => buttonNamed(card, "Retry").click());
+  const retried = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_inbox_1/retry"),
+  );
+  assert.ok(retried, JSON.stringify(calls));
+  assert.equal(retried.method, "POST");
+  assert.match(retried.body.requestId, /^[0-9a-f-]{36}$/);
+  await act(async () => buttonNamed(card, "Don't process").click());
+  const dismissed = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_inbox_1/state"),
+  );
+  assert.deepEqual(dismissed.body, { state: "dismissed" });
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an unprocessed message's time is when it was sent, not when its item was recorded", async () => {
+  const list = {
+    open: 1,
+    bySession: {},
+    items: [
+      inboxItem({
+        sessionId: undefined,
+        createdAt: "2026-11-16T09:00:00Z",
+        messageAt: "2026-11-16T08:12:00Z",
+        rule: "device_offline",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  const time = host.querySelector('[data-source="assistant_inbox"] time');
+  assert.ok(time, host.innerHTML);
+  assert.equal(time.getAttribute("datetime"), "2026-11-16T08:12:00Z");
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a refused retry says why in the person's words, never the server's sentence", async () => {
+  const list = {
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      inboxItem({
+        sessionId: "sess_1",
+        failureCategory: "rate_limited",
+        context: "429 too many requests",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (url, init) =>
+    String(url).includes("/api/pending-items/pnd_inbox_1/retry")
+      ? answer(
+          {
+            code: "inbox_retry_not_settled",
+            error: "the last attempt is not confirmed finished yet",
+          },
+          409,
+        )
+      : previous(url, init);
+  const card = host.querySelector('[data-source="assistant_inbox"]');
+  await act(async () => buttonNamed(card, "Retry").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  globalThis.fetch = previous;
+  assert.match(
+    card.textContent,
+    /The last attempt is still finishing on the computer\. Try again in a moment\./,
+  );
+  assert.doesNotMatch(card.textContent, /not confirmed finished yet/);
+  await act(async () => root.unmount());
+  host.remove();
 });

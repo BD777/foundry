@@ -27,6 +27,7 @@ export const shell: Translation<typeof en> = {
     assistants: "助理",
     pending: "等你处理",
     assistantSettings: "助理设置",
+    assistantItems: "事项",
     account: "账户",
     members: "成员",
     assets: "资产",

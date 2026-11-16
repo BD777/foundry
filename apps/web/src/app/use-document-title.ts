@@ -6,6 +6,7 @@ import type { NavView } from "../lib/routes";
 
 const globalViews = new Set<NavView>([
   "assistant",
+  "assistantItems",
   "assistants",
   "assistantSettings",
   "pending",

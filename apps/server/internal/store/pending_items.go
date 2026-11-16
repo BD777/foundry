@@ -27,6 +27,19 @@ const (
 	// PendingSourceMessageChannel: a message channel needs the person
 	// (DEV-203): messages held over its limit, or a gap in its feed.
 	PendingSourceMessageChannel = "message_channel"
+	// PendingSourceAssistantInbox: a message saved for the person's
+	// assistant was not processed (DEV-254): its attempt failed, or it waits
+	// on something only the person can fix (the computer offline, a paused
+	// assistant, an account to check). Its rule is the waiting reason.
+	PendingSourceAssistantInbox = "assistant_inbox"
+	// PendingSourceProjectUpkeep: a project's upkeep holds suggested file
+	// changes the person has not decided (DEV-256). One item per person and
+	// project; applying or dismissing every suggestion closes it.
+	PendingSourceProjectUpkeep = "project_upkeep"
+	// PendingSourceMemoryUpkeep: an assistant's memory reviews hold findings
+	// the person has not dismissed (DEV-256). One item per assistant; its
+	// review ends when the person dismisses it.
+	PendingSourceMemoryUpkeep = "memory_upkeep"
 )
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
@@ -133,6 +146,9 @@ type PendingItem struct {
 	Options        []string `json:"options,omitempty"`
 	Recommendation string   `json:"recommendation,omitempty"`
 	Occurrences    int      `json:"occurrences"`
+	// Count is how many things wait for the person, for an item that counts
+	// them (project upkeep: its undecided suggested changes).
+	Count int `json:"count,omitempty"`
 	// FailureCategory, FailureProvider and FailureAccountID form a
 	// turn_failed item's root-cause key. FailureSessions are every session
 	// whose terminal failure contributed to it, and FailureResetAt is the

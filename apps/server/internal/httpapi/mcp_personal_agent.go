@@ -139,7 +139,7 @@ func (s *Server) readListForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	answer, err := s.assistant.ReadList(ctx, scope, mcpArgString(call.args, "closedSince"))
+	answer, err := s.assistant.ReadList(ctx, scope, call.args)
 	if err != nil {
 		return "", err
 	}

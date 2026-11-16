@@ -7,6 +7,14 @@ import (
 
 var ErrPersonalAgentRevision = errors.New("personal agent record changed; read its current revision")
 
+// ErrInboxRetryNotSettled: a message's last attempt is not confirmed finished
+// on its device, so it cannot be retried yet (DEV-254).
+var ErrInboxRetryNotSettled = errors.New("the last attempt is not confirmed finished yet")
+
+// ErrInboxNotRetryable: a message is no longer in a state a retry starts from
+// (DEV-254).
+var ErrInboxNotRetryable = errors.New("this message cannot be retried in its current state")
+
 // PersonalAgentInboxEntry is an authenticated input received independently of
 // the assistant's device or model. Text and source identity never change.
 // Delivered means its input exists in a session, not that its intent is done.

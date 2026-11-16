@@ -243,17 +243,17 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 			return store.ErrPersonalAgentRevision
 		}
 		if current.Status == "dispatching" || current.Status == "cancelled" || (current.Status == "resolved" && current.ResultStatus != "failed" && current.ResultStatus != "canceled") {
-			return errors.New("this input cannot be retried in its current state")
+			return store.ErrInboxNotRetryable
 		}
 		if current.SessionID != "" {
 			if current.ResultStatus != "failed" && current.ResultStatus != "canceled" {
-				return errors.New("wait for the original input's confirmed failure before retrying")
+				return store.ErrInboxRetryNotSettled
 			}
 			// ResultStatus is the durable result of this exact input, not
 			// the session's newer input, which may already be running.
 
 		} else if recorded, err := tx.WorkRunInputSession(ctx, current.InputID); err == nil && recorded != "" {
-			return errors.New("the previous dispatch has a receipt; reconcile it before retrying")
+			return store.ErrInboxRetryNotSettled
 		} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -263,7 +263,7 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 				return e
 			}
 			if accepted {
-				return errors.New("previous input acceptance needs reconciliation before retry")
+				return store.ErrInboxRetryNotSettled
 			}
 		}
 		next.UserID, next.AssistantID, next.Channel, next.Text, next.Origin, next.RootID = current.UserID, assistantID, current.Channel, current.Text, current.Origin, current.RootID
@@ -271,10 +271,10 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 		if current.SessionID != "" {
 			control, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE assistant_id=? AND input_id=?`, assistantID, current.InputID))
 			if e != nil {
-				return errors.New("the original input needs its exact native end receipt before retrying")
+				return store.ErrInboxRetryNotSettled
 			}
 			if control.DispatchAttempted && control.NativeEndedAt == "" {
-				return errors.New("cancellation or failure is not yet confirmed by the native runtime")
+				return store.ErrInboxRetryNotSettled
 			}
 		}
 		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_inbox SET status='cancelled',revision=revision+1,lease_until='',notify_pending=0,updated_at=? WHERE assistant_id=? AND id=? AND revision=?`, paNow(), assistantID, current.ID, current.Revision); err != nil {

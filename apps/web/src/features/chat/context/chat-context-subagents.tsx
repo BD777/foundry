@@ -17,7 +17,7 @@ import {
   FinishedFold,
   finishedFoldLabel,
   useRevealedRow,
-} from "./chat-context-folds";
+} from "../../../components/finished-fold";
 import type { ChatContextSelection, ChatSubagentItem } from "../chat-types";
 
 function SubagentStatusIcon({

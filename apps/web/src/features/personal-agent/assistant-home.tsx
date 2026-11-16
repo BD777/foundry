@@ -56,22 +56,18 @@ import {
   placeProposals,
   sideSummary,
   visibleTasks,
+  waitingReasonKey,
+  withoutRetiredUpkeepTurns,
 } from "./assistant-model";
 import { AssistantGate } from "./assistant-gate";
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantCreateDialog } from "./assistant-list";
-import { PersonList } from "./person-list";
+import { ItemsCard } from "./items-card";
+import { closedToday } from "./items-model";
 import { ProposalCard } from "./proposal-card";
-import {
-  MaintenanceWaitingSection,
-  NeedsYouSection,
-  UnprocessedSection,
-  waitingReasonKey,
-} from "./assistant-side-card";
+import { NeedsYouSection } from "./assistant-side-card";
 import { ContextCard } from "../../components/ui/context-card";
 import { Dialog } from "../../components/ui/dialog";
-import { personListView } from "./person-list-model";
-import { TaskList } from "./task-list";
 import { useAssistant, type AssistantController } from "./use-assistant";
 import { useAssistantConversation } from "./use-assistant-conversation";
 import { Skeleton } from "../../components/ui/loading";
@@ -124,7 +120,6 @@ export function AssistantHome({
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
-            maintenance={overview.maintenance}
             needsYou={overview.needsYou}
             needsYouTotal={needsYouTotal}
             onEvent={onEvent}
@@ -143,7 +138,6 @@ function AssistantHomeReady({
   devices,
   home,
   homeOnline,
-  maintenance,
   needsYou,
   needsYouTotal,
   onEvent,
@@ -155,7 +149,6 @@ function AssistantHomeReady({
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
-  maintenance: PersonalAgentOverview["maintenance"];
   needsYou: PersonalAgentOverview["needsYou"];
   needsYouTotal: number | undefined;
   onEvent: (event: AssistantFeatureEvent) => void;
@@ -167,9 +160,17 @@ function AssistantHomeReady({
     agent.workspaceId,
     agent.formerWorkspaceIds,
   );
+  // The items a handoff can name: the open ones and those updated today.
+  const knownItems = useMemo(
+    () => [
+      ...(assistant.openItems.value?.items ?? []),
+      ...(assistant.todayItems.value?.items ?? []),
+    ],
+    [assistant.openItems.value, assistant.todayItems.value],
+  );
   // A handoff names a helper the assistant started or messaged: its project
-  // list holds that session's title and status, and its list holds the item
-  // a dispatch works on (DEV-250).
+  // list holds that session's title and status, and the item a dispatch works
+  // on is named by its words (DEV-250).
   const handoffOf = useCallback(
     (handoff: TurnHandoff) => {
       const sessionsById = new Map(
@@ -211,11 +212,10 @@ function AssistantHomeReady({
         },
         workspace: (workspaceId) =>
           workspaces.find((entry) => entry.id === workspaceId)?.name,
-        item: (itemId) =>
-          assistant.listItems.find((item) => item.id === itemId)?.text,
+        item: (itemId) => knownItems.find((item) => item.id === itemId)?.text,
       });
     },
-    [assistant.listItems, conversation.knownSessions, workspaces],
+    [knownItems, conversation.knownSessions, workspaces],
   );
   // The channels this assistant reads: a quiet way into each channel
   // workspace's conversations (DEV-234).
@@ -243,16 +243,6 @@ function AssistantHomeReady({
   const stopped = agent.state === "stopped";
   const name = agent.settings.assistantName.trim() || t("defaultName");
   const canCreate = devices.some((device) => device.owned);
-  const namedTasks = useMemo(
-    () =>
-      assistant.tasks.map((task) => ({
-        ...task,
-        title:
-          assistant.listItems.find((item) => item.taskId === task.id)?.text ??
-          task.title,
-      })),
-    [assistant.tasks, assistant.listItems],
-  );
   const notify = useCallback(
     async (message: string, tone?: ToastTone) => {
       onEvent(
@@ -274,7 +264,6 @@ function AssistantHomeReady({
   useEffect(() => {
     resetAttachments();
   }, [agent.id, resetAttachments]);
-
   async function stopAll(): Promise<void> {
     notice(await assistant.stopAll());
   }
@@ -344,7 +333,8 @@ function AssistantHomeReady({
         (firstAt !== "" && proposal.createdAt >= firstAt),
     );
     const items: ChatMessageItem[] = [];
-    for (const entry of placeProposals(conversation.lines, shown)) {
+    const visibleLines = withoutRetiredUpkeepTurns(conversation.lines);
+    for (const entry of placeProposals(visibleLines, shown)) {
       if ("proposal" in entry) {
         const { proposal } = entry;
         items.push({
@@ -457,69 +447,25 @@ function AssistantHomeReady({
   // there is not.
   const sideSections = (
     <>
-      {maintenance && maintenance.proposals > 0 ? (
-        // The maintenance panel is on the settings' activity section.
-        <MaintenanceWaitingSection
-          onOpen={() => onEvent({ type: "settings.open", section: "activity" })}
-          waiting={maintenance}
-        />
-      ) : null}
-      {needsYou ? (
-        <NeedsYouSection
-          needsYou={needsYou}
-          onOpenAll={() => onEvent({ type: "pending.open" })}
-          total={needsYouTotal}
-        />
-      ) : null}
-      <UnprocessedSection
-        dismissing={Boolean(conversation.dismissingInboxId)}
-        error={conversation.inboxError}
-        failed={conversation.failedInbox}
-        onDismiss={(entry) => void conversation.dismissInbox(entry)}
-        onRetry={(entry) => void conversation.retryInbox(entry)}
-        retrying={Boolean(conversation.retryingInboxId)}
-        waiting={conversation.waitingInbox.filter(
-          (entry) => entry.status === "waiting" && !entry.sessionId,
-        )}
-      />
-      <PersonList
-        assistantId={agent.id}
-        error={assistant.listItemsError}
-        items={assistant.listItems}
-        onDelete={assistant.deleteItem}
-        onEdit={assistant.editItem}
-        onTick={assistant.tickItem}
-        tasks={namedTasks}
-        operations={assistant.operations}
-        workspaces={workspaces}
-        onPlan={assistant.planItem}
-        onRefresh={assistant.reload}
-        onContinue={async (item) => {
-          await send(
-            t("planning.continuePrompt", { id: item.id, text: item.text }),
-            [],
-          );
-        }}
-      />
-      <TaskList
-        error={assistant.listsError}
-        onStop={assistant.stopTask}
+      <NeedsYouSection count={needsYouTotal ?? needsYou?.open ?? 0} />
+      <ItemsCard
+        closed={closedToday(assistant.todayItems.value?.items ?? [])}
+        onOpenAll={() => onEvent({ type: "items.open" })}
+        onOpenItem={(itemId) => onEvent({ type: "items.open", itemId })}
+        onTick={assistant.setItemDone}
+        open={assistant.openItems.value}
+        openError={assistant.openItems.error || assistant.todayItems.error}
         projectName={(id) =>
           workspaces.find((workspace) => workspace.id === id)?.name
         }
-        tasks={namedTasks}
+        tasks={assistant.tasks}
       />
     </>
   );
   const summary = sideSummary({
-    needsYou: needsYou?.open ?? 0,
-    unprocessed:
-      conversation.failedInbox.length +
-      conversation.waitingInbox.filter(
-        (entry) => entry.status === "waiting" && !entry.sessionId,
-      ).length,
-    list: personListView(assistant.listItems).open.length,
-    tasks: visibleTasks(namedTasks).active.length,
+    needsYou: needsYouTotal ?? needsYou?.open ?? 0,
+    list: assistant.openItems.value?.total ?? 0,
+    tasks: visibleTasks(assistant.tasks).active.length,
   });
 
   return (

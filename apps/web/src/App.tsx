@@ -89,6 +89,7 @@ export function App() {
     selectedChatId,
     selectedAssistantId: location.selectedAssistantId,
     selectedIssueId,
+    selectedItemId: location.selectedItemId,
     selectedDeviceId,
     deviceSection: location.deviceSection,
     chatView: location.chatView,

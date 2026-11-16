@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-16.7": "e696ec172492143dd102dd305f4650dca53693db875f7ce8f1907b628e191ffa", // DEV-258: items keep a summary, owner and archive; a helper is tied to its item with itemId; read_list by period
 	"2026-11-16.6": "a6d61c3bda9858a6856648e3c105c1ad98071d06a209114b7608a228250f4ed7", // DEV-251 + DEV-253 merged: a channel's rules stay with the channel and the home names each folder; read a helper's progress; the foundry-orchestration skill says when
 	"2026-11-16.5": "1b71d1d598f8c0bada0e5a26a907f6f036f95252661373d67bf935f5e0e5f8b9", // DEV-240: a person's decision is recorded with needs_you and, in a channel, also said briefly
 	"2026-11-16.4": "21f6214c58c8e218d95451636958e8112530ecd44776c305bd02e709755c526f", // DEV-240: assistant-handoff keeps only the list, needs_you, permissions and channels; orchestration guidance lives in the foundry skill

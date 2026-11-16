@@ -9,7 +9,7 @@ import (
 
 func TestPersonalAgentOperationFences(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Prepare a comparison", Plan: &store.PersonalAgentItemPlan{Mode: "record", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Prepare a comparison", Plan: &store.PersonalAgentItemPlan{Mode: "record", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func TestPersonalAgentOperationFences(t *testing.T) {
 		t.Fatal("record-only item dispatched")
 	}
 	item.Plan.Mode = "execute"
-	item, err = db.SavePersonalAgentItem(ctx, item)
+	item, err = db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestPersonalAgentOperationFences(t *testing.T) {
 		t.Fatal("competing step accepted")
 	}
 	item.Plan.Progress = "working"
-	item, err = db.SavePersonalAgentItem(ctx, item)
+	item, err = db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
 	if err != nil || item.IntentRevision != op.IntentRevision {
 		t.Fatalf("progress minted intent: %+v %v", item, err)
 	}
@@ -87,11 +87,11 @@ func TestPersonalAgentOperationFences(t *testing.T) {
 }
 func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	dependency, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Approve inputs"})
+	dependency, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Approve inputs"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Use inputs", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws", Dependencies: []string{dependency.ID}}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Use inputs", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws", Dependencies: []string{dependency.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +104,11 @@ func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 		t.Fatal("unfinished dependency dispatched")
 	}
 	dependency.Status = "done"
-	if _, err = db.SavePersonalAgentItem(ctx, dependency); err != nil {
+	if _, err = db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, dependency); err != nil {
 		t.Fatal(err)
 	}
 	item.Text = "Changed instruction"
-	if _, err = db.SavePersonalAgentItem(ctx, item); err != nil {
+	if _, err = db.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.SavePersonalAgentOperation(ctx, op); !errors.Is(err, store.ErrPersonalAgentRevision) {
@@ -118,7 +118,7 @@ func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 
 func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testin
 	op.ID = "other-pending-op"
 	op.StepKey = "later"
 	op.ItemID = ""
-	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Other synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Other synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
 	if err != nil {
 		t.Fatal(err)
 	}

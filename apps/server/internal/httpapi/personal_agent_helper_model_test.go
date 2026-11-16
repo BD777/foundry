@@ -242,7 +242,7 @@ func TestDispatchItemRejectsExecutionChoiceOutsideTheList(t *testing.T) {
 	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{
+	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
 		UserID: f.aliceID, AssistantID: agent.ID, Text: "Reject an unlisted helper model",
 		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
 	})

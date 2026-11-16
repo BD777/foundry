@@ -266,7 +266,6 @@ globalThis.fetch = async (input, init = {}) => {
     case "GET /api/personal-agent/knowledge/migrations":
     case "GET /api/personal-agent/knowledge/replica-cleanup":
     case "GET /api/personal-agent/operations":
-    case "GET /api/personal-agent/context-patches":
     case "GET /api/personal-agent/runs":
     case "GET /api/personal-agent/run-controls":
     case "GET /api/personal-agent/knowledge/mutations":
@@ -275,7 +274,9 @@ globalThis.fetch = async (input, init = {}) => {
       return json([]);
     case "GET /api/personal-agent/maintenance":
       return json(maintenanceJobs);
-    case "POST /api/personal-agent/maintenance/job_patch/patch":
+    case "GET /api/workspaces/ws_project/upkeep":
+      return json({ jobs: maintenanceJobs, patches: [] });
+    case "POST /api/workspaces/ws_project/upkeep/job_patch/patch":
       return json(maintenancePreviewReplies[body.index]);
     case "GET /api/personal-agent/memory/sorting":
       return json({ moves: [], suggestions: [] });
@@ -330,8 +331,8 @@ globalThis.fetch = async (input, init = {}) => {
       return json([proposal]);
     case "GET /api/personal-agent/tasks":
       return json(tasks);
-    case "GET /api/personal-agent/list":
-      return json([]);
+    case "GET /api/personal-agent/items":
+      return json({ items: [], total: 0, offset: 0 });
     case "POST /api/personal-agent/proposals/prop_1/accept":
       return json({ ...proposal, status: "accepted" });
     case "POST /api/personal-agent/stop":
@@ -410,8 +411,8 @@ const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
 const { AssistantHome, AssistantSettings } =
   await import("../src/features/personal-agent/index.ts");
-const { MaintenanceSection } =
-  await import("../src/features/personal-agent/settings-maintenance.tsx");
+const { WorkspaceUpkeep } =
+  await import("../src/features/workspaces/workspace-upkeep.tsx");
 const model = await import("../src/features/personal-agent/assistant-model.ts");
 const { ProposalCard } =
   await import("../src/features/personal-agent/proposal-card.tsx");
@@ -777,15 +778,23 @@ test("home: plain words, proposal cards, what it's doing, stop before the model"
   assert.match(text, /Build the family budget page/);
   assert.match(text, /In “Family budget”/);
   assert.doesNotMatch(text, /\b(workspace|device|session)s?\b/i);
-  // The person's list is read beside it: open items and what closed today.
-  assert.match(text, /Your list/);
-  const listRead = calls.find(
-    (call) => call.path === "/api/personal-agent/list",
+  // The person's 「事项」 is read beside it: the open ones, and those that
+  // finished since the start of today.
+  assert.match(text, /Items/);
+  const openRead = calls.find(
+    (call) =>
+      call.path === "/api/personal-agent/items" &&
+      new URLSearchParams(call.search).get("view") === "open",
   );
-  assert.ok(listRead, JSON.stringify(calls));
+  assert.ok(openRead, JSON.stringify(calls));
+  const todayRead = calls.find(
+    (call) =>
+      call.path === "/api/personal-agent/items" &&
+      new URLSearchParams(call.search).get("view") === "finished",
+  );
   assert.ok(
     Number.isFinite(
-      Date.parse(new URLSearchParams(listRead.search).get("closedSince")),
+      Date.parse(new URLSearchParams(todayRead.search).get("from")),
     ),
   );
   // Reading the assistant never asks for, or changes, the shown project.
@@ -1468,117 +1477,6 @@ test("memory location is independent from the assistant home and survives an off
   }
 });
 
-test("item plan preserves routing, dependencies and an unknown execution without claiming completion", async () => {
-  const { PersonList } =
-    await import("../src/features/personal-agent/person-list.tsx");
-  const next = [];
-  const item = {
-    id: "item-plan",
-    text: "Compare synthetic options",
-    status: "open",
-    createdAt: iso(-minute),
-    updatedAt: iso(0),
-    revision: 3,
-    intentRevision: 2,
-    remind: false,
-    plan: {
-      mode: "execute",
-      progress: "waiting",
-      workspaceId: "ws_trip",
-      nextAction: "Review the existing comparison",
-      waitingFor: "Owner receipt",
-      route: {
-        kind: "continue",
-        reason: "The previous owner already has the sources",
-        needsClarification: false,
-      },
-      dependencies: ["before"],
-      workRefs: [
-        {
-          kind: "session",
-          id: "sess_synthetic",
-          workspaceId: "ws_trip",
-          relation: "executing",
-        },
-      ],
-    },
-  };
-  const page = await render(PersonList, {
-    items: [
-      item,
-      {
-        id: "before",
-        text: "Agree on criteria",
-        status: "open",
-        remind: false,
-        createdAt: iso(-minute),
-        updatedAt: iso(0),
-      },
-    ],
-    tasks: [],
-    error: "",
-    operations: [
-      {
-        id: "op-synthetic",
-        itemId: item.id,
-        status: "unknown",
-        createdAt: iso(0),
-        workspaceId: "ws_trip",
-        sessionId: "sess_synthetic",
-      },
-    ],
-    workspaces: [{ id: "ws_trip", name: "Comparison" }],
-    onTick: async () => {},
-    onEdit: async () => {},
-    onDelete: async () => {},
-    onContinue: async (row) => next.push(row.id),
-  });
-  assert.match(
-    page.container.textContent,
-    /previous owner already has the sources/,
-  );
-  assert.match(page.container.textContent, /Waiting on: Agree on criteria/);
-  assert.match(page.container.textContent, /Outcome unknown/);
-  assert.match(
-    page.container.textContent,
-    /Reconcile its existing conversation/,
-  );
-  assert.equal(
-    page.container.querySelector('input[type="checkbox"]').checked,
-    false,
-  );
-  // Asking the assistant to continue sits in the row's menu, not on a line.
-  assert.equal(
-    [...page.container.querySelectorAll("button")].some(
-      (node) => node.textContent.trim() === "Ask assistant to continue",
-    ),
-    false,
-  );
-  const trigger = [...page.container.querySelectorAll("button")].find((node) =>
-    (node.getAttribute("aria-label") ?? "").includes(item.text),
-  );
-  await act(async () => {
-    trigger.dispatchEvent(
-      new window.PointerEvent("pointerdown", {
-        bubbles: true,
-        button: 0,
-        pointerType: "mouse",
-      }),
-    );
-    trigger.click();
-  });
-  const entry = [...document.querySelectorAll('[role="menuitem"]')].find(
-    (node) => node.textContent.trim() === "Ask assistant to continue",
-  );
-  assert.ok(entry);
-  await act(async () => {
-    entry.click();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  assert.deepEqual(next, [item.id]);
-  await page.unmount();
-});
-
 test("assistant conversation never attributes a helper handoff to the person", () => {
   const at = iso(0);
   const input = {
@@ -1612,49 +1510,6 @@ test("assistant conversation never attributes a helper handoff to the person", (
       false,
     );
   }
-});
-
-test("a completed item keeps evidence in compact details and does not ask for verification again", async () => {
-  const { ItemPlan } =
-    await import("../src/features/personal-agent/person-list-plan.tsx");
-  const item = {
-    id: "done-item",
-    status: "done",
-    plan: {
-      mode: "execute",
-      progress: "review",
-      evidence: [
-        {
-          kind: "file",
-          ref: "result.md",
-          summary: "verified synthetic result",
-        },
-      ],
-    },
-  };
-  const page = await render(ItemPlan, {
-    item,
-    items: [item],
-    workspaces: [],
-    operations: [
-      {
-        id: "done-op",
-        itemId: item.id,
-        status: "review",
-        reason: "execution_completed_requires_evidence",
-        createdAt: iso(0),
-      },
-    ],
-  });
-  const details = page.container.querySelector("[data-plan-details]");
-  assert.equal(details.hidden, true);
-  assert.match(page.container.textContent, /Result available/);
-  assert.doesNotMatch(
-    page.container.textContent,
-    /still needs verification|Review result/,
-  );
-  assert.match(details.textContent, /verified synthetic result/);
-  await page.unmount();
 });
 
 test("the flows' topology draws as a Mermaid flowchart: flows are boxes, events dashed, links labelled", async () => {
@@ -1899,34 +1754,6 @@ test("each of the assistant's flows chooses its model, with its trigger and the 
   await page.unmount();
 });
 
-test("checking an item complete does not present its unsettled execution as stopped", async () => {
-  const { ItemPlan } =
-    await import("../src/features/personal-agent/person-list-plan.tsx");
-  const item = {
-    id: "manual-done",
-    status: "done",
-    plan: { mode: "execute", progress: "working" },
-  };
-  const page = await render(ItemPlan, {
-    item,
-    items: [item],
-    workspaces: [],
-    operations: [
-      {
-        id: "running-op",
-        itemId: item.id,
-        status: "delivered",
-        createdAt: iso(0),
-      },
-    ],
-  });
-  assert.match(
-    page.container.querySelector('[role="status"]').textContent,
-    /may still be running/,
-  );
-  await page.unmount();
-});
-
 test("role settings load the person's account catalog independently of the active workspace", async () => {
   overview = {
     agent: {
@@ -1956,48 +1783,6 @@ test("role settings load the person's account catalog independently of the activ
   assert.doesNotMatch(page.container.textContent, /Unavailable: prof_claude/);
   await page.unmount();
   overview = { agent, homeDeviceOnline: true };
-});
-
-test("completion evidence opens its owner workspace instead of the workspace currently in the sidebar", async () => {
-  const { ItemPlan } =
-    await import("../src/features/personal-agent/person-list-plan.tsx");
-  const oldURL = window.location.href;
-  const item = {
-    id: "cross-domain-evidence",
-    status: "done",
-    plan: {
-      workspaceId: "ws_domain",
-      workRefs: [
-        {
-          kind: "session",
-          id: "sess_owner",
-          workspaceId: "ws_owner",
-          relation: "executing",
-        },
-      ],
-      evidence: [
-        {
-          kind: "session",
-          ref: "sess_owner#completed-input",
-          summary: "verified result",
-        },
-      ],
-    },
-  };
-  const page = await render(ItemPlan, {
-    item,
-    items: [item],
-    operations: [],
-    workspaces: [],
-  });
-  await act(async () => button(page.container, "Open evidence").click());
-  assert.equal(window.location.pathname, "/chats/sess_owner");
-  assert.equal(
-    new URL(window.location.href).searchParams.get("workspace"),
-    "ws_owner",
-  );
-  await page.unmount();
-  window.history.replaceState(null, "", oldURL);
 });
 
 test("maintenance preview distinguishes new files from modified files", async () => {
@@ -2050,9 +1835,8 @@ test("maintenance preview distinguishes new files from modified files", async ()
       state: "read",
     },
   };
-  const page = await render(MaintenanceSection, {
-    workspaces: [],
-    assistantId: undefined,
+  const page = await render(WorkspaceUpkeep, {
+    workspace: { id: "ws_project", name: "Project", accessRole: "owner" },
   });
   try {
     const reviews = [...page.container.querySelectorAll("button")].filter(
@@ -2070,4 +1854,221 @@ test("maintenance preview distinguishes new files from modified files", async ()
     maintenancePreviewReplies = {};
     await page.unmount();
   }
+});
+
+test("a completed item keeps evidence in compact details and does not ask for verification again", async () => {
+  const { ItemPlan } =
+    await import("../src/features/personal-agent/person-list-plan.tsx");
+  const item = {
+    id: "done-item",
+    status: "done",
+    plan: {
+      mode: "execute",
+      progress: "review",
+      evidence: [
+        {
+          kind: "file",
+          ref: "result.md",
+          summary: "verified synthetic result",
+        },
+      ],
+    },
+  };
+  const page = await render(ItemPlan, {
+    item,
+    items: [item],
+    workspaces: [],
+    operations: [
+      {
+        id: "done-op",
+        itemId: item.id,
+        status: "review",
+        reason: "execution_completed_requires_evidence",
+        createdAt: iso(0),
+      },
+    ],
+  });
+  const details = page.container.querySelector("[data-plan-details]");
+  assert.equal(details.hidden, true);
+  assert.match(page.container.textContent, /Result available/);
+  assert.doesNotMatch(
+    page.container.textContent,
+    /still needs verification|Review result/,
+  );
+  assert.match(details.textContent, /verified synthetic result/);
+  await page.unmount();
+});
+
+test("checking an item complete does not present its unsettled execution as stopped", async () => {
+  const { ItemPlan } =
+    await import("../src/features/personal-agent/person-list-plan.tsx");
+  const item = {
+    id: "manual-done",
+    status: "done",
+    plan: { mode: "execute", progress: "working" },
+  };
+  const page = await render(ItemPlan, {
+    item,
+    items: [item],
+    workspaces: [],
+    operations: [
+      {
+        id: "running-op",
+        itemId: item.id,
+        status: "delivered",
+        createdAt: iso(0),
+      },
+    ],
+  });
+  assert.match(
+    page.container.querySelector('[role="status"]').textContent,
+    /may still be running/,
+  );
+  await page.unmount();
+});
+
+test("completion evidence opens its owner workspace instead of the workspace currently in the sidebar", async () => {
+  const { ItemPlan } =
+    await import("../src/features/personal-agent/person-list-plan.tsx");
+  const oldURL = window.location.href;
+  const item = {
+    id: "cross-domain-evidence",
+    status: "done",
+    plan: {
+      workspaceId: "ws_domain",
+      workRefs: [
+        {
+          kind: "session",
+          id: "sess_owner",
+          workspaceId: "ws_owner",
+          relation: "executing",
+        },
+      ],
+      evidence: [
+        {
+          kind: "session",
+          ref: "sess_owner#completed-input",
+          summary: "verified result",
+        },
+      ],
+    },
+  };
+  const page = await render(ItemPlan, {
+    item,
+    items: [item],
+    operations: [],
+    workspaces: [],
+  });
+  await act(async () => button(page.container, "Open evidence").click());
+  assert.equal(window.location.pathname, "/chats/sess_owner");
+  assert.equal(
+    new URL(window.location.href).searchParams.get("workspace"),
+    "ws_owner",
+  );
+  await page.unmount();
+  window.history.replaceState(null, "", oldURL);
+});
+
+test("item plan preserves routing, dependencies and an unknown execution without claiming completion", async () => {
+  const { ItemDetail } =
+    await import("../src/features/personal-agent/items-detail.tsx");
+  const item = {
+    id: "item-plan",
+    text: "Compare synthetic options",
+    status: "open",
+    owner: "assistant",
+    createdAt: iso(-minute),
+    updatedAt: iso(0),
+    revision: 3,
+    intentRevision: 2,
+    remind: false,
+    helpers: [],
+    plan: {
+      mode: "execute",
+      progress: "waiting",
+      workspaceId: "ws_trip",
+      nextAction: "Review the existing comparison",
+      waitingFor: "Owner receipt",
+      route: {
+        kind: "continue",
+        reason: "The previous owner already has the sources",
+        needsClarification: false,
+      },
+      dependencies: ["before"],
+      workRefs: [
+        {
+          kind: "session",
+          id: "sess_synthetic",
+          workspaceId: "ws_trip",
+          relation: "executing",
+        },
+      ],
+    },
+  };
+  const before = {
+    id: "before",
+    text: "Agree on criteria",
+    status: "open",
+    owner: "person",
+    remind: false,
+    createdAt: iso(-minute),
+    updatedAt: iso(0),
+    helpers: [],
+  };
+  const page = await render(ItemDetail, {
+    assistantId: undefined,
+    detail: { item, events: [] },
+    error: "",
+    items: [before],
+    operations: [
+      {
+        id: "op-synthetic",
+        itemId: item.id,
+        status: "unknown",
+        createdAt: iso(0),
+        workspaceId: "ws_trip",
+        sessionId: "sess_synthetic",
+      },
+    ],
+    workspaces: [{ id: "ws_trip", name: "Comparison" }],
+    onBack: () => {},
+    onOpenAssistant: () => {},
+    onChanged: async () => {},
+    onDeleted: () => {},
+  });
+  assert.match(
+    page.container.textContent,
+    /previous owner already has the sources/,
+  );
+  assert.match(page.container.textContent, /Waiting on: Agree on criteria/);
+  assert.match(page.container.textContent, /Outcome unknown/);
+  assert.match(
+    page.container.textContent,
+    /Reconcile its existing conversation/,
+  );
+  // Asking the assistant to continue sits in the item's menu, not on a line.
+  assert.equal(
+    [...page.container.querySelectorAll("button")].some(
+      (node) => node.textContent.trim() === "Ask the assistant to continue",
+    ),
+    false,
+  );
+  const trigger = [...page.container.querySelectorAll("button")].find((node) =>
+    (node.getAttribute("aria-label") ?? "").includes(item.text),
+  );
+  await act(async () => {
+    trigger.dispatchEvent(
+      new window.PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerType: "mouse",
+      }),
+    );
+    trigger.click();
+  });
+  const entry = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (node) => node.textContent.trim() === "Ask the assistant to continue",
+  );
+  assert.ok(entry);
+  await page.unmount();
 });

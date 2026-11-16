@@ -185,20 +185,21 @@ func fillHelperRun(input *store.CreateAgentSessionInput, snapshot store.Personal
 	}
 }
 
-// RecordTask follows up a session the assistant started (§6).
-func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession) {
+// RecordTask follows up a session the assistant started (§6). itemID is the
+// item of the person's list it works on, "" for none (create_session itemId).
+func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string) {
 	if session.ID == "" {
 		return
 	}
 	task := store.PersonalAgentTask{
 		UserID: agent.UserID, AssistantID: agent.ID, ConversationSessionID: conversationID, SessionID: session.ID,
 		WorkspaceID: session.WorkspaceID, Title: session.Title, Status: taskStatusOf(session.Status),
-		ReadOnly: session.Source == store.SessionSourceVerification,
+		ReadOnly: session.Source == store.SessionSourceVerification, ItemID: itemID,
 	}
 	if task.Status != store.PersonalAgentTaskRunning {
 		task.EndedAt = sessionEndedAt(session)
 	}
-	if _, err := s.store.CreatePersonalAgentTask(ctx, task); err != nil {
+	if _, err := s.store.CreatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task); err != nil {
 		log.Printf("personal agent %s: record task for %s: %v", agent.UserID, session.ID, err)
 	}
 }
@@ -270,7 +271,7 @@ func (s *Service) RefreshTasks(ctx context.Context, agent store.PersonalAgent) {
 		}
 		ended := sessionEndedAt(session)
 		task.Status, task.EndedAt, task.LastEventAt = status, ended, ended
-		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
 			log.Printf("personal agent %s: update task %s: %v", userID, task.ID, err)
 		}
 	}
@@ -404,11 +405,11 @@ func (s *Service) DecideProposal(ctx context.Context, agent store.PersonalAgent,
 	s.channel.PersonalAgentProposalChanged(proposal)
 	say := s.proposalNoticeSayer(ctx, agent)
 	if !accept {
-		s.tell(ctx, proposal.SessionID, say("declined", proposal.Summary))
+		s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("declined", proposal.Summary))
 		return proposal, nil
 	}
 	if proposal.Kind == store.PersonalAgentProposalConnectorWrite {
-		s.tell(ctx, proposal.SessionID, say("connectorApproved", proposal.Summary))
+		s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorApproved", proposal.Summary))
 		return proposal, nil
 	}
 	result, applyErr := s.applyProposal(ctx, proposal)
@@ -428,10 +429,10 @@ func (s *Service) DecideProposal(ctx context.Context, agent store.PersonalAgent,
 	}
 	s.channel.PersonalAgentProposalChanged(proposal)
 	if applyErr != nil {
-		s.tell(ctx, proposal.SessionID, say("failed", proposal.Summary, errText))
+		s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("failed", proposal.Summary, errText))
 	} else {
 		answer, _ := encodeJSON(result)
-		s.tell(ctx, proposal.SessionID, say("applied", proposal.Summary, answer))
+		s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("applied", proposal.Summary, answer))
 	}
 	return proposal, nil
 }
@@ -492,15 +493,16 @@ func (s *Service) ExpireProposals(ctx context.Context, agent store.PersonalAgent
 }
 
 // tell sends the assistant session a server notice as its next input:
-// steered into a running turn, else a new turn. It reports whether the
-// session accepted it; an offline queue refusal is not accepted.
-func (s *Service) tell(ctx context.Context, sessionID, text string) bool {
+// steered into a running turn, else a new turn. noticeKind names which
+// notice it is (store.NoticeKind*). It reports whether the session accepted
+// it; an offline queue refusal is not accepted.
+func (s *Service) tell(ctx context.Context, sessionID, noticeKind, text string) bool {
 	if sessionID == "" {
 		return false
 	}
 	input := store.SendAgentSessionInput{
 		Prompt:      personalagent.Notice(text),
-		InputSource: &store.AgentSessionInputSource{Kind: "foundry_notice"},
+		InputSource: &store.AgentSessionInputSource{Kind: "foundry_notice", NoticeKind: noticeKind},
 	}
 	if _, err := s.sessions.Send(ctx, sessionID, input, nil); err != nil {
 		log.Printf("tell assistant session %s: %v", sessionID, err)
@@ -735,35 +737,9 @@ func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (st
 	for _, item := range persons[:shown] {
 		needsYou.Items = append(needsYou.Items, s.needsYouRow(ctx, item))
 	}
-	maintenance, err := s.maintenanceWaiting(ctx, agent)
-	if err != nil {
-		return store.PersonalAgentOverview{}, err
-	}
 	return store.PersonalAgentOverview{
 		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage, NeedsYou: needsYou,
-		Maintenance: maintenance,
 	}, nil
-}
-
-// maintenanceWaiting counts the suggested changes one assistant's upkeep
-// holds for the person: a quiet fact for its home's side card (DEV-252).
-func (s *Service) maintenanceWaiting(ctx context.Context, agent store.PersonalAgent) (*store.PersonalAgentMaintenanceWaiting, error) {
-	jobs, err := s.store.ListPersonalAgentMaintenance(ctx, agent.ID)
-	if err != nil {
-		return nil, err
-	}
-	waiting := &store.PersonalAgentMaintenanceWaiting{}
-	for _, job := range jobs {
-		if job.Status != "review" || job.Result == nil || len(job.Result.Patches) == 0 {
-			continue
-		}
-		waiting.Proposals += len(job.Result.Patches)
-		waiting.Projects++
-	}
-	if waiting.Proposals == 0 {
-		return nil, nil
-	}
-	return waiting, nil
 }
 
 // SaveSettings checks and stores what the panel saved.

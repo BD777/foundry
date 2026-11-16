@@ -94,6 +94,20 @@ func (input SendAgentSessionInput) InputSourceOf() *AgentSessionInputSource {
 	})
 }
 
+// The notices Foundry sends an assistant session (AgentSessionInputSource's
+// noticeKind, DEV-260). UpkeepNoticeKind is retired (DEV-252); the DEV-260
+// migration marks the turns it sent.
+const (
+	NoticeKindReminder        = "reminder"
+	NoticeKindDigest          = "digest"
+	NoticeKindProposalOutcome = "proposal_outcome"
+	NoticeKindHelperQuestion  = "helper_question"
+	NoticeKindDeviceBack      = "device_back"
+	NoticeKindOperation       = "operation"
+	NoticeKindSupervision     = "supervision"
+	NoticeKindUpkeep          = "upkeep"
+)
+
 // SessionInputSourceOf is a stored input's structured source (DEV-246): what
 // the server set, else the kind its own fields already determine.
 func SessionInputSourceOf(input SessionInput) *AgentSessionInputSource {
@@ -189,6 +203,9 @@ type CreateAgentSessionInput struct {
 	// ReportBack false keeps an agent's child from reporting its ended
 	// turns to its parent's inbox; unset reports them (DEV-090).
 	ReportBack *bool `json:"reportBack,omitempty"`
+	// AssistantItemID is the item of the person's list the helper the
+	// assistant starts works on (create_session itemId); set by the server.
+	AssistantItemID string `json:"-"`
 	// FeishuRouteID is the Feishu chat route a topic's session starts
 	// from: its chat's and bot's default agents apply.
 	FeishuRouteID string `json:"-"`

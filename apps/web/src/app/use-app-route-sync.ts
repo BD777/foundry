@@ -25,6 +25,7 @@ export interface UseAppRouteSyncInput {
   selectedChatId: string;
   selectedAssistantId?: string;
   selectedIssueId: string;
+  selectedItemId: string;
   selectedDeviceId?: string;
   deviceSection?: AppRoute["deviceSection"];
 }
@@ -50,6 +51,7 @@ export function useAppRouteSync({
   selectedAssistantId,
   chatView,
   selectedIssueId,
+  selectedItemId,
   selectedDeviceId,
   deviceSection,
 }: UseAppRouteSyncInput): AppRouteSelection {
@@ -106,26 +108,31 @@ export function useAppRouteSync({
           }
         : activeView === "issue"
           ? { view: "issue", selectedIssueId: selectedIssueId || undefined }
-          : activeView === "devices"
-            ? { view: "devices", selectedDeviceId, deviceSection }
-            : activeView === "locations"
-              ? { view: "locations", selectedDeviceId }
-              : activeView === "connectors"
-                ? { view: "connectors", connectorTab }
-                : activeView === "profiles"
-                  ? { view: "profiles", providerTab }
-                  : activeView === "assistantSettings"
-                    ? {
-                        view: "assistantSettings",
-                        assistantId: selectedAssistantId,
-                        assistantSection,
-                      }
-                    : activeView === "assistant"
+          : activeView === "assistantItems"
+            ? {
+                view: "assistantItems",
+                selectedItemId: selectedItemId || undefined,
+              }
+            : activeView === "devices"
+              ? { view: "devices", selectedDeviceId, deviceSection }
+              : activeView === "locations"
+                ? { view: "locations", selectedDeviceId }
+                : activeView === "connectors"
+                  ? { view: "connectors", connectorTab }
+                  : activeView === "profiles"
+                    ? { view: "profiles", providerTab }
+                    : activeView === "assistantSettings"
                       ? {
-                          view: "assistant",
+                          view: "assistantSettings",
                           assistantId: selectedAssistantId,
+                          assistantSection,
                         }
-                      : { view: activeView };
+                      : activeView === "assistant"
+                        ? {
+                            view: "assistant",
+                            assistantId: selectedAssistantId,
+                          }
+                        : { view: activeView };
     const nextPath = pathForAppRoute(nextRoute);
     const nextUrl = `${nextPath}${searchWithWorkspace(activeWorkspaceId)}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -146,6 +153,7 @@ export function useAppRouteSync({
     selectedAssistantId,
     chatView,
     selectedIssueId,
+    selectedItemId,
     selectedDeviceId,
     deviceSection,
     connectorTab,

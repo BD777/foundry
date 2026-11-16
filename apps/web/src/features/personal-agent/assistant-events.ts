@@ -18,4 +18,6 @@ export type AssistantFeatureEvent =
   | { type: "devices.open"; deviceId?: string }
   /** Opens the "needs you" list. */
   | { type: "pending.open" }
+  /** Opens 「事项」: the list, or one item's detail when `itemId` is given. */
+  | { type: "items.open"; itemId?: string }
   | { type: "interface.changed"; mode: InterfaceMode };

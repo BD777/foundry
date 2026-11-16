@@ -417,6 +417,16 @@ func (s *Store) DeleteAssistant(ctx context.Context, assistantID string) error {
 				if _, err := tx.conn().ExecContext(ctx, `UPDATE `+record.table+` SET assistant_id = '' WHERE assistant_id = ?`, assistantID); err != nil {
 					return fmt.Errorf("delete assistant %s: %w", record.table, err)
 				}
+			case "pa_maintenance":
+				// Project upkeep belongs to its workspace; the assistant is
+				// only the executor of its last attempt (DEV-256).
+				if _, err := tx.conn().ExecContext(ctx, `DELETE FROM `+record.table+` WHERE assistant_id = ? AND role <> 'governance'`, assistantID); err != nil {
+					return fmt.Errorf("delete assistant %s: %w", record.table, err)
+				}
+			case "pa_context_patches":
+				// Every file change comes from a governance review, so it
+				// belongs to its project; the assistant is only the executor
+				// (DEV-256). Kept as it is.
 			default:
 				if _, err := tx.conn().ExecContext(ctx, `DELETE FROM `+record.table+` WHERE assistant_id = ?`, assistantID); err != nil {
 					return fmt.Errorf("delete assistant %s: %w", record.table, err)

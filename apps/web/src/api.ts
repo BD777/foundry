@@ -38,6 +38,7 @@ export * from "./api/session-work";
 export * from "./api/skills";
 export * from "./api/usage";
 export * from "./api/workspaces";
+export * from "./api/workspace-upkeep";
 
 export * from "./api/knowledge";
 

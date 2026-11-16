@@ -10,7 +10,6 @@ import {
   getAgentSession,
   listPersonalAgentSessions,
   listPersonalAgentInbox,
-  actOnPersonalAgentInbox,
   listMessageChannels,
 } from "../../api";
 import {
@@ -99,10 +98,6 @@ export function useAssistantConversation(
       ),
     [assistantId],
   );
-  const [inboxError, setInboxError] = useState("");
-  const [retryingInboxId, setRetryingInboxId] = useState<string>();
-  const [dismissingInboxId, setDismissingInboxId] = useState<string>();
-  const retryKeys = useRef(new Map<string, string>());
   const held = useRef(sessions);
   held.current = sessions;
   // The sessions read in full. One learned otherwise (a create's or send's
@@ -195,15 +190,6 @@ export function useAssistantConversation(
         .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
     [ownInbox],
   );
-  const failedInbox = useMemo(
-    () =>
-      ownInbox.filter(
-        (entry) =>
-          entry.status !== "cancelled" &&
-          ["failed", "canceled"].includes(entry.resultStatus ?? ""),
-      ),
-    [ownInbox],
-  );
   const needsInboxRefresh = ownInbox.some(
     (entry) =>
       ["pending", "waiting", "dispatching"].includes(entry.status) ||
@@ -212,13 +198,9 @@ export function useAssistantConversation(
   useEffect(() => {
     if (!needsInboxRefresh) return;
     const timer = window.setInterval(() => {
-      void listPersonalAgentInbox(assistantId).then(
-        (items) => {
-          setInbox(items);
-          setInboxError("");
-        },
-        (reason) => setInboxError(serverErrorText(reason)),
-      );
+      // A failed read keeps the messages already shown; the next pass
+      // retries.
+      void listPersonalAgentInbox(assistantId).then(setInbox, () => {});
     }, 3000);
     return () => window.clearInterval(timer);
   }, [assistantId, needsInboxRefresh]);
@@ -327,56 +309,6 @@ export function useAssistantConversation(
     /** Every session of the assistant's projects, for handoff rows. */
     knownSessions,
     waitingInbox,
-    failedInbox,
-    inboxError,
-    retryingInboxId,
-    dismissingInboxId,
-    async retryInbox(entry: PersonalAgentInboxEntry): Promise<void> {
-      if (retryingInboxId || dismissingInboxId) return;
-      const requestId = retryKeys.current.get(entry.id) ?? crypto.randomUUID();
-      retryKeys.current.set(entry.id, requestId);
-      setRetryingInboxId(entry.id);
-      setInboxError("");
-      try {
-        const saved = await actOnPersonalAgentInbox(assistantId, entry.id, {
-          action: "retry",
-          revision: entry.revision,
-          requestId,
-        });
-        setInbox((items) => [
-          ...items.filter(
-            (item) => item.id !== entry.id && item.id !== saved.id,
-          ),
-          saved,
-        ]);
-        retryKeys.current.delete(entry.id);
-      } catch (reason) {
-        setInboxError(serverErrorText(reason));
-      } finally {
-        setRetryingInboxId(undefined);
-      }
-    },
-    /** Abandons a held message: the person will not process it. */
-    async dismissInbox(entry: PersonalAgentInboxEntry): Promise<void> {
-      if (retryingInboxId || dismissingInboxId) return;
-      setDismissingInboxId(entry.id);
-      setInboxError("");
-      try {
-        const saved = await actOnPersonalAgentInbox(assistantId, entry.id, {
-          action: "dismiss",
-          revision: entry.revision,
-          requestId: crypto.randomUUID(),
-        });
-        setInbox((items) => [
-          ...items.filter((item) => item.id !== entry.id),
-          saved,
-        ]);
-      } catch (reason) {
-        setInboxError(serverErrorText(reason));
-      } finally {
-        setDismissingInboxId(undefined);
-      }
-    },
     working: assistantWorking(ordered),
     /** The latest session: queued, it may wait for its offline computer. */
     latestSession: latest,

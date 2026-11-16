@@ -27,7 +27,7 @@ func TestDueDigestFactsKeepsDueUnrunningWorkspaces(t *testing.T) {
 }
 
 // The facts file names the waiting changes, the failure and stalled reasons,
-// the blocked summaries, and the settings page of the assistant it is for.
+// the blocked summaries, and the project page each proposal is decided on.
 func TestUpkeepFileContentNamesTheFactsAndItsAssistant(t *testing.T) {
 	now := time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)
 	state := upkeepState{
@@ -37,10 +37,12 @@ func TestUpkeepFileContentNamesTheFactsAndItsAssistant(t *testing.T) {
 		Digests:     []upkeepDigest{{WorkspaceID: "ws_home", Project: "Home", DueAt: now.Add(-time.Hour)}},
 		DeviceLabel: "Mac mini",
 	}
-	settings := "https://foundry.test/assistants/asst_second/settings"
-	got := upkeepFileContent(state, now, time.UTC, settings)
+	project := func(workspaceID string) string {
+		return "https://foundry.test/workspace?workspace=" + workspaceID
+	}
+	got := upkeepFileContent(state, now, time.UTC, project)
 	for _, want := range []string{
-		"Budget (ws_budget): 2 suggested changes", settings,
+		"Budget (ws_budget): 2 suggested changes", project("ws_budget"),
 		"Notes (ws_notes): project review failed (runner_failed)",
 		"Blog (ws_blog): memory review waiting", "device_offline",
 		"1 summary is due and wait for Mac mini to come online", "Home (ws_home)",
@@ -49,7 +51,7 @@ func TestUpkeepFileContentNamesTheFactsAndItsAssistant(t *testing.T) {
 			t.Errorf("the upkeep file lacks %q:\n%s", want, got)
 		}
 	}
-	if empty := upkeepFileContent(upkeepState{}, now, time.UTC, ""); !strings.Contains(empty, "Nothing needs attention.") {
+	if empty := upkeepFileContent(upkeepState{}, now, time.UTC, nil); !strings.Contains(empty, "Nothing needs attention.") {
 		t.Fatalf("empty upkeep = %q", empty)
 	}
 }

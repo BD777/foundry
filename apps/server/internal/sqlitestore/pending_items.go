@@ -171,6 +171,7 @@ func (s *Store) RecordPendingItem(ctx context.Context, item store.PendingItem) (
 		next := existing
 		next.Title, next.Excerpt, next.Context = item.Title, item.Excerpt, item.Context
 		next.Options, next.Recommendation, next.Rule = item.Options, item.Recommendation, item.Rule
+		next.Count = item.Count
 		if item.Source == store.PendingSourceTurnFailed {
 			next.SessionID, next.WorkspaceID = item.SessionID, item.WorkspaceID
 			next.Handler = item.Handler
@@ -203,7 +204,7 @@ func (s *Store) RecordPendingItem(ctx context.Context, item store.PendingItem) (
 func pendingSame(a, b store.PendingItem) bool {
 	return a.Title == b.Title && a.Excerpt == b.Excerpt && a.Context == b.Context &&
 		slices.Equal(a.Options, b.Options) && a.Recommendation == b.Recommendation && a.Rule == b.Rule &&
-		a.Occurrences == b.Occurrences && a.EventID == b.EventID && a.MessageID == b.MessageID &&
+		a.Occurrences == b.Occurrences && a.Count == b.Count && a.EventID == b.EventID && a.MessageID == b.MessageID &&
 		a.SessionID == b.SessionID && a.WorkspaceID == b.WorkspaceID && a.Handler == b.Handler &&
 		a.DeadlineAt == b.DeadlineAt && a.AcknowledgedAt == b.AcknowledgedAt &&
 		a.NotifiedAt == b.NotifiedAt && a.Outcome == b.Outcome &&

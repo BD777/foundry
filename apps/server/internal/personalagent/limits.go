@@ -21,6 +21,12 @@ func AssistantSettingsPath(assistantID string) string {
 	return "/assistants/" + url.PathEscape(assistantID) + "/settings"
 }
 
+// WorkspacePath is a project's own page in the web, where its upkeep and
+// suggested file changes are reviewed next to the files (DEV-256).
+func WorkspacePath(workspaceID string) string {
+	return "/workspace?workspace=" + url.QueryEscape(workspaceID)
+}
+
 // LimitError is a §9 limit the assistant reached: what it tells the person,
 // with the settings link.
 type LimitError struct {
