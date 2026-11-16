@@ -24,7 +24,11 @@ func (s *Server) workerGroupsForMCP(call mcpCall) (string, error) {
 		}
 		result := make([]store.WorkerGroup, len(groups))
 		for index, group := range groups {
-			result[index] = publicWorkerGroup(group)
+			view, err := s.workerGroupView(ctx, group)
+			if err != nil {
+				return "", err
+			}
+			result[index] = view
 		}
 		return encodeJSON(map[string]any{"groups": result})
 	case "save":

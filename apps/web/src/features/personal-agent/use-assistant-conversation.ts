@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentSession,
+  ChatAttachment,
   PersonalAgentInboxEntry,
 } from "@bd777/foundry-protocol";
 import {
@@ -46,6 +47,7 @@ interface PendingLine {
   clientId: string;
   text: string;
   at: string;
+  attachments: ChatAttachment[];
 }
 
 function sentInputs(sessions: Iterable<AgentSession>): Set<string> {
@@ -300,6 +302,7 @@ export function useAssistantConversation(
           clientId: entry.messageId,
           role: "person" as const,
           text: entry.text,
+          attachments: entry.attachments,
           at: entry.createdAt,
         })),
       ...pending
@@ -309,6 +312,7 @@ export function useAssistantConversation(
           clientId: line.clientId,
           role: "person" as const,
           text: line.text,
+          attachments: line.attachments,
           at: line.at,
         })),
     ],
@@ -379,15 +383,20 @@ export function useAssistantConversation(
     /** The latest turn: changes when a message starts a new one. */
     latestTurnId: latest ? `${latest.id}:${latest.input?.id ?? ""}` : "",
     retry: read,
-    async send(text: string, clientId: string): Promise<void> {
+    async send(
+      text: string,
+      clientId: string,
+      attachments: ChatAttachment[] = [],
+    ): Promise<void> {
       setPending((current) => [
         ...current.filter((line) => line.clientId !== clientId),
-        { clientId, text, at: new Date().toISOString() },
+        { clientId, text, at: new Date().toISOString(), attachments },
       ]);
       try {
         const receipt = await capturePersonalAgentInbox(assistantId, {
           text,
           messageId: clientId,
+          attachments: attachments.length ? attachments : undefined,
         });
         setInbox((current) => [
           ...current.filter((entry) => entry.id !== receipt.id),

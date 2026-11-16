@@ -98,6 +98,9 @@ func (s *Server) backgroundJobs() []backgroundJob {
 // once each has returned, so nothing still uses the store after it.
 func (s *Server) StartBackground(ctx context.Context) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
+	if err := s.restoreMemberHealth(ctx, time.Now().UTC()); err != nil {
+		log.Printf("member health: restore rate-limit breakers: %v", err)
+	}
 	var running sync.WaitGroup
 	for _, job := range s.backgroundJobs() {
 		running.Add(1)

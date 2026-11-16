@@ -172,7 +172,7 @@ export const profiles = {
   workerGroups: {
     title: "Worker groups",
     intro:
-      "A named set of models, each from any provider. A new worker takes one member available on its device and keeps it for the whole session.",
+      "A named set of models, each from any provider. A new worker starts on one member. If that member's account is rate limited, the session moves to a fallback and moves back once the account has recovered.",
     pairingHint:
       "Put models that can replace each other in one group: quotas and weights only spread load; they do not indicate capability or cost.",
     new: "New worker group",
@@ -205,6 +205,21 @@ export const profiles = {
       "No quotas set: new workers rotate through the models by weight. Members a device cannot use are skipped.",
     memberWithoutQuota:
       "Other models have quotas set, so this model will not be selected. Add Tokens / minute, or clear every quota to use weights.",
+    tier: "Role",
+    tierLabel: "Role of model {{index}}",
+    tierPrimary: "Primary",
+    tierFallback: "Fallback",
+    tierHint:
+      "A fallback takes over while its primary's account is rate limited, then the session goes back to the primary. A fallback only takes over from a model of the same runtime.",
+    domain: {
+      healthy: "Healthy · {{active}}/{{limit}} sessions",
+      limited: "Rate limited · back in about {{minutes}} min",
+      limitedNoEta: "Rate limited",
+      probing: "Probing",
+      recovering: "Recovering",
+      withFailovers:
+        "{{text}} · switched to a fallback {{count}} times in the last hour",
+    },
     modeByQuota: "By quota",
     modeByWeight: "By weight",
     missingProvider: "{{name}} (no longer available)",

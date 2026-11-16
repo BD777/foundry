@@ -17,6 +17,9 @@ const (
 	sessionRetryPumpInterval = time.Second
 	sessionRetryLease        = 2 * time.Minute
 	maxSameModelRetries      = 5
+	// fallbackRetryDelay is the wait before a retry on another account: the
+	// fallback is not the limited account, so it needs only a short settle.
+	fallbackRetryDelay = 3 * time.Second
 )
 
 type sessionRetryService struct {
@@ -49,6 +52,7 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
+	r.server.hub.observeRateLimitedSession(ctx, session, failure)
 	current, found, err := r.server.store.GetSessionRetry(ctx, session.ID, session.Input.ID)
 	if err != nil {
 		return false, err
@@ -63,23 +67,47 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
+	now := time.Now().UTC()
 	delay := modelpool.Backoff(attempt, retryJitter(attempt))
 	retry := store.SessionRetry{
 		SessionID: session.ID, InputID: session.Input.ID, Attempt: attempt,
 		MaxAttempts: maxSameModelRetries, PreviousModel: session.Model, NextModel: session.Model,
-		NextAttemptAt: time.Now().UTC().Add(delay), LastError: failure,
+		LastError: failure,
 	}
-	blocked, err := r.server.store.ScheduleAgentSessionRetry(ctx, retry,
-		fmt.Sprintf("Model rate limit; automatic retry %d/%d in %s", attempt, maxSameModelRetries, delay.Round(time.Second)))
+	reason := fmt.Sprintf("Model rate limit; automatic retry %d/%d in %s", attempt, maxSameModelRetries, delay.Round(time.Second))
+	fallback, fromMember, onFallback, err := r.server.fallbackMember(ctx, session)
+	if err != nil {
+		log.Printf("session retry: fallback for %s: %v", session.ID, err)
+	}
+	var note string
+	if onFallback {
+		// The fallback account is not the limited one: it needs only a short
+		// settle, not the same-model backoff.
+		delay = fallbackRetryDelay + retryJitter(1)
+		retry.NextModel, retry.NextProfileID = fallback.Model, fallback.ProviderID
+		reason = fmt.Sprintf("Model rate limit on this account; automatic retry %d/%d on %s in %s",
+			attempt, maxSameModelRetries, fallback.Model, delay.Round(time.Second))
+		note, err = r.server.failoverNote(ctx, session, fallback, fromMember, now)
+		if err != nil {
+			return false, err
+		}
+	}
+	retry.NextAttemptAt = now.Add(delay)
+	blocked, err := r.server.store.ScheduleAgentSessionRetry(ctx, retry, reason)
 	if err != nil {
 		return false, err
 	}
 	r.server.hub.sessions.Changed(ctx, sessions.Blocked, blocked)
-	event := retryEvent(session, attempt, maxSameModelRetries, session.Model, "Automatic model retry")
+	event := retryEvent(session, attempt, maxSameModelRetries, retry.NextModel, "Automatic model retry")
 	if err := r.server.store.AppendAgentSessionEvent(ctx, event); err != nil {
 		return false, err
 	}
 	r.server.hub.sessions.Recorded(ctx, session.WorkspaceID, event)
+	if note != "" {
+		if err := r.server.recordMemberEvent(ctx, session, note); err != nil {
+			log.Printf("session retry: record failover note %s: %v", session.ID, err)
+		}
+	}
 	return true, nil
 }
 

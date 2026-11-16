@@ -166,7 +166,7 @@ export const profiles: Translation<typeof en> = {
   workerGroups: {
     title: "Worker 组",
     intro:
-      "一组命名的模型，成员可以来自任意模型来源。每个新 worker 从中分到一个所在设备可用的成员，并在整个会话中保持不变。",
+      "一组命名的模型，成员可以来自任意模型来源。新 worker 先用其中一个成员；如果它的账号被限流，会话会切到备用，账号恢复后再切回。",
     pairingHint:
       "把可以互相替换的模型放在一组：额度和权重只用来分摊负载，不代表能力或成本。",
     new: "新建 Worker 组",
@@ -199,6 +199,20 @@ export const profiles: Translation<typeof en> = {
       "未设额度：新 worker 按权重轮流分配到各个模型。所在设备不能用的成员会被跳过。",
     memberWithoutQuota:
       "其他模型设了额度，这个模型不会被选中。填上每分钟 token，或者清空所有额度改用权重。",
+    tier: "角色",
+    tierLabel: "模型 {{index}} 的角色",
+    tierPrimary: "主力",
+    tierFallback: "备用",
+    tierHint:
+      "主力的账号被限流时，备用接手，恢复后会话切回主力。备用只接手同一运行时的模型。",
+    domain: {
+      healthy: "正常 · {{active}}/{{limit}} 个会话",
+      limited: "限流中 · 约 {{minutes}} 分钟后恢复",
+      limitedNoEta: "限流中",
+      probing: "试探中",
+      recovering: "恢复中",
+      withFailovers: "{{text}} · 1 小时内转备用 {{count}} 次",
+    },
     modeByQuota: "按额度",
     modeByWeight: "按权重",
     missingProvider: "{{name}}（已不可用）",

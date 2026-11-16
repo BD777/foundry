@@ -39,6 +39,9 @@ type PersonalAgentInboxEntry struct {
 	// as unprocessed. Empty until then.
 	DismissedBy string `json:"dismissedBy,omitempty"`
 	DismissedAt string `json:"dismissedAt,omitempty"`
+	// Attachments uploaded for a web message, delivered with its turn and
+	// kept across retries. A channel message's files come from its origin.
+	Attachments []ChatAttachment `json:"attachments,omitempty"`
 }
 
 // Channel routing and resource references are server-owned provenance, never
@@ -60,8 +63,9 @@ type PersonalAgentInboxResource struct {
 }
 
 type PersonalAgentInboxCapture struct {
-	MessageID string `json:"messageId"`
-	Text      string `json:"text"`
+	MessageID   string           `json:"messageId"`
+	Text        string           `json:"text"`
+	Attachments []ChatAttachment `json:"attachments,omitempty"`
 }
 
 type PersonalAgentInboxAction struct {

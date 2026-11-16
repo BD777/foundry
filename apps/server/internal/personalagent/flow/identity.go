@@ -31,7 +31,7 @@ func InputID(operationID string) string {
 
 // Capture validates an authenticated channel's envelope. A model cannot
 // choose its user or channel identity; callers supply those from the actor.
-func Capture(userID, channel, messageID, text string) error {
+func Capture(userID, channel, messageID, text string, hasAttachments bool) error {
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("an inbox message requires an authenticated person")
 	}
@@ -41,8 +41,9 @@ func Capture(userID, channel, messageID, text string) error {
 	if strings.TrimSpace(messageID) == "" || len(messageID) > 200 {
 		return fmt.Errorf("messageId is required and must be at most 200 bytes")
 	}
-	if strings.TrimSpace(text) == "" || !utf8.ValidString(text) || len(text) > 128*1024 {
-		return fmt.Errorf("text must be nonempty UTF-8 and at most 128 KiB")
+	// A message may be only its files, as in a chat.
+	if (strings.TrimSpace(text) == "" && !hasAttachments) || !utf8.ValidString(text) || len(text) > 128*1024 {
+		return fmt.Errorf("text must be UTF-8 and at most 128 KiB, and a message needs text or files")
 	}
 	return nil
 }

@@ -51,7 +51,7 @@ import (
 //   - it runs on an agent of that workspace (sessions.Service.ResolveDevice).
 //
 // A refusal is a statusError. MCP passes runLikeParent; REST does not.
-func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput, runLikeParent bool) error {
+func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput, runLikeParent bool) (note string, err error) {
 	// The assistant starts helpers through this same mechanism; its
 	// admission parameters are its scope, executor default and the
 	// conversation as report target and budget subject.
@@ -60,11 +60,11 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 	input.CreatedByUserID = actor.AccountID()
 	if actor.Agent() {
 		if strings.TrimSpace(input.NativeSessionID) != "" {
-			return &statusError{http.StatusBadRequest, errors.New("nativeSessionId is not accepted from a session: continue a Foundry session with its messages endpoint or fork it with forkSessionId")}
+			return "", &statusError{http.StatusBadRequest, errors.New("nativeSessionId is not accepted from a session: continue a Foundry session with its messages endpoint or fork it with forkSessionId")}
 		}
 		input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
 		if err := s.keepAgentInIssue(ctx, actor, input); err != nil {
-			return &statusError{http.StatusForbidden, err}
+			return "", &statusError{http.StatusForbidden, err}
 		}
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = store.SessionSourceAgent
@@ -90,44 +90,46 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 	}
 	if strings.TrimSpace(input.ForkSessionID) != "" {
 		if err := s.applySessionFork(ctx, input, actor); err != nil {
-			return err
+			return "", err
 		}
 	}
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	if isAssistant {
 		if err := assistantScope.StartRefusal(input.WorkspaceID); err != nil {
-			return err
+			return "", err
 		}
 		// The input's id keys the run snapshot the helper's budget and
 		// run control read, so it is settled before the budget is pinned.
 		if input.InputID == "" {
 			id, err := uuid.NewV7()
 			if err != nil {
-				return &statusError{http.StatusInternalServerError, err}
+				return "", &statusError{http.StatusInternalServerError, err}
 			}
 			input.InputID = id.String()
 		}
 		if _, err := s.assistant.ApplyHelperDefaults(ctx, input, nil); err != nil {
-			return err
+			return "", err
 		}
 	} else {
 		scope, err := s.contextScope(ctx, actor)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := workspaceRefusal(scope, input.WorkspaceID, store.WorkspaceRoleMember); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if input.WorkerGroupID != "" {
 		if input.Model != "" || input.Provider != "" || input.ProfileID != "" || input.AgentID != "" {
-			return invalid("workerGroupId cannot be combined with model, provider, profileId or agentId: the group's member decides them")
+			return "", invalid("workerGroupId cannot be combined with model, provider, profileId or agentId: the group's member decides them")
 		}
-		choice, err := s.selectWorkerGroup(ctx, actor, input.WorkerGroupID, input.WorkspaceID)
+		var choice workerGroupChoice
+		choice, err = s.selectWorkerGroup(ctx, actor, input.WorkerGroupID, input.WorkspaceID)
 		if err != nil {
-			return err
+			return "", err
 		}
 		member := choice.Member
+		note = choice.Note
 		input.WorkerGroupID, input.Provider, input.ProfileID, input.Model = choice.Group.ID, string(member.Runtime), member.ProviderID, member.Model
 		if member.Effort != "" {
 			if member.Runtime == "codex" {
@@ -142,15 +144,15 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 	// session reaches.
 	if chatID := strings.TrimSpace(input.ChatID); chatID != "" && actor.Agent() {
 		if chat, err := s.store.GetChat(ctx, chatID); err != nil || chat.WorkspaceID != input.WorkspaceID {
-			return &statusError{http.StatusNotFound, errors.New("chat not found")}
+			return "", &statusError{http.StatusNotFound, errors.New("chat not found")}
 		}
 	}
 	if runLikeParent {
 		if err := s.chooseSessionAccount(ctx, input); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return s.sessionService.ResolveDevice(ctx, input)
+	return note, s.sessionService.ResolveDevice(ctx, input)
 }
 
 // applySessionFork resolves forkSessionId: a new Foundry session starts from

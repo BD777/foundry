@@ -105,6 +105,10 @@ func (p sessionPolicy) ChooseRuntimeSwitch(ctx context.Context, session store.Ag
 	return p.s.chooseRuntimeSwitch(ctx, session, input)
 }
 
+func (p sessionPolicy) ApplyRunningMemberSwitch(ctx context.Context, session store.AgentSession, input *store.SendAgentSessionInput) (bool, error) {
+	return p.s.applyRunningMemberSwitch(ctx, session, input)
+}
+
 type sessionChats struct{ s *Server }
 
 func (c sessionChats) Created(session store.AgentSession, adoptedChatID string) {

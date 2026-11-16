@@ -67,7 +67,12 @@ func (s *Server) handleListWorkerGroups(w http.ResponseWriter, r *http.Request) 
 	}
 	result := make([]store.WorkerGroup, len(groups))
 	for index, group := range groups {
-		result[index] = publicWorkerGroup(group)
+		view, err := s.workerGroupView(r.Context(), group)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		result[index] = view
 	}
 	writeResult(w, result, nil)
 }
@@ -121,7 +126,7 @@ func (s *Server) saveWorkerGroup(ctx context.Context, m providerManager, id stri
 	if err != nil {
 		return store.WorkerGroup{}, err
 	}
-	return publicWorkerGroup(saved), nil
+	return s.workerGroupView(ctx, saved)
 }
 
 func (s *Server) handleDeleteWorkerGroup(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +219,9 @@ func (e *noWorkerGroupMemberError) Error() string {
 type workerGroupChoice struct {
 	Group  store.StoredWorkerGroup
 	Member store.WorkerGroupMember
+	// Note says, in the person's language, why the member is not the primary;
+	// empty when it is.
+	Note string
 }
 
 func (s *Server) chooseWorkerGroupMember(ctx context.Context, group store.StoredWorkerGroup, workspace store.WorkspaceProjection) (store.WorkerGroupMember, error) {
@@ -236,6 +244,19 @@ func (s *Server) chooseWorkerGroupMember(ctx context.Context, group store.Stored
 			group: group.Label, device: workspace.DeviceLabel, reasons: reasons,
 		}}
 	}
+	admission, err := s.admissionCandidates(ctx, candidates, "")
+	if err != nil {
+		return store.WorkerGroupMember{}, err
+	}
+	indexes, queued := modelpool.Admit(admission)
+	if queued {
+		return candidates[indexes[0]], nil
+	}
+	admitted := make([]store.WorkerGroupMember, len(indexes))
+	for position, index := range indexes {
+		admitted[position] = candidates[index]
+	}
+	candidates = admitted
 	type route struct{ providerID, runtime string }
 	models := map[route][]string{}
 	for _, member := range candidates {
@@ -275,7 +296,11 @@ func (s *Server) chooseWorkerGroupMember(ctx context.Context, group store.Stored
 	if !ok {
 		return store.WorkerGroupMember{}, errors.New("worker group has no usable member")
 	}
-	return candidates[decision.Index], nil
+	chosen := candidates[decision.Index]
+	if admission[indexes[decision.Index]].Health == modelpool.Probing {
+		s.hub.health.reserve(memberDomain(chosen.ProviderID, string(chosen.Runtime)), time.Now().UTC())
+	}
+	return chosen, nil
 }
 
 // selectWorkerGroup is the member a new session in the workspace starts on:
@@ -294,5 +319,9 @@ func (s *Server) selectWorkerGroup(ctx context.Context, actor Actor, groupID, wo
 	if err != nil {
 		return workerGroupChoice{}, err
 	}
-	return workerGroupChoice{Group: group, Member: member}, nil
+	note, err := s.memberRoutingNote(ctx, group, member)
+	if err != nil {
+		return workerGroupChoice{}, err
+	}
+	return workerGroupChoice{Group: group, Member: member, Note: note}, nil
 }

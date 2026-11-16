@@ -190,6 +190,7 @@ type Store interface {
 	ExecutionDefaultStore
 	WorkerGroupStore
 	SessionRetryStore
+	SessionMemberSwitchStore
 
 	ListDeviceSkillRoots(ctx context.Context, deviceID string) ([]DeviceSkillRoot, error)
 	SetDeviceSkillRoots(ctx context.Context, input SetDeviceSkillRootsInput) error

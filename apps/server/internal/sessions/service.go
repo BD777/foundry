@@ -108,6 +108,11 @@ type Policy interface {
 	// ChooseRuntimeSwitch pins the account of a message that names only
 	// a runtime.
 	ChooseRuntimeSwitch(ctx context.Context, session store.AgentSession, input *store.SendAgentSessionInput) error
+	// ApplyRunningMemberSwitch takes a manual switch to another member of the
+	// session's worker group while it runs or is blocked. applied reports
+	// that the switch was taken and cleared from input; any other switch is
+	// left in input for the refusal.
+	ApplyRunningMemberSwitch(ctx context.Context, session store.AgentSession, input *store.SendAgentSessionInput) (applied bool, err error)
 }
 
 // Chats is the chat list sessions appear in.

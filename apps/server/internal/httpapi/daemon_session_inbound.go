@@ -74,6 +74,7 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 		err = c.observeNativeAccountHold(ctx, payload.Event.SessionID, payload.Event.Metadata.NativeAccountInputID, payload.Event.Metadata.NativeAccountError)
 	}
 	if err == nil && stored {
+		c.hub.observeMemberSignal(ctx, payload.Event)
 		workspaceID := c.sessionWorkspace(ctx, payload.Event.SessionID)
 		subagents := c.hub.subagents.observe(payload.Event)
 		c.hub.sessions.Recorded(ctx, workspaceID, payload.Event)

@@ -26,7 +26,8 @@ func (s *Service) CaptureInbox(ctx context.Context, agent store.PersonalAgent, c
 // whose answer goes back there.
 func (s *Service) CaptureInboxOrigin(ctx context.Context, agent store.PersonalAgent, channel string, input store.PersonalAgentInboxCapture, origin *store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
 	userID := agent.UserID
-	if err := flow.Capture(userID, channel, input.MessageID, input.Text); err != nil {
+	attachments := store.NormalizeChatAttachments(input.Attachments)
+	if err := flow.Capture(userID, channel, input.MessageID, input.Text, len(attachments) > 0); err != nil {
 		return store.PersonalAgentInboxEntry{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
 	}
 	// The default assistant keeps the ids it had before there were several.
@@ -37,8 +38,9 @@ func (s *Service) CaptureInboxOrigin(ctx context.Context, agent store.PersonalAg
 	entry, err := s.store.CapturePersonalAgentInbox(ctx, store.PersonalAgentInboxEntry{
 		ID: id, UserID: userID, AssistantID: agent.ID, Channel: channel, MessageID: input.MessageID,
 		Text: input.Text, InputID: flow.InputID(id),
-		Origin:   origin,
-		Timezone: s.PersonLocation(ctx, agent).String(),
+		Origin:      origin,
+		Attachments: attachments,
+		Timezone:    s.PersonLocation(ctx, agent).String(),
 	})
 	if errors.Is(err, store.ErrIdempotencyConflict) {
 		err = &personalagent.Refusal{Status: http.StatusConflict, Err: err}
@@ -268,7 +270,7 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 	if channelEntry {
 		channelOrigin = s.channelOriginOf(ctx, entry)
 	}
-	prompt, attachments := entry.Text, []store.ChatAttachment(nil)
+	prompt, attachments := entry.Text, entry.Attachments
 	if entry.Origin != nil {
 		prompt, attachments, err = s.channel.PrepareAssistantInbox(ctx, entry, agent.WorkspaceID)
 		if err != nil {

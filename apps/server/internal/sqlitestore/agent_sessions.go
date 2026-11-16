@@ -801,7 +801,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		}
 		if model := strings.TrimSpace(input.Model); model != "" {
 			session.Model = model
-			session.WorkerGroupID = ""
+			if !tx.workerGroupHoldsMember(ctx, session.WorkerGroupID, session.Provider, session.ProfileID, model) {
+				session.WorkerGroupID = ""
+			}
 		}
 		for target, value := range map[*string]string{
 			&session.ClaudeEffort: input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,
@@ -1205,4 +1207,23 @@ func (s *Store) transitionAgentSessionBlocked(ctx context.Context, id string, re
 		return nil
 	})
 	return result, err
+}
+
+// workerGroupHoldsMember reports whether the group still holds the session's
+// runtime, account and model as one of its members: a switch to another member
+// keeps the session in its group, any other model leaves the group.
+func (s *Store) workerGroupHoldsMember(ctx context.Context, groupID, runtime, profileID, model string) bool {
+	if groupID == "" {
+		return false
+	}
+	group, err := s.GetWorkerGroup(ctx, groupID)
+	if err != nil {
+		return false
+	}
+	for _, member := range group.Members {
+		if string(member.Runtime) == runtime && member.ProviderID == profileID && member.Model == model {
+			return true
+		}
+	}
+	return false
 }

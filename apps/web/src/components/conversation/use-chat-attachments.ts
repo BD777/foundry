@@ -1,8 +1,8 @@
-import type { ToastTone } from "../../../components/ui/toast";
+import type { ToastTone } from "../ui/toast";
 import { useCallback, useState } from "react";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
-import { uploadChatAttachments } from "../../../api";
-import { i18n } from "../../../i18n";
+import { uploadChatAttachments } from "../../api";
+import { i18n } from "../../i18n";
 
 export interface ChatAttachments {
   add: (files: File[]) => Promise<void>;

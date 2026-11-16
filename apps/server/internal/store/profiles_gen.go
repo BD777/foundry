@@ -108,6 +108,30 @@ func (e NativeSignInStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkerGroupDomainState.
+const (
+	WorkerGroupDomainStateHealthy    WorkerGroupDomainState = "healthy"
+	WorkerGroupDomainStateLimited    WorkerGroupDomainState = "limited"
+	WorkerGroupDomainStateProbing    WorkerGroupDomainState = "probing"
+	WorkerGroupDomainStateRecovering WorkerGroupDomainState = "recovering"
+)
+
+// Valid indicates whether the value is a known member of the WorkerGroupDomainState enum.
+func (e WorkerGroupDomainState) Valid() bool {
+	switch e {
+	case WorkerGroupDomainStateHealthy:
+		return true
+	case WorkerGroupDomainStateLimited:
+		return true
+	case WorkerGroupDomainStateProbing:
+		return true
+	case WorkerGroupDomainStateRecovering:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkerGroupMemberProviderKind.
 const (
 	WorkerGroupMemberProviderKindAPI          WorkerGroupMemberProviderKind = "api"
@@ -655,12 +679,33 @@ type SecretPlacement = string
 
 // WorkerGroup A person's named group of models that workers can be assigned from. Members may come from different providers and runtimes. A new worker takes one member available on its device and keeps it for the whole session.
 type WorkerGroup struct {
-	ID        string                            `json:"id"`
-	Label     string                            `json:"label"`
-	Members   jsonempty.List[WorkerGroupMember] `json:"members"`
-	CreatedAt string                            `json:"createdAt"`
-	UpdatedAt string                            `json:"updatedAt"`
+	ID      string                            `json:"id"`
+	Label   string                            `json:"label"`
+	Members jsonempty.List[WorkerGroupMember] `json:"members"`
+
+	// Domains The live rate-limit state of each account the group's members run on, one entry per account and runtime. Read-only; the server computes it and ignores it on save.
+	Domains   []WorkerGroupDomain `json:"domains,omitempty"`
+	CreatedAt string              `json:"createdAt"`
+	UpdatedAt string              `json:"updatedAt"`
 }
+
+// WorkerGroupDomain One rate-limit domain of a worker group, an account that members share. `state` is `healthy`, `recovering` (rate limited within the last ten minutes), `probing` (its one half-open probe is free) or `limited` (in cooldown). `cooldownUntil` is set while the account is in cooldown. `level` doubles the cooldown on each reopening and halves each clean ten minutes. `limit` is the concurrent-session limit the server currently allows; `active` is the sessions running on the account now.
+type WorkerGroupDomain struct {
+	ProfileID string `json:"profileId"`
+
+	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	Runtime           NativeRuntimeID        `json:"runtime"`
+	State             WorkerGroupDomainState `json:"state"`
+	CooldownUntil     string                 `json:"cooldownUntil,omitempty"`
+	Level             int                    `json:"level"`
+	Limit             int                    `json:"limit"`
+	Active            int                    `json:"active"`
+	SignalsInWindow   int                    `json:"signalsInWindow"`
+	FailoversLastHour int                    `json:"failoversLastHour"`
+}
+
+// WorkerGroupDomainState defines model for WorkerGroupDomain.State.
+type WorkerGroupDomainState string
 
 // WorkerGroupInput Create or replace one worker group.
 type WorkerGroupInput struct {
@@ -679,6 +724,9 @@ type WorkerGroupMember struct {
 	Effort          string          `json:"effort,omitempty"`
 	TokensPerMinute int64           `json:"tokensPerMinute,omitempty"`
 	Weight          int             `json:"weight,omitempty"`
+
+	// Tier Tier 1 is a primary member; tier 2 is a fallback, used when the primary rate-limit domain is limited. Members of the same runtime only fall back to each other. Without it a member is primary.
+	Tier int `json:"tier,omitempty"`
 }
 
 // WorkerGroupMemberProviderKind defines model for WorkerGroupMember.ProviderKind.

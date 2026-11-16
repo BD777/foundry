@@ -4,6 +4,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type AgentSessionInputSource,
+  type ChatAttachment,
   type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
@@ -250,6 +251,8 @@ export interface AssistantLine {
   id: string;
   role: "person" | "assistant";
   text: string;
+  /** Files the message carried; a message may be only its files. */
+  attachments?: ChatAttachment[];
   at?: string;
   streaming?: boolean;
   /** The first line of a later session: a new conversation began. */
@@ -275,7 +278,7 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
   const events = agentSessionDisplayEvents(session);
   const input = session.input;
   if (
-    !input?.prompt?.trim() ||
+    (!input?.prompt?.trim() && !input?.attachments?.length) ||
     events.some(
       (event) =>
         event.message?.kind === "user" && event.message.id === input.id,
@@ -294,7 +297,13 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
     label: sessionEventLabels.userMessage,
     detail: input.prompt,
     level: "info",
-    message: { id: input.id, kind: "user", text: input.prompt, at },
+    message: {
+      id: input.id,
+      kind: "user",
+      text: input.prompt,
+      at,
+      attachments: input.attachments,
+    },
     metadata:
       input.sentBySessionId || input.inputSource
         ? {
@@ -342,6 +351,11 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
       if (event.label === sessionEventLabels.userMessage) {
         flush();
         const text = event.message?.text ?? event.detail;
+        const attachments =
+          event.message?.attachments ??
+          (event.message?.id === session.input?.id
+            ? session.input?.attachments
+            : undefined);
         const inputSource = event.metadata?.inputSource;
         // Another session's input with no structured source cannot be named,
         // and must not read as the person's. A Foundry notice is kept: its
@@ -349,11 +363,12 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
         // inputSource keeps it out of the person's bubble (DEV-246).
         const unattributable =
           Boolean(event.metadata?.sentBySessionId) && !inputSource;
-        if (text.trim() && !unattributable)
+        if ((text.trim() || attachments?.length) && !unattributable)
           lines.push({
             id: `${session.id}:${event.message?.id ?? event.id}`,
             role: "person",
             text,
+            ...(attachments?.length ? { attachments } : {}),
             at: event.message?.at ?? event.at,
             ...(inputSource ? { inputSource } : {}),
           });
