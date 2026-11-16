@@ -98,7 +98,7 @@ func (s *Service) RefreshUpkeep(ctx context.Context) {
 		if err != nil || last == state.Signature {
 			continue
 		}
-		content := upkeepFileContent(state, now, s.PersonLocation(ctx, agent), s.WebURL(personalagent.AssistantSettingsPath(agent.ID)))
+		content := upkeepFileContent(state, now, s.PersonLocation(ctx, agent), s.projectUpkeepURL)
 		wrote, err := s.writeUpkeepFile(ctx, agent, content)
 		if err != nil {
 			log.Printf("assistant %s: write upkeep facts: %v", agent.ID, err)
@@ -132,7 +132,14 @@ func (s *Service) upkeepStateOf(ctx context.Context, agent store.PersonalAgent, 
 	}
 	parts := []string{}
 	for _, job := range jobs {
-		if job.AssistantID != agent.ID {
+		if job.Role == "governance" {
+			// A project's upkeep is the person's, wherever it last ran: the
+			// default assistant sees it even when another assistant held the
+			// executor row before the person changed defaults (DEV-256).
+			if !agent.IsDefault {
+				continue
+			}
+		} else if job.AssistantID != agent.ID {
 			continue
 		}
 		switch job.Status {
@@ -210,8 +217,9 @@ func dueDigestFacts(records []store.WorkspaceDigestRecord, now time.Time) []upke
 
 // upkeepFileContent is the facts file's text: what waits for the person,
 // what failed or stalled, and summaries due on an offline home. It says so
-// plainly when there is nothing.
-func upkeepFileContent(state upkeepState, now time.Time, location *time.Location, settingsURL string) string {
+// plainly when there is nothing. projectURL links a proposal to the page
+// where the person decides it (the project's own).
+func upkeepFileContent(state upkeepState, now time.Time, location *time.Location, projectURL func(string) string) string {
 	var out strings.Builder
 	out.WriteString("# Upkeep\n\n")
 	if location == nil {
@@ -236,8 +244,10 @@ func upkeepFileContent(state upkeepState, now time.Time, location *time.Location
 				fmt.Fprintf(&out, ", since %s", at)
 			}
 			out.WriteString(".")
-			if settingsURL != "" {
-				fmt.Fprintf(&out, " Settings: %s", settingsURL)
+			if projectURL != nil {
+				if link := projectURL(proposal.WorkspaceID); link != "" {
+					fmt.Fprintf(&out, " Project: %s", link)
+				}
 			}
 			out.WriteString("\n")
 		}
@@ -293,7 +303,16 @@ func (s *Service) upkeepFileFor(ctx context.Context, agent store.PersonalAgent, 
 		return ""
 	}
 	state := s.upkeepStateOf(ctx, agent, jobs, now)
-	return upkeepFileContent(state, now, s.PersonLocation(ctx, agent), s.WebURL(personalagent.AssistantSettingsPath(agent.ID)))
+	return upkeepFileContent(state, now, s.PersonLocation(ctx, agent), s.projectUpkeepURL)
+}
+
+// projectUpkeepURL is where the person reviews a project's upkeep and its
+// suggested file changes: the project's own page, not an assistant's.
+func (s *Service) projectUpkeepURL(workspaceID string) string {
+	if workspaceID == "" {
+		return ""
+	}
+	return s.WebURL(personalagent.WorkspacePath(workspaceID))
 }
 
 // writeUpkeepFile writes the facts into the assistant's home, if it is

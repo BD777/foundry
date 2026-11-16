@@ -8,6 +8,13 @@ info:
 x-oapi-codegen:
   output-options:
     prefer-skip-optional-pointer: true
+    # The store already has these three as hand-written structs (store/
+    # personal_agent_list.go, used by the assistant's planning); the contract
+    # names them, Go keeps its own.
+    exclude-schemas:
+      - PersonalAgentItemPlan
+      - PersonalAgentWorkReference
+      - PersonalAgentCompletionEvidence
 paths: {}
 components:
   schemas:
@@ -555,3 +562,511 @@ components:
           type: string
         status:
           type: string
+    # 「事项」 (DEV-258): one list of what someone wants done. The assistant
+    # decides what an item is, who does it and what its summary says; Foundry
+    # records the mechanics (times, state changes, helpers, archive) and
+    # shows them here. Same JSON names as store.PersonalAgentListItem.
+    PersonalAgentItemOwner:
+      description: Who is to do the item (pa_items.owner).
+      type: string
+      enum:
+        - person
+        - assistant
+      x-go-type: string
+    PersonalAgentItemStatus:
+      description: An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+      type: string
+      enum:
+        - open
+        - done
+        - dropped
+      x-go-type: string
+    PersonalAgentItemOriginKind:
+      description: Where an item started.
+      type: string
+      enum:
+        - web
+        - channel
+        - self_chat
+      x-go-type: string
+    PersonalAgentItemOrigin:
+      description: >-
+        Where the item started and the message it rests on. Foundry records
+        this mechanically; the assistant never writes it. A channel item
+        names the channel and the requester whose message asked for it.
+      type: object
+      required:
+        - kind
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: "#/components/schemas/PersonalAgentItemOriginKind"
+        name:
+          description: The channel or conversation name the message came from.
+          type: string
+        source:
+          description: The channel's source kind, e.g. openlark.
+          type: string
+        requester:
+          description: Display name of the person whose message started the item.
+          type: string
+        requesterId:
+          type: string
+        sessionId:
+          description: The assistant conversation that received the message.
+          type: string
+        messageId:
+          type: string
+    PersonalAgentItemEventActor:
+      description: Who caused the change an event records.
+      type: string
+      enum:
+        - person
+        - assistant
+        - foundry
+      x-go-type: string
+    PersonalAgentItemEventKind:
+      description: The mechanical fact an event records.
+      type: string
+      enum:
+        - created
+        - edited
+        - owner_changed
+        - status_changed
+        - summary_updated
+        - helper_started
+        - helper_ended
+        - needs_you_opened
+        - needs_you_answered
+        - archived
+        - restored
+      x-go-type: string
+    PersonalAgentItemEventDetail:
+      description: >-
+        The small difference an event records; fields absent when they do
+        not apply. A helper event names its session and workspace, a
+        needs_you event its item.
+      type: object
+      additionalProperties: false
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        sessionId:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        needsYouId:
+          type: string
+        reason:
+          type: string
+    PersonalAgentItemEvent:
+      description: One append-only fact in an item's timeline (pa_item_events).
+      type: object
+      required:
+        - id
+        - itemId
+        - at
+        - actor
+        - kind
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        itemId:
+          type: string
+        at:
+          type: string
+        actor:
+          $ref: "#/components/schemas/PersonalAgentItemEventActor"
+        kind:
+          $ref: "#/components/schemas/PersonalAgentItemEventKind"
+        detail:
+          $ref: "#/components/schemas/PersonalAgentItemEventDetail"
+          x-go-type-skip-optional-pointer: false
+    PersonalAgentItemHelper:
+      description: >-
+        One helper session that works or worked on the item (pa_tasks.item_id).
+        A helper started without an item is not here; it stays its own task.
+      type: object
+      required:
+        - sessionId
+        - status
+        - readOnly
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        title:
+          type: string
+        project:
+          description: The workspace's name, when it still exists.
+          type: string
+        workspaceId:
+          type: string
+        status:
+          description: queued, running, asking, done, failed or cancelled.
+          type: string
+        readOnly:
+          type: boolean
+        startedAt:
+          type: string
+        endedAt:
+          type: string
+        archived:
+          description: The helper's session is archived.
+          type: boolean
+    PersonalAgentItemPlan:
+      description: >-
+        The assistant's plan for executing the item (plan_json), as it is
+        today: how it routes, its progress, the next action and what it waits
+        for, the project it runs in, items it depends on, the work it
+        references and the completion evidence. Operational state, not the
+        person's intent; absent on items with none.
+      type: object
+      required:
+        - mode
+        - progress
+      additionalProperties: false
+      properties:
+        route:
+          $ref: "#/components/schemas/PersonalAgentItemRouteDecision"
+        mode:
+          description: record unless the person asked the assistant to execute.
+          type: string
+        progress:
+          type: string
+          enum:
+            - inbox
+            - ready
+            - waiting
+            - working
+            - review
+        nextAction:
+          type: string
+        waitingFor:
+          type: string
+        workspaceId:
+          type: string
+        dependencies:
+          type: array
+          items:
+            type: string
+        workRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentWorkReference"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentCompletionEvidence"
+    PersonalAgentItemRouteDecision:
+      description: The assistant's explainable routing decision for an item.
+      type: object
+      required:
+        - kind
+        - reason
+        - needsClarification
+      additionalProperties: false
+      x-go-type: PersonalAgentRouteDecision
+      properties:
+        kind:
+          type: string
+          enum:
+            - record
+            - continue
+            - existing
+            - create
+            - multiple
+            - clarify
+        reason:
+          type: string
+        alternatives:
+          type: array
+          items:
+            type: string
+        needsClarification:
+          type: boolean
+    PersonalAgentWorkReference:
+      description: One session, Issue or service the item's work refers to.
+      type: object
+      required:
+        - kind
+        - id
+        - workspaceId
+        - relation
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+            - session
+            - issue
+            - service
+        id:
+          type: string
+        workspaceId:
+          type: string
+        relation:
+          type: string
+          enum:
+            - observing
+            - executing
+            - dependency
+    PersonalAgentCompletionEvidence:
+      description: What showed the item's work was done.
+      type: object
+      required:
+        - kind
+        - ref
+        - summary
+        - observedAt
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+            - session
+            - issue
+            - file
+            - url
+            - user
+        ref:
+          type: string
+        summary:
+          type: string
+        observedAt:
+          type: string
+    PersonalAgentItem:
+      description: >-
+        One thing someone wants done or plans, in their words, as the side
+        card and the items page show it. The assistant's list owns the
+        content; Foundry fills times, derived helper state and archive.
+      type: object
+      required:
+        - id
+        - owner
+        - text
+        - status
+        - remind
+        - revision
+        - createdAt
+        - updatedAt
+        - helpers
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        intentRevision:
+          type: integer
+        revision:
+          type: integer
+        owner:
+          $ref: "#/components/schemas/PersonalAgentItemOwner"
+        text:
+          type: string
+        when:
+          type: string
+        at:
+          type: string
+        remind:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/PersonalAgentItemStatus"
+        summary:
+          description: >-
+            The assistant's short running context in Markdown, at most 1500
+            characters: what was asked, what has been done, the result or
+            answer, what is still open. Foundry never writes it.
+          type: string
+          maxLength: 1500
+        quote:
+          type: string
+        origin:
+          $ref: "#/components/schemas/PersonalAgentItemOrigin"
+          x-go-type-skip-optional-pointer: false
+        plan:
+          $ref: "#/components/schemas/PersonalAgentItemPlan"
+          x-go-type-skip-optional-pointer: false
+        archivedAt:
+          type: string
+        remindedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        closedAt:
+          type: string
+        helpers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentItemHelper"
+    PersonalAgentItemDetail:
+      description: >-
+        GET /api/personal-agent/items/{id}: the item, its timeline and its
+        helpers.
+      type: object
+      required:
+        - item
+        - events
+      additionalProperties: false
+      properties:
+        item:
+          $ref: "#/components/schemas/PersonalAgentItem"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentItemEvent"
+    PersonalAgentItemList:
+      description: >-
+        GET /api/personal-agent/items. Query: view (open | finished | archived;
+        default open: open = status open and not archived, finished = done or
+        dropped and not archived, archived = archivedAt set); owner
+        (person | assistant); from and to (RFC 3339 instants, the range is
+        [from, to), filtering updatedAt; the row shows when it last changed);
+        q (case-insensitive substring of text and summary); limit (default 50,
+        max 200) and offset. Newest-updated first. createdAt, closedAt and
+        archivedAt come back on every item so the Web can show them. Items
+        are the person's list only; the report is GET .../items/report.
+      type: object
+      required:
+        - items
+        - total
+        - offset
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentItem"
+        total:
+          description: How many items match the filters.
+          type: integer
+        offset:
+          type: integer
+        nextOffset:
+          description: Pass as offset for the next page; absent on the last one.
+          type: integer
+          x-go-type-skip-optional-pointer: false
+    PersonalAgentItemPlanChoice:
+      description: >-
+        The person's choice of how an open item runs, sent as part of the edit.
+        Only what the person can choose: the route, the project (workspaceId)
+        and the items it depends on. Foundry merges it over the assistant's
+        plan and keeps the rest (progress, next action, waiting, work refs,
+        evidence). Absent fields stay. Dependencies are checked for cycles;
+        a cycle is refused with 400.
+      type: object
+      additionalProperties: false
+      properties:
+        route:
+          description: The route the person picked; Foundry records it as given.
+          type: string
+          enum:
+            - record
+            - continue
+            - existing
+            - create
+            - multiple
+            - clarify
+        workspaceId:
+          description: The project the item runs in.
+          type: string
+        dependencies:
+          type: array
+          items:
+            type: string
+    PersonalAgentItemEditInput:
+      description: >-
+        PUT /api/personal-agent/items/{id} (the older /api/personal-agent/list/{id}
+        is the same route during the Web transition). The person's own edit of
+        their item; absent fields stay. Changing when clears at and the
+        reminder. archived true archives the item (only when closed and no
+        helper runs; otherwise 409), false restores it. DELETE on the same path
+        removes the item, as before.
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          type: integer
+        text:
+          type: string
+        when:
+          type: string
+        status:
+          $ref: "#/components/schemas/PersonalAgentItemStatus"
+        owner:
+          $ref: "#/components/schemas/PersonalAgentItemOwner"
+        archived:
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        plan:
+          $ref: "#/components/schemas/PersonalAgentItemPlanChoice"
+          x-go-type-skip-optional-pointer: false
+    PersonalAgentItemReportCounts:
+      type: object
+      required:
+        - created
+        - done
+        - dropped
+        - open
+      additionalProperties: false
+      properties:
+        created:
+          description: Items created in the range.
+          type: integer
+        done:
+          description: Items completed in the range.
+          type: integer
+        dropped:
+          description: Items dropped in the range.
+          type: integer
+        open:
+          description: Items still open at the end of the range.
+          type: integer
+    PersonalAgentItemReportGroup:
+      type: object
+      required:
+        - status
+        - items
+      additionalProperties: false
+      properties:
+        status:
+          $ref: "#/components/schemas/PersonalAgentItemStatus"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentItem"
+    PersonalAgentItemReport:
+      description: >-
+        GET /api/personal-agent/items/report?from=&to=: the deterministic
+        review of a range, built only from items and their times; from and to
+        are RFC 3339 instants, the range is [from, to). Archived items count.
+        An item belongs to the range when it was created, updated or closed in
+        it. counts.created: createdAt in range. counts.done and
+        counts.dropped: closedAt in range with that status. counts.open: items
+        open at to (createdAt before to, and not closed before to). groups hold
+        the items in range by status (open, done, dropped). The person may ask
+        the assistant to write prose from it; the report itself is data.
+      type: object
+      required:
+        - from
+        - to
+        - counts
+        - groups
+      additionalProperties: false
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        counts:
+          $ref: "#/components/schemas/PersonalAgentItemReportCounts"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalAgentItemReportGroup"

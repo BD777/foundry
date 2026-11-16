@@ -1,0 +1,465 @@
+package sqlitestore
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
+)
+
+// 「事项」 beyond the list's basics (personal_agent_list.go): the timeline
+// (pa_item_events), archive, the items page, the review of a range, and the
+// time rule that archives closed items. Times are compared as instants
+// (julianday): stored times carry varying fractional seconds, which their
+// text order does not follow.
+
+// recordItemEvent appends one fact to an item's timeline, in the transaction
+// of the change it records.
+func (s *Store) recordItemEvent(ctx context.Context, item store.PersonalAgentListItem, at, actor, kind string, detail store.PersonalAgentItemEventDetail) error {
+	if err := checkActor(actor); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		return fmt.Errorf("encode personal agent item event: %w", err)
+	}
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO pa_item_events (id, user_id, assistant_id, item_id, at, actor, kind, detail_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		paID("pie"), item.UserID, item.AssistantID, item.ID, at, actor, kind, string(raw)); err != nil {
+		return fmt.Errorf("record personal agent item event: %w", err)
+	}
+	return nil
+}
+
+// ListPersonalAgentItemEvents lists an item's timeline, oldest first.
+func (s *Store) ListPersonalAgentItemEvents(ctx context.Context, assistantID, itemID string) ([]store.PersonalAgentItemEvent, error) {
+	rows, err := s.reader().QueryContext(ctx, `SELECT id, item_id, at, actor, kind, detail_json FROM pa_item_events
+		WHERE assistant_id = ? AND item_id = ? ORDER BY julianday(at), rowid`, assistantID, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("list personal agent item events: %w", err)
+	}
+	defer rows.Close()
+	events := []store.PersonalAgentItemEvent{}
+	for rows.Next() {
+		var event store.PersonalAgentItemEvent
+		var detailJSON string
+		if err := rows.Scan(&event.ID, &event.ItemID, &event.At, &event.Actor, &event.Kind, &detailJSON); err != nil {
+			return nil, fmt.Errorf("read personal agent item event: %w", err)
+		}
+		var detail store.PersonalAgentItemEventDetail
+		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+			return nil, fmt.Errorf("read personal agent item event detail: %w", err)
+		}
+		if detail != (store.PersonalAgentItemEventDetail{}) {
+			event.Detail = &detail
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+// SetPersonalAgentItemArchived archives a closed item no helper of which
+// runs, or restores it. Archiving or restoring an item already in that state
+// changes nothing. It returns the sessions of the item's helpers, which go
+// with the item.
+func (s *Store) SetPersonalAgentItemArchived(ctx context.Context, actor, assistantID, id string, archived bool) ([]string, error) {
+	if err := checkActor(actor); err != nil {
+		return nil, err
+	}
+	var sessions []string
+	err := s.withTx(ctx, func(tx *Store) error {
+		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
+		if err != nil {
+			return err
+		}
+		if item.Text == "" {
+			return store.ErrNotFound
+		}
+		if (item.ArchivedAt != "") != archived {
+			if err := tx.setItemArchived(ctx, actor, item, archived, paNow()); err != nil {
+				return err
+			}
+		}
+		sessions, err = tx.helperSessionIDs(ctx, assistantID, id)
+		return err
+	})
+	return sessions, err
+}
+
+// SavePersonalAgentItemArchive saves an item as SavePersonalAgentItem does
+// and archives or restores it as SetPersonalAgentItemArchived does, in one
+// transaction. An archive the item cannot take is refused before the save
+// writes anything; a save the store refuses (a stale revision, an invalid
+// field, a dependency cycle) rolls the archive back with it. It returns the
+// saved item and the sessions of its helpers.
+func (s *Store) SavePersonalAgentItemArchive(ctx context.Context, actor string, item store.PersonalAgentListItem, archived bool) (store.PersonalAgentListItem, []string, error) {
+	if err := checkActor(actor); err != nil {
+		return store.PersonalAgentListItem{}, nil, err
+	}
+	var saved store.PersonalAgentListItem
+	var sessions []string
+	err := s.withTx(ctx, func(tx *Store) error {
+		if archived {
+			if err := tx.checkItemArchivable(ctx, item); err != nil {
+				return err
+			}
+		}
+		var err error
+		if saved, err = tx.SavePersonalAgentItem(ctx, actor, item); err != nil {
+			return err
+		}
+		if sessions, err = tx.SetPersonalAgentItemArchived(ctx, actor, item.AssistantID, item.ID, archived); err != nil {
+			return err
+		}
+		saved, err = tx.GetPersonalAgentItem(ctx, item.AssistantID, item.ID)
+		return err
+	})
+	return saved, sessions, err
+}
+
+// RecordPersonalAgentItemSessionEvent records that the archive or restore of
+// an item took one of its helper sessions, once the session archive has taken
+// it. kind is archived or restored.
+func (s *Store) RecordPersonalAgentItemSessionEvent(ctx context.Context, actor, assistantID, itemID, kind, sessionID string) error {
+	if kind != store.PersonalAgentItemEventArchived && kind != store.PersonalAgentItemEventRestored {
+		return fmt.Errorf("%w: session event kind %q is neither archived nor restored", store.ErrPersonalAgentItemInvalid, kind)
+	}
+	item, err := s.GetPersonalAgentItem(ctx, assistantID, itemID)
+	if err != nil {
+		return err
+	}
+	return s.recordItemEvent(ctx, item, paNow(), actor, kind, store.PersonalAgentItemEventDetail{SessionID: sessionID})
+}
+
+// setItemArchived archives a closed item that no helper of it runs for, or
+// restores it, and records the change for actor.
+func (s *Store) setItemArchived(ctx context.Context, actor string, item store.PersonalAgentListItem, archived bool, now string) error {
+	kind, archivedAt := store.PersonalAgentItemEventRestored, ""
+	if archived {
+		if err := s.checkItemArchivable(ctx, item); err != nil {
+			return err
+		}
+		kind, archivedAt = store.PersonalAgentItemEventArchived, now
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET archived_at = ?, updated_at = ? WHERE assistant_id = ? AND id = ?`,
+		archivedAt, now, item.AssistantID, item.ID); err != nil {
+		return fmt.Errorf("set personal agent item archived: %w", err)
+	}
+	return s.recordItemEvent(ctx, item, now, actor, kind, store.PersonalAgentItemEventDetail{})
+}
+
+// checkItemArchivable refuses an archive of an item that is open or has a helper running.
+func (s *Store) checkItemArchivable(ctx context.Context, item store.PersonalAgentListItem) error {
+	if item.Status == store.PersonalAgentItemOpen {
+		return store.ErrPersonalAgentItemNotArchivable
+	}
+	running, err := s.hasRunningHelper(ctx, item.AssistantID, item.ID)
+	if err != nil {
+		return err
+	}
+	if running {
+		return store.ErrPersonalAgentItemNotArchivable
+	}
+	return nil
+}
+
+// hasRunningHelper reports whether a helper of the item is queued, running or asking.
+func (s *Store) hasRunningHelper(ctx context.Context, assistantID, itemID string) (bool, error) {
+	var running bool
+	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_tasks WHERE assistant_id = ? AND item_id = ? AND status IN (?, ?, ?))`,
+		assistantID, itemID, store.PersonalAgentTaskQueued, store.PersonalAgentTaskRunning, store.PersonalAgentTaskAsking).Scan(&running); err != nil {
+		return false, fmt.Errorf("check personal agent item helpers: %w", err)
+	}
+	return running, nil
+}
+
+// helperSessionIDs lists the sessions of the item's helpers, oldest first.
+func (s *Store) helperSessionIDs(ctx context.Context, assistantID, itemID string) ([]string, error) {
+	rows, err := s.reader().QueryContext(ctx, `SELECT session_id FROM pa_tasks WHERE assistant_id = ? AND item_id = ? AND session_id <> '' ORDER BY created_at, rowid`,
+		assistantID, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("list personal agent item sessions: %w", err)
+	}
+	defer rows.Close()
+	sessions := []string{}
+	for rows.Next() {
+		var sessionID string
+		if err := rows.Scan(&sessionID); err != nil {
+			return nil, fmt.Errorf("read personal agent item session: %w", err)
+		}
+		sessions = append(sessions, sessionID)
+	}
+	return sessions, rows.Err()
+}
+
+// SweepArchiveFinishedItems is the time rule: an item closed at least after
+// ago, with no helper running, is archived as Foundry. It returns the items
+// and the sessions of their helpers.
+func (s *Store) SweepArchiveFinishedItems(ctx context.Context, now time.Time, after time.Duration) ([]store.PersonalAgentArchivedItem, error) {
+	at, cutoff := formatTime(now), formatTime(now.Add(-after))
+	archived := []store.PersonalAgentArchivedItem{}
+	err := s.withTx(ctx, func(tx *Store) error {
+		items, err := tx.queryItems(ctx, `text <> '' AND archived_at = '' AND status IN (?, ?) AND closed_at <> '' AND julianday(closed_at) <= julianday(?)
+			AND NOT EXISTS (SELECT 1 FROM pa_tasks WHERE pa_tasks.assistant_id = pa_items.assistant_id AND pa_tasks.item_id = pa_items.id AND pa_tasks.status IN (?, ?, ?))
+			ORDER BY julianday(closed_at), rowid`,
+			store.PersonalAgentItemDone, store.PersonalAgentItemDropped, cutoff,
+			store.PersonalAgentTaskQueued, store.PersonalAgentTaskRunning, store.PersonalAgentTaskAsking)
+		if err != nil {
+			return fmt.Errorf("find finished personal agent items: %w", err)
+		}
+		for _, item := range items {
+			if err := tx.setItemArchived(ctx, store.PersonalAgentActorFoundry, item, true, at); err != nil {
+				return err
+			}
+			sessions, err := tx.helperSessionIDs(ctx, item.AssistantID, item.ID)
+			if err != nil {
+				return err
+			}
+			archived = append(archived, store.PersonalAgentArchivedItem{AssistantID: item.AssistantID, ItemID: item.ID, SessionIDs: sessions})
+		}
+		return nil
+	})
+	return archived, err
+}
+
+// recordHelperEvents writes the helper events of a task change on its item:
+// started when the task joins one, ended when it reaches a final status. A
+// helper event bumps the item's updated_at, not its revision.
+func (s *Store) recordHelperEvents(ctx context.Context, actor, now string, previous, next store.PersonalAgentTask) error {
+	if next.ItemID == "" {
+		return nil
+	}
+	started := next.ItemID != previous.ItemID
+	ended := helperFinished(next.Status) && (started || !helperFinished(previous.Status))
+	if !started && !ended {
+		return nil
+	}
+	item, err := s.GetPersonalAgentItem(ctx, next.AssistantID, next.ItemID)
+	if err != nil {
+		return fmt.Errorf("record helper event on item %s: %w", next.ItemID, err)
+	}
+	detail := store.PersonalAgentItemEventDetail{SessionID: next.SessionID, WorkspaceID: next.WorkspaceID, Title: next.Title}
+	if started {
+		if err := s.recordItemEvent(ctx, item, now, actor, store.PersonalAgentItemEventHelperStarted, detail); err != nil {
+			return err
+		}
+	}
+	if ended {
+		detail.To = next.Status
+		if err := s.recordItemEvent(ctx, item, now, actor, store.PersonalAgentItemEventHelperEnded, detail); err != nil {
+			return err
+		}
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET updated_at = ? WHERE assistant_id = ? AND id = ?`, now, next.AssistantID, next.ItemID); err != nil {
+		return fmt.Errorf("touch personal agent item: %w", err)
+	}
+	return nil
+}
+
+// helperFinished reports whether a helper's status is final.
+func helperFinished(status string) bool {
+	switch status {
+	case store.PersonalAgentTaskDone, store.PersonalAgentTaskFailed, store.PersonalAgentTaskCancelled:
+		return true
+	}
+	return false
+}
+
+// itemSearchEscaper escapes a LIKE pattern's wildcards.
+var itemSearchEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// ListPersonalAgentItemPage lists one page of the items of the filter, newest
+// updated first, with the helpers of the items on it.
+func (s *Store) ListPersonalAgentItemPage(ctx context.Context, assistantID string, filter store.PersonalAgentItemFilter) (store.PersonalAgentItemPage, error) {
+	where := []string{"assistant_id = ?", "text <> ''"}
+	args := []any{assistantID}
+	archivedView := false
+	if filter.ClosedSince != "" {
+		if _, err := parseInstant("closedSince", filter.ClosedSince); err != nil {
+			return store.PersonalAgentItemPage{}, err
+		}
+		where = append(where, "(status = ? OR (closed_at <> '' AND julianday(closed_at) >= julianday(?)))")
+		args = append(args, store.PersonalAgentItemOpen, filter.ClosedSince)
+	} else {
+		switch filter.View {
+		case "", store.PersonalAgentItemViewOpen:
+			where = append(where, "status = ?")
+			args = append(args, store.PersonalAgentItemOpen)
+		case store.PersonalAgentItemViewFinished:
+			where = append(where, "status IN (?, ?)")
+			args = append(args, store.PersonalAgentItemDone, store.PersonalAgentItemDropped)
+		case store.PersonalAgentItemViewArchived:
+			archivedView = true
+			where = append(where, "archived_at <> ''")
+		case store.PersonalAgentItemViewAll:
+		default:
+			return store.PersonalAgentItemPage{}, fmt.Errorf("%w: view %q is not open, finished, archived or all", store.ErrPersonalAgentItemInvalid, filter.View)
+		}
+	}
+	if !archivedView && !filter.IncludeArchived {
+		where = append(where, "archived_at = ''")
+	}
+	switch filter.Status {
+	case "":
+	case store.PersonalAgentItemOpen, store.PersonalAgentItemDone, store.PersonalAgentItemDropped:
+		where = append(where, "status = ?")
+		args = append(args, filter.Status)
+	default:
+		return store.PersonalAgentItemPage{}, fmt.Errorf("%w: status %q is not open, done or dropped", store.ErrPersonalAgentItemInvalid, filter.Status)
+	}
+	switch filter.Owner {
+	case "":
+	case store.PersonalAgentItemOwnerPerson, store.PersonalAgentItemOwnerAssistant:
+		where = append(where, "owner = ?")
+		args = append(args, filter.Owner)
+	default:
+		return store.PersonalAgentItemPage{}, fmt.Errorf("%w: owner %q is neither person nor assistant", store.ErrPersonalAgentItemInvalid, filter.Owner)
+	}
+	if filter.From != "" {
+		if _, err := parseInstant("from", filter.From); err != nil {
+			return store.PersonalAgentItemPage{}, err
+		}
+		where = append(where, "julianday(updated_at) >= julianday(?)")
+		args = append(args, filter.From)
+	}
+	if filter.To != "" {
+		if _, err := parseInstant("to", filter.To); err != nil {
+			return store.PersonalAgentItemPage{}, err
+		}
+		where = append(where, "julianday(updated_at) < julianday(?)")
+		args = append(args, filter.To)
+	}
+	if query := strings.TrimSpace(filter.Query); query != "" {
+		pattern := "%" + itemSearchEscaper.Replace(query) + "%"
+		where = append(where, `(LOWER(text) LIKE LOWER(?) ESCAPE '\' OR LOWER(summary) LIKE LOWER(?) ESCAPE '\')`)
+		args = append(args, pattern, pattern)
+	}
+	condition := strings.Join(where, " AND ")
+
+	var total int
+	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM pa_items WHERE `+condition, args...).Scan(&total); err != nil {
+		return store.PersonalAgentItemPage{}, fmt.Errorf("count personal agent items: %w", err)
+	}
+	limit, offset := filter.Limit, max(filter.Offset, 0)
+	switch {
+	case limit <= 0:
+		limit = store.PersonalAgentItemPageDefault
+	case limit > store.PersonalAgentItemPageMax:
+		limit = store.PersonalAgentItemPageMax
+	}
+	items, err := s.queryItems(ctx, condition+` ORDER BY julianday(updated_at) DESC, rowid DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	if err != nil {
+		return store.PersonalAgentItemPage{}, err
+	}
+	helpers, err := s.itemHelpers(ctx, assistantID, items)
+	if err != nil {
+		return store.PersonalAgentItemPage{}, err
+	}
+	page := store.PersonalAgentItemPage{Items: items, Helpers: helpers, Total: total, Offset: offset}
+	if offset+len(items) < total {
+		page.NextOffset = offset + len(items)
+	}
+	return page, nil
+}
+
+// itemHelpers loads the helpers of the given items in one query.
+func (s *Store) itemHelpers(ctx context.Context, assistantID string, items []store.PersonalAgentListItem) (map[string][]store.PersonalAgentTask, error) {
+	helpers := map[string][]store.PersonalAgentTask{}
+	if len(items) == 0 {
+		return helpers, nil
+	}
+	args := []any{assistantID}
+	for _, item := range items {
+		args = append(args, item.ID)
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id = ? AND item_id IN (`+sqlPlaceholders(len(items))+`)
+		ORDER BY created_at, rowid`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list personal agent item helpers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		helpers[task.ItemID] = append(helpers[task.ItemID], task)
+	}
+	return helpers, rows.Err()
+}
+
+// ReportPersonalAgentItems reviews [from, to), two RFC 3339 instants. Archived
+// items count. Created counts items created in the range; done and dropped
+// count items closed in the range with that status; open counts items open
+// at to. Groups hold the items created, updated or closed in the range, by status.
+func (s *Store) ReportPersonalAgentItems(ctx context.Context, assistantID, from, to string) (store.PersonalAgentItemRangeReport, error) {
+	start, err := parseInstant("from", from)
+	if err != nil {
+		return store.PersonalAgentItemRangeReport{}, err
+	}
+	end, err := parseInstant("to", to)
+	if err != nil {
+		return store.PersonalAgentItemRangeReport{}, err
+	}
+	if !start.Before(end) {
+		return store.PersonalAgentItemRangeReport{}, fmt.Errorf("%w: from must be before to", store.ErrPersonalAgentItemInvalid)
+	}
+	inRange := func(column string) string {
+		return `(julianday(` + column + `) >= julianday(?) AND julianday(` + column + `) < julianday(?))`
+	}
+	count := func(condition string, args ...any) (int, error) {
+		var n int
+		err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM pa_items WHERE assistant_id = ? AND text <> '' AND `+condition,
+			append([]any{assistantID}, args...)...).Scan(&n)
+		if err != nil {
+			return 0, fmt.Errorf("count personal agent items for report: %w", err)
+		}
+		return n, nil
+	}
+	var report store.PersonalAgentItemRangeReport
+	report.From, report.To = from, to
+	if report.Counts.Created, err = count(inRange("created_at"), from, to); err != nil {
+		return report, err
+	}
+	if report.Counts.Done, err = count("status = ? AND "+inRange("closed_at"), store.PersonalAgentItemDone, from, to); err != nil {
+		return report, err
+	}
+	if report.Counts.Dropped, err = count("status = ? AND "+inRange("closed_at"), store.PersonalAgentItemDropped, from, to); err != nil {
+		return report, err
+	}
+	if report.Counts.Open, err = count(`julianday(created_at) < julianday(?) AND (closed_at = '' OR julianday(closed_at) >= julianday(?))`, to, to); err != nil {
+		return report, err
+	}
+	items, err := s.queryItems(ctx, `assistant_id = ? AND text <> '' AND (`+inRange("created_at")+` OR `+inRange("updated_at")+` OR `+inRange("closed_at")+`)
+		ORDER BY julianday(updated_at) DESC, rowid DESC`, assistantID, from, to, from, to, from, to)
+	if err != nil {
+		return report, err
+	}
+	report.Groups = []store.PersonalAgentItemStatusGroup{
+		{Status: store.PersonalAgentItemOpen, Items: []store.PersonalAgentListItem{}},
+		{Status: store.PersonalAgentItemDone, Items: []store.PersonalAgentListItem{}},
+		{Status: store.PersonalAgentItemDropped, Items: []store.PersonalAgentListItem{}},
+	}
+	for _, item := range items {
+		for index := range report.Groups {
+			if report.Groups[index].Status == item.Status {
+				report.Groups[index].Items = append(report.Groups[index].Items, item)
+			}
+		}
+	}
+	if report.Helpers, err = s.itemHelpers(ctx, assistantID, items); err != nil {
+		return report, err
+	}
+	return report, nil
+}
+
+// parseInstant reads an RFC 3339 instant a query names.
+func parseInstant(name, value string) (time.Time, error) {
+	instant, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: %s is not an RFC 3339 instant", store.ErrPersonalAgentItemInvalid, name)
+	}
+	return instant, nil
+}

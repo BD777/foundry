@@ -382,6 +382,7 @@ func (s *Server) routeTable() []route {
 		// What waits for the person in their chats and Issues (DEV-079).
 		fn("GET /api/pending-items", s.handleListPendingItems, personOnly()),
 		fn("POST /api/pending-items/{id}/state", s.handleSetPendingItemState, personOnly()),
+		fn("POST /api/pending-items/{id}/retry", s.handleRetryPendingItem, personOnly()),
 		fn("PUT /api/me/default-skills", s.handleSetMyDefaultSkills, signedIn()),
 		fn("GET /api/workspaces/{id}/service-tunnels", s.handleListServiceTunnels, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/service-tunnels", s.handleSaveServiceTunnel, workspaceRole(member, pathWorkspace("id"))),
@@ -396,6 +397,11 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/workspaces/{id}/services/{workId}/operations", s.handleWorkspaceServiceControl, workspaceRole(member, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/inspection", s.handleWorkspaceInspection, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/inspection/rescan", s.handleWorkspaceInspection, workspaceRole(member, pathWorkspace("id"))),
+		// A project's upkeep and the file changes it suggests (DEV-256):
+		// reviewed on the project page; governance applies only for owners.
+		fn("GET /api/workspaces/{id}/upkeep", s.handleWorkspaceUpkeep, workspaceRole(owner, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/upkeep/{job}", s.handleWorkspaceUpkeepAction, workspaceRole(owner, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/upkeep/{job}/patch", s.handleWorkspaceUpkeepPatch, workspaceRole(owner, pathWorkspace("id"))),
 
 		fn("GET /api/devices", s.handleListDevices, filtered()),
 		fn("POST /api/devices/pairing-tokens", s.handleCreateDevicePairingToken, signedIn()),
@@ -669,8 +675,6 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/personal-agent/memory/entries/{entry}/move", s.handleMoveMemoryEntry, personOnly()),
 		fn("GET /api/personal-agent/memory/sorting", s.handleMemorySorting, personOnly()),
 		fn("POST /api/personal-agent/memory/sorting/{record}/action", s.handleMemorySortAction, personOnly()),
-		fn("GET /api/personal-agent/context-patches", s.handleContextPatches, personOnly()),
-		fn("POST /api/personal-agent/maintenance/{job}/patch", s.handleContextPatch, personOnly()),
 		fn("GET /api/personal-agent/maintenance", s.handleMaintenanceList, personOnly()),
 		fn("POST /api/personal-agent/maintenance/{job}", s.handleMaintenanceAction, personOnly()),
 		fn("GET /api/personal-agent/runs", s.handlePersonalAgentRunSnapshots, personOnly()),
@@ -692,9 +696,14 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/personal-agent/tasks", s.handleListPersonalAgentTasks, personOnly()),
 		fn("POST /api/personal-agent/tasks/{id}/stop", s.handleStopPersonalAgentTask, personOnly()),
 		fn("GET /api/personal-agent/actions", s.handleListPersonalAgentActions, personOnly()),
-		fn("GET /api/personal-agent/list", s.handleListPersonalAgentItems, personOnly()),
+		fn("GET /api/personal-agent/list", s.handleLegacyListPersonalAgentItems, personOnly()),
 		fn("PUT /api/personal-agent/list/{id}", s.handleEditPersonalAgentItem, personOnly()),
 		fn("DELETE /api/personal-agent/list/{id}", s.handleDeletePersonalAgentItem, personOnly()),
+		fn("GET /api/personal-agent/items", s.handleListPersonalAgentItems, personOnly()),
+		fn("GET /api/personal-agent/items/report", s.handleReportPersonalAgentItems, personOnly()),
+		fn("GET /api/personal-agent/items/{id}", s.handleGetPersonalAgentItem, personOnly()),
+		fn("PUT /api/personal-agent/items/{id}", s.handleEditPersonalAgentItem, personOnly()),
+		fn("DELETE /api/personal-agent/items/{id}", s.handleDeletePersonalAgentItem, personOnly()),
 
 		agent(fn("POST /api/chats/archive", s.handleArchiveChats, inHandler())),
 		agent(fn("POST /api/chats/unarchive", s.handleUnarchiveChats, inHandler())),

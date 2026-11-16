@@ -121,7 +121,7 @@ func TestLegacyInFlightOperationDrainsThroughTheGenericPath(t *testing.T) {
 	ctx := context.Background()
 	agent := mustAgent(t, f)
 	items := f.server.store.(store.PersonalAgentListStore)
-	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{
+	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
 		AssistantID: agent.ID, UserID: f.aliceID, Text: "tidy the synthetic photos",
 		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
 	})

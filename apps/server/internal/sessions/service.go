@@ -99,7 +99,7 @@ type Policy interface {
 	// assistant; delegating: the assistant hands it off, and follows it
 	// (RecordAssistantTask).
 	AdmitAssistantSession(ctx context.Context, input store.CreateAgentSessionInput) (agent store.PersonalAgent, delegating bool, err error)
-	RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession)
+	RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string)
 	// AdmitAssistantTurn refuses a turn of the assistant past its limits.
 	AdmitAssistantTurn(ctx context.Context, session store.AgentSession) error
 	// ChooseSessionAccount pins the account a new session naming no

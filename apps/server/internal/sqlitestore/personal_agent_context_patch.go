@@ -15,6 +15,10 @@ func (s *Store) setupPersonalAgentContextPatch(ctx context.Context) error {
 		return err
 	}
 	_, err = s.conn().ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_context_patch_fence ON pa_context_patches(workspace_id) WHERE status='applying'`)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn().ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_pa_context_patch_workspace ON pa_context_patches(workspace_id)`)
 	return err
 }
 func scanPAContextPatch(row interface{ Scan(...any) error }) (store.PersonalAgentContextPatch, error) {
@@ -121,8 +125,8 @@ func (s *Store) listPAContextPatches(ctx context.Context, q string, args ...any)
 	}
 	return out, rows.Err()
 }
-func (s *Store) ListPersonalAgentContextPatches(ctx context.Context, assistantID string) ([]store.PersonalAgentContextPatch, error) {
-	return s.listPAContextPatches(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE assistant_id=? ORDER BY rowid DESC LIMIT 200`, assistantID)
+func (s *Store) ListPersonalAgentContextPatchesForWorkspace(ctx context.Context, userID, workspaceID string) ([]store.PersonalAgentContextPatch, error) {
+	return s.listPAContextPatches(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE user_id=? AND workspace_id=? ORDER BY rowid DESC LIMIT 200`, userID, workspaceID)
 }
 func (s *Store) PendingPersonalAgentContextPatches(ctx context.Context) ([]store.PersonalAgentContextPatch, error) {
 	return s.listPAContextPatches(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_context_patches WHERE status='applying' ORDER BY rowid LIMIT 20`)

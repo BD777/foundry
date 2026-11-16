@@ -89,8 +89,8 @@ func (p sessionPolicy) AdmitAssistantSession(ctx context.Context, input store.Cr
 	return p.s.assistant.AdmitSession(ctx, input)
 }
 
-func (p sessionPolicy) RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession) {
-	p.s.assistant.RecordTask(ctx, agent, conversationID, session)
+func (p sessionPolicy) RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string) {
+	p.s.assistant.RecordTask(ctx, agent, conversationID, session, itemID)
 }
 
 func (p sessionPolicy) AdmitAssistantTurn(ctx context.Context, session store.AgentSession) error {

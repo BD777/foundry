@@ -2,6 +2,8 @@
 
 状态：已部署 dev（train15/16/17-20261117）；Agent 代验收（2026-11-17，范围见验收记录）；已合入 main（PR #272）。
 
+- 2026-11-17（train 18）：MCP 工具描述中补上执行成员档位与限流域（dev261-mcp），随 train 18 部署到 dev。
+
 ## 问题与证据
 
 - 2026-11-17 00:17（UTC+8）8 个编排子会话跑在 worker group `wgroup_c8029c91…`（deepseek-flash-1017）上，3 个同时被 "Rate limited, waiting to retry" 卡住。

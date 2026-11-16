@@ -283,6 +283,28 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("superseded", "source_changed", 0)
 		return
 	}
+	if job.Role == "governance" {
+		// Project upkeep belongs to the workspace; the assistant is only the
+		// executor of its attempts. Resolve the person's current default
+		// assistant when the review runs, and say so plainly when there is
+		// none (DEV-256).
+		executor, e := s.store.DefaultAssistant(ctx, job.UserID)
+		if errors.Is(e, store.ErrNotFound) {
+			save("waiting", "no_default_assistant", 5*time.Minute)
+			return
+		}
+		if e != nil {
+			save("waiting", "role_configuration_unavailable", 5*time.Minute)
+			return
+		}
+		if executor.ID != job.AssistantID {
+			if e := s.store.RebindPersonalAgentMaintenance(ctx, job.AssistantID, job.ID, executor.ID); e != nil {
+				log.Printf("maintenance %s: rebind executor: %v", job.ID, e)
+				return
+			}
+			job.AssistantID = executor.ID
+		}
+	}
 	placement, err := s.placeMaintenance(ctx, job)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {

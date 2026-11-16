@@ -56,8 +56,12 @@ func (s *Server) requestAssistant(r *http.Request) (store.PersonalAgent, error) 
 }
 
 func (s *Server) handlePersonalAgentOverview(w http.ResponseWriter, r *http.Request) {
+	person := s.personFrom(r)
+	// The card's count includes unprocessed messages (DEV-254): bring their
+	// items up to what the inboxes hold before the overview reads them.
+	s.reconcileInboxPending(r.Context(), person.ID, s.openInboxPendingKeys(r.Context(), person.ID))
 	if r.PathValue("assistant") == "" {
-		overview, err := s.assistant.Overview(r.Context(), s.personFrom(r).ID)
+		overview, err := s.assistant.Overview(r.Context(), person.ID)
 		writeResult(w, overview, err)
 		return
 	}
@@ -444,7 +448,9 @@ func (s *Server) handleMaintenanceList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	jobs, err := s.store.ListPersonalAgentMaintenance(r.Context(), agent.ID)
+	// Only this assistant's own memory layer: project upkeep belongs to its
+	// workspace and is read there (DEV-256).
+	jobs, err := s.store.ListAssistantMemoryMaintenance(r.Context(), agent.ID)
 	writeResult(w, jobs, err)
 }
 
@@ -454,6 +460,9 @@ func (s *Server) handleMaintenanceAction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	job, err := s.store.GetPersonalAgentMaintenance(r.Context(), agent.ID, r.PathValue("job"))
+	if err == nil && job.Role != "memory" {
+		err = store.ErrNotFound
+	}
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -467,83 +476,6 @@ func (s *Server) handleMaintenanceAction(w http.ResponseWriter, r *http.Request)
 	}
 	saved, err := s.assistant.MaintenanceAction(r.Context(), job, input.Action, input.Revision)
 	writeResult(w, saved, err)
-}
-
-func (s *Server) handleContextPatches(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
-	v, err := s.store.ListPersonalAgentContextPatches(r.Context(), agent.ID)
-	writeResult(w, v, err)
-}
-
-func (s *Server) handleContextPatch(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
-	job, err := s.store.GetPersonalAgentMaintenance(r.Context(), agent.ID, r.PathValue("job"))
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	var input assistant.ContextPatchRequest
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	answer, accepted, err := s.assistant.ContextPatch(r.Context(), job, input)
-	if accepted {
-		writeResultWithStatus(w, http.StatusAccepted, answer, err)
-		return
-	}
-	writeResult(w, answer, err)
-}
-
-// handleListPersonalAgentItems answers the person's open items and those
-// closed since ?closedSince (none without it).
-func (s *Server) handleListPersonalAgentItems(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
-	since := ""
-	if value := strings.TrimSpace(r.URL.Query().Get("closedSince")); value != "" {
-		at, err := time.Parse(time.RFC3339Nano, value)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "closedSince must be an RFC 3339 time")
-			return
-		}
-		since = at.UTC().Format(time.RFC3339Nano)
-	}
-	items, err := s.assistant.Items(r.Context(), agent.ID, since)
-	writeResult(w, items, err)
-}
-
-// handleEditPersonalAgentItem is the person's own edit (assistant.EditItem).
-func (s *Server) handleEditPersonalAgentItem(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
-	var input store.PersonalAgentListItemInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	saved, err := s.assistant.EditItem(r.Context(), agent, r.PathValue("id"), input)
-	writeResult(w, saved, err)
-}
-
-func (s *Server) handleDeletePersonalAgentItem(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
-	if err := s.store.DeletePersonalAgentItem(r.Context(), agent.ID, r.PathValue("id")); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleAssistantRunControls(w http.ResponseWriter, r *http.Request) {

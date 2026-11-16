@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AgentSession,
   PersonalAgent,
-  PersonalAgentListItem,
-  PersonalAgentItemPlan,
+  PersonalAgentItem,
   PersonalAgentOperation,
   PersonalAgentOverview,
   PersonalAgentProposal,
@@ -12,43 +11,37 @@ import type {
 import {
   acceptPersonalAgentProposal,
   declinePersonalAgentProposal,
-  deletePersonalAgentListItem,
   fillPersonalAgentTimezone,
   getPersonalAgent,
-  listPersonalAgentList,
   listPersonalAgentOperations,
   listPersonalAgentProposals,
   listPersonalAgentTasks,
   resumePersonalAgent,
   stopPersonalAgent,
   stopPersonalAgentTask,
-  updatePersonalAgentListItem,
 } from "../../api";
 import { serverErrorText } from "../../lib/errors";
 import { onStreamEvent } from "../../stream";
+import { assistantSessionEventTypes } from "./assistant-session-events";
 import { browserTimezone } from "./assistant-model";
-import { listItemEdit, startOfLocalDay } from "./person-list-model";
+import { startOfLocalDay } from "./items-model";
+import { personalItemActions, usePersonalItems } from "./use-personal-items";
 
 export type AssistantLoad =
   | { state: "loading" }
   | { state: "failed"; message: string }
   | { state: "ready"; overview: PersonalAgentOverview };
 
-/** What the assistant's sessions do changes its proposals and tasks. */
-const sessionEventTypes = [
-  "agent_session_created",
-  "agent_session_started",
-  "agent_session_blocked",
-  "agent_session_resumed",
-  "agent_session_completed",
-] as const;
-
 const refreshDelayMs = 400;
+
+/** The open 「事项」 (all of them: the card's count and the helpers they own). */
+const openItemsQuery = { view: "open", limit: 200 } as const;
 
 /**
  * The person's assistant: its state, the proposals waiting for them, the
- * work it follows up and the person's own list. Read when shown, and again when one of its sessions
- * (or a session doing its work) starts or ends, or the stream missed events.
+ * work it follows up and the person's 「事项」. Read when shown, and again when
+ * one of its sessions (or a session doing its work) starts or ends, or the
+ * stream missed events.
  */
 export function useAssistant(assistantId?: string) {
   const [load, setLoad] = useState<AssistantLoad>({ state: "loading" });
@@ -56,8 +49,12 @@ export function useAssistant(assistantId?: string) {
   const [tasks, setTasks] = useState<PersonalAgentTask[]>([]);
   const [operations, setOperations] = useState<PersonalAgentOperation[]>([]);
   const [listsError, setListsError] = useState("");
-  const [listItems, setListItems] = useState<PersonalAgentListItem[]>([]);
-  const [listItemsError, setListItemsError] = useState("");
+  const openItems = usePersonalItems(assistantId, openItemsQuery);
+  const todayItems = usePersonalItems(assistantId, {
+    view: "finished",
+    from: startOfLocalDay().toISOString(),
+    limit: 200,
+  });
   const agent = load.state === "ready" ? load.overview.agent : undefined;
   const workspaceId = agent?.workspaceId ?? "";
   const watched = useRef({ workspaceId, sessions: new Set<string>() });
@@ -103,22 +100,6 @@ export function useAssistant(assistantId?: string) {
     }
   }, [assistantId, withTimezone]);
 
-  // The person's list: open items, and those closed since the start of
-  // today. Read on its own so a failure leaves proposals and tasks shown.
-  const readListItems = useCallback(async () => {
-    try {
-      setListItems(
-        await listPersonalAgentList(
-          assistantId,
-          startOfLocalDay().toISOString(),
-        ),
-      );
-      setListItemsError("");
-    } catch (error) {
-      setListItemsError(serverErrorText(error));
-    }
-  }, [assistantId]);
-
   const readWork = useCallback(async () => {
     try {
       const [nextProposals, nextTasks] = await Promise.all([
@@ -136,12 +117,11 @@ export function useAssistant(assistantId?: string) {
   const readLists = useCallback(async () => {
     await Promise.all([
       readWork(),
-      readListItems(),
       listPersonalAgentOperations(assistantId)
         .then(setOperations)
         .catch((e) => setListsError(serverErrorText(e))),
     ]);
-  }, [assistantId, readWork, readListItems]);
+  }, [assistantId, readWork]);
 
   const reload = useCallback(async () => {
     const overview = await readOverview();
@@ -158,7 +138,7 @@ export function useAssistant(assistantId?: string) {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => void reload(), refreshDelayMs);
     };
-    const stops = sessionEventTypes.map((type) =>
+    const stops = assistantSessionEventTypes.map((type) =>
       onStreamEvent(
         type,
         (session: AgentSession) => {
@@ -192,8 +172,10 @@ export function useAssistant(assistantId?: string) {
     tasks,
     operations,
     listsError,
-    listItems,
-    listItemsError,
+    /** The person's open 「事项」 (all of them, for the count and the helpers). */
+    openItems,
+    /** Items updated since the start of today: where the closed ones of today come from. */
+    todayItems,
     reload,
     replaceAgent,
     /** Pauses new dispatch and requests execution stops; receipts remain separate. */
@@ -224,37 +206,14 @@ export function useAssistant(assistantId?: string) {
       await stopPersonalAgentTask(assistantId, task.id);
       await readLists();
     },
-    /** Ticks an item done, or reopens it. */
-    async tickItem(item: PersonalAgentListItem, done: boolean): Promise<void> {
-      await updatePersonalAgentListItem(assistantId, item.id, {
-        revision: item.revision,
-        status: done ? "done" : "open",
-      });
-      await readListItems();
-    },
-    async planItem(
-      item: PersonalAgentListItem,
-      plan: PersonalAgentItemPlan,
-    ): Promise<void> {
-      await updatePersonalAgentListItem(assistantId, item.id, {
-        revision: item.revision,
-        plan,
-      });
-      await readLists();
-    },
-    /** Saves the person's words; nothing is sent when nothing changed. */
-    async editItem(
-      item: PersonalAgentListItem,
-      draft: { text: string; when: string },
-    ): Promise<void> {
-      const input = listItemEdit(item, draft);
-      if (Object.keys(input).length === 0) return;
-      await updatePersonalAgentListItem(assistantId, item.id, input);
-      await readListItems();
-    },
-    async deleteItem(item: PersonalAgentListItem): Promise<void> {
-      await deletePersonalAgentListItem(assistantId, item.id);
-      await readListItems();
+    /** Ticks an 「事项」 done, or reopens it; both lists of items show the change. */
+    async setItemDone(item: PersonalAgentItem, done: boolean): Promise<void> {
+      await personalItemActions.setStatus(
+        assistantId,
+        item,
+        done ? "done" : "open",
+      );
+      await Promise.all([openItems.reload(), todayItems.reload()]);
     },
   };
 }

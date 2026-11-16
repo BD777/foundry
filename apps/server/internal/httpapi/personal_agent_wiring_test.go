@@ -120,7 +120,7 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper)
+	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper, "")
 	if run, ok, err := f.server.assistant.RunFor(ctx, helper); ok || err != nil || len(run.Files) != 0 {
 		t.Fatalf("a helper ran as the assistant: %v %v", ok, err)
 	}

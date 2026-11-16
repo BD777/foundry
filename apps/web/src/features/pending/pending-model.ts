@@ -1,5 +1,7 @@
+import type { TFunction } from "i18next";
 import type { PendingItem } from "../../api";
 import { pendingPersonal } from "../../lib/pending-display";
+import { clockTime } from "../../lib/time-format";
 
 export {
   pendingFailure,
@@ -81,32 +83,61 @@ export function pendingOrigin(
   return { kind: "chat", name: untitled };
 }
 
+/**
+ * Upkeep suggestions (DEV-256) belong to a project or to an assistant, never
+ * to a chat: they group under that name, so no "untitled chat" header shows.
+ */
+function upkeepOwner(item: PendingItem): "project" | "memory" | undefined {
+  if (item.source === "project_upkeep") return "project";
+  if (item.source === "memory_upkeep") return "memory";
+  return undefined;
+}
+
 export function groupPendingItems(
   items: readonly PendingItem[],
   filter: PendingFilter,
   untitled: string,
   personal = untitled,
+  defaultAssistant = untitled,
+  projectFallback = untitled,
 ): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
     if ((filter === "open") === pendingResolved(item)) continue;
     if (pendingByAssistant(item)) continue;
     const own = pendingPersonal(item);
-    const key = own
-      ? "personal"
-      : item.issueId
-        ? `issue:${item.issueId}`
-        : `session:${item.sessionId ?? item.id}`;
+    // Saved messages group under the assistant they were sent to, not a
+    // chat chosen among them (their attempts may run in several chats).
+    const inbox = item.source === "assistant_inbox";
+    const owner = upkeepOwner(item);
+    const key = inbox
+      ? `assistant-inbox:${item.assistantId || item.id}`
+      : own
+        ? "personal"
+        : owner === "project"
+          ? `project:${item.workspaceId}`
+          : owner === "memory"
+            ? `memory:${item.assistantId || item.id}`
+            : item.issueId
+              ? `issue:${item.issueId}`
+              : `session:${item.sessionId ?? item.id}`;
     let group = groups.get(key);
     if (!group) {
       group = {
         key,
-        title: own
-          ? personal
-          : (item.issueId ? item.title : item.sessionTitle) || untitled,
+        title: inbox
+          ? item.assistantName || defaultAssistant
+          : own
+            ? personal
+            : owner === "project"
+              ? item.workspaceName || projectFallback
+              : owner === "memory"
+                ? item.assistantName || defaultAssistant
+                : (item.issueId ? item.title : item.sessionTitle) || untitled,
         workspaceId: item.workspaceId,
-        workspaceName: item.workspaceName ?? "",
-        sessionId: item.issueId ? undefined : item.sessionId,
+        // An upkeep group's header is its name already; no second project name.
+        workspaceName: owner ? "" : (item.workspaceName ?? ""),
+        sessionId: inbox || item.issueId ? undefined : item.sessionId,
         issueId: item.issueId,
         items: [],
       };
@@ -160,6 +191,56 @@ export function pendingForSession(
     );
 }
 
+/** Why an unprocessed assistant message waits: a bucket of the same fix. */
+export type InboxWaitBucket =
+  "device_offline" | "worker_update" | "account" | "paused" | "queued";
+
+export function inboxWaitBucket(rule?: string): InboxWaitBucket {
+  switch (rule) {
+    case "device_offline":
+      return "device_offline";
+    case "worker_update_needed":
+      return "worker_update";
+    case "assistant_paused":
+      return "paused";
+    case "account_unavailable":
+    case "role_disabled":
+    case "model_unavailable":
+    case "effort_unavailable":
+    case "permission_required":
+    case "location_mismatch":
+      return "account";
+    default:
+      return "queued";
+  }
+}
+
+/**
+ * The one line an unprocessed assistant message says why it waits: its
+ * failed attempt's classified reason (a quota's reset when it names one),
+ * a stop, or what it is waiting for.
+ */
+export function pendingInboxReason(
+  item: PendingItem,
+  t: TFunction<"pending">,
+  now = new Date(),
+): string {
+  if (item.failureCategory) {
+    if (item.failureCategory === "quota_exhausted" && item.failureResetAt) {
+      const reset = Date.parse(item.failureResetAt);
+      if (!Number.isNaN(reset))
+        return reset <= now.getTime()
+          ? t("item.inboxReason.quotaReset")
+          : t("item.inboxReason.quotaResets", {
+              time: clockTime(item.failureResetAt, { date: "short" }),
+            });
+    }
+    return t(`item.inboxReason.${item.failureCategory}`);
+  }
+  if (item.rule === "canceled") return t("item.inboxReason.canceled");
+  return t(`item.inboxWait.${inboxWaitBucket(item.rule)}`);
+}
+
 /** An Agent's option without the "(Recommended)" it may have added itself. */
 export function pendingOptionLabel(option: string): string {
   return (
@@ -179,6 +260,11 @@ export type PendingPrimary = "options" | "reply" | "open" | "grant" | "none";
 
 export function pendingPrimary(item: PendingItem): PendingPrimary {
   if (pendingResolved(item)) return "none";
+  // A saved message's actions are retry, not-process and its attempt.
+  if (item.source === "assistant_inbox") return "none";
+  // A project's suggestions are decided on the project's page (DEV-256).
+  if (item.source === "project_upkeep") return "none";
+  if (item.source === "memory_upkeep") return "none";
   if (pendingPersonal(item)) return "open";
   // A GitHub scope the session's device lacks (DEV-136): its picker there.
   if (item.rule === "github_scope" && item.deviceId) return "grant";

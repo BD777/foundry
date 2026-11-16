@@ -1118,6 +1118,9 @@ test("memory reads two layers, adds to each, and confirms moving to shared", asy
 
   items = await openRowMenu(page.container, "Actions for “Owns Project Atlas”");
   await act(async () => items[3].click());
+  // The row menu runs the chosen action when the menu closes, so the dialog
+  // opens after that focus-return callback, not in the click itself.
+  await settle();
   const dialog = document.querySelector("[role=dialog]");
   assert.match(dialog.textContent, /Move to the shared layer\?/);
   assert.match(dialog.textContent, /every one of your assistants/);
@@ -1146,6 +1149,7 @@ test("memory reads two layers, adds to each, and confirms moving to shared", asy
     "Actions for “Prefers concise answers”",
   );
   await act(async () => items.at(-1).click());
+  await settle();
   const forgetDialog = document.querySelector("[role=dialog]");
   assert.match(forgetDialog.textContent, /Forget this memory\?/);
   assert.match(forgetDialog.textContent, /no longer be recalled/);

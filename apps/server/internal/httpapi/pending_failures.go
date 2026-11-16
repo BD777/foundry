@@ -42,6 +42,12 @@ func (r pendingReactions) recordTurnFailure(ctx context.Context, session store.A
 	if !r.s.pendingKept(ctx, session) {
 		return
 	}
+	// One event is one item (DEV-254): a turn that ran for a saved assistant
+	// message reports its failure on that message's own item, which retries
+	// the message; a second turn_failed item would ask the same thing twice.
+	if r.s.assistantInboxTurn(ctx, session) {
+		return
+	}
 	detail := strings.TrimSpace(failure)
 	if detail == "" || store.IsCanceledTurnFailure(detail) {
 		return
@@ -270,6 +276,12 @@ func (s *Server) maintainPendingTurnFailures(ctx context.Context) {
 	groups := map[string][]store.PendingItem{}
 	for _, item := range items {
 		session, sessionErr := s.store.GetAgentSessionSummary(ctx, item.SessionID)
+		// A turn_failed item recorded before DEV-254 for a saved assistant
+		// message is the same event its message item now carries.
+		if sessionErr == nil && s.assistantInboxTurn(ctx, session) {
+			s.resolveTurnFailure(ctx, item, "assistant_inbox")
+			continue
+		}
 		if item.FailureCategory == "" {
 			failureAt := parseStoredPendingTime(item.UpdatedAt)
 			if failureAt.IsZero() {

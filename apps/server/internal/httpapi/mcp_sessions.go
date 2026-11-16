@@ -256,6 +256,16 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}
+	if itemID := mcpArgString(args, "itemId"); itemID != "" {
+		scope, err := s.paScope(ctx, actor)
+		if err != nil {
+			return "", err
+		}
+		if err := s.assistant.HelperItem(ctx, scope, itemID); err != nil {
+			return "", err
+		}
+		input.AssistantItemID = itemID
+	}
 	if _, given := args["reportBack"]; given {
 		reportBack := mcpArgBool(args, "reportBack")
 		input.ReportBack = &reportBack

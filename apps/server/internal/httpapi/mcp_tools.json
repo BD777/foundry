@@ -1023,7 +1023,7 @@
   },
   {
     "name": "get_execution_default",
-    "description": "Read the person's effective execution model: providerId, runtime, model and effort, or a workerGroupId with the resolved group whose members carry their own provider, model and effort. A personal assistant's helper override wins; otherwise the workspace override is used when set, else the global choice. Without workspaceId it reads the global choice. scope is global, workspace, assistant or none. Each alternative has a stable id; default, an alternative's 1-based number, or its id can be passed as dispatch_item.executionChoice.",
+    "description": "Read the person's effective execution model: providerId, runtime, model and effort, or a workerGroupId with the group: its members (provider, model, effort, tier) and domains (each account's rate limit). A personal assistant's helper override wins; otherwise the workspace override is used when set, else the global choice. Without workspaceId it reads the global choice. scope is global, workspace, assistant or none. Each alternative has a stable id; default, an alternative's 1-based number, or its id can be passed as dispatch_item.executionChoice.",
     "summary": "Reads the effective provider, model and effort, or worker group, for delegated execution.",
     "limits": [
       "Only the person's own settings.",
@@ -1045,11 +1045,11 @@
   },
   {
     "name": "worker_groups",
-    "description": "List the person's worker groups or save one, as the Model providers page's worker group editor does. A worker group spreads new sessions over its members; each member is one model on one provider with its own effort and tokensPerMinute quota (or weight). save without id creates a group (label required); with id it replaces that group's members (and label when given), keeping its id. Every member's provider must be the person's, of that runtime, and its effort valid for the runtime. Sessions already running keep the member they were given. Answers the saved group, or for list { groups }.",
+    "description": "List the person's worker groups or save one, as the Model providers page's worker group editor does. A worker group spreads new sessions over its members; each member is one model on one provider with its own effort, tier and tokensPerMinute quota (or weight). A session moves from its primary to a fallback member when the primary's account is rate limited, and returns to the primary once that account recovers; a running session keeps its member until its rate-limited retry moves it or a manual switch applies at its next turn. save without id creates a group (label required); with id it replaces that group's members (and label when given), keeping its id. Every member's provider must be the person's, of that runtime, and its effort valid for the runtime. Answers the saved group, or for list { groups }; each group carries domains, one per account its members use: its state (healthy, recovering, probing or limited), cooldownUntil, level, limit, active, signalsInWindow and failoversLastHour.",
     "summary": "Lists or saves the person's worker groups: the models, efforts and quotas new sessions are spread over.",
     "limits": [
       "Only the person's own groups and providers.",
-      "Changes apply to sessions started afterwards.",
+      "Changes apply to sessions started afterwards and to the next turn of a running session.",
       "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
     ],
     "inputSchema": {
@@ -1098,6 +1098,10 @@
               "weight": {
                 "type": "integer",
                 "description": "Relative share when no quota is set."
+              },
+              "tier": {
+                "type": "integer",
+                "description": "1 is the primary member, 2 a fallback used while the primary's account is rate limited; omitted means 1."
               }
             },
             "required": ["providerKind", "providerId", "runtime", "model"]
@@ -1175,7 +1179,7 @@
   },
   {
     "name": "create_session",
-    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, dispatch_item ties the step to that item. Returns the session id and status.",
+    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, itemId ties this helper to it. Returns the session id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 8 sessions it started queued, running or blocked at once.",
@@ -1251,6 +1255,10 @@
         "issueId": {
           "type": "string",
           "description": "Run in that Issue's candidate worktree and sandbox; the Issue must be in this workspace and in progress, blocked or verifying."
+        },
+        "itemId": {
+          "type": "string",
+          "description": "The item of the person's list this helper works on: one of yours, open and not archived (update_list, read_list). The helper is listed on the item."
         },
         "reportBack": {
           "type": "boolean",
@@ -2170,10 +2178,10 @@
   },
   {
     "name": "update_list",
-    "description": "Keep the person's own list of what they plan, are doing or did (they see and edit it on their home page; your handed-off work is list_tasks). op add adds one item (status open by default); update changes item.id's given fields (include revision). when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId links a task. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs.",
-    "summary": "Adds to or updates the person's own list of plans and done things, from their own words; can set a reminder.",
+    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId links a task. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs.",
+    "summary": "Adds to or updates the person's list of items (plans and done things) from their own words; keeps each item's owner, summary and archive; can set a reminder.",
     "limits": [
-      "One item per call; text at most 200 characters, when at most 60.",
+      "One item per call; text at most 200 characters, when at most 60, summary at most 1500.",
       "Only from the person's own words in this conversation: anything else is refused.",
       "A reminder needs a time still to come and goes out once, unless the assistant is stopped.",
       "The person ticks, edits and deletes items on the assistant's home page.",
@@ -2184,7 +2192,8 @@
       "properties": {
         "op": {
           "type": "string",
-          "enum": ["add", "update"]
+          "enum": ["add", "update", "archive", "restore"],
+          "description": "add or update an item; archive or restore it (item.id only)."
         },
         "item": {
           "type": "object",
@@ -2215,6 +2224,16 @@
               "type": "string",
               "enum": ["open", "done", "dropped"],
               "description": "open (to do or doing), done, or dropped (they will not do it)."
+            },
+            "owner": {
+              "type": "string",
+              "enum": ["person", "assistant"],
+              "description": "person (they do it) or assistant (you do it through helpers)."
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 1500,
+              "description": "The item's running context in Markdown, replacing the old one: what was asked, done, the result, what is open. Foundry never writes it."
             },
             "taskId": {
               "type": "string",
@@ -2354,18 +2373,52 @@
   },
   {
     "name": "read_list",
-    "description": "Read the person's list: the open items and those done or dropped since closedSince (default: the start of their today), with the time now in their zone.",
-    "summary": "Reads the person's own list of plans and done things.",
+    "description": "Read the person's items one page at a time, newest updated first. Each item shows its text, when, owner, status, summary, quote (when short), times and helpers; events and plans are not returned. status and owner narrow the page. from and to bound updatedAt as RFC 3339 instants, [from, to). closedSince instead gives the open items and those closed since a date or time, as before. Archived items come back only with includeArchived. limit is 1 to 50 (default 20); offset takes nextOffset from the last page. The answer also gives now in the person's zone, total and the pending operations.",
+    "summary": "Reads the person's items a page at a time: their words, times, status, summary and helpers.",
     "limits": [
       "Only the list of the assistant's own person.",
+      "At most 50 items a call.",
       "Only the person's assistant (a personal_agent session) has it."
     ],
     "inputSchema": {
       "type": "object",
       "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["open", "done", "dropped"],
+          "description": "Only items with this status."
+        },
+        "owner": {
+          "type": "string",
+          "enum": ["person", "assistant"],
+          "description": "Only items this owner does."
+        },
+        "from": {
+          "type": "string",
+          "description": "RFC 3339 instant: items updated at or after it."
+        },
+        "to": {
+          "type": "string",
+          "description": "RFC 3339 instant: items updated before it."
+        },
         "closedSince": {
           "type": "string",
-          "description": "Also items closed since this date (2026-10-13, in the person's time zone) or time (RFC 3339)."
+          "description": "The open items and those closed since this date (2026-10-13, in the person's time zone) or time (RFC 3339)."
+        },
+        "includeArchived": {
+          "type": "boolean",
+          "description": "Also archived items; false by default."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Items per page; default 20."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset of the page: nextOffset of the last answer."
         }
       }
     },

@@ -12,6 +12,7 @@ import type { ConnectorType } from "../lib/connector-types";
 import type { ProviderTab } from "../lib/provider-tabs";
 import {
   AssistantHome,
+  AssistantItemsPage,
   AssistantList,
   AssistantSettings,
   type AssistantFeatureEvent,
@@ -131,6 +132,10 @@ export function ActiveView({
       case "home.open":
         location.setActiveView("assistant");
         return;
+      case "items.open":
+        location.setSelectedItemId(event.itemId ?? "");
+        location.setActiveView("assistantItems");
+        return;
       case "pending.open":
         location.setActiveView("pending");
         return;
@@ -184,6 +189,16 @@ export function ActiveView({
           key={location.selectedAssistantId}
           needsYouTotal={pending.list?.open}
           onEvent={handleAssistantEvent}
+          workspaces={data.workspaces}
+        />
+      );
+    case "assistantItems":
+      return (
+        <AssistantItemsPage
+          assistantId={location.selectedAssistantId}
+          onOpenAssistant={() => location.setActiveView("assistant")}
+          onSelectItem={(itemId) => location.setSelectedItemId(itemId ?? "")}
+          selectedItemId={location.selectedItemId || undefined}
           workspaces={data.workspaces}
         />
       );

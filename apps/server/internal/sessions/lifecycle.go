@@ -109,7 +109,7 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 		}
 	}
 	if delegating {
-		s.policy.RecordAssistantTask(ctx, assistant, input.ParentSessionID, session)
+		s.policy.RecordAssistantTask(ctx, assistant, input.ParentSessionID, session, input.AssistantItemID)
 	}
 	s.events.Changed(ctx, Created, session)
 	s.chats.Created(session, adoptedChatID)

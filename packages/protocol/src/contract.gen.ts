@@ -3346,6 +3346,210 @@ interface components {
       status: string;
     };
     /**
+     * @description Who is to do the item (pa_items.owner).
+     * @enum {string}
+     */
+    PersonalAgentItemOwner: "person" | "assistant";
+    /**
+     * @description An item is open, done or dropped; "in progress" and "waiting" are derived from its helpers and needs_you items, never stored.
+     * @enum {string}
+     */
+    PersonalAgentItemStatus: "open" | "done" | "dropped";
+    /**
+     * @description Where an item started.
+     * @enum {string}
+     */
+    PersonalAgentItemOriginKind: "web" | "channel" | "self_chat";
+    /** @description Where the item started and the message it rests on. Foundry records this mechanically; the assistant never writes it. A channel item names the channel and the requester whose message asked for it. */
+    PersonalAgentItemOrigin: {
+      kind: components["schemas"]["PersonalAgentItemOriginKind"];
+      /** @description The channel or conversation name the message came from. */
+      name?: string;
+      /** @description The channel's source kind, e.g. openlark. */
+      source?: string;
+      /** @description Display name of the person whose message started the item. */
+      requester?: string;
+      requesterId?: string;
+      /** @description The assistant conversation that received the message. */
+      sessionId?: string;
+      messageId?: string;
+    };
+    /**
+     * @description Who caused the change an event records.
+     * @enum {string}
+     */
+    PersonalAgentItemEventActor: "person" | "assistant" | "foundry";
+    /**
+     * @description The mechanical fact an event records.
+     * @enum {string}
+     */
+    PersonalAgentItemEventKind:
+      | "created"
+      | "edited"
+      | "owner_changed"
+      | "status_changed"
+      | "summary_updated"
+      | "helper_started"
+      | "helper_ended"
+      | "needs_you_opened"
+      | "needs_you_answered"
+      | "archived"
+      | "restored";
+    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. */
+    PersonalAgentItemEventDetail: {
+      from?: string;
+      to?: string;
+      sessionId?: string;
+      workspaceId?: string;
+      title?: string;
+      needsYouId?: string;
+      reason?: string;
+    };
+    /** @description One append-only fact in an item's timeline (pa_item_events). */
+    PersonalAgentItemEvent: {
+      id: string;
+      itemId: string;
+      at: string;
+      actor: components["schemas"]["PersonalAgentItemEventActor"];
+      kind: components["schemas"]["PersonalAgentItemEventKind"];
+      detail?: components["schemas"]["PersonalAgentItemEventDetail"];
+    };
+    /** @description One helper session that works or worked on the item (pa_tasks.item_id). A helper started without an item is not here; it stays its own task. */
+    PersonalAgentItemHelper: {
+      sessionId: string;
+      title?: string;
+      /** @description The workspace's name, when it still exists. */
+      project?: string;
+      workspaceId?: string;
+      /** @description queued, running, asking, done, failed or cancelled. */
+      status: string;
+      readOnly: boolean;
+      startedAt?: string;
+      endedAt?: string;
+      /** @description The helper's session is archived. */
+      archived?: boolean;
+    };
+    /** @description The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references and the completion evidence. Operational state, not the person's intent; absent on items with none. */
+    PersonalAgentItemPlan: {
+      route?: components["schemas"]["PersonalAgentItemRouteDecision"];
+      /** @description record unless the person asked the assistant to execute. */
+      mode: string;
+      /** @enum {string} */
+      progress: "inbox" | "ready" | "waiting" | "working" | "review";
+      nextAction?: string;
+      waitingFor?: string;
+      workspaceId?: string;
+      dependencies?: string[];
+      workRefs?: components["schemas"]["PersonalAgentWorkReference"][];
+      evidence?: components["schemas"]["PersonalAgentCompletionEvidence"][];
+    };
+    /** @description The assistant's explainable routing decision for an item. */
+    PersonalAgentItemRouteDecision: {
+      /** @enum {string} */
+      kind:
+        "record" | "continue" | "existing" | "create" | "multiple" | "clarify";
+      reason: string;
+      alternatives?: string[];
+      needsClarification: boolean;
+    };
+    /** @description One session, Issue or service the item's work refers to. */
+    PersonalAgentWorkReference: {
+      /** @enum {string} */
+      kind: "session" | "issue" | "service";
+      id: string;
+      workspaceId: string;
+      /** @enum {string} */
+      relation: "observing" | "executing" | "dependency";
+    };
+    /** @description What showed the item's work was done. */
+    PersonalAgentCompletionEvidence: {
+      /** @enum {string} */
+      kind: "session" | "issue" | "file" | "url" | "user";
+      ref: string;
+      summary: string;
+      observedAt: string;
+    };
+    /** @description One thing someone wants done or plans, in their words, as the side card and the items page show it. The assistant's list owns the content; Foundry fills times, derived helper state and archive. */
+    PersonalAgentItem: {
+      id: string;
+      intentRevision?: number;
+      revision: number;
+      owner: components["schemas"]["PersonalAgentItemOwner"];
+      text: string;
+      when?: string;
+      at?: string;
+      remind: boolean;
+      status: components["schemas"]["PersonalAgentItemStatus"];
+      /** @description The assistant's short running context in Markdown, at most 1500 characters: what was asked, what has been done, the result or answer, what is still open. Foundry never writes it. */
+      summary?: string;
+      quote?: string;
+      origin?: components["schemas"]["PersonalAgentItemOrigin"];
+      plan?: components["schemas"]["PersonalAgentItemPlan"];
+      archivedAt?: string;
+      remindedAt?: string;
+      createdAt: string;
+      updatedAt: string;
+      closedAt?: string;
+      helpers: components["schemas"]["PersonalAgentItemHelper"][];
+    };
+    /** @description GET /api/personal-agent/items/{id}: the item, its timeline and its helpers. */
+    PersonalAgentItemDetail: {
+      item: components["schemas"]["PersonalAgentItem"];
+      events: components["schemas"]["PersonalAgentItemEvent"][];
+    };
+    /** @description GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report. */
+    PersonalAgentItemList: {
+      items: components["schemas"]["PersonalAgentItem"][];
+      /** @description How many items match the filters. */
+      total: number;
+      offset: number;
+      /** @description Pass as offset for the next page; absent on the last one. */
+      nextOffset?: number;
+    };
+    /** @description The person's choice of how an open item runs, sent as part of the edit. Only what the person can choose: the route, the project (workspaceId) and the items it depends on. Foundry merges it over the assistant's plan and keeps the rest (progress, next action, waiting, work refs, evidence). Absent fields stay. Dependencies are checked for cycles; a cycle is refused with 400. */
+    PersonalAgentItemPlanChoice: {
+      /**
+       * @description The route the person picked; Foundry records it as given.
+       * @enum {string}
+       */
+      route?:
+        "record" | "continue" | "existing" | "create" | "multiple" | "clarify";
+      /** @description The project the item runs in. */
+      workspaceId?: string;
+      dependencies?: string[];
+    };
+    /** @description PUT /api/personal-agent/items/{id} (the older /api/personal-agent/list/{id} is the same route during the Web transition). The person's own edit of their item; absent fields stay. Changing when clears at and the reminder. archived true archives the item (only when closed and no helper runs; otherwise 409), false restores it. DELETE on the same path removes the item, as before. */
+    PersonalAgentItemEditInput: {
+      revision?: number;
+      text?: string;
+      when?: string;
+      status?: components["schemas"]["PersonalAgentItemStatus"];
+      owner?: components["schemas"]["PersonalAgentItemOwner"];
+      archived?: boolean;
+      plan?: components["schemas"]["PersonalAgentItemPlanChoice"];
+    };
+    PersonalAgentItemReportCounts: {
+      /** @description Items created in the range. */
+      created: number;
+      /** @description Items completed in the range. */
+      done: number;
+      /** @description Items dropped in the range. */
+      dropped: number;
+      /** @description Items still open at the end of the range. */
+      open: number;
+    };
+    PersonalAgentItemReportGroup: {
+      status: components["schemas"]["PersonalAgentItemStatus"];
+      items: components["schemas"]["PersonalAgentItem"][];
+    };
+    /** @description GET /api/personal-agent/items/report?from=&to=: the deterministic review of a range, built only from items and their times; from and to are RFC 3339 instants, the range is [from, to). Archived items count. An item belongs to the range when it was created, updated or closed in it. counts.created: createdAt in range. counts.done and counts.dropped: closedAt in range with that status. counts.open: items open at to (createdAt before to, and not closed before to). groups hold the items in range by status (open, done, dropped). The person may ask the assistant to write prose from it; the report itself is data. */
+    PersonalAgentItemReport: {
+      from: string;
+      to: string;
+      counts: components["schemas"]["PersonalAgentItemReportCounts"];
+      groups: components["schemas"]["PersonalAgentItemReportGroup"][];
+    };
+    /**
      * @description A runtime Foundry runs natively: Claude Code or Codex.
      * @enum {string}
      */
@@ -4355,6 +4559,19 @@ interface components {
       status?: string;
       /** @description A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose. */
       response?: string;
+      /**
+       * @description Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration.
+       * @enum {string}
+       */
+      noticeKind?:
+        | "reminder"
+        | "digest"
+        | "proposal_outcome"
+        | "helper_question"
+        | "device_back"
+        | "operation"
+        | "supervision"
+        | "upkeep";
     };
     AgentSessionEventMetadata: {
       workerFailure?: components["schemas"]["WorkerFailure"];
@@ -5465,6 +5682,47 @@ export type MemorySortList = components["schemas"]["MemorySortList"];
 export type MemorySortActionInput =
   components["schemas"]["MemorySortActionInput"];
 export type MemoryEntryMove = components["schemas"]["MemoryEntryMove"];
+export type PersonalAgentItemOwner =
+  components["schemas"]["PersonalAgentItemOwner"];
+export type PersonalAgentItemStatus =
+  components["schemas"]["PersonalAgentItemStatus"];
+export type PersonalAgentItemOriginKind =
+  components["schemas"]["PersonalAgentItemOriginKind"];
+export type PersonalAgentItemOrigin =
+  components["schemas"]["PersonalAgentItemOrigin"];
+export type PersonalAgentItemEventActor =
+  components["schemas"]["PersonalAgentItemEventActor"];
+export type PersonalAgentItemEventKind =
+  components["schemas"]["PersonalAgentItemEventKind"];
+export type PersonalAgentItemEventDetail =
+  components["schemas"]["PersonalAgentItemEventDetail"];
+export type PersonalAgentItemEvent =
+  components["schemas"]["PersonalAgentItemEvent"];
+export type PersonalAgentItemHelper =
+  components["schemas"]["PersonalAgentItemHelper"];
+export type PersonalAgentItemPlan =
+  components["schemas"]["PersonalAgentItemPlan"];
+export type PersonalAgentItemRouteDecision =
+  components["schemas"]["PersonalAgentItemRouteDecision"];
+export type PersonalAgentWorkReference =
+  components["schemas"]["PersonalAgentWorkReference"];
+export type PersonalAgentCompletionEvidence =
+  components["schemas"]["PersonalAgentCompletionEvidence"];
+export type PersonalAgentItem = components["schemas"]["PersonalAgentItem"];
+export type PersonalAgentItemDetail =
+  components["schemas"]["PersonalAgentItemDetail"];
+export type PersonalAgentItemList =
+  components["schemas"]["PersonalAgentItemList"];
+export type PersonalAgentItemPlanChoice =
+  components["schemas"]["PersonalAgentItemPlanChoice"];
+export type PersonalAgentItemEditInput =
+  components["schemas"]["PersonalAgentItemEditInput"];
+export type PersonalAgentItemReportCounts =
+  components["schemas"]["PersonalAgentItemReportCounts"];
+export type PersonalAgentItemReportGroup =
+  components["schemas"]["PersonalAgentItemReportGroup"];
+export type PersonalAgentItemReport =
+  components["schemas"]["PersonalAgentItemReport"];
 export type NativeRuntimeId = components["schemas"]["NativeRuntimeId"];
 export type WorkerRuntimeId = components["schemas"]["WorkerRuntimeId"];
 export type CodexSpeed = components["schemas"]["CodexSpeed"];

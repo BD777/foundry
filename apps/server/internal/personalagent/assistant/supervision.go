@@ -80,7 +80,7 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 	switch change {
 	case sessions.Completed:
 		task.Status, task.EndedAt = taskStatusOf(session.Status), sessionEndedAt(session)
-		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
 			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
 		}
 		if session.Status == "failed" || session.Status == "canceled" {
@@ -89,7 +89,7 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 	default:
 		// It works again (the assistant passed the answer on).
 		task.Status, task.EndedAt, task.StuckSince = store.PersonalAgentTaskRunning, "", ""
-		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
 			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
 		}
 	}
@@ -117,7 +117,7 @@ func (s *Service) AdoptTask(ctx context.Context, callerSessionID string, helper 
 		return
 	}
 	task.ConversationSessionID = caller.ID
-	if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+	if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task); err != nil {
 		log.Printf("personal agent %s: move task %s to conversation %s: %v", agent.UserID, task.ID, caller.ID, err)
 	}
 }
@@ -136,7 +136,7 @@ func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, tas
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
 		}
-		s.tell(context.Background(), task.ConversationSessionID, text)
+		s.tell(context.Background(), task.ConversationSessionID, store.NoticeKindSupervision, text)
 	})
 }
 
@@ -276,7 +276,7 @@ func (s *Service) Supervise(ctx context.Context, now time.Time) error {
 			continue
 		}
 		task.LastEventAt = formatPATime(now)
-		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
+		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
 			return err
 		}
 		if kind == assistantTaskEventUnreachable || task.StuckSince == formatPATime(now) {

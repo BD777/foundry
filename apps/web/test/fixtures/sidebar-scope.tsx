@@ -98,6 +98,7 @@ function Fixture() {
     activeWorkspaceId,
     selectedChatId: route.selectedChatId,
     selectedIssueId: route.selectedIssueId,
+    selectedItemId: route.selectedItemId,
     selectedDeviceId: route.selectedDeviceId,
     onPopState: (next, workspace) => {
       route.showRoute(next);

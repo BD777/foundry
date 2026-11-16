@@ -85,6 +85,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupAssistantRecords,
 		s.setupAgentDefaults,
 		s.setupWorkspaceMigrations,
+		// One-time data migrations are recorded, so each runs once (DEV-260).
+		s.setupDataMigrations,
+		s.migrateRetiredUpkeepNotices,
 	}
 	for _, step := range steps {
 		started := time.Now()

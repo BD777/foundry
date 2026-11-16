@@ -208,6 +208,15 @@ type Ports struct {
 	// the assistant a channel session belongs to.
 	ChannelTarget func(ctx context.Context, entry store.PersonalAgentInboxEntry) (ChannelTarget, error)
 	ChannelOf     func(ctx context.Context, sessionID string) (assistantID string, ok bool)
+	// ArchiveItemSessions archives the helper sessions an item's archive took
+	// (「事项」 DEV-258) through the session archive path, as the person, and
+	// records each on the item for recordAs; it returns an error naming each
+	// session it could not archive.
+	ArchiveItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, sessionIDs []string) error
+	// RestoreItemSessions restores exactly the helper sessions the item's last
+	// archive took (cascaded: its archived events, oldest first), recording
+	// each for recordAs; a session the person archived since stays archived.
+	RestoreItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, cascaded []store.PersonalAgentItemEvent) error
 }
 
 // ChannelTarget is where a message channel's turn runs (DEV-203): the
@@ -242,6 +251,10 @@ type Service struct {
 	origin          string
 	fileTimeout     time.Duration
 
+	// archiveItemSessions and restoreItemSessions are the item ports (Ports).
+	archiveItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, sessionIDs []string) error
+	restoreItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, cascaded []store.PersonalAgentItemEvent) error
+
 	// notices gathers the events of the assistant's tasks for its
 	// conversations (supervision.go).
 	notices notices
@@ -265,6 +278,7 @@ func New(st Store, events sessions.ChangeNotifier, ports Ports) *Service {
 		runs: ports.Runs, knowledge: ports.Knowledge, archiveSessions: ports.ArchiveSessions,
 		origin: ports.Origin, fileTimeout: ports.FileTimeout,
 		messageChannels: ports.MessageChannels, channelTarget: ports.ChannelTarget, channelOf: ports.ChannelOf,
+		archiveItemSessions: ports.ArchiveItemSessions, restoreItemSessions: ports.RestoreItemSessions,
 	}
 }
 

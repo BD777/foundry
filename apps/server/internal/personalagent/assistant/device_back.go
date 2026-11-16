@@ -158,7 +158,7 @@ func (s *Service) DeviceBack(ctx context.Context, deviceID string) {
 			if err != nil || current.State != store.PersonalAgentActive {
 				return
 			}
-			s.tell(context.Background(), conversationID, text)
+			s.tell(context.Background(), conversationID, store.NoticeKindDeviceBack, text)
 		})
 	}
 }

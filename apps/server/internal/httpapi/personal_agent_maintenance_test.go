@@ -39,7 +39,7 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
 	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
-	jobs, e := f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
+	jobs, e := f.server.store.ListWorkspaceMaintenance(ctx, f.aliceID, "ws_project")
 	if e != nil || len(jobs) != 1 {
 		t.Fatalf("jobs %+v %v", jobs, e)
 	}
@@ -50,7 +50,7 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 		t.Fatal(e)
 	}
 	f.server.assistant.EnqueueMaintenance(ctx, agent, "governance", "ws_project", "", "revision-one")
-	jobs, _ = f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
+	jobs, _ = f.server.store.ListWorkspaceMaintenance(ctx, f.aliceID, "ws_project")
 	if len(jobs) != 1 || jobs[0].Status != "complete" {
 		t.Fatal("unchanged content scheduled another model call")
 	}
@@ -540,7 +540,7 @@ func TestUpkeepFactsAreWrittenNotSent(t *testing.T) {
 	defer func() { assistant.UpkeepSweepInterval = saved }()
 	f.server.assistant.RefreshUpkeep(ctx)
 	facts := f.daemon.workspaceFiles("ws_pa")[prompt.UpkeepPath]
-	for _, want := range []string{"Budget", "1 suggested change", "/assistants/" + agent.ID + "/settings"} {
+	for _, want := range []string{"Budget", "1 suggested change", "/workspace?workspace=ws_budget"} {
 		if !strings.Contains(facts, want) {
 			t.Fatalf("the upkeep file lacks %q:\n%s", want, facts)
 		}
@@ -613,11 +613,11 @@ func TestUpkeepFactsGoOnlyToTheOwningAssistant(t *testing.T) {
 	ownerFacts := f.daemon.workspaceFiles("ws_pa")[prompt.UpkeepPath]
 	secondFacts := f.daemon.workspaceFiles("ws_second")[prompt.UpkeepPath]
 	if !strings.Contains(ownerFacts, "Budget") || strings.Contains(ownerFacts, "ws_second") ||
-		!strings.Contains(ownerFacts, "/assistants/"+owner.ID+"/settings") {
+		!strings.Contains(ownerFacts, "/workspace?workspace=ws_budget") {
 		t.Fatalf("the default assistant's upkeep file = %q", ownerFacts)
 	}
 	if !strings.Contains(secondFacts, "Second") || strings.Contains(secondFacts, "ws_budget") ||
-		!strings.Contains(secondFacts, "/assistants/"+second.ID+"/settings") {
+		!strings.Contains(secondFacts, "/workspace?workspace=ws_second") {
 		t.Fatalf("the second assistant's upkeep file = %q", secondFacts)
 	}
 }
@@ -625,21 +625,14 @@ func TestUpkeepFactsGoOnlyToTheOwningAssistant(t *testing.T) {
 func TestGovernanceActivityDoesNotScheduleAnotherReview(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
-	agent := defaultAssistantOf(t, f.server, f.aliceID)
 	record := f.digest(t)
 	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	count := func() int {
-		rows, err := f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
+		rows, err := f.server.store.ListWorkspaceMaintenance(ctx, f.aliceID, "ws_budget")
 		if err != nil {
 			t.Fatal(err)
 		}
-		n := 0
-		for _, row := range rows {
-			if row.Role == "governance" && row.WorkspaceID == "ws_budget" {
-				n++
-			}
-		}
-		return n
+		return len(rows)
 	}
 	if count() != 1 {
 		t.Fatal("initial review missing")

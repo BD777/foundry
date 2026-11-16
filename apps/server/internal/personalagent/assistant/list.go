@@ -10,23 +10,24 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// The person's list (docs/personal-agent.md §6, store.PersonalAgentListItem):
-// what the person told the assistant they plan to do, are doing or did. The
-// assistant writes it with update_list, only from the person's own words
-// in the conversation (the quote, as remember checks it), and reads it with
-// read_list; each turn's context shows the open items. The person ticks,
-// edits and deletes items on the home page. An open item with a time and
+// 「事项」 (docs/personal-agent.md §6, store.PersonalAgentListItem): what the
+// person told the assistant they plan to do, are doing or did. The assistant
+// writes it with update_list, only from the person's own words in the
+// conversation (the quote, as remember checks it) where a field is about the
+// person, and reads it with read_list. The assistant keeps each item's summary,
+// owner and archive; Foundry records the times and events and applies the time
+// rule (a closed item is archived after a week). An open item with a time and
 // remind set is a reminder: when it is due the server tells the assistant's
-// latest conversation, which tells the person wherever they last talked to
-// it (the web, or their Feishu direct chat). The daily digest, when the
-// person turned it on, goes the same way at their time with the list and
-// the work in progress.
+// latest conversation, which tells the person wherever they last talked to it.
+// The daily digest, when the person turned it on, goes the same way at their
+// time with the open items and the work in progress.
 
 // listSpec is update_list's arguments.
 type listSpec struct {
@@ -45,16 +46,19 @@ type listItemArgs struct {
 	At        *string                      `json:"at,omitempty"`
 	Remind    *bool                        `json:"remind,omitempty"`
 	Status    *string                      `json:"status,omitempty"`
+	Owner     *string                      `json:"owner,omitempty"`
+	Summary   *string                      `json:"summary,omitempty"`
 	TaskID    *string                      `json:"taskId,omitempty"`
 	Quote     string                       `json:"quote,omitempty"`
 }
 
 const listNoteUngrounded = "not added: the quote is not in anything the person wrote in this conversation (a document, web page, file, helper's output or Foundry's own notice is not their words). The list holds only what the person told you; quote their exact words."
 
-// planUpdateList adds or changes one item of the person's list. What it
-// says of the person (text, when, time, reminder, status) must rest on
-// their words in this conversation; linking the assistant's own task does
-// not. Its audit keeps the op and the item id only.
+// planUpdateList adds or changes one item of the person's list, or archives or
+// restores it. What it says of the person (text, when, time, reminder, status)
+// must rest on their words in this conversation; the owner, the summary, the
+// linked task and the archive are the assistant's own bookkeeping and need no
+// quote. Its audit keeps the op and the item id only.
 func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[string]json.RawMessage) (Write, error) {
 	var spec listSpec
 	if err := DecodeArgs(args, &spec); err != nil {
@@ -63,7 +67,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	id := strings.TrimSpace(spec.Item.ID)
 	write := Write{ArgsSummary: strings.TrimSpace(spec.Op + " " + id),
 		Spec: map[string]any{"op": spec.Op, "item": map[string]string{"id": id}}}
-	userID, assistantID := scope.Agent.UserID, scope.Agent.ID
+	assistantID := scope.Agent.ID
 	var item store.PersonalAgentListItem
 	switch spec.Op {
 	case "add":
@@ -73,21 +77,28 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		if spec.Item.Text == nil {
 			return write, invalid("item.text is required to add")
 		}
-		item = store.PersonalAgentListItem{UserID: userID, AssistantID: assistantID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID, Status: store.PersonalAgentItemOpen}
+		item = store.PersonalAgentListItem{UserID: scope.Agent.UserID, AssistantID: assistantID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID,
+			Status: store.PersonalAgentItemOpen, Owner: store.PersonalAgentItemOwnerPerson, Origin: itemOriginOf(scope)}
 		if source, err := s.store.PersonalAgentInboxByInput(ctx, assistantID, scope.Turn.ID); err == nil {
 			item.SourceInboxID = source.RootID
 		}
-	case "update":
+	case "update", "archive", "restore":
+		if spec.Op != "update" && listItemChangesFields(spec.Item) {
+			return write, invalid("%s takes only item.id and revision; change the fields with update", spec.Op)
+		}
 		existing, err := s.store.GetPersonalAgentItem(ctx, assistantID, id)
-		if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
 			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", id)
+		}
+		if err != nil {
+			return write, err
 		}
 		item = existing
 		if spec.Item.Revision != nil && *spec.Item.Revision != item.Revision {
 			return write, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentRevision}
 		}
 	default:
-		return write, invalid("op must be add or update")
+		return write, invalid("op must be add, update, archive or restore")
 	}
 	location := s.PersonLocation(ctx, scope.Agent)
 	personal := false
@@ -129,13 +140,34 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		}
 		item.Status, personal = *spec.Item.Status, true
 	}
+	if spec.Item.Owner != nil {
+		owner, err := listOwner(*spec.Item.Owner)
+		if err != nil {
+			return write, err
+		}
+		item.Owner = owner
+	}
+	if spec.Item.Summary != nil {
+		if utf8.RuneCountInString(*spec.Item.Summary) > store.PersonalAgentItemSummaryMaxLength {
+			return write, invalid("item.summary is longer than %d characters: keep the running context short", store.PersonalAgentItemSummaryMaxLength)
+		}
+		item.Summary = *spec.Item.Summary
+	}
+	taskID := ""
 	if spec.Item.TaskID != nil {
-		taskID := strings.TrimSpace(*spec.Item.TaskID)
-		if taskID != "" && !s.hasTask(ctx, assistantID, taskID) {
+		taskID = strings.TrimSpace(*spec.Item.TaskID)
+		if taskID == "" {
+			return write, invalid("item.taskId names one of your tasks; it is not empty")
+		}
+		_, found, err := s.findTask(ctx, assistantID, taskID)
+		if err != nil {
+			return write, err
+		}
+		if !found {
 			return write, invalid("no task %q of yours: item.taskId is the id list_tasks or the turn's context shows", taskID)
 		}
-		item.TaskID = taskID
-	} else if !personal {
+	}
+	if spec.Op == "update" && !personal && taskID == "" && spec.Item.Owner == nil && spec.Item.Summary == nil {
 		return write, invalid("nothing to change: give the fields to set")
 	}
 	if item.Remind && item.At == "" {
@@ -162,7 +194,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			item.Quote = quote
 		}
 	}
-	if item.Status == store.PersonalAgentItemDone && (item.Plan == nil || len(item.Plan.Evidence) == 0) {
+	if (spec.Op == "add" || spec.Op == "update") && item.Status == store.PersonalAgentItemDone && (item.Plan == nil || len(item.Plan.Evidence) == 0) {
 		// Recording something the person says they already did is different from
 		// claiming our execution succeeded. Preserve their current words as the
 		// self-report; an agent-generated completion needs result evidence.
@@ -176,6 +208,17 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		item.Plan.Evidence = []store.PersonalAgentCompletionEvidence{{Kind: "user", Ref: "session:" + scope.SessionID + "/event/evt_" + scope.Turn.ID, Summary: spec.Item.Quote, ObservedAt: scope.Turn.At}}
 	}
 	write.Apply = func(ctx context.Context) (any, error) {
+		if spec.Op == "archive" || spec.Op == "restore" {
+			archived := spec.Op == "archive"
+			if (item.ArchivedAt != "") == archived {
+				return map[string]any{"status": "unchanged", "item": item, "note": listStateNote(archived)}, nil
+			}
+			saved, err := s.saveItem(ctx, scope.Agent, item, false, &archived, store.PersonalAgentActorAssistant)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"status": "applied", "item": saved}, nil
+		}
 		var saved store.PersonalAgentListItem
 		var err error
 		if spec.Op == "add" {
@@ -190,7 +233,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if item.SourceInboxID != "" {
 				sourceID = item.SourceInboxID
 			}
-			item.CaptureKey = flow.Key("item", userID, sourceID, intentKey)
+			item.CaptureKey = flow.Key("item", scope.Agent.UserID, sourceID, intentKey)
 			item.CaptureHash, err = flow.Fingerprint(struct {
 				Text, When, At, Status, Quote string
 				Remind                        bool
@@ -199,18 +242,30 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if err != nil {
 				return nil, err
 			}
-			saved, err = s.store.AddPersonalAgentItem(ctx, item)
-		} else {
-			saved, err = s.store.SavePersonalAgentItem(ctx, item)
-		}
-		if err != nil {
-			if errors.Is(err, store.ErrIdempotencyConflict) || errors.Is(err, store.ErrPersonalAgentRevision) {
-				return nil, &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+			saved, err = s.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
+			if err != nil {
+				return nil, itemRefusal(err)
 			}
-			return nil, err
+		} else {
+			saved, err = s.saveItem(ctx, scope.Agent, item, true, nil, store.PersonalAgentActorAssistant)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if saved.Text == "" {
 			return map[string]string{"status": "already_removed", "id": saved.ID, "note": "The person removed this item. Replaying its original input does not add it again."}, nil
+		}
+		if taskID != "" {
+			task, found, err := s.findTask(ctx, assistantID, taskID)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return nil, invalid("task %q is no longer one of your tasks", taskID)
+			}
+			if err := s.tieTaskToItem(ctx, task, saved.ID); err != nil {
+				return nil, err
+			}
 		}
 		answer := map[string]any{"status": "applied", "item": saved}
 		if note := reminderNote(saved, location); note != "" {
@@ -219,6 +274,49 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		return answer, nil
 	}
 	return write, nil
+}
+
+// listItemChangesFields reports whether an update_list item names a field that
+// archive and restore do not take.
+func listItemChangesFields(item listItemArgs) bool {
+	return item.Plan != nil || item.Text != nil || item.When != nil || item.At != nil || item.Remind != nil ||
+		item.Status != nil || item.Owner != nil || item.Summary != nil || item.TaskID != nil
+}
+
+// listStateNote says an archive or restore that changes nothing.
+func listStateNote(archived bool) string {
+	if archived {
+		return "the item is already archived"
+	}
+	return "the item is not archived"
+}
+
+// listOwner checks an item's owner: the person does it, or the assistant does
+// it through its helpers.
+func listOwner(owner string) (string, error) {
+	switch owner {
+	case store.PersonalAgentItemOwnerPerson, store.PersonalAgentItemOwnerAssistant:
+		return owner, nil
+	}
+	return "", invalid("item.owner is person or assistant, not %q", owner)
+}
+
+// itemOriginOf is where a new item started: the channel message that
+// triggered the turn, or the web. The requester is the sender of the turn's
+// last message that is not the assistant's own.
+func itemOriginOf(scope Scope) *store.PersonalAgentItemOrigin {
+	channel := scope.Turn.ChannelOrigin
+	if channel == nil {
+		return &store.PersonalAgentItemOrigin{Kind: store.PersonalAgentItemOriginWeb, SessionID: scope.SessionID}
+	}
+	origin := &store.PersonalAgentItemOrigin{Kind: store.PersonalAgentItemOriginChannel,
+		Name: cmp.Or(channel.Conversation.Name, channel.ChannelName), Source: channel.Source, SessionID: scope.SessionID}
+	for _, message := range channel.Messages {
+		if !message.Sender.IsSelf {
+			origin.Requester, origin.RequesterID, origin.MessageID = message.Sender.Name, message.Sender.ID, message.ID
+		}
+	}
+	return origin
 }
 
 // reminderNote tells the assistant when Foundry reminds it of the item.
@@ -231,64 +329,277 @@ func reminderNote(item store.PersonalAgentListItem, location *time.Location) str
 		at.In(location).Format("2006-01-02 15:04"), location.String())
 }
 
-func (s *Service) hasTask(ctx context.Context, assistantID, taskID string) bool {
+// findTask finds one of the assistant's tasks by id.
+func (s *Service) findTask(ctx context.Context, assistantID, taskID string) (store.PersonalAgentTask, bool, error) {
 	tasks, err := s.store.ListPersonalAgentTasks(ctx, assistantID, nil)
 	if err != nil {
-		return false
+		return store.PersonalAgentTask{}, false, err
 	}
 	for _, task := range tasks {
 		if task.ID == taskID {
-			return true
+			return task, true, nil
 		}
 	}
-	return false
+	return store.PersonalAgentTask{}, false, nil
 }
 
-// ReadList answers the person's open items and those closed since
-// closedSince (a date or time; the start of the person's today by
-// default), with the time now in their zone.
-func (s *Service) ReadList(ctx context.Context, scope Scope, closedSince string) (map[string]any, error) {
+// tieTaskToItem ties a task to the item it helps with (pa_tasks.item_id); the
+// item's timeline records the helper starting on it.
+func (s *Service) tieTaskToItem(ctx context.Context, task store.PersonalAgentTask, itemID string) error {
+	if task.ItemID == itemID {
+		return nil
+	}
+	task.ItemID = itemID
+	return s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task)
+}
+
+// listQuery is read_list's arguments. from and to bound updatedAt as RFC 3339
+// instants, [from, to); closedSince is the older form: the open items and those
+// closed since a day (its start in the person's zone) or a time.
+type listQuery struct {
+	Status          string `json:"status"`
+	Owner           string `json:"owner"`
+	From            string `json:"from"`
+	To              string `json:"to"`
+	ClosedSince     string `json:"closedSince"`
+	IncludeArchived bool   `json:"includeArchived"`
+	Limit           int    `json:"limit"`
+	Offset          int    `json:"offset"`
+}
+
+const (
+	listDefaultLimit = 20
+	listMaxLimit     = 50
+	// listQuoteLimit is the longest quote read_list shows; a longer one is left out.
+	listQuoteLimit = 200
+)
+
+// listHelperView is a helper of an item as read_list shows it.
+type listHelperView struct {
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title,omitempty"`
+	Status    string `json:"status"`
+}
+
+// listItemView is an item as read_list shows it: its words, times, status,
+// summary and helpers. Events and the plan are left out.
+type listItemView struct {
+	ID         string           `json:"id"`
+	Text       string           `json:"text"`
+	When       string           `json:"when,omitempty"`
+	At         string           `json:"at,omitempty"`
+	Owner      string           `json:"owner"`
+	Status     string           `json:"status"`
+	Summary    string           `json:"summary,omitempty"`
+	Quote      string           `json:"quote,omitempty"`
+	CreatedAt  string           `json:"createdAt"`
+	UpdatedAt  string           `json:"updatedAt"`
+	ClosedAt   string           `json:"closedAt,omitempty"`
+	ArchivedAt string           `json:"archivedAt,omitempty"`
+	Helpers    []listHelperView `json:"helpers,omitempty"`
+}
+
+// listPage is read_list's answer: one page of items, newest updated first,
+// with the pending operations.
+type listPage struct {
+	Now        string                         `json:"now"`
+	Total      int                            `json:"total"`
+	Offset     int                            `json:"offset"`
+	NextOffset int                            `json:"nextOffset,omitempty"`
+	Items      []listItemView                 `json:"items"`
+	Operations []store.PersonalAgentOperation `json:"operations"`
+}
+
+// ReadList is read_list: one page of the person's items that match the query,
+// concise, with their helpers. Archived items are left out unless
+// includeArchived is set.
+func (s *Service) ReadList(ctx context.Context, scope Scope, args map[string]json.RawMessage) (listPage, error) {
+	var query listQuery
+	if err := DecodeArgs(args, &query); err != nil {
+		return listPage{}, err
+	}
+	limit := query.Limit
+	switch {
+	case limit == 0:
+		limit = listDefaultLimit
+	case limit < 0 || limit > listMaxLimit:
+		return listPage{}, invalid("limit is 1 to %d", listMaxLimit)
+	}
+	if query.Offset < 0 {
+		return listPage{}, invalid("offset is 0 or more")
+	}
 	location := s.PersonLocation(ctx, scope.Agent)
-	now := time.Now().In(location)
-	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	if value := strings.TrimSpace(closedSince); value != "" {
-		if day, err := time.ParseInLocation(time.DateOnly, value, location); err == nil {
-			since = day
-		} else if at, err := time.Parse(time.RFC3339, value); err == nil {
-			since = at
-		} else {
-			return nil, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("closedSince is a date (2026-10-15) or a time (RFC 3339)")}
+	filter := store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewAll, Status: query.Status, Owner: query.Owner,
+		From: query.From, To: query.To, IncludeArchived: query.IncludeArchived, Limit: limit, Offset: query.Offset}
+	if value := strings.TrimSpace(query.ClosedSince); value != "" {
+		since, err := closedSinceOf(value, location)
+		if err != nil {
+			return listPage{}, err
 		}
+		filter.ClosedSince = formatPATime(since)
 	}
-	items, err := s.store.ListPersonalAgentItems(ctx, scope.Agent.ID, formatPATime(since))
+	page, err := s.store.ListPersonalAgentItemPage(ctx, scope.Agent.ID, filter)
 	if err != nil {
-		return nil, err
-	}
-	items, err = s.includeItemDependencies(ctx, scope.Agent.ID, items)
-	if err != nil {
-		return nil, err
+		return listPage{}, itemRefusal(err)
 	}
 	operations, err := s.store.ListPersonalAgentOperations(ctx, scope.Agent.ID)
 	if err != nil {
-		return nil, err
+		return listPage{}, err
 	}
-	return map[string]any{"now": now.Format("2006-01-02 15:04 MST"), "items": items, "operations": operations}, nil
+	items := make([]listItemView, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, listItemViewOf(item, page.Helpers[item.ID]))
+	}
+	return listPage{Now: time.Now().In(location).Format("2006-01-02 15:04 MST"), Total: page.Total, Offset: page.Offset,
+		NextOffset: page.NextOffset, Items: items, Operations: operations}, nil
 }
 
-// Items are the person's open items and those closed since (an RFC 3339
-// time; none closed when empty), with the items they depend on.
-func (s *Service) Items(ctx context.Context, assistantID, since string) ([]store.PersonalAgentListItem, error) {
-	items, err := s.store.ListPersonalAgentItems(ctx, assistantID, since)
-	if err == nil {
-		items, err = s.includeItemDependencies(ctx, assistantID, items)
+// closedSinceOf reads closedSince: a day, from its start in the person's zone,
+// or an RFC 3339 time.
+func closedSinceOf(value string, location *time.Location) (time.Time, error) {
+	if day, err := time.ParseInLocation(time.DateOnly, value, location); err == nil {
+		return day, nil
 	}
-	return items, err
+	if at, err := time.Parse(time.RFC3339, value); err == nil {
+		return at, nil
+	}
+	return time.Time{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: errors.New("closedSince is a date (2026-10-13) or a time (RFC 3339)")}
 }
 
-// EditItem is the person's own edit: their words, so no
-// quote. Changing when clears the time and the reminder, which no longer
-// match it.
-func (s *Service) EditItem(ctx context.Context, agent store.PersonalAgent, itemID string, input store.PersonalAgentListItemInput) (store.PersonalAgentListItem, error) {
+// listItemViewOf is an item as read_list shows it, with its helpers.
+func listItemViewOf(item store.PersonalAgentListItem, helpers []store.PersonalAgentTask) listItemView {
+	view := listItemView{ID: item.ID, Text: item.Text, When: item.When, At: item.At, Owner: item.Owner, Status: item.Status,
+		Summary: item.Summary, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, ClosedAt: item.ClosedAt, ArchivedAt: item.ArchivedAt}
+	if utf8.RuneCountInString(item.Quote) <= listQuoteLimit {
+		view.Quote = item.Quote
+	}
+	for _, task := range helpers {
+		view.Helpers = append(view.Helpers, listHelperView{SessionID: task.SessionID, Title: task.Title, Status: task.Status})
+	}
+	return view
+}
+
+// EditItem is an edit of one item and its archive, by the person on the web
+// (recordAs person) or by the assistant. Changing when clears the time and the
+// reminder, which no longer match it. Every check runs before anything is
+// written; see saveItem for the archive and its helper sessions.
+func (s *Service) EditItem(ctx context.Context, agent store.PersonalAgent, itemID string, input store.PersonalAgentListItemInput, archived *bool, recordAs string) (store.PersonalAgentListItem, error) {
+	item, err := s.mergeItemEdit(ctx, agent, itemID, input)
+	if err != nil {
+		return store.PersonalAgentListItem{}, err
+	}
+	return s.saveItem(ctx, agent, item, input != (store.PersonalAgentListItemInput{}), archived, recordAs)
+}
+
+// saveItem saves an item as an edit or an assistant write merged it: changed
+// says whether a field changed, and archived archives or restores the item (nil
+// leaves its archive as it is). Reopening an archived item restores it, the
+// same as archived=false does. The helper sessions follow the archive: an
+// archive archives its ended helper sessions, and a restore restores the ones
+// its last archive took. A session the port cannot take is logged and skipped;
+// the item is saved all the same.
+func (s *Service) saveItem(ctx context.Context, agent store.PersonalAgent, item store.PersonalAgentListItem, changed bool, archived *bool, recordAs string) (store.PersonalAgentListItem, error) {
+	previous, err := s.store.GetPersonalAgentItem(ctx, agent.ID, item.ID)
+	if err != nil {
+		return store.PersonalAgentListItem{}, err
+	}
+	if archived == nil && item.Status == store.PersonalAgentItemOpen && previous.ArchivedAt != "" {
+		reopen := false
+		archived = &reopen
+	}
+	restoring := archived != nil && !*archived && previous.ArchivedAt != ""
+	var cascaded []store.PersonalAgentItemEvent
+	if restoring {
+		events, err := s.store.ListPersonalAgentItemEvents(ctx, agent.ID, item.ID)
+		if err != nil {
+			return store.PersonalAgentListItem{}, err
+		}
+		cascaded = cascadedSessionEvents(events)
+	}
+	var sessions []string
+	switch {
+	case changed && archived != nil:
+		_, sessions, err = s.store.SavePersonalAgentItemArchive(ctx, recordAs, item, *archived)
+	case changed:
+		_, err = s.store.SavePersonalAgentItem(ctx, recordAs, item)
+	case archived != nil:
+		sessions, err = s.store.SetPersonalAgentItemArchived(ctx, recordAs, agent.ID, item.ID, *archived)
+	}
+	if err != nil {
+		return store.PersonalAgentListItem{}, itemRefusal(err)
+	}
+	saved, err := s.store.GetPersonalAgentItem(ctx, agent.ID, item.ID)
+	if err != nil {
+		return store.PersonalAgentListItem{}, err
+	}
+	if archived != nil && *archived && len(sessions) > 0 {
+		if s.archiveItemSessions == nil {
+			log.Printf("personal agent item %s: no port archives its helper sessions", item.ID)
+		} else if err := s.archiveItemSessions(ctx, recordAs, agent.ID, item.ID, sessions); err != nil {
+			log.Printf("personal agent item %s: archive helper sessions: %v", item.ID, err)
+		}
+	}
+	if restoring && len(cascaded) > 0 {
+		if s.restoreItemSessions == nil {
+			log.Printf("personal agent item %s: no port restores its helper sessions", item.ID)
+		} else if err := s.restoreItemSessions(ctx, recordAs, agent.ID, item.ID, cascaded); err != nil {
+			log.Printf("personal agent item %s: restore helper sessions: %v", item.ID, err)
+		}
+	}
+	return saved, nil
+}
+
+// cascadedSessionEvents are the archived events that name a helper session
+// since the item was last restored: the sessions its last archive took, oldest
+// first. A restored event ends a cascade, the item's and each session's.
+func cascadedSessionEvents(events []store.PersonalAgentItemEvent) []store.PersonalAgentItemEvent {
+	var cascaded []store.PersonalAgentItemEvent
+	for _, event := range events {
+		switch {
+		case event.Kind == store.PersonalAgentItemEventRestored:
+			cascaded = nil
+		case event.Kind == store.PersonalAgentItemEventArchived && event.Detail != nil && event.Detail.SessionID != "":
+			cascaded = append(cascaded, event)
+		}
+	}
+	return cascaded
+}
+
+// itemRefusal gives a store refusal of an item write or read its status.
+func itemRefusal(err error) error {
+	switch {
+	case errors.Is(err, store.ErrPersonalAgentRevision), errors.Is(err, store.ErrIdempotencyConflict):
+		return &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+	case errors.Is(err, store.ErrPersonalAgentItemInvalid):
+		return &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
+	case errors.Is(err, store.ErrPersonalAgentItemNotArchivable):
+		return &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+	}
+	return err
+}
+
+// HelperItem checks the item of the person's list that a helper the assistant
+// starts works on (create_session itemId): one of its own, open and not archived.
+func (s *Service) HelperItem(ctx context.Context, scope Scope, itemID string) error {
+	item, err := s.store.GetPersonalAgentItem(ctx, scope.Agent.ID, itemID)
+	if errors.Is(err, store.ErrNotFound) {
+		return refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", itemID)
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case item.ArchivedAt != "":
+		return refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is archived: restore it with update_list (op restore) before a helper works on it", itemID)
+	case item.Status != store.PersonalAgentItemOpen:
+		return refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is %s: reopen it (update_list status open) before a helper works on it", itemID, item.Status)
+	}
+	return nil
+}
+
+// mergeItemEdit checks the person's edit of an item and returns the item as
+// it would be saved. It writes nothing.
+func (s *Service) mergeItemEdit(ctx context.Context, agent store.PersonalAgent, itemID string, input store.PersonalAgentListItemInput) (store.PersonalAgentListItem, error) {
 	item, err := s.store.GetPersonalAgentItem(ctx, agent.ID, itemID)
 	if err != nil {
 		return store.PersonalAgentListItem{}, err
@@ -334,11 +645,56 @@ func (s *Service) EditItem(ctx context.Context, agent store.PersonalAgent, itemI
 			}
 		}
 	}
-	saved, err := s.store.SavePersonalAgentItem(ctx, item)
-	if errors.Is(err, store.ErrPersonalAgentRevision) {
-		err = &personalagent.Refusal{Status: http.StatusConflict, Err: err}
+	if input.Owner != nil {
+		switch *input.Owner {
+		case store.PersonalAgentItemOwnerPerson, store.PersonalAgentItemOwnerAssistant:
+			item.Owner = *input.Owner
+		default:
+			return bad(fmt.Errorf("%w: owner %q is neither person nor assistant", store.ErrPersonalAgentItemInvalid, *input.Owner))
+		}
 	}
-	return saved, err
+	if input.PlanChoice != nil {
+		if err := s.applyPlanChoice(ctx, agent, &item, *input.PlanChoice); err != nil {
+			return store.PersonalAgentListItem{}, err
+		}
+	}
+	return item, nil
+}
+
+// applyPlanChoice merges the person's choice of how an open item runs over
+// its plan: the route, the project and the items it depends on. Progress,
+// next action, waiting, work refs, evidence and mode stay as the assistant
+// set them; an item without a plan starts one in record mode at inbox. The
+// store refuses a dependency cycle when the item is saved.
+func (s *Service) applyPlanChoice(ctx context.Context, agent store.PersonalAgent, item *store.PersonalAgentListItem, choice store.PersonalAgentItemPlanChoice) error {
+	if item.Status != store.PersonalAgentItemOpen {
+		return &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("the plan of an item is chosen only while it is open")}
+	}
+	plan := store.PersonalAgentItemPlan{Mode: "record", Progress: "inbox"}
+	if item.Plan != nil {
+		plan = *item.Plan
+	}
+	if choice.Route != "" {
+		if !choice.Route.Valid() {
+			return &personalagent.Refusal{Status: http.StatusBadRequest, Err: fmt.Errorf("%w: plan route %q is not one of the routes", store.ErrPersonalAgentItemInvalid, choice.Route)}
+		}
+		plan.Route = &store.PersonalAgentRouteDecision{Kind: string(choice.Route), NeedsClarification: choice.Route == store.PersonalAgentItemPlanChoiceRouteClarify}
+	}
+	if choice.WorkspaceID != "" {
+		roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
+		if err != nil {
+			return err
+		}
+		if roles[choice.WorkspaceID] == "" {
+			return &personalagent.Refusal{Status: http.StatusNotFound, Err: store.ErrNotFound}
+		}
+		plan.WorkspaceID = choice.WorkspaceID
+	}
+	if choice.Dependencies != nil {
+		plan.Dependencies = choice.Dependencies
+	}
+	item.Plan = &plan
+	return nil
 }
 
 // latestConversation is the assistant conversation the person
@@ -390,8 +746,11 @@ func (s *Service) sayList(ctx context.Context, agent store.PersonalAgent, key st
 // reminderInterval is how often due reminders and digests are looked for.
 var reminderInterval = time.Minute
 
+// itemArchiveAfter is how long a closed item stays on the list before Foundry archives it.
+const itemArchiveAfter = 7 * 24 * time.Hour
+
 // sendDueReminders sends the reminders and daily digests that are
-// due now.
+// due now, and archives the items closed long enough ago.
 func (s *Service) sendDueReminders(ctx context.Context) {
 	now := time.Now()
 	if err := s.SendReminders(ctx, now); err != nil && ctx.Err() == nil {
@@ -400,6 +759,34 @@ func (s *Service) sendDueReminders(ctx context.Context) {
 	if err := s.SendDigests(ctx, now); err != nil && ctx.Err() == nil {
 		log.Printf("personal agent digests: %v", err)
 	}
+	if err := s.archiveFinishedItems(ctx, now); err != nil && ctx.Err() == nil {
+		log.Printf("personal agent items: archive finished: %v", err)
+	}
+}
+
+// archiveFinishedItems is the time rule: the items closed long enough ago
+// are archived, and so are their ended helper sessions, through the session
+// archive path (ArchiveItemSessions). A session that cannot be archived
+// comes back in the error, named by its item, and the rest of the sweep goes on.
+func (s *Service) archiveFinishedItems(ctx context.Context, now time.Time) error {
+	archived, err := s.store.SweepArchiveFinishedItems(ctx, now, itemArchiveAfter)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, item := range archived {
+		if len(item.SessionIDs) == 0 {
+			continue
+		}
+		if s.archiveItemSessions == nil {
+			failures = append(failures, fmt.Errorf("item %s: no port archives its helper sessions", item.ItemID))
+			continue
+		}
+		if err := s.archiveItemSessions(ctx, store.PersonalAgentActorFoundry, item.AssistantID, item.ItemID, item.SessionIDs); err != nil {
+			failures = append(failures, fmt.Errorf("item %s: %w", item.ItemID, err))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // SendReminders tells the assistant of each item whose reminder
@@ -425,7 +812,7 @@ func (s *Service) SendReminders(ctx context.Context, now time.Time) error {
 		at, _ := time.Parse(time.RFC3339, item.At)
 		text := s.sayList(ctx, agent, "reminder", at.In(location).Format("15:04"), item.Text,
 			cmp.Or(item.When, s.sayList(ctx, agent, "noWhen")), item.ID)
-		s.tell(ctx, conversation, text)
+		s.tell(ctx, conversation, store.NoticeKindReminder, text)
 	}
 	return nil
 }
@@ -469,17 +856,16 @@ func (s *Service) SendDigests(ctx context.Context, now time.Time) error {
 		if conversation == "" {
 			continue
 		}
-		s.tell(ctx, conversation, s.sayList(ctx, agent, "digest", local.Format("2006-01-02 15:04"), facts))
+		s.tell(ctx, conversation, store.NoticeKindDigest, s.sayList(ctx, agent, "digest", local.Format("2006-01-02 15:04"), facts))
 	}
 	return nil
 }
 
-// DigestFacts lists, for the digest, the person's open items, the
-// items closed and the tasks open or ended in the last day; "" when there
-// is none.
+// DigestFacts lists, for the digest, the person's open items, the items closed
+// and the tasks open or ended in the last day; "" when there is none.
 func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, now time.Time) (string, error) {
 	dayAgo := formatPATime(now.Add(-24 * time.Hour))
-	items, err := s.store.ListPersonalAgentItems(ctx, agent.ID, dayAgo)
+	items, err := s.digestItems(ctx, agent.ID, dayAgo)
 	if err != nil {
 		return "", err
 	}
@@ -528,33 +914,19 @@ func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, no
 	return strings.TrimRight(out.String(), "\n"), nil
 }
 
-// Closed prerequisites may predate today's list. Return their current state as
-// well so the UI and router never mistake a missing display row for unfinished work.
-func (s *Service) includeItemDependencies(ctx context.Context, assistantID string, items []store.PersonalAgentListItem) ([]store.PersonalAgentListItem, error) {
-	seen := map[string]bool{}
-	for _, item := range items {
-		seen[item.ID] = true
-	}
-	added := 0
-	for i := 0; i < len(items); i++ {
-		if items[i].Plan == nil {
-			continue
+// digestItems are the person's items open or closed since closedSince, as the
+// items page's query finds them (archived ones left out), read page by page.
+func (s *Service) digestItems(ctx context.Context, assistantID, closedSince string) ([]store.PersonalAgentListItem, error) {
+	var items []store.PersonalAgentListItem
+	for offset := 0; ; {
+		page, err := s.store.ListPersonalAgentItemPage(ctx, assistantID, store.PersonalAgentItemFilter{ClosedSince: closedSince, Limit: store.PersonalAgentItemPageMax, Offset: offset})
+		if err != nil {
+			return nil, err
 		}
-		for _, id := range items[i].Plan.Dependencies {
-			if seen[id] {
-				continue
-			}
-			if added >= 256 {
-				return nil, invalid("dependency view exceeds the supported graph size")
-			}
-			item, e := s.store.GetPersonalAgentItem(ctx, assistantID, id)
-			if e != nil {
-				return nil, e
-			}
-			seen[id] = true
-			items = append(items, item)
-			added++
+		items = append(items, page.Items...)
+		if page.NextOffset == 0 {
+			return items, nil
 		}
+		offset = page.NextOffset
 	}
-	return items, nil
 }

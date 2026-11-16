@@ -25,6 +25,7 @@ export const shell = {
     assistants: "Assistants",
     pending: "Needs you",
     assistantSettings: "Assistant settings",
+    assistantItems: "Items",
     account: "Account",
     members: "Members",
     assets: "Assets",

@@ -37,6 +37,9 @@ export interface AppLocation {
   selectChat: (chatId: string) => void;
   selectedIssueId: string;
   setSelectedIssueId: Dispatch<SetStateAction<string>>;
+  /** The 「事项」 item whose detail the items page shows; empty for none. */
+  selectedItemId: string;
+  setSelectedItemId: Dispatch<SetStateAction<string>>;
   /** Shows a route the browser went back or forward to. */
   showRoute: (route: AppRoute) => void;
   /** Opens the Devices page on a device (or the list), keeping the section unless given. */
@@ -93,6 +96,9 @@ export function useAppLocation(): AppLocation {
       initialRoute.selectedIssueId ??
       preferredIssueId(initialFoundryData().issues),
   );
+  const [selectedItemId, setSelectedItemId] = useState(
+    () => initialRoute.selectedItemId ?? "",
+  );
 
   const selectChat = useCallback((chatId: string) => {
     setChatView("active");
@@ -114,6 +120,8 @@ export function useAppLocation(): AppLocation {
     selectChat,
     selectedIssueId,
     setSelectedIssueId,
+    selectedItemId,
+    setSelectedItemId,
     showRoute: (shown) => {
       const route = shownRoute(shown);
       setActiveView(route.view);
@@ -130,6 +138,8 @@ export function useAppLocation(): AppLocation {
       if (route.selectedIssueId !== undefined) {
         setSelectedIssueId(route.selectedIssueId);
       }
+      if (route.view === "assistantItems")
+        setSelectedItemId(route.selectedItemId ?? "");
     },
     openDevices: (deviceId, section) => {
       setSelectedDeviceId(deviceId);

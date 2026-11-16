@@ -14,6 +14,7 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { issuesEnabled } from "../../lib/feature-flags";
 import { navigateToChat, navigateToIssue } from "../../lib/in-app-navigation";
 import { serverErrorText } from "../../lib/errors";
+import { cn } from "../../lib/cn";
 import { ButtonRow } from "../../components/ui/button-row";
 import { FieldLabel } from "../../components/ui/form-field";
 
@@ -28,12 +29,15 @@ export function ItemPlan({
   meta,
   detailsOpen = false,
   detailsId,
+  className,
 }: {
   /** The row's own facts (a reminder, the task helping), first on its line. */
   meta?: ReactNode;
   /** Shows the plan's details and evidence; the row's menu toggles it. */
   detailsOpen?: boolean;
   detailsId?: string;
+  /** Where the plan sits: the detail pane sets its own inset and alignment. */
+  className?: string;
   assistantId?: string;
   item: PersonalAgentListItem;
   items: PersonalAgentListItem[];
@@ -112,7 +116,7 @@ export function ItemPlan({
     }
   }
   return (
-    <div className="grid min-w-0 gap-1 ps-6 wrap-anywhere">
+    <div className={cn("grid min-w-0 gap-1 ps-6 wrap-anywhere", className)}>
       {meta || executing ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs leading-[1.45] text-ink-muted">
           {meta}
@@ -303,7 +307,6 @@ export function ItemPlan({
             {error}
           </ToastFeedback>
         ) : null}
-        <FieldHint>{t("planning.completeHint")}</FieldHint>
         {draft ? (
           <form
             className="grid gap-2"
@@ -416,7 +419,7 @@ export function ItemPlan({
           </form>
         ) : onSave ? (
           <Button
-            size="sm"
+            className="justify-self-start"
             onClick={() => {
               setError("");
               setDraft(
@@ -425,6 +428,7 @@ export function ItemPlan({
                   : { mode: "record", progress: "inbox" },
               );
             }}
+            variant="secondary"
           >
             {t("planning.edit")}
           </Button>

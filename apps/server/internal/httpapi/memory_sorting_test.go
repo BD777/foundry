@@ -237,7 +237,7 @@ func TestMemorySortFirstRunIsOnceAndSurvivesAStoppedDefault(t *testing.T) {
 	count := func() map[string][]store.PersonalAgentMaintenance {
 		jobs := map[string][]store.PersonalAgentMaintenance{}
 		for _, agent := range []store.PersonalAgent{f.a, f.b} {
-			list, err := db.ListPersonalAgentMaintenance(ctx, agent.ID)
+			list, err := db.ListAssistantMemoryMaintenance(ctx, agent.ID)
 			if err != nil {
 				t.Fatal(err)
 			}

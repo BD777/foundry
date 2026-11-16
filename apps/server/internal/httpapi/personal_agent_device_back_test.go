@@ -129,7 +129,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent, _ = f.db.GetPersonalAgent(ctx, f.aliceID)
-	f.server.assistant.RecordTask(ctx, agent, conversation.ID, running)
+	f.server.assistant.RecordTask(ctx, agent, conversation.ID, running, "")
 	if _, err := f.db.StartAgentSession(ctx, running.ID); err != nil {
 		t.Fatal(err)
 	}

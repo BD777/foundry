@@ -172,7 +172,9 @@
 | 交出去的工作 | `executor`     | 助理调用 `dispatch_item`；每 2 秒投递                                                                                                                                                                                             | `assistant/operations.go`                                               |
 | 项目概括     | `digest`（新） | 项目里会话结束或 Issue 变化后（30 分钟防抖、每个项目至多 6 小时一次），电脑上线时到期的，安家时全部排队                                                                                                                           | `httpapi/workspace_digests.go`，只读工具会话                            |
 | 记忆整理     | `memory`       | 知识库条目变化（每 30 秒检查，约 1 分钟后开始）；也可手动重试                                                                                                                                                                     | `assistant/maintenance.go`，只读审阅会话                                |
-| 项目整理     | `governance`   | 本人拥有的项目的目的或 `AGENTS.md` / `README` 变化（同上）                                                                                                                                                                        | `assistant/maintenance.go`，只读审阅会话                                |
+| 项目整理     | `governance`   | 本人拥有的项目的目的或 `AGENTS.md` / `README` 变化（同上；执行者是运行时的默认助理，见下段）                                                                                                                                      | `assistant/maintenance.go`，只读审阅会话                                |
+
+**项目维护与记忆整理的归属（DEV-256）**：项目整理（`governance`）属于项目，不属于任何助理。它的审阅与建议修改按工作区保存（`pa_maintenance` 的 `role='governance'`，`pa_context_patches` 随之），只在项目页的「项目维护」里给拥有者审阅；待确认的只计未决的修改建议（冲突也算未决，需要本人处理）。`assistant_id` 只是最近一次运行的执行者：审阅运行时解析本人当前的默认助理，不同则改绑；没有默认助理时等待并注明 `no_default_assistant`。删除助理不删除项目的审阅与建议修改。记忆整理（`memory`）仍属于它所在的助理，在助理设置的「记忆整理」里看。项目维护的状态不进入任何对话：助理需要时自己读 `.foundry/upkeep.md` 与项目文件。
 
 拓扑：本人消息 → 对话与安排 →（`dispatch_item`）交出去的工作 →（完成 / 失败 / 提问）通知 → 对话与安排；项目里的会话结束 → 项目概括 → 项目文件变化 → 项目整理 → 采纳的补丁 → 项目概括；知识条目变化 → 记忆整理；清单的提醒、每日摘要、电脑上线、提议决定 → 对话与安排。会话标题命名是 Foundry 的通用功能（沿用会话自己的配置），不属于助理。
 

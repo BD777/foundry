@@ -57,3 +57,13 @@ export interface PersonalAgentContextPatch {
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * A project's upkeep (DEV-256): the governance reviews of its instruction
+ * files and the file changes they proposed. It belongs to the project, not
+ * to the assistant that last ran a review.
+ */
+export interface WorkspaceUpkeep {
+  jobs: PersonalAgentMaintenance[];
+  patches: PersonalAgentContextPatch[];
+}

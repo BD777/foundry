@@ -13,7 +13,10 @@ import { chatHref, navigateToChat } from "../../../lib/in-app-navigation";
 import { Button } from "../../../components/ui/button";
 import { Alert } from "../../../components/ui/alert";
 import type { SessionWorkController } from "./use-session-work";
-import { FinishedFold, useRevealedRow } from "./chat-context-folds";
+import {
+  FinishedFold,
+  useRevealedRow,
+} from "../../../components/finished-fold";
 import {
   ContextHeading,
   ContextSection,

@@ -2,6 +2,15 @@ import type { workspaces as en } from "../en/workspaces";
 import type { Translation } from "../../translation";
 
 export const workspaces: Translation<typeof en> = {
+  upkeep: {
+    title: "项目维护",
+    description:
+      "修改建议是 Foundry 审阅这个项目的说明文件（AGENTS.md、README、docs、skills）后提出的完整文件改写；你审阅并应用之前不会写入。",
+    waiting_one: "{{count}} 条修改建议待确认",
+    waiting_other: "{{count}} 条修改建议待确认",
+    empty: "暂无等待审阅的修改建议。",
+    ended: "已结束（{{count}}）",
+  },
   tunnels: {
     compatibility: "兼容范围",
     compatibilityNote:

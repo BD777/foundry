@@ -18,6 +18,11 @@ export interface AssistantSelection {
   stale: boolean;
   /** The in-memory selection belongs to a deleted assistant. */
   clearSelection: boolean;
+  /**
+   * The default assistant stands in while no choice exists (the items page);
+   * it is not written down as the remembered choice.
+   */
+  fallback?: boolean;
 }
 
 /**
@@ -57,6 +62,21 @@ export function resolveAssistantSelection(
   );
   const rememberedStale = Boolean(rememberedAssistantId && !remembered);
   const selectedStale = Boolean(selectedAssistantId && !selected);
+
+  if (route.view === "assistantItems") {
+    // The person's own list: a direct load or a reload opens it for the
+    // current choice, else the default assistant, never the assistant list.
+    const fallback = assistants.find((row) => row.isDefault);
+    const chosen = selected ?? remembered ?? fallback;
+    // Without a remembered choice the default is only stood in, on every run.
+    const standsIn = Boolean(chosen) && !remembered && chosen === fallback;
+    return {
+      ...(chosen ? { assistantId: chosen.id } : {}),
+      ...(standsIn ? { fallback: true } : {}),
+      stale: rememberedStale,
+      clearSelection: selectedStale,
+    };
+  }
 
   if (route.view === "assistant" || route.view === "assistantSettings") {
     const routed = assistants.find((row) => row.id === route.assistantId);
@@ -127,7 +147,7 @@ export function useAssistantRouteResolution(
       selectedAssistantId
     )
       setSelectedAssistantId(undefined);
-    if (selection.assistantId && userId)
+    if (selection.assistantId && userId && !selection.fallback)
       persistAssistantId(userId, selection.assistantId);
     if (selection.destination)
       navigateAppRoute(selection.destination, undefined, undefined, {

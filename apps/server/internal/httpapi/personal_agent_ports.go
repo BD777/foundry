@@ -457,5 +457,6 @@ func newAssistant(s *Server, events sessions.ChangeNotifier) *assistant.Service 
 		Server: assistantServer{s}, Runs: s.runs, Knowledge: s.knowledge, ArchiveSessions: s.planArchiveSession,
 		Origin: s.options.AllowedOrigin, FileTimeout: deviceFileRequestTimeout,
 		MessageChannels: messageChannelStoreOf(s.store), ChannelTarget: s.messageChannelTarget, ChannelOf: s.messageChannelSessionAssistant,
+		ArchiveItemSessions: s.archiveItemSessionsForAssistant, RestoreItemSessions: s.restoreItemSessionsForAssistant,
 	})
 }

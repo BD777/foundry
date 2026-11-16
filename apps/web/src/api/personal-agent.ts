@@ -32,8 +32,12 @@ import type {
   PersonalAgentActionRecord,
   PersonalAgentConnector,
   PersonalAgentConnectorsView,
-  PersonalAgentListItem,
-  PersonalAgentListItemInput,
+  PersonalAgentItem,
+  PersonalAgentItemDetail,
+  PersonalAgentItemEditInput,
+  PersonalAgentItemList,
+  PersonalAgentItemOwner,
+  PersonalAgentItemReport,
   PersonalAgentInboxEntry,
   PersonalAgentInboxCapture,
   PersonalAgentInboxAction,
@@ -273,40 +277,88 @@ export function stopPersonalAgentTask(
   );
 }
 
-/**
- * The person's list: every open item, and those closed at or after
- * `closedSince` (RFC 3339; none without it). Oldest first.
- */
-export function listPersonalAgentList(
-  assistantId?: string,
-  closedSince?: string,
-): Promise<PersonalAgentListItem[]> {
-  const query = closedSince
-    ? `?${new URLSearchParams({ closedSince }).toString()}`
-    : "";
-  return request("GET", `${personalAgentApiBase(assistantId)}/list${query}`);
+/** What the 「事项」 list asks for: one view, newest updated first, one page at a time. */
+export interface PersonalAgentItemsQuery {
+  /** open (the default), finished (done or dropped, not archived) or archived. */
+  view?: "open" | "finished" | "archived";
+  owner?: PersonalAgentItemOwner;
+  /** RFC 3339 instants: the range is [from, to) on the time an item last changed. */
+  from?: string;
+  to?: string;
+  /** Case-insensitive search in the item's words and summary. */
+  q?: string;
+  /** Default 50, at most 200. */
+  limit?: number;
+  offset?: number;
 }
 
-/** The person's edit; changing `when` clears its time and reminder. */
-export function updatePersonalAgentListItem(
+function itemsQuery(query: PersonalAgentItemsQuery): string {
+  const params = new URLSearchParams();
+  for (const [name, value] of Object.entries(query))
+    if (value !== undefined && value !== "") params.set(name, String(value));
+  const search = params.toString();
+  return search ? `?${search}` : "";
+}
+
+/** One page of the person's items, with helpers and derived state. */
+export function listPersonalAgentItems(
+  assistantId: string | undefined,
+  query: PersonalAgentItemsQuery = {},
+): Promise<PersonalAgentItemList> {
+  return request(
+    "GET",
+    `${personalAgentApiBase(assistantId)}/items${itemsQuery(query)}`,
+  );
+}
+
+/** One item with its append-only timeline. */
+export function getPersonalAgentItem(
   assistantId: string | undefined,
   itemId: string,
-  input: PersonalAgentListItemInput,
-): Promise<PersonalAgentListItem> {
+): Promise<PersonalAgentItemDetail> {
+  return request(
+    "GET",
+    `${personalAgentApiBase(assistantId)}/items/${id(itemId)}`,
+  );
+}
+
+/**
+ * The person's edit; absent fields stay. `archived` moves a closed item to
+ * the archive and back (refused while it is open or a helper runs).
+ */
+export function updatePersonalAgentItem(
+  assistantId: string | undefined,
+  itemId: string,
+  input: PersonalAgentItemEditInput,
+): Promise<PersonalAgentItem> {
   return request(
     "PUT",
-    `${personalAgentApiBase(assistantId)}/list/${id(itemId)}`,
+    `${personalAgentApiBase(assistantId)}/items/${id(itemId)}`,
     { body: input },
   );
 }
 
-export function deletePersonalAgentListItem(
+/** The deterministic review of a range, built from items and their times. */
+export function getPersonalAgentItemReport(
+  assistantId: string | undefined,
+  from: string,
+  to: string,
+): Promise<PersonalAgentItemReport> {
+  const query = new URLSearchParams({ from, to }).toString();
+  return request(
+    "GET",
+    `${personalAgentApiBase(assistantId)}/items/report?${query}`,
+  );
+}
+
+/** Deletes an item for good, with its timeline; the person's own delete. */
+export function deletePersonalAgentItem(
   assistantId: string | undefined,
   itemId: string,
 ): Promise<void> {
   return request(
     "DELETE",
-    `${personalAgentApiBase(assistantId)}/list/${id(itemId)}`,
+    `${personalAgentApiBase(assistantId)}/items/${id(itemId)}`,
   );
 }
 

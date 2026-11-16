@@ -365,6 +365,9 @@ type AgentSessionInputSource struct {
 
 	// Response A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose.
 	Response string `json:"response,omitempty"`
+
+	// NoticeKind Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration.
+	NoticeKind string `json:"noticeKind,omitempty"`
 }
 
 // AgentSessionSchedule AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest input completed (Status still describes that input). Derived from the latest timer snapshot its device reported (SessionScheduleFromSnapshot).

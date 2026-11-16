@@ -37,6 +37,9 @@ export function openPendingItem(item: PendingItem): void {
     navigateToAssistantSettings("channels", item.assistantId);
   else if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
   else if (item.issueId) navigateToIssue(item.issueId);
+  else if (item.source === "assistant_inbox" && item.sessionId)
+    // A saved message's attempt is the assistant's conversation itself.
+    navigateToChat(item.sessionId, item.workspaceId);
   else if (item.sessionId)
     navigateToChatMessage(item.sessionId, item.workspaceId, item.messageId);
 }
@@ -66,6 +69,8 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
             filter,
             t("page.untitled"),
             t("page.personal"),
+            t("page.defaultAssistant"),
+            t("page.project"),
           )
         : [],
     [list, filteredItems, filter, t],
@@ -148,10 +153,14 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
         <div className="grid gap-5">
           {groups.map((group) => (
             <section
-              aria-label={t("page.groupLabel", {
-                title: group.title,
-                workspace: group.workspaceName,
-              })}
+              aria-label={
+                group.workspaceName
+                  ? t("page.groupLabel", {
+                      title: group.title,
+                      workspace: group.workspaceName,
+                    })
+                  : group.title
+              }
               className="grid min-w-0 gap-1.5"
               key={group.key}
             >

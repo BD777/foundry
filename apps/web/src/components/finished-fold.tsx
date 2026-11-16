@@ -1,14 +1,14 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Button } from "../../../components/ui/button";
-import { cn } from "../../../lib/cn";
+import { Button } from "./ui/button";
+import { cn } from "../lib/cn";
 
-/** Open folds by chat and section, for this page's lifetime only. */
+/** Open folds by memory key, for this page's lifetime only. */
 const openFolds = new Map<string, boolean>();
 
 /**
- * Whether a section's finished rows are unfolded: remembered per chat while
- * the page lives, closed for a chat not seen yet.
+ * Whether a section's finished rows are unfolded: remembered per memory key
+ * while the page lives, closed for a key not seen yet.
  */
 export function useFoldOpen(
   memoryKey: string | undefined,

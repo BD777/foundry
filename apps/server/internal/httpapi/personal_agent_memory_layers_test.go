@@ -363,7 +363,7 @@ func TestMemoryReviewReadsOneVault(t *testing.T) {
 	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	reviews := map[string]store.PersonalAgentMaintenance{}
 	for _, agent := range []store.PersonalAgent{f.a, f.b} {
-		jobs, err := f.server.store.ListPersonalAgentMaintenance(ctx, agent.ID)
+		jobs, err := f.server.store.ListAssistantMemoryMaintenance(ctx, agent.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

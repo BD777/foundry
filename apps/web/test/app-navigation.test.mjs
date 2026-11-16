@@ -337,6 +337,80 @@ test("a deleted assistant clears the stale choice and opens the list", () => {
   });
 });
 
+test("a direct load or reload of the items page opens the default assistant, not the list", () => {
+  assert.deepEqual(parseAppRoute("/assistant/items"), {
+    view: "assistantItems",
+  });
+  assert.deepEqual(parseAppRoute("/assistant/items/item_1"), {
+    view: "assistantItems",
+    selectedItemId: "item_1",
+  });
+  // A fresh browser has no remembered choice: the default stands in, unremembered.
+  assert.deepEqual(
+    resolveAssistantSelection("/assistant/items", assistantRows, ""),
+    {
+      assistantId: "asst_default",
+      fallback: true,
+      stale: false,
+      clearSelection: false,
+    },
+  );
+  // A second run, with the default already selected, still remembers nothing.
+  assert.deepEqual(
+    resolveAssistantSelection(
+      "/assistant/items",
+      assistantRows,
+      "",
+      "asst_default",
+    ),
+    {
+      assistantId: "asst_default",
+      fallback: true,
+      stale: false,
+      clearSelection: false,
+    },
+  );
+  // A remembered choice wins over the default and needs no fallback.
+  assert.deepEqual(
+    resolveAssistantSelection(
+      "/assistant/items/item_1",
+      assistantRows,
+      "asst_work",
+    ),
+    { assistantId: "asst_work", stale: false, clearSelection: false },
+  );
+  // A deleted remembered choice is stale; the default stands in for this load.
+  assert.deepEqual(
+    resolveAssistantSelection(
+      "/assistant/items",
+      assistantRows,
+      "asst_deleted",
+    ),
+    {
+      assistantId: "asst_default",
+      fallback: true,
+      stale: true,
+      clearSelection: false,
+    },
+  );
+  // With no default flagged, the items page still needs no redirect.
+  assert.deepEqual(
+    resolveAssistantSelection(
+      "/assistant/items",
+      [{ id: "asst_a", isDefault: false }],
+      "",
+    ),
+    { stale: false, clearSelection: false },
+  );
+  // The legacy assistant home keeps asking for the remembered choice.
+  assert.deepEqual(
+    resolveAssistantSelection("/assistant", assistantRows, "").destination,
+    {
+      view: "assistants",
+    },
+  );
+});
+
 test("the assistant sidebar keeps the same conversation, needs-you and settings items", () => {
   const items = navSections
     .find((section) => section.id === "assistant")

@@ -26,6 +26,7 @@ export const pending = {
     emptyResolvedBody:
       "Items you answered, marked done or dismissed stay here for 7 days.",
     untitled: "Untitled chat",
+    project: "Project",
     openChat: "Open chat",
     openIssue: "Open Issue",
     groupLabel: "{{title}} in {{workspace}}",
@@ -40,6 +41,23 @@ export const pending = {
     helper_stuck: "Helper stuck",
     bundle_update: "Bundle update",
     message_channel: "Message channel",
+    assistant_inbox: "Unprocessed message",
+    project_upkeep: "Project upkeep",
+    memory_upkeep: "Memory upkeep",
+  },
+  upkeep: {
+    title_one: "{{project}}: {{count}} suggested change to confirm",
+    title_other: "{{project}}: {{count}} suggested changes to confirm",
+    reason:
+      "Review each suggested file change on the project page. Applying or dismissing them all closes this.",
+    open: "Open project",
+  },
+  memoryUpkeep: {
+    title_one: "{{assistant}}: {{count}} memory suggestion to confirm",
+    title_other: "{{assistant}}: {{count}} memory suggestions to confirm",
+    reason:
+      "Review each memory suggestion under this assistant's Memory upkeep. Dismissing the review closes this.",
+    open: "Open memory upkeep",
   },
   state: {
     open: "Open",
@@ -109,6 +127,35 @@ export const pending = {
     more: "More for “{{title}}”",
     reopen: "Reopen",
     changeFailed: "The item could not be changed: {{error}}",
+    inboxRetry: "Retry",
+    inboxRetryRefusal: {
+      notSettled:
+        "The last attempt is still finishing on the computer. Try again in a moment.",
+      changed: "This message changed. Reload the page and check it again.",
+      failed: "The message could not be retried. Try again later.",
+    },
+    inboxDismissFailed: "The message could not be set aside. Try again later.",
+    inboxDismiss: "Don't process",
+    inboxOpenAttempt: "Open the last attempt",
+    inboxDetail: "Details",
+    inboxReason: {
+      quota_exhausted: "the model quota ran out",
+      quotaResets: "the model quota ran out; retry after {{time}}",
+      quotaReset: "the model quota should be back; you can retry",
+      rate_limited: "too many model requests; try again shortly",
+      provider_unavailable: "the model service is unavailable for now",
+      provider_mismatch: "this chat needs the model service it started with",
+      host_stopped: "the run was interrupted on the computer",
+      other: "processing failed",
+      canceled: "processing was stopped",
+    },
+    inboxWait: {
+      device_offline: "saved; waiting for the computer",
+      worker_update: "saved; the loaded worker needs an update",
+      account: "saved; check the assistant's account in Settings",
+      paused: "saved; processing is paused",
+      queued: "saved; waiting to process",
+    },
   },
   failure: {
     usage_limit: {

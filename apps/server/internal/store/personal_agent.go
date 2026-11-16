@@ -214,18 +214,6 @@ type PersonalAgentOverview struct {
 	SuggestedHomeDeviceID string                 `json:"suggestedHomeDeviceId,omitempty"`
 	Usage                 *PersonalAgentUsage    `json:"usage,omitempty"`
 	NeedsYou              *PersonalAgentNeedsYou `json:"needsYou,omitempty"`
-	// Maintenance is what this assistant's upkeep waits on the person for;
-	// nil when there is nothing.
-	Maintenance *PersonalAgentMaintenanceWaiting `json:"maintenance,omitempty"`
-}
-
-// PersonalAgentMaintenanceWaiting is the part of one assistant's upkeep
-// that waits for the person: suggested changes they have not decided yet.
-type PersonalAgentMaintenanceWaiting struct {
-	// Proposals is the number of suggested changes across review jobs.
-	Proposals int `json:"proposals"`
-	// Projects is how many projects have such changes.
-	Projects int `json:"projects"`
 }
 
 // PersonalAgentNeedsYou is the part of the person's "needs you" list this
@@ -404,15 +392,17 @@ type PersonalAgentTask struct {
 	AssistantID           string `json:"-"`
 	ConversationSessionID string `json:"conversationSessionId"`
 	SessionID             string `json:"sessionId,omitempty"`
-	WorkspaceID           string `json:"workspaceId"`
-	Title                 string `json:"title"`
-	Status                string `json:"status"`
-	ReadOnly              bool   `json:"readOnly"`
-	CreatedAt             string `json:"createdAt"`
-	UpdatedAt             string `json:"updatedAt"`
-	LastEventAt           string `json:"lastEventAt,omitempty"`
-	EndedAt               string `json:"endedAt,omitempty"`
-	StuckSince            string `json:"stuckSince,omitempty"`
+	// ItemID is the item of the person's list this task helps with (pa_tasks.item_id).
+	ItemID      string `json:"itemId,omitempty"`
+	WorkspaceID string `json:"workspaceId"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	ReadOnly    bool   `json:"readOnly"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+	LastEventAt string `json:"lastEventAt,omitempty"`
+	EndedAt     string `json:"endedAt,omitempty"`
+	StuckSince  string `json:"stuckSince,omitempty"`
 	// WaitingFor, set when listed, is the name of the offline computer its
 	// session is queued for; not stored.
 	WaitingFor string `json:"waitingFor,omitempty"`
@@ -745,13 +735,16 @@ type PersonalAgentStore interface {
 	// expired before now, or every pending one when now is empty.
 	ExpirePersonalAgentProposals(ctx context.Context, assistantID, now string) (int, error)
 
-	CreatePersonalAgentTask(ctx context.Context, task PersonalAgentTask) (PersonalAgentTask, error)
+	// CreatePersonalAgentTask records a task for actor; a task linked to an
+	// item records its helper's start on the item.
+	CreatePersonalAgentTask(ctx context.Context, actor string, task PersonalAgentTask) (PersonalAgentTask, error)
 	// ListPersonalAgentTasks lists tasks in these statuses (all when none),
 	// newest first.
 	ListPersonalAgentTasks(ctx context.Context, assistantID string, statuses []string) ([]PersonalAgentTask, error)
-	// UpdatePersonalAgentTask saves a task's status and times, and the
-	// conversation it reports to.
-	UpdatePersonalAgentTask(ctx context.Context, task PersonalAgentTask) error
+	// UpdatePersonalAgentTask saves a task's status, times, the conversation
+	// it reports to and its item, for actor. Joining an item and reaching a
+	// final status are recorded on that item.
+	UpdatePersonalAgentTask(ctx context.Context, actor string, task PersonalAgentTask) error
 
 	// RecordPersonalAgentAction appends an audit row with the call's
 	// arguments (kept for the server, never sent) and drops rows older than

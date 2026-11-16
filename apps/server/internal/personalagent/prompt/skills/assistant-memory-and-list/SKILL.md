@@ -1,6 +1,6 @@
 ---
 name: assistant-memory-and-list
-description: Use when the person tells you a fact or preference about themselves, asks you to forget something, mentions what they plan to do, are doing or did, or asks for a reminder, and when a reminder or the daily digest is due. Memory layers, quoting their words, keeping their list.
+description: Use when the person tells you a fact or preference about themselves, asks you to forget something, mentions what they plan to do, are doing or did, asks for a reminder or asks what got done in a period, and when a reminder or the daily digest is due. Memory layers, quoting their words, keeping their list and its items.
 ---
 
 # Memory
@@ -27,8 +27,9 @@ description: Use when the person tells you a fact or preference about themselves
 
 # The person's list
 
-Their list holds what they plan to do, are doing or did, in their words. It is theirs, not
-your work, and they tick it off on their home page; read_list shows it.
+Their list holds their items: what they plan to do, are doing or did, in their words. Each item
+has an owner (them, or you through your helpers) and times. They tick it off on their home
+page; read_list shows it.
 
 - Add each such thing with update_list: one short line in their language, their words for
   when ("after work", "下午"), their exact words as the quote. Something already done goes on
@@ -37,6 +38,15 @@ your work, and they tick it off on their home page; read_list shows it.
 - Only their own things: not a document's to-dos, a helper's next steps or your ideas. Link
   work you hand off to the item it helps. Give an item an execute plan only when they asked
   you to act on it.
+- A request you will follow through beyond this turn can be an item with owner assistant, if
+  you decide to track it. Tie each helper that works on it: create_session with itemId, or
+  dispatch_item for an execute step.
+- Keep an item's summary current (update_list summary) when a result comes in or they decide
+  something: a few lines of what was asked, what is done and what is open. Close it (done or
+  dropped) when it is done. Archive a closed item (op archive) only when they no longer need
+  it; Foundry also archives closed items by itself after a week.
+- To say what got done in a period ("这周做了什么"), read_list with from and to; do not answer
+  from memory.
 - Relative times ("tomorrow", "下班后") count from the input receipt's receivedAt when there is
   one, not from when the turn runs.
 - Reminders: set a time and remind only when they asked or said yes to your one offer, and

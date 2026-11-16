@@ -447,6 +447,9 @@ type pendingItemView struct {
 	SessionTitle  string `json:"sessionTitle,omitempty"`
 	WorkspaceName string `json:"workspaceName,omitempty"`
 	AssistantName string `json:"assistantName,omitempty"`
+	// MessageAt is when an unprocessed assistant message was sent: its inbox
+	// entry's time, which the item (recorded later) does not carry (DEV-254).
+	MessageAt string `json:"messageAt,omitempty"`
 	// DeviceID is the session's device: a github_scope item links to that
 	// device's GitHub permissions (DEV-136).
 	DeviceID string `json:"deviceId,omitempty"`
@@ -502,8 +505,20 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	// conversation was archived or deleted is not shown here either, so the
 	// card's count and "All" can never disagree.
 	items, err := s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
-	if err == nil && s.reconcilePersonalPending(ctx, user, items) {
-		items, err = s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
+	if err == nil {
+		changed := s.reconcilePersonalPending(ctx, user, items)
+		if s.reconcileUpkeepPending(ctx, user, upkeepOpenKeys(items)) {
+			changed = true
+		}
+		if s.reconcileMemoryPending(ctx, user, pendingOpenKeysOf(items, store.PendingSourceMemoryUpkeep)) {
+			changed = true
+		}
+		if s.reconcileInboxPending(ctx, user, inboxOpenKeys(items)) {
+			changed = true
+		}
+		if changed {
+			items, err = s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
+		}
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list pending items")
@@ -513,6 +528,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	workspaces := map[string]string{}
 	for _, item := range items {
 		view := pendingItemView{PendingItem: item, AssistantName: assistantNames[item.AssistantID]}
+		if item.Source == store.PendingSourceAssistantInbox {
+			view.MessageAt = s.inboxMessageAt(ctx, user, item)
+		}
 		if item.SessionID != "" {
 			session, seen := sessions[item.SessionID]
 			if !seen {
@@ -565,7 +583,32 @@ func (s *Server) handleSetPendingItemState(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, "pending items belong to a signed-in account")
 		return
 	}
-	item, err := s.store.SetPendingItemState(r.Context(), user, r.PathValue("id"), input.State)
+	ctx := r.Context()
+	current, err := s.store.GetPendingItem(ctx, user, r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "pending item not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "read pending item")
+		return
+	}
+	// An unprocessed assistant message is retried or dismissed, never
+	// "done": its item may only close together with the message it stands
+	// for (DEV-254).
+	if current.Source == store.PendingSourceAssistantInbox {
+		switch input.State {
+		case store.PendingDismissed:
+			if err := s.dismissInboxItem(ctx, user, current); err != nil {
+				writeResult(w, nil, err)
+				return
+			}
+		case store.PendingOpen, store.PendingDone:
+			writeError(w, http.StatusConflict, "an unprocessed assistant message is retried or dismissed")
+			return
+		}
+	}
+	item, err := s.store.SetPendingItemState(ctx, user, current.ID, input.State)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "pending item not found")
 		return

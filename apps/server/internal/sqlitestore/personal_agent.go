@@ -563,19 +563,22 @@ func (s *Store) ExpirePersonalAgentProposals(ctx context.Context, assistantID, n
 	return int(count), nil
 }
 
-const taskColumns = `id, user_id, assistant_id, conversation_session_id, session_id, workspace_id, title, status, read_only, created_at, updated_at, last_event_at, ended_at, stuck_since`
+const taskColumns = `id, user_id, assistant_id, conversation_session_id, session_id, workspace_id, title, status, read_only, created_at, updated_at, last_event_at, ended_at, stuck_since, item_id`
 
 func scanTask(row interface{ Scan(...any) error }) (store.PersonalAgentTask, error) {
 	var task store.PersonalAgentTask
 	err := row.Scan(&task.ID, &task.UserID, &task.AssistantID, &task.ConversationSessionID, &task.SessionID, &task.WorkspaceID, &task.Title,
-		&task.Status, &task.ReadOnly, &task.CreatedAt, &task.UpdatedAt, &task.LastEventAt, &task.EndedAt, &task.StuckSince)
+		&task.Status, &task.ReadOnly, &task.CreatedAt, &task.UpdatedAt, &task.LastEventAt, &task.EndedAt, &task.StuckSince, &task.ItemID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return task, store.ErrNotFound
 	}
 	return task, err
 }
 
-func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
+func (s *Store) CreatePersonalAgentTask(ctx context.Context, actor string, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
+	if err := checkActor(actor); err != nil {
+		return store.PersonalAgentTask{}, err
+	}
 	var out store.PersonalAgentTask
 	err := s.withTx(ctx, func(tx *Store) error {
 		if task.SessionID != "" {
@@ -584,9 +587,15 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.Personal
 				if old.WorkspaceID != task.WorkspaceID {
 					return store.ErrIdempotencyConflict
 				}
+				changed := false
 				if task.ConversationSessionID != "" && task.ConversationSessionID != old.ConversationSessionID {
-					old.ConversationSessionID = task.ConversationSessionID
-					if e = tx.UpdatePersonalAgentTask(ctx, old); e != nil {
+					old.ConversationSessionID, changed = task.ConversationSessionID, true
+				}
+				if task.ItemID != "" && task.ItemID != old.ItemID {
+					old.ItemID, changed = task.ItemID, true
+				}
+				if changed {
+					if e = tx.UpdatePersonalAgentTask(ctx, actor, old); e != nil {
 						return e
 					}
 				}
@@ -599,10 +608,14 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.Personal
 		}
 		var e error
 		out, e = tx.insertPersonalAgentTask(ctx, task)
-		return e
+		if e != nil {
+			return e
+		}
+		return tx.recordHelperEvents(ctx, actor, out.CreatedAt, store.PersonalAgentTask{AssistantID: out.AssistantID}, out)
 	})
 	return out, err
 }
+
 func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
 	if task.UserID == "" || task.AssistantID == "" || task.WorkspaceID == "" {
 		return task, errors.New("a task needs a person and a workspace")
@@ -612,9 +625,9 @@ func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.Persona
 	if task.Status == "" {
 		task.Status = store.PersonalAgentTaskRunning
 	}
-	_, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (`+sqlPlaceholders(15)+`)`,
 		task.ID, task.UserID, task.AssistantID, task.ConversationSessionID, task.SessionID, task.WorkspaceID, task.Title, task.Status,
-		task.ReadOnly, task.CreatedAt, task.UpdatedAt, task.LastEventAt, task.EndedAt, task.StuckSince)
+		task.ReadOnly, task.CreatedAt, task.UpdatedAt, task.LastEventAt, task.EndedAt, task.StuckSince, task.ItemID)
 	if err != nil {
 		return task, fmt.Errorf("create personal agent task: %w", err)
 	}
@@ -640,17 +653,26 @@ func (s *Store) ListPersonalAgentTasks(ctx context.Context, assistantID string, 
 	return tasks, rows.Err()
 }
 
-func (s *Store) UpdatePersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) error {
-	result, err := s.conn().ExecContext(ctx, `UPDATE pa_tasks SET conversation_session_id = ?, session_id = ?, title = ?, status = ?, updated_at = ?,
-		last_event_at = ?, ended_at = ?, stuck_since = ? WHERE assistant_id = ? AND id = ?`,
-		task.ConversationSessionID, task.SessionID, task.Title, task.Status, paNow(), task.LastEventAt, task.EndedAt, task.StuckSince, task.AssistantID, task.ID)
-	if err != nil {
-		return fmt.Errorf("update personal agent task: %w", err)
+func (s *Store) UpdatePersonalAgentTask(ctx context.Context, actor string, task store.PersonalAgentTask) error {
+	if err := checkActor(actor); err != nil {
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return store.ErrNotFound
-	}
-	return nil
+	return s.withTx(ctx, func(tx *Store) error {
+		previous, err := scanTask(tx.conn().QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id = ? AND id = ?`, task.AssistantID, task.ID))
+		if err != nil {
+			return err
+		}
+		next := previous
+		next.ConversationSessionID, next.SessionID, next.Title, next.Status = task.ConversationSessionID, task.SessionID, task.Title, task.Status
+		next.LastEventAt, next.EndedAt, next.StuckSince, next.ItemID = task.LastEventAt, task.EndedAt, task.StuckSince, task.ItemID
+		now := paNow()
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_tasks SET conversation_session_id = ?, session_id = ?, title = ?, status = ?, updated_at = ?,
+			last_event_at = ?, ended_at = ?, stuck_since = ?, item_id = ? WHERE assistant_id = ? AND id = ?`,
+			next.ConversationSessionID, next.SessionID, next.Title, next.Status, now, next.LastEventAt, next.EndedAt, next.StuckSince, next.ItemID, next.AssistantID, next.ID); err != nil {
+			return fmt.Errorf("update personal agent task: %w", err)
+		}
+		return tx.recordHelperEvents(ctx, actor, now, previous, next)
+	})
 }
 
 const actionColumns = `id, user_id, assistant_id, session_id, tool, args_summary, workspace_id, decision, outcome, refusal, proposal_id, confirmed_via, error, created_at`

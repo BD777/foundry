@@ -4,16 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   PersonalAgentMaintenance,
-  PersonalAgentContextPatch,
-  ContextPatchReply,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import {
   listPersonalAgentMaintenance,
-  listPersonalAgentContextPatches,
   actOnPersonalAgentMaintenance,
-  previewPersonalAgentPatch,
-  applyPersonalAgentPatch,
 } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
@@ -23,6 +18,10 @@ import { SettingsGroup } from "./settings-field";
 import { DividedList } from "../../components/ui/divided-list";
 import { ButtonRow } from "../../components/ui/button-row";
 
+/**
+ * 「记忆整理」: this assistant's own memory layer upkeep. Project upkeep is
+ * the project's, reviewed on its own page, so it is not here (DEV-256).
+ */
 export function MaintenanceSection({
   assistantId,
   workspaces,
@@ -32,30 +31,17 @@ export function MaintenanceSection({
 }) {
   const { t } = useTranslation("personalAgent");
   const [jobs, setJobs] = useState<PersonalAgentMaintenance[]>([]);
-  const [patches, setPatches] = useState<PersonalAgentContextPatch[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [preview, setPreview] = useState<{
-    jobId: string;
-    revision: number;
-    index: number;
-    source: ContextPatchReply;
-  } | null>(null);
   const read = useCallback(async () => {
-    const [j, p] = await Promise.all([
-      listPersonalAgentMaintenance(assistantId),
-      listPersonalAgentContextPatches(assistantId),
-    ]);
-    setJobs(j);
-    setPatches(p);
+    setJobs(await listPersonalAgentMaintenance(assistantId));
   }, [assistantId]);
   useEffect(() => {
     void read().catch((e) => setError(serverErrorText(e)));
   }, [read]);
-  const active =
-    jobs.some((j) =>
-      ["pending", "waiting", "starting", "running"].includes(j.status),
-    ) || patches.some((p) => p.status === "applying");
+  const active = jobs.some((j) =>
+    ["pending", "waiting", "starting", "running"].includes(j.status),
+  );
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(
@@ -91,9 +77,6 @@ export function MaintenanceSection({
       "failed",
       "dismissed",
       "superseded",
-      "applying",
-      "applied",
-      "conflict",
     ];
     return known.includes(value)
       ? t(`maintenance.states.${value}` as never)
@@ -157,13 +140,7 @@ export function MaintenanceSection({
             <p>
               {workspaces.find((w) => w.id === job.workspaceId)?.name ??
                 job.workspaceId}{" "}
-              ·{" "}
-              {t(
-                job.role === "memory"
-                  ? "maintenance.memory"
-                  : "maintenance.governance",
-              )}{" "}
-              · {status(job.status)}
+              · {t("maintenance.memory")} · {status(job.status)}
             </p>
             {job.reason ? <FieldHint>{reason(job.reason)}</FieldHint> : null}
             {job.result ? (
@@ -230,104 +207,6 @@ export function MaintenanceSection({
                 </Button>
               ) : null}
             </ButtonRow>
-            {job.status === "review"
-              ? job.result?.patches.map((patch, index) => {
-                  const operation = patches.find(
-                    (p) => p.jobId === job.id && p.index === index,
-                  );
-                  const shown =
-                    preview?.jobId === job.id &&
-                    preview.index === index &&
-                    preview.revision === job.revision
-                      ? preview.source
-                      : null;
-                  const baseHash = patch.baseHash || "missing";
-                  return (
-                    <div
-                      key={patch.path}
-                      className="grid min-w-0 justify-items-start gap-1.5"
-                    >
-                      <p>
-                        {patch.path} · {patch.reason}
-                      </p>
-                      {operation ? (
-                        <p>
-                          {status(operation.status)}
-                          {operation.reason
-                            ? ` · ${reason(operation.reason)}`
-                            : ""}
-                        </p>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        disabled={!!busy}
-                        onClick={() =>
-                          void perform(`${job.id}:${index}`, async () => {
-                            setPreview(null);
-                            const source = await previewPersonalAgentPatch(
-                              assistantId,
-                              job.id,
-                              job.revision,
-                              index,
-                            );
-                            setPreview({
-                              jobId: job.id,
-                              revision: job.revision,
-                              index,
-                              source,
-                            });
-                          })
-                        }
-                      >
-                        {t("maintenance.preview")}
-                      </Button>
-                      {shown ? (
-                        <>
-                          <FieldHint>
-                            {baseHash === "missing"
-                              ? t("maintenance.newFile")
-                              : t("maintenance.modifiedFile")}
-                          </FieldHint>
-                          <FieldHint>{t("maintenance.current")}</FieldHint>
-                          <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
-                            {shown.hash === "missing"
-                              ? t("maintenance.missing")
-                              : shown.content}
-                          </pre>
-                          <FieldHint>{t("maintenance.proposed")}</FieldHint>
-                          <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
-                            {patch.content}
-                          </pre>
-                          {shown.hash !== baseHash ? (
-                            <Alert
-                              tone="warning"
-                              title={t("maintenance.stale")}
-                            />
-                          ) : (
-                            <Button
-                              size="sm"
-                              disabled={!!busy || !!operation}
-                              onClick={() =>
-                                void perform(`${job.id}:${index}`, () =>
-                                  applyPersonalAgentPatch(
-                                    assistantId,
-                                    job.id,
-                                    job.revision,
-                                    index,
-                                    shown.hash,
-                                  ),
-                                )
-                              }
-                            >
-                              {t("maintenance.apply")}
-                            </Button>
-                          )}
-                        </>
-                      ) : null}
-                    </div>
-                  );
-                })
-              : null}
           </li>
         ))}
       </DividedList>
