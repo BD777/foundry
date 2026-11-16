@@ -137,6 +137,46 @@ func TestInboxExplicitRetryKeepsRootAndDoesNotRaceUnknownDispatch(t *testing.T) 
 	}
 }
 
+func TestInboxKeepsWebAttachmentsAcrossRetry(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	files := []store.ChatAttachment{
+		{ID: "att_1", Name: "photo.png", Path: "inbox/photo.png", MIMEType: "image/png", Size: 12, Kind: "image"},
+		{ID: "att_2", Name: "notes.txt", Path: "inbox/notes.txt", MIMEType: "text/plain", Size: 4, Kind: "file"},
+	}
+	input := inboxFixture("person-a", "web", "with-files")
+	input.Text, input.Attachments = "", files
+	first, err := db.CapturePersonalAgentInbox(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Attachments) != 2 || first.Attachments[0].ID != "att_1" {
+		t.Fatalf("captured attachments = %+v", first.Attachments)
+	}
+	replayed, err := db.CapturePersonalAgentInbox(ctx, input)
+	if err != nil || len(replayed.Attachments) != 2 {
+		t.Fatalf("replay lost its files: %+v %v", replayed, err)
+	}
+	changed := input
+	changed.Attachments = files[:1]
+	if _, err := db.CapturePersonalAgentInbox(ctx, changed); !errors.Is(err, store.ErrIdempotencyConflict) {
+		t.Fatalf("changed files reused the message id: %v", err)
+	}
+	empty := inboxFixture("person-a", "web", "no-content")
+	empty.Text = ""
+	if _, err := db.CapturePersonalAgentInbox(ctx, empty); err == nil {
+		t.Fatal("an empty message without files was accepted")
+	}
+	first.Status, first.WaitingReason = "waiting", "device_offline"
+	first, err = db.SavePersonalAgentInbox(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := db.RetryPersonalAgentInbox(ctx, first.AssistantID, first.ID, first.Revision, inboxFixture("person-a", "web", "retry-files"))
+	if err != nil || len(retry.Attachments) != 2 || retry.Attachments[1].Name != "notes.txt" {
+		t.Fatalf("retry lost its files: %+v %v", retry, err)
+	}
+}
+
 func TestInboxDismissCancelsAHeldMessageAndRecordsWho(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	entry, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "web", "dismiss-me"))

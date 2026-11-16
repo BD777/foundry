@@ -176,6 +176,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"session_alerts", "child_session_id", ownerSession},
 	{"session_alerts", "recipient_session_id", ownerSession},
 	{"session_retries", "session_id", ownerSession},
+	{"session_member_switches", "session_id", ownerSession},
 	{"session_report_optouts", "session_id", ownerSession},
 	{"pending_items", "session_id", ownerSession},
 	{"native_account_dispatches", "session_id", ownerSession},

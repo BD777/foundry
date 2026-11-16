@@ -34,12 +34,15 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 			notify_pending INTEGER NOT NULL DEFAULT 0,
 			dismissed_by TEXT NOT NULL DEFAULT '',
 			dismissed_at TEXT NOT NULL DEFAULT '',
+			attachments_json TEXT NOT NULL DEFAULT '[]',
 			UNIQUE(user_id, channel, message_id))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_user ON pa_inbox(user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_due ON pa_inbox(status, lease_until, created_at)`,
 		// A message the person gave up on keeps who dismissed it and when.
 		`ALTER TABLE pa_inbox ADD COLUMN dismissed_by TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE pa_inbox ADD COLUMN dismissed_at TEXT NOT NULL DEFAULT ''`,
+		// A web message keeps the files uploaded for it across retries.
+		`ALTER TABLE pa_inbox ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate personal agent inbox: %w", err)
@@ -48,36 +51,42 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 	return nil
 }
 
-const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone,dismissed_by,dismissed_at`
+const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone,dismissed_by,dismissed_at,attachments_json`
 
 func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEntry, error) {
 	var entry store.PersonalAgentInboxEntry
-	var origin string
+	var origin, attachments string
 	err := row.Scan(&entry.ID, &entry.UserID, &entry.AssistantID, &entry.Channel, &entry.MessageID, &entry.Text,
 		&entry.Status, &entry.Revision, &entry.InputID, &entry.SessionID, &entry.WaitingReason,
 		&entry.LeaseUntil, &entry.CreatedAt, &entry.UpdatedAt, &origin, &entry.RootID,
 		&entry.ResultStatus, &entry.ResultText, &entry.ResultError, &entry.ResultTruncated, &entry.NotificationPending, &entry.Timezone,
-		&entry.DismissedBy, &entry.DismissedAt)
+		&entry.DismissedBy, &entry.DismissedAt, &attachments)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = store.ErrNotFound
 	}
 	if err == nil {
 		err = json.Unmarshal([]byte(origin), &entry.Origin)
 	}
+	if err == nil && attachments != "" && attachments != "[]" {
+		err = json.Unmarshal([]byte(attachments), &entry.Attachments)
+	}
 	return entry, err
 }
 
 func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) (store.PersonalAgentInboxEntry, error) {
-	if entry.ID == "" || entry.UserID == "" || entry.AssistantID == "" || entry.MessageID == "" || entry.Text == "" ||
+	entry.Attachments = store.NormalizeChatAttachments(entry.Attachments)
+	if entry.ID == "" || entry.UserID == "" || entry.AssistantID == "" || entry.MessageID == "" ||
+		(entry.Text == "" && len(entry.Attachments) == 0) ||
 		!(slices.Contains([]string{"web", "feishu"}, entry.Channel) || strings.HasPrefix(entry.Channel, "mc:")) || !store.ValidSessionInputID(entry.InputID) {
-		return entry, errors.New("inbox requires a source, person, text and native input identity")
+		return entry, errors.New("inbox requires a source, person, text or files, and native input identity")
 	}
 	var saved store.PersonalAgentInboxEntry
 	err := s.withTx(ctx, func(tx *Store) error {
 		existing, err := scanInbox(tx.conn().QueryRowContext(ctx, `SELECT `+inboxColumns+` FROM pa_inbox
 			WHERE user_id=? AND channel=? AND message_id=?`, entry.UserID, entry.Channel, entry.MessageID))
 		if err == nil {
-			if existing.Text != entry.Text || existing.InputID != entry.InputID || !reflect.DeepEqual(existing.Origin, entry.Origin) {
+			if existing.Text != entry.Text || existing.InputID != entry.InputID || !reflect.DeepEqual(existing.Origin, entry.Origin) ||
+				!slices.Equal(existing.Attachments, entry.Attachments) {
 				return store.ErrIdempotencyConflict
 			}
 			saved = existing
@@ -98,10 +107,14 @@ func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.Perso
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		attachments, err := json.Marshal(entry.Attachments)
+		if err != nil {
+			return err
+		}
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			entry.ID, entry.UserID, entry.AssistantID, entry.Channel, entry.MessageID, entry.Text, entry.Status, entry.Revision,
 			entry.InputID, entry.SessionID, entry.WaitingReason, entry.LeaseUntil, entry.CreatedAt, entry.UpdatedAt, string(origin),
-			entry.RootID, "", "", "", false, false, entry.Timezone, entry.DismissedBy, entry.DismissedAt)
+			entry.RootID, "", "", "", false, false, entry.Timezone, entry.DismissedBy, entry.DismissedAt, string(attachments))
 		saved = entry
 		return err
 	})
@@ -254,7 +267,7 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 			}
 		}
 		next.UserID, next.AssistantID, next.Channel, next.Text, next.Origin, next.RootID = current.UserID, assistantID, current.Channel, current.Text, current.Origin, current.RootID
-		next.Timezone = current.Timezone
+		next.Attachments, next.Timezone = current.Attachments, current.Timezone
 		if current.SessionID != "" {
 			control, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE assistant_id=? AND input_id=?`, assistantID, current.InputID))
 			if e != nil {

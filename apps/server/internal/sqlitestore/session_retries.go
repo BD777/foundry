@@ -33,17 +33,20 @@ func (s *Store) setupSessionRetries(ctx context.Context) error {
 		ON session_retries (status, next_attempt_at)`); err != nil {
 		return fmt.Errorf("index sqlite session retries: %w", err)
 	}
+	if _, err := s.conn().ExecContext(ctx, `ALTER TABLE session_retries ADD COLUMN next_profile_id TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("add next_profile_id to sqlite session retries: %w", err)
+	}
 	return nil
 }
 
 const sessionRetryColumns = `session_id, input_id, attempt, max_attempts,
-	previous_model, next_model, status, next_attempt_at, last_error, created_at, updated_at`
+	previous_model, next_model, next_profile_id, status, next_attempt_at, last_error, created_at, updated_at`
 
 func scanSessionRetry(row interface{ Scan(...any) error }) (store.SessionRetry, error) {
 	var retry store.SessionRetry
 	var next, created, updated string
 	err := row.Scan(&retry.SessionID, &retry.InputID, &retry.Attempt, &retry.MaxAttempts,
-		&retry.PreviousModel, &retry.NextModel, &retry.Status, &next, &retry.LastError, &created, &updated)
+		&retry.PreviousModel, &retry.NextModel, &retry.NextProfileID, &retry.Status, &next, &retry.LastError, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.SessionRetry{}, store.ErrNotFound
 	}
@@ -98,6 +101,7 @@ func (s *Store) ScheduleAgentSessionRetry(ctx context.Context, retry store.Sessi
 	retry.InputID = strings.TrimSpace(retry.InputID)
 	retry.PreviousModel = strings.TrimSpace(retry.PreviousModel)
 	retry.NextModel = strings.TrimSpace(retry.NextModel)
+	retry.NextProfileID = strings.TrimSpace(retry.NextProfileID)
 	retry.LastError = strings.TrimSpace(retry.LastError)
 	blockedReason = strings.TrimSpace(blockedReason)
 	if retry.SessionID == "" || retry.InputID == "" {
@@ -128,20 +132,21 @@ func (s *Store) ScheduleAgentSessionRetry(ctx context.Context, retry store.Sessi
 			return err
 		}
 		_, err = tx.conn().ExecContext(ctx, `INSERT INTO session_retries
-			(session_id, input_id, attempt, max_attempts, previous_model, next_model, status,
+			(session_id, input_id, attempt, max_attempts, previous_model, next_model, next_profile_id, status,
 				next_attempt_at, last_error, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(session_id, input_id) DO UPDATE SET
 				attempt = excluded.attempt,
 				max_attempts = excluded.max_attempts,
 				previous_model = excluded.previous_model,
 				next_model = excluded.next_model,
+				next_profile_id = excluded.next_profile_id,
 				status = excluded.status,
 				next_attempt_at = excluded.next_attempt_at,
 				last_error = excluded.last_error,
 				updated_at = excluded.updated_at`,
 			retry.SessionID, retry.InputID, retry.Attempt, retry.MaxAttempts, retry.PreviousModel,
-			retry.NextModel, retry.Status, formatTime(retry.NextAttemptAt.UTC()), retry.LastError,
+			retry.NextModel, retry.NextProfileID, retry.Status, formatTime(retry.NextAttemptAt.UTC()), retry.LastError,
 			formatTime(retry.CreatedAt), formatTime(retry.UpdatedAt))
 		if err != nil {
 			return err
@@ -172,6 +177,9 @@ func (s *Store) ClaimAgentSessionRetry(ctx context.Context, retry store.SessionR
 			return store.ErrNotFound
 		}
 		session.Model = stored.NextModel
+		if stored.NextProfileID != "" {
+			session.ProfileID = stored.NextProfileID
+		}
 		session.DispatchID = uuid.NewString()
 		session.Status = "queued"
 		session.BlockedReason = ""
@@ -210,4 +218,19 @@ func (s *Store) UpdateSessionRetry(ctx context.Context, sessionID, inputID, stat
 		return fmt.Errorf("update session retry: %w", err)
 	}
 	return nil
+}
+
+// SetSessionRetryNextMember moves a pending retry to another member and makes
+// it due at at, so the next pump runs it on that member.
+func (s *Store) SetSessionRetryNextMember(ctx context.Context, sessionID, inputID, profileID, model string, at time.Time) (bool, error) {
+	result, err := s.conn().ExecContext(ctx, `UPDATE session_retries
+		SET next_profile_id = ?, next_model = ?, next_attempt_at = ?, updated_at = ?
+		WHERE session_id = ? AND input_id = ? AND status = ?`,
+		strings.TrimSpace(profileID), strings.TrimSpace(model), formatTime(at.UTC()), formatTime(time.Now().UTC()),
+		sessionID, inputID, store.SessionRetryPending)
+	if err != nil {
+		return false, fmt.Errorf("move session retry: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed > 0, err
 }

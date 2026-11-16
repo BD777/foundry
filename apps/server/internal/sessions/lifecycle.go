@@ -187,12 +187,19 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 		if input.RequireIdle {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrAgentSessionActive}
 		}
+		applied, err := s.policy.ApplyRunningMemberSwitch(ctx, session, &input)
+		if err != nil {
+			return store.AgentSession{}, err
+		}
 		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" ||
 			input.Model != "" {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, errors.New("a running session keeps its runtime; switch it once it settles")}
 		}
 		// Files steer in with the message, as they arrive with any message.
 		attachments := store.NormalizeChatAttachments(input.Attachments)
+		if applied && message == "" && len(attachments) == 0 {
+			return session, nil
+		}
 		if message == "" && len(attachments) == 0 {
 			return store.AgentSession{}, &Refusal{http.StatusBadRequest, errors.New("message is required")}
 		}

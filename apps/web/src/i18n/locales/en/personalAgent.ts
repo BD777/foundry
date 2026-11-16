@@ -544,6 +544,7 @@ export const personalAgent = {
     inputLabel: "Message to your assistant",
     send: "Send",
     stopReply: "Stop this reply",
+    uploadingWait: "Wait for the files to finish uploading.",
     working: "Working on it…",
     waitingForComputer: "Waiting for {{computer}} to come online",
     waitingForComputerDetail:

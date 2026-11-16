@@ -1,3 +1,5 @@
+import type { ChatAttachment } from "./contract.gen.js";
+
 /** A durable, authenticated input. Delivery is not task completion. */
 export interface PersonalAgentInboxEntry {
   id: string;
@@ -22,6 +24,8 @@ export interface PersonalAgentInboxEntry {
   /** Who gave up on the message ("不再处理"); empty until then. */
   dismissedBy?: string;
   dismissedAt?: string;
+  /** Files uploaded for a web message; delivered with its turn. */
+  attachments?: ChatAttachment[];
 }
 
 export interface PersonalAgentInboxFailure {
@@ -43,4 +47,5 @@ export interface PersonalAgentInboxAction {
 export interface PersonalAgentInboxCapture {
   messageId: string;
   text: string;
+  attachments?: ChatAttachment[];
 }

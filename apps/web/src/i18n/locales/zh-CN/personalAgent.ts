@@ -489,6 +489,7 @@ export const personalAgent: Translation<typeof en> = {
     inputLabel: "发给助理的消息",
     send: "发送",
     stopReply: "停止这次回复",
+    uploadingWait: "请等文件上传完成再发送。",
     working: "正在处理…",
     waitingForComputer: "等待 {{computer}} 上线",
     waitingForComputerDetail: "{{computer}} 上线后我会自己接着做。",

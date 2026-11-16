@@ -59,6 +59,8 @@ type DaemonHub struct {
 	store  Backend
 	// usageStats records usage facts from session events and terminal turns.
 	usageStats usageRecorder
+	// health is the rate-limit breaker of each account worker group members use.
+	health *memberHealth
 	// connectors decides what a session may use of each connector (connectors.go).
 	connectors *connectors.Module
 	// resources keeps what devices report of their resources (resources.go).

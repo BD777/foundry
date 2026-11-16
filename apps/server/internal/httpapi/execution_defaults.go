@@ -136,7 +136,10 @@ func (s *Server) fillExecutionChoiceGroup(ctx context.Context, workerGroupID str
 	if err != nil {
 		return nil, err
 	}
-	public := publicWorkerGroup(group)
+	public, err := s.workerGroupView(ctx, group)
+	if err != nil {
+		return nil, err
+	}
 	return &public, nil
 }
 

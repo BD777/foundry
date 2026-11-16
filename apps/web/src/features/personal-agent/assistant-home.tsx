@@ -15,6 +15,7 @@ import {
 import type {
   AgentProfileProjection,
   AssistantSummary,
+  ChatAttachment,
   DeviceProjection,
   MessageChannelView,
   PersonalAgent,
@@ -22,6 +23,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Conversation } from "../../components/conversation/conversation";
+import { useChatAttachments } from "../../components/conversation/use-chat-attachments";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import {
   viewHandoff,
@@ -44,6 +46,7 @@ import {
   DropdownMenuSurface,
 } from "../../components/ui/row-menu-parts";
 import { serverErrorText } from "../../lib/errors";
+import type { ToastTone } from "../../components/ui/toast";
 import { channelChatsHref } from "../../lib/in-app-navigation";
 import { listMessageChannels } from "../../api";
 import {
@@ -250,8 +253,27 @@ function AssistantHomeReady({
       })),
     [assistant.tasks, assistant.listItems],
   );
-  const notice = (message: string) =>
-    onEvent({ type: "notice.requested", message });
+  const notify = useCallback(
+    async (message: string, tone?: ToastTone) => {
+      onEvent(
+        tone
+          ? { type: "notice.requested", message, tone }
+          : { type: "notice.requested", message },
+      );
+    },
+    [onEvent],
+  );
+  const notice = (message: string) => void notify(message);
+  // Files for the next message, uploaded to the assistant's home workspace
+  // and carried into its inbox entry, exactly as a chat's composer does.
+  const attachments = useChatAttachments({
+    notify,
+    workspaceId: agent.workspaceId,
+  });
+  const { reset: resetAttachments } = attachments;
+  useEffect(() => {
+    resetAttachments();
+  }, [agent.id, resetAttachments]);
 
   async function stopAll(): Promise<void> {
     notice(await assistant.stopAll());
@@ -274,10 +296,16 @@ function AssistantHomeReady({
   // The fixed words are answered here, before the model (§4, §8).
   async function send(
     text: string,
-    _attachments: unknown,
+    queuedAttachments?: ChatAttachment[],
     options?: { idempotencyKey?: string },
-  ): Promise<true | "replied"> {
-    const command = channelCommand(text);
+  ): Promise<true | "replied" | false> {
+    const files = queuedAttachments ?? attachments.attachments;
+    if (attachments.uploading) {
+      await notify(t("conversation.uploadingWait"));
+      return false;
+    }
+    // A message with files is a normal message, never a fixed word.
+    const command = files.length ? undefined : channelCommand(text);
     if (command === "stop") {
       await stopAll();
       return "replied";
@@ -302,7 +330,9 @@ function AssistantHomeReady({
     await conversation.send(
       text,
       options?.idempotencyKey ?? crypto.randomUUID(),
+      files,
     );
+    if (!queuedAttachments) attachments.removeSent(files);
     return true;
   }
 
@@ -343,6 +373,7 @@ function AssistantHomeReady({
         clientId: line.clientId,
         role: line.role === "person" ? "user" : "bot",
         text: line.text,
+        attachments: line.attachments,
         copyText: line.text,
         at: line.at,
         streaming: line.streaming,
@@ -602,9 +633,14 @@ function AssistantHomeReady({
         <Conversation
           active={conversation.working}
           activeExecutionId={conversation.latestTurnId}
+          attachmentUploading={attachments.uploading}
+          attachments={attachments.attachments}
           canSendDuringExecution={() => true}
           composer={{ mode: "plain" }}
           history={history}
+          onAttachmentsAdd={(files) => void attachments.add(files)}
+          onAttachmentsRestore={attachments.restore}
+          onAttachmentRemove={attachments.remove}
           inputLabel={t("conversation.inputLabel")}
           messages={messages}
           onSend={send}

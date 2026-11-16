@@ -56,14 +56,17 @@ func TestDependencyDiamondAndInvalidGraph(t *testing.T) {
 }
 
 func TestCaptureRejectsUnsupportedSourceAndEmptyMessage(t *testing.T) {
-	if err := Capture("person-a", "web", "message-1", "记一下这件事"); err != nil {
+	if err := Capture("person-a", "web", "message-1", "记一下这件事", false); err != nil {
 		t.Fatal(err)
+	}
+	if err := Capture("person-a", "web", "message-files", "", true); err != nil {
+		t.Fatalf("a message of files alone: %v", err)
 	}
 	for _, parts := range [][4]string{
 		{"", "web", "m1", "task"}, {"a", "model", "m1", "task"},
 		{"a", "web", "", "task"}, {"a", "web", "m1", " \n "},
 	} {
-		if Capture(parts[0], parts[1], parts[2], parts[3]) == nil {
+		if Capture(parts[0], parts[1], parts[2], parts[3], false) == nil {
 			t.Fatal("invalid source was accepted")
 		}
 	}

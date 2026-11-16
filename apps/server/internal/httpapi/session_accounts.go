@@ -262,6 +262,9 @@ func (s *Server) chooseSessionAccount(ctx context.Context, input *store.CreateAg
 // runtime: its own runtime keeps the session's account, another one runs
 // under an account chosen as for a new session (chooseAccount).
 func (s *Server) chooseRuntimeSwitch(ctx context.Context, session store.AgentSession, input *store.SendAgentSessionInput) error {
+	if session.WorkerGroupID != "" && input.AgentID == "" && input.ProfileID == "" && input.Model == "" && input.Provider == "" {
+		return s.chooseSettledMember(ctx, session, input)
+	}
 	if input.AgentID != "" || input.ProfileID != "" || input.Provider == "" {
 		return nil
 	}

@@ -893,6 +893,13 @@ components:
         weight:
           type: integer
           minimum: 1
+        tier:
+          description:
+            Tier 1 is a primary member; tier 2 is a fallback, used when the
+            primary rate-limit domain is limited. Members of the same runtime
+            only fall back to each other. Without it a member is primary.
+          type: integer
+          minimum: 1
     WorkerGroup:
       description:
         A person's named group of models that workers can be assigned from.
@@ -916,10 +923,67 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkerGroupMember"
+        domains:
+          description:
+            The live rate-limit state of each account the group's members run
+            on, one entry per account and runtime. Read-only; the server
+            computes it and ignores it on save.
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerGroupDomain"
         createdAt:
           type: string
         updatedAt:
           type: string
+    WorkerGroupDomain:
+      description:
+        One rate-limit domain of a worker group, an account that members share.
+        `state` is `healthy`, `recovering` (rate limited within the last ten
+        minutes), `probing` (its one half-open probe is free) or `limited` (in
+        cooldown). `cooldownUntil` is set while the account is in cooldown.
+        `level` doubles the cooldown on each reopening and halves each clean
+        ten minutes. `limit` is the concurrent-session limit the server
+        currently allows; `active` is the sessions running on the account now.
+      type: object
+      required:
+        - profileId
+        - runtime
+        - state
+        - level
+        - limit
+        - active
+        - signalsInWindow
+        - failoversLastHour
+      additionalProperties: false
+      properties:
+        profileId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        state:
+          type: string
+          enum:
+            - healthy
+            - recovering
+            - probing
+            - limited
+        cooldownUntil:
+          type: string
+        level:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 0
+        active:
+          type: integer
+          minimum: 0
+        signalsInWindow:
+          type: integer
+          minimum: 0
+        failoversLastHour:
+          type: integer
+          minimum: 0
     WorkerGroupInput:
       description: Create or replace one worker group.
       type: object

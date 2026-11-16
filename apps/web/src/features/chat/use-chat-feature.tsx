@@ -76,7 +76,7 @@ import { useExternalConnectionSetups } from "../../components/external-connectio
 import { useRuntimeReadinessActions } from "./session/use-runtime-readiness-actions";
 import { useChatQueue } from "./composer/use-chat-queue";
 import { useChatListItems } from "./list/use-chat-list-items";
-import { useChatAttachments } from "./composer/use-chat-attachments";
+import { useChatAttachments } from "../../components/conversation/use-chat-attachments";
 import { useChatSend } from "./composer/use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { migrationPauseReason } from "../../components/workspace/workspace-migration";

@@ -260,7 +260,8 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		reportBack := mcpArgBool(args, "reportBack")
 		input.ReportBack = &reportBack
 	}
-	if err := s.resolveNewSession(ctx, actor, &input, true); err != nil {
+	note, err := s.resolveNewSession(ctx, actor, &input, true)
+	if err != nil {
 		return "", err
 	}
 	handed, err := s.mcpAttachments(ctx, actor, input.WorkspaceID, mcpArgList(args, "attachments"))
@@ -273,6 +274,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.noteMemberRouting(ctx, session, note)
 	return encodeJSON(s.mcpSessionAnswer(ctx, session, handed.list()))
 }
 
@@ -344,7 +346,13 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(s.mcpSessionAnswer(ctx, sessions.Slim(session), attachments.list()))
+	answer := s.mcpSessionAnswer(ctx, sessions.Slim(session), attachments.list())
+	if profileID != "" || model != "" {
+		if memberSwitch, ok := s.memberSwitchFor(ctx, session); ok {
+			return encodeJSON(withMemberSwitch(answer, memberSwitch))
+		}
+	}
+	return encodeJSON(answer)
 }
 
 // sendInboxMessageForMCP sends another session's message through the

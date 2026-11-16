@@ -24,7 +24,7 @@ import {
 import { sessionStillActive, toChatSendError } from "./chat-send-error";
 import type { chatComposerChoices } from "../session/chat-session-model";
 import type { ChatSessionThread } from "../chat-types";
-import type { ChatAttachments } from "./use-chat-attachments";
+import type { ChatAttachments } from "../../../components/conversation/use-chat-attachments";
 import type { ChatOutbox } from "./use-chat-outbox";
 import type { ChatFeatureEvent } from "../use-chat-feature";
 

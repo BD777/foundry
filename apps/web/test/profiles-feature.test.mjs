@@ -1674,3 +1674,110 @@ test("a refused check is reported inline on its device", async () => {
     await unmount(view.root);
   }
 });
+
+/** One group whose members run on two accounts, with the server's live domain state. */
+function serveGroupWithDomains(domains) {
+  const group = {
+    id: "wg_flash",
+    label: "DeepSeek Flash",
+    members: [
+      groupMember("deepseek-v4.1-flash-1017"),
+      groupMember("deepseek/deepseek-flash", "p2"),
+    ],
+    ...(domains ? { domains } : {}),
+    createdAt: "2026-11-10T10:00:00Z",
+    updatedAt: "2026-11-10T10:00:00Z",
+  };
+  const executionDefault = { workerGroupId: group.id, scope: "global", group };
+  return {
+    serve(request) {
+      if (request.path === "/api/execution-default" && request.method === "GET")
+        return Response.json({
+          saved: executionDefault,
+          effective: executionDefault,
+        });
+      if (request.path === "/api/worker-groups" && request.method === "GET")
+        return Response.json([group]);
+      if (
+        request.path === "/api/worker-groups/wg_flash" &&
+        request.method === "PUT"
+      )
+        return Response.json({ ...group, ...request.body });
+      return serveProfiles(request);
+    },
+  };
+}
+
+test("each member shows its tier and the live state of its account, and a fallback can be chosen", async () => {
+  const cooldownUntil = new Date(Date.now() + 5.5 * 60_000).toISOString();
+  const { serve } = serveGroupWithDomains([
+    {
+      profileId: "p1",
+      runtime: "codex",
+      state: "limited",
+      cooldownUntil,
+      level: 1,
+      limit: 2,
+      active: 2,
+      signalsInWindow: 5,
+      failoversLastHour: 3,
+    },
+    {
+      profileId: "p2",
+      runtime: "codex",
+      state: "healthy",
+      level: 0,
+      limit: 4,
+      active: 2,
+      signalsInWindow: 0,
+      failoversLastHour: 0,
+    },
+  ]);
+  const view = await renderFeature({ tab: "groups" }, serve);
+  await settle();
+  await act(async () => {
+    view.query('button[aria-label="Edit worker group DeepSeek Flash"]').click();
+  });
+  const roleOf = (index) => view.query(`[aria-label="Role of model ${index}"]`);
+  const segment = (index, label) =>
+    [...roleOf(index).querySelectorAll("button")].find(
+      (button) => button.textContent === label,
+    );
+  assert.equal(segment(1, "Primary").getAttribute("aria-checked"), "true");
+  assert.match(
+    view.container.textContent,
+    /Rate limited · back in about 6 min · switched to a fallback 3 times in the last hour/,
+  );
+  assert.match(view.container.textContent, /Healthy · 2\/4 sessions/);
+
+  await act(async () => {
+    segment(1, "Fallback").click();
+  });
+  await view.clickButton("Save group");
+  const saved = view.requests.find(
+    (request) =>
+      request.method === "PUT" &&
+      request.path === "/api/worker-groups/wg_flash",
+  );
+  assert.equal(saved.body.members[0].tier, 2);
+  assert.equal("tier" in saved.body.members[1], false);
+  await unmount(view.root);
+});
+
+test("a member with no domain data shows no status line", async () => {
+  const { serve } = serveGroupWithDomains(undefined);
+  const view = await renderFeature({ tab: "groups" }, serve);
+  await settle();
+  await act(async () => {
+    view.query('button[aria-label="Edit worker group DeepSeek Flash"]').click();
+  });
+  assert.doesNotMatch(
+    view.container.textContent,
+    /Healthy|Rate limited|Probing|Recovering/,
+  );
+  assert.ok(
+    view.query('[aria-label="Role of model 1"]'),
+    "the tier control is still shown",
+  );
+  await unmount(view.root);
+});

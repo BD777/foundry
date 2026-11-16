@@ -37,6 +37,33 @@ func TestAssistantInboxCapturesWithoutDeviceAndDoesNotDispatch(t *testing.T) {
 	}
 }
 
+// A web message's files reach its turn, as a chat's do, including a message
+// that is only its files.
+func TestAssistantInboxDeliversWebAttachmentsWithTheTurn(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	files := []store.ChatAttachment{
+		{ID: "att_1", Name: "photo.png", Path: "inbox/photo.png", MIMEType: "image/png", Size: 12, Kind: "image"},
+		{ID: "att_2", Name: "notes.txt", Path: "inbox/notes.txt", MIMEType: "text/plain", Size: 4, Kind: "file"},
+	}
+	entry, err := f.server.assistant.CaptureInbox(ctx, agent, "web",
+		store.PersonalAgentInboxCapture{MessageID: "with-files", Attachments: files})
+	if err != nil || len(entry.Attachments) != 2 {
+		t.Fatalf("capture with files: %+v %v", entry, err)
+	}
+	f.server.assistant.DrainInbox(ctx)
+	run := f.daemon.nextChatRun()
+	if run.Session.Input.ID != entry.InputID || len(run.Session.Input.Attachments) != 2 ||
+		run.Session.Input.Attachments[1].Name != "notes.txt" {
+		t.Fatalf("turn input = %+v", run.Session.Input)
+	}
+	delivered, _ := f.server.store.GetPersonalAgentInbox(ctx, agent.ID, entry.ID)
+	if delivered.Status != "delivered" || len(delivered.Attachments) != 2 {
+		t.Fatalf("delivered receipt = %+v", delivered)
+	}
+}
+
 func TestAssistantInboxReconcilesLostReceiptAndContinuesConversation(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()

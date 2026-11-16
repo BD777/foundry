@@ -1,10 +1,21 @@
-import { ChevronRight, Plus, Trash2, X } from "lucide-react";
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   ProfileDefinition,
   WorkerGroup,
+  WorkerGroupDomain,
   WorkerGroupInput,
   WorkerGroupMember,
 } from "@bd777/foundry-protocol";
@@ -21,6 +32,7 @@ import { ConfirmButton } from "../../components/ui/confirm-button";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { SectionHeader } from "../../components/ui/page-header";
 import { SectionPanel } from "../../components/ui/section-panel";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
   SelectMenu,
   type SelectMenuOption,
@@ -36,6 +48,11 @@ import {
   claudeEffortOptions,
   codexEffortOptions,
 } from "../../lib/agent-effort";
+import {
+  domainForMember,
+  domainStatus,
+  memberTier,
+} from "./worker-group-domain";
 
 interface MemberDraft {
   providerKind: string;
@@ -45,6 +62,7 @@ interface MemberDraft {
   effort: string;
   tokensPerMinute: string;
   weight: string;
+  tier: "primary" | "fallback";
 }
 
 interface GroupDraft {
@@ -73,6 +91,7 @@ function memberFromSource(source?: ExecutionSource): MemberDraft {
     effort: "",
     tokensPerMinute: "",
     weight: "1",
+    tier: "primary",
   };
 }
 
@@ -94,6 +113,7 @@ function draftFor(
         ? String(member.tokensPerMinute)
         : "",
       weight: String(member.weight || 1),
+      tier: memberTier(member) === 2 ? "fallback" : "primary",
     })),
   };
 }
@@ -128,9 +148,47 @@ function inputFor(draft: GroupDraft): WorkerGroupInput | undefined {
       ...(member.effort ? { effort: member.effort } : {}),
       ...(tokensPerMinute ? { tokensPerMinute } : {}),
       weight,
+      ...(member.tier === "fallback" ? { tier: 2 } : {}),
     });
   }
   return { label: draft.label.trim(), members };
+}
+
+const domainStateIcons: Record<
+  WorkerGroupDomain["state"],
+  { icon: LucideIcon; tone: string }
+> = {
+  healthy: { icon: CircleCheck, tone: "text-success-text" },
+  limited: { icon: CircleAlert, tone: "text-warning-text" },
+  probing: { icon: CircleDashed, tone: "text-ink-muted" },
+  recovering: { icon: RefreshCw, tone: "text-ink-muted" },
+};
+
+function DomainStatusLine({
+  domain,
+  now,
+}: {
+  domain: WorkerGroupDomain | undefined;
+  now: number;
+}) {
+  const { t } = useTranslation("profiles");
+  if (!domain) return null;
+  const status = domainStatus(domain, now);
+  const { icon: Icon, tone } = domainStateIcons[status.state];
+  const text = t(status.key, status.values);
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+      <Icon aria-hidden className={`shrink-0 ${tone}`} size={13} />
+      <span className="min-w-0">
+        {status.failoversLastHour > 0
+          ? t("workerGroups.domain.withFailovers", {
+              text,
+              count: status.failoversLastHour,
+            })
+          : text}
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -158,6 +216,9 @@ export function WorkerGroupsSection({
   const input = draft ? inputFor(draft) : undefined;
   const byQuota =
     draft?.members.some((member) => hasQuota(member.tokensPerMinute)) ?? false;
+  const domains =
+    groups?.find((group) => group.id === draft?.id)?.domains ?? [];
+  const now = Date.now();
 
   useEffect(() => {
     let active = true;
@@ -357,6 +418,7 @@ export function WorkerGroupsSection({
                             ...memberFromSource(source),
                             tokensPerMinute: member.tokensPerMinute,
                             weight: member.weight,
+                            tier: member.tier,
                           });
                       }}
                     />
@@ -459,6 +521,35 @@ export function WorkerGroupsSection({
                   >
                     <X aria-hidden size={14} />
                   </Button>
+                  <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 @[480px]/members:col-span-6">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="text-2xs text-ink-muted">
+                        {t("workerGroups.tier")}
+                      </span>
+                      <SegmentedControl
+                        aria-label={t("workerGroups.tierLabel", {
+                          index: index + 1,
+                        })}
+                        onValueChange={(tier) => updateMember(index, { tier })}
+                        options={[
+                          {
+                            value: "primary",
+                            label: t("workerGroups.tierPrimary"),
+                          },
+                          {
+                            value: "fallback",
+                            label: t("workerGroups.tierFallback"),
+                          },
+                        ]}
+                        size="sm"
+                        value={member.tier}
+                      />
+                    </div>
+                    <DomainStatusLine
+                      domain={domainForMember(domains, member)}
+                      now={now}
+                    />
+                  </div>
                   {byQuota && !hasQuota(member.tokensPerMinute) ? (
                     <FieldHint
                       className="col-span-2 mt-0 @[480px]/members:col-span-6"
@@ -478,6 +569,7 @@ export function WorkerGroupsSection({
                   : "workerGroups.memberHintByWeight",
               )}
             </FieldHint>
+            <FieldHint>{t("workerGroups.tierHint")}</FieldHint>
           </div>
           <div className="flex items-center justify-end gap-2">
             {draft.id ? (
