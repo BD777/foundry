@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { claudeManagedPrompt, codexManagedPrompt, leadingSkillInvocation } =
+const { claudeManagedPrompt, codexManagedInput, leadingSkillInvocation } =
   await import("../dist/skills/skill-invocation.js");
 const { codexSessionInput } =
   await import("../dist/session/runner/codex-options.js");
@@ -77,38 +77,64 @@ test("Claude gets the plugin-namespaced name and keeps the rest as typed", () =>
   );
 });
 
-test("Codex gets the skill as a $name mention, drafts and non-leading names stay as typed", () => {
-  assert.equal(
-    codexManagedPrompt("/foundry-orchestration brief it", managed),
-    "$foundry-orchestration brief it",
+test("Codex gets the skill as its own skill input; drafts and non-leading names stay as typed", () => {
+  assert.deepEqual(
+    codexManagedInput("/foundry-orchestration brief it", managed),
+    {
+      text: "brief it",
+      skill: {
+        type: "skill",
+        name: "foundry-orchestration",
+        path: "/skills/foundry-orchestration/SKILL.md",
+      },
+    },
   );
+  assert.equal(codexManagedInput("/foundry-orchestration", managed).text, "");
   assert.equal(
-    codexManagedPrompt("/foundry-orchestration", managed),
-    "$foundry-orchestration",
+    codexManagedInput("/unit run", managed).skill?.name,
+    "bits-unit-test-run",
   );
-  assert.equal(
-    codexManagedPrompt("/unit run", managed),
-    "$bits-unit-test-run run",
-  );
-  assert.equal(codexManagedPrompt("/unknown run", managed), "/unknown run");
-  assert.equal(
-    codexManagedPrompt("/draft:example run", managed),
-    "/draft:example run",
-  );
-  assert.equal(
-    codexManagedPrompt("ask /foundry-orchestration", managed),
-    "ask /foundry-orchestration",
-  );
+  assert.deepEqual(codexManagedInput("/unknown run", managed), {
+    text: "/unknown run",
+  });
+  assert.deepEqual(codexManagedInput("/draft:example run", managed), {
+    text: "/draft:example run",
+  });
+  assert.deepEqual(codexManagedInput("ask /foundry-orchestration", managed), {
+    text: "ask /foundry-orchestration",
+  });
 });
 
-test("a Codex turn's input is the rewritten prompt as plain text", () => {
+test("a Codex turn's input names the skill first, then the text and images", () => {
   const session = { id: "sess_t", input: { id: "in_t", prompt: "x" } };
-  const prompt = codexManagedPrompt(
+  const invoked = codexManagedInput(
     "/foundry-orchestration plan the next step",
     managed,
   );
-  assert.equal(
-    codexSessionInput(session, prompt),
-    "$foundry-orchestration plan the next step",
+  assert.deepEqual(codexSessionInput(session, invoked.text, invoked.skill), [
+    {
+      type: "skill",
+      name: "foundry-orchestration",
+      path: "/skills/foundry-orchestration/SKILL.md",
+    },
+    { type: "text", text: "plan the next step" },
+  ]);
+  assert.equal(codexSessionInput(session, "plain"), "plain");
+});
+
+test("the app server gets text elements only on text items", async () => {
+  const { appServerInput } =
+    await import("../dist/session/runner/codex-app-server.js");
+  assert.deepEqual(
+    appServerInput([
+      { type: "skill", name: "s", path: "/p/SKILL.md" },
+      { type: "text", text: "go" },
+      { type: "local_image", path: "/i.png" },
+    ]),
+    [
+      { type: "skill", name: "s", path: "/p/SKILL.md" },
+      { type: "text", text: "go", text_elements: [] },
+      { type: "localImage", path: "/i.png" },
+    ],
   );
 });

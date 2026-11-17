@@ -317,7 +317,7 @@ test("Codex active steer carries sender identity and preserves image input and t
   }
 });
 
-test("a Codex steer opening with a selected skill's name reaches the turn as $name", async () => {
+test("a Codex steer opening with a selected skill's name reaches the turn as Codex's skill input", async () => {
   const { runCodexStreamedTurn } =
     await import("../dist/session/runner/codex-stream.js");
   const id = `sess_${randomUUID()}`;
@@ -356,14 +356,18 @@ test("a Codex steer opening with a selected skill's name reaches the turn as $na
       [image],
       "sess_sender",
     );
-    assert.equal(
-      receivedInput[0].text,
-      userMessageText(
-        "$foundry-orchestration Please inspect",
-        [image],
-        "sess_sender",
-      ),
+    assert.deepEqual(receivedInput[0], {
+      type: "skill",
+      name: "foundry-orchestration",
+      path: "/skills/foundry-orchestration/SKILL.md",
+    });
+    assert.match(
+      receivedInput[1].text,
+      /^Foundry message source: agent session "sess_sender"/,
     );
+    assert.match(receivedInput[1].text, /Please inspect$/);
+    assert.doesNotMatch(receivedInput[1].text, /foundry-orchestration/);
+    assert.equal(receivedInput[2].type, "local_image");
   } finally {
     finish();
     await running;
@@ -618,4 +622,58 @@ test("a queued cancellation is consumed when its exact target registers", async 
   } finally {
     remove();
   }
+});
+
+test("a leading /skill stays the prompt's first token ahead of what Foundry adds", async () => {
+  const { codexManagedInput, claudeManagedPrompt } =
+    await import("../dist/skills/skill-invocation.js");
+  const managed = {
+    skills: [
+      {
+        name: "foundry-orchestration",
+        invocationName: "foundry-orchestration",
+      },
+    ],
+  };
+  const fromSession = userMessageText(
+    "/foundry-orchestration 合成验证：只回答是否加载",
+    [],
+    "sess_parent",
+  );
+  assert.match(
+    fromSession,
+    /^\/foundry-orchestration\n\nFoundry message source: agent session "sess_parent"/,
+  );
+  assert.match(
+    fromSession,
+    /Message from that session:\n\n合成验证：只回答是否加载$/,
+  );
+  assert.deepEqual(
+    codexManagedInput(fromSession, {
+      ...managed,
+      skills: [{ ...managed.skills[0], dir: "/skills/fo" }],
+    }).skill,
+    {
+      type: "skill",
+      name: "foundry-orchestration",
+      path: "/skills/fo/SKILL.md",
+    },
+  );
+  assert.match(
+    claudeManagedPrompt(fromSession, managed),
+    /^\/foundry-workspace:foundry-orchestration\n\nFoundry message source/,
+  );
+  const withImage = userMessageText("/foundry-orchestration 看图", [image]);
+  assert.match(withImage, /^\/foundry-orchestration\n\nAttached files/);
+  assert.match(withImage, /看图$/);
+  // Nothing added in front: the message is unchanged.
+  assert.equal(
+    userMessageText("/foundry-orchestration 原样"),
+    "/foundry-orchestration 原样",
+  );
+  // An ordinary message keeps its order.
+  assert.match(
+    userMessageText("你好", [], "sess_parent"),
+    /^Foundry message source/,
+  );
 });

@@ -1,6 +1,6 @@
 # DEV-270 编排者的子会话调不动 `/foundry-orchestration`
 
-状态：已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）。实现与自验证完成。Claude 一侧的真实子会话验证仍待编排者完成（见验收步骤）。
+状态：已部署 dev（2026-11-17/18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #275）。实现与自验证完成；Claude 与 Codex 子会话的真实调用已于 2026-11-18 复验通过（见下）。
 
 ## 问题
 
@@ -58,3 +58,16 @@
 - 补丁在「c8c8a35e + DEV-269」上 `git apply` 成功，结果与提交树逐文件一致（README 除外，DEV-269 行由其自身补丁提供）。
 - 未跑 `apps/server` 全量 `go build ./...`（本机与远端都超时）；本次 Go 改动只有常量与测试，`builtinskills` 包已编译并通过测试。
 - 未在 Web 或真实子会话上验证；见「验收步骤」。
+
+## 2026-11-17 夜：补丁 b（实测发现）
+
+- 编排者实测：Codex 子会话收到的提示开头是 Foundry 的来源说明「Foundry message source: agent session … Message from that session:」，`/foundry-orchestration` 在其后，不再是开头，于是 `$name` 改写没有发生，Codex 回答「未加载」。Claude 子会话那次是模型自己调用了 Skill 工具。同一问题也会出现在本人带附件或注释、以 `/skill` 开头的消息上。
+- 修复：`userMessageText` 在前面要加来源说明、附件说明或注释时，把消息开头的命令留在整段提示的最前面（只有前面要加东西时才挪；其他消息原样）。两种运行时已有的改写随之生效。
+- 检查：byte-dev `scripts/run-worker-tests.mjs`：session-steer（含新增用例）、chat-naming、skill-invocation、workspace-draft-skills 共 39 个通过。
+
+## 2026-11-18 凌晨：补丁 c（部署补丁 b 后实测仍失败）
+
+- Codex 原生提示已经以 `$foundry-orchestration` 开头，但 Codex 仍答「未加载」。查 rollout：Codex 的技能列表里有 `foundry-workspace:foundry` 等，**没有** `foundry-orchestration`——它的 `agents/openai.yaml` 是 `allow_implicit_invocation: false`（只许显式调用），不出现在模型可见的列表里；而 app-server 不解析文本里的 `$name`（那是 TUI 的功能）。Codex 0.169 app-server 的 `UserInput` 有结构化的 `{ type: "skill", name, path }`。
+- 修复：`codexManagedInput` 把开头的已选技能变成 Codex 的 skill 输入项（`path` 为该技能的 `SKILL.md`），其余作为文本；新回合（`codex-turn.ts`）与 steer（`codex-stream.ts`）都用它；`appServerInput` 只给文本项加 `text_elements`。草稿仍原样。
+- 检查：byte-dev `run-worker-tests`：skill-invocation、session-steer、codex-boundary、execution-core 共 45 个通过。
+- 2026-11-18 凌晨复验（Worker train 43 `…1794933749`）：编排者派出的 Codex 子会话（`sess_1794933914558150721`，gpt-5.6-luna）提示以 `/foundry-orchestration` 开头，原生 rollout 收到 `<skill><name>foundry-workspace:foundry-orchestration</name>…` 整段技能内容，回答「是 / # Foundry orchestration」。Claude 子会话（`sess_1794930266257466533`）同样加载成功。

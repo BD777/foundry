@@ -372,10 +372,11 @@ export function sessionTranscriptEntries(
     const sentBySessionId = event.metadata?.sentBySessionId;
     const steered = event.label === sessionEventLabels.steeredIntoTurn;
     if (event.message) {
-      // An annotated message's text carries the wrapper for the model; the
-      // person sees their own text, with the annotations beside it.
+      // An annotated message's text (sent, or steered into a running turn)
+      // carries the wrapper for the model; the person sees their own text,
+      // with the annotations beside it.
       const annotated =
-        event.label === sessionEventLabels.userMessage &&
+        (event.label === sessionEventLabels.userMessage || steered) &&
         (event.message.annotations?.length ?? 0) > 0;
       const update: TranscriptEntry = {
         ...event.message,

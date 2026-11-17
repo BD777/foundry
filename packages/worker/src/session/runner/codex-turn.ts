@@ -25,7 +25,7 @@ import type {
   SessionEventEmitter,
 } from "../session-state.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
-import { codexManagedPrompt } from "../../skills/skill-invocation.js";
+import { codexManagedInput } from "../../skills/skill-invocation.js";
 import { turnUsageMetadata } from "../usage/turn-usage.js";
 import { codexSessionInput } from "./codex-options.js";
 import {
@@ -167,10 +167,8 @@ async function runCodexTurn(
     const prompt = sessionPrompt(session, profile);
     // The turn's input may approve what a relayed prompt asked.
     thread.thread.observeInput?.(prompt);
-    const input = codexSessionInput(
-      session,
-      codexManagedPrompt(prompt, managedSkills),
-    );
+    const invoked = codexManagedInput(prompt, managedSkills);
+    const input = codexSessionInput(session, invoked.text, invoked.skill);
     // Codex reports no diffs: its changes are diffed against the work tree
     // as the turn started. Naming and other utility sessions write nothing.
     if (!isUtilitySession(session)) await files.snapshotWorkTree();

@@ -1,4 +1,5 @@
 import { isolatedCodexEnvironment } from "../../harness/runtime-isolation.js";
+import type { CodexSkillInput } from "../../skills/skill-invocation.js";
 import type {
   AgentProfileProjection,
   AgentSession,
@@ -167,22 +168,27 @@ export function codexSessionEnvironment(
 type CodexSDKInput =
   | string
   | Array<
-      { type: "text"; text: string } | { type: "local_image"; path: string }
+      | { type: "text"; text: string }
+      | { type: "local_image"; path: string }
+      | CodexSkillInput
     >;
 
+/** The turn's input: the skill it invokes, its text, then its images. */
 export function codexSessionInput(
   session: AgentSession,
   prompt: string,
+  skill?: CodexSkillInput,
 ): CodexSDKInput {
   const images = (currentInput(session).attachments ?? [])
     .filter((attachment) => attachment.kind === "image")
     .map((attachment) => attachment.path.trim())
     .filter(Boolean);
-  if (images.length === 0) {
+  if (images.length === 0 && !skill) {
     return prompt;
   }
   return [
-    { type: "text", text: prompt },
+    ...(skill ? [skill] : []),
+    ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
     ...images.map((path) => ({ type: "local_image" as const, path })),
   ];
 }

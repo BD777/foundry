@@ -17,6 +17,7 @@ import {
   ControlOutcomeUnknownError,
   clearSessionControl,
   registerActiveSessionCancelTarget,
+  registerActiveSessionSteerTarget,
 } from "../dist/session/session-control.js";
 import { writeAgentSessionCompletionMarker } from "../dist/session/session-helpers.js";
 import { SessionExecutionRegistry } from "../dist/session/session-state.js";
@@ -567,4 +568,41 @@ test("cancel chooses the active retry claim when an older claim shares its input
   const outcome = await executions.cancel({ sessionId, inputId });
   assert.equal(canceled, 1, "the active retry was really canceled");
   assert.equal(outcome.stopped, true);
+});
+
+test("the host passes a steer's annotations to the running turn", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "host-annotations-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { executions } = host(t, root);
+  const received = [];
+  const unregister = registerActiveSessionSteerTarget("sess_annotated", {
+    provider: "codex",
+    steer: async (message, attachments, steerId, sentBy, options) => {
+      received.push({ message, steerId, options });
+    },
+  });
+  t.after(unregister);
+  const annotations = [
+    {
+      id: "a1",
+      selectedText: "香蕉 3",
+      comment: "待确认",
+      sourceEventId: "evt_answer",
+    },
+  ];
+  await executions.steer({
+    sessionId: "sess_annotated",
+    inputId: "steer_annotated",
+    message: "看注释",
+    attachments: [],
+    delivery: "boundary",
+    boundaryLimitMs: 1000,
+    annotations,
+  });
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0].options, {
+    delivery: "boundary",
+    boundaryLimitMs: 1000,
+    annotations,
+  });
 });
