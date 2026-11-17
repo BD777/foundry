@@ -5,7 +5,7 @@ import {
 } from "../workspace-write-refusals.js";
 import { codexCitationsAsLinks } from "./codex-citations.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
-import { codexManagedPrompt } from "../../skills/skill-invocation.js";
+import { codexManagedInput } from "../../skills/skill-invocation.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendLine } from "../../platform/line-log.js";
 import { redactedJSONLine } from "../../platform/secret-redaction.js";
@@ -130,16 +130,13 @@ export async function runCodexStreamedTurn(
     sentBySessionId?: string,
     annotations?: SessionInputAnnotation[],
   ) => {
+    const invoked = codexManagedInput(
+      userMessageText(message, attachments, sentBySessionId, annotations),
+      state.managedSkills,
+    );
     const input = [
-      {
-        type: "text",
-        text: userMessageText(
-          codexManagedPrompt(message, state.managedSkills),
-          attachments,
-          sentBySessionId,
-          annotations,
-        ),
-      },
+      ...(invoked.skill ? [invoked.skill] : []),
+      ...(invoked.text ? [{ type: "text", text: invoked.text }] : []),
       ...attachments
         .filter((attachment) => attachment.kind === "image")
         .map((attachment) => ({

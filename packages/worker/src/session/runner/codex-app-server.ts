@@ -115,7 +115,9 @@ export function appServerInput(input: unknown): unknown[] {
   ).map((part) =>
     part.type === "local_image"
       ? { type: "localImage", path: part.path }
-      : { ...part, text_elements: [] },
+      : part.type === "text"
+        ? { ...part, text_elements: [] }
+        : part,
   );
 }
 

@@ -811,6 +811,9 @@ export class ExecutionHostClient {
             boundaryLimitMs: options.boundaryLimitMs,
           }
         : {}),
+      ...(options?.annotations?.length
+        ? { annotations: options.annotations }
+        : {}),
     });
   }
   async cancel(

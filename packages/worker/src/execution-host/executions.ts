@@ -244,10 +244,17 @@ export class HostExecutions {
       request.message,
       request.attachments,
       request.sentBySessionId,
-      request.delivery
+      request.delivery || request.annotations?.length
         ? {
-            delivery: request.delivery,
-            boundaryLimitMs: request.boundaryLimitMs,
+            ...(request.delivery
+              ? {
+                  delivery: request.delivery,
+                  boundaryLimitMs: request.boundaryLimitMs,
+                }
+              : {}),
+            ...(request.annotations?.length
+              ? { annotations: request.annotations }
+              : {}),
           }
         : undefined,
     );

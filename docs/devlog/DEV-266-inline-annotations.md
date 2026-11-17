@@ -2,7 +2,7 @@
 
 2026-11-17。本人反馈：很多时候需要在正文里逐条回复 Agent 的回答，希望参考 Codex App 的做法（选中文本、加注释、编号标记、输入框里的「N 条注释」芯片）。
 
-状态：scratch 栈真实浏览器验证部分通过（见「验证」）；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
+状态：scratch 栈真实浏览器验证部分通过（见「验证」）；已部署 dev（2026-11-17/18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #275）。
 
 ## 事实与根因
 
@@ -49,3 +49,11 @@
 - Steer 注释需要 worker 把 `annotations` 写入它的 transcript 事件；载荷已带上，worker 尚未改动。
 - 通道来源的收件箱条目目前不带注释（仅文本）。
 - 工作树基于 HEAD c8c8a35e；与 live tree 的未提交改动在以下文件重叠，需合并时人工对齐：`personalagent/assistant/inbox.go`、`sqlitestore/migrations.go`、`store/contract-schema.json`、`packages/protocol/src/chat.ts`、`contract.gen.ts`、`contract-schema.json`。
+
+## 2026-11-17 夜：运行中带注释的消息（steer）显示原始包装（实测发现，已修）
+
+- 编排者以 e2e-alice 在合成设备上实测：回合运行中，在上一条回答里选中文字加注释再发送，消息作为 steer 进入回合。模型收到了注释（回答带「注释 1」），但对话里这条消息显示成原始包装（「Response annotations: … My request: …」），没有「1 条注释」。
+- 根因：Worker 的执行宿主转发 steer 时只带 `delivery` / `boundaryLimitMs`，丢了 `annotations`（`execution-host/client.ts` 发出、`executions.ts` 重建选项两处），于是 steer 事件没有结构化注释，Web 无法剥掉包装。
+- 修复：两处都转发 `annotations`。新增 `execution-core` 用例：宿主把 steer 的注释交给正在运行的回合。
+- 部署 Worker train 41 后复验：steer 事件已带结构化注释，气泡出现「1 条注释」，但正文仍是原始包装——Web `transcript-adapters.ts` 只对「User message」剥包装。补上「Steered into active turn」（新增 `test/chat-steer-annotations.test.mjs`）。
+- 2026-11-18 凌晨复验（Worker train 41 + Web train 42 `37a0b22b024219ec`，e2e-alice 合成设备 `sess_1794933062407632805`）：回合运行中带注释发送 → steer 事件带结构化注释；气泡只显示本人原文和「1 条注释」，回答里「香蕉 3」高亮；模型回答引用了注释。

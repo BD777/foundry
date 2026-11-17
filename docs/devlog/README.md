@@ -20,13 +20,13 @@
 
 2026-11-17 Worker：[DEV-272 排队的消息不再显示成「定时任务」](DEV-272-queued-steer-not-timer.md)。本人截图反馈：回合中排队的消息回合结束后被标成定时任务。查明：Worker 把 steer 推给 Claude，回合结束后 Claude Code 才提交它，`UserPromptSubmit` 钩子把「没有运行中回合时的任何提示」都当作定时任务。现在 Worker 记住自己推送过的 steer，它的提交不再是定时任务，回答以 Response stream 发出。定向 Worker 测试 27/27 在 byte-dev 通过；已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）；未做真实浏览器检查。
 
-2026-11-17 Worker/编排：[DEV-270 编排者的子会话调不动 `/foundry-orchestration`（Codex 用 `$name` 显式调用，steer 同样改写）](DEV-270-child-skill-invocation.md)。编排者派出的 Codex 子会话 rg 搜不到 skill，随后绕走 relay。现在开头的 `/name` 对两种运行时都解析成 skill。已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）。
+2026-11-17 Worker/编排：[DEV-270 编排者的子会话调不动 `/foundry-orchestration`（Codex 用 `$name` 显式调用，steer 同样改写）](DEV-270-child-skill-invocation.md)。编排者派出的 Codex 子会话 rg 搜不到 skill，随后绕走 relay。现在开头的 `/name` 对两种运行时都解析成 skill。已部署 dev（2026-11-17/18）；Agent 代验收（2026-11-18，范围见各自验收记录）；已合入 main（PR #275）。
 
 2026-11-17 Server：[DEV-269 编排者的子会话不指定模型时，运行在目标工作区的 execution default 上](DEV-269-child-session-default-model.md)。本人指出 `sess_1794903494975054964` 仍派错模型。查明：`resolveNewSession` 的 runLikeParent 只把「未指名 provider/profile」的子会话按父会话复制，从不读 Workspace 的 execution default；去掉模型参数反而落到父会话的 hell-tw/Opus，只有显式传默认 provider+model 才正确。现在「未指定模型/账号」的普通子会话由唯一解析器 `run.ResolveExecutionModels`（助理覆盖 → Workspace → 全局；组则选成员）决定，默认不可用时退回账号默认并在结果里说明；显式选择原样保留，`create_session` 结果只加一行事实 `runsOn`；fork、REST、助理 helper、`send_message` 不变。`foundry-orchestration` 技能相应缩短为「省略模型参数」。Go 定向测试；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 2026-11-17 Web/Server：[DEV-267 助理对话不再出现授权外写操作的原始卡片；被停止的一轮说出来](DEV-267-assistant-proposal-cards-and-stopped.md)。本人截图反馈卡片样式难看、发了消息没回复。查明：首页的提议卡由 Web 从 `/api/personal-agent/proposals` 合并进来，`connector_write` 只属于 Needs you，现在在 Web 合并处与飞书卡片处排除；那条消息不是本人停的，是助理运行控制的 `observed_token_budget`（785380 / 500000）——预算把每轮重复读的缓存上下文按全价计，9 次请求就误杀正常一轮。现在预算只数未缓存输入 + 缓存写入 + 输出，停止原因写进会话终态并由 Server 覆盖 Worker 的通用取消，首页在无回答结束的一轮下说「已停止：这一轮用量超过上限」/「没有完成：<原因>」并可重试。Go 定向、Web typecheck 与定向测试、scratch e2e-alice 截图；已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）。
 
-2026-11-17 Web/Server：[DEV-266 正文内联注释：选中 Agent 回答 → 评论 → 随消息发送](DEV-266-inline-annotations.md)。本人反馈希望参考 Codex App，在正文里逐条回复 Agent 的回答。已实现，已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
+2026-11-17 Web/Server：[DEV-266 正文内联注释：选中 Agent 回答 → 评论 → 随消息发送](DEV-266-inline-annotations.md)。本人反馈希望参考 Codex App，在正文里逐条回复 Agent 的回答。已实现，已部署 dev（2026-11-17/18）；Agent 代验收（2026-11-18，范围见各自验收记录）；已合入 main（PR #275）。
 
 2026-11-17 Web/Server：[DEV-264 归档文件夹只算未归档成员，并显示更早的对话](DEV-264-folder-archive-count.md)。本人截图反馈「运行时初始化」只有 1 个可见会话，归档对话框却说 25 chats、列原始 id、要停 3 个定时工作。查明：文件夹 position 归档后保留，会话列表只画最新 80 条，该文件夹 25 个成员里 15 个已归档、10 个未归档，其中 9 个只在窗口外（真实会话，非陈旧 position）。现在 group 归档按 id/native 标记过滤已归档成员、忽略不存在的 position，预检返回 `archivedTitles`，REST/MCP 共用；侧栏文件夹末尾显示「更早的 N 个对话」并按 group 分页加载（新 `chat-layout/member-counts`、`chat-layout/members` 接口），展开后行数与对话框一致；对话框列标题（弱化短 id）、注明侧栏未显示的较早会话并可点开；右键菜单去掉误导的可见计数；两语言。Go 定向与 SQLite 全量（唯一失败为 origin/main 同样失败的日期敏感测试）、Web typecheck/audits/13 个定向测试、scratch e2e-alice 合成文件夹（浅色/深色/窄）通过；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
