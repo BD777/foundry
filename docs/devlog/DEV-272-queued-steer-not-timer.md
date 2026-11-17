@@ -1,6 +1,6 @@
 # DEV-272 排队的消息不再显示成「定时任务」
 
-状态：已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #**PR**）。
+状态：已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）。
 
 2026-11-17。本人截图反馈（ccm-omh-integration，chat `sess_1794903494975054964`，17:36）：「为什么这个是 scheduled task 啊，他不是直接 queue 在后面发出去的消息吗？」消息是 `/foundry-orchestration 另外你看看这个skill，你说sub-session该用什么？`，转录里被标成定时任务（闹钟图标）。
 

@@ -1,6 +1,6 @@
 # DEV-273 去掉助理 §9 的用量上限，只留「可能卡住」提醒
 
-状态：已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #**PR**）。
+状态：已部署 dev（2026-11-17）；待本人验收；已合入 main（PR #274）。
 
 2026-11-17。本人决定去掉 §9 中除「可能卡住」提醒外的全部上限：同时在跑的派出会话、每天派出的会话、每天/每周新建的项目、每小时助理轮次、每天概括会话、每月 token 预算。Foundry 按原生 Agent 厂商的方式运行，不因配额替它们拒绝工作。基于 DEV-271（已去掉每轮 token 与时长上限）；patch 只含 DEV-273。
 
@@ -56,7 +56,7 @@
 
 ## 限制
 
-- 已部署 dev（2026-11-17）；已合入 main（PR #**PR**）；dev 上的浏览器验收待本人完成。
+- 已部署 dev（2026-11-17）；已合入 main（PR #274）；dev 上的浏览器验收待本人完成。
 - live 快照中 `packages/worker/src/session/runner/codex-stream.ts` 当时缺少 `SessionInputAnnotation` 导入，远程 Worker `tsc` 失败；验证时临时补了一行导入，已还原，patch 不含它（live 之后已由他人修复）。
 - `docs/refactor/code-map/*` 是快照，仍提到 `LimitCaps`，未改。
 - `mcp_tools.json` 进度标记 `budget (80% and 95% …)` 是 DEV-271 留下的，预算已去掉，未在本项改。

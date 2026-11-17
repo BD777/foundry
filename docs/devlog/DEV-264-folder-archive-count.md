@@ -1,6 +1,6 @@
 # DEV-264 归档只有一个可见会话的文件夹却说「25 个对话」
 
-状态：已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+状态：已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 本人截图（2026-11-17，ccm-omh-integration，byte-dev）：侧边栏「运行时初始化」文件夹里只画了 1 个会话，右键「归档文件夹」的对话框却说 25 chats、列原始 `sess_…` id，并要暂停 3 个定时工作。「我 archive 这个只有一条 session 的 group 时他说有 25 chats」。
 
@@ -20,7 +20,7 @@
 - Go：`go build ./...`；`internal/sqlitestore` 全量（唯一失败 `TestPersonalAgentItemPageFiltersAndPages` 在 origin/main 同样失败，日期敏感、与本项无关）；新增 `TestArchiveFolderActsOnUnarchivedMembersOnly`（归档成员不重复计数/不重新打标记、陈旧 position 被忽略、按批次恢复只恢复本批次）与 `TestChatGroupMembersCountAndPageUnarchivedChats`；`internal/httpapi` 定向 Archive/ChatLayout 测试通过。
 - Web：`tsc --noEmit`、全部 `scripts/audit-*.mjs` 通过；`chat-archive-review`、`chat-archive-stable`、`chat-archived-route`、`chat-group-context-menu`、新增 `chat-group-older-members` 共 13 个测试通过。
 - 真实浏览器（scratch 栈，e2e-alice，合成工作区 ws_7ccbde37… 内新增合成文件夹：90 条较新的无关会话 + 1 条窗口内成员 + 9 条窗口外成员 + 15 条已归档成员 + 1 个合成定时工作）：左侧 1 行 + 「更早的 9 个对话」；展开后 10 行、该行消失；对话框「10 个对话」、10 行标题（弱化短 id）、注记 9 个较早会话、只列合成定时工作、按钮「归档 10 个对话」；展开后再开对话框仍为 10 且无注记；点列表行能打开隐藏会话（标题/记录正常）。浅色 1440×900、深色、窄 640×900 截图：`/tmp/dev264-sidebar-light.png`（更早行 hover/focus）、`/tmp/dev264-sidebar-expanded.png`、`/tmp/dev264-dialog-light.png`（首行 hover）、`/tmp/dev264-dialog-dark.png`（首行 hover）、`/tmp/dev264-dialog-narrow.png`、`/tmp/dev264-hidden-chat-open.png`；无页面错误。计算样式确认对话框行静止色等于 `ink`、静止无下划线、hover/聚焦才有下划线；更早行 `aria-expanded=false/true` 与键盘聚焦均验证。
-- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。scratch 栈已 `down` 并删除。
+- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。scratch 栈已 `down` 并删除。
 
 ## 限制
 

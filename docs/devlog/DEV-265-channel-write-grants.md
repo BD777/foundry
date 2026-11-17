@@ -2,7 +2,7 @@
 
 2026-11-17。本人截图反馈：在 OpenLark 自聊里写 `/ai 发个"hello"消息给高逸斌`，通道会话 sess_1794886314214617318 直接把 "hello" 发进了高逸斌的单聊。网关审计 04:51:47Z 记录 `POST /agent/v1/conversations/:feedId/messages`。本人：「糟了，不是说好的不允许通过 channel 给 channel 发送吗」。
 
-状态：实现与定向测试完成；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+状态：实现与定向测试完成；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 ## 问题
 
@@ -62,6 +62,6 @@
 
 - OpenLark 图片/文件/视频/语音写的响应是否含 `/messageId` 未在真实实例上核对；声明了指针，缺失时只是不记录回声（不会误发）。
 - 目标名字来自描述符声明的只读路由（OpenLark：`GET /agent/v1/conversations/:feedId` → `/name`）；取不到名字时卡片明确说「未知会话（oc_…）」，不会展示成名字。
-- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 2026-11-17 夜（提交前全量测试）：新表没有登记为会话拥有的数据（`workspaceOwnedRows`），删除设备会留下它的行（`TestRemovedDeviceLeavesNothingBehind` / `TestEveryTableNamingAnOwnerIsOwned` 失败）。已补登记；同批把这次新增的存储方法从 `store.Store` 移到模块接口（`audit:modules`），随 Server train 40 部署。

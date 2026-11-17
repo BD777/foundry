@@ -1,6 +1,6 @@
 # DEV-263 项目维护面板：层级、折叠与共用 Agent 长文组件
 
-状态：已在 `apps/web` 实现并在 byte-dev 验证（typecheck、`audit:ui`、定向测试、真实浏览器截图）；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+状态：已在 `apps/web` 实现并在 byte-dev 验证（typecheck、`audit:ui`、定向测试、真实浏览器截图）；已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 ## 问题
 
@@ -79,7 +79,7 @@
 - 截图来自临时 fixture 的合成数据与近似的页面骨架，不是 dev 数据库的真实 workspace；fixture 未入库。
 - 390 宽时 diff 保持 480px 最小内容宽并横向滚动，截图中右侧会被对话框边缘裁切（不再按字符断行）；这是共享 `FileDiff` 在窄屏的既有行为。
 - 行展开状态只在本次浏览内保留，刷新后回到「最新待处理 review 展开」。
-- 已部署 dev（2026-11-17）；已合入 main（PR #**PR**）；远程检查未做（本机 byte-dev 已跑全部检查）。
+- 已部署 dev（2026-11-17）；已合入 main（PR #274）；远程检查未做（本机 byte-dev 已跑全部检查）。
 - 2026-11-17 编排评审后修正：溢出测量改为 `scrollHeight` / `clientHeight`（含 `document.fonts.ready` 与尺寸重测）、summary 不再重复行标题、截图 fixture 的「等你处理」说明文字删除；重拍 `new-dark-1440-expanded.png`、`new-light-1440-expanded.png`、`new-light-390-expanded-zh.png`。
 
 ## 验收步骤

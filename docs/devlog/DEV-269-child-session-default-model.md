@@ -1,6 +1,6 @@
 # DEV-269 编排者的子会话不指定模型时，运行在目标工作区的 execution default 上
 
-状态：已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+状态：已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 
 2026-11-17。本人在 `sess_1794903494975054964`（ccm-omh-integration）指出 foundry-orchestrator 仍有 bug，要求先查清犯错路径、从机制上堵住，不要过度注入 prompt 或过度引导。
 
@@ -55,6 +55,6 @@
 
 ## 5. 限制
 
-- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #**PR**）。
+- 已部署 dev（2026-11-17）；Agent 代验收（2026-11-17，范围见各自验收记录）；已合入 main（PR #274）。
 - 结果行里发现型 provider 没有 `profiles` 行时显示 profile id（设备报告的事实），其余显示账号 label。
 - 子会话「只指定 model、不指定 provider/profile」时保留旧规则（沿用父会话的 provider/profile），本次只移除「完全未指定」时的父会话复制。
