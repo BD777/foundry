@@ -1,6 +1,6 @@
 # DEV-281 助理：帮手文件交接、通道会话列表、工具失败原因
 
-状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #TBD）。
+状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #277）。
 
 来源：`.foundry/reports/assistant-review-20261117-channel.md` D8、`.foundry/reports/assistant-review-20261117-web.md` D6、D7；派工 `.foundry/briefs/assistant-fixes-20261118.md`。编排者审阅后返工（D8 方案改为附件路径，D6 定为助理自己的通道 workspace）。本 patch 基于 DEV-280 已应用后的树。
 

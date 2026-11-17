@@ -1,6 +1,6 @@
 # DEV-279 通道回合：处理中表情等本人答复，已取消的消息结清
 
-2026-11-18。来源：`.foundry/reports/assistant-review-20261117-channel.md` D7 / D5 遗留 / D12。状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #TBD）。
+2026-11-18。来源：`.foundry/reports/assistant-review-20261117-channel.md` D7 / D5 遗留 / D12。状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #277）。
 
 ## 问题
 

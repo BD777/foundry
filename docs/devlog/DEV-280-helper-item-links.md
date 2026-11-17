@@ -1,6 +1,6 @@
 # DEV-280 helpers and items stay linked
 
-状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #TBD）。
+状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #277）。
 
 ## 问题
 

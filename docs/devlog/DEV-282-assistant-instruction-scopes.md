@@ -2,7 +2,7 @@
 
 2026-11-17。依据 `.foundry/reports/assistant-review-20261117-web.md`（D1、D2、D3、D8、D10、D11）与 `assistant-review-20261117-channel.md` 的 D2。本条产出补丁，经编排端 sess_1794464313271186377 决定后已应用到 `~/workspace/foundry` 并部署 dev；未提交。
 
-状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #TBD）。D11 的措辞等本人确认后仍有效。
+状态：已部署 dev（2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #277）。D11 的措辞等本人确认后仍有效。
 
 ## 补丁内容
 
