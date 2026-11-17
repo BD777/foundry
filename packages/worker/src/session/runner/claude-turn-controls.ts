@@ -180,12 +180,15 @@ async function steerClaudeTurn(
       text,
       "info",
       undefined,
-      attachments.length > 0
+      // The transcript shows what came with the message: its files, and the
+      // passages it annotates (their wrapper is in the text).
+      attachments.length > 0 || annotations?.length
         ? {
             id: `steer_${randomUUID()}`,
             kind: "user",
             text,
-            attachments,
+            ...(attachments.length > 0 ? { attachments } : {}),
+            ...(annotations?.length ? { annotations } : {}),
           }
         : undefined,
       // Named like a sent message's input event: the server then knows the

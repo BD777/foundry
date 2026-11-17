@@ -57,3 +57,4 @@
 - 修复：两处都转发 `annotations`。新增 `execution-core` 用例：宿主把 steer 的注释交给正在运行的回合。
 - 部署 Worker train 41 后复验：steer 事件已带结构化注释，气泡出现「1 条注释」，但正文仍是原始包装——Web `transcript-adapters.ts` 只对「User message」剥包装。补上「Steered into active turn」（新增 `test/chat-steer-annotations.test.mjs`）。
 - 2026-11-18 凌晨复验（Worker train 41 + Web train 42 `37a0b22b024219ec`，e2e-alice 合成设备 `sess_1794933062407632805`）：回合运行中带注释发送 → steer 事件带结构化注释；气泡只显示本人原文和「1 条注释」，回答里「香蕉 3」高亮；模型回答引用了注释。
+- 2026-11-18 凌晨，本人在编排对话（Claude 运行时）里只带注释、不打字地 steer，气泡显示原始包装。原因：Claude 运行时记录 steer 事件时只在有附件时带结构化消息（`claude-turn-controls.ts`），注释没进事件；Codex 那边早已带上。修复：有附件或注释时都带上，并记录注释（新增 `session-steer` 用例）。

@@ -677,3 +677,26 @@ test("a leading /skill stays the prompt's first token ahead of what Foundry adds
     /^Foundry message source/,
   );
 });
+
+test("a Claude steer with annotations records them on its transcript message", async () => {
+  const { session, events, finished } = await openTurn();
+  const annotations = [
+    {
+      id: "a1",
+      selectedText: "Approvals",
+      comment: "什么意思？",
+      sourceEventId: "evt_answer",
+    },
+  ];
+  const wrapped = "\n# Response annotations:\nwrapper\n\n## My request:\n";
+  await steerActiveSession(session.id, wrapped, [], undefined, undefined, {
+    annotations,
+  });
+  await finished;
+  const steered = events.find(
+    (event) => event.label === "Steered into active turn",
+  );
+  assert.equal(steered.message.kind, "user");
+  assert.deepEqual(steered.message.annotations, annotations);
+  assert.equal(steered.message.attachments, undefined);
+});
