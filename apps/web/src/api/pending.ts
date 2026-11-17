@@ -32,7 +32,12 @@ export type PendingSource =
    * A connector write outside what the session was granted (DEV-265): the
    * person allows or refuses that exact request.
    */
-  | "connector_write";
+  | "connector_write"
+  /**
+   * A note from the assistant that needs no decision (DEV-278): the person
+   * reads it and dismisses it.
+   */
+  | "notice";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person

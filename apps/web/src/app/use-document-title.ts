@@ -27,6 +27,8 @@ export function documentPageTitle(input: {
   workspaceName: string;
   issue?: Pick<Issue, "shortId" | "title">;
   device?: Pick<DeviceProjection, "label">;
+  /** The assistant's home conversation holds an unseen answer (DEV-278). */
+  assistantUnread?: boolean;
 }): { primary: string; context?: string } {
   const page = i18n.t(
     input.view === "workspace"
@@ -48,9 +50,10 @@ export function useDocumentTitle(
   input: Parameters<typeof documentPageTitle>[0],
 ) {
   const { primary, context } = documentPageTitle(input);
+  const assistantUnread = input.assistantUnread ?? false;
   useEffect(() => {
-    setDocumentPage({ primary, context });
-  }, [primary, context]);
+    setDocumentPage({ primary, context, assistantUnread });
+  }, [primary, context, assistantUnread]);
   useEffect(
     () => () => {
       document.title = appName;

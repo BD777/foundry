@@ -173,6 +173,26 @@ test("a failed call stays visible with a short reason", () => {
   assert.match(handoff.failure, /not allowed/);
 });
 
+test("a stored null error is no failure (DEV-288)", () => {
+  const [handoff] = toolHandoffs([
+    step(
+      "call_null",
+      [
+        codexCall(
+          "create_session",
+          { title: "Helper", workspaceId: "ws_x" },
+          { id: "sess_child", status: "running" },
+        ),
+        "Error\n\nnull",
+      ].join("\n\n"),
+    ),
+  ]);
+  assert.equal(handoff.failed, undefined);
+  assert.equal(handoff.failure, undefined);
+  assert.equal(handoff.sessionId, "sess_child");
+  assert.equal(viewHandoff(handoff).failed, undefined);
+});
+
 test("truncated tool input still names the fields before the cut", () => {
   const full = JSON.stringify({
     title: "Long task",

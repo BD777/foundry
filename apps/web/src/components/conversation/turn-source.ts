@@ -28,6 +28,8 @@ export interface TurnSource {
   /** The session that sent it (session, report), or the work that woke it. */
   title?: string;
   onOpen?: () => void;
+  /** A child report's session, linked by its title when no sender resolved it (DEV-289). */
+  sessionId?: string;
   /** The raw kind, for a source this build does not know. */
   raw?: string;
   /** A child report's turn status: completed, failed or canceled. */
@@ -141,6 +143,8 @@ function structuredSource(
         kind: "report",
         title: sender?.label ?? source.title,
         onOpen: sender?.onOpen,
+        // A resolved sender that cannot be opened is "another session": no link.
+        ...(sender || !source.sessionId ? {} : { sessionId: source.sessionId }),
         status: source.status,
         body: source.response,
       };

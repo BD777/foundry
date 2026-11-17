@@ -44,6 +44,7 @@ export const pending = {
     assistant_inbox: "Unprocessed message",
     project_upkeep: "Project upkeep",
     memory_upkeep: "Memory upkeep",
+    notice: "A note from your assistant",
   },
   upkeep: {
     title_one: "{{project}}: {{count}} suggested change to confirm",
@@ -118,6 +119,7 @@ export const pending = {
     done: "Mark done",
     dismiss: "Dismiss",
     notNeeded: "Not for me",
+    gotIt: "Got it",
     useRecommended: "Reply with “{{option}}” (recommended)",
     fixInChat: "Fix in chat",
     jumpToMessage: "Jump to message",

@@ -58,7 +58,8 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
 		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
 		OwnWrites: s.messageChannelOwnWrites, Session: s.messageChannelSessionState,
-		Ack: s.messageChannelAck, Working: s.messageChannelWorking, Context: s.messageChannelContext,
+		Ack: s.messageChannelAck, Working: s.messageChannelWorking, HandOver: s.messageChannelHandOver,
+		Context: s.messageChannelContext,
 	})
 }
 
@@ -669,6 +670,16 @@ func cleanIDList(ids []string) []string {
 // it handed to the person, by delivery id.
 func (s *Server) messageChannelActions(ctx context.Context, agent store.PersonalAgent, channel store.MessageChannelRecord, records []store.MessageChannelDeliveryRecord) map[string][]store.MessageChannelAction {
 	out := s.messageChannelAckFailures(ctx, channel, records)
+	// When the processing reaction went on and came off, from the delivery
+	// itself: the channel's audit of its own "on it" signal (DEV-279).
+	for _, record := range records {
+		if record.AckAddedAt != "" {
+			out[record.ID] = append(out[record.ID], store.MessageChannelAction{At: record.AckAddedAt, Kind: "reaction_added", Summary: "processing reaction added"})
+		}
+		if record.AckRemovedAt != "" {
+			out[record.ID] = append(out[record.ID], store.MessageChannelAction{At: record.AckRemovedAt, Kind: "reaction_removed", Summary: "processing reaction removed"})
+		}
+	}
 	bySession := map[string][]store.MessageChannelDeliveryRecord{}
 	for _, record := range records {
 		if record.SessionID != "" && record.DeliveredAt != "" {

@@ -648,6 +648,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/personal-agent/inbox", s.handleListPersonalAgentInbox, personOnly()),
 		fn("POST /api/personal-agent/inbox", s.handleCapturePersonalAgentInbox, personOnly()),
 		fn("POST /api/personal-agent/inbox/{id}/action", s.handlePersonalAgentInboxAction, personOnly()),
+		fn("GET /api/personal-agent/home-unread", s.handleAssistantHomeUnread, personOnly()),
+		fn("POST /api/personal-agent/home-seen", s.handleMarkAssistantHomeSeen, personOnly()),
 		fn("POST /api/personal-agent/run-preview", s.handlePersonalAgentRunPreview, personOnly()),
 		fn("POST /api/personal-agent/knowledge/vaults/{vault}/assistant-access", s.handleAssistantMemoryAccess, personOnly()),
 		fn("POST /api/personal-agent/knowledge/vaults/{vault}/initial-location", s.handleResetPendingKnowledgeLocation, personOnly()),

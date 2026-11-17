@@ -6,6 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -52,6 +53,23 @@ export function hostWasStopped(root: string): boolean {
 /** A starting host is not stopped any more. */
 export function clearHostStopped(root: string): void {
   rmSync(stoppedMarker(root), { force: true });
+}
+
+const retiringMarker = (root: string) => resolve(root, "retiring");
+
+/**
+ * Mirrors the daemon's "retire" order into the host's folder, so a host that
+ * starts beside it can see that the host has handed its shared work over.
+ */
+export function markHostRetiring(root: string, retiring: boolean): void {
+  if (retiring)
+    writeFileSync(retiringMarker(root), new Date().toISOString(), {
+      mode: 0o600,
+    });
+  else rmSync(retiringMarker(root), { force: true });
+}
+export function hostIsRetiring(root: string): boolean {
+  return existsSync(retiringMarker(root));
 }
 
 /**
@@ -151,7 +169,9 @@ export function pinnedHostEntries(roots = knownHostRoots()): string[] {
  * device's shared work: it runs, or it died without being stopped and its
  * service manager may bring it back (a crashed host before rollover has no
  * standby logic and would take the work again). `deadSince` remembers when
- * each such root was first seen dead.
+ * each such root was first seen dead. A host the daemon retires has given
+ * its work up (it stops its heartbeats and timers) and does not count, so
+ * it cannot hold the device's work while it waits to be stopped.
  */
 export function seniorHostPresent(
   self: { root: string; startedAt: number },
@@ -173,6 +193,10 @@ export function seniorHostPresent(
       startedAt < self.startedAt ||
       (startedAt === self.startedAt && root < self.root);
     if (!senior) continue;
+    if (hostIsRetiring(root)) {
+      deadSince.delete(root);
+      continue;
+    }
     if (liveHostIdentity(root)) {
       deadSince.delete(root);
       present = true;

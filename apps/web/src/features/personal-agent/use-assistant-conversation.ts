@@ -41,6 +41,9 @@ export type AssistantRuntime = NonNullable<ReturnType<typeof assistantRuntime>>;
 /** How many of the latest conversations the home page shows. */
 const shownSessions = 3;
 
+/** How long a failed read waits before it is made again (DEV-287). */
+export const failedReadRetryMs = 5000;
+
 const sessionEventTypes = [
   "agent_session_created",
   "agent_session_started",
@@ -55,6 +58,30 @@ interface PendingLine {
   at: string;
   attachments: ChatAttachment[];
   annotations?: ConversationAnnotation[];
+}
+
+/**
+ * A read that began before the stream changed the session answers with an
+ * older state of it: the stream's state (status, answer, activity) wins over
+ * the read's, while what only a read brings (events, the first input) is
+ * still taken from it (see mergeLoadedAgentSession).
+ */
+function readAsOf(
+  shown: AgentSession | undefined,
+  loaded: AgentSession,
+  streamedAt: ReadonlyMap<string, number>,
+  readStartedAt: number,
+): AgentSession {
+  if (!shown || (streamedAt.get(loaded.id) ?? -Infinity) < readStartedAt)
+    return loaded;
+  return {
+    ...loaded,
+    status: shown.status,
+    completedAt: shown.completedAt,
+    response: shown.response,
+    error: shown.error,
+    lastActivityAt: shown.lastActivityAt,
+  };
 }
 
 function sentInputs(sessions: Iterable<AgentSession>): Set<string> {
@@ -91,6 +118,9 @@ export function useAssistantConversation(
   const [knownSessions, setKnownSessions] = useState<AgentSession[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [error, setError] = useState("");
+  // Counts failed reads, so a failure that leaves the page failed is
+  // scheduled again (see the effect below).
+  const [failedReads, setFailedReads] = useState(0);
   const [pending, setPending] = useState<PendingLine[]>([]);
   const [inbox, setInbox] = useState<PersonalAgentInboxEntry[]>([]);
   // Message channels' sessions live in the assistant's home too; the
@@ -112,8 +142,11 @@ export function useAssistantConversation(
   // reply, a stream announcement) comes without events, and its first
   // input's event is never streamed: only a read has it.
   const readInFull = useRef(new Set<string>());
+  // When the stream last changed each session (see changedSince).
+  const streamedAt = useRef(new Map<string, number>());
 
   const upsert = useCallback((session: AgentSession) => {
+    streamedAt.current.set(session.id, Date.now());
     setSessions((current) => {
       const next = new Map(current);
       next.set(
@@ -133,6 +166,7 @@ export function useAssistantConversation(
 
   const read = useCallback(async () => {
     if (!workspaceId) return;
+    const startedAt = Date.now();
     try {
       const [current, received, channels, ...earlier] = await Promise.all([
         listPersonalAgentSessions(workspaceId),
@@ -159,17 +193,23 @@ export function useAssistantConversation(
       for (const session of loaded) readInFull.current.add(session.id);
       setSessions((current) => {
         const next = new Map<string, AgentSession>();
-        for (const session of loaded)
+        for (const session of loaded) {
+          const shown = current.get(session.id);
           next.set(
             session.id,
-            mergeLoadedAgentSession(current.get(session.id), session),
+            mergeLoadedAgentSession(
+              shown,
+              readAsOf(shown, session, streamedAt.current, startedAt),
+            ),
           );
+        }
         return next;
       });
       setState("ready");
       setError("");
     } catch (reason) {
       setError(serverErrorText(reason));
+      setFailedReads((count) => count + 1);
       setState((current) => (current === "ready" ? current : "failed"));
     }
   }, [assistantId, workspaceId, former, readChannels]);
@@ -180,6 +220,15 @@ export function useAssistantConversation(
     readInFull.current = new Set();
     void read();
   }, [read]);
+
+  // A page that could not read its conversation (the network was down)
+  // reads it again by itself: the stream resumes without a resync when the
+  // outage was short, so nothing else would.
+  useEffect(() => {
+    if (state !== "failed") return;
+    const timer = window.setTimeout(() => void read(), failedReadRetryMs);
+    return () => window.clearTimeout(timer);
+  }, [state, failedReads, read]);
 
   const ownInbox = useMemo(
     () => inbox.filter((entry) => !isChannelInboxEntry(entry)),
@@ -254,13 +303,20 @@ export function useAssistantConversation(
       if (readInFull.current.has(id)) continue;
       readInFull.current.add(id);
       const reading = readInFull.current;
+      const startedAt = Date.now();
       getAgentSession(id).then(
         (session) =>
           setSessions((current) => {
             const shown = current.get(id);
             if (!shown) return current;
             const next = new Map(current);
-            next.set(id, mergeLoadedAgentSession(shown, session));
+            next.set(
+              id,
+              mergeLoadedAgentSession(
+                shown,
+                readAsOf(shown, session, streamedAt.current, startedAt),
+              ),
+            );
             return next;
           }),
         () => reading.delete(id),

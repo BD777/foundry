@@ -17,6 +17,41 @@ test("does not serialize empty tool arguments or results", () => {
   );
 });
 
+test("a null, empty or object-free error writes no Error section", () => {
+  const call = {
+    result: { id: "sess_child" },
+    server: "foundry",
+    tool: "create_session",
+  };
+  assert.equal(
+    sdkToolCallDetail({ ...call, error: null }, true),
+    'foundry.create_session\n\nResult\n\n```json\n{\n  "id": "sess_child"\n}\n```',
+  );
+  assert.doesNotMatch(sdkToolCallDetail({ ...call, error: "" }, true), /Error/);
+  assert.doesNotMatch(sdkToolCallDetail({ ...call, error: {} }, true), /Error/);
+  assert.doesNotMatch(
+    sdkToolCallDetail({ ...call, error: false }, true),
+    /Error/,
+  );
+});
+
+test("a real error is written as the Error section", () => {
+  assert.equal(
+    sdkToolCallDetail(
+      { error: "not allowed", server: "foundry", tool: "send_message" },
+      true,
+    ),
+    "foundry.send_message\n\nError\n\nnot allowed",
+  );
+  assert.equal(
+    sdkToolCallDetail(
+      { error: { message: "boom" }, server: "foundry", tool: "send_message" },
+      true,
+    ),
+    "foundry.send_message\n\nError\n\nboom",
+  );
+});
+
 test("keeps meaningful nested tool payloads", () => {
   assert.equal(hasMeaningfulToolPayload({ input: { command: "pwd" } }), true);
   assert.match(

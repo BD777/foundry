@@ -35,10 +35,11 @@ func inboxEntryTried(entry store.PersonalAgentInboxEntry) bool {
 }
 
 // inboxEntryNeedsPerson reports whether the entry is one the person still
-// has to deal with: its attempt failed or was stopped, or it waits on
-// something only the person can fix.
+// has to deal with: its attempt failed, or it waits on something only the
+// person can fix. A resolved entry is done: its answer arrived, or its turn
+// was canceled and will not run again (DEV-279).
 func inboxEntryNeedsPerson(entry store.PersonalAgentInboxEntry) bool {
-	if entry.Status == "cancelled" {
+	if entry.Status == "cancelled" || entry.Status == "resolved" {
 		return false
 	}
 	if inboxEntryTried(entry) {
@@ -49,13 +50,16 @@ func inboxEntryNeedsPerson(entry store.PersonalAgentInboxEntry) bool {
 }
 
 // inboxEntrySettled names how an entry closed, for its item's resolution:
-// the person dismissed it, a retry replaced it, or its attempt answered it.
+// the person dismissed it, a retry replaced it, its attempt answered it, or
+// its turn was canceled (DEV-279).
 func inboxEntrySettled(entry store.PersonalAgentInboxEntry) (string, bool) {
 	switch {
 	case entry.Status == "cancelled" && entry.DismissedBy != "":
 		return "dismissed", true
 	case entry.Status == "cancelled":
 		return "retried", true
+	case entry.Status == "resolved" && entry.ResultStatus == "canceled":
+		return "canceled", true
 	case entry.Status == "resolved":
 		return "processed", true
 	}

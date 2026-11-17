@@ -54,6 +54,7 @@ export const shell = {
     workspaceScope: "Workspace: {{workspace}}",
     assistantScope: "Assistant: {{assistant}}",
     open: "Open {{label}}",
+    openUnread: "Open {{label}}, new answer",
     lightMode: "Switch to light mode",
     darkMode: "Switch to dark mode",
     expand: "Expand sidebar",

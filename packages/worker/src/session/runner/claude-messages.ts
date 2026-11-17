@@ -20,6 +20,7 @@ import { observedSessionWork } from "../../session-work/supervisor.js";
 import {
   redactedJSONLine,
   redactSecrets,
+  redactTranscriptText,
 } from "../../platform/secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../files/session-files.js";
@@ -522,16 +523,29 @@ function handoffResultText(content: unknown): string {
   return "";
 }
 
-/** At most `handoffResultLimit` UTF-8 bytes, ending with the truncation mark. */
-function boundedHandoffResult(text: string): string {
-  if (Buffer.byteLength(text, "utf8") <= handoffResultLimit) return text;
+/** At most `limit` UTF-8 bytes, ending with the truncation mark. */
+function boundedHandoffResult(
+  text: string,
+  limit: number = handoffResultLimit,
+): string {
+  if (Buffer.byteLength(text, "utf8") <= limit) return text;
   let end = text.length;
-  while (
-    end > 0 &&
-    Buffer.byteLength(text.slice(0, end), "utf8") > handoffResultLimit
-  )
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > limit)
     end -= 1;
   return `${text.slice(0, end)}\n\n... truncated ...`;
+}
+
+/** A failed tool's error text is kept, redacted and bounded (DEV-281). */
+const failedToolErrorLimit = 1_024;
+
+/**
+ * A failed tool's transcript text: its call detail, then the error its result
+ * carried. Without it "Tool failed" records no reason anyone can read back.
+ */
+function failedClaudeToolDetail(tool: FinishedClaudeTool): string {
+  const error = redactTranscriptText(handoffResultText(tool.content).trim());
+  if (!error) return tool.detail;
+  return `${tool.detail}\n\nError\n\n\`\`\`\n${boundedHandoffResult(error, failedToolErrorLimit)}\n\`\`\``;
 }
 
 /**
@@ -542,6 +556,7 @@ function boundedHandoffResult(text: string): string {
  * answer. Other tools keep the call detail they always had.
  */
 export function claudeToolTranscriptDetail(tool: FinishedClaudeTool): string {
+  if (tool.failed) return failedClaudeToolDetail(tool);
   if (!handoffResultTools.has(tool.name)) return tool.detail;
   const result = handoffResultText(tool.content).trim();
   if (!result) return tool.detail;

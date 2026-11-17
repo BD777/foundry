@@ -1,8 +1,9 @@
-import { createContext, useContext } from "react";
+import { createContext, Fragment, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import type { ConversationAnnotation } from "./annotations";
+import { splitAnnotationDirectives } from "./remark-codex-annotations";
 
 /** What an answer's reference to an annotation shows: the passage and the comment. */
 export interface AnnotationReferenceValue {
@@ -60,5 +61,27 @@ export function AnnotationReference({
         {label}
       </Button>
     </Tooltip>
+  );
+}
+
+/**
+ * Plain text an agent wrote (a snippet, a row that is not Markdown): its
+ * annotation directives read as the same references the Markdown shows.
+ */
+export function AnnotatedText({ text }: { text: string }) {
+  return (
+    <>
+      {splitAnnotationDirectives(text).map((segment, index) =>
+        segment.kind === "text" ? (
+          <Fragment key={index}>{segment.value}</Fragment>
+        ) : (
+          <AnnotationReference
+            id={segment.id}
+            index={segment.index}
+            key={index}
+          />
+        ),
+      )}
+    </>
   );
 }

@@ -122,7 +122,9 @@ export function FoundryView({
 }
 
 export interface SidebarNavBadge {
-  children: ReactNode;
+  /** An unread mark: a dot alone, with no count. */
+  dot?: boolean;
+  children?: ReactNode;
   tone?: "brass" | "neutral";
 }
 
@@ -537,7 +539,11 @@ function SidebarNavButton<T extends string>({
     <Tooltip content={`${scopeLabel} · ${item.label}`}>
       <Button
         aria-current={active ? "page" : undefined}
-        aria-label={t("sidebar.open", { label: item.label })}
+        aria-label={
+          item.badge?.dot
+            ? t("sidebar.openUnread", { label: item.label })
+            : t("sidebar.open", { label: item.label })
+        }
         title={`${scopeLabel} · ${item.label}`}
         className={navLinkClass}
         data-nav-id={item.id}
@@ -562,17 +568,25 @@ function SidebarNavButton<T extends string>({
           {item.label}
         </span>
         {item.badge ? (
-          <b
-            className={cn(
-              "flex-none h-[19px] min-w-[19px] rounded-full px-[5px] text-center font-mono text-2xs leading-[19px] font-semibold rail:hidden",
-              item.badge.tone === "neutral"
-                ? "bg-control-ghost-hover text-ink-muted"
-                : "bg-accent-soft text-brand-dark",
-            )}
-            data-tone={item.badge.tone ?? "brass"}
-          >
-            {item.badge.children}
-          </b>
+          item.badge.dot ? (
+            <span
+              aria-hidden="true"
+              className="size-1.5 flex-none rounded-full bg-brand-dark rail:hidden"
+              data-tone={item.badge.tone ?? "brass"}
+            />
+          ) : (
+            <b
+              className={cn(
+                "flex-none h-[19px] min-w-[19px] rounded-full px-[5px] text-center font-mono text-2xs leading-[19px] font-semibold rail:hidden",
+                item.badge.tone === "neutral"
+                  ? "bg-control-ghost-hover text-ink-muted"
+                  : "bg-accent-soft text-brand-dark",
+              )}
+              data-tone={item.badge.tone ?? "brass"}
+            >
+              {item.badge.children}
+            </b>
+          )
         ) : null}
         {item.liveCount ? (
           <i className="inline-flex min-w-0 flex-none items-center gap-[5px] font-mono text-2xs leading-none font-semibold text-brand-dark not-italic rail:hidden">

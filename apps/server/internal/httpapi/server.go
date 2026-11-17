@@ -388,7 +388,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 			resourceLeaseReactions{server},
 		}, server.assistant.Observers(), []sessions.ChangeObserver{
 			sessionAlertReactions{server}, inbox, childReportReactions{server},
-			pendingReactions{server}, workspaceDigestReactions{server}, waitingChildReactions{server}, server.issueService.Observer(),
+			pendingReactions{server}, workspaceDigestReactions{server}, waitingChildReactions{server},
+			homeAnswerReactions{server}, server.issueService.Observer(),
 		}),
 		// An event added to its transcript: its Feishu card, the chat's
 		// queued messages, its inbox, pending items, a child's question to

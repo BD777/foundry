@@ -184,10 +184,15 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 	if err != nil {
 		return accessScope{}, err
 	}
+	ownChannels, err := s.assistantChannelWorkspaces(ctx, permissionAccess)
+	if err != nil {
+		return accessScope{}, err
+	}
 	for workspaceID, role := range roles {
 		// A session working for an assistant reaches the workspaces its
-		// package allows, and always the one it runs in.
-		if permissionAccess.Applicable && workspaceID != session.WorkspaceID && !permissionAccess.WorkspaceAllowed(workspaceID) {
+		// package allows, and always the one it runs in. An assistant's own
+		// conversation also reaches the workspaces of its own channels (DEV-281).
+		if permissionAccess.Applicable && workspaceID != session.WorkspaceID && !permissionAccess.WorkspaceAllowed(workspaceID) && !ownChannels[workspaceID] {
 			continue
 		}
 		if roleAtLeast(role, store.WorkspaceRoleMaintainer) {
@@ -196,6 +201,32 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 		scope.roles[workspaceID] = role
 	}
 	return scope, nil
+}
+
+// assistantChannelWorkspaces are the workspaces of the message channels an
+// assistant runs for its own conversation (DEV-281): the channels/<slug>
+// folders they create. Only the assistant's home sessions reach them, and
+// only at the person's own role in each; nothing else is widened. Empty
+// for any other session.
+func (s *Server) assistantChannelWorkspaces(ctx context.Context, access permission.Access) (map[string]bool, error) {
+	workspaces := map[string]bool{}
+	if !access.Applicable || !access.Home || access.Agent.ID == "" {
+		return workspaces, nil
+	}
+	channelStore, ok := s.store.(store.MessageChannelStore)
+	if !ok {
+		return workspaces, nil
+	}
+	channels, err := channelStore.ListMessageChannels(ctx, access.Agent.UserID, access.Agent.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		if channel.WorkspaceID != "" {
+			workspaces[channel.WorkspaceID] = true
+		}
+	}
+	return workspaces, nil
 }
 
 // requestScope computes the scope once per request.

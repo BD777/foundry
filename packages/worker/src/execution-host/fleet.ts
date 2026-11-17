@@ -41,9 +41,11 @@ import { executionHostPaths } from "./paths.js";
 import { hostRolloverCapability, type HostSnapshot } from "./protocol.js";
 import {
   generationRoot,
+  hostIsRetiring,
   knownHostRoots,
   hostWasStopped,
   liveHostIdentity,
+  markHostRetiring,
   markHostStopped,
   type HostIdentity,
 } from "./roots.js";
@@ -147,6 +149,12 @@ const settleTimeoutMs = 30_000;
 const deadSlotGraceMs = 60_000;
 /** How long the active host may stay unreachable before retired hosts serve again. */
 const activeDownGraceMs = 20_000;
+/**
+ * How long a retiring host may hold no turn, background task or busy agent
+ * while refusing the gentle switch modes (some non-turn state keeps it
+ * "busy"). After that it is stopped: nothing on it is left to finish.
+ */
+const retiredIdleStopMs = 120_000;
 
 export class ExecutionHostFleet {
   private readonly slots = new Map<string, Slot>();
@@ -164,7 +172,7 @@ export class ExecutionHostFleet {
   constructor(
     private readonly serverURL: string,
     private readonly driver: HostDriver,
-    private readonly timing?: { serviceStartMs?: number },
+    private readonly timing?: { serviceStartMs?: number; idleStopMs?: number },
   ) {}
 
   /**
@@ -324,16 +332,23 @@ export class ExecutionHostFleet {
       await slot.client.refresh();
       slot.error = undefined;
       const latest = slot.client.latest();
+      // Only a host with the rollover capability pauses its timers on retire;
+      // an older one keeps them, so it is never marked.
       if (!latest?.capabilities?.includes(hostRolloverCapability)) return;
-      if (activeHealthy && !latest.retiring) await slot.client.retire(true);
-      // The newest host stays down: the older one serves until it is back.
-      else if (
-        !activeHealthy &&
+      if (activeHealthy) {
+        if (!latest.retiring) await slot.client.retire(true);
+        // The daemon writes the marker itself: a host that was retired by an
+        // earlier daemon, or whose code predates the marker, never writes one.
+        if (!hostIsRetiring(slot.root)) markHostRetiring(slot.root, true);
+      } else if (
         latest.retiring &&
         this.activeDownSince !== undefined &&
         Date.now() - this.activeDownSince >= activeDownGraceMs
-      )
+      ) {
+        // The newest host stays down: the older one serves until it is back.
         await slot.client.retire(false);
+        markHostRetiring(slot.root, false);
+      }
     } catch (error) {
       slot.error = errorMessage(error);
     }
@@ -355,8 +370,16 @@ export class ExecutionHostFleet {
         slot.quietSince,
       );
       // Unacknowledged envelopes are delivered through the live link first.
-      if (decision.action === "switch" && !(snapshot.outbox ?? 0))
-        void this.stopSlot(slot, decision.mode).catch(() => undefined);
+      if (decision.action !== "switch" || (snapshot.outbox ?? 0)) continue;
+      const idleLongEnough =
+        slot.quietSince !== undefined &&
+        now - slot.quietSince >= (this.timing?.idleStopMs ?? retiredIdleStopMs);
+      const nothingLeft =
+        idleLongEnough &&
+        !(snapshot.resident ?? []).some((entry) => entry.busy);
+      void this.stopSlot(slot, nothingLeft ? "now" : decision.mode).catch(
+        () => undefined,
+      );
     }
   }
 

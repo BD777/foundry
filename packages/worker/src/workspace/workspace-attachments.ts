@@ -38,7 +38,10 @@ export class AttachmentError extends Error {
       | "unsupported"
       | "changed"
       | "invalid_path"
-      | "out_of_order",
+      | "out_of_order"
+      | "no_temp_folder"
+      | "other_session_temp"
+      | "outside_temp",
     message: string,
   ) {
     super(message);
@@ -234,6 +237,53 @@ export function readAttachmentImageChunk(input: {
   if (!chunk.mimeType)
     throw new AttachmentError("unsupported", "not a supported image");
   return { ...chunk, mimeType: chunk.mimeType, realPath: target };
+}
+
+/**
+ * Reads one chunk of a file in the session's own temp folder (DEV-281), the
+ * scratch directory its TMPDIR names, which lies outside its workspace.
+ * Another session's temp folder is refused by name; so is anything outside
+ * both.
+ */
+export function readSessionTempFileChunk(input: {
+  tempFolder: string | undefined;
+  otherTempFolders: string[];
+  path: string;
+  offset: number;
+  maxBytes: number;
+}): { size: number; mimeType?: string; data: Buffer; revision: string } {
+  if (!input.tempFolder)
+    throw new AttachmentError(
+      "no_temp_folder",
+      "the session has no temp folder yet",
+    );
+  if (!isAbsolute(input.path))
+    throw new AttachmentError("invalid_path", "path must be absolute");
+  const target = realpathThroughMissing(input.path);
+  if (
+    input.otherTempFolders.some((folder) =>
+      isInside(realpathThroughMissing(folder), target),
+    )
+  )
+    throw new AttachmentError(
+      "other_session_temp",
+      "another session's temp folder",
+    );
+  try {
+    return readWorkspaceFileChunk({
+      workspacePath: input.tempFolder,
+      path: input.path,
+      offset: input.offset,
+      maxBytes: input.maxBytes,
+    });
+  } catch (error) {
+    if (error instanceof AttachmentError && error.code === "invalid_path")
+      throw new AttachmentError(
+        "outside_temp",
+        "outside the session's temp folder",
+      );
+    throw error;
+  }
 }
 
 /**

@@ -41,7 +41,7 @@ test("code and existing links keep the directive as written", () => {
   const children = [
     {
       type: "inlineCode",
-      value: ':codex-annotation{index="1" id="x"}',
+      value: 'see :codex-annotation{index="1" id="x"} here',
     },
     {
       type: "link",
@@ -56,6 +56,31 @@ test("code and existing links keep the directive as written", () => {
   assert.equal(result[1].type, "link");
   assert.equal(result[1].url, "https://example.com");
   assert.equal(result[1].children[0].type, "text");
+});
+
+test("a code span holding only a directive is a reference, as its text is", () => {
+  const [link] = render([
+    {
+      type: "inlineCode",
+      value: ' :codex-annotation{index="3" id="ab12"} ',
+    },
+  ]);
+  assert.equal(link.type, "link");
+  assert.deepEqual(parseAnnotationReferenceHref(link.url), {
+    index: 3,
+    id: "ab12",
+  });
+});
+
+test("a directive with index 0 is not a reference, in text or code", () => {
+  const [text] = render([
+    { type: "text", value: ':codex-annotation{index="0" id="ab12"}' },
+  ]);
+  assert.equal(text.type, "text");
+  const [code] = render([
+    { type: "inlineCode", value: ':codex-annotation{index="0" id="ab12"}' },
+  ]);
+  assert.equal(code.type, "inlineCode");
 });
 
 test("an invalid index is not a reference", () => {

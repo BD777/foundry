@@ -27,8 +27,11 @@ const (
 	questionsToPerson = "person"
 	questionsToParent = "parent"
 	// questionDeliveryNextTurn marks questions that ended the turn and wait
-	// for the next message (TranscriptMessage.delivery).
+	// for the next message (TranscriptMessage.delivery); questionDeliveryAsync
+	// marks questions the turn keeps working past (Codex
+	// request_user_input_async), answered by a steer naming them.
 	questionDeliveryNextTurn = "next_turn"
+	questionDeliveryAsync    = "async"
 	// questionChainLimit bounds the walk up nested orchestrators.
 	questionChainLimit = 8
 	// relayedQuestionDetailLimit is how much of a plan a relay carries.
@@ -76,11 +79,17 @@ func questionsTo(ctx context.Context, summaries sessionSummaries, session store.
 	return questionsToParent, parent.ID
 }
 
-// relayChildQuestion puts a child's question, recorded as waiting for its
-// next message, in its parent's inbox at once.
+// questionWaits reports whether a question waits for the person's (or a
+// parent's) answer: it ended the turn, or the turn runs on without it.
+func questionWaits(delivery string) bool {
+	return delivery == questionDeliveryNextTurn || delivery == questionDeliveryAsync
+}
+
+// relayChildQuestion puts a child's question that waits for an answer in its
+// parent's inbox at once.
 func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessionEvent) {
 	message := event.Message
-	if message == nil || len(message.Questions) == 0 || message.Delivery != questionDeliveryNextTurn {
+	if message == nil || len(message.Questions) == 0 || !questionWaits(message.Delivery) {
 		return
 	}
 	child, err := s.store.GetAgentSessionSummary(ctx, event.SessionID)
@@ -90,6 +99,10 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 	to, parentID := s.questionsTo(ctx, child)
 	if to != questionsToParent || parentID == "" {
 		log.Printf("session question kept in its chat: session=%s message=%s reason=%q", child.ID, message.ID, "no live parent answers it")
+		return
+	}
+	if s.questionAnswered(ctx, child, *message) {
+		log.Printf("session question not relayed: session=%s message=%s reason=%q", child.ID, message.ID, "already answered")
 		return
 	}
 	prompt := s.relayedQuestionText(child, *message)
@@ -117,9 +130,12 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 func (s *Server) relayedQuestionText(child store.AgentSession, message store.TranscriptMessage) string {
 	var builder strings.Builder
 	approval := len(message.Questions) == 1 && message.Questions[0].Approval
-	if approval {
+	switch {
+	case approval:
 		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks for approval and waits; its turn ended.\n", child.ID, child.Title)
-	} else {
+	case message.Delivery == questionDeliveryAsync:
+		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks and keeps working; it reads the answer at its next step.\n", child.ID, child.Title)
+	default:
 		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks and waits for the answer; its turn ended.\n", child.ID, child.Title)
 	}
 	if link := s.assistant.SessionURL(child); link != "" {
@@ -160,9 +176,9 @@ func (s *Server) relayedQuestionText(child store.AgentSession, message store.Tra
 	return builder.String()
 }
 
-// waitingQuestion is the child's latest question still waiting for its
-// next message, if any: one recorded since the child's latest input (its
-// turn may still be ending when the parent answers).
+// waitingQuestion is the child's latest question still waiting for an
+// answer, if any: one recorded since the child's latest input (its turn may
+// still be ending when the parent answers).
 func (s *Server) waitingQuestion(ctx context.Context, child store.AgentSession) (store.TranscriptMessage, bool) {
 	events, _, err := s.store.AgentSessionEventWindow(ctx, child.ID, "", 200)
 	if err != nil {
@@ -178,11 +194,36 @@ func (s *Server) waitingQuestion(ctx context.Context, child store.AgentSession) 
 		if event.Label == store.EventLabelSteeredIntoTurn && strings.Contains(event.Detail, agentQuestionReplyOpen) {
 			break
 		}
-		if message := event.Message; message != nil && len(message.Questions) > 0 && message.Delivery == questionDeliveryNextTurn {
+		if message := event.Message; message != nil && len(message.Questions) > 0 && questionWaits(message.Delivery) {
 			return *message, true
 		}
 	}
 	return store.TranscriptMessage{}, false
+}
+
+// questionAnswered reports whether an answer naming the question reached the
+// child: the person's in its chat, or its creator's.
+func (s *Server) questionAnswered(ctx context.Context, child store.AgentSession, message store.TranscriptMessage) bool {
+	events, _, err := s.store.AgentSessionEventWindow(ctx, child.ID, "", 200)
+	if err != nil {
+		return false
+	}
+	itemID := nativeQuestionID(message.ID)
+	for _, event := range events {
+		if event.Label == store.EventLabelSteeredIntoTurn && strings.Contains(event.Detail, agentQuestionReplyOpen) && strings.Contains(event.Detail, itemID) {
+			return true
+		}
+	}
+	return false
+}
+
+// nativeQuestionID is the runtime's id of a question item (its message id
+// without the path a Foundry id carries).
+func nativeQuestionID(messageID string) string {
+	if at := strings.LastIndex(messageID, "/"); at >= 0 {
+		return messageID[at+1:]
+	}
+	return messageID
 }
 
 // answerWaitingQuestion turns a parent's plain message to a child waiting
@@ -210,10 +251,7 @@ const (
 // agentQuestionReplyText is the answer to the first question of item
 // itemID, in the envelope of @bd777/foundry-protocol agentQuestionReplyText.
 func agentQuestionReplyText(itemID, question, answer string) string {
-	if at := strings.LastIndex(itemID, "/"); at >= 0 {
-		itemID = itemID[at+1:]
-	}
-	target, _ := json.Marshal([]any{"request_user_input_async", itemID, 0})
+	target, _ := json.Marshal([]any{"request_user_input_async", nativeQuestionID(itemID), 0})
 	entries, _ := json.Marshal([]map[string]string{{"questionItemId": string(target), "question": question, "answer": answer}})
 	return agentQuestionReplyOpen + "\n" + string(entries) + "\n" + agentQuestionReplyClose + "\n"
 }

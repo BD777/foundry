@@ -56,6 +56,7 @@ export const shell: Translation<typeof en> = {
     workspaceScope: "工作区：{{workspace}}",
     assistantScope: "助理：{{assistant}}",
     open: "打开{{label}}",
+    openUnread: "打开{{label}}，有新回复",
     lightMode: "切换到浅色模式",
     darkMode: "切换到深色模式",
     expand: "展开侧栏",

@@ -7,6 +7,7 @@ import {
 import { ErrorBoundary } from "./components/ui/error-boundary";
 import { WorkspacesFeature } from "./features/workspaces";
 import { usePendingItems } from "./features/pending";
+import { useAssistantHomeUnread } from "./features/personal-agent";
 import { ActiveView, type AppViewContext } from "./app/active-view";
 import { useAppStatus, useTransientNotice } from "./app/app-notices";
 import { AppSidebar } from "./app/app-sidebar";
@@ -101,11 +102,17 @@ export function App() {
     assistants.assistants.find(
       (assistant) => assistant.id === location.selectedAssistantId,
     ) ?? assistants.assistants.find((assistant) => assistant.isDefault);
+  const assistantUnread = useAssistantHomeUnread(
+    currentAssistant?.id,
+    currentAssistant?.workspaceId,
+    activeView === "assistant",
+  );
   useDocumentTitle({
     view: activeView,
     workspaceName: data.workspace.name,
     issue: current.selectedIssue,
     device: data.devices.find((row) => row.id === selectedDeviceId),
+    assistantUnread,
   });
   const issueDraft = useIssueDraftRequest(location.setActiveView, setNotice);
   const pending = usePendingItems(apiState !== "loading");
@@ -160,6 +167,7 @@ export function App() {
           running: current.runningCount,
           activeSkills: current.activeSkillCount,
           pending: pending.list?.open ?? 0,
+          assistantUnread,
         }}
         onNavSelect={selectSidebarView}
         onNotice={setNotice}

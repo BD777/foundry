@@ -38,7 +38,10 @@ type wsAttachmentReadPayload struct {
 	MaxBytes    int64  `json:"maxBytes"`
 	// Scope "workspace" reads any regular file inside the workspace, not
 	// only an image among its attachments.
-	Scope      string `json:"scope,omitempty"`
+	Scope string `json:"scope,omitempty"`
+	// SessionID with Scope "session_temp" names the session whose own temp
+	// folder (its TMPDIR, outside its workspace) holds the file (DEV-281).
+	SessionID  string `json:"sessionId,omitempty"`
 	Variant    string `json:"variant,omitempty"`
 	ChunkBytes int64  `json:"chunkBytes,omitempty"`
 }
@@ -110,6 +113,13 @@ func (h *DaemonHub) ReadAttachmentImageChunk(ctx context.Context, workspace stor
 // resolving links; MIMEType is set for an image only.
 func (h *DaemonHub) ReadWorkspaceFileChunk(ctx context.Context, workspace store.WorkspaceProjection, path string, offset int64, maxBytes int64) (attachmentChunk, error) {
 	return h.readAttachmentChunk(ctx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxBytes, Scope: "workspace"})
+}
+
+// ReadSessionTempFileChunk reads one chunk of a file in the temp folder of
+// the session sessionID on the workspace's device (DEV-281). The device
+// refuses paths outside that folder and inside another session's.
+func (h *DaemonHub) ReadSessionTempFileChunk(ctx context.Context, workspace store.WorkspaceProjection, sessionID, path string, offset int64, maxBytes int64) (attachmentChunk, error) {
+	return h.readAttachmentChunk(ctx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxBytes, Scope: "session_temp", SessionID: sessionID})
 }
 
 func (h *DaemonHub) readAttachmentChunk(ctx context.Context, workspace store.WorkspaceProjection, payload wsAttachmentReadPayload) (attachmentChunk, error) {

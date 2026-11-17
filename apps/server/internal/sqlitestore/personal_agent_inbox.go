@@ -138,8 +138,11 @@ func (s *Store) PendingPersonalAgentInboxNotifications(ctx context.Context, now 
 	return s.queryInbox(ctx, `notify_pending=1 AND result_status<>'' AND (lease_until='' OR julianday(lease_until)<=julianday(?)) ORDER BY updated_at LIMIT ?`, now, min(max(limit, 1), 100))
 }
 
+// UnresolvedPersonalAgentInboxResults lists the entries whose attempt ended
+// without their receipt: no result recorded yet, or a canceled one still
+// marked delivered by an older server (DEV-279).
 func (s *Store) UnresolvedPersonalAgentInboxResults(ctx context.Context, limit int) ([]store.PersonalAgentInboxEntry, error) {
-	return s.queryInbox(ctx, `status='delivered' AND result_status='' AND session_id<>'' ORDER BY created_at LIMIT ?`, min(max(limit, 1), 100))
+	return s.queryInbox(ctx, `status='delivered' AND session_id<>'' AND (result_status='' OR result_status='canceled') ORDER BY created_at LIMIT ?`, min(max(limit, 1), 100))
 }
 
 func (s *Store) PersonalAgentInboxSession(ctx context.Context, assistantID, channel string) (string, error) {

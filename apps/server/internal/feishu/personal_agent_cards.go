@@ -37,6 +37,7 @@ var assistantTexts = map[string][2]string{
 	"inboxAnswered":    {"助理回复", "Assistant reply"},
 	"inboxInterrupted": {"处理未完成", "Processing interrupted"},
 	"inboxFull":        {"[查看完整回复](%s)", "[Read the full reply](%s)"},
+	"noticeTitle":      {"助理的话", "From your assistant"},
 	"inboxReceived":    {"消息及附件引用已保存，无需重发。电脑或账号可用后处理；暂停期间只保存。", "Your message and attachment references are saved. No need to resend. Processing waits for the computer and account; paused work is only recorded."},
 	"inboxFailedTitle": {"未能保存消息", "Message not saved"},
 	"inboxFailed":      {"这次消息没有保存成功，请稍后重试或从助理页面查看。", "This message could not be saved. Try again later or check the assistant page."},
@@ -231,6 +232,29 @@ func (m *WSManager) assistantDirectChat(ctx context.Context, userID, assistantID
 		return app, route.ChatID
 	}
 	return nil, ""
+}
+
+// TellPerson posts one note from the assistant to the person's direct chat
+// with it (DEV-278): the way a session tells the person something outside
+// its own conversation. The person's switch off, or no paired chat, posts
+// nothing and is not an error.
+func (m *WSManager) TellPerson(ctx context.Context, agent store.PersonalAgent, note, sessionURL string) (bool, error) {
+	if !agent.Settings.FeishuDirectChat || strings.TrimSpace(note) == "" {
+		return false, nil
+	}
+	app, chatID := m.assistantDirectChat(ctx, agent.UserID, agent.ID)
+	if app == nil {
+		return false, nil
+	}
+	body := strings.TrimSpace(note)
+	if sessionURL != "" {
+		body += "\n\n" + sessionURL
+	}
+	card := BuildAssistantCard(assistantText(m.proposalLanguage(ctx, agent.ID, agent.UserID), "noticeTitle"), body, "turquoise")
+	if _, err := app.client.SendCard(ctx, chatID, card); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // tellAssistantTurn posts the answer of an assistant turn that Feishu did

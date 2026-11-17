@@ -552,7 +552,37 @@ test("a Foundry handoff result is bounded and a failed one still carries it", ()
     failed: true,
     content: [{ type: "text", text: "not allowed" }],
   });
-  assert.match(failed, /Result[\s\S]*not allowed/);
+  assert.match(failed, /Error[\s\S]*not allowed/);
+  const failedBash = claudeToolTranscriptDetail({
+    id: "call_3",
+    name: "Bash",
+    detail: "Bash\n\n```json\n{}\n```",
+    failed: true,
+    content: [
+      { type: "text", text: "Error: token sk-ant-api03-SECRETVALUE rejected" },
+    ],
+  });
+  assert.match(failedBash, /Error[\s\S]*Error: token/);
+  assert.doesNotMatch(failedBash, /SECRETVALUE/);
+  const failedLong = claudeToolTranscriptDetail({
+    id: "call_4",
+    name: "Bash",
+    detail: "Bash",
+    failed: true,
+    content: "x".repeat(5_000),
+  });
+  assert.ok(failedLong.length < 1_400);
+  assert.match(failedLong, /\.\.\. truncated \.\.\./);
+  assert.equal(
+    claudeToolTranscriptDetail({
+      id: "call_5",
+      name: "Bash",
+      detail: "Bash",
+      failed: true,
+      content: undefined,
+    }),
+    "Bash",
+  );
 });
 
 test("an answered turn that waits for background work completes with its answer when stopped", async () => {

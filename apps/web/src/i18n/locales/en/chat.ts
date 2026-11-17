@@ -263,8 +263,8 @@ export const chat = {
     title: "Chats",
     newChat: "New chat",
     search: "Search chats or groups",
-    needsMe_one: "Needs me · {{count}}",
-    needsMe_other: "Needs me · {{count}}",
+    needsMe_one: "Needs you · {{count}}",
+    needsMe_other: "Needs you · {{count}}",
     needsMeOn:
       "Show only the chats with items waiting for you: questions, failed runs, things only you can do",
     needsMeOff: "Show all chats again",

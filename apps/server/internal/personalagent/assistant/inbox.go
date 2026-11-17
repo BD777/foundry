@@ -371,14 +371,20 @@ func (r inboxReactions) SessionChanged(ctx context.Context, change sessions.Chan
 }
 
 // A result belongs to one input, not to whichever turn a session runs later.
-// "resolved" means this input got an answer; it never completes a TODO.
+// "resolved" means this input got an answer; a canceled turn is settled the
+// same way, since it will not be answered (DEV-279); a failed one stays
+// "delivered" for the person to retry. It never completes a TODO.
 func (s *Service) recordInboxResult(ctx context.Context, session store.AgentSession) {
 	agent, err := s.store.AssistantForSession(ctx, session.ID)
 	if err != nil || agent.UserID != session.CreatedByUserID {
 		return
 	}
 	entry, err := s.store.PersonalAgentInboxByInput(ctx, agent.ID, session.Input.ID)
-	if err != nil || entry.Status == "cancelled" || entry.ResultStatus != "" {
+	if err != nil || entry.Status == "cancelled" {
+		return
+	}
+	// A canceled result recorded before a crash is settled by the next pass.
+	if entry.ResultStatus != "" && !(entry.ResultStatus == "canceled" && entry.Status == "delivered") {
 		return
 	}
 	if session.Status != "completed" && session.Status != "failed" && session.Status != "canceled" {
@@ -390,15 +396,22 @@ func (s *Service) recordInboxResult(ctx context.Context, session store.AgentSess
 		entry.ResultText = strings.ToValidUTF8(entry.ResultText[:128*1024], "")
 		entry.ResultTruncated = true
 	}
-	entry.Status, entry.WaitingReason = "resolved", ""
-	if session.Status != "completed" {
-		entry.Status, entry.WaitingReason = "delivered", "execution_failed"
-	}
+	entry.Status, entry.WaitingReason = inboxResultStatus(session.Status)
 	entry.LeaseUntil = ""
 	entry.NotificationPending = entry.Origin != nil
 	if _, err := s.store.SavePersonalAgentInbox(ctx, entry); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
 		log.Printf("personal agent inbox %s: record answer: %v", entry.ID, err)
 	}
+}
+
+// inboxResultStatus is how one attempt's end settles its message: an answer
+// and a canceled turn both close it (a cancel is a decision that this turn
+// does not run), while a failure stays delivered for the person to retry.
+func inboxResultStatus(sessionStatus string) (status, reason string) {
+	if sessionStatus == "failed" {
+		return "delivered", "execution_failed"
+	}
+	return "resolved", ""
 }
 
 func (s *Service) recoverInboxResults(ctx context.Context) {
@@ -407,6 +420,17 @@ func (s *Service) recoverInboxResults(ctx context.Context) {
 		return
 	}
 	for _, entry := range entries {
+		if entry.ResultStatus == "canceled" {
+			// A canceled attempt recorded by an older server never gets an
+			// answer: settle it now, as the canceled turn is settled when it
+			// ends (DEV-279).
+			entry.Status, entry.WaitingReason = "resolved", ""
+			entry.LeaseUntil = ""
+			if _, err := s.store.SavePersonalAgentInbox(ctx, entry); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
+				log.Printf("personal agent inbox %s: settle canceled attempt: %v", entry.ID, err)
+			}
+			continue
+		}
 		session, err := s.store.GetAgentSessionSummary(ctx, entry.SessionID)
 		if err == nil && session.CreatedByUserID == entry.UserID && session.Input.ID == entry.InputID {
 			s.recordInboxResult(ctx, session)

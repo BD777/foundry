@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -37,13 +38,24 @@ func (s *Store) setupAssistants(ctx context.Context) error {
 			stopped_at TEXT NOT NULL DEFAULT '',
 			former_workspace_ids TEXT NOT NULL DEFAULT '[]',
 			digest_sent_on TEXT NOT NULL DEFAULT '',
-			connector_opt_out TEXT NOT NULL DEFAULT '[]'
+			connector_opt_out TEXT NOT NULL DEFAULT '[]',
+			home_answer_at TEXT NOT NULL DEFAULT '',
+			home_seen_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_assistants_default ON assistants(owner_user_id) WHERE is_default = 1`,
 		`CREATE INDEX IF NOT EXISTS idx_assistants_owner ON assistants(owner_user_id, created_at)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate assistants: %w", err)
+		}
+	}
+	// Columns added after the table was first created (DEV-278).
+	for _, column := range []string{
+		`home_answer_at TEXT NOT NULL DEFAULT ''`,
+		`home_seen_at TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE assistants ADD COLUMN `+column); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate assistants: %w", err)
 		}
 	}
@@ -280,6 +292,65 @@ func (s *Store) ListAssistants(ctx context.Context, ownerUserID string) ([]store
 
 func (s *Store) AssistantForWorkspace(ctx context.Context, workspaceID string) (store.PersonalAgent, error) {
 	return s.getAssistantWhere(ctx, `home_workspace_id = ?`, workspaceID)
+}
+
+// AssistantForHomeConversation is AssistantForWorkspace over the home the
+// assistant lives in now and the ones it moved away from (DEV-278). A
+// message channel's workspace is never one of them.
+func (s *Store) AssistantForHomeConversation(ctx context.Context, workspaceID string) (store.PersonalAgent, error) {
+	return s.getAssistantWhere(ctx, `home_workspace_id = ? OR EXISTS (SELECT 1 FROM json_each(former_workspace_ids) WHERE value = ?)
+		ORDER BY home_workspace_id = ? DESC LIMIT 1`, workspaceID, workspaceID, workspaceID)
+}
+
+// MarkAssistantHomeAnswer keeps the newest answer time of the assistant's
+// home conversation (DEV-278): an older report never moves it back.
+func (s *Store) MarkAssistantHomeAnswer(ctx context.Context, assistantID, at string) error {
+	parsed, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return fmt.Errorf("home answer time %q: %w", at, err)
+	}
+	parsed = parsed.UTC()
+	return s.withTx(ctx, func(tx *Store) error {
+		var current string
+		err := tx.conn().QueryRowContext(ctx, `SELECT home_answer_at FROM assistants WHERE id = ?`, assistantID).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if current != "" {
+			previous, err := time.Parse(time.RFC3339Nano, current)
+			if err == nil && !parsed.After(previous) {
+				return nil
+			}
+		}
+		_, err = tx.conn().ExecContext(ctx, `UPDATE assistants SET home_answer_at = ? WHERE id = ?`,
+			parsed.Format(time.RFC3339Nano), assistantID)
+		return err
+	})
+}
+
+// MarkAssistantHomeSeen moves the person's last view of the home
+// conversation to its newest answer (DEV-278). The update reads the answer
+// time in the same statement, so an answer recorded after it stays unseen.
+func (s *Store) MarkAssistantHomeSeen(ctx context.Context, assistantID string) error {
+	_, err := s.conn().ExecContext(ctx, `UPDATE assistants SET home_seen_at = home_answer_at WHERE id = ?`, assistantID)
+	return err
+}
+
+// AssistantHomeUnread is the newest answer and whether the person has seen
+// it (DEV-278).
+func (s *Store) AssistantHomeUnread(ctx context.Context, assistantID string) (store.AssistantHomeUnread, error) {
+	var answerAt, seenAt string
+	err := s.reader().QueryRowContext(ctx, `SELECT home_answer_at, home_seen_at FROM assistants WHERE id = ?`, assistantID).Scan(&answerAt, &seenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.AssistantHomeUnread{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.AssistantHomeUnread{}, err
+	}
+	return store.AssistantHomeUnread{Unread: answerAt != "" && answerAt != seenAt, LastAnswerAt: answerAt}, nil
 }
 
 // AssistantForFeishuApp is the owner's assistant explicitly bound to appID.

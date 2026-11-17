@@ -146,6 +146,10 @@ type Channel interface {
 	PrepareAssistantInbox(ctx context.Context, entry store.PersonalAgentInboxEntry, workspaceID string) (string, []store.ChatAttachment, error)
 	FollowAssistantInbox(ctx context.Context, entry store.PersonalAgentInboxEntry, workspaceID, sessionID string) error
 	DeliverAssistantInboxResult(ctx context.Context, entry store.PersonalAgentInboxEntry, workspaceID, sessionURL string) error
+	// TellPerson posts one informational note to the person's Feishu direct
+	// chat when their settings pair one (DEV-278); it reports whether it
+	// did.
+	TellPerson(ctx context.Context, agent store.PersonalAgent, note, sessionURL string) (bool, error)
 }
 
 // Accounts are the accounts a workspace offers.

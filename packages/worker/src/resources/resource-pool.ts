@@ -311,6 +311,16 @@ export function adoptSessionScratchDirectories(
   return directory;
 }
 
+/**
+ * The scratch directories of the other sessions on this device, which a
+ * session may not read (DEV-281).
+ */
+export function otherSessionScratchDirectories(sessionId: string): string[] {
+  return scratchRecords()
+    .filter((record) => record.sessionId !== sessionId)
+    .map((record) => record.directory);
+}
+
 /** TMPDIR and friends pointing at the session's scratch directory. */
 export function sessionScratchEnvironment(
   sessionId: string,

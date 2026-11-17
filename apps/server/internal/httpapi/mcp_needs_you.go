@@ -3,11 +3,13 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
@@ -53,9 +55,49 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		if note == "" || utf8.RuneCountInString(note) > needsYouNoteLimit {
 			return "", &statusError{http.StatusBadRequest, fmt.Errorf("hand_over needs a note for the person of 1 to %d characters", needsYouNoteLimit)}
 		}
+	case "tell":
+		if note == "" || utf8.RuneCountInString(note) > needsYouNoteLimit {
+			return "", &statusError{http.StatusBadRequest, fmt.Errorf("tell needs a note for the person of 1 to %d characters", needsYouNoteLimit)}
+		}
+		if itemID != "" {
+			return "", &statusError{http.StatusBadRequest, fmt.Errorf("tell takes a sessionId, not an itemId")}
+		}
+		target := sessionID
+		if target == "" {
+			target = scope.SessionID
+		}
+		if target == "" {
+			return "", &statusError{http.StatusBadRequest, fmt.Errorf("tell needs the session with the news")}
+		}
+		session, err := s.store.GetAgentSessionSummary(ctx, target)
+		if err != nil {
+			return "", &statusError{http.StatusNotFound, fmt.Errorf("session %s not found", target)}
+		}
+		agent, ok := s.assistant.Conversation(ctx, session)
+		if !ok || agent.ID != scope.Agent.ID {
+			return "", &statusError{http.StatusForbidden, fmt.Errorf("only one of this assistant's own conversations can tell the person")}
+		}
+		item, changed, err := s.store.RecordPendingItem(ctx, store.PendingItem{
+			UserID: user, AssistantID: agent.ID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
+			Source: store.PendingSourceNotice, Key: flow.Key("notice", user, session.ID, note),
+			Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
+			Handler: store.PendingHandlerPerson, Note: note,
+			HandedReason: store.PendingHandedByAssistant, HandedAt: formatPendingTime(time.Now()),
+		})
+		if err != nil {
+			return "", err
+		}
+		// One Feishu post per new note; a repeat of the same note only
+		// refreshes its open item.
+		if changed {
+			if _, err := s.assistant.TellPerson(ctx, agent, session, note); err != nil {
+				log.Printf("personal agent %s: tell the person: %v", agent.ID, err)
+			}
+		}
+		return encodeJSON(map[string]any{"told": s.needsYouLineOf(ctx, item)})
 	case "resolve":
 	default:
-		return "", &statusError{http.StatusBadRequest, fmt.Errorf("op is list, hand_over or resolve")}
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("op is list, hand_over, tell or resolve")}
 	}
 	if (itemID == "") == (sessionID == "") {
 		return "", &statusError{http.StatusBadRequest, fmt.Errorf("name exactly one of itemId and sessionId")}
@@ -85,7 +127,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 			Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
 			Context: pendingAnswerContext(helper.Response),
 			Handler: store.PendingHandlerPerson, Note: note, HandedReason: store.PendingHandedByAssistant, HandedAt: now,
-			Outcome: store.PendingOutcomeHandedOver,
+			HandedInputID: scope.Turn.ID, Outcome: store.PendingOutcomeHandedOver,
 		})
 		if err != nil {
 			return "", err
@@ -93,7 +135,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		return encodeJSON(map[string]any{"handedOver": []needsYouLine{s.needsYouLineOf(ctx, item)}})
 	}
 	for _, item := range items {
-		handed, err := s.store.HandPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver)
+		handed, err := s.store.HandPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver, scope.Turn.ID)
 		if err != nil {
 			return "", err
 		}
