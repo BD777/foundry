@@ -620,12 +620,15 @@ type SessionFileReference struct {
 // SessionInput defines model for SessionInput.
 type SessionInput struct {
 	// ExecutionBudget SessionInput is one message delivered to a session: the unit of dispatch. It is not a session of its own; identity, permissions and lineage belong to the session it was sent to.
-	ExecutionBudget       *SessionExecutionBudget `json:"executionBudget,omitempty"`
-	ID                    string                  `json:"id"`
-	Prompt                string                  `json:"prompt"`
-	Attachments           []ChatAttachment        `json:"attachments,omitempty"`
-	ProfileTransitionNote string                  `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string                  `json:"importedContext,omitempty"`
+	ExecutionBudget *SessionExecutionBudget `json:"executionBudget,omitempty"`
+	ID              string                  `json:"id"`
+	Prompt          string                  `json:"prompt"`
+	Attachments     []ChatAttachment        `json:"attachments,omitempty"`
+
+	// Annotations `annotations` are the answer passages the person annotated in this message.
+	Annotations           []SessionInputAnnotation `json:"annotations,omitempty"`
+	ProfileTransitionNote string                   `json:"profileTransitionNote,omitempty"`
+	ImportedContext       string                   `json:"importedContext,omitempty"`
 
 	// At When the server received the input; its transcript events carry it.
 	At string `json:"at,omitempty"`
@@ -641,6 +644,26 @@ type SessionInput struct {
 
 	// ChannelOrigin `channelOrigin` is a message channel turn's structured origin (DEV-234): the channel, source conversation and thread, and each message. The prompt still carries the facts block; clients render this instead of parsing it.
 	ChannelOrigin *MessageChannelOrigin `json:"channelOrigin,omitempty"`
+}
+
+// SessionInputAnnotation One passage of an earlier agent answer the person annotated, sent with a user message. `selectedText` is the passage and `comment` the person's optional comment. The prompt text already carries the model-facing wrapper; this structure is only for display.
+type SessionInputAnnotation struct {
+	ID           string `json:"id"`
+	SelectedText string `json:"selectedText"`
+	Comment      string `json:"comment,omitempty"`
+
+	// SourceEventID `sourceEventId` is the transcript event of the annotated answer.
+	SourceEventID string `json:"sourceEventId"`
+
+	// StartOffset `startOffset` and `endOffset` are the selection's character offsets in the answer's plain text, for re-highlighting; both are set or both absent.
+	StartOffset *int64 `json:"startOffset,omitempty"`
+	EndOffset   *int64 `json:"endOffset,omitempty"`
+
+	// TurnNumber `turnNumber` is the answer's turn as the transcript navigator numbers it; set only when the answer is not the latest.
+	TurnNumber int `json:"turnNumber,omitempty"`
+
+	// MessageAt `messageAt` is when the annotated answer was written (RFC 3339).
+	MessageAt string `json:"messageAt,omitempty"`
 }
 
 // SessionSource defines model for SessionSource.

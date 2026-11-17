@@ -4,6 +4,7 @@ import {
   processLabels,
   type AgentSession,
   type ChatAttachment,
+  type SessionInputAnnotation,
   sessionEventLabels,
   sessionInputEventId,
   sessionSources,
@@ -18,6 +19,7 @@ import {
 } from "../session-control.js";
 import type { SessionTurnFiles } from "../files/session-files.js";
 import { userMessageText } from "../session-prompt.js";
+import { claudeManagedPrompt } from "../../skills/skill-invocation.js";
 import type {
   ActiveClaudeRuntime,
   ActiveClaudeTurn,
@@ -105,7 +107,7 @@ export function registerClaudeTurnControls(
 ): () => void {
   const unregisterSteer = registerActiveSessionSteerTarget(run.session.id, {
     provider: "claude",
-    steer: (message, attachments = [], steerId, sentBySessionId) =>
+    steer: (message, attachments = [], steerId, sentBySessionId, options) =>
       steerClaudeTurn(
         run,
         runtime,
@@ -113,6 +115,7 @@ export function registerClaudeTurnControls(
         attachments,
         steerId,
         sentBySessionId,
+        options?.annotations,
       ),
   });
   const unregisterCancel = registerActiveSessionCancelTarget(run.session.id, {
@@ -133,6 +136,7 @@ async function steerClaudeTurn(
   attachments: ChatAttachment[],
   steerId?: string,
   sentBySessionId?: string,
+  annotations?: SessionInputAnnotation[],
 ): Promise<void> {
   if (runtime.pending?.resultPath !== run.resultPath) {
     throw new Error(
@@ -152,16 +156,24 @@ async function steerClaudeTurn(
     attachments.length === 0 &&
     !sentBySessionId &&
     runtime.questions?.take(text) === true;
-  if (!answered)
+  if (!answered) {
+    const content = userMessageText(
+      claudeManagedPrompt(text, run.managedSkills),
+      attachments,
+      sentBySessionId,
+      annotations,
+    );
+    // Claude may submit this steer after the turn it joined has ended: the
+    // timer tracker must know the Worker sent it (never a timer's prompt).
+    // Registered as pushed, so the submitted prompt matches it.
+    runtime.timers?.expectSteer(content);
     runtime.input.push({
-      message: {
-        role: "user",
-        content: userMessageText(text, attachments, sentBySessionId),
-      },
+      message: { role: "user", content },
       parent_tool_use_id: null,
       priority: "next",
       type: "user",
     });
+  }
   try {
     await run.emit(
       sessionEventLabels.steeredIntoTurn,
@@ -220,14 +232,6 @@ export function openClaudeTurn(
   },
 ): ActiveClaudeTurn {
   const livenessSettings = turnLivenessSettings();
-  const minutes = run.session.input?.executionBudget?.timeoutMinutes;
-  if (minutes && minutes > 0) {
-    const bound = Math.min(minutes, 240) * 60_000;
-    livenessSettings.ceilingMs =
-      livenessSettings.ceilingMs > 0
-        ? Math.min(livenessSettings.ceilingMs, bound)
-        : bound;
-  }
   const operationBounds = claudeTurnOperationBounds(run);
   const turn: ActiveClaudeTurn = {
     emit: run.emit,
@@ -249,22 +253,10 @@ export function openClaudeTurn(
     liveness: new ClaudeTurnLiveness(
       {
         ...livenessSettings,
-        ...(minutes && minutes > 0
-          ? {
-              checkIntervalMs: Math.max(
-                50,
-                Math.min(1000, (minutes * 60_000) / 4),
-              ),
-            }
-          : {}),
         ...(startsProcess
           ? {
-              firstResponseTimeoutMs: Math.min(
+              firstResponseTimeoutMs:
                 operationBounds.apiTimeoutMs + livenessSettings.graceMs,
-                minutes && minutes > 0
-                  ? Math.min(minutes, 240) * 60_000
-                  : Number.POSITIVE_INFINITY,
-              ),
             }
           : { startupTimeoutMs: undefined }),
         backgroundBusy: () =>

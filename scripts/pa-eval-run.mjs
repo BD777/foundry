@@ -46,8 +46,8 @@
 // contain the answer, and the person gets a random password on the copy. A
 // worker is paired to the person with its own state root and HOME under the
 // instance (e2e: CLAUDE_CONFIG_DIR / CODEX_HOME point at the real logins, or
-// --worker-home real), the assistant is set up on it, and its limits are
-// raised to the hard caps. Each e2e case then runs a real assistant turn;
+// --worker-home real), the assistant is set up on it. Each e2e case then
+// runs a real assistant turn;
 // its dispatched workspace is the routing answer.
 //
 // usage: node scripts/pa-eval-run.mjs [--e2e] [--sample N]
@@ -771,26 +771,6 @@ async function ensureAssistant(client, deviceId) {
       throw new SetupError("the assistant was not set up within 120s");
   }
   const agent = overview.agent;
-  // Each case is a fresh conversation: the eval must not trip the limits
-  // meant for one person's day.
-  const limits = {
-    ...(agent.settings?.limits || {}),
-    concurrentSessions: 8,
-    dailySessions: 100,
-    dailyWorkspaces: 10,
-    weeklyWorkspaces: 30,
-    hourlyTurns: 120,
-    dailyDigestSessions: 200,
-  };
-  try {
-    await client.request("PUT", "/api/personal-agent/settings", {
-      body: { ...agent.settings, limits },
-    });
-  } catch (error) {
-    log(
-      `could not raise the assistant's limits (${error.message}); continuing with its defaults`,
-    );
-  }
   return agent;
 }
 
@@ -1028,24 +1008,16 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
     log(`e2e ${i + 1}/${sample.length} ${c.id}`);
     let session;
     let error = null;
-    // The hourly reply cap is a hard one (the helpers' cancellations wake
-    // the assistant too): wait it out rather than lose the case.
-    for (let waited = 0; ; waited++) {
-      try {
-        session = await startAssistantSession(
-          client,
-          agent,
-          args.provider,
-          args.model,
-          c.request,
-        );
-        error = null;
-      } catch (e) {
-        error = e;
-      }
-      if (!error || !/limit reached/.test(error.message) || waited >= 60) break;
-      if (waited === 0) log("the hourly reply limit is reached; waiting");
-      await sleep(60_000);
+    try {
+      session = await startAssistantSession(
+        client,
+        agent,
+        args.provider,
+        args.model,
+        c.request,
+      );
+    } catch (e) {
+      error = e;
     }
     if (error) {
       rows.push({ id: c.id, error: error.message });

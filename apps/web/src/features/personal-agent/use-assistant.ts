@@ -23,7 +23,7 @@ import {
 import { serverErrorText } from "../../lib/errors";
 import { onStreamEvent } from "../../stream";
 import { assistantSessionEventTypes } from "./assistant-session-events";
-import { browserTimezone } from "./assistant-model";
+import { browserTimezone, conversationProposals } from "./assistant-model";
 import { startOfLocalDay } from "./items-model";
 import { personalItemActions, usePersonalItems } from "./use-personal-items";
 
@@ -106,7 +106,9 @@ export function useAssistant(assistantId?: string) {
         listPersonalAgentProposals(assistantId),
         listPersonalAgentTasks(assistantId),
       ]);
-      setProposals(nextProposals);
+      // Connector writes are decided in Needs you, not in this conversation
+      // (DEV-267).
+      setProposals(conversationProposals(nextProposals));
       setTasks(nextTasks);
       setListsError("");
     } catch (error) {

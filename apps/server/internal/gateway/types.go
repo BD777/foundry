@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -36,6 +37,15 @@ type Holdings struct {
 	GrantedScopes []string
 }
 
+// ObjectLabel names one object a write touches, for the person: a
+// conversation id and its name. Name is empty when the connector could not
+// name it.
+type ObjectLabel struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
 // Need is what Classify found a request to touch.
 type Need struct {
 	// Resource must be one of the session's Holdings.Resources; "" for a
@@ -46,6 +56,28 @@ type Need struct {
 	// Write says the request changes something upstream. The assistant's
 	// permission package must be write for it.
 	Write bool
+	// Objects are the grant objects the request touches, resolved to the
+	// types a session's grants name (a message resolved to its conversation).
+	// Empty for a request no grant can hold.
+	Objects []permission.GrantObject
+	// Labels name those objects for the person; a failed lookup leaves a
+	// name empty.
+	Labels []ObjectLabel
+	// Auxiliary says the request only prepares another write (an upload, say)
+	// and is allowed with any grant for the account.
+	Auxiliary bool
+	// Body is the effective request body the provider would send, when it
+	// rewrote it (a channel footer); nil means the request's own body.
+	Body []byte
+	// Text is a message's own words when the write carries one, for the
+	// person's item; empty otherwise.
+	Text string
+	// Replay says the provider's gateway can send this exact request again
+	// after the person allows it (DEV-265); false keeps the retry contract.
+	Replay bool
+	// Operation names what the write does in the person's words, from the
+	// route's summary or the descriptor; empty falls back to METHOD path.
+	Operation string
 	// Risk marks a write that needs the person's confirmation before it runs.
 	// Empty means the write is ordinary.
 	Risk string
@@ -120,6 +152,13 @@ const (
 	// ReasonNeedsConfirmation: the assistant may write, but this risk write
 	// waits for the person to accept the proposal named by ProposalID.
 	ReasonNeedsConfirmation = "needs_confirmation"
+	// ReasonWriteOutsideGrant: the write touches an object the session was
+	// not granted, so it waits for the person to accept the proposal named
+	// by ProposalID (DEV-265).
+	ReasonWriteOutsideGrant = "write_outside_grant"
+	// ReasonTooLarge: the write is larger than Foundry keeps to replay for
+	// the person's confirmation; nothing was sent.
+	ReasonTooLarge = "too_large"
 	// ReasonInternal: the check itself failed (Err says how).
 	ReasonInternal = "internal"
 )
@@ -151,13 +190,27 @@ type ConfirmationRequest struct {
 	Lease *Lease
 	Need  Need
 	// Method, Path, Query and BodyDigest identify the exact call the person
-	// is approving.
+	// is approving; Body is the effective body Foundry would send, kept so
+	// accepting the proposal can replay it (DEV-265).
 	Method      string
 	Path        string
 	Query       string
 	BodyDigest  string
+	Body        []byte
 	Fingerprint string
 	Summary     string
+	// Objects are what the write touches on which account, when the provider
+	// resolved them; the person's item names them. Labels carry their names.
+	Objects   []permission.GrantObject
+	Labels    []ObjectLabel
+	Auxiliary bool
+	// Text is a message's own words when the write carries one.
+	Text string
+	// Replay says Foundry can send this exact request after the person
+	// allows it (an extension gateway write).
+	Replay bool
+	// Operation names what the write does in the person's words.
+	Operation string
 	// AssistantID is the assistant whose permission package required the
 	// confirmation (DEV-191); its proposals hold the card.
 	AssistantID string

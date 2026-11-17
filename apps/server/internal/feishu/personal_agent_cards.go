@@ -140,6 +140,11 @@ func (m *WSManager) PersonalAgentProposalCreated(ctx context.Context, proposal s
 	if proposal.Status != "" && proposal.Status != store.PersonalAgentProposalPending {
 		return
 	}
+	// A connector write outside a session's grant is decided in Needs you
+	// alone, never as a second card in a chat (DEV-267).
+	if proposal.Kind == store.PersonalAgentProposalConnectorWrite {
+		return
+	}
 	card := BuildProposalCard(proposal, m.proposalLanguage(ctx, proposal.AssistantID, proposal.UserID))
 	m.mu.RLock()
 	topic, inTopic := m.assistantTopics[proposal.SessionID]

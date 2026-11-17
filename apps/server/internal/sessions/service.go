@@ -28,6 +28,7 @@ type Steer struct {
 	SentBySessionID string
 	Message         string
 	Attachments     []store.ChatAttachment
+	Annotations     []store.SessionInputAnnotation
 	SessionID       string
 	// InputID is the message's id (a queued message's): a worker that
 	// already applied a steer with it answers without applying it again,
@@ -100,8 +101,6 @@ type Policy interface {
 	// (RecordAssistantTask).
 	AdmitAssistantSession(ctx context.Context, input store.CreateAgentSessionInput) (agent store.PersonalAgent, delegating bool, err error)
 	RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string)
-	// AdmitAssistantTurn refuses a turn of the assistant past its limits.
-	AdmitAssistantTurn(ctx context.Context, session store.AgentSession) error
 	// ChooseSessionAccount pins the account a new session naming no
 	// profile runs under: one that works on its device.
 	ChooseSessionAccount(ctx context.Context, input *store.CreateAgentSessionInput) error

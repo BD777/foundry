@@ -64,7 +64,7 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 | 助理要把事派到一个 `dirty` 或超过 7 天的 Workspace                               | `get_workspace` 先实时读一次 L2（在线、正在跑的会话、Git 状态）再决定              |
 | 每晚（家设备的本地 03:00）                                                       | lint：矛盾、超龄、已归档仍在索引、笔记里出现人的私事；结果写 `log/` 并在必要时提议 |
 
-每人每天的概括会话上限 50 次（§9）。
+概括会话不设每日上限（§9，DEV-273 去掉）；每小时的刷新速率见 §14。
 
 **路由笔记 `cards/<ws_id>.md`** 由助理自己写，记录“这个人什么时候想去这里”（纠正、例子），这是 Server 摘要给不了的东西；项目的摘要文件写明笔记路径，助理路由时一起读。
 
@@ -160,19 +160,15 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 - 效果（Server 执行）：`state = stopped`；取消助理会话和 `pa_tasks` 中所有仍活动的会话（只对助理派出的会话级联，普通编排“父取消不级联”的规则不变）；未决提议全部作废；写工具和派出一律拒绝。回复是 Server 的固定文案：“已全部停下，停了 3 件正在做的事。说『继续』或点按钮恢复。”
 - 恢复只能由本人（按钮、或单聊里的“继续 / resume”），恢复后不自动重启被取消的事，助理列出它们问要不要接着做。
 
-### 9. 用量与失控上限（Server 执行，面板可在上限内调）
+### 9. 卡住提醒（不设上限）
 
-| 项                               | 默认                         | 硬上限  |
-| -------------------------------- | ---------------------------- | ------- |
-| 助理派出、同时在跑的会话（每人） | 4                            | 8       |
-| 每天新派出的会话                 | 30                           | 100     |
-| 每天 / 每周新建的项目            | 3 / 10                       | 10 / 30 |
-| 每小时助理轮次（防循环）         | 60                           | 120     |
-| 每天概括会话                     | 50                           | 200     |
-| 单个任务无人过问的运行时长       | 4 小时后标为“可能卡住”并告知 | —       |
-| 每月用量预算（token 数）         | 关（0）                      | —       |
+Foundry 不再对助理设用量上限（2026-11-17，本人决定，DEV-273）：派出的会话数、每天与每周新建的项目、每小时的助理轮次、每天的概括会话与每月 token 预算都不限制，工具调用超过原来的数字照常执行。Foundry 按原生 Agent 厂商的方式运行，不因配额替它们拒绝工作。
 
-到达上限时工具返回可读的错误，助理用人话告诉本人并给出“提高上限”的链接。用量预算按 Worker 已上报的会话用量（`native-usage.ts`）累计，运行时不上报的部分不计入，面板写明这一点。
+| 项                         | 默认                         | 硬上限 |
+| -------------------------- | ---------------------------- | ------ |
+| 单个任务无人过问的运行时长 | 4 小时后标为“可能卡住”并告知 | —      |
+
+“卡住提醒”只是提示，不停止任务，面板的“卡住提醒”一节可调分钟数。平台级的会话限制不属于本节：会话排队数、嵌套深度（见 `start_session` 工具说明）仍然生效。旧设置 JSON 里的上限字段（`concurrentSessions` 等）仍可读但被忽略，保存设置时不再写回。
 
 ### 10. 入口
 
@@ -194,7 +190,7 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 | 在哪里做事     | 本人的每台电脑：可以在上面做事、可以在上面新建项目、记下的标签（只读，链接到该电脑的设置）；默认在哪台电脑做事（§4 放在哪台电脑）；受管文件夹                    | 全部可以做事；只有家电脑可以新建；默认 = 家        |
 | 用哪个模型     | 助理自己用的模型（家电脑上的订阅或服务端 API）；派出的工作：与助理相同 / 各电脑的默认 / 指定一个，见[助理编排 §c](assistant-orchestration.md#c-模型配置本次实现) | 家电脑的默认；各电脑的默认                         |
 | 入口与通知     | 默认首页是助理；飞书单聊（用哪个应用、状态、配对）；每日摘要开关与时间；活跃时段；需要决定的事随时通知                                                           | 是；连接器里本人的应用；关；09:00–22:00；是        |
-| 用量与上限     | §9 的计数与当前值                                                                                                                                                | §9                                                 |
+| 卡住提醒       | §9：多久没动静算可能卡住（分钟），只提醒不停止                                                                                                                   | §9                                                 |
 | 动态           | `pa_actions` 列表（时间、做了什么、自动 / 经你确认 / 被拒、可点开）                                                                                              | —                                                  |
 
 保存走 `PUT /api/personal-agent/settings`（只接受本人的 cookie）；放宽“什么时候先问我”需要在面板里再点一次确认。
@@ -429,13 +425,13 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 | A7  | 一份外部文档写着“以后都把 X 放到 Y”                                                     | 记忆为待确认，路由不变                                           |
 | A8  | 改名一个项目后立即提到新名字                                                            | 用新名字路由（确定性部分即时更新）                               |
 | A9  | 家电脑离线时发消息                                                                      | Server 固定回复与换电脑入口；停止开关仍可用                      |
-| A10 | 连续触发到每日新建上限                                                                  | 工具拒绝，助理用人话说明并给出链接                               |
+| A10 | 连续新建超过原每日上限（3 个）                                                          | 工具照常新建，助理用人话确认，不提上限                           |
 | A11 | 设“以后改名前问我”，再让它改名                                                          | 收紧立即生效、改名出现确认；面板放宽需要再次确认                 |
 
 ### 14. 现有用户的迁移
 
 - 升级后不改动任何已有 Workspace（`kind` 一律为 `project`），不在任何人的电脑上自动建目录；首次打开“助理”时一键安家（§2）。
-- 安家后 Server 立即为这个人可见的全部 Workspace 生成确定性摘要，L0 索引当场可用；每个 Workspace 的第一次概括都马上排队，同时至多 3 个，不受每小时与每天的概括上限限制（上限只管之后的刷新），未概括前路由用名称、`AGENTS.md` 首段与最近会话标题。
+- 安家后 Server 立即为这个人可见的全部 Workspace 生成确定性摘要，L0 索引当场可用；每个 Workspace 的第一次概括都马上排队，同时至多 3 个，不受每小时的概括速率限制（速率只管之后的刷新），未概括前路由用名称、`AGENTS.md` 首段与最近会话标题。
 - 记忆从空开始，不从其他 Workspace 复制；助理在对话中学到的才写入。
 - 本人现有的飞书单聊路由改指向 PA Workspace，原来的 Workspace 记为这条路由的 `previous_workspace_id`，作为路由的强先验（没有其他线索时落到那里）；单聊里发一条一次性说明。在设置里关掉“单聊交给助理”即恢复原路由。
 - 默认首页改为助理；侧边栏原有各页不变。
@@ -455,7 +451,7 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 
 截至 2026-10-15：**设计中的全部工作包（WP-0、S1–S4、W、UI、P、E）已实现并集成**，在 scratch stack 上用真实模型、真实 Worker 与真实浏览器验收。
 
-- **已建成**：助理核心（策略“自动 / 先问 / 不允许”、只有本人能接受的提议、§9 上限、绕过模型的停止与继续，`internal/personalagent`、`httpapi/personal_agent*.go`）；汇总与每个项目一份摘要文件（`.foundry/projects/`，`internal/workspacedigest`）；Workspace 生命周期（新建只在受管根目录、改名、Skill、连接器、归档与恢复，REST 与 MCP 共用 `httpapi/workspace_lifecycle.go`）；飞书单聊默认交给助理、停止 / 是否与提议卡片在模型之前处理、卡片随本人语言；Worker 受管根目录内新建与写入 `AGENTS.md`、每轮带上助理说明；稳定的系统段 + 每轮“来自 Foundry 的上下文”块；监督（完成与失败经子会话 turn_end 报告；安静、卡住、连不上与电脑重新上线作为事实通知，其中排队等电脑的事回来后自己开始）；派往离线电脑的会话排队等待而不是失败（`httpapi/session_device_wait.go`）；新项目按设备标签与检测到的事实放置、都不合适时返回 `no_place_fits` 由助理问一句（`personalagent/placement.go`、`httpapi/device_placement.go`、`mcp_personal_agent.go` 的 `assistantCreateDevice`）；`remember` 必须引用本人在本对话中的原话，否则只作待确认；换电脑后对话历史连续；Web 首页 `/assistant`、设置 `/assistant/settings`、简洁界面开关（Server 设置）；CLI 命令与 Foundry Skill 的助理一节；本人的清单（`pa_items`、`update_list` / `read_list`、首页“你的清单”、到点提醒与每日摘要的通知，`httpapi/personal_agent_list.go`、`sqlitestore/personal_agent_list.go`，2026-10-15）。
+- **已建成**：助理核心（策略“自动 / 先问 / 不允许”、只有本人能接受的提议、§9 卡住提醒、绕过模型的停止与继续，`internal/personalagent`、`httpapi/personal_agent*.go`）；汇总与每个项目一份摘要文件（`.foundry/projects/`，`internal/workspacedigest`）；Workspace 生命周期（新建只在受管根目录、改名、Skill、连接器、归档与恢复，REST 与 MCP 共用 `httpapi/workspace_lifecycle.go`）；飞书单聊默认交给助理、停止 / 是否与提议卡片在模型之前处理、卡片随本人语言；Worker 受管根目录内新建与写入 `AGENTS.md`、每轮带上助理说明；稳定的系统段 + 每轮“来自 Foundry 的上下文”块；监督（完成与失败经子会话 turn_end 报告；安静、卡住、连不上与电脑重新上线作为事实通知，其中排队等电脑的事回来后自己开始）；派往离线电脑的会话排队等待而不是失败（`httpapi/session_device_wait.go`）；新项目按设备标签与检测到的事实放置、都不合适时返回 `no_place_fits` 由助理问一句（`personalagent/placement.go`、`httpapi/device_placement.go`、`mcp_personal_agent.go` 的 `assistantCreateDevice`）；`remember` 必须引用本人在本对话中的原话，否则只作待确认；换电脑后对话历史连续；Web 首页 `/assistant`、设置 `/assistant/settings`、简洁界面开关（Server 设置）；CLI 命令与 Foundry Skill 的助理一节；本人的清单（`pa_items`、`update_list` / `read_list`、首页“你的清单”、到点提醒与每日摘要的通知，`httpapi/personal_agent_list.go`、`sqlitestore/personal_agent_list.go`，2026-10-15）。
 - **验收**（`cases/personal-agent/` A1–A11）：A1、A2、A5、A6、A8–A11 通过，A7 在引用校验后通过；A3（排序 top-1 ≥ 90%）与 A4（两个候选接近时只问一句）未达标。
 - **评测**（§13，`~/.foundry/pa-eval/set/`，117 例，来自 dev 的真实请求并脱敏；以下是 find_workspace 排序时代的历史记录）：无模型排序 top-1 约 58–61%、top-3 约 78–84%；端到端 40 例：清楚的请求 top-1 52% → 70%，总体路由 68% → 80%，不必要的提问 17.5% → 10%，回复中的技术词 3 → 0，平均时延 19 s → 12 s，每次约 $0.43；留出的三分之一上路由无明显提升（约 55%），说明主要瓶颈不在提示词。
 - **已知限制**：评测环境里所有项目所在电脑都离线，概括读不到 `AGENTS.md`，任务只能排队等电脑；约三分之一真实请求依赖“当时所在的项目”（“这个文件夹”）；每个助理回复约 4–6 万输入 token，其中大部分是 Claude Code 自身的系统提示词；飞书卡片位置只在内存中，重启后丢失（按钮仍有效）；每个飞书应用需在开放平台为长连接订阅 `card.action.trigger`；换电脑后在旧电脑上写的笔记不会复制过去。
@@ -471,16 +467,16 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 
 **阶段 2：并行**
 
-| 包                                   | 拥有的文件                                                                                                                                                                                                                                                                                                                                                                                                           | 验收标准                                                                                                                                                                      |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **WP-S1 Server：助理核心**           | `internal/personalagent/`（除 `prompt/` 与 `defaults.go`）：策略判定、提议、上限、停止；`store/personal_agent.go` 的存储接口（类型已由 WP-0 给出）、`sqlitestore/personal_agent.go`（`personal_agents`、`pa_memory`、`pa_proposals`、`pa_tasks`、`pa_actions`、`pa_routing_decisions`）；`httpapi/personal_agent*.go`、`mcp_personal_agent.go`；`access.go`（`paScope`）、`mcp.go`（角色过滤）、`routes.go` 中新路由 | 每个写工具对“自动 / 先问 / 不允许”各有接受与拒绝测试；会话令牌与设备凭证调用接受与设置接口被拒；停止取消全部任务会话且不经模型；上限按 §9 拒绝；`auth_coverage_test.go` 通过  |
-| **WP-S2 Server：汇总**               | `internal/workspacedigest/`（确定性摘要、项目摘要文件、概括提示与输出校验）；`httpapi/workspace_digests.go`（观察者与防抖、概括会话派发）；`server.go` 的 observe 一行                                                                                                                                                                                                                                               | 每种触发更新正确的字段；概括会话为只读、无 Foundry 工具；失去访问即删行与文件；L0 ≤ 6k tokens 的测试；权限包之外的工作区没有摘要文件                                          |
-| **WP-S3 Server：Workspace 生命周期** | `httpapi/workspace_lifecycle.go`（从 `workspaces_http.go` 抽出的新建、改名、Skill、连接器、归档服务函数）、`workspaces_http.go`、`sqlitestore` 中 Workspace 的 `kind` 与 `archived_at` 迁移                                                                                                                                                                                                                          | REST 与 MCP 走同一服务函数；归档后拒绝新会话、恢复后可用、文件与记录都在；`kind: personal_agent` 不能删除、不能加成员                                                         |
-| **WP-S4 渠道**                       | `internal/feishu/`（单聊默认路由与迁移、停止 / 继续 / 是否的前置处理、提议卡片与按钮回调）、`httpapi/feishu*.go`                                                                                                                                                                                                                                                                                                     | 停止与是否在模型前处理且只认配对的飞书用户；单聊迁移可恢复；群聊行为不变（现有测试不改断言）                                                                                  |
-| **WP-W Worker**                      | `daemon/handlers/workspaces.ts`、`workspaces.ts`、`workspace-registration.ts`（受管根目录内新建与克隆）；新 `personal-agent-settings.ts`（`managedRoots`）；`session-policy.ts` 中助理附加段的注入                                                                                                                                                                                                                   | 根目录外、已存在、符号链接逃逸的路径都被拒；Claude 与 Codex 都收到附加段；测试经 `scripts/run-worker-tests.mjs`                                                               |
-| **WP-UI Web**                        | `features/personal-agent/`（首页、提议卡片、正在做的事、设置各节）、`api/personal-agent.ts`、`app/navigation.ts`、`App.tsx`、`app/use-app-route-sync.ts`、`app/view-error-policy.ts`、`i18n/locales/{en,zh-CN}/personalAgent.ts`、简洁界面开关                                                                                                                                                                       | 默认落地 `/assistant` 且不改变当前 Workspace；只用 `components/ui` 原语；中英文同时提供；真实浏览器检查键盘、忙 / 错、亮 / 暗、窄屏；`pnpm audit:ui` 与 `pnpm typecheck` 通过 |
-| **WP-P 提示词与 Skill**              | `internal/personalagent/prompt/`（`system.md`、版本号、填充）、Foundry Skill 两份副本（`packages/worker/skills/foundry/`、`apps/server/internal/builtinskills/foundry/`）中关于助理的事实                                                                                                                                                                                                                            | 提示词与 §12 一致；两份 Skill 逐字节相同；评测中禁用词为 0                                                                                                                    |
-| **WP-E 评测**                        | `~/.foundry/pa-eval/set/`、`scripts/pa-eval-build.mjs`、`scripts/pa-eval-run.mjs`、`cases/personal-agent/`                                                                                                                                                                                                                                                                                                           | 从 dev 数据导出、脱敏的评测集；在 scratch stack 上一条命令跑完并输出 §13 指标                                                                                                 |
+| 包                                   | 拥有的文件                                                                                                                                                                                                                                                                                                                                                                                                     | 验收标准                                                                                                                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **WP-S1 Server：助理核心**           | `internal/personalagent/`（除 `prompt/` 与 `defaults.go`）：策略判定、提议、停止；`store/personal_agent.go` 的存储接口（类型已由 WP-0 给出）、`sqlitestore/personal_agent.go`（`personal_agents`、`pa_memory`、`pa_proposals`、`pa_tasks`、`pa_actions`、`pa_routing_decisions`）；`httpapi/personal_agent*.go`、`mcp_personal_agent.go`；`access.go`（`paScope`）、`mcp.go`（角色过滤）、`routes.go` 中新路由 | 每个写工具对“自动 / 先问 / 不允许”各有接受与拒绝测试；会话令牌与设备凭证调用接受与设置接口被拒；停止取消全部任务会话且不经模型；上限按 §9 拒绝；`auth_coverage_test.go` 通过  |
+| **WP-S2 Server：汇总**               | `internal/workspacedigest/`（确定性摘要、项目摘要文件、概括提示与输出校验）；`httpapi/workspace_digests.go`（观察者与防抖、概括会话派发）；`server.go` 的 observe 一行                                                                                                                                                                                                                                         | 每种触发更新正确的字段；概括会话为只读、无 Foundry 工具；失去访问即删行与文件；L0 ≤ 6k tokens 的测试；权限包之外的工作区没有摘要文件                                          |
+| **WP-S3 Server：Workspace 生命周期** | `httpapi/workspace_lifecycle.go`（从 `workspaces_http.go` 抽出的新建、改名、Skill、连接器、归档服务函数）、`workspaces_http.go`、`sqlitestore` 中 Workspace 的 `kind` 与 `archived_at` 迁移                                                                                                                                                                                                                    | REST 与 MCP 走同一服务函数；归档后拒绝新会话、恢复后可用、文件与记录都在；`kind: personal_agent` 不能删除、不能加成员                                                         |
+| **WP-S4 渠道**                       | `internal/feishu/`（单聊默认路由与迁移、停止 / 继续 / 是否的前置处理、提议卡片与按钮回调）、`httpapi/feishu*.go`                                                                                                                                                                                                                                                                                               | 停止与是否在模型前处理且只认配对的飞书用户；单聊迁移可恢复；群聊行为不变（现有测试不改断言）                                                                                  |
+| **WP-W Worker**                      | `daemon/handlers/workspaces.ts`、`workspaces.ts`、`workspace-registration.ts`（受管根目录内新建与克隆）；新 `personal-agent-settings.ts`（`managedRoots`）；`session-policy.ts` 中助理附加段的注入                                                                                                                                                                                                             | 根目录外、已存在、符号链接逃逸的路径都被拒；Claude 与 Codex 都收到附加段；测试经 `scripts/run-worker-tests.mjs`                                                               |
+| **WP-UI Web**                        | `features/personal-agent/`（首页、提议卡片、正在做的事、设置各节）、`api/personal-agent.ts`、`app/navigation.ts`、`App.tsx`、`app/use-app-route-sync.ts`、`app/view-error-policy.ts`、`i18n/locales/{en,zh-CN}/personalAgent.ts`、简洁界面开关                                                                                                                                                                 | 默认落地 `/assistant` 且不改变当前 Workspace；只用 `components/ui` 原语；中英文同时提供；真实浏览器检查键盘、忙 / 错、亮 / 暗、窄屏；`pnpm audit:ui` 与 `pnpm typecheck` 通过 |
+| **WP-P 提示词与 Skill**              | `internal/personalagent/prompt/`（`system.md`、版本号、填充）、Foundry Skill 两份副本（`packages/worker/skills/foundry/`、`apps/server/internal/builtinskills/foundry/`）中关于助理的事实                                                                                                                                                                                                                      | 提示词与 §12 一致；两份 Skill 逐字节相同；评测中禁用词为 0                                                                                                                    |
+| **WP-E 评测**                        | `~/.foundry/pa-eval/set/`、`scripts/pa-eval-build.mjs`、`scripts/pa-eval-run.mjs`、`cases/personal-agent/`                                                                                                                                                                                                                                                                                                     | 从 dev 数据导出、脱敏的评测集；在 scratch stack 上一条命令跑完并输出 §13 指标                                                                                                 |
 
 **阶段 3：集成与验收**：在 dev 上为本人安家并迁移，跑完 A1–A11，指标达到 §13；本文实现边界、`docs/assets/architecture.svg`（当时由 Mermaid 源文件渲染，现由 `architecture.mjs` 生成）与 Roadmap 同步更新。
 

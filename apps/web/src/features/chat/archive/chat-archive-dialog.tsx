@@ -1,12 +1,15 @@
 import { toast } from "../../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowUpRight } from "lucide-react";
 import type { ArchiveBlocker } from "@bd777/foundry-protocol";
 import {
   archiveChats,
   type ChatArchiveInput,
   type ChatArchiveResult,
 } from "../../../api";
+import { AppLink } from "../../../components/ui/app-link";
+import { chatHref } from "../../../lib/in-app-navigation";
 import { Dialog } from "../../../components/ui/dialog";
 import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
@@ -22,15 +25,23 @@ import {
   type ArchiveBlockerResolution,
 } from "./chat-archive-controls";
 
+/** A chat's id shortened for a muted disambiguator beside its title. */
+function shortChatId(id: string): string {
+  return `…${id.slice(-6)}`;
+}
+
 export function ChatArchiveDialog({
   input,
   titles,
+  shownChatIds = [],
   onClose,
   onArchive,
   returnFocusTo,
 }: {
   input: ChatArchiveInput;
   titles: Record<string, string>;
+  /** Chats the chat list draws now; the rest are its older, hidden members. */
+  shownChatIds?: readonly string[];
   onClose: () => void;
   onArchive: (expectedChatIds: string[]) => Promise<void>;
   returnFocusTo?: HTMLElement | null;
@@ -65,6 +76,12 @@ export function ChatArchiveDialog({
       live = false;
     };
   }, [input.workspaceId, input.groupId, input.chatIds?.join("|"), attempt]);
+  const shown = new Set(shownChatIds);
+  const olderCount = (preflight?.archived ?? []).filter(
+    (id) => !shown.has(id),
+  ).length;
+  const chatLabel = (id: string) =>
+    preflight?.archivedTitles?.[id] || titles[id] || t("archive.untitled");
   const blockers = [...(preflight?.blockers ?? [])];
   for (const { blocker } of pending)
     if (
@@ -214,13 +231,42 @@ export function ChatArchiveDialog({
             </h3>
             <ul className="max-h-[min(10rem,28dvh)] overflow-y-auto py-1">
               {preflight.archived.map((id) => (
-                <li className="px-3 py-[5px] text-sm leading-[1.45]" key={id}>
-                  <span className="block truncate" title={titles[id] ?? id}>
-                    {titles[id] ?? id}
-                  </span>
+                <li className="min-w-0" key={id}>
+                  <AppLink
+                    className="group flex min-w-0 items-baseline gap-2 rounded-sm px-3 py-[5px] text-sm leading-[1.45] text-ink underline-offset-3 hover:underline"
+                    href={chatHref(id, input.workspaceId)}
+                    onClick={(event) => {
+                      if (
+                        event.button !== 0 ||
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey
+                      )
+                        return;
+                      onClose();
+                    }}
+                  >
+                    <span className="truncate" title={chatLabel(id)}>
+                      {chatLabel(id)}
+                    </span>
+                    <span className="ml-auto flex shrink-0 items-baseline gap-1 text-xs text-ink-muted">
+                      <span title={id}>{shortChatId(id)}</span>
+                      <ArrowUpRight
+                        aria-hidden="true"
+                        className="opacity-0 group-focus-visible:opacity-100 group-hover:opacity-100"
+                        size={12}
+                      />
+                    </span>
+                  </AppLink>
                 </li>
               ))}
             </ul>
+            {olderCount ? (
+              <p className="border-t border-line-soft px-3 py-[7px] text-xs leading-normal text-ink-muted">
+                {t("archive.olderIncluded", { count: olderCount })}
+              </p>
+            ) : null}
           </section>
         ) : checking ? (
           <Skeleton label={t("archive.loading")} rows={3} variant="rows" />
@@ -270,7 +316,7 @@ export function ChatArchiveDialog({
                   >
                     <div className="min-w-0 flex-1">
                       <strong className="block text-xs wrap-anywhere">
-                        {titles[item.id] ?? item.id}
+                        {chatLabel(item.id)}
                       </strong>
                       <p className="text-xs">{archiveBlockerReason(item)}</p>
                       {receipt ? (

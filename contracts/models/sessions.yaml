@@ -1202,6 +1202,46 @@ components:
           format: int64
         timeoutMinutes:
           type: integer
+    SessionInputAnnotation:
+      description:
+        "One passage of an earlier agent answer the person annotated, sent with a user message.
+        `selectedText` is the passage and `comment` the person's optional comment. The prompt
+        text already carries the model-facing wrapper; this structure is only for display."
+      type: object
+      required:
+        - id
+        - selectedText
+        - sourceEventId
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        selectedText:
+          type: string
+        comment:
+          type: string
+        sourceEventId:
+          description: "`sourceEventId` is the transcript event of the annotated answer."
+          type: string
+        startOffset:
+          description:
+            "`startOffset` and `endOffset` are the selection's character offsets in the answer's
+            plain text, for re-highlighting; both are set or both absent."
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        endOffset:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        turnNumber:
+          description:
+            "`turnNumber` is the answer's turn as the transcript navigator numbers it; set only
+            when the answer is not the latest."
+          type: integer
+        messageAt:
+          description: "`messageAt` is when the annotated answer was written (RFC 3339)."
+          type: string
     SessionInput:
       type: object
       required:
@@ -1220,6 +1260,11 @@ components:
           type: array
           items:
             $ref: ./chats.yaml#/components/schemas/ChatAttachment
+        annotations:
+          description: "`annotations` are the answer passages the person annotated in this message."
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInputAnnotation"
         profileTransitionNote:
           type: string
         importedContext:

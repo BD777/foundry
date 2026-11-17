@@ -18,10 +18,8 @@ import {
 } from "../session-launch-options.js";
 import { sessionPrompt } from "../session-prompt.js";
 import type { SessionEventEmitter } from "../session-state.js";
-import {
-  claudeManagedPrompt,
-  type ManagedSkillRuntime,
-} from "../../skills/skill-materializer.js";
+import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
+import { claudeManagedPrompt } from "../../skills/skill-invocation.js";
 import { isPromptOnlySession, isUtilitySession } from "../session-roles.js";
 import { resolveClaudeCommand } from "../../harness/native/native-cli.js";
 import {

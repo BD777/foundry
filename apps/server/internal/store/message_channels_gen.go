@@ -29,7 +29,7 @@ type MessageChannel struct {
 	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
 	Session *MessageChannelSessionRule `json:"session,omitempty"`
 
-	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; thread-participants, anyone in a thread where a turn happened, while a quote outside a thread stays the same sender's; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, thread-participants and /end.
 	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
 
 	// Ack Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one.
@@ -65,11 +65,10 @@ type MessageChannelCapabilities struct {
 	Footer bool `json:"footer"`
 }
 
-// MessageChannelConnectorScope One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card.
+// MessageChannelConnectorScope One connector account for the channel's sessions, capped by the assistant's permission package. Its sessions write only inside the conversation their turn came from; every other write waits for the person's confirmation.
 type MessageChannelConnectorScope struct {
 	AccountID string `json:"accountId"`
 	Level     string `json:"level"`
-	Writes    string `json:"writes"`
 }
 
 // MessageChannelConversation One source conversation of a channel (DEV-234): its latest message and its sessions, newest first.
@@ -170,7 +169,7 @@ type MessageChannelFilters struct {
 // MessageChannelFollowUpFrom defines model for MessageChannelFollowUpFrom.
 type MessageChannelFollowUpFrom = string
 
-// MessageChannelFollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+// MessageChannelFollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; thread-participants, anyone in a thread where a turn happened, while a quote outside a thread stays the same sender's; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, thread-participants and /end.
 type MessageChannelFollowUps struct {
 	Enabled     bool                       `json:"enabled"`
 	From        MessageChannelFollowUpFrom `json:"from"`
@@ -205,7 +204,7 @@ type MessageChannelInput struct {
 	// Session When a conversation's messages go to a new assistant session. idleMinutes, the time since the conversation's last message after which the next one starts a new session (0 never); never while the session is working. resetCommands, words that start a new session the way trigger words are matched (after the trigger word or alone). Missing means 240 minutes and no command.
 	Session *MessageChannelSessionRule `json:"session,omitempty"`
 
-	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end.
+	// FollowUps Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; thread-participants, anyone in a thread where a turn happened, while a quote outside a thread stays the same sender's; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, thread-participants and /end.
 	FollowUps *MessageChannelFollowUps `json:"followUps,omitempty"`
 
 	// Ack Put the source's acknowledgement reaction on each message handed to the assistant and take it away when the turn ends. Missing means on when the source declares one.

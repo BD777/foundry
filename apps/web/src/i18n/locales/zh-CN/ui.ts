@@ -108,6 +108,10 @@ export const ui: Translation<typeof en> = {
   selectMenu: {
     placeholder: "请选择",
   },
+  text: {
+    showMore: "展开",
+    showLess: "收起",
+  },
   slashMenu: {
     label: "Skills",
     empty: "没有匹配“{{query}}”的 Skill。",

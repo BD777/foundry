@@ -47,7 +47,7 @@ func (s *Server) archiveSpec(ctx context.Context, actor Actor, workspace string,
 		resolved = append(resolved, id)
 	}
 	input := store.ArchiveChatsInput{WorkspaceID: spec.WorkspaceID, ChatIDs: resolved, GroupID: spec.GroupID, ExpectedChatIDs: spec.ExpectedChatIDs}
-	_, err := s.authorizeArchive(ctx, actor, input)
+	_, err := s.authorizeArchive(ctx, actor, input, spec.Restore)
 	return spec, input, err
 }
 
@@ -100,7 +100,7 @@ func (s *Server) planArchiveSession(ctx context.Context, scope assistant.Scope, 
 	if err != nil {
 		return write, err
 	}
-	ids, err := s.store.ArchiveChatIDs(ctx, input)
+	ids, err := s.store.ArchiveChatIDs(ctx, input, spec.Restore)
 	if err != nil {
 		return write, err
 	}

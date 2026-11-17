@@ -944,6 +944,9 @@ components:
         `level` doubles the cooldown on each reopening and halves each clean
         ten minutes. `limit` is the concurrent-session limit the server
         currently allows; `active` is the sessions running on the account now.
+        `reason` is set while the account is unusable, as `402` (billing arrears),
+        `quota exhausted` or `account disabled`. Its cooldown is the provider's
+        reset time or one hour, and it clears only after a successful probe.
       type: object
       required:
         - profileId
@@ -968,6 +971,8 @@ components:
             - probing
             - limited
         cooldownUntil:
+          type: string
+        reason:
           type: string
         level:
           type: integer

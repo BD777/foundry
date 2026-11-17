@@ -310,6 +310,7 @@ func TestPersonalAgentItemPageFiltersAndPages(t *testing.T) {
 	if before, _ := db.ListPersonalAgentItemPage(ctx, "asst_a", store.PersonalAgentItemFilter{To: "2026-11-16T09:00:00Z"}); len(ids(before)) != 0 {
 		t.Fatalf("an update after the end of the range fell inside it = %+v", before)
 	}
+	setItemTimes(t, db, deploy.ID, day+"00:00:00Z", day+"09:00:00Z", "")
 	if inDay, _ := db.ListPersonalAgentItemPage(ctx, "asst_a", store.PersonalAgentItemFilter{From: day + "00:00:00Z", To: "2026-11-17T00:00:00Z"}); len(ids(inDay)) != 2 {
 		t.Fatalf("the day = %+v", inDay)
 	}

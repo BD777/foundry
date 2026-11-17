@@ -356,10 +356,8 @@ function FlowChoice({
   const mode: FlowMode = picking ? "chosen" : saved;
   const own = draft.roleOverrides?.[flow];
   const title = t(`settings.models.flows.${flow}.title`);
-  // Budgets and fallbacks set earlier carry over.
+  // Fallbacks set earlier carry over.
   const keep: PersonalAgentRunPreference = {
-    ...(own?.tokenBudget ? { tokenBudget: own.tokenBudget } : {}),
-    ...(own?.timeoutMinutes ? { timeoutMinutes: own.timeoutMinutes } : {}),
     ...(own?.fallbacks?.length ? { fallbacks: own.fallbacks } : {}),
   };
   const withOwn = (value: PersonalAgentRunPreference | undefined) => {

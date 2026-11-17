@@ -178,7 +178,7 @@ Foundry starts the executable with literal arguments and sends one JSON line on 
 }
 ```
 
-`settings` may also be a JSON object or absent. `environment` contains model/connection metadata after inherited provider credentials and endpoint overrides have been removed. The helper process receives only basic OS lookup variables and starts in a private temporary directory, never the workspace. Settings are sent as a validated snapshot; a settings snapshot containing inherited provider credentials or endpoint overrides is rejected before helper launch. The helper checks settings conflicts and prepares the connection; it must not change the host's settings, credential home, executable, tools, Skills or MCP configuration. A public certificate needed by a sandboxed CLI can be written inside the provided config home and removed on release.
+`settings` may also be a JSON object or absent. `environment` contains model/connection metadata after inherited provider credentials and endpoint overrides have been removed, and the launch's onward proxy variables: the device's egress (`foundry-worker proxy`, else the Worker's environment), which a gateway adapter uses for the run's onward traffic. The native process's own environment is unchanged. The helper process receives only basic OS lookup variables and starts in a private temporary directory, never the workspace. Settings are sent as a validated snapshot; a settings snapshot containing inherited provider credentials or endpoint overrides is rejected before helper launch. The helper checks settings conflicts and prepares the connection; it must not change the host's settings, credential home, executable, tools, Skills or MCP configuration. A public certificate needed by a sandboxed CLI can be written inside the provided config home and removed on release.
 
 The helper replies with one JSON line on stdout, then stays alive:
 
@@ -207,7 +207,7 @@ Workspace sandboxes prepare their connection on the host and receive only the in
 
 ## Compatibility obligations
 
-- The helper owns connection credentials, proxy/TLS preparation and connection policy. Foundry owns native process launch, configuration isolation, permissions, history and cancellation.
+- The helper owns connection credentials, TLS preparation and connection policy. Foundry owns native process launch, configuration isolation, permissions, history and cancellation, and the device's egress: the helper starts with the Worker's proxy (`foundry-worker proxy`, else the Worker's environment) as the standard proxy variables, so a gateway's adapter follows the one device setting instead of a copy of its own.
 - Changes to inherited proxy/CA/region variables can affect tools and MCP subprocesses. Verify these paths with the gateway before shipping an adapter.
 - A helper must state runtime/version restrictions and disabled native features. SDK support alone does not establish gateway compatibility.
 - Acceptance includes streaming, native tool calls, resume, cancellation, concurrent sessions, identity mismatch and sandbox execution. Test helpers need no real gateway or credentials.

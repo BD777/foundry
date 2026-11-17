@@ -43,6 +43,29 @@ export function saveChatLayout(
   });
 }
 
+/** Each folder's listable chats: what it draws now and what it still holds. */
+export function getChatGroupMemberCounts(
+  workspaceId: string,
+  options: RequestOptions = {},
+): Promise<Record<string, number>> {
+  return sharedGetJSON(
+    `/api/chat-layout/member-counts?workspaceId=${encodeURIComponent(workspaceId)}`,
+    options,
+  );
+}
+
+/** One page of a folder's chats the chat list's window left out. */
+export function getChatGroupMembers(
+  workspaceId: string,
+  groupId: string,
+  cursor: string,
+  options: RequestOptions = {},
+): Promise<{ sessions: AgentSession[]; nextCursor: string }> {
+  const query = new URLSearchParams({ workspaceId, groupId });
+  if (cursor) query.set("cursor", cursor);
+  return sharedGetJSON(`/api/chat-layout/members?${query}`, options);
+}
+
 export function deleteChatGroup(
   workspaceId: string,
   groupId: string,

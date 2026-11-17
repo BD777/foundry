@@ -21,6 +21,7 @@ import {
 import { ApiError, type PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { ClampedText } from "../../components/ui/clamped-text";
 import { ButtonRow } from "../../components/ui/button-row";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { FieldHint, Textarea } from "../../components/ui/field";
@@ -44,6 +45,7 @@ import {
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
 import { MemoryUpkeepItemCard, UpkeepItemCard } from "./upkeep-item-card";
+import { ConnectorWriteItemCard } from "./connector-write-item-card";
 
 /** What kind of thing waits, by shape and tone: never by color alone. */
 const kindIcon = {
@@ -56,10 +58,8 @@ const kindIcon = {
   helper_stuck: { icon: Hourglass, tone: "warn" },
   bundle_update: { icon: PackageX, tone: "error" },
   message_channel: { icon: MessagesSquare, tone: "warn" },
+  connector_write: { icon: MessagesSquare, tone: "warn" },
 } as const;
-
-/** Details longer than this many characters start collapsed. */
-const collapseAfter = 240;
 
 /**
  * One pending item, read top to bottom: what it asks (a plain headline, the
@@ -84,7 +84,7 @@ export function PendingItemCard({
   item: PendingItem;
   /** Opens the transcript at the item's message (or its Issue). */
   onOpenMessage: (item: PendingItem) => void;
-  pending: Pick<PendingItems, "changeState" | "reply" | "retry">;
+  pending: Pick<PendingItems, "changeState" | "reply" | "retry" | "decide">;
   density?: "comfortable" | "compact";
   where?: "page" | "chat";
   /** Shown, not acted on: an item the person's assistant handles. */
@@ -96,7 +96,6 @@ export function PendingItemCard({
   const titleId = useId();
   const hintId = useId();
   const replyRef = useRef<HTMLTextAreaElement>(null);
-  const [expanded, setExpanded] = useState(false);
   const [shown, setShown] = useState<"" | "context" | "error">("");
   const [replying, setReplying] = useState(false);
   const [draft, setDraft] = useState("");
@@ -114,6 +113,14 @@ export function PendingItemCard({
       <InboxItemCard
         item={item}
         onOpenMessage={onOpenMessage}
+        pending={pending}
+        showOrigin={showOrigin}
+      />
+    );
+  if (item.source === "connector_write")
+    return (
+      <ConnectorWriteItemCard
+        item={item}
         pending={pending}
         showOrigin={showOrigin}
       />
@@ -153,7 +160,6 @@ export function PendingItemCard({
       : "";
   // A classified failure says what to do; its raw error waits in the menu.
   const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
-  const long = detail.length > collapseAfter || detail.split("\n").length > 3;
   const canReply =
     !resolved &&
     !readOnly &&
@@ -429,26 +435,15 @@ export function PendingItemCard({
           </p>
         ) : null}
         {detail ? (
-          <div className="grid justify-items-start gap-0.5">
-            <p
-              className={cn(
-                "fdy-pending-item-excerpt min-w-0 text-xs leading-[1.5] whitespace-pre-wrap text-ink-muted wrap-anywhere",
-                long && !expanded && "line-clamp-3",
-              )}
-            >
-              {detail}
-            </p>
-            {long ? (
-              <Button
-                aria-expanded={expanded}
-                onClick={() => setExpanded((value) => !value)}
-                size="inline"
-                variant="link"
-              >
-                {expanded ? t("item.showLess") : t("item.showMore")}
-              </Button>
-            ) : null}
-          </div>
+          <ClampedText
+            clamp={3}
+            className="fdy-pending-item-excerpt"
+            lessLabel={t("item.showLess")}
+            moreLabel={t("item.showMore")}
+            size="xs"
+          >
+            {detail}
+          </ClampedText>
         ) : null}
         {shown ? (
           <blockquote

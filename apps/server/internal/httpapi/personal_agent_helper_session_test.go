@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -63,13 +62,6 @@ func TestAssistantCreatesHelperThroughCreateSession(t *testing.T) {
 	}
 	if !followed {
 		t.Fatalf("the helper is not followed as an assistant task: %+v", tasks)
-	}
-	usage, err := f.server.store.PersonalAgentUsage(ctx, agent, personalagent.Windows(time.Now(), time.UTC))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if usage.SessionsToday != 1 || usage.ActiveSessions != 1 {
-		t.Fatalf("limits did not count the helper: %+v", usage)
 	}
 }
 
@@ -218,10 +210,10 @@ func TestAssistantHelperTurnEndReachesTheConversation(t *testing.T) {
 	t.Fatalf("the helper's turn_end did not reach the assistant conversation: %+v", items)
 }
 
-// A helper the assistant starts with create_session carries the executor
-// role's token and time budget, the same pinned-run mechanism dispatch uses,
-// so an unattended helper is bounded on this path too.
-func TestAssistantCreateSessionAppliesExecutorBudget(t *testing.T) {
+// A helper the assistant starts with create_session still gets a pinned
+// run control, so it can be stopped; legacy token and time budgets in the
+// settings JSON bound nothing (DEV-271).
+func TestAssistantCreateSessionKeepsLegacyBudgetInert(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	agent := mustAgent(t, f)
@@ -235,16 +227,19 @@ func TestAssistantCreateSessionAppliesExecutorBudget(t *testing.T) {
 	if failed {
 		t.Fatalf("create_session: %s", text)
 	}
-	budget := helper.Input.ExecutionBudget
-	if budget == nil || budget.TokenBudget != 1234 || budget.TimeoutMinutes != 7 {
-		t.Fatalf("helper budget = %+v, want the executor role's 1234 tokens and 7 minutes", budget)
+	pinned := helper.Input.ExecutionBudget
+	if pinned == nil {
+		t.Fatal("the helper's input lost its pinned run")
 	}
-	snapshot, err := f.server.store.RunSnapshotForUser(ctx, f.aliceID, budget.SnapshotID)
+	if pinned.TokenBudget != 0 || pinned.TimeoutMinutes != 0 {
+		t.Fatalf("a legacy budget reached the helper's input: %+v", pinned)
+	}
+	snapshot, err := f.server.store.RunSnapshotForUser(ctx, f.aliceID, pinned.SnapshotID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if snapshot.InputID != helper.Input.ID || snapshot.WorkspaceID != "ws_alice" || snapshot.Role != "executor" ||
-		snapshot.TokenBudget != 1234 || snapshot.TimeoutMinutes != 7 {
+		snapshot.TokenBudget != 0 || snapshot.TimeoutMinutes != 0 {
 		t.Fatalf("helper run snapshot = %+v", snapshot)
 	}
 	controls, err := f.server.store.ListPersonalAgentRunControls(ctx, agent.ID)
@@ -252,10 +247,10 @@ func TestAssistantCreateSessionAppliesExecutorBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, control := range controls {
-		if control.SnapshotID == budget.SnapshotID && control.SessionID == helper.ID &&
-			control.TokenBudget == 1234 && control.TimeoutMinutes == 7 && control.State == "monitoring" {
+		if control.SnapshotID == pinned.SnapshotID && control.SessionID == helper.ID &&
+			control.State == "monitoring" && control.TokenBudget == 0 && control.TimeoutMinutes == 0 {
 			return
 		}
 	}
-	t.Fatalf("no run control for the helper's budget: %+v", controls)
+	t.Fatalf("no run control for the helper: %+v", controls)
 }

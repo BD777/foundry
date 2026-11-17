@@ -21,6 +21,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/google/uuid"
 )
 
 // A message channel's runtime (DEV-203 phase 2): its sessions run in a
@@ -396,6 +397,11 @@ func (s *Server) messageChannelTarget(ctx context.Context, entry store.PersonalA
 		if name != "" {
 			target.Title += " · " + name
 		}
+		// A thread is named as what it is: a thread under someone's message
+		// (DEV-268).
+		if first.Envelope.Thread.ID != "" {
+			target.Title += " · 话题"
+		}
 		if segment > 0 {
 			zone := time.Local
 			if agent, err := s.store.GetAssistant(ctx, channel.AssistantID); err == nil && s.assistant != nil {
@@ -566,6 +572,48 @@ func (s *Server) messageChannelSessionState(ctx context.Context, sessionID strin
 		}
 	}
 	return state, true
+}
+
+// messageChannelWorking reports whether a channel turn still does work: its
+// session's own turn is active, or a session it started is (DEV-268). The
+// acknowledgement reaction and the context window follow it.
+func (s *Server) messageChannelWorking(ctx context.Context, sessionID string) (bool, error) {
+	if sessionID == "" {
+		return false, nil
+	}
+	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if store.IsActiveSessionStatus(session.Status) {
+		return true, nil
+	}
+	descendants, err := s.store.CountActiveAgentDescendants(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	return descendants > 0, nil
+}
+
+// messageChannelContext steers other participants' messages into a running
+// turn as facts, at a boundary; it never starts a turn. false means the
+// session is not running now and the messages wait.
+func (s *Server) messageChannelContext(ctx context.Context, channel store.MessageChannelRecord, sessionID string, turn channels.Turn) (bool, error) {
+	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil || !store.IsActiveSessionStatus(session.Status) {
+		return false, nil
+	}
+	_, err = s.sessionService.Send(ctx, sessionID, store.SendAgentSessionInput{
+		Prompt: turn.Text, ChannelOrigin: turn.Origin, Delivery: store.DeliveryBoundary,
+		InputID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(turn.MessageID)).String(),
+	}, nil)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 // messageChannelWorkspaceView is where the channel's sessions run, for the

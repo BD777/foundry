@@ -174,6 +174,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
           key={workspaceId}
           workspaceId={workspaceId}
           chats={listChats}
+          groupMemberCounts={props.groupMemberCounts}
+          groupMemberLoading={props.groupMemberLoading}
+          groupMemberLoaded={props.groupMemberLoaded}
+          groupMemberExhausted={props.groupMemberExhausted}
+          onLoadGroupMembers={props.onLoadGroupMembers}
           onNewChat={handleNewChat}
           newChatDisabledReason={props.newChatDisabledReason}
           readOnly={Boolean(props.readOnlyReason)}

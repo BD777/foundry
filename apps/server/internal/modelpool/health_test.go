@@ -179,14 +179,48 @@ func TestAdmitQueuesOnLeastLoadedPrimaryWhenNothingHasHeadroom(t *testing.T) {
 	}
 }
 
-func TestAdmitUsesProbeMemberOnceAndSkipsRecovering(t *testing.T) {
+func TestAdmitTakesRecoveringPrimaryBeforeAProbe(t *testing.T) {
 	members := []Candidate{
 		{Index: 0, Tier: 1, Health: Recovering, Active: 0, Limit: 4},
 		{Index: 1, Tier: 2, Health: Probing, Active: 0, Limit: 4},
 	}
 	indexes, queued := Admit(members)
-	if queued || len(indexes) != 1 || indexes[0] != 1 {
-		t.Fatalf("admit = %v queued=%v, want probe member 1 over recovering primary", indexes, queued)
+	if queued || len(indexes) != 1 || indexes[0] != 0 {
+		t.Fatalf("admit = %v queued=%v, want the recovering primary 0 without spilling to the probe", indexes, queued)
+	}
+}
+
+func TestAdmitSpillsWhenPrimaryIsFullButNeverToAnOpenDomain(t *testing.T) {
+	full := []Candidate{
+		{Index: 0, Tier: 1, Health: Healthy, Active: 4, Limit: 4},
+		{Index: 1, Tier: 2, Health: Limited},
+	}
+	if indexes, queued := Admit(full); !queued || indexes[0] != 0 {
+		t.Fatalf("full primary with an open fallback: admit %v queued=%v, want queue on primary 0", indexes, queued)
+	}
+	closed := []Candidate{
+		{Index: 0, Tier: 1, Health: Healthy, Active: 4, Limit: 4},
+		{Index: 1, Tier: 2, Health: Recovering, Active: 1, Limit: 4},
+	}
+	if indexes, queued := Admit(closed); queued || len(indexes) != 1 || indexes[0] != 1 {
+		t.Fatalf("full primary with a recovering fallback: admit %v queued=%v, want spill to 1", indexes, queued)
+	}
+}
+
+func TestAdmitProbesLowerTierOnlyWhenPrimaryIsLimited(t *testing.T) {
+	fullPrimary := []Candidate{
+		{Index: 0, Tier: 1, Health: Healthy, Active: 4, Limit: 4},
+		{Index: 1, Tier: 2, Health: Probing},
+	}
+	if indexes, queued := Admit(fullPrimary); !queued || indexes[0] != 0 {
+		t.Fatalf("full healthy primary: admit %v queued=%v, want queue on 0 without probing 1", indexes, queued)
+	}
+	limitedPrimary := []Candidate{
+		{Index: 0, Tier: 1, Health: Limited},
+		{Index: 1, Tier: 2, Health: Probing},
+	}
+	if indexes, queued := Admit(limitedPrimary); queued || len(indexes) != 1 || indexes[0] != 1 {
+		t.Fatalf("limited primary: admit %v queued=%v, want the probe 1", indexes, queued)
 	}
 }
 
@@ -246,5 +280,57 @@ func TestRetryAfterFloorIsCappedAtMaxCooldown(t *testing.T) {
 	}
 	if until := h.Snapshot("acc", t0.Add(time.Second), 0, 1).CooldownUntil; until.After(t0.Add(MaxCooldown)) {
 		t.Fatalf("cooldown until %s, want at most %s after the first signal", until, t0.Add(MaxCooldown))
+	}
+}
+
+func TestUnusableCooldownHonoursResetCappedAtADay(t *testing.T) {
+	if got := UnusableCooldownFor(0); got != UnusableCooldown {
+		t.Fatalf("no reset hint: cooldown %s, want %s", got, UnusableCooldown)
+	}
+	if got := UnusableCooldownFor(3 * time.Hour); got != 3*time.Hour {
+		t.Fatalf("reset in 3h: cooldown %s, want 3h", got)
+	}
+	if got := UnusableCooldownFor(30 * 24 * time.Hour); got != MaxUnusableCooldown {
+		t.Fatalf("reset in 30 days: cooldown %s, want %s", got, MaxUnusableCooldown)
+	}
+}
+
+func TestAccountUnusableOpensForCooldownThenProbesOnce(t *testing.T) {
+	h := NewHealthTracker()
+	h.ObserveUnusable("acc", t0, UnusableCooldown, "402")
+	during := t0.Add(30 * time.Minute)
+	status := h.Snapshot("acc", during, 0, 0)
+	if status.State != Limited || status.Reason != "402" || status.CooldownUntil.IsZero() {
+		t.Fatalf("during cooldown: %+v, want limited with reason 402", status)
+	}
+	if h.Reserve("acc", during) {
+		t.Fatal("a probe was reserved during the cooldown")
+	}
+	afterCooldown := t0.Add(UnusableCooldown + time.Minute)
+	if status := h.Snapshot("acc", t0.Add(ResetAfter+2*time.Hour), 0, 0); status.State != Probing || status.Reason != "402" {
+		t.Fatalf("after cooldown and clean time: %+v, want probing with reason kept", status)
+	}
+	if !h.Reserve("acc", afterCooldown) {
+		t.Fatal("no probe reserved after the cooldown")
+	}
+	if h.Reserve("acc", afterCooldown) {
+		t.Fatal("a second probe reserved while the first is in flight")
+	}
+	h.Succeeded("acc", afterCooldown)
+	if status := h.Snapshot("acc", afterCooldown, 0, 0); status.State != Healthy || status.Reason != "" {
+		t.Fatalf("after a successful probe: %+v, want healthy without reason", status)
+	}
+}
+
+func TestFailedAccountProbeReopensForAnotherCooldown(t *testing.T) {
+	h := NewHealthTracker()
+	h.ObserveUnusable("acc", t0, UnusableCooldown, "402")
+	probeAt := t0.Add(UnusableCooldown + time.Minute)
+	if !h.Reserve("acc", probeAt) {
+		t.Fatal("no probe reserved after the cooldown")
+	}
+	h.ObserveUnusable("acc", probeAt, UnusableCooldown, "402")
+	if status := h.Snapshot("acc", probeAt.Add(time.Minute), 0, 0); status.State != Limited {
+		t.Fatalf("after a failed probe: %+v, want limited for a new cooldown", status)
 	}
 }

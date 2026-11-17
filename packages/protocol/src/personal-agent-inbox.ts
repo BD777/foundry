@@ -1,4 +1,4 @@
-import type { ChatAttachment } from "./contract.gen.js";
+import type { ChatAttachment, SessionInputAnnotation } from "./contract.gen.js";
 
 /** A durable, authenticated input. Delivery is not task completion. */
 export interface PersonalAgentInboxEntry {
@@ -26,6 +26,8 @@ export interface PersonalAgentInboxEntry {
   dismissedAt?: string;
   /** Files uploaded for a web message; delivered with its turn. */
   attachments?: ChatAttachment[];
+  /** The answer passages a web message annotates; its text carries their wrapper. */
+  annotations?: SessionInputAnnotation[];
 }
 
 export interface PersonalAgentInboxFailure {
@@ -48,4 +50,5 @@ export interface PersonalAgentInboxCapture {
   messageId: string;
   text: string;
   attachments?: ChatAttachment[];
+  annotations?: SessionInputAnnotation[];
 }

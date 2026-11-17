@@ -35,6 +35,7 @@ import (
 type Backend interface {
 	store.Store
 	store.AccountStore
+	store.SessionConnectorGrantStore
 	store.OwnershipStore
 	store.DeviceCredentialStore
 	store.DeviceRemovalStore
@@ -87,6 +88,9 @@ type Backend interface {
 	store.PendingItemStore
 	store.AgentDefaultStore
 	store.ChatArchiveStore
+	store.ChatGroupMemberStore
+	store.AccountUnusableStore
+	store.SessionDescendantStore
 	store.NativeAccountHoldStore
 	store.ServiceTunnelStore
 	store.WorkspaceDraftStore
@@ -315,6 +319,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.connectors.Confirmations.OnCreated = server.assistant.ProposalCreated
 		server.connectors.Confirmations.OnChanged = server.assistant.ProposalChanged
 	}
+	server.assistant.ConnectorReplay = server.connectors.Extensions.ReplayConfirmedWrite
 	server.hub.connectors = server.connectors
 	server.resources = newResourceService(store, server.hub, stream)
 	server.hub.resources = server.resources

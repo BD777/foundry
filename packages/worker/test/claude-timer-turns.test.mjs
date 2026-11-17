@@ -266,3 +266,42 @@ test("a server that registers the worker is told the turns Claude runs on its ow
   }
   assert.deepEqual(told, [["sess_running", true]]);
 });
+
+test("a steer the Worker sent, submitted by Claude after its turn ended, is answered as the person's, not as a timer", async () => {
+  await withOutOfBand(async (directory, outOfBand) => {
+    const runtime = runtimeFor(directory);
+    const turn = firstTurn(runtime, directory);
+    const steer = "/foundry-orchestration 另外你看看这个skill";
+    runtime.timers.expectSteer(steer);
+    // The Foundry turn the steer joined ends first.
+    runtime.pending = undefined;
+    await runtime.timers
+      .hooks()
+      .UserPromptSubmit[0].hooks[0]({ prompt: steer });
+    await handleActiveClaudeMessage(runtime, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "SUB-SESSION ANSWER",
+    });
+    assert.equal(
+      turn.resolved,
+      undefined,
+      "the ended turn is not resolved twice",
+    );
+    assert.equal(
+      outOfBand.some((event) => event.metadata?.timerFire),
+      false,
+      "the steer is not published as a timer's fire",
+    );
+    assert.equal(
+      outOfBand.some((event) => event.label === "Background task continued"),
+      false,
+    );
+    const answers = outOfBand.filter(
+      (event) => event.label === "Response stream",
+    );
+    assert.equal(answers.length, 1);
+    assert.equal(answers[0].detail, "SUB-SESSION ANSWER");
+  });
+});

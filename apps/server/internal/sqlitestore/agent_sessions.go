@@ -336,6 +336,7 @@ type sessionStart struct {
 	input       store.CreateAgentSessionInput
 	prompt      string
 	attachments []store.ChatAttachment
+	annotations []store.SessionInputAnnotation
 	agent       store.AgentProjection
 	source      string
 	parent      store.AgentSession
@@ -348,6 +349,7 @@ type sessionStart struct {
 func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSessionInput) (sessionStart, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	attachments := store.NormalizeChatAttachments(input.Attachments)
+	annotations := store.NormalizeSessionInputAnnotations(input.Annotations)
 	if prompt == "" && len(attachments) == 0 {
 		return sessionStart{}, errors.New("agent session prompt is required")
 	}
@@ -370,7 +372,7 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 	if err != nil {
 		return sessionStart{}, err
 	}
-	if store.IsPromptOnlySessionSource(source) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
+	if store.IsPromptOnlySessionSource(source) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0 || len(input.Annotations) > 0) {
 		return sessionStart{}, errors.New("naming and digest sessions must start independent, without inherited context")
 	}
 	if input.NativeSessionID != "" {
@@ -397,6 +399,7 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 		input:       input,
 		prompt:      prompt,
 		attachments: attachments,
+		annotations: annotations,
 		agent:       agent,
 		source:      source,
 		parent:      parent,
@@ -521,6 +524,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 			At:                    formatTime(now),
 			Prompt:                start.prompt,
 			Attachments:           start.attachments,
+			Annotations:           start.annotations,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			ImportedContext:       strings.TrimSpace(input.ImportedContext),
 			// The session that started it wrote its first message.
@@ -608,7 +612,7 @@ func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input 
 		if e = s.BindPersonalAgentRunSnapshot(ctx, snap.AssistantID, snap.ID, sessionID); e != nil {
 			return e
 		}
-		if _, e = s.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: flow.Key("parctl", sessionID, input.ID), UserID: user, AssistantID: snap.AssistantID, SessionID: sessionID, InputID: input.ID, SnapshotID: snap.ID, Role: snap.Role, TokenBudget: snap.TokenBudget, TimeoutMinutes: snap.TimeoutMinutes}); e != nil {
+		if _, e = s.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: flow.Key("parctl", sessionID, input.ID), UserID: user, AssistantID: snap.AssistantID, SessionID: sessionID, InputID: input.ID, SnapshotID: snap.ID, Role: snap.Role}); e != nil {
 			return e
 		}
 	}
@@ -769,6 +773,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		}
 		prompt := strings.TrimSpace(input.Prompt)
 		attachments := store.NormalizeChatAttachments(input.Attachments)
+		annotations := store.NormalizeSessionInputAnnotations(input.Annotations)
 		if prompt == "" && len(attachments) == 0 {
 			return errors.New("agent session prompt is required")
 		}
@@ -826,6 +831,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			At:                    formatTime(now),
 			Prompt:                prompt,
 			Attachments:           attachments,
+			Annotations:           annotations,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			TimerFire:             input.TimerFire,
 			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),

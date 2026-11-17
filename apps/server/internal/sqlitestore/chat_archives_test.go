@@ -147,6 +147,58 @@ func TestArchiveFolderAtomicBlockersAndMembershipFence(t *testing.T) {
 		t.Fatalf("restore=%+v", restored)
 	}
 }
+func TestArchiveFolderActsOnUnarchivedMembersOnly(t *testing.T) {
+	ctx := context.Background()
+	db, kept := archiveFixture(t)
+	gone, e := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: kept.WorkspaceID, AgentID: kept.AgentID, Provider: "codex", Prompt: "already archived", Source: "chat"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if gone, e = db.CompleteAgentSession(ctx, gone.ID, "answer", "native_gone"); e != nil {
+		t.Fatal(e)
+	}
+	first, e := db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: kept.WorkspaceID, ChatIDs: []string{gone.ID}}, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	archivedGone, _ := db.GetAgentSessionSummary(ctx, gone.ID)
+	layout, _ := db.GetChatLayout(ctx, kept.WorkspaceID)
+	layout.Groups = []store.ChatLayoutGroup{{ID: "folder", Name: "Folder"}}
+	layout.Positions = []store.ChatPlacement{
+		{ChatID: kept.ID, GroupID: "folder"},
+		{ChatID: gone.ID, GroupID: "folder"},
+		{ChatID: "sess_deleted_member", GroupID: "folder"},
+	}
+	saveLayout(t, db, kept.WorkspaceID, layout)
+	input := store.ArchiveChatsInput{WorkspaceID: kept.WorkspaceID, GroupID: "folder"}
+	pre := input
+	pre.DryRun = true
+	preview, e := db.ArchiveChats(ctx, pre, false)
+	if e != nil || !reflect.DeepEqual(preview.Archived, []string{kept.ID}) || preview.ArchivedTitles[kept.ID] == "" {
+		t.Fatalf("preview=%+v %v", preview, e)
+	}
+	result, e := db.ArchiveChats(ctx, input, false)
+	if e != nil || !reflect.DeepEqual(result.Archived, []string{kept.ID}) {
+		t.Fatalf("archive=%+v %v", result, e)
+	}
+	// The archived member keeps its own marker and batch: the folder neither
+	// re-archived nor re-stamped it.
+	stillGone, _ := db.GetAgentSessionSummary(ctx, gone.ID)
+	if stillGone.ArchivedAt != archivedGone.ArchivedAt || stillGone.ArchiveBatchID != first.BatchID || first.BatchID == result.BatchID {
+		t.Fatalf("archived member changed: before=%+v after=%+v", archivedGone.Archive(), stillGone.Archive())
+	}
+	if _, e = db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: kept.WorkspaceID, BatchID: result.BatchID}, true); e != nil {
+		t.Fatal(e)
+	}
+	restored, _ := db.ListAgentSessionSummaries(ctx, kept.WorkspaceID)
+	if len(restored) != 1 || restored[0].ID != kept.ID {
+		t.Fatalf("restored=%+v", restored)
+	}
+	if again, _ := db.GetAgentSessionSummary(ctx, gone.ID); again.ArchivedAt == "" {
+		t.Fatal("folder restore unarchived a member archived on its own")
+	}
+}
+
 func TestArchiveIssueAndPersonalAgentRefused(t *testing.T) {
 	ctx := context.Background()
 	db, v := archiveFixture(t)

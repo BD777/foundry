@@ -44,7 +44,7 @@ import {
   withoutSessionToken,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
-import { claudeManagedPrompt } from "../skills/skill-materializer.js";
+import { claudeManagedPrompt } from "../skills/skill-invocation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import {
   clarificationFoundryTools,

@@ -322,7 +322,7 @@ func (s *Server) steerChatQueueItem(ctx context.Context, workspaceID, chatID, it
 		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
 	}
 	_, steerErr := s.sessionService.Send(ctx, session.ID, store.SendAgentSessionInput{
-		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID, Delivery: delivery,
+		Prompt: item.Text, Attachments: item.Attachments, Annotations: item.Annotations, InputID: item.ID, Delivery: delivery,
 	}, nil)
 	if steerErr == nil {
 		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
@@ -543,7 +543,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 			ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 			CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,
 			CodexApprovalPolicy: settings.CodexApprovalPolicy, CodexSpeed: settings.CodexSpeed,
-			Prompt: item.Text, Attachments: item.Attachments, ProfileTransitionNote: note,
+			Prompt: item.Text, Attachments: item.Attachments, Annotations: item.Annotations, ProfileTransitionNote: note,
 			RequireIdle: true, InputID: item.ID,
 		}, nil)
 	}
@@ -553,7 +553,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 		ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 		CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,
 		CodexApprovalPolicy: settings.CodexApprovalPolicy, CodexSpeed: settings.CodexSpeed,
-		Prompt: item.Text, Attachments: item.Attachments, ProfileTransitionNote: note, InputID: item.ID,
+		Prompt: item.Text, Attachments: item.Attachments, Annotations: item.Annotations, ProfileTransitionNote: note, InputID: item.ID,
 	})
 }
 

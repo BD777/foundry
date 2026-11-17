@@ -203,7 +203,10 @@ function button(container, text) {
   return found;
 }
 
-test("usage renders totals, sources and breakdown, then refetches for each filter", async () => {
+test("usage renders totals, sources and breakdown, then refetches for each filter", async (t) => {
+  // The fixture's days (2026-11-09/10) sit inside the default range only
+  // when today is shortly after them.
+  t.mock.timers.enable({ apis: ["Date"], now: new Date(2026, 10, 11, 12, 0) });
   requests.length = 0;
   const container = document.createElement("div");
   document.body.append(container);

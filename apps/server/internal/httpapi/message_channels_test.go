@@ -50,7 +50,7 @@ func newChannelSessionFixture(t *testing.T) channelSessionFixture {
 		ID: "mch_t1", AssistantID: f.agent.ID, Name: "Lark /fd", Enabled: true, SessionKey: "conversation",
 		Source: store.MessageChannelSource{Kind: "openlark", AccountID: "xacc_lark"},
 		Scope: store.MessageChannelScope{ConnectorDefault: "off",
-			Connectors: []store.MessageChannelConnectorScope{{AccountID: "xacc_lark", Level: "write", Writes: "direct"}, {AccountID: "xacc_gh", Level: "read", Writes: "confirm"}},
+			Connectors: []store.MessageChannelConnectorScope{{AccountID: "xacc_lark", Level: "write"}, {AccountID: "xacc_gh", Level: "read"}},
 			Workspaces: store.PermissionListRule{Scope: store.PermissionListScopeListed, Include: []string{"ws_budget"}}},
 		Limits: store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3}, CreatedAt: "2026-11-13T00:00:00Z", UpdatedAt: "2026-11-13T00:00:00Z",
 	}}
@@ -77,21 +77,38 @@ func newChannelSessionFixture(t *testing.T) channelSessionFixture {
 }
 
 // What a channel's session and its helpers may use is the channel's scope
-// within the assistant's package; writes the person set to direct need no
-// card, the others still do.
+// within the assistant's package; a write passes without a card only inside
+// the conversation the turn was granted (DEV-265).
 func TestMessageChannelSessionsAreNarrowedToTheChannelScope(t *testing.T) {
 	f := newChannelSessionFixture(t)
 	ctx := context.Background()
+	if err := f.db.SetSessionConnectorGrants(ctx, f.session.ID, "xacc_lark", []store.SessionConnectorGrant{{
+		AccountID: "xacc_lark", ObjectType: "conversation", ObjectID: "oc_1", Label: "Lark /fd",
+	}}); err != nil {
+		t.Fatal(err)
+	}
 	for _, session := range []store.AgentSession{f.session, f.helper} {
 		access, err := permission.Resolve(ctx, f.db, session)
 		if err != nil || !access.Applicable || access.Channel == nil || access.Channel.ID != f.channel.ID {
 			t.Fatalf("%s: access %+v (%v)", session.ID, access, err)
 		}
-		if access.ConnectorLevel("xacc_lark") != store.ConnectorAccessLevelWrite || !access.WritesWithoutConfirmation("xacc_lark") {
-			t.Fatalf("%s: the source account writes directly", session.ID)
+		if access.ConnectorLevel("xacc_lark") != store.ConnectorAccessLevelWrite {
+			t.Fatalf("%s: the source account is writable", session.ID)
 		}
-		if access.ConnectorLevel("xacc_gh") != store.ConnectorAccessLevelRead || access.WritesWithoutConfirmation("xacc_gh") {
-			t.Fatalf("%s: a read account stays read", session.ID)
+		if !access.WriteInsideGrant("xacc_lark", []permission.GrantObject{{Type: "conversation", ID: "oc_1"}}, false) {
+			t.Fatalf("%s: the granted conversation may be written", session.ID)
+		}
+		if access.WriteInsideGrant("xacc_lark", []permission.GrantObject{{Type: "conversation", ID: "oc_2"}}, false) {
+			t.Fatalf("%s: another conversation is outside the grant", session.ID)
+		}
+		if access.WriteInsideGrant("xacc_lark", nil, false) {
+			t.Fatalf("%s: a write touching no object is outside the grant", session.ID)
+		}
+		if access.WriteInsideGrant("xacc_lark", nil, true) != true {
+			t.Fatalf("%s: an auxiliary write passes with the grant", session.ID)
+		}
+		if access.ConnectorLevel("xacc_gh") != store.ConnectorAccessLevelRead || access.WriteInsideGrant("xacc_gh", nil, true) {
+			t.Fatalf("%s: a read account has no grant", session.ID)
 		}
 		if access.ConnectorLevel("xacc_other") != store.ConnectorAccessLevelOff {
 			t.Fatalf("%s: unlisted accounts are off", session.ID)
@@ -105,7 +122,7 @@ func TestMessageChannelSessionsAreNarrowedToTheChannelScope(t *testing.T) {
 	}
 	// The person's own conversation keeps the package.
 	access, err := permission.Resolve(ctx, f.db, f.conversation)
-	if err != nil || access.Channel != nil || access.ConnectorLevel("xacc_other") != store.ConnectorAccessLevelWrite || access.WritesWithoutConfirmation("xacc_lark") {
+	if err != nil || access.Channel != nil || access.ConnectorLevel("xacc_other") != store.ConnectorAccessLevelWrite || len(access.Grants) != 0 {
 		t.Fatalf("own conversation: %+v (%v)", access, err)
 	}
 	// The package still caps the channel.
@@ -115,7 +132,7 @@ func TestMessageChannelSessionsAreNarrowedToTheChannelScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	access, _ = permission.Resolve(ctx, f.db, f.session)
-	if access.ConnectorLevel("xacc_lark") != store.ConnectorAccessLevelRead || access.WritesWithoutConfirmation("xacc_lark") {
+	if access.ConnectorLevel("xacc_lark") != store.ConnectorAccessLevelRead {
 		t.Fatal("the package caps the channel's level")
 	}
 }

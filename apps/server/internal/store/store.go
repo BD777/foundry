@@ -163,6 +163,13 @@ type SessionDelegationStore interface {
 	OutstandingChildTurns(ctx context.Context, parentIDs []string) (map[string][]OutstandingChildTurn, error)
 }
 
+// SessionDescendantStore counts the sessions a session started, at any depth.
+type SessionDescendantStore interface {
+	// CountActiveAgentDescendants counts every session below sessionID, at
+	// any depth, that still occupies an execution slot.
+	CountActiveAgentDescendants(ctx context.Context, sessionID string) (int, error)
+}
+
 type Store interface {
 	Close() error
 

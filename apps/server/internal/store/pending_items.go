@@ -40,6 +40,10 @@ const (
 	// the person has not dismissed (DEV-256). One item per assistant; its
 	// review ends when the person dismisses it.
 	PendingSourceMemoryUpkeep = "memory_upkeep"
+	// PendingSourceConnectorWrite: a connector write outside what the
+	// session was granted waits for the person's answer (DEV-265). One item
+	// per proposal; answering it allows or refuses that exact request.
+	PendingSourceConnectorWrite = "connector_write"
 )
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
@@ -158,6 +162,9 @@ type PendingItem struct {
 	FailureAccountID string   `json:"failureAccountId,omitempty"`
 	FailureResetAt   string   `json:"failureResetAt,omitempty"`
 	FailureSessions  []string `json:"failureSessions,omitempty"`
+	// ConnectorWrite is what a connector-write item asks the person to
+	// decide (DEV-265), in structured form so the page words it locally.
+	ConnectorWrite *PendingConnectorWriteDetail `json:"connectorWrite,omitempty"`
 	// Handler is who handles it while open: PendingHandlerPerson (also when
 	// empty) or PendingHandlerAssistant.
 	Handler string `json:"handler,omitempty"`
@@ -183,6 +190,32 @@ type PendingItem struct {
 	ResolutionReason string `json:"resolutionReason,omitempty"`
 	ResolutionDetail string `json:"resolutionDetail,omitempty"`
 	Outcome          string `json:"outcome,omitempty"`
+}
+
+// PendingConnectorWriteDetail is one connector write the person may allow
+// (DEV-265): what it writes, to what, and where the request came from. The
+// page words it; the server sends no prose of its own.
+type PendingConnectorWriteDetail struct {
+	ProposalID string `json:"proposalId"`
+	// Action says what the write does: message (it carries a message's
+	// text), reaction, or write (anything else). Operation names it in the
+	// person's words; Preview and Body show what the recorded request sends.
+	Action           string   `json:"action,omitempty"`
+	Operation        string   `json:"operation,omitempty"`
+	ExpiresAt        string   `json:"expiresAt,omitempty"`
+	Preview          []string `json:"preview,omitempty"`
+	Body             string   `json:"body,omitempty"`
+	AccountName      string   `json:"accountName,omitempty"`
+	TargetType       string   `json:"targetType,omitempty"`
+	TargetID         string   `json:"targetId,omitempty"`
+	TargetName       string   `json:"targetName,omitempty"`
+	Text             string   `json:"text,omitempty"`
+	ChannelName      string   `json:"channelName,omitempty"`
+	ConversationKind string   `json:"conversationKind,omitempty"`
+	ConversationName string   `json:"conversationName,omitempty"`
+	// FromHelper says the request came from a session the assistant handed
+	// work to, not from a person's own conversation.
+	FromHelper bool `json:"fromHelper,omitempty"`
 }
 
 // PendingResolution resolves the open items a filter selects: a session's

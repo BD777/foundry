@@ -219,6 +219,10 @@ export const profiles = {
       recovering: "Recovering",
       withFailovers:
         "{{text}} · switched to a fallback {{count}} times in the last hour",
+      unusableArrears: "Account unusable: billing arrears (402)",
+      unusableQuota: "Account unusable: quota exhausted",
+      unusableDisabled: "Account unusable: account disabled",
+      unusableOther: "Account unusable ({{reason}})",
     },
     modeByQuota: "By quota",
     modeByWeight: "By weight",

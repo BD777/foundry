@@ -28,7 +28,8 @@ type RunControlStore interface {
 }
 
 // EnsureRunControl is the control of the session's current input, kept
-// once: its budget comes from the run snapshot the input carries.
+// once, for stopping it: the run snapshot the input carries names its
+// assistant and role.
 func EnsureRunControl(ctx context.Context, backend RunControlStore, session store.AgentSession) (store.PersonalAgentRunControl, error) {
 	c := store.PersonalAgentRunControl{ID: flow.Key("parctl", session.ID, session.Input.ID), UserID: session.CreatedByUserID, SessionID: session.ID, InputID: session.Input.ID, Role: "executor", DispatchAttempted: session.Input.ExecutionBudget == nil}
 	if budget := session.Input.ExecutionBudget; budget != nil {
@@ -40,7 +41,7 @@ func EnsureRunControl(ctx context.Context, backend RunControlStore, session stor
 		if snapshot.InputID != session.Input.ID || snapshot.WorkspaceID != session.WorkspaceID {
 			return c, store.ErrIdempotencyConflict
 		}
-		c.SnapshotID, c.Role, c.TokenBudget, c.TimeoutMinutes = snapshot.ID, snapshot.Role, snapshot.TokenBudget, snapshot.TimeoutMinutes
+		c.SnapshotID, c.Role = snapshot.ID, snapshot.Role
 	}
 	if c.AssistantID == "" {
 		// An input without a budget: the assistant the session works for,
@@ -129,27 +130,9 @@ func (s *Service) ReconcileRunControl(ctx context.Context, c store.PersonalAgent
 			c.StopReason = "terminal_projection_needs_receipt"
 		}
 	}
-	if c.State == "monitoring" {
-		started, e := time.Parse(time.RFC3339Nano, session.StartedAt)
-		if e == nil && c.TimeoutMinutes > 0 && now.Sub(started) >= time.Duration(c.TimeoutMinutes)*time.Minute {
-			c.State = "stop_requested"
-			c.StopReason = "timeout_budget"
-		}
-		last, _ := time.Parse(time.RFC3339Nano, c.LastUsageAt)
-		if c.State == "monitoring" && c.TokenBudget > 0 && session.Status != "queued" && now.Sub(last) >= 30*time.Second {
-			c.LastUsageAt = now.Format(time.RFC3339Nano)
-			tokens, known, e := s.devices.InputTokens(ctx, session)
-			c.UsageState = "unavailable"
-			if e == nil && known {
-				c.ObservedTokens = max(c.ObservedTokens, tokens)
-				c.UsageState = "native_main_observed"
-			}
-			if known && c.ObservedTokens >= c.TokenBudget {
-				c.State = "stop_requested"
-				c.StopReason = "observed_token_budget"
-			}
-		}
-	}
+	// Only a requested stop (the person, the stop switch, a caller) can end
+	// a working turn here. Foundry has no token or time budget for it: a
+	// native agent is left to run as its vendor intends (DEV-271).
 	updated, e := s.store.SavePersonalAgentRunControl(ctx, c)
 	if e != nil {
 		return

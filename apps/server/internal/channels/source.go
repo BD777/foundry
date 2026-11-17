@@ -25,6 +25,10 @@ type Source interface {
 	// ContextHint is how an agent reads what surrounds a message with the
 	// connector's own tool (a template over the envelope), or "".
 	ContextHint(language string) string
+	// Read runs one of the source's declared reads (serverHeld.events.reads)
+	// with its route parameters filled from facts (conversation.id,
+	// message.id, thread.id).
+	Read(ctx context.Context, name string, facts map[string]string) (ReadAnswer, error)
 }
 
 // Batch is one poll's answer. Commit Cursor only after the envelopes are
@@ -94,6 +98,32 @@ func (p LongPoll) Reply(kind string) string {
 		return command
 	}
 	return strings.TrimSpace(p.Spec.Reply.Kinds["other"])
+}
+
+// Read runs one of the source's declared reads.
+func (p LongPoll) Read(ctx context.Context, name string, facts map[string]string) (ReadAnswer, error) {
+	spec, ok := p.Spec.Reads[name]
+	if !ok {
+		return ReadAnswer{}, fmt.Errorf("this source declares no read %q", name)
+	}
+	path, ok := fillReadPath(spec.Path, spec.Args, facts)
+	if !ok {
+		return ReadAnswer{}, fmt.Errorf("read %q has no fact for one of its path parameters", name)
+	}
+	status, body, _, err := p.Upstream.Get(ctx, path, nil)
+	if err != nil {
+		return ReadAnswer{}, err
+	}
+	if status < 200 || status > 299 {
+		return ReadAnswer{}, fmt.Errorf("read %q answered %d", name, status)
+	}
+	var document any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&document); err != nil {
+		return ReadAnswer{}, fmt.Errorf("read %q: the answer is not JSON", name)
+	}
+	return readAnswer(document, spec), nil
 }
 
 func (p LongPoll) Poll(ctx context.Context, cursor string) (Batch, error) {

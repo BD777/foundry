@@ -10,6 +10,7 @@ import type {
   SessionToolFrame,
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../agent-runtime/runtime-mark";
+import type { ConversationAnnotation } from "./annotations";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { TurnHandoffView } from "./turn-handoffs";
 import type { AgentComposerProps } from "../agent-runtime/agent-composer";
@@ -85,7 +86,10 @@ export interface ConversationProps {
   onSend: (
     text: string,
     attachments?: ChatAttachment[],
-    options?: { idempotencyKey?: string },
+    options?: {
+      idempotencyKey?: string;
+      annotations?: ConversationAnnotation[];
+    },
   ) => Promise<ConversationSendOutcome>;
   /** Injects a queued message, with its files, into the running execution. */
   onSteer?: (
@@ -159,6 +163,8 @@ export interface QueuedDraft {
   text: string;
   /** Uploaded before queueing, so these are server references. */
   attachments?: ChatAttachment[];
+  /** Annotations on earlier answers; the text already carries their wrapper. */
+  annotations?: ConversationAnnotation[];
   targetExecutionId?: string;
   /** Set while a tab sends this message; a stale one may have been sent. */
   sending?: { tab: string; at: number };
@@ -208,7 +214,7 @@ export interface ConversationServerQueue {
    */
   enqueue: (
     chatId: string,
-    message: Pick<QueuedDraft, "id" | "text" | "attachments">,
+    message: Pick<QueuedDraft, "id" | "text" | "attachments" | "annotations">,
     options?: { steer?: boolean; delivery?: ConversationDelivery },
   ) => Promise<ConversationQueueOutcome>;
   /** Changes when a waiting message enters the running turn. */
@@ -247,6 +253,8 @@ export interface ChatMessageItem {
   clientId?: string;
   agentLabel?: ReactNode;
   attachments?: ChatAttachment[];
+  /** A sent message's annotations on earlier answers, shown beside its text. */
+  annotations?: ConversationAnnotation[];
   copyAlways?: boolean;
   copyText?: string;
   /** How long a process group ran, from its start to its last step. */
@@ -262,8 +270,21 @@ export interface ChatMessageItem {
   editText?: string;
   id: string;
   idea?: string;
-  /** "waiting": queued work that waits for its offline device, without a timer. */
-  kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
+  /**
+   * "waiting": queued work that waits for its offline device, without a
+   * timer. "stopped": the turn ended without an answer (stopped or failed),
+   * shown as a quiet line (DEV-267).
+   */
+  kind?:
+    | "boundary"
+    | "failure"
+    | "message"
+    | "process"
+    | "stopped"
+    | "tool"
+    | "waiting";
+  /** A stopped turn asks for one more attempt: the same retry as Needs you. */
+  onRetry?: () => Promise<void>;
   processItems?: ProcessDisplayItem[];
   onTurnIntoIssue?: () => void;
   recoverable?: boolean;

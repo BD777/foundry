@@ -50,19 +50,20 @@ type ChatQueueRunSettings struct {
 // as the chat's next input once the chat's session is idle; its id becomes
 // that input's id.
 type ChatQueueItem struct {
-	ID            string               `json:"id"`
-	ChatID        string               `json:"chatId"`
-	Position      int64                `json:"position"`
-	Text          string               `json:"text"`
-	Attachments   []ChatAttachment     `json:"attachments,omitempty"`
-	RunSettings   ChatQueueRunSettings `json:"runSettings"`
-	CreatedBy     string               `json:"createdBy,omitempty"`
-	CreatedAt     string               `json:"createdAt"`
-	UpdatedAt     string               `json:"updatedAt"`
-	Revision      int64                `json:"revision"`
-	State         string               `json:"state"`
-	Error         string               `json:"error,omitempty"`
-	SentSessionID string               `json:"sentSessionId,omitempty"`
+	ID            string                   `json:"id"`
+	ChatID        string                   `json:"chatId"`
+	Position      int64                    `json:"position"`
+	Text          string                   `json:"text"`
+	Attachments   []ChatAttachment         `json:"attachments,omitempty"`
+	Annotations   []SessionInputAnnotation `json:"annotations,omitempty"`
+	RunSettings   ChatQueueRunSettings     `json:"runSettings"`
+	CreatedBy     string                   `json:"createdBy,omitempty"`
+	CreatedAt     string                   `json:"createdAt"`
+	UpdatedAt     string                   `json:"updatedAt"`
+	Revision      int64                    `json:"revision"`
+	State         string                   `json:"state"`
+	Error         string                   `json:"error,omitempty"`
+	SentSessionID string                   `json:"sentSessionId,omitempty"`
 	// MaybeSent: a failed message its device may have taken after all (it
 	// did not answer in time); the person checks the chat before a retry.
 	MaybeSent bool `json:"maybeSent,omitempty"`
@@ -103,9 +104,10 @@ type ChatQueue struct {
 }
 
 type EnqueueChatMessageInput struct {
-	Text        string               `json:"text"`
-	Attachments []ChatAttachment     `json:"attachments,omitempty"`
-	RunSettings ChatQueueRunSettings `json:"runSettings"`
+	Text        string                   `json:"text"`
+	Attachments []ChatAttachment         `json:"attachments,omitempty"`
+	Annotations []SessionInputAnnotation `json:"annotations,omitempty"`
+	RunSettings ChatQueueRunSettings     `json:"runSettings"`
 	// Steer moves the message into the chat's running turn at once (an
 	// answer to the Agent's question); with nothing running it waits as
 	// any queued message does.
@@ -117,11 +119,12 @@ type EnqueueChatMessageInput struct {
 // EditChatQueueItemInput changes the fields it carries; ExpectedRevision is
 // the message's revision the edit was made on.
 type EditChatQueueItemInput struct {
-	Text             *string               `json:"text,omitempty"`
-	Attachments      *[]ChatAttachment     `json:"attachments,omitempty"`
-	RunSettings      *ChatQueueRunSettings `json:"runSettings,omitempty"`
-	Delivery         *string               `json:"delivery,omitempty"`
-	ExpectedRevision *int64                `json:"expectedRevision"`
+	Text             *string                   `json:"text,omitempty"`
+	Attachments      *[]ChatAttachment         `json:"attachments,omitempty"`
+	Annotations      *[]SessionInputAnnotation `json:"annotations,omitempty"`
+	RunSettings      *ChatQueueRunSettings     `json:"runSettings,omitempty"`
+	Delivery         *string                   `json:"delivery,omitempty"`
+	ExpectedRevision *int64                    `json:"expectedRevision"`
 }
 
 // ReorderChatQueueInput names every queued or failed message in the new

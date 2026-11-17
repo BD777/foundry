@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { workerEgressVariables } from "../../platform/server-link/server-proxy.js";
 import {
   findCommand,
   managedToolsBin,
@@ -8,8 +9,8 @@ import {
 
 /**
  * What an extension's process (and a declarative extension's tool) starts
- * with: the person's ordinary environment (home, language, proxy and CA),
- * never the worker's own credentials.
+ * with: the person's ordinary environment (home, language and CA), the
+ * Worker's proxy (workerEgressVariables), never the worker's own credentials.
  */
 /** Variables an extension's process gets from the worker's environment. */
 const passedVariables = [
@@ -21,14 +22,6 @@ const passedVariables = [
   "LANGUAGE",
   "TZ",
   "TMPDIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
   "NODE_EXTRA_CA_CERTS",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
@@ -46,6 +39,7 @@ export function extensionBaseEnvironment(): NodeJS.ProcessEnv {
     if (process.env[name] !== undefined) env[name] = process.env[name];
   for (const [name, value] of Object.entries(process.env))
     if (name.startsWith("LC_") && value !== undefined) env[name] = value;
+  Object.assign(env, workerEgressVariables());
   env.PATH = toolEnvironment().PATH;
   return env;
 }

@@ -5,6 +5,7 @@ import {
 } from "../workspace-write-refusals.js";
 import { codexCitationsAsLinks } from "./codex-citations.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
+import { codexManagedPrompt } from "../../skills/skill-invocation.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendLine } from "../../platform/line-log.js";
 import { redactedJSONLine } from "../../platform/secret-redaction.js";
@@ -12,6 +13,7 @@ import {
   processLabels,
   sessionEventLabels,
   sessionInputEventId,
+  type SessionInputAnnotation,
 } from "@bd777/foundry-protocol";
 import type { CodexContextFollower } from "../usage/context-usage.js";
 import {
@@ -126,11 +128,17 @@ export async function runCodexStreamedTurn(
     attachments: ChatAttachment[],
     steerId?: string,
     sentBySessionId?: string,
+    annotations?: SessionInputAnnotation[],
   ) => {
     const input = [
       {
         type: "text",
-        text: userMessageText(message, attachments, sentBySessionId),
+        text: userMessageText(
+          codexManagedPrompt(message, state.managedSkills),
+          attachments,
+          sentBySessionId,
+          annotations,
+        ),
       },
       ...attachments
         .filter((attachment) => attachment.kind === "image")
@@ -141,12 +149,13 @@ export async function runCodexStreamedTurn(
     ];
     await thread.steer!(input, steerId);
     if (steerId) steered.add(steerId);
-    await recordSteer(message, attachments, steerId);
+    await recordSteer(message, attachments, steerId, annotations);
   };
   const recordSteer = async (
     message: string,
     attachments: ChatAttachment[],
     steerId?: string,
+    annotations?: SessionInputAnnotation[],
   ) => {
     try {
       await state.emit(
@@ -154,7 +163,13 @@ export async function runCodexStreamedTurn(
         message,
         "info",
         undefined,
-        { id: steerId ?? "", kind: "user", text: message, attachments },
+        {
+          id: steerId ?? "",
+          kind: "user",
+          text: message,
+          ...(attachments.length ? { attachments } : {}),
+          ...(annotations?.length ? { annotations } : {}),
+        },
         steerId ? sessionInputEventId(steerId) : undefined,
       );
     } catch {
@@ -182,7 +197,12 @@ export async function runCodexStreamedTurn(
             !sentBySessionId &&
             thread.answerQuestion?.(message) === true
           ) {
-            await recordSteer(message, attachments, steerId);
+            await recordSteer(
+              message,
+              attachments,
+              steerId,
+              options?.annotations,
+            );
             if (steerId)
               await state
                 .emit(sessionEventLabels.steerConsumed, steerId, "info")
@@ -190,12 +210,24 @@ export async function runCodexStreamedTurn(
             return;
           }
           if (options?.delivery !== "boundary")
-            return applySteer(message, attachments, steerId, sentBySessionId);
+            return applySteer(
+              message,
+              attachments,
+              steerId,
+              sentBySessionId,
+              options?.annotations,
+            );
           boundary.hold({
             steerId,
             limitMs: options.boundaryLimitMs ?? defaultBoundaryLimitMs,
             apply: () =>
-              applySteer(message, attachments, steerId, sentBySessionId),
+              applySteer(
+                message,
+                attachments,
+                steerId,
+                sentBySessionId,
+                options?.annotations,
+              ),
           });
         },
       })

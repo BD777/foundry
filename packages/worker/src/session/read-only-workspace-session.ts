@@ -17,7 +17,10 @@ import { withManagedTools } from "../skills/managed-tools.js";
 import { sessionToolsFolder } from "../skills/session-tools.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import type { WorkspaceSandbox } from "./index.js";
-import { readOnlyWorkspaceExecution } from "./verification-session.js";
+import {
+  readOnlyWorkspaceExecution,
+  writableWorkspaceExecution,
+} from "./verification-session.js";
 
 /** Where a read-only workspace session keeps its private state. */
 export function readOnlySessionDirectory(
@@ -84,6 +87,42 @@ export function readOnlySessionExecution(
     // It works on other people's messages: the person's own files (their
     // CLI logins, ~/.ssh, browser data) stay out of its reach. Its tools
     // and connectors come from Foundry's folders and its scratch home.
+    "hidden",
+  );
+}
+
+/**
+ * How a writable session in a message channel's lineage runs (DEV-265): its
+ * workspace stays writable, but the person's own files stay hidden, so a
+ * helper cannot read the credentials the channel's tool holds. Without a
+ * ready sandbox the turn fails, as a read-only session does.
+ */
+export function channelLineageSessionExecution(
+  session: AgentSession,
+  workspacePath: string,
+  ambient: SessionAmbientEnv,
+  store = new ExecutionStore(),
+  ready = sandboxReady("writable_tree"),
+): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
+  if (!ready)
+    throw new Error(
+      "This session works for a message channel, and this device cannot sandbox its files (on Linux it needs bubblewrap with user namespaces); the message was not run.",
+    );
+  return writableWorkspaceExecution(
+    readOnlySessionDirectory(session.workspaceId, session.id, store),
+    workspacePath,
+    ambient,
+    "channel-lineage-session.sb",
+    (env) => {
+      const withConnectors = withSessionConnectors(env, session.id);
+      return {
+        ...withConnectors,
+        PATH: withManagedTools(
+          withConnectors.PATH,
+          sessionToolsFolder(session.id),
+        ),
+      };
+    },
     "hidden",
   );
 }

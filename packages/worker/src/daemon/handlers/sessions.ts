@@ -16,6 +16,7 @@ import {
   cancelActiveSession,
   steerActiveSessionOnce,
   isNotSteerableError,
+  type SteerOptions,
 } from "../../session/session-control.js";
 import { sendWebSocket } from "../../transport/transport.js";
 import type { DaemonContext } from "../context.js";
@@ -62,7 +63,11 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
   const sessionId = payload?.sessionId?.trim();
   const message = payload?.message?.trim() ?? "";
   const attachments = payload?.attachments ?? [];
-  if (!sessionId || (!message && attachments.length === 0)) {
+  const annotations = payload?.annotations ?? [];
+  if (
+    !sessionId ||
+    (!message && attachments.length === 0 && annotations.length === 0)
+  ) {
     sendWebSocket(
       ctx.socket,
       daemonMessageTypes.sessionSteered,
@@ -74,9 +79,22 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     return;
   }
   const inputId = payload?.inputId?.trim() || undefined;
-  const options =
-    payload?.delivery === "interrupt" || payload?.delivery === "boundary"
-      ? { delivery: payload.delivery, boundaryLimitMs: payload.boundaryLimitMs }
+  const options: SteerOptions | undefined =
+    payload?.delivery === "interrupt" ||
+    payload?.delivery === "boundary" ||
+    payload?.annotations?.length
+      ? {
+          ...(payload?.delivery === "interrupt" ||
+          payload?.delivery === "boundary"
+            ? {
+                delivery: payload.delivery,
+                boundaryLimitMs: payload.boundaryLimitMs,
+              }
+            : {}),
+          ...(payload?.annotations?.length
+            ? { annotations: payload.annotations }
+            : {}),
+        }
       : undefined;
   return reply(
     ctx,

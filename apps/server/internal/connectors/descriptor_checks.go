@@ -276,6 +276,9 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 			if probe.Extract.Routes.Domain != "" && !jsonPointer(probe.Extract.Routes.Domain) {
 				return fmt.Errorf("serverHeld probe %s: route domain extraction is not a JSON pointer", probe.ID)
 			}
+			if probe.Extract.Routes.Summary != "" && !jsonPointer(probe.Extract.Routes.Summary) {
+				return fmt.Errorf("serverHeld probe %s: route summary extraction is not a JSON pointer", probe.ID)
+			}
 		}
 	}
 	for _, field := range serverHeld.Fields {
@@ -394,8 +397,48 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 		if err := checkExtensionPath("serverHeld.writes.path", write.Path); err != nil {
 			return err
 		}
-		if write.CreatedMessageID == "" || !jsonPointer(write.CreatedMessageID) {
+		// createdMessageId is optional now: a write may only name objects
+		// (a reaction) or prepare another one (an upload, DEV-265).
+		if write.CreatedMessageID != "" && !jsonPointer(write.CreatedMessageID) {
 			return fmt.Errorf("serverHeld.writes.createdMessageId is a JSON pointer")
+		}
+		if len(write.Objects) > 8 {
+			return fmt.Errorf("serverHeld.writes.objects lists at most 8 objects")
+		}
+		if write.Auxiliary && len(write.Objects) > 0 {
+			return fmt.Errorf("serverHeld.writes.auxiliary touches no objects")
+		}
+		if write.Summary != "" {
+			if err := checkText("serverHeld.writes.summary", write.Summary, 200, true); err != nil {
+				return err
+			}
+		}
+		if write.CreatedMessageID == "" && len(write.Objects) == 0 && !write.Auxiliary && write.Summary == "" {
+			return fmt.Errorf("a serverHeld write names a created message, its objects, an operation summary or is auxiliary")
+		}
+		params := extensionPathParamsIn(write.Path)
+		seenObjects := map[string]bool{}
+		for _, object := range write.Objects {
+			if err := checkText("serverHeld.writes.objects.type", object.Type, 60, true); err != nil {
+				return err
+			}
+			key := object.Type + "\x00" + object.From
+			if object.Type == "" || object.From == "" || seenObjects[key] {
+				return fmt.Errorf("serverHeld.writes.objects names a distinct type and from")
+			}
+			seenObjects[key] = true
+			if name, ok := strings.CutPrefix(object.From, ":"); ok {
+				if object.Each {
+					return fmt.Errorf("serverHeld.writes.objects.each needs a body pointer")
+				}
+				if !params[name] {
+					return fmt.Errorf("serverHeld.writes.objects.from names a path parameter of the route")
+				}
+				continue
+			}
+			if !jsonPointer(object.From) {
+				return fmt.Errorf("serverHeld.writes.objects.from is a path parameter or a JSON pointer")
+			}
 		}
 		if footer := write.Footer; footer != nil {
 			if footer.Text == "" || !jsonPointer(footer.Text) {
@@ -431,6 +474,65 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 					plain[value] = true
 				}
 			}
+		}
+	}
+	if len(serverHeld.Resolvers) > 8 {
+		return fmt.Errorf("serverHeld.resolvers lists at most 8 resolvers")
+	}
+	seenResolvers := map[string]bool{}
+	for _, resolver := range serverHeld.Resolvers {
+		if err := checkText("serverHeld.resolvers.from", resolver.From, 60, true); err != nil {
+			return err
+		}
+		if err := checkText("serverHeld.resolvers.to", resolver.To, 60, true); err != nil {
+			return err
+		}
+		if resolver.From == resolver.To || seenResolvers[resolver.From] {
+			return fmt.Errorf("serverHeld.resolvers maps each object type once onto another")
+		}
+		seenResolvers[resolver.From] = true
+		if strings.ToUpper(strings.TrimSpace(resolver.Method)) != "GET" {
+			return fmt.Errorf("serverHeld.resolvers.method is GET")
+		}
+		if err := checkExtensionPath("serverHeld.resolvers.path", resolver.Path); err != nil {
+			return err
+		}
+		if len(extensionPathParamsIn(resolver.Path)) != 1 {
+			return fmt.Errorf("serverHeld.resolvers.path names exactly one parameter to fill")
+		}
+		if resolver.Pointer == "" || !jsonPointer(resolver.Pointer) {
+			return fmt.Errorf("serverHeld.resolvers.pointer is a JSON pointer")
+		}
+		if resolver.TTLSeconds != 0 && (resolver.TTLSeconds < 60 || resolver.TTLSeconds > 3600) {
+			return fmt.Errorf("serverHeld.resolvers.ttlSeconds is 60 to 3600 when set")
+		}
+	}
+	if len(serverHeld.Labels) > 8 {
+		return fmt.Errorf("serverHeld.labels lists at most 8 labels")
+	}
+	seenLabels := map[string]bool{}
+	for _, label := range serverHeld.Labels {
+		if err := checkText("serverHeld.labels.object", label.Object, 60, true); err != nil {
+			return err
+		}
+		if seenLabels[label.Object] {
+			return fmt.Errorf("serverHeld.labels names each object type once")
+		}
+		seenLabels[label.Object] = true
+		if strings.ToUpper(strings.TrimSpace(label.Method)) != "GET" {
+			return fmt.Errorf("serverHeld.labels.method is GET")
+		}
+		if err := checkExtensionPath("serverHeld.labels.path", label.Path); err != nil {
+			return err
+		}
+		if len(extensionPathParamsIn(label.Path)) != 1 {
+			return fmt.Errorf("serverHeld.labels.path names exactly one parameter to fill")
+		}
+		if label.Pointer == "" || !jsonPointer(label.Pointer) {
+			return fmt.Errorf("serverHeld.labels.pointer is a JSON pointer")
+		}
+		if label.TTLSeconds != 0 && (label.TTLSeconds < 60 || label.TTLSeconds > 3600) {
+			return fmt.Errorf("serverHeld.labels.ttlSeconds is 60 to 3600 when set")
 		}
 	}
 	if len(serverHeld.Network.Holdings) == 0 || len(serverHeld.Network.Holdings) > 2 {
@@ -496,32 +598,8 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 		if !channels.ValidEnvelopeField(key) {
 			return fmt.Errorf("serverHeld.events.envelope field %q is not an envelope field", key)
 		}
-		if (field.Pointer == "") == (field.Template == "") || !jsonPointer(field.Pointer) || len(field.Template) > 300 || len(field.Map) > 50 {
-			return fmt.Errorf("serverHeld.events.envelope field %q has exactly one of pointer or template", key)
-		}
-		if field.Unit != "" && field.Unit != "ms" && field.Unit != "s" && field.Unit != "rfc3339" {
-			return fmt.Errorf("serverHeld.events.envelope field %q has an unknown unit", key)
-		}
-		if len(field.When) > 10 || len(field.TrimPrefix) > 100 {
-			return fmt.Errorf("serverHeld.events.envelope field %q has a bounded when and trimPrefix", key)
-		}
-		for _, condition := range field.When {
-			if err := checkEventsCondition(condition); err != nil {
-				return fmt.Errorf("serverHeld.events.envelope field %q: %w", key, err)
-			}
-		}
-		if len(field.Cases) > 10 {
-			return fmt.Errorf("serverHeld.events.envelope field %q has at most 10 cases", key)
-		}
-		for _, next := range field.Cases {
-			if len(next.When) == 0 || len(next.When) > 10 || len(next.Value) > 200 {
-				return fmt.Errorf("serverHeld.events.envelope field %q: a case has 1 to 10 conditions and a bounded value", key)
-			}
-			for _, condition := range next.When {
-				if err := checkEventsCondition(condition); err != nil {
-					return fmt.Errorf("serverHeld.events.envelope field %q: %w", key, err)
-				}
-			}
+		if err := checkEventsValue("serverHeld.events.envelope field "+key, field); err != nil {
+			return err
 		}
 	}
 	if len(events.Envelope.SkipWhen) > 20 {
@@ -571,6 +649,85 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 		if ack.Remove.Method != "" || ack.Remove.Path != "" || ack.Remove.Body != "" {
 			if err := checkEventsAckCall("serverHeld.events.ack.remove", ack.Remove, prefix); err != nil {
 				return err
+			}
+		}
+	}
+	if len(events.Reads) > 8 {
+		return fmt.Errorf("serverHeld.events.reads lists at most 8 reads")
+	}
+	for name, read := range events.Reads {
+		if err := checkText("serverHeld.events.reads name", name, 64, true); err != nil {
+			return err
+		}
+		if strings.ContainsAny(name, " ./{}") {
+			return fmt.Errorf("serverHeld.events.reads name %q is one word", name)
+		}
+		what := "serverHeld.events.reads." + name
+		if strings.ToUpper(strings.TrimSpace(read.Method)) != "GET" {
+			return fmt.Errorf("%s.method is GET", what)
+		}
+		if err := checkExtensionPath(what+".path", read.Path); err != nil {
+			return err
+		}
+		if read.Path != prefix && !strings.HasPrefix(read.Path, strings.TrimRight(prefix, "/")+"/") {
+			return fmt.Errorf("%s.path must be at or below the upstream prefix %s", what, prefix)
+		}
+		params := extensionPathParamsIn(read.Path)
+		if len(read.Args) != len(params) {
+			return fmt.Errorf("%s.args fills every path parameter and nothing else", what)
+		}
+		for param, fact := range read.Args {
+			if !params[strings.TrimPrefix(param, ":")] {
+				return fmt.Errorf("%s.args names %q, which is not a path parameter", what, param)
+			}
+			switch fact {
+			case "conversation.id", "message.id", "thread.id":
+			default:
+				return fmt.Errorf("%s.args fills from conversation.id, message.id or thread.id", what)
+			}
+		}
+		if len(read.Fields) == 0 || len(read.Fields) > 40 {
+			return fmt.Errorf("%s.fields maps 1 to 40 values", what)
+		}
+		if read.Items != "" && !jsonPointer(read.Items) {
+			return fmt.Errorf("%s.items is a JSON pointer", what)
+		}
+		for key, field := range read.Fields {
+			if err := checkEventsValue(what+" field "+key, field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkEventsValue checks one mapped value of an envelope field or a read:
+// exactly one pointer or template, a known unit, bounded conditions.
+func checkEventsValue(what string, field store.ConnectorEventsValue) error {
+	if (field.Pointer == "") == (field.Template == "") || !jsonPointer(field.Pointer) || len(field.Template) > 300 || len(field.Map) > 50 {
+		return fmt.Errorf("%s has exactly one of pointer or template", what)
+	}
+	if field.Unit != "" && field.Unit != "ms" && field.Unit != "s" && field.Unit != "rfc3339" {
+		return fmt.Errorf("%s has an unknown unit", what)
+	}
+	if len(field.When) > 10 || len(field.TrimPrefix) > 100 {
+		return fmt.Errorf("%s has a bounded when and trimPrefix", what)
+	}
+	for _, condition := range field.When {
+		if err := checkEventsCondition(condition); err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+	}
+	if len(field.Cases) > 10 {
+		return fmt.Errorf("%s has at most 10 cases", what)
+	}
+	for _, next := range field.Cases {
+		if len(next.When) == 0 || len(next.When) > 10 || len(next.Value) > 200 {
+			return fmt.Errorf("%s: a case has 1 to 10 conditions and a bounded value", what)
+		}
+		for _, condition := range next.When {
+			if err := checkEventsCondition(condition); err != nil {
+				return fmt.Errorf("%s: %w", what, err)
 			}
 		}
 	}
@@ -637,6 +794,19 @@ func checkExtensionPath(what, path string) error {
 		return fmt.Errorf("%s is a path beginning with / and without query, fragment or traversal", what)
 	}
 	return nil
+}
+
+// extensionPathParamsIn lists the named parameters of a route template.
+func extensionPathParamsIn(path string) map[string]bool {
+	names := map[string]bool{}
+	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
+		if name, ok := strings.CutPrefix(segment, ":"); ok && name != "" {
+			names[name] = true
+		} else if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") && len(segment) > 2 {
+			names[segment[1:len(segment)-1]] = true
+		}
+	}
+	return names
 }
 
 func jsonPointer(pointer string) bool {

@@ -11,7 +11,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.ArchiveChatsInput) ([]string, error) {
+func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.ArchiveChatsInput, restore bool) ([]string, error) {
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.
 	if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
 		return nil, &statusError{http.StatusNotFound, store.ErrNotFound}
 	}
-	ids, err := s.store.ArchiveChatIDs(ctx, input)
+	ids, err := s.store.ArchiveChatIDs(ctx, input, restore)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.Arch
 	empty := store.ArchiveChatsResult{}
 	timing := archiveTiming{started: time.Now()}
 	defer timing.log(input, restore)
-	ids, err := s.authorizeArchive(ctx, actor, input)
+	ids, err := s.authorizeArchive(ctx, actor, input, restore)
 	timing.mark(&timing.authorize)
 	timing.chats = len(ids)
 	if err != nil {
@@ -196,7 +196,7 @@ func (s *Server) handleRetryNativeArchive(w http.ResponseWriter, r *http.Request
 		ws = body.WorkspaceID
 	}
 	input := store.ArchiveChatsInput{WorkspaceID: ws, ChatIDs: []string{r.PathValue("id")}}
-	if _, err := s.authorizeArchive(r.Context(), actorFromContext(r.Context()), input); err != nil {
+	if _, err := s.authorizeArchive(r.Context(), actorFromContext(r.Context()), input, false); err != nil {
 		writeResult(w, nil, err)
 		return
 	}

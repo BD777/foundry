@@ -1140,6 +1140,133 @@ test("an unprocessed message's item: retry, not-process and the attempt in one r
   host.remove();
 });
 
+test("a connector write says what would be written where, and allows exactly it", async () => {
+  const list = {
+    open: 1,
+    bySession: {},
+    items: [
+      item({
+        id: "pnd_write_1",
+        source: "connector_write",
+        assistantId: "asst_1",
+        assistantName: "Ada",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "OpenLark",
+        excerpt: "hello",
+        createdAt: "2026-11-17T04:51:47Z",
+        connectorWrite: {
+          proposalId: "p_1",
+          action: "message",
+          accountName: "OpenLark",
+          targetType: "conversation",
+          targetId: "oc_other",
+          targetName: "Gao Yibin",
+          text: "hello",
+          channelName: "OpenLark",
+          conversationKind: "self",
+          conversationName: "Me",
+        },
+      }),
+      item({
+        id: "pnd_write_2",
+        source: "connector_write",
+        assistantId: "asst_1",
+        assistantName: "Ada",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "OpenLark",
+        excerpt: "",
+        createdAt: "2026-11-17T05:00:00Z",
+        connectorWrite: {
+          proposalId: "p_2",
+          action: "write",
+          accountName: "OpenLark",
+          operation: "新建云文档",
+          expiresAt: "2099-01-01T00:00:00Z",
+          preview: ["docType: docx", "title: DEV-265 授权测试（可删）"],
+          body: '{\n  "docType": "docx",\n  "title": "DEV-265 授权测试（可删）"\n}',
+          text: "",
+        },
+      }),
+      item({
+        id: "pnd_write_3",
+        source: "connector_write",
+        assistantId: "asst_1",
+        assistantName: "Ada",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "OpenLark",
+        excerpt: "",
+        createdAt: "2026-11-17T05:10:00Z",
+        connectorWrite: {
+          proposalId: "p_3",
+          action: "write",
+          accountName: "OpenLark",
+          targetType: "conversation",
+          targetId: "oc_missing",
+          text: "",
+        },
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list);
+  const card = host.querySelector('[data-source="connector_write"]');
+  assert.ok(card, host.innerHTML);
+  assert.match(card.textContent, /Allow this write\?/);
+  assert.match(
+    card.textContent,
+    /The assistant wants to message Gao Yibin on OpenLark: hello/,
+  );
+  assert.match(card.textContent, /from \/ai in OpenLark self chat/);
+  assert.doesNotMatch(card.textContent, /oc_other/);
+  assert.match(card.textContent, /hello/);
+  const cards = [...host.querySelectorAll('[data-source="connector_write"]')];
+  assert.equal(cards.length, 3, host.innerHTML);
+  // A generic write names the operation, previews its body, and keeps the
+  // full JSON behind a disclosure.
+  assert.match(
+    cards[1].textContent,
+    /The assistant wants to run “新建云文档” on OpenLark/,
+  );
+  assert.match(cards[1].textContent, /docType: docx/);
+  assert.match(cards[1].textContent, /title: DEV-265 授权测试（可删）/);
+  const details = cards[1].querySelector("details");
+  assert.ok(details, cards[1].innerHTML);
+  assert.match(details.textContent, /"title": "DEV-265 授权测试（可删）"/);
+  assert.match(cards[0].querySelector("time").textContent, /requested/);
+  assert.match(cards[1].querySelector("time").textContent, /expires/);
+  assert.equal(
+    cards[1].querySelector("time").getAttribute("datetime"),
+    "2099-01-01T00:00:00Z",
+  );
+  const requestLine = [...cards[1].querySelectorAll("p")].find((line) =>
+    line.textContent.includes("The assistant wants to run"),
+  );
+  assert.ok(requestLine, cards[1].innerHTML);
+  assert.doesNotMatch(requestLine.textContent, /"title"/);
+  assert.match(
+    cards[2].textContent,
+    /The assistant wants to write to unknown conversation \(oc_missing\) on OpenLark/,
+  );
+  assert.ok(buttonNamed(card, "Allow"));
+  assert.ok(buttonNamed(card, "Don't allow"));
+  await act(async () => buttonNamed(card, "Allow").click());
+  const decided = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_write_1/decide"),
+  );
+  assert.ok(decided, JSON.stringify(calls));
+  assert.equal(decided.method, "POST");
+  assert.deepEqual(decided.body, { allow: true });
+  await act(async () => buttonNamed(card, "Don't allow")?.click());
+  const declined = calls.filter((call) =>
+    call.path.endsWith("/api/pending-items/pnd_write_1/decide"),
+  );
+  assert.deepEqual(declined.at(-1).body, { allow: false });
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 test("an unprocessed message's time is when it was sent, not when its item was recorded", async () => {
   const list = {
     open: 1,

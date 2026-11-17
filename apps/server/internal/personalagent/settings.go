@@ -201,35 +201,16 @@ func DeviceSettings(devices []store.PersonalAgentDeviceSettings, deviceID, home 
 	return store.PersonalAgentDeviceSettings{DeviceID: deviceID, AllowWork: true, AllowCreate: deviceID == home}
 }
 
-// NormalizeLimits fills zero limits with their defaults and refuses
-// negative ones and those above their hard caps (§9).
+// NormalizeLimits fills a zero stuck notice with its default and refuses a
+// negative one. The caps §9 used to set are gone: their legacy settings
+// fields are ignored and not kept.
 func NormalizeLimits(in store.PersonalAgentLimits) (store.PersonalAgentLimits, error) {
 	out := in
-	fields := []struct {
-		name          string
-		value         *int
-		fallback, cap int
-	}{
-		{"concurrentSessions", &out.ConcurrentSessions, DefaultLimits.ConcurrentSessions, LimitCaps.ConcurrentSessions},
-		{"dailySessions", &out.DailySessions, DefaultLimits.DailySessions, LimitCaps.DailySessions},
-		{"dailyWorkspaces", &out.DailyWorkspaces, DefaultLimits.DailyWorkspaces, LimitCaps.DailyWorkspaces},
-		{"weeklyWorkspaces", &out.WeeklyWorkspaces, DefaultLimits.WeeklyWorkspaces, LimitCaps.WeeklyWorkspaces},
-		{"hourlyTurns", &out.HourlyTurns, DefaultLimits.HourlyTurns, LimitCaps.HourlyTurns},
-		{"dailyDigestSessions", &out.DailyDigestSessions, DefaultLimits.DailyDigestSessions, LimitCaps.DailyDigestSessions},
-		{"stuckAfterMinutes", &out.StuckAfterMinutes, DefaultLimits.StuckAfterMinutes, LimitCaps.StuckAfterMinutes},
+	if out.StuckAfterMinutes < 0 {
+		return in, errors.New("stuckAfterMinutes cannot be negative")
 	}
-	for _, field := range fields {
-		switch {
-		case *field.value < 0:
-			return in, fmt.Errorf("%s cannot be negative", field.name)
-		case *field.value == 0:
-			*field.value = field.fallback
-		case field.cap > 0 && *field.value > field.cap:
-			return in, fmt.Errorf("%s is at most %d", field.name, field.cap)
-		}
-	}
-	if out.MonthlyTokenBudget < 0 {
-		return in, errors.New("monthlyTokenBudget cannot be negative; 0 means no budget")
+	if out.StuckAfterMinutes == 0 {
+		out.StuckAfterMinutes = DefaultLimits.StuckAfterMinutes
 	}
 	return out, nil
 }

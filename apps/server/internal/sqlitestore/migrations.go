@@ -69,6 +69,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupDeviceAccountSharing,
 		s.setupPersonalAgentList,
 		s.setupPersonalAgentInbox,
+		s.setupSessionConnectorGrants,
 		s.setupMessageChannels,
 		s.setupWorkspaceFiles,
 		s.setupPersonalAgentRuntime,
@@ -151,6 +152,9 @@ func (s *Store) createCoreSchema(ctx context.Context) error {
 		}
 	}
 	if err := s.dropRetiredThreadColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.addChatQueueAnnotationsColumn(ctx); err != nil {
 		return err
 	}
 	for _, statement := range indexStatements() {

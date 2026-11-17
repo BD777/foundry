@@ -8,7 +8,6 @@ import {
   type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
-  type PersonalAgentLimits,
   type PersonalAgentPolicy,
   type PersonalAgentPolicyPreset,
   type PersonalAgentProposal,
@@ -18,6 +17,11 @@ import {
   sessionSources,
 } from "@bd777/foundry-protocol";
 import { agentSessionDisplayEvents } from "../../lib/agent-session-events";
+import type { ConversationAnnotation } from "../../components/conversation/annotations";
+import {
+  receivedAnnotations,
+  sentPromptText,
+} from "../../components/conversation/received-annotations";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isSessionLive } from "../../lib/session-status";
 import {
@@ -129,31 +133,8 @@ export function loosenedActions(
   );
 }
 
-export const limitKeys = [
-  "concurrentSessions",
-  "dailySessions",
-  "dailyWorkspaces",
-  "weeklyWorkspaces",
-  "hourlyTurns",
-  "dailyDigestSessions",
-  "stuckAfterMinutes",
-  "monthlyTokenBudget",
-] as const satisfies ReadonlyArray<keyof PersonalAgentLimits>;
-
-export type LimitKey = (typeof limitKeys)[number];
-
-/** §9's hard caps; absent: none. */
-export const limitCaps: Partial<Record<LimitKey, number>> = {
-  concurrentSessions: 8,
-  dailySessions: 100,
-  dailyWorkspaces: 10,
-  weeklyWorkspaces: 30,
-  hourlyTurns: 120,
-  dailyDigestSessions: 200,
-};
-
-/** Limits that may be 0 (off); the others need at least 1. */
-const zeroAllowed = new Set<LimitKey>(["monthlyTokenBudget"]);
+/** The one limit §9 still sets: how long a task may go unanswered before it is reported as possibly stuck. */
+export type LimitKey = "stuckAfterMinutes";
 
 export const extraInstructionsMaxChars = 2000;
 export const memoryItemMaxChars = 300;
@@ -164,7 +145,7 @@ export type SettingsProblem =
   | { kind: "extraInstructions" }
   | { kind: "executionModels" }
   | { kind: "time"; field: "dailyDigestTime" | "activeHours" }
-  | { kind: "limit"; key: LimitKey; max?: number; min: number };
+  | { kind: "limit"; key: LimitKey; min: number };
 
 /** What keeps a draft from being saved, in the order the panel shows. */
 export function settingsProblems(
@@ -200,17 +181,9 @@ export function settingsProblems(
     !clockPattern.test(settings.activeHoursEnd)
   )
     problems.push({ kind: "time", field: "activeHours" });
-  for (const key of limitKeys) {
-    const value = settings.limits[key];
-    const min = zeroAllowed.has(key) ? 0 : 1;
-    const max = limitCaps[key];
-    if (
-      !Number.isInteger(value) ||
-      value < min ||
-      (max !== undefined && value > max)
-    )
-      problems.push({ kind: "limit", key, min, max });
-  }
+  const stuckAfterMinutes = settings.limits.stuckAfterMinutes;
+  if (!Number.isInteger(stuckAfterMinutes) || stuckAfterMinutes < 1)
+    problems.push({ kind: "limit", key: "stuckAfterMinutes", min: 1 });
   return problems;
 }
 
@@ -252,6 +225,8 @@ export interface AssistantLine {
   text: string;
   /** Files the message carried; a message may be only its files. */
   attachments?: ChatAttachment[];
+  /** Annotations on earlier answers the message carried. */
+  annotations?: ConversationAnnotation[];
   at?: string;
   streaming?: boolean;
   /** The first line of a later session: a new conversation began. */
@@ -265,6 +240,17 @@ export interface AssistantLine {
    * Foundry notice.
    */
   inputSource?: AgentSessionInputSource;
+  /**
+   * The turn ended without an answer (stopped, or failed): the home says so
+   * where the answer would have been, with a retry (DEV-267).
+   */
+  ended?: {
+    status: "canceled" | "failed";
+    /** The session's recorded reason, when it has one. */
+    reason?: string;
+    /** The input this turn ran, to match its saved message. */
+    inputId?: string;
+  };
 }
 
 /**
@@ -277,7 +263,9 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
   const events = agentSessionDisplayEvents(session);
   const input = session.input;
   if (
-    (!input?.prompt?.trim() && !input?.attachments?.length) ||
+    (!input?.prompt?.trim() &&
+      !input?.attachments?.length &&
+      !input?.annotations?.length) ||
     events.some(
       (event) =>
         event.message?.kind === "user" && event.message.id === input.id,
@@ -302,6 +290,7 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
       text: input.prompt,
       at,
       attachments: input.attachments,
+      annotations: input.annotations,
     },
     metadata:
       input.sentBySessionId || input.inputSource
@@ -326,6 +315,9 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
   sessions.forEach((session, index) => {
     const start = lines.length;
     let answer: AssistantLine | undefined;
+    // Whether the latest user message got any answer text: a turn that ended
+    // without one says so (DEV-267).
+    let answered = false;
     // The turn's handoffs are shown under its answer, outside the steps the
     // home does not show at all (DEV-250).
     let steps: TurnHandoffToolStep[] = [];
@@ -349,7 +341,16 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
         });
       if (event.label === sessionEventLabels.userMessage) {
         flush();
-        const text = event.message?.text ?? event.detail;
+        answered = false;
+        const annotations =
+          event.message?.annotations ??
+          (event.message?.id === session.input?.id
+            ? session.input?.annotations
+            : undefined);
+        const text = sentPromptText(
+          event.message?.text ?? event.detail,
+          annotations,
+        );
         const attachments =
           event.message?.attachments ??
           (event.message?.id === session.input?.id
@@ -368,6 +369,9 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
             role: "person",
             text,
             ...(attachments?.length ? { attachments } : {}),
+            ...(annotations?.length
+              ? { annotations: receivedAnnotations(annotations) }
+              : {}),
             at: event.message?.at ?? event.at,
             ...(inputSource ? { inputSource } : {}),
           });
@@ -385,9 +389,25 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
         text: event.message?.text ?? event.detail,
         at: answer?.at ?? event.message?.at ?? event.at,
       };
+      if ((answer.text ?? "").trim() !== "") answered = true;
     }
     if (answer && isSessionLive(session)) answer.streaming = true;
     flush();
+    if (
+      !answered &&
+      (session.status === "canceled" || session.status === "failed")
+    )
+      lines.push({
+        id: `${session.id}:ended:${session.input?.id ?? ""}`,
+        role: "assistant",
+        text: "",
+        at: session.completedAt,
+        ended: {
+          status: session.status,
+          ...(session.error?.trim() ? { reason: session.error.trim() } : {}),
+          ...(session.input?.id ? { inputId: session.input.id } : {}),
+        },
+      });
     if (index > 0 && lines.length > start)
       lines[start] = { ...lines[start]!, startsConversation: true };
   });
@@ -453,6 +473,18 @@ export function assistantActivity(
  * Proposals placed in the conversation: each after the last line said
  * before it was made. Decided ones stay where they were, without buttons.
  */
+/**
+ * The proposals the home conversation shows. A connector write outside a
+ * session's grant is decided in Needs you alone (DEV-267): it is not one of
+ * the cards the assistant's conversation carries, and a bare yes or no here
+ * must not answer it.
+ */
+export function conversationProposals(
+  proposals: PersonalAgentProposal[],
+): PersonalAgentProposal[] {
+  return proposals.filter((proposal) => proposal.kind !== "connector_write");
+}
+
 export function placeProposals<T extends { at?: string }>(
   lines: T[],
   proposals: PersonalAgentProposal[],

@@ -50,6 +50,9 @@ type PersonalAgentInboxEntry struct {
 	// Attachments uploaded for a web message, delivered with its turn and
 	// kept across retries. A channel message's files come from its origin.
 	Attachments []ChatAttachment `json:"attachments,omitempty"`
+	// Annotations are the answer passages a web message annotates; its text
+	// already carries their wrapper, so they are display structure only.
+	Annotations []SessionInputAnnotation `json:"annotations,omitempty"`
 }
 
 // Channel routing and resource references are server-owned provenance, never
@@ -71,9 +74,10 @@ type PersonalAgentInboxResource struct {
 }
 
 type PersonalAgentInboxCapture struct {
-	MessageID   string           `json:"messageId"`
-	Text        string           `json:"text"`
-	Attachments []ChatAttachment `json:"attachments,omitempty"`
+	MessageID   string                   `json:"messageId"`
+	Text        string                   `json:"text"`
+	Attachments []ChatAttachment         `json:"attachments,omitempty"`
+	Annotations []SessionInputAnnotation `json:"annotations,omitempty"`
 }
 
 type PersonalAgentInboxAction struct {

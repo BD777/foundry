@@ -76,3 +76,13 @@ export * from "./personal-agent-maintenance.js";
 export * from "./service-tunnels.js";
 
 export * from "./worker-failure.js";
+
+export {
+  annotatedMessageText,
+  annotationInstruction,
+  annotationWrapperHeading,
+  serializeAnnotatedPrompt,
+  sessionAnnotationPromptItem,
+  stripAnnotationWrapper,
+} from "./annotations.js";
+export type { AnnotationPromptItem } from "./annotations.js";

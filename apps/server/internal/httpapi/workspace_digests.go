@@ -402,8 +402,8 @@ func (s *Server) wakeDigestSummaries(at time.Time) {
 }
 
 // runDigestSummaries starts the summaries due within ahead, most recently
-// active projects first, within each person's limits (§9 and §14: per
-// day, and at most DigestMigrationRate an hour), on their assistant's
+// active projects first, within each person's rate (§14: at most
+// DigestMigrationRate an hour), on their assistant's
 // home device. What cannot run now is postponed.
 func (s *Server) runDigestSummaries(ctx context.Context, ahead time.Duration) {
 	digestDispatch.Lock()
@@ -536,20 +536,10 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 // runs.
 var errDigestRunning = errors.New("another summary of this project is running")
 
-// digestSummaryAllowed postpones a summary past the person's limits on
-// refreshing summaries (§9: per day, and DigestMigrationRate an hour):
-// errDigestPostponed when it did.
+// digestSummaryAllowed postpones a summary past the rate of refreshing
+// summaries (§14: DigestMigrationRate an hour): errDigestPostponed when it
+// did.
 func (s *Server) digestSummaryAllowed(ctx context.Context, service *workspacedigest.Service, record store.WorkspaceDigestRecord, agent store.PersonalAgent, now time.Time) error {
-	daily := agent.Settings.Limits.DailyDigestSessions
-	if daily <= 0 {
-		daily = personalagent.DefaultLimits.DailyDigestSessions
-	}
-	dayStart := startOfDay(now, s.assistant.PersonLocation(ctx, agent))
-	if today, err := service.SummariesSince(ctx, agent.UserID, dayStart); err != nil {
-		return err
-	} else if today >= daily {
-		return postponed(service.Postpone(ctx, record, dayStart.Add(24*time.Hour)))
-	}
 	if lastHour, err := service.SummariesSince(ctx, agent.UserID, now.Add(-time.Hour)); err != nil {
 		return err
 	} else if lastHour >= personalagent.DigestMigrationRate {
@@ -663,10 +653,4 @@ func (s *Server) finishDigestSummary(ctx context.Context, session store.AgentSes
 		// A first summary waiting for this one to end starts now.
 		s.hub.work.Go(func() { s.runDigestSummaries(s.hub.work.ctx, 0) })
 	}
-}
-
-// startOfDay is the start of now's day in location.
-func startOfDay(now time.Time, location *time.Location) time.Time {
-	local := now.In(location)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 }

@@ -292,6 +292,11 @@ func (m *WSManager) answerProposalByWord(ctx context.Context, client botClient, 
 		if proposal.Status != "" && proposal.Status != store.PersonalAgentProposalPending {
 			continue
 		}
+		// A connector write is answered in Needs you, where it is shown;
+		// a word in a chat never answers a card the person did not see.
+		if proposal.Kind == store.PersonalAgentProposalConnectorWrite {
+			continue
+		}
 		if threadSessionID != "" {
 			if proposal.SessionID == threadSessionID {
 				matches = append(matches, proposal)

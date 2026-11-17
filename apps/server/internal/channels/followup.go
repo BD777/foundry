@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -15,8 +16,12 @@ import (
 // Who may continue a conversation without a trigger word.
 const (
 	FollowUpSameSender = "same-sender"
-	FollowUpPerson     = "person"
-	FollowUpAnyone     = "anyone"
+	// FollowUpThreadParticipants lets anyone in a thread whose turn happened
+	// continue it; a quote outside a thread stays the same sender's. It is
+	// the default (DEV-268).
+	FollowUpThreadParticipants = "thread-participants"
+	FollowUpPerson             = "person"
+	FollowUpAnyone             = "anyone"
 )
 
 const (
@@ -39,14 +44,15 @@ type FollowUpConfig struct {
 }
 
 // FollowUpRule is the channel's follow-up rule with its defaults: enabled,
-// the sender of the first message, and /end.
+// thread participants (the sender of the thread's first message and everyone
+// else in that thread), and /end.
 func FollowUpRule(channel store.MessageChannel) FollowUpConfig {
 	if channel.FollowUps == nil {
-		return FollowUpConfig{Enabled: true, From: FollowUpSameSender, EndCommands: []string{"/end"}}
+		return FollowUpConfig{Enabled: true, From: FollowUpThreadParticipants, EndCommands: []string{"/end"}}
 	}
 	config := FollowUpConfig{Enabled: channel.FollowUps.Enabled, From: channel.FollowUps.From}
 	if config.From == "" {
-		config.From = FollowUpSameSender
+		config.From = FollowUpThreadParticipants
 	}
 	for _, command := range channel.FollowUps.EndCommands {
 		if command = strings.TrimSpace(command); command != "" {
@@ -76,6 +82,9 @@ type followUpIndex struct {
 	conversations map[string]*followUpBinding
 	threads       map[string]*followUpBinding
 	quotes        map[string]followUpQuote
+	// ownWrites are the messages the assistant wrote through the gateway; a
+	// reply to one continues the conversation it was written in.
+	ownWrites map[string]bool
 }
 
 func newFollowUpIndex() followUpIndex {
@@ -210,15 +219,16 @@ func (index followUpIndex) followUp(channel store.MessageChannel, config FollowU
 	conversation, thread := index.bindingFor(channel, envelope)
 	replyTo := strings.TrimSpace(envelope.Attributes["replyTo"])
 	quote, quoted := index.quotes[replyTo]
-	// replyToMe marks a reply to one of the assistant's own messages, which
-	// the source does not name by id.
-	replyToMe := envelope.Attributes["replyToMe"] == "true"
+	// Only Foundry knows which messages the assistant wrote. The source's
+	// replyToMe means a reply to anything the account sent, and on the
+	// person's own account that includes every message the person wrote.
+	toAssistant := replyTo != "" && index.ownWrites[replyTo]
 	threadActive := thread != nil
-	if !threadActive && !((quoted || replyToMe) && conversation != nil) {
+	if !threadActive && !((quoted || toAssistant) && conversation != nil) {
 		return "", false
 	}
 	// A chat without threads continues only by replying or quoting.
-	if envelope.Thread.ID == "" && !quoted && !replyToMe {
+	if envelope.Thread.ID == "" && !quoted && !toAssistant {
 		return "", false
 	}
 	firstSender := ""
@@ -230,16 +240,29 @@ func (index followUpIndex) followUp(channel store.MessageChannel, config FollowU
 	case conversation != nil:
 		firstSender = conversation.FirstSenderID
 	}
-	if !followUpSenderAllowed(config.From, envelope, firstSender) {
+	if !followUpSenderAllowed(config.From, envelope, firstSender, threadActive) {
 		return "", false
 	}
 	if threadActive {
-		return "thread " + envelope.Thread.ID + " (since " + thread.Since + ")", true
+		return followUpFact("thread "+envelope.Thread.ID, thread.Since, envelope.Sender), true
 	}
 	if quoted {
-		return "quote " + replyTo + " (since " + quote.Since + ")", true
+		return followUpFact("quote "+replyTo, quote.Since, envelope.Sender), true
 	}
-	return "quote (since " + conversation.Since + ")", true
+	return followUpFact("quote", conversation.Since, envelope.Sender), true
+}
+
+// followUpFact says what continues the conversation, since when, and who
+// wrote it: the assistant reads who it is answering.
+func followUpFact(what, since string, sender store.MessageEnvelopeSender) string {
+	who := sender.ID
+	if sender.Name != "" {
+		who = fmt.Sprintf("%q (%s)", oneLine(sender.Name), sender.ID)
+	}
+	if sender.IsSelf {
+		return fmt.Sprintf("%s (since %s) by %s, the person", what, since, who)
+	}
+	return fmt.Sprintf("%s (since %s) by %s, not the person", what, since, who)
 }
 
 // followUpEnd reports whether envelope ends the conversation's follow-ups.
@@ -255,7 +278,7 @@ func (index followUpIndex) followUpEnd(channel store.MessageChannel, config Foll
 	if binding == nil {
 		return "", false
 	}
-	if !followUpSenderAllowed(config.From, envelope, binding.FirstSenderID) {
+	if !followUpSenderAllowed(config.From, envelope, binding.FirstSenderID, thread != nil) {
 		return "", false
 	}
 	if _, ok := StripCommand(envelope.Text, ChannelTriggers(channel), config.EndCommands); !ok {
@@ -264,14 +287,21 @@ func (index followUpIndex) followUpEnd(channel store.MessageChannel, config Foll
 	return binding.SessionKey, true
 }
 
-func followUpSenderAllowed(from string, envelope store.MessageEnvelope, firstSenderID string) bool {
+// followUpSenderAllowed says whether a message may continue a conversation:
+// same-sender the first sender, person the person, anyone anyone;
+// thread-participants anyone in a thread, the first sender in a quote outside
+// one.
+func followUpSenderAllowed(from string, envelope store.MessageEnvelope, firstSenderID string, inThread bool) bool {
+	sameSender := firstSenderID != "" && envelope.Sender.ID == firstSenderID
 	switch from {
 	case FollowUpAnyone:
 		return true
 	case FollowUpPerson:
 		return envelope.Sender.IsSelf
+	case FollowUpThreadParticipants:
+		return sameSender || inThread
 	default:
-		return firstSenderID != "" && envelope.Sender.ID == firstSenderID
+		return sameSender
 	}
 }
 

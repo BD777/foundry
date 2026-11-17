@@ -37,18 +37,15 @@ export const triStates = [
 
 /** Who may continue a conversation without a trigger word. */
 export const followUpFroms = [
+  "thread-participants",
   "same-sender",
   "person",
   "anyone",
 ] as const satisfies readonly MessageChannelFollowUpFrom[];
 
 /** What the channel's sessions may do with the source connector. */
-export type SourceAccess = "read" | "confirm" | "direct";
-export const sourceAccesses: readonly SourceAccess[] = [
-  "read",
-  "confirm",
-  "direct",
-];
+export type SourceAccess = "read" | "write";
+export const sourceAccesses: readonly SourceAccess[] = ["read", "write"];
 
 export const channelBounds = {
   name: 80,
@@ -458,7 +455,7 @@ export function newCustomRule(
  * A new channel: direct messages, group @me and the person's own messages
  * on, no trigger word filled in for them, each thread its own session, a
  * new session after 4 hours without messages, a new workspace, the source's
- * writes left to the assistant, other connectors as the assistant has them.
+ * write for replies in place, other connectors as the assistant has them.
  */
 export function newChannelDraft(sourceAccountId = ""): ChannelDraft {
   return {
@@ -476,7 +473,7 @@ export function newChannelDraft(sourceAccountId = ""): ChannelDraft {
     ack: true,
     footer: defaultFooter,
     workspace: { mode: "new", id: "" },
-    access: "direct",
+    access: "write",
     inheritOtherConnectors: true,
     limits: {
       perHour: channelBounds.perHour.initial,
@@ -489,19 +486,14 @@ export function newChannelDraft(sourceAccountId = ""): ChannelDraft {
 export function sourceAccessOf(
   scope: MessageChannelConnectorScope | undefined,
 ): SourceAccess {
-  if (!scope || scope.level !== "write") return "read";
-  return scope.writes === "direct" ? "direct" : "confirm";
+  return scope?.level === "write" ? "write" : "read";
 }
 
 function sourceScope(
   accountId: string,
   access: SourceAccess,
 ): MessageChannelConnectorScope {
-  return {
-    accountId,
-    level: access === "read" ? "read" : "write",
-    writes: access === "direct" ? "direct" : "confirm",
-  };
+  return { accountId, level: access };
 }
 
 /** The source a channel reads: the listed one, else the one it saved. */
@@ -905,7 +897,7 @@ export function resetCommandsValid(commands: readonly string[]): boolean {
 }
 
 export function defaultFollowUpRule(): MessageChannelFollowUps {
-  return { enabled: true, from: "same-sender", endCommands: ["/end"] };
+  return { enabled: true, from: "thread-participants", endCommands: ["/end"] };
 }
 
 /** A channel's follow-up rule; a channel saved without one is on by default. */

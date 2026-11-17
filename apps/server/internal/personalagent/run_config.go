@@ -53,12 +53,9 @@ func RunPreference(settings store.PersonalAgentSettings, role string) (store.Per
 			preference = assistantChoice(settings)
 		}
 	}
-	if preference.TokenBudget == 0 {
-		preference.TokenBudget = 500000
-	}
-	if preference.TimeoutMinutes == 0 {
-		preference.TimeoutMinutes = 30
-	}
+	// Token and time budgets set by older versions stay readable in the
+	// settings JSON but bound nothing: Foundry does not stop a working
+	// assistant turn by its own judgement (DEV-271).
 	if preference.ProfileID == "" {
 		preference.ProfileID = "device_default"
 	}
@@ -91,12 +88,6 @@ func assistantChoice(settings store.PersonalAgentSettings) store.PersonalAgentRu
 func ValidateRunPreference(preference store.PersonalAgentRunPreference) error {
 	if preference.Runtime != "" && !slices.Contains([]string{"claude", "codex"}, preference.Runtime) {
 		return fmt.Errorf("runtime must be claude or codex")
-	}
-	if preference.TokenBudget < 0 || preference.TokenBudget > 10000000 {
-		return fmt.Errorf("token budget must be between 0 and 10000000")
-	}
-	if preference.TimeoutMinutes < 0 || preference.TimeoutMinutes > 240 {
-		return fmt.Errorf("run timeout must be between 0 and 240 minutes")
 	}
 	for _, value := range []string{preference.DeviceID, preference.ProfileID, preference.Model, preference.Effort} {
 		if len(value) > 200 || strings.ContainsAny(value, "\r\n\t") {

@@ -27,6 +27,7 @@ func (s *Service) CaptureInbox(ctx context.Context, agent store.PersonalAgent, c
 func (s *Service) CaptureInboxOrigin(ctx context.Context, agent store.PersonalAgent, channel string, input store.PersonalAgentInboxCapture, origin *store.PersonalAgentInboxOrigin) (store.PersonalAgentInboxEntry, error) {
 	userID := agent.UserID
 	attachments := store.NormalizeChatAttachments(input.Attachments)
+	annotations := store.NormalizeSessionInputAnnotations(input.Annotations)
 	if err := flow.Capture(userID, channel, input.MessageID, input.Text, len(attachments) > 0); err != nil {
 		return store.PersonalAgentInboxEntry{}, &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
 	}
@@ -40,6 +41,7 @@ func (s *Service) CaptureInboxOrigin(ctx context.Context, agent store.PersonalAg
 		Text: input.Text, InputID: flow.InputID(id),
 		Origin:      origin,
 		Attachments: attachments,
+		Annotations: annotations,
 		Timezone:    s.PersonLocation(ctx, agent).String(),
 	})
 	if errors.Is(err, store.ErrIdempotencyConflict) {
@@ -287,6 +289,9 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 			if err != nil {
 				return err
 			}
+			if err := s.grantChannelTurn(ctx, sessionID, channelOrigin); err != nil {
+				return err
+			}
 			return target.OnSession(ctx, sessionID)
 		}
 		if entry.Origin == nil {
@@ -311,12 +316,13 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		previous.Provider == snapshot.Runtime && previous.Model == snapshot.Model && previousEffort == snapshot.Effort {
 		s.recordInboxResult(ctx, *previous)
 		session, err = s.sessions.Send(ctx, previous.ID, store.SendAgentSessionInput{
-			ExecutionBudget: run.ExecutionBudget(snapshot), Prompt: prompt, Attachments: attachments, InputID: entry.InputID, RequireIdle: true,
+			ExecutionBudget: run.ExecutionBudget(snapshot), Prompt: prompt, Attachments: attachments, Annotations: entry.Annotations, InputID: entry.InputID, RequireIdle: true,
 			ChannelOrigin: channelOrigin,
 		}, beforeDispatch)
 	} else {
 		input := run.SessionInput(snapshot, prompt, entry.InputID)
 		input.Attachments = attachments
+		input.Annotations = entry.Annotations
 		input.ChannelOrigin = channelOrigin
 		if channelEntry {
 			input.WorkspaceID, input.Title, input.WorkspaceAccess = target.WorkspaceID, target.Title, store.SessionWorkspaceAccessRead
@@ -331,6 +337,29 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		// An unknown outcome is retried only after the stable-input lookup.
 		save("waiting", "dispatch_unavailable", "")
 	}
+}
+
+// grantChannelTurn records what this turn may write without the person's
+// confirmation (DEV-265): the conversation it came from, on the channel's
+// source account. Sessions this one starts inherit the grant through the
+// parent chain.
+func (s *Service) grantChannelTurn(ctx context.Context, sessionID string, origin *store.MessageChannelOrigin) error {
+	if origin == nil || origin.Conversation.ID == "" || s.messageChannels == nil || s.store == nil {
+		return nil
+	}
+	channel, err := s.messageChannels.GetMessageChannel(ctx, origin.ChannelID)
+	if err != nil || channel.Source.AccountID == "" {
+		return nil
+	}
+	if err := s.store.SetSessionConnectorGrants(ctx, sessionID, channel.Source.AccountID, []store.SessionConnectorGrant{{
+		AccountID: channel.Source.AccountID, ObjectType: "conversation",
+		ObjectID: origin.Conversation.ID, Label: origin.Conversation.Name,
+	}}); err != nil {
+		// Without the grant the turn's writes wait for the person: safe, and
+		// not a reason to lose the message.
+		log.Printf("grant message channel turn %s: %v", sessionID, err)
+	}
+	return nil
 }
 
 type inboxReactions struct{ s *Service }

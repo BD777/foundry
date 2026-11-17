@@ -386,6 +386,11 @@
     background: var(--fdy-accent-line);
   }
 
+  /* Sent annotations on an answer (components/conversation/answer-annotations). */
+  ::highlight(answer-annotation) {
+    background-color: color-mix(in oklab, var(--color-brand) 15%, transparent);
+  }
+
   html,
   body,
   #root {

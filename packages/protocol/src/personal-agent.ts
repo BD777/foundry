@@ -195,37 +195,10 @@ export interface PersonalAgentDeviceSettings {
   allowCreate: boolean;
 }
 
-/** The limits of §9; each at most its hard cap (personalagent/defaults.go). */
+/** The limit §9 still sets: the stuck notice, not a cap. Legacy cap fields are ignored. */
 export interface PersonalAgentLimits {
-  /** Sessions the assistant started that run at once. */
-  concurrentSessions: number;
-  /** Sessions it starts per day. */
-  dailySessions: number;
-  /** Projects it creates per day and per week. */
-  dailyWorkspaces: number;
-  weeklyWorkspaces: number;
-  /** Assistant turns per hour, against loops. */
-  hourlyTurns: number;
-  /** Digest summary sessions per day. */
-  dailyDigestSessions: number;
   /** A task nobody asked about for this long is reported as possibly stuck. */
   stuckAfterMinutes: number;
-  /**
-   * Tokens (input and output, as workers report them) its sessions may use
-   * per calendar month; 0: no budget.
-   */
-  monthlyTokenBudget: number;
-}
-
-/** The counters the limits apply to, now. */
-export interface PersonalAgentUsage {
-  activeSessions: number;
-  sessionsToday: number;
-  workspacesToday: number;
-  workspacesThisWeek: number;
-  turnsThisHour: number;
-  digestSessionsToday: number;
-  tokensThisMonth: number;
 }
 
 /** GET /api/personal-agent: the caller's assistant, or how to set one up. */
@@ -235,7 +208,6 @@ export interface PersonalAgentOverview {
   homeDeviceOnline: boolean;
   /** Without an agent: the device the setup card offers (most online). */
   suggestedHomeDeviceId?: string;
-  usage?: PersonalAgentUsage;
   /** Open items this assistant may see, for its home card. */
   needsYou?: PersonalAgentNeedsYou;
 }

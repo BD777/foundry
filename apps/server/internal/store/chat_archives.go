@@ -40,8 +40,11 @@ type ArchiveChatsResult struct {
 	NativeAlsoHidden []ArchiveHiddenChat `json:"nativeAlsoHidden,omitempty"`
 	BatchID          string              `json:"batchId"`
 	Archived         []string            `json:"archived"`
-	Blockers         []ArchiveBlocker    `json:"blockers"`
-	PausedWork       []ArchivePausedWork `json:"pausedWork"`
+	// ArchivedTitles names each archived chat as the person sees it, so a
+	// confirmation can list chats the sidebar's own window does not draw.
+	ArchivedTitles map[string]string   `json:"archivedTitles,omitempty"`
+	Blockers       []ArchiveBlocker    `json:"blockers"`
+	PausedWork     []ArchivePausedWork `json:"pausedWork"`
 }
 
 // AgentSession and ChatThread carry ChatArchive's fields (allOf in
@@ -66,7 +69,10 @@ func (c *ChatThread) SetArchive(a ChatArchive) {
 // Optional extension keeps archive available independently of legacy projections.
 type ChatArchiveStore interface {
 	ArchiveChats(context.Context, ArchiveChatsInput, bool) (ArchiveChatsResult, error)
-	ArchiveChatIDs(context.Context, ArchiveChatsInput) ([]string, error)
+	// ArchiveChatIDs resolves what the input names. Restoring keeps members
+	// that already carry an archive marker; archiving leaves them out, so a
+	// folder acts on the chats it still shows and never re-archives one.
+	ArchiveChatIDs(context.Context, ArchiveChatsInput, bool) ([]string, error)
 	ListArchivedChats(context.Context, string, string) ([]ChatThread, error)
 	ListArchivedSessions(context.Context, string, string) ([]AgentSession, error)
 	NativeArchivePreview(context.Context, string, []string) ([]NativeArchiveTarget, error)

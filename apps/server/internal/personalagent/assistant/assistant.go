@@ -3,6 +3,7 @@ package assistant
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -18,7 +19,7 @@ import (
 )
 
 // The Personal Agent's server side (docs/personal-agent.md): who the
-// assistant is, the limits it is held to, stopping and resuming it, and
+// assistant is, stopping and resuming it, and
 // the person's answer to its proposals. The REST routes, its MCP tools and
 // the channels (httpapi) call these; none of them reaches a model.
 
@@ -64,21 +65,6 @@ func (s *Service) SessionRole(ctx context.Context, session store.AgentSession) s
 	return ""
 }
 
-// usage counts what the limits apply to, now.
-func (s *Service) usage(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgentUsage, error) {
-	return s.store.PersonalAgentUsage(ctx, agent, personalagent.Windows(time.Now(), s.PersonLocation(ctx, agent)))
-}
-
-// limitRefusal is a reached limit as the assistant reads it.
-// limitRefusal refuses past a §9 limit; its text links settingsURL.
-func limitRefusal(err error, settingsURL string) error {
-	var limit *personalagent.LimitError
-	if errors.As(err, &limit) {
-		limit.SettingsURL = settingsURL
-	}
-	return &personalagent.Refusal{Status: http.StatusTooManyRequests, Err: err}
-}
-
 // settingsURL is the assistant's settings as a full link: what
 // the assistant passes on works in the web and in a Feishu chat alike.
 func (s *Service) settingsURL(agent store.PersonalAgent) string {
@@ -90,15 +76,12 @@ func (s *Service) settingsURL(agent store.PersonalAgent) string {
 var errStopped = &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("stopped: the person pressed stop; nothing changes or starts until they resume you (they say \"resume\" or 继续)")}
 
 // AdmitSession is what a new session owes the person's assistant
-// (§8, §9): one it hands off is refused while it is stopped, past a limit
-// or on a device the person keeps it off, and is then followed up as a
-// task (delegating); a new conversation counts against the hourly turns.
+// (§8): one it hands off is refused while it is stopped or on a device the
+// person keeps it off, and is then followed up as a task (delegating).
 // Other sessions pass.
 func (s *Service) AdmitSession(ctx context.Context, input store.CreateAgentSessionInput) (agent store.PersonalAgent, delegating bool, err error) {
 	if input.ParentSessionID == "" {
-		return agent, false, s.AdmitTurn(ctx, store.AgentSession{
-			WorkspaceID: input.WorkspaceID, CreatedByUserID: input.CreatedByUserID, Source: input.Source,
-		})
+		return agent, false, nil
 	}
 	parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID)
 	if err != nil {
@@ -114,13 +97,6 @@ func (s *Service) AdmitSession(ctx context.Context, input store.CreateAgentSessi
 	if workspace, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && workspace.DeviceID != "" && workspace.ID != agent.WorkspaceID &&
 		!personalagent.DeviceSettings(agent.Settings.Devices, workspace.DeviceID, agent.HomeDeviceID).AllowWork {
 		return agent, true, &personalagent.Refusal{Status: http.StatusUnprocessableEntity, Err: errors.New("not allowed: the person keeps you from working on that project's computer; they can change it in your settings (" + s.settingsURL(agent) + ")")}
-	}
-	usage, err := s.usage(ctx, agent)
-	if err != nil {
-		return agent, true, err
-	}
-	if err := personalagent.CheckDelegate(agent.Settings.Limits, usage); err != nil {
-		return agent, true, limitRefusal(err, s.settingsURL(agent))
 	}
 	return agent, true, nil
 }
@@ -221,24 +197,6 @@ func taskStatusOf(sessionStatus string) string {
 // sessionEndedAt is when a session that ended did, as best known.
 func sessionEndedAt(session store.AgentSession) string {
 	return cmp.Or(session.CompletedAt, session.LastActivityAt, formatPATime(time.Now()))
-}
-
-// AdmitTurn refuses a turn of the person's assistant past the
-// hourly limit (§9, against loops). session is the conversation, or the
-// one about to start; anything else is admitted.
-func (s *Service) AdmitTurn(ctx context.Context, session store.AgentSession) error {
-	agent, ok := s.Conversation(ctx, session)
-	if !ok {
-		return nil
-	}
-	usage, err := s.usage(ctx, agent)
-	if err != nil {
-		return err
-	}
-	if err := personalagent.CheckTurn(agent.Settings.Limits, usage); err != nil {
-		return limitRefusal(err, s.settingsURL(agent))
-	}
-	return nil
 }
 
 // RefreshTasks brings the assistant's unfinished tasks up to date
@@ -409,7 +367,40 @@ func (s *Service) DecideProposal(ctx context.Context, agent store.PersonalAgent,
 		return proposal, nil
 	}
 	if proposal.Kind == store.PersonalAgentProposalConnectorWrite {
-		s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorApproved", proposal.Summary))
+		var spec struct {
+			Replay bool `json:"replay"`
+		}
+		_ = json.Unmarshal(proposal.Spec, &spec)
+		if !spec.Replay {
+			// This gateway cannot send the request itself: the approval
+			// covers the assistant repeating it, as before (DEV-265).
+			s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorApproved", proposal.Summary))
+			return proposal, nil
+		}
+		// Foundry sends the recorded request itself (DEV-265); the
+		// pending->accepted transition above is what makes it once.
+		detail, replayErr := "", error(errors.New("no connector gateway is wired"))
+		if s.ConnectorReplay != nil {
+			detail, replayErr = s.ConnectorReplay(ctx, proposal)
+		}
+		final, errText := store.PersonalAgentProposalApplied, ""
+		if replayErr != nil {
+			final, errText = store.PersonalAgentProposalFailed, replayErr.Error()
+		}
+		proposal, err = s.store.SetPersonalAgentProposalStatus(ctx, agent.ID, proposalID,
+			[]string{store.PersonalAgentProposalAccepted}, final, "", errText)
+		if err != nil {
+			return proposal, err
+		}
+		s.channel.PersonalAgentProposalChanged(proposal)
+		switch {
+		case replayErr != nil:
+			s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorNotSent", proposal.Summary, errText))
+		case detail != "":
+			s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorSent", proposal.Summary, detail))
+		default:
+			s.tell(ctx, proposal.SessionID, store.NoticeKindProposalOutcome, say("connectorSentWithout", proposal.Summary))
+		}
 		return proposal, nil
 	}
 	result, applyErr := s.applyProposal(ctx, proposal)
@@ -454,8 +445,14 @@ var proposalNoticeTexts = map[string][2]string{
 	"declined": {"本人没有同意：%s", "The person declined: %s"},
 	"failed":   {"本人同意了，但没做成：%s 错误：%s", "The person accepted, but it failed: %s Error: %s"},
 	"applied":  {"本人同意了，已经做好：%s\n%s", "The person accepted and it is done: %s\n%s"},
+	"connectorSent": {"本人同意了：%s 请求已发出（%s）。",
+		"The person accepted: %s The write was sent (%s)."},
 	"connectorApproved": {"本人同意了：%s 这次批准只覆盖再发一次完全相同的请求。",
 		"The person accepted: %s The approval covers one repeat of that exact connector request."},
+	"connectorSentWithout": {"本人同意了：%s 请求已发出。",
+		"The person accepted: %s The write was sent."},
+	"connectorNotSent": {"本人同意了，但没有发出：%s 原因：%s",
+		"The person accepted, but nothing was sent: %s Reason: %s"},
 }
 
 // proposalNoticeSayer renders proposalNoticeTexts in the person's language.
@@ -715,10 +712,6 @@ func (s *Service) Overview(ctx context.Context, userID string) (store.PersonalAg
 
 // OverviewOf answers GET /api/assistants/{id}.
 func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgentOverview, error) {
-	usage, err := s.usage(ctx, agent)
-	if err != nil {
-		return store.PersonalAgentOverview{}, err
-	}
 	pending, err := s.PendingFor(ctx, agent, 200)
 	if err != nil {
 		return store.PersonalAgentOverview{}, err
@@ -738,7 +731,7 @@ func (s *Service) OverviewOf(ctx context.Context, agent store.PersonalAgent) (st
 		needsYou.Items = append(needsYou.Items, s.needsYouRow(ctx, item))
 	}
 	return store.PersonalAgentOverview{
-		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), Usage: &usage, NeedsYou: needsYou,
+		Agent: &agent, HomeDeviceOnline: s.devices.Connected(agent.HomeDeviceID), NeedsYou: needsYou,
 	}, nil
 }
 

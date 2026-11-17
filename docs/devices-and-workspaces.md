@@ -32,9 +32,9 @@
 - **目录被移动或删除**：Worker 上报自己服务的与丢失的目录，不再服务的 Workspace 标为不可用、保留历史并提供 "Add again"，派发到它的会话立即以明确的消息失败（2026-10-10，#118；`workspace_availability.go`）；Locate 把 Workspace 指向新位置，id 不变，聊天、会话、Issue、设置、飞书路由与连接器绑定随之保留（`workspace_relink.go`、`workspace-folders.ts`）。
 - **选择规则**（[AGENTS.md](../AGENTS.md) 的 UI 原则）：Workspaces 页（`/locations`，侧边栏的位置入口）按设备分组列出 Workspace，Switch 是唯一改变当前位置的动作；浏览设备从不改变当前位置；设备与 Workspace 只在明确选择成功后一起提交，取消或失败保留原上下文。Devices 页（`/devices/<id>/<section>`：resources、agents、skills、settings、diagnostics）管理机器，链接到该设备在 `/locations/<id>` 的分组（`apps/web/src/app/navigation.ts`）。
 
-### Worker 到服务器的代理
+### 设备的出网代理
 
-`foundry-worker proxy set <url> [--no-proxy <list>]` 保存设备自己的服务器代理；支持 `http://`、`https://`、`socks5://`（本地 DNS）及 `socks5h://`（代理端 DNS），可带 `user:password@`。URL 不接受路径、query 或 fragment，密码中的特殊字符需 URL 编码。配置存放在当前状态根的 `worker-proxy.json`，文件权限为 `0600`，与配对凭据分开，首次安装前也能保存。
+`foundry-worker proxy set <url> [--no-proxy <list>]` 保存设备的出网代理：Worker 自己连服务器用它，Worker 为本人启动、需要出网的程序也用它——模型连接的 helper（如 Limen）、连接器扩展的命令（登录、状态、`limen join` 等）、连接的「帮我设置」命令，都以标准变量 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`（及小写）拿到它。改一次即全部生效（下一次启动的 helper / 命令），不要再给这些程序另写一份代理配置（如 systemd drop-in）。Agent 会话本身的环境不变。支持 `http://`、`https://`、`socks5://`（本地 DNS）及 `socks5h://`（代理端 DNS），可带 `user:password@`。URL 不接受路径、query 或 fragment，密码中的特殊字符需 URL 编码。配置存放在当前状态根的 `worker-proxy.json`，文件权限为 `0600`，与配对凭据分开，首次安装前也能保存。
 
 ```bash
 ~/.foundry/bin/foundry-worker proxy set socks5h://127.0.0.1:1080

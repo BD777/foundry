@@ -791,46 +791,6 @@ func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, assistant
 var assistantSessions = `SELECT id FROM agent_sessions WHERE workspace_id = ? AND parent_session_id = ''
 	AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ` + store.SQLStringList(store.SessionSourceDigest, store.SessionSourceVerification)
 
-func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgent, windows store.PersonalAgentWindows) (store.PersonalAgentUsage, error) {
-	var usage store.PersonalAgentUsage
-	err := s.readSnapshot(ctx, func(db dbExecutor) error {
-		counts := []struct {
-			target *int
-			query  string
-			args   []any
-		}{
-			{&usage.ActiveSessions, `SELECT COUNT(*) FROM pa_tasks JOIN agent_sessions ON agent_sessions.id = pa_tasks.session_id
-				WHERE pa_tasks.assistant_id = ? AND agent_sessions.status IN ` + store.ActiveSessionStatusesSQL, []any{agent.ID}},
-			{&usage.SessionsToday, `SELECT COUNT(*) FROM pa_tasks WHERE assistant_id = ? AND session_id != '' AND created_at >= ?`,
-				[]any{agent.ID, windows.DayStart}},
-			{&usage.WorkspacesToday, `SELECT COUNT(*) FROM pa_actions WHERE assistant_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
-				[]any{agent.ID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.DayStart}},
-			{&usage.WorkspacesThisWeek, `SELECT COUNT(*) FROM pa_actions WHERE assistant_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
-				[]any{agent.ID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.WeekStart}},
-			{&usage.TurnsThisHour, `SELECT COUNT(*) FROM agent_session_events WHERE session_id IN (` + assistantSessions + `)
-				AND json_extract(payload_json, '$.label') = ? AND created_at >= ?`,
-				[]any{agent.WorkspaceID, store.EventLabelUserMessage, windows.HourAgo}},
-			{&usage.DigestSessionsToday, `SELECT COUNT(*) FROM agent_sessions WHERE json_extract(payload_json, '$.source') = ?
-				AND (workspace_id = ? OR json_extract(payload_json, '$.createdByUserId') = ?) AND created_at >= ?`,
-				[]any{store.SessionSourceDigest, agent.WorkspaceID, agent.UserID, windows.DayStart}},
-		}
-		for _, count := range counts {
-			if err := db.QueryRowContext(ctx, count.query, count.args...).Scan(count.target); err != nil {
-				return fmt.Errorf("count personal agent usage: %w", err)
-			}
-		}
-		// Tokens as workers report them, for the assistant's conversations
-		// and the sessions it handed work to.
-		return db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
-				COALESCE(json_extract(payload_json, '$.metadata.turnUsage.inputTokens'), 0) +
-				COALESCE(json_extract(payload_json, '$.metadata.turnUsage.outputTokens'), 0)), 0)
-			FROM agent_session_events WHERE created_at >= ? AND json_type(payload_json, '$.metadata.turnUsage') IS NOT NULL
-			AND session_id IN (`+assistantSessions+` UNION SELECT session_id FROM pa_tasks WHERE assistant_id = ? AND session_id != '')`,
-			windows.MonthStart, agent.WorkspaceID, agent.ID).Scan(&usage.TokensThisMonth)
-	})
-	return usage, err
-}
-
 func (s *Store) PersonalAgentActiveSessions(ctx context.Context, agent store.PersonalAgent) ([]string, error) {
 	rows, err := s.conn().QueryContext(ctx, `SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`
 		AND (id IN (`+assistantSessions+`) OR id IN (SELECT session_id FROM pa_tasks WHERE assistant_id = ? AND session_id != ''))

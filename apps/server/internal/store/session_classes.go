@@ -46,6 +46,10 @@ var PromptOnlySessionSources = []string{SessionSourceNaming, SessionSourceDigest
 var (
 	ActiveSessionStatusesSQL    = SQLStringList(ActiveSessionStatuses...)
 	PromptOnlySessionSourcesSQL = SQLStringList(PromptOnlySessionSources...)
+	// AgentSessionSourcesSQL is the source set of sessions an agent started:
+	// a helper or a review. The chat list treats them as chat rows unless an
+	// Issue owns them.
+	AgentSessionSourcesSQL = SQLStringList(SessionSourceAgent, SessionSourceVerification)
 )
 
 func IsActiveSessionStatus(status string) bool {

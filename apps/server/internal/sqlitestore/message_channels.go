@@ -96,6 +96,7 @@ func (s *Store) setupMessageChannels(ctx context.Context) error {
 	for _, column := range []string{
 		`segment INTEGER NOT NULL DEFAULT 0`, `session_new INTEGER NOT NULL DEFAULT 0`, `new_reason TEXT NOT NULL DEFAULT ''`,
 		`inbox_channel TEXT NOT NULL DEFAULT ''`, `raw_json TEXT NOT NULL DEFAULT ''`, `follow_up TEXT NOT NULL DEFAULT ''`,
+		`ack_held INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, `ALTER TABLE message_channel_deliveries ADD COLUMN `+column); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("setup message channel deliveries: %w", err)
@@ -252,12 +253,12 @@ func (s *Store) insertMessageChannelDelivery(ctx context.Context, record store.M
 	}
 	result, err := s.conn().ExecContext(ctx, `INSERT INTO message_channel_deliveries
 		(id, channel_id, envelope_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at,
-		 segment, session_new, new_reason, inbox_channel, raw_json, follow_up)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 segment, session_new, new_reason, inbox_channel, raw_json, follow_up, ack_held)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(channel_id, envelope_id) DO NOTHING`,
 		record.ID, record.ChannelID, record.Envelope.ID, record.UserID, record.AssistantID, record.Status, record.Reason,
 		record.Rule, record.SessionKey, string(envelope), record.InboxID, record.SessionID, string(actions), record.CreatedAt, record.DeliveredAt,
-		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.RawJSON, record.FollowUp)
+		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.RawJSON, record.FollowUp, record.AckHeld)
 	if err != nil {
 		return false, err
 	}
@@ -265,14 +266,14 @@ func (s *Store) insertMessageChannelDelivery(ctx context.Context, record store.M
 	return changed > 0, nil
 }
 
-const messageDeliveryColumns = `id, channel_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at, segment, session_new, new_reason, inbox_channel, raw_json, follow_up`
+const messageDeliveryColumns = `id, channel_id, user_id, assistant_id, status, reason, rule, session_key, envelope_json, inbox_id, session_id, actions_json, created_at, delivered_at, segment, session_new, new_reason, inbox_channel, raw_json, follow_up, ack_held`
 
 func scanMessageChannelDelivery(row rowScanner) (store.MessageChannelDeliveryRecord, error) {
 	var record store.MessageChannelDeliveryRecord
 	var envelope, actions string
 	err := row.Scan(&record.ID, &record.ChannelID, &record.UserID, &record.AssistantID, &record.Status, &record.Reason, &record.Rule,
 		&record.SessionKey, &envelope, &record.InboxID, &record.SessionID, &actions, &record.CreatedAt, &record.DeliveredAt,
-		&record.Segment, &record.SessionNew, &record.NewReason, &record.InboxChannel, &record.RawJSON, &record.FollowUp)
+		&record.Segment, &record.SessionNew, &record.NewReason, &record.InboxChannel, &record.RawJSON, &record.FollowUp, &record.AckHeld)
 	if err != nil {
 		return record, err
 	}
@@ -512,10 +513,14 @@ func (s *Store) SaveMessageChannelDelivery(ctx context.Context, record store.Mes
 	if err != nil {
 		return err
 	}
+	envelope, err := json.Marshal(record.Envelope)
+	if err != nil {
+		return err
+	}
 	result, err := s.conn().ExecContext(ctx, `UPDATE message_channel_deliveries SET status = ?, reason = ?, inbox_id = ?, session_id = ?,
-		actions_json = ?, delivered_at = ?, segment = ?, session_new = ?, new_reason = ?, inbox_channel = ?, follow_up = ? WHERE id = ? AND channel_id = ?`,
+		actions_json = ?, delivered_at = ?, segment = ?, session_new = ?, new_reason = ?, inbox_channel = ?, follow_up = ?, ack_held = ?, envelope_json = ? WHERE id = ? AND channel_id = ?`,
 		record.Status, record.Reason, record.InboxID, record.SessionID, string(actions), record.DeliveredAt,
-		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.FollowUp, record.ID, record.ChannelID)
+		record.Segment, record.SessionNew, record.NewReason, record.InboxChannel, record.FollowUp, record.AckHeld, string(envelope), record.ID, record.ChannelID)
 	if err != nil {
 		return err
 	}

@@ -156,6 +156,8 @@ interface UserPromptSubmitHookInput {
 
 /** Claude Code's prompt for a background task's end, not a timer's. */
 const taskNotificationPrompt = /^\s*<task-notification>/;
+/** Steers Claude has not submitted yet, kept per process; the oldest go first. */
+const steerBacklogLimit = 16;
 
 type TimerTool = NonNullable<AgentScheduledTask["createdBy"]>;
 
@@ -252,6 +254,13 @@ export class ClaudeTimerTracker {
   private reportedOnce = false;
   private closed = false;
   private firing?: ClaudeTimerTurn;
+  /**
+   * Steers the Worker pushed into Claude's input that Claude has not
+   * submitted yet. Claude may submit one after the turn it joined ended.
+   */
+  private steers: string[] = [];
+  /** A steer Claude submitted with no turn running: the person's, not a timer. */
+  private steerTurn = false;
 
   /**
    * `known` are the session's timers from before this process: Claude Code
@@ -313,6 +322,32 @@ export class ClaudeTimerTracker {
     return fire;
   }
 
+  /**
+   * The Worker pushed a steer into Claude's input. Claude submits it as a
+   * prompt of its own, possibly after the turn it joined has ended: that
+   * prompt is the person's message, never a timer's.
+   */
+  expectSteer(content: string): void {
+    const prompt = content.trim();
+    if (!prompt) return;
+    this.steers = [...this.steers, prompt].slice(-steerBacklogLimit);
+  }
+
+  /** Whether a steer the Worker pushed was the next prompt Claude submitted. */
+  private consumeSteer(prompt: string): boolean {
+    const index = this.steers.indexOf(prompt);
+    if (index < 0) return false;
+    this.steers = this.steers.filter((_, position) => position !== index);
+    return true;
+  }
+
+  /** A steer Claude submitted while no turn ran: its answer answers the person's message. */
+  takeSteerTurn(): boolean {
+    const steered = this.steerTurn;
+    this.steerTurn = false;
+    return steered;
+  }
+
   /** A timer turn runs that was published as it started: Claude's own. */
   isFiring(id: string): boolean {
     return this.firing?.id === id;
@@ -358,6 +393,10 @@ export class ClaudeTimerTracker {
     if (this.closed || input.agent_id) return undefined;
     const prompt = String(input.prompt ?? "").trim();
     if (!prompt || taskNotificationPrompt.test(prompt)) return undefined;
+    if (this.consumeSteer(prompt)) {
+      if (!this.sink.isActiveTurn()) this.steerTurn = true;
+      return undefined;
+    }
     const id = this.matchTimerId(prompt);
     if (!id && this.sink.isActiveTurn()) return undefined;
     const task = id ? this.tasks.get(id) : undefined;

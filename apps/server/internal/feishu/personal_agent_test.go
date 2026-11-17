@@ -407,6 +407,33 @@ func TestAGroupCannotPairWithTheAssistant(t *testing.T) {
 	}
 }
 
+// A connector write outside a session's grant is decided in Needs you
+// alone: it never becomes a second card in the assistant's chat, while the
+// other proposal kinds keep theirs (DEV-267).
+func TestConnectorWriteProposalPostsNoCard(t *testing.T) {
+	ctx := context.Background()
+	f := newAssistantFixture(t)
+	f.send(t, personMessage("om_topic", "", "archive the old blog", "ou_person"))
+	f.bot.take()
+	proposal := store.PersonalAgentProposal{
+		ID: "pap_write", UserID: f.person.ID, AssistantID: "asst_person", SessionID: "sess_1",
+		Kind:    store.PersonalAgentProposalConnectorWrite,
+		Summary: "The assistant wants to make this openlark change: POST /api/connectors/extensions/openlark/gateway/documents/drive/items.",
+		Status:  store.PersonalAgentProposalPending,
+	}
+	f.manager.PersonalAgentProposalCreated(ctx, proposal)
+	if replies := f.bot.take(); len(replies) != 0 {
+		t.Fatalf("a connector write proposal posted a card: %+v", replies)
+	}
+	other := proposal
+	other.ID, other.Kind = "pap_archive", store.PersonalAgentActionArchiveSession
+	other.Summary = "Archive “Old blog”?"
+	f.manager.PersonalAgentProposalCreated(ctx, other)
+	if replies := f.bot.take(); len(replies) != 1 || !strings.Contains(replies[0].card, "需要你确认") {
+		t.Fatalf("a normal proposal posted %+v, want its card", replies)
+	}
+}
+
 // The assistant's workspace lists the direct chats it takes, marked with
 // it; the group stays its workspace's alone.
 func TestAssistantWorkspaceListsTheDirectChatsItTakes(t *testing.T) {

@@ -156,6 +156,33 @@ export const pending = {
       paused: "saved; processing is paused",
       queued: "saved; waiting to process",
     },
+    connectorWrite: {
+      title: "Allow this write?",
+      message:
+        "The assistant wants to message {{target}} on {{account}}: {{text}}",
+      reaction:
+        "The assistant wants to react to a message from {{target}} on {{account}}",
+      operation: "The assistant wants to run “{{operation}}” on {{account}}",
+      expires: "expires {{when}}",
+      requested: "requested {{when}}",
+      bodyDetails: "Request details",
+      write: "The assistant wants to write to {{target}} on {{account}}",
+      unknownConversation: "unknown conversation ({{id}})",
+      targetAccount: "this connector account",
+      unknownTarget: "unknown {{type}} ({{id}})",
+      originChannel: "from /ai in {{channel}} {{kind}}",
+      originChannelKind: {
+        self: "self chat",
+        direct: "direct chat",
+        group: "group",
+        other: "conversation",
+      },
+      originWeb: "from the web assistant",
+      originHelper: "from a helper of the assistant",
+      allow: "Allow",
+      decline: "Don't allow",
+      failed: "The answer could not be recorded: {{error}}",
+    },
   },
   failure: {
     usage_limit: {

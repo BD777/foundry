@@ -152,9 +152,10 @@ components:
     MessageChannelConnectorScope:
       description:
         One connector account for the channel's sessions, capped by the assistant's permission
-        package. writes direct lets them write through it without a confirmation card.
+        package. Its sessions write only inside the conversation their turn came from; every other
+        write waits for the person's confirmation.
       type: object
-      required: [accountId, level, writes]
+      required: [accountId, level]
       additionalProperties: false
       properties:
         accountId:
@@ -162,10 +163,6 @@ components:
         level:
           type: string
           enum: ["off", read, write]
-          x-go-type: string
-        writes:
-          type: string
-          enum: [confirm, direct]
           x-go-type: string
     MessageChannelScope:
       description:
@@ -208,15 +205,16 @@ components:
             type: string
     MessageChannelFollowUpFrom:
       type: string
-      enum: [same-sender, person, anyone]
+      enum: [same-sender, thread-participants, person, anyone]
       x-go-type: string
     MessageChannelFollowUps:
       description:
         Which messages continue a conversation without a trigger word once a message matched a rule.
         enabled turns it on; from says who may continue (same-sender, the sender of the message that
-        started the session; person, the person the assistant works for; anyone). endCommands are
-        words that stop it, matched like trigger words and never handed to the assistant. Missing
-        means enabled, same-sender and /end.
+        started the session; thread-participants, anyone in a thread where a turn happened, while a
+        quote outside a thread stays the same sender's; person, the person the assistant works for;
+        anyone). endCommands are words that stop it, matched like trigger words and never handed to
+        the assistant. Missing means enabled, thread-participants and /end.
       type: object
       required: [enabled, from, endCommands]
       additionalProperties: false
@@ -648,7 +646,7 @@ components:
             $ref: "#/components/schemas/MessageChannelSource"
     MessageChannelDeliveryStatus:
       type: string
-      enum: [dropped, held, queued, delivered, done, failed]
+      enum: [dropped, held, queued, context, delivered, done, failed]
       x-go-type: string
     MessageChannelAction:
       description: Something the channel's session did after the message arrived.

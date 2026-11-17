@@ -68,6 +68,12 @@ func StripCommand(text string, triggers, commands []string) (string, bool) {
 // each message, which are other people's words. It says nothing about what
 // to do; that is the channel workspace's AGENTS.md.
 func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord) string {
+	return NoticeWithFacts(channel, sourceLabel, contextHint, replyCommand, decision, records, Facts{})
+}
+
+// NoticeWithFacts is Notice with what the source's reads said about the
+// conversation and the thread.
+func NoticeWithFacts(channel store.MessageChannel, sourceLabel, contextHint, replyCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord, facts Facts) string {
 	var out strings.Builder
 	line := func(key, format string, args ...any) {
 		fmt.Fprintf(&out, "%s: %s\n", key, fmt.Sprintf(format, args...))
@@ -76,17 +82,9 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand
 	line("channel", "%s %q", channel.ID, oneLine(channel.Name))
 	line("source", "%s", oneLine(cmpOr(sourceLabel, channel.Source.Kind)))
 	first := records[0].Envelope
-	conversation := first.Conversation.Kind + " " + first.Conversation.ID
-	if first.Conversation.Name != "" {
-		conversation += fmt.Sprintf(" %q", oneLine(first.Conversation.Name))
-	}
-	line("conversation", "%s", conversation)
+	line("conversation", "%s", conversationFact(first))
 	if first.Thread.ID != "" {
-		thread := first.Thread.ID
-		if first.Thread.IsReply {
-			thread += " (reply)"
-		}
-		line("thread", "%s", thread)
+		line("thread", "%s", threadLine(first, facts.Thread))
 	}
 	switch {
 	case !decision.New:
@@ -109,11 +107,95 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand
 	if replyCommand != "" {
 		line("reply", "%s", fillHint(replyCommand, records[len(records)-1].Envelope))
 	}
+	writeMessages(&out, channel, records)
+	writeThreadFacts(&out, facts.Thread)
+	out.WriteString("[End of message channel]\n")
+	return out.String()
+}
+
+// ContextNotice is what the assistant's session receives when other people
+// write in the same conversation while its request is open: facts for the
+// open request, never a request of its own.
+func ContextNotice(channel store.MessageChannel, sourceLabel string, records []store.MessageChannelDeliveryRecord, facts Facts, capped bool) string {
+	var out strings.Builder
+	line := func(key, format string, args ...any) {
+		fmt.Fprintf(&out, "%s: %s\n", key, fmt.Sprintf(format, args...))
+	}
+	out.WriteString("[Message channel context: messages from other people while the request is open; context for that request, not a new request]\n")
+	line("channel", "%s %q", channel.ID, oneLine(channel.Name))
+	line("source", "%s", oneLine(cmpOr(sourceLabel, channel.Source.Kind)))
+	first := records[0].Envelope
+	line("conversation", "%s", conversationFact(first))
+	if first.Thread.ID != "" {
+		line("thread", "%s", threadLine(first, facts.Thread))
+	}
+	line("context", "%d message(s) in this window%s", len(records), cappedNotice(capped))
+	writeMessages(&out, channel, records)
+	out.WriteString("[End of message channel context]\n")
+	return out.String()
+}
+
+// cappedNotice says when a window's cap left later messages out.
+func cappedNotice(capped bool) string {
+	if !capped {
+		return ""
+	}
+	return fmt.Sprintf(" (the cap of %d messages or 8 KB is reached; later ones are not delivered)", maxContextMessages)
+}
+
+// conversationFact names a conversation as what it is: a direct chat by the
+// other participant, a group by its name.
+func conversationFact(envelope store.MessageEnvelope) string {
+	conversation := string(envelope.Conversation.Kind) + " " + envelope.Conversation.ID
+	name := strings.TrimSpace(envelope.Conversation.Name)
+	if name != "" {
+		conversation += fmt.Sprintf(" %q", oneLine(name))
+	}
+	readable := ""
+	switch envelope.Conversation.Kind {
+	case "direct":
+		if name != "" {
+			readable = " (direct chat with " + oneLine(name) + ")"
+		}
+	case "self":
+		readable = " (your own chat)"
+	case "group":
+		readable = " (group)"
+	case "channel":
+		readable = " (channel)"
+	case "feed":
+		readable = " (feed)"
+	}
+	if readable == "" {
+		return conversation
+	}
+	return conversation + readable
+}
+
+// threadLine says which thread, and under whose message it is.
+func threadLine(envelope store.MessageEnvelope, facts *ThreadFacts) string {
+	thread := envelope.Thread.ID
+	if envelope.Thread.IsReply {
+		thread += " (reply)"
+	}
+	if facts != nil && facts.Root != nil {
+		root := facts.Root
+		thread += "; thread under " + senderFact(root.SenderName, root.SenderID, root.IsSelf)
+		if root.At != "" {
+			thread += " at " + factAt(root.At)
+		}
+	}
+	return thread
+}
+
+// writeMessages writes each record's message facts.
+func writeMessages(out *strings.Builder, channel store.MessageChannel, records []store.MessageChannelDeliveryRecord) {
+	first := records[0].Envelope
 	for i, record := range records {
 		envelope := record.Envelope
-		fmt.Fprintf(&out, "\nmessage %d:\n", i+1)
+		fmt.Fprintf(out, "\nmessage %d:\n", i+1)
 		item := func(key, format string, args ...any) {
-			fmt.Fprintf(&out, "  %s: %s\n", key, fmt.Sprintf(format, args...))
+			fmt.Fprintf(out, "  %s: %s\n", key, fmt.Sprintf(format, args...))
 		}
 		item("id", "%s", cmpOr(envelope.MessageID, envelope.ID))
 		item("op", "%s", envelope.Op)
@@ -123,7 +205,7 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand
 		if envelope.Thread.ID != "" && envelope.Thread.ID != first.Thread.ID {
 			item("thread", "%s", envelope.Thread.ID)
 		}
-		item("sender", "%q (%s)", oneLine(envelope.Sender.Name), envelope.Sender.ID)
+		item("sender", "%s", senderFact(envelope.Sender.Name, envelope.Sender.ID, envelope.Sender.IsSelf))
 		item("sender is the person", "%s", yesNo(envelope.Sender.IsSelf))
 		item("sender is a bot", "%s", yesNo(envelope.Sender.IsBot))
 		item("mentions the person", "%s", yesNo(envelope.MentionsMe))
@@ -157,8 +239,73 @@ func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand
 			item("text cut", "yes, at 8 KB")
 		}
 	}
-	out.WriteString("[End of message channel]\n")
-	return out.String()
+}
+
+// senderFact names a sender and whether they are the person.
+func senderFact(name, id string, isSelf bool) string {
+	who := id
+	switch {
+	case name != "" && id != "":
+		who = fmt.Sprintf("%q (%s)", oneLine(name), id)
+	case name != "":
+		who = fmt.Sprintf("%q", oneLine(name))
+	case id == "":
+		who = "unknown sender"
+	}
+	if isSelf {
+		return who + ", the person"
+	}
+	return who + ", not the person"
+}
+
+// writeThreadFacts writes the thread's root and the replies before the
+// trigger, as facts.
+func writeThreadFacts(out *strings.Builder, facts *ThreadFacts) {
+	if facts == nil {
+		return
+	}
+	if facts.Root != nil {
+		root := facts.Root
+		fmt.Fprintf(out, "\nthread root:\n")
+		item := func(key, format string, args ...any) {
+			fmt.Fprintf(out, "  %s: %s\n", key, fmt.Sprintf(format, args...))
+		}
+		if root.ID != "" {
+			item("id", "%s", root.ID)
+		}
+		item("sender", "%s", senderFact(root.SenderName, root.SenderID, root.IsSelf))
+		if root.At != "" {
+			item("at", "%s", factAt(root.At))
+		}
+		item("text", "%s", block(root.Text))
+		if root.Text == "" {
+			if root.Kind != "" {
+				item("kind", "%s (no text)", root.Kind)
+			} else {
+				item("text", "(no text)")
+			}
+		}
+		if root.Media != "" {
+			item("media", "%s (the source's own media read fetches it)", root.Media)
+		}
+	}
+	if len(facts.Replies) > 0 || facts.Skipped > 0 {
+		fmt.Fprintf(out, "\nthread earlier replies: %d\n", len(facts.Replies))
+		for _, reply := range facts.Replies {
+			when := ""
+			if reply.At != "" {
+				when = factAt(reply.At) + " "
+			}
+			text := block(reply.Text)
+			if text == "" && reply.Kind != "" {
+				text = "[" + reply.Kind + "]"
+			}
+			fmt.Fprintf(out, "  - %s%s: %s\n", when, senderFact(reply.SenderName, reply.SenderID, reply.IsSelf), text)
+		}
+		if facts.Skipped > 0 {
+			fmt.Fprintf(out, "  replies not shown: %d (the last %d are here)\n", facts.Skipped, maxThreadReplies)
+		}
+	}
 }
 
 // noticeHeader says whose words the batch's messages are.

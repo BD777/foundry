@@ -51,7 +51,7 @@ func TestFoundryToolLimitsNameTheEnforcedNumbers(t *testing.T) {
 	}
 	attachments := fmt.Sprintf("At most %d attachments, each at most %d MB", maxMCPAttachments, maxMCPAttachmentBytes>>20)
 	for tool, want := range map[string][]string{
-		"create_session": {attachments, "At most 8 sessions", "at most 4 levels"},
+		"create_session": {attachments, "At most 20 sessions", "at most 4 levels"},
 		"send_message":   {attachments},
 		"read_context": {
 			fmt.Sprintf("maxBytes, %d by default", inspectDefaultBytes),
@@ -64,9 +64,6 @@ func TestFoundryToolLimitsNameTheEnforcedNumbers(t *testing.T) {
 		},
 		"get_workspace": {fmt.Sprintf("at most %d KiB", personalagent.DigestSourceBytes>>10)},
 		"remember":      {fmt.Sprintf("at most %d characters", personalagent.MemoryItemMaxChars)},
-		"create_workspace": {fmt.Sprintf("At most %d new projects a day and %d a week by default (at most %d and %d)",
-			personalagent.DefaultLimits.DailyWorkspaces, personalagent.DefaultLimits.WeeklyWorkspaces,
-			personalagent.LimitCaps.DailyWorkspaces, personalagent.LimitCaps.WeeklyWorkspaces)},
 	} {
 		for _, phrase := range want {
 			if !strings.Contains(limits[tool], phrase) {

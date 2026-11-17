@@ -184,27 +184,12 @@ type PersonalAgentDeviceSettings struct {
 	AllowCreate bool   `json:"allowCreate"`
 }
 
-// PersonalAgentLimits are the §9 limits, each at most its hard cap.
+// PersonalAgentLimits are the limits §9 still sets: only the stuck notice
+// (after how long without a person's word a task is reported as possibly
+// stuck). The former caps are gone; their legacy JSON fields are read as
+// unknown and never written back.
 type PersonalAgentLimits struct {
-	ConcurrentSessions  int   `json:"concurrentSessions"`
-	DailySessions       int   `json:"dailySessions"`
-	DailyWorkspaces     int   `json:"dailyWorkspaces"`
-	WeeklyWorkspaces    int   `json:"weeklyWorkspaces"`
-	HourlyTurns         int   `json:"hourlyTurns"`
-	DailyDigestSessions int   `json:"dailyDigestSessions"`
-	StuckAfterMinutes   int   `json:"stuckAfterMinutes"`
-	MonthlyTokenBudget  int64 `json:"monthlyTokenBudget"`
-}
-
-// PersonalAgentUsage are the counters the limits apply to.
-type PersonalAgentUsage struct {
-	ActiveSessions      int   `json:"activeSessions"`
-	SessionsToday       int   `json:"sessionsToday"`
-	WorkspacesToday     int   `json:"workspacesToday"`
-	WorkspacesThisWeek  int   `json:"workspacesThisWeek"`
-	TurnsThisHour       int   `json:"turnsThisHour"`
-	DigestSessionsToday int   `json:"digestSessionsToday"`
-	TokensThisMonth     int64 `json:"tokensThisMonth"`
+	StuckAfterMinutes int `json:"stuckAfterMinutes"`
 }
 
 // PersonalAgentOverview answers GET /api/personal-agent.
@@ -212,7 +197,6 @@ type PersonalAgentOverview struct {
 	Agent                 *PersonalAgent         `json:"agent,omitempty"`
 	HomeDeviceOnline      bool                   `json:"homeDeviceOnline"`
 	SuggestedHomeDeviceID string                 `json:"suggestedHomeDeviceId,omitempty"`
-	Usage                 *PersonalAgentUsage    `json:"usage,omitempty"`
 	NeedsYou              *PersonalAgentNeedsYou `json:"needsYou,omitempty"`
 }
 
@@ -633,15 +617,6 @@ type PersonalAgentActionRecord struct {
 	CreatedAt    string `json:"createdAt"`
 }
 
-// PersonalAgentWindows are the starts of the windows §9's limits count in,
-// in the person's time zone.
-type PersonalAgentWindows struct {
-	HourAgo    string
-	DayStart   string
-	WeekStart  string
-	MonthStart string
-}
-
 // PersonalAgentStore keeps the assistants' records. Every read and write
 // is scoped to one assistant (assistantID, PersonalAgent.ID) that the caller
 // resolved for its owner first; another assistant's record answers
@@ -761,8 +736,6 @@ type PersonalAgentStore interface {
 	RecordPersonalAgentRoutingDecision(ctx context.Context, decision PersonalAgentRoutingDecision) (PersonalAgentRoutingDecision, error)
 	ListPersonalAgentRoutingDecisions(ctx context.Context, assistantID string, limit int) ([]PersonalAgentRoutingDecision, error)
 
-	// PersonalAgentUsage counts what §9's limits apply to.
-	PersonalAgentUsage(ctx context.Context, agent PersonalAgent, windows PersonalAgentWindows) (PersonalAgentUsage, error)
 	// PersonalAgentActiveSessions are the sessions the stop switch cancels:
 	// the assistant's own conversations and its tasks' sessions still
 	// queued, running or blocked.

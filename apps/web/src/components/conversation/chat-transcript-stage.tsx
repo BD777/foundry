@@ -18,7 +18,10 @@ import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { turnRailVars } from "./conversation-layout";
-import { ChatMessageRow } from "./chat-message-list";
+import { ChatMessageRow, type AnswerAnnotationHost } from "./chat-message-list";
+import { answerTurnNumber } from "./annotation-turns";
+import type { AnswerSelectionDraft } from "./answer-annotations";
+import type { ConversationAnnotation } from "./annotations";
 import { visibleSessionTurns } from "./session-turns";
 import type {
   ChatMessageItem,
@@ -91,6 +94,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   messages,
   onlyMine = false,
   onHiddenTurnsChange,
+  answerAnnotations,
   onAnswerQuestion,
   onEditMessage,
   onImagePreview,
@@ -112,6 +116,21 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   onlyMine?: boolean;
   /** How many turns the person did not start are hidden now. */
   onHiddenTurnsChange?: (count: number) => void;
+  /**
+   * The composer's annotations on finished answers. A new one gets the answer's
+   * turn number as the navigator counts it.
+   */
+  answerAnnotations?: {
+    annotations: readonly ConversationAnnotation[];
+    enabled: boolean;
+    onAdd: (
+      answer: ChatMessageItem,
+      draft: AnswerSelectionDraft,
+      turnNumber: number,
+    ) => void;
+    onUpdate: (id: string, comment: string) => void;
+    onRemove: (id: string) => void;
+  };
   onAnswerQuestion?: (text: string, key: string) => Promise<string | undefined>;
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -152,6 +171,22 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     onHiddenTurnsChange?.(visible.hiddenTurns);
   }, [visible.hiddenTurns, onHiddenTurnsChange]);
   const anchors = useMemo(() => buildChatTurnAnchors(rows), [rows]);
+  const annotationHost = useMemo<AnswerAnnotationHost | undefined>(
+    () =>
+      answerAnnotations && {
+        annotations: answerAnnotations.annotations,
+        enabled: answerAnnotations.enabled,
+        onAdd: (answer, draft) =>
+          answerAnnotations.onAdd(
+            answer,
+            draft,
+            answerTurnNumber(rows, answer.id),
+          ),
+        onUpdate: answerAnnotations.onUpdate,
+        onRemove: answerAnnotations.onRemove,
+      },
+    [answerAnnotations, rows],
+  );
   const heightEstimates = useMemo(
     () => rows.map(estimateChatMessageHeight),
     [rows],
@@ -258,6 +293,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       >
         <ChatMessageRow
           active={active}
+          answerAnnotations={annotationHost}
           fileActions={fileActions}
           message={message}
           onAnswerQuestion={onAnswerQuestion}
@@ -268,6 +304,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     ),
     [
       active,
+      annotationHost,
       fileActions,
       focusedId,
       onAnswerQuestion,

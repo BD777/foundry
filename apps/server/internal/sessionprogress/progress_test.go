@@ -139,30 +139,6 @@ func TestQuietExcludesKnownWaits(t *testing.T) {
 	}
 }
 
-func TestBudgetReportsTheEightyAndNinetyFiveMarks(t *testing.T) {
-	for _, tc := range []struct {
-		tokens int64
-		want   string
-	}{
-		{79, ""},
-		{80, "tokens 80% of 100 (80% mark)"},
-		{96, "tokens 96% of 100 (95% mark)"},
-	} {
-		if got := Budget(tc.tokens, 100, 0, 0); got != tc.want {
-			t.Errorf("Budget(%d) = %q, want %q", tc.tokens, got, tc.want)
-		}
-	}
-	if got := Budget(0, 0, 50*time.Minute, 60); !strings.Contains(got, "time 83% of 60 min (80% mark)") {
-		t.Fatalf("time budget = %q", got)
-	}
-	if got := Budget(0, 0, 59*time.Minute, 60); !strings.Contains(got, "95% mark") {
-		t.Fatalf("time budget at 98%% = %q", got)
-	}
-	if got := Budget(90, 100, 30*time.Minute, 60); got != "tokens 90% of 100 (80% mark)" {
-		t.Fatalf("both budgets = %q", got)
-	}
-}
-
 func TestPlanStepIsTheFirstUncheckedItem(t *testing.T) {
 	events := []store.AgentSessionEvent{
 		event("2026-11-16T10:00:00Z", store.ProcessLabelUpdatedPlan, "- [ ] old step"),
@@ -176,28 +152,5 @@ func TestPlanStepIsTheFirstUncheckedItem(t *testing.T) {
 	}
 	if got := PlanStep(nil); got != "" {
 		t.Fatalf("no plan = %q", got)
-	}
-}
-
-func TestUsageSinceAndLastEventSkipHiddenReports(t *testing.T) {
-	since := time.Date(2026, 11, 16, 10, 5, 0, 0, time.UTC)
-	usage := func(at string, input, output int64) store.AgentSessionEvent {
-		item := event(at, store.ProcessLabelModelRequestUsage, "msg")
-		item.Metadata = &store.AgentSessionEventMetadata{RequestUsage: &store.ModelRequestUsage{InputTokens: input, OutputTokens: output}}
-		return item
-	}
-	events := []store.AgentSessionEvent{
-		usage("2026-11-16T10:00:00Z", 1000, 500),
-		usage("2026-11-16T10:06:00Z", 2000, 200),
-		event("2026-11-16T10:07:00Z", store.ProcessLabelUsingTool, "Bash"),
-	}
-	if got := UsageSince(events, since); got != 2200 {
-		t.Fatalf("usage = %d, want 2200", got)
-	}
-	if at, label := LastEvent(events); at != "2026-11-16T10:07:00Z" || label != store.ProcessLabelUsingTool {
-		t.Fatalf("last event = %q %q", at, label)
-	}
-	if got := ShortDetail("Bash\n\n```json\n{\"command\": \"ls\"}\n```"); got != `{"command": "ls"}` {
-		t.Fatalf("short detail = %q", got)
 	}
 }

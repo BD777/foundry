@@ -94,3 +94,24 @@ type SessionMemberSwitchStore interface {
 	// TakePendingSessionMember returns and clears the pending switch, if any.
 	TakePendingSessionMember(ctx context.Context, sessionID string) (PendingSessionMember, bool, error)
 }
+
+// AccountUnusableObservation is one failure that made a rate-limit domain's
+// account unusable (billing arrears, exhausted quota, a disabled account). Its
+// cooldown is absolute, so a restart rebuilds the breaker until CooldownUntil
+// without waiting for a new failure.
+type AccountUnusableObservation struct {
+	Runtime       string
+	ProfileID     string
+	SessionID     string
+	Reason        string
+	ObservedAt    time.Time
+	CooldownUntil time.Time
+}
+
+// AccountUnusableStore keeps those observations for the replay on restart.
+type AccountUnusableStore interface {
+	RecordAccountUnusable(ctx context.Context, observation AccountUnusableObservation) error
+	// AccountUnusableSince lists the observations made at or after since, and
+	// any still in cooldown at now, oldest first.
+	AccountUnusableSince(ctx context.Context, since, now time.Time) ([]AccountUnusableObservation, error)
+}

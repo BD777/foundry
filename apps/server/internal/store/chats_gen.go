@@ -162,6 +162,9 @@ type TranscriptMessage struct {
 	// Attachments `attachments` travel with a user message.
 	Attachments []ChatAttachment `json:"attachments,omitempty"`
 
+	// Annotations `annotations` travel with a user message: the answer passages it annotates.
+	Annotations []SessionInputAnnotation `json:"annotations,omitempty"`
+
 	// RequestUsage `requestUsage` is the tokens of the model request that produced this step. Claude reports them when the request stream ends; Codex estimates them from native token-usage updates.
 	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
 
@@ -174,7 +177,7 @@ type TranscriptMessage struct {
 	// Delivery "async" on a message whose questions do not hold the turn; "next_turn" on one whose questions ended the turn and wait for the next message to answer them.
 	Delivery string `json:"delivery,omitempty"`
 
-	// Compaction AgentContextCompaction marks the runtime compacting the context.
+	// Compaction `compaction`, on a boundary, is the context compaction it marks (DEV-083).
 	Compaction *AgentContextCompaction `json:"compaction,omitempty"`
 }
 

@@ -23,6 +23,9 @@ importers:
       '@bd777/foundry-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@floating-ui/react-dom':
+        specifier: ^2.1.8
+        version: 2.1.8(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-context-menu':
         specifier: ^2.3.7
         version: 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

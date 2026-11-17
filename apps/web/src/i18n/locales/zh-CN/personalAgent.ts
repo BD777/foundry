@@ -80,8 +80,6 @@ export const personalAgent: Translation<typeof en> = {
     title: "角色执行与停止回执",
     boundaries:
       "停止针对记录中的原始输入，不会误停同一会话后来的新输入。停止助理会暂停新派发并请求停止其执行；独立工作区服务保持各自生命周期。",
-    budgetHint:
-      "时限在本机执行。Token 限额依据主运行时已观测的输入输出（包含缓存输入）；报告延迟和在途请求可能超出，未上报或子任务用量不构成精确计费上限。",
     failed: "执行控制更新失败",
     refresh: "刷新执行",
     monitoring: "执行监测中",
@@ -94,8 +92,6 @@ export const personalAgent: Translation<typeof en> = {
     requestedOnly:
       "这里展示请求配置；实际模型或 effort 只有原生运行时在会话中上报后才可确认。",
     defaultValue: "账号默认值",
-    usage:
-      "已观测 {{tokens}} / {{budget}} tokens · {{state}} · 时限 {{minutes}} 分钟",
     reason: "原因：{{reason}}",
     open: "打开执行",
     stopInput: "停止此输入",
@@ -455,6 +451,13 @@ export const personalAgent: Translation<typeof en> = {
     stopped: "助理已暂停处理新工作。说“继续”即可恢复。",
     noRuntime:
       "助理还没法思考：{{device}} 上没有可用的 AI 登录。请先在那台电脑上设置。",
+    /** 一轮没有回答就结束了（DEV-267）。 */
+    turnStopped: "已停止",
+    turnUnfinished: "没有完成：{{reason}}",
+    turnUnfinishedNoReason: "没有完成",
+    retryNotSettled: "上一次尝试还没确认结束，稍后再试。",
+    retryChanged: "这条消息已经变了，或现在不能重试。",
+    retryFailed: "没能重试这条消息。",
   },
   commands: {
     accepted: "你同意了：{{summary}}",
@@ -663,7 +666,7 @@ export const personalAgent: Translation<typeof en> = {
       connectors: "连接账号",
       entry: "入口与通知",
       channels: "消息通道",
-      limits: "用量与上限",
+      limits: "卡住提醒",
       activity: "动态",
       files: "工作区文件",
     },
@@ -682,7 +685,7 @@ export const personalAgent: Translation<typeof en> = {
       connectors: "可以使用哪些账号与服务",
       entry: "从哪里开始，以及如何通知你",
       channels: "从连接器收到的消息",
-      limits: "可以运行多少、使用多少",
+      limits: "多久没动静算可能卡住",
       activity: "做过什么，以及有什么在等你",
       files: "它运行所在工作区的全部文件",
     },
@@ -803,7 +806,6 @@ export const personalAgent: Translation<typeof en> = {
         "请为助理覆盖和每个可选项选择 Worker 组，或者完整的模型来源、运行时和模型。",
       dailyDigestTime: "摘要时间请写成 HH:MM，比如 09:00。",
       activeHours: "时段请写成 HH:MM，比如 09:00 和 22:00。",
-      limit: "“{{label}}”需要在 {{min}} 到 {{max}} 之间。",
       limitNoMax: "“{{label}}”需要是不小于 {{min}} 的整数。",
     },
     status: {
@@ -1388,11 +1390,14 @@ export const personalAgent: Translation<typeof en> = {
           "消息送到之后，同一话题里的后续消息，或者引用、回复助理处理过的消息，不用再带触发词，也会进入同一段会话。",
         followUpsFrom: "谁能续聊",
         followUpFroms: {
+          "thread-participants": "话题里的参与者",
           "same-sender": "最初发消息的人",
           person: "只有你",
           anyone: "任何人",
         },
         followUpFromHints: {
+          "thread-participants":
+            "已经聊过的话题里，谁发的消息都会接着聊；话题外的引用回复仍只接最初发消息的人。",
           "same-sender": "其他人仍可以用触发词发起新的一轮。",
           person: "只有你自己账号发的消息会接着聊。",
           anyone: "话题里的任何消息，或回复助理的消息，都会接着聊。",
@@ -1405,7 +1410,7 @@ export const personalAgent: Translation<typeof en> = {
         handoverTitle: "聊天里的标记",
         ack: "处理中给消息加表情",
         ackHint:
-          "助理接手每条消息时，在来源的聊天里给它加上「处理中」表情；这一轮结束时移除，无论成功、失败还是取消。",
+          "助理接手每条消息时，在来源的聊天里给它加上「处理中」表情；这一轮和它启动的会话都结束后才移除，无论成功、失败还是取消。",
         footer: "AI 回复说明",
         footerPlaceholder: "> 来自AI",
         footerHint:
@@ -1423,8 +1428,7 @@ export const personalAgent: Translation<typeof en> = {
         accessTitle: "这些对话对来源连接器的权限",
         access: {
           read: "只读",
-          confirm: "读写 · 每次写入需确认",
-          direct: "读写 · 助理自行决定（不逐条确认，全部留痕）",
+          write: "读写 · 在本会话里回复；其它写入需要你确认",
         },
         inheritOthers: "其他连接器沿用助理权限",
         workspaces: "工作区：沿用助理的权限",
@@ -1518,20 +1522,10 @@ export const personalAgent: Translation<typeof en> = {
       },
     },
     limits: {
-      intro: "安全上限。助理碰到上限会停下来告诉你。",
+      intro: "任务超过这么久无人过问，会标为可能卡住，助理会告诉你。",
       labels: {
-        concurrentSessions: "同时在做的事",
-        dailySessions: "每天新开始的事",
-        dailyWorkspaces: "每天新建的项目",
-        weeklyWorkspaces: "每周新建的项目",
-        hourlyTurns: "每小时回复次数",
-        dailyDigestSessions: "每天的项目概括次数",
         stuckAfterMinutes: "多久没动静算可能卡住（分钟）",
-        monthlyTokenBudget: "每月用量预算（token，0 为不限）",
       },
-      now: "当前：{{value}}",
-      max: "最多 {{max}}",
-      usageNote: "用量按你的电脑上报的数字累计，没有上报的部分不计入。",
     },
     activity: {
       title: "它改过什么",

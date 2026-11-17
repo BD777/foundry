@@ -25,6 +25,7 @@ import type {
   SessionEventEmitter,
 } from "../session-state.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
+import { codexManagedPrompt } from "../../skills/skill-invocation.js";
 import { turnUsageMetadata } from "../usage/turn-usage.js";
 import { codexSessionInput } from "./codex-options.js";
 import {
@@ -166,25 +167,19 @@ async function runCodexTurn(
     const prompt = sessionPrompt(session, profile);
     // The turn's input may approve what a relayed prompt asked.
     thread.thread.observeInput?.(prompt);
-    const input = codexSessionInput(session, prompt);
+    const input = codexSessionInput(
+      session,
+      codexManagedPrompt(prompt, managedSkills),
+    );
     // Codex reports no diffs: its changes are diffed against the work tree
     // as the turn started. Naming and other utility sessions write nothing.
     if (!isUtilitySession(session)) await files.snapshotWorkTree();
     if (state.nativeSessionId)
       await state.context.follow(state.nativeSessionId, { resumed: true });
 
-    if (streamsCodexEvents(thread.thread)) {
-      const minutes = session.input?.executionBudget?.timeoutMinutes;
-      if (minutes && minutes > 0)
-        state.ceilingMs = Math.min(minutes, 240) * 60_000;
+    if (streamsCodexEvents(thread.thread))
       await runCodexStreamedTurn(state, thread.thread, input, session.id);
-    } else {
-      if (session.input?.executionBudget)
-        throw new Error(
-          "This Codex transport cannot enforce a role run deadline; use a streaming native runtime.",
-        );
-      await runCodexUnstreamedTurn(state, thread.thread, input);
-    }
+    else await runCodexUnstreamedTurn(state, thread.thread, input);
     return await finishCodexTurn(state, resultPath, startedAt);
   } catch (error) {
     if (isAgentSessionCanceledError(error)) {

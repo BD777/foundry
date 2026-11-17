@@ -78,6 +78,51 @@ export function readOnlyWorkspaceExecution(
   env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv = (base) => base,
   userFiles: WritableTreeProfile["userFiles"] = "readable",
 ): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
+  return workspaceSandboxExecution(
+    directory,
+    workspacePath,
+    ambient,
+    policyName,
+    env,
+    userFiles,
+    false,
+  );
+}
+
+/**
+ * A turn in the workspace inside the same sandbox, with the workspace
+ * writable: a session in a message channel's lineage that is not read-only
+ * (DEV-265). Its temporary directory starts empty each turn, and userFiles
+ * keeps the person's own files out of its reach.
+ */
+export function writableWorkspaceExecution(
+  directory: string,
+  workspacePath: string,
+  ambient: SessionAmbientEnv,
+  policyName: string,
+  env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv = (base) => base,
+  userFiles: WritableTreeProfile["userFiles"] = "hidden",
+): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
+  return workspaceSandboxExecution(
+    directory,
+    workspacePath,
+    ambient,
+    policyName,
+    env,
+    userFiles,
+    true,
+  );
+}
+
+function workspaceSandboxExecution(
+  directory: string,
+  workspacePath: string,
+  ambient: SessionAmbientEnv,
+  policyName: string,
+  env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv,
+  userFiles: WritableTreeProfile["userFiles"],
+  workspaceWritable: boolean,
+): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
   const scratch = resolve(directory, "scratch");
   rmSync(resolve(scratch, "tmp"), { recursive: true, force: true });
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
@@ -92,7 +137,7 @@ export function readOnlyWorkspaceExecution(
         policyFile: resolve(directory, policyName),
         workdir: workspacePath,
         readRoots: [workspacePath],
-        writeRoots: [scratch],
+        writeRoots: workspaceWritable ? [workspacePath, scratch] : [scratch],
         protectedReadRoots: [],
         readOnlyDirectories: [],
         readOnlyPaths: [],

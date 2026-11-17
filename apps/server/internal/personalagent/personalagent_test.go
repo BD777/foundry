@@ -1,9 +1,9 @@
 package personalagent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -51,7 +51,7 @@ func TestPresetsCoverEveryAction(t *testing.T) {
 	}
 }
 
-func TestNormalizeSettingsKeepsLimitsUnderTheirCaps(t *testing.T) {
+func TestNormalizeSettingsRefusesInvalidSettings(t *testing.T) {
 	owned := []string{"dev_a", "dev_b"}
 	settings, err := NormalizeSettings(store.PersonalAgentSettings{}, owned, "dev_a")
 	if err != nil {
@@ -64,8 +64,7 @@ func TestNormalizeSettingsKeepsLimitsUnderTheirCaps(t *testing.T) {
 		t.Fatalf("devices = %+v, want work everywhere and create only at home", settings.Devices)
 	}
 	for label, edit := range map[string]func(*store.PersonalAgentSettings){
-		"over a cap": func(s *store.PersonalAgentSettings) { s.Limits.ConcurrentSessions = LimitCaps.ConcurrentSessions + 1 },
-		"negative":   func(s *store.PersonalAgentSettings) { s.Limits.DailySessions = -1 },
+		"negative": func(s *store.PersonalAgentSettings) { s.Limits.StuckAfterMinutes = -1 },
 		"someone's device": func(s *store.PersonalAgentSettings) {
 			s.Devices = []store.PersonalAgentDeviceSettings{{DeviceID: "dev_x"}}
 		},
@@ -84,39 +83,28 @@ func TestNormalizeSettingsKeepsLimitsUnderTheirCaps(t *testing.T) {
 	}
 }
 
-func TestLimitsRefusePastTheirValue(t *testing.T) {
-	limits := DefaultLimits
-	if err := CheckNewWorkspace(limits, store.PersonalAgentUsage{WorkspacesToday: 2}); err != nil {
-		t.Errorf("below the daily limit: %v", err)
+// The former §9 caps are gone: a legacy settings JSON still reads, its cap
+// fields are ignored, and a save writes only the stuck notice back.
+func TestLimitsKeepOnlyTheStuckNotice(t *testing.T) {
+	legacy := []byte(`{"concurrentSessions":4,"dailySessions":30,"dailyWorkspaces":3,"weeklyWorkspaces":10,` +
+		`"hourlyTurns":60,"dailyDigestSessions":50,"monthlyTokenBudget":1000,"stuckAfterMinutes":90}`)
+	var stored store.PersonalAgentLimits
+	if err := json.Unmarshal(legacy, &stored); err != nil {
+		t.Fatalf("legacy limits do not read: %v", err)
 	}
-	err := CheckNewWorkspace(limits, store.PersonalAgentUsage{WorkspacesToday: 3})
-	if err == nil || !strings.Contains(err.Error(), SettingsPath) {
-		t.Errorf("at the daily limit: %v", err)
+	normalized, err := NormalizeLimits(stored)
+	if err != nil || normalized.StuckAfterMinutes != 90 {
+		t.Fatalf("normalized = %+v (%v)", normalized, err)
 	}
-	if err := CheckNewWorkspace(limits, store.PersonalAgentUsage{WorkspacesThisWeek: 10}); err == nil {
-		t.Error("the weekly limit passed")
+	saved, err := json.Marshal(normalized)
+	if err != nil || string(saved) != `{"stuckAfterMinutes":90}` {
+		t.Fatalf("saved = %s (%v)", saved, err)
 	}
-	if err := CheckDelegate(limits, store.PersonalAgentUsage{ActiveSessions: 4}); err == nil {
-		t.Error("the concurrent limit passed")
+	if defaulted, err := NormalizeLimits(store.PersonalAgentLimits{}); err != nil || defaulted.StuckAfterMinutes != 240 {
+		t.Errorf("zero stuck notice = %+v (%v)", defaulted, err)
 	}
-	if err := CheckDelegate(limits, store.PersonalAgentUsage{TokensThisMonth: 1 << 40}); err != nil {
-		t.Errorf("no budget refused: %v", err)
-	}
-	limits.MonthlyTokenBudget = 1000
-	if err := CheckDelegate(limits, store.PersonalAgentUsage{TokensThisMonth: 1000}); err == nil {
-		t.Error("the budget passed")
-	}
-	if err := CheckTurn(store.PersonalAgentLimits{HourlyTurns: 500}, store.PersonalAgentUsage{TurnsThisHour: LimitCaps.HourlyTurns}); err == nil {
-		t.Error("a stored limit above the cap was applied")
-	}
-}
-
-func TestWindowsStartInThePersonsTimeZone(t *testing.T) {
-	now := time.Date(2026, 10, 15, 1, 30, 0, 0, time.UTC) // Thursday 09:30 in Shanghai
-	windows := Windows(now, Location(store.PersonalAgentSettings{Timezone: "Asia/Shanghai"}, ""))
-	if windows.DayStart != "2026-10-14T16:00:00Z" || windows.WeekStart != "2026-10-11T16:00:00Z" ||
-		windows.MonthStart != "2026-09-30T16:00:00Z" || windows.HourAgo != "2026-10-15T00:30:00Z" {
-		t.Fatalf("windows = %+v", windows)
+	if _, err := NormalizeLimits(store.PersonalAgentLimits{StuckAfterMinutes: -1}); err == nil {
+		t.Error("a negative stuck notice was accepted")
 	}
 }
 

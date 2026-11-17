@@ -65,9 +65,20 @@ export const ChatSidebar = memo(function ChatSidebar({
   readOnly = false,
   newChatDisabledReason,
   channelWorkspace = false,
+  groupMemberCounts,
+  groupMemberLoading,
+  groupMemberLoaded,
+  groupMemberExhausted,
+  onLoadGroupMembers,
 }: {
   workspaceId: string;
   archiveCount?: number;
+  /** Each folder's listable chats, and the pages it adds on demand. */
+  groupMemberCounts?: Readonly<Record<string, number>>;
+  groupMemberLoading?: Readonly<Record<string, boolean>>;
+  groupMemberLoaded?: Readonly<Record<string, boolean>>;
+  groupMemberExhausted?: Readonly<Record<string, boolean>>;
+  onLoadGroupMembers?: (groupId: string) => void;
   onArchive?: (input: {
     chatIds?: string[];
     groupId?: string;
@@ -399,60 +410,79 @@ export const ChatSidebar = memo(function ChatSidebar({
             ) : null}
             {needsMe || channelWorkspace
               ? null
-              : filtered.groups.map((group) => (
-                  <ChatGroupSection
-                    key={group.id}
-                    group={group}
-                    editing={editingId === group.id}
-                    disabled={!editable}
-                    archiveCount={
-                      sorted.filter(
-                        (chat) => groupState.membership[chat.id] === group.id,
-                      ).length
-                    }
-                    sessionCount={
-                      layout.layout.positions.filter(
-                        (position) => position.groupId === group.id,
-                      ).length
-                    }
-                    onArchive={
-                      onArchive
-                        ? (opener) => {
-                            archiveOpener.current = opener;
-                            setArchiveInput({ groupId: group.id });
-                          }
-                        : undefined
-                    }
-                    onDelete={async () => {
-                      const ids = layout.layout.positions
-                        .filter((position) => position.groupId === group.id)
-                        .map((position) => position.chatId);
-                      await layout.deleteGroup(group.id);
-                      setDeletedIds((current) => new Set([...current, ...ids]));
-                      await onChatsDeleted?.(ids);
-                    }}
-                    dropEdge={drag.indicator(group.id)}
-                    onEdit={() => setEditingId(group.id)}
-                    onRename={(name) => {
-                      layout.change((current) => ({
-                        ...current,
-                        groups: current.groups.map((item) =>
-                          item.id === group.id ? { ...item, name } : item,
-                        ),
-                      }));
-                      setEditingId(undefined);
-                    }}
-                    onToggle={() => layout.toggle(group.id)}
-                  >
-                    {group.chats.length ? (
-                      group.chats.map(renderChat)
-                    ) : (
-                      <p className="px-2.5 py-1.5 text-xs text-ink-muted">
-                        {t("list.groupEmpty")}
-                      </p>
-                    )}
-                  </ChatGroupSection>
-                ))}
+              : filtered.groups.map((group) => {
+                  const shown = sorted.filter(
+                    (chat) => groupState.membership[chat.id] === group.id,
+                  ).length;
+                  // The chats the session list's window leaves out: the
+                  // folder draws what it holds, not what one page returned.
+                  const olderCount =
+                    query.trim() || groupMemberExhausted?.[group.id]
+                      ? 0
+                      : Math.max(
+                          0,
+                          (groupMemberCounts?.[group.id] ?? 0) - shown,
+                        );
+                  return (
+                    <ChatGroupSection
+                      key={group.id}
+                      group={group}
+                      editing={editingId === group.id}
+                      disabled={!editable}
+                      olderCount={olderCount}
+                      olderLoading={Boolean(groupMemberLoading?.[group.id])}
+                      olderExpanded={Boolean(groupMemberLoaded?.[group.id])}
+                      onLoadOlder={
+                        olderCount && onLoadGroupMembers
+                          ? () => onLoadGroupMembers(group.id)
+                          : undefined
+                      }
+                      sessionCount={
+                        layout.layout.positions.filter(
+                          (position) => position.groupId === group.id,
+                        ).length
+                      }
+                      onArchive={
+                        onArchive
+                          ? (opener) => {
+                              archiveOpener.current = opener;
+                              setArchiveInput({ groupId: group.id });
+                            }
+                          : undefined
+                      }
+                      onDelete={async () => {
+                        const ids = layout.layout.positions
+                          .filter((position) => position.groupId === group.id)
+                          .map((position) => position.chatId);
+                        await layout.deleteGroup(group.id);
+                        setDeletedIds(
+                          (current) => new Set([...current, ...ids]),
+                        );
+                        await onChatsDeleted?.(ids);
+                      }}
+                      dropEdge={drag.indicator(group.id)}
+                      onEdit={() => setEditingId(group.id)}
+                      onRename={(name) => {
+                        layout.change((current) => ({
+                          ...current,
+                          groups: current.groups.map((item) =>
+                            item.id === group.id ? { ...item, name } : item,
+                          ),
+                        }));
+                        setEditingId(undefined);
+                      }}
+                      onToggle={() => layout.toggle(group.id)}
+                    >
+                      {group.chats.length ? (
+                        group.chats.map(renderChat)
+                      ) : olderCount ? null : (
+                        <p className="px-2.5 py-1.5 text-xs text-ink-muted">
+                          {t("list.groupEmpty")}
+                        </p>
+                      )}
+                    </ChatGroupSection>
+                  );
+                })}
             {!needsMe && !channelWorkspace && groupState.groups.length > 0 ? (
               <div
                 className={cn(
@@ -520,6 +550,7 @@ export const ChatSidebar = memo(function ChatSidebar({
           titles={Object.fromEntries(
             chats.map((chat) => [chat.id, chat.title]),
           )}
+          shownChatIds={chats.map((chat) => chat.id)}
           onClose={() => setArchiveInput(undefined)}
           onArchive={(expectedChatIds) => {
             const index = sorted.findIndex((chat) => chat.selected);

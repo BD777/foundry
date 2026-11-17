@@ -4,6 +4,16 @@ import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../agent-runtime/agent-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
+import { AnnotationChip } from "./annotation-chip";
+import {
+  AnnotationReferenceContext,
+  type AnnotationReferenceValue,
+} from "./annotation-reference";
+import type { AnswerSelectionDraft } from "./answer-annotations";
+import type { ConversationAnnotation } from "./annotations";
+
+const NO_SENT_ANNOTATIONS: readonly ConversationAnnotation[] = [];
+import type { ChatMessageItem } from "./conversation-types";
 import { AttachmentList } from "./attachment-list";
 import { ImagePreview } from "./local-image";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
@@ -49,6 +59,62 @@ export function Conversation(
     [props.messages, turnRunning],
   );
   const answerQuestion = input.answerQuestion;
+  // Annotations need a live composer: not on read-only or disabled conversations.
+  const annotationsEnabled = !props.readOnly && !props.disabled;
+  const annotationStore = input.annotations;
+  const annotationStoreRef = useRef(annotationStore);
+  annotationStoreRef.current = annotationStore;
+  const annotationList = annotationStore.annotations;
+  const answerAnnotations = useMemo(
+    () => ({
+      annotations: annotationList,
+      enabled: annotationsEnabled,
+      onAdd: (
+        answer: ChatMessageItem,
+        draft: AnswerSelectionDraft,
+        turnNumber: number,
+      ) => {
+        const annotation: ConversationAnnotation = {
+          id: crypto.randomUUID(),
+          sourceEventId: answer.id,
+          ...(turnNumber > 0 ? { turnNumber } : {}),
+          ...(answer.at ? { messageAt: answer.at } : {}),
+          selectedText: draft.selectedText,
+          anchor: draft.anchor,
+          ...(draft.comment ? { comment: draft.comment } : {}),
+        };
+        annotationStoreRef.current.add(annotation);
+      },
+      onUpdate: (id: string, comment: string) =>
+        annotationStoreRef.current.update(id, { comment }),
+      onRemove: (id: string) => annotationStoreRef.current.remove(id),
+    }),
+    [annotationList, annotationsEnabled],
+  );
+  // Sent annotations, by id and by the answer they are from.
+  const sentAnnotations = useMemo(() => {
+    const byId = new Map<string, ConversationAnnotation>();
+    const byAnswer = new Map<string, ConversationAnnotation[]>();
+    for (const message of messages)
+      for (const annotation of message.annotations ?? []) {
+        byId.set(annotation.id, annotation);
+        byAnswer.set(annotation.sourceEventId, [
+          ...(byAnswer.get(annotation.sourceEventId) ?? []),
+          annotation,
+        ]);
+      }
+    return { byAnswer, byId };
+  }, [messages]);
+  const [sourceFocusId, setSourceFocusId] = useState<string>();
+  const referenceValue = useMemo<AnnotationReferenceValue>(
+    () => ({
+      lookup: (id) => sentAnnotations.byId.get(id),
+      openSource: (messageId) => setSourceFocusId(messageId),
+      sentFor: (messageId) =>
+        sentAnnotations.byAnswer.get(messageId) ?? NO_SENT_ANNOTATIONS,
+    }),
+    [sentAnnotations],
+  );
   const latestAnswer = useRef(answerQuestion);
   latestAnswer.current = answerQuestion;
   const onAnswerQuestion = useCallback(
@@ -63,7 +129,11 @@ export function Conversation(
   };
   const selectable =
     props.composer.mode === "selectable" ? props.composer : undefined;
-  const hasDraft = Boolean(input.draft.trim() || props.attachments?.length);
+  const hasDraft = Boolean(
+    input.draft.trim() ||
+    props.attachments?.length ||
+    input.annotations.annotations.length,
+  );
   const actionLabel =
     input.action === "sending"
       ? t("composer.sending")
@@ -72,30 +142,36 @@ export function Conversation(
         : (props.sendLabel ?? t("composer.send"));
   return (
     <div className={cn("fdy-chat-conversation", conversationRoot)}>
-      <ChatTranscriptStage
-        active={turnRunning}
-        fileActions={props.fileActions}
-        history={props.history}
-        onReachHistoryStart={props.onReachHistoryStart}
-        messages={messages}
-        onlyMine={props.onlyMine}
-        onHiddenTurnsChange={props.onHiddenTurnsChange}
-        onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
-        threadKey={props.threadKey}
-        focusMessageId={props.focusMessageId}
-        onMessageFocused={props.onMessageFocused}
-        scrollController={scroll}
-        showScrollToLatest={scroll.showScrollToLatest && !controlsOpen}
-        onEditMessage={
-          props.readOnly
-            ? undefined
-            : (text) => {
-                input.updateDraft(text);
-                focus();
-              }
-        }
-        onImagePreview={onPreview}
-      />
+      <AnnotationReferenceContext.Provider value={referenceValue}>
+        <ChatTranscriptStage
+          active={turnRunning}
+          answerAnnotations={answerAnnotations}
+          fileActions={props.fileActions}
+          history={props.history}
+          onReachHistoryStart={props.onReachHistoryStart}
+          messages={messages}
+          onlyMine={props.onlyMine}
+          onHiddenTurnsChange={props.onHiddenTurnsChange}
+          onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
+          threadKey={props.threadKey}
+          focusMessageId={sourceFocusId ?? props.focusMessageId}
+          onMessageFocused={() => {
+            if (sourceFocusId) setSourceFocusId(undefined);
+            else props.onMessageFocused?.();
+          }}
+          scrollController={scroll}
+          showScrollToLatest={scroll.showScrollToLatest && !controlsOpen}
+          onEditMessage={
+            props.readOnly
+              ? undefined
+              : (text) => {
+                  input.updateDraft(text);
+                  focus();
+                }
+          }
+          onImagePreview={onPreview}
+        />
+      </AnnotationReferenceContext.Provider>
       {props.readOnly ? (
         <div
           className={cn(
@@ -265,6 +341,18 @@ export function Conversation(
               title={props.disabledReason}
               tone="warning"
             />
+          ) : null}
+          {annotationsEnabled && annotationList.length ? (
+            <div className="flex min-w-0 flex-wrap items-start gap-2 pt-0.5 pb-[9px]">
+              <AnnotationChip
+                annotations={annotationList}
+                onClear={() => annotationStore.clear()}
+                onRemove={(id) => annotationStore.remove(id)}
+                onUpdate={(id, comment) =>
+                  annotationStore.update(id, { comment })
+                }
+              />
+            </div>
           ) : null}
           {props.attachments?.length || props.attachmentUploading ? (
             <div className="flex min-w-0 flex-wrap items-start gap-2 pt-0.5 pb-[9px]">

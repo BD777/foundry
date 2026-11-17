@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessionprogress"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // Progress facts an orchestrator pulls instead of pushing anything into a
@@ -71,7 +70,6 @@ func (s *Server) progressFacts(ctx context.Context, target inspectTarget) *sessi
 	}
 	progress.BackgroundTasks = openBackgroundTasks(session.Events)
 	flags := sessionprogress.Detect(session.Events, session.Status, time.Now().UTC())
-	flags.Budget = sessionBudgetFlag(session)
 	if !flags.Empty() {
 		progress.Flags = &flags
 	}
@@ -91,29 +89,6 @@ func chatProgress(status string, events []inspectEvent) *sessionProgress {
 		}
 	}
 	return progress
-}
-
-// sessionBudgetFlag compares the current run's recorded token usage and
-// elapsed time with the input's execution budget.
-func sessionBudgetFlag(session store.AgentSession) string {
-	budget := session.Input.ExecutionBudget
-	if budget == nil || (budget.TokenBudget <= 0 && budget.TimeoutMinutes <= 0) {
-		return ""
-	}
-	since := parseInspectTime(session.Input.At)
-	start := parseInspectTime(session.StartedAt)
-	if start.IsZero() {
-		start = since
-	}
-	end := time.Now().UTC()
-	if completed := parseInspectTime(session.CompletedAt); !completed.IsZero() {
-		end = completed
-	}
-	elapsed := time.Duration(0)
-	if !start.IsZero() && end.After(start) {
-		elapsed = end.Sub(start)
-	}
-	return sessionprogress.Budget(sessionprogress.UsageSince(session.Events, since), budget.TokenBudget, elapsed, budget.TimeoutMinutes)
 }
 
 // toolCallsFor is the tool-call log of a Foundry session; a native chat keeps
@@ -170,7 +145,7 @@ func (s *Server) readProgressForMCP(call mcpCall) (string, error) {
 
 // attachListProgress adds the cheap progress line to active sessions in a
 // list: their last event and the event-log detectors, read from a bounded
-// window. Budget needs the whole run, so only get_session reports it.
+// window.
 func (s *Server) attachListProgress(ctx context.Context, items []mcpSessionItem) {
 	now := time.Now().UTC()
 	for index := range items {

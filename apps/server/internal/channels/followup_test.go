@@ -23,7 +23,8 @@ func TestFollowUpsIgnoreOwnWritesAndRespectFrom(t *testing.T) {
 		Thread: store.MessageEnvelopeThread{ID: "th_1"}, Sender: store.MessageEnvelopeSender{ID: "ou_peer"}, Text: "接着说",
 	}
 	sameSender := FollowUpConfig{Enabled: true, From: FollowUpSameSender, EndCommands: []string{"/end"}}
-	if fact, ok := index.followUp(channel, sameSender, envelope); !ok || fact != "thread th_1 (since 2026-11-13T09:00:00Z)" {
+	if fact, ok := index.followUp(channel, sameSender, envelope); !ok ||
+		fact != "thread th_1 (since 2026-11-13T09:00:00Z) by ou_peer, not the person" {
 		t.Fatalf("same sender: %q %v", fact, ok)
 	}
 	own := envelope
@@ -40,6 +41,32 @@ func TestFollowUpsIgnoreOwnWritesAndRespectFrom(t *testing.T) {
 	other.Sender.ID = "ou_other"
 	if _, ok := index.followUp(channel, sameSender, other); ok {
 		t.Fatal("another sender continued a same-sender thread")
+	}
+	// Thread participants: anyone in a thread continues it, while a quote
+	// outside a thread stays the first sender's (DEV-268).
+	threadParticipants := FollowUpConfig{Enabled: true, From: FollowUpThreadParticipants, EndCommands: []string{"/end"}}
+	if fact, ok := index.followUp(channel, threadParticipants, other); !ok ||
+		fact != "thread th_1 (since 2026-11-13T09:00:00Z) by ou_other, not the person" {
+		t.Fatalf("thread participant: %q %v", fact, ok)
+	}
+	if _, ok := index.followUp(channel, threadParticipants, own); ok {
+		t.Fatal("the assistant's own write continued a thread of participants")
+	}
+	quote := envelope
+	quote.Thread = store.MessageEnvelopeThread{}
+	quote.Attributes = map[string]string{"replyTo": "m1"}
+	quote.Sender = store.MessageEnvelopeSender{ID: "ou_other"}
+	if _, ok := index.followUp(channel, threadParticipants, quote); ok {
+		t.Fatal("another sender continued a quote outside a thread")
+	}
+	quote.Sender = store.MessageEnvelopeSender{ID: "ou_peer"}
+	if _, ok := index.followUp(channel, threadParticipants, quote); !ok {
+		t.Fatal("the first sender continued a quote outside a thread")
+	}
+	if _, ok := index.followUpEnd(channel, threadParticipants, store.MessageEnvelope{
+		Conversation: envelope.Conversation, Thread: envelope.Thread, Sender: other.Sender, Text: "/end",
+	}); !ok {
+		t.Fatal("thread participants may end the follow-up")
 	}
 	if _, ok := index.followUp(channel, FollowUpConfig{Enabled: true, From: FollowUpAnyone, EndCommands: []string{"/end"}}, other); !ok {
 		t.Fatal("anyone may continue an anyone thread")
@@ -78,7 +105,8 @@ func TestFollowUpsMatchAQuoteWithoutThreads(t *testing.T) {
 		Sender: store.MessageEnvelopeSender{ID: "ou_peer"}, Text: "引用",
 		Attributes: map[string]string{"replyTo": "m1"},
 	}
-	if fact, ok := index.followUp(channel, config, quote); !ok || fact != "quote m1 (since 2026-11-13T09:00:00Z)" {
+	if fact, ok := index.followUp(channel, config, quote); !ok ||
+		fact != "quote m1 (since 2026-11-13T09:00:00Z) by ou_peer, not the person" {
 		t.Fatalf("quote: %q %v", fact, ok)
 	}
 	// A plain message of a chat without threads stays out.
@@ -87,21 +115,31 @@ func TestFollowUpsMatchAQuoteWithoutThreads(t *testing.T) {
 	if _, ok := index.followUp(channel, config, plain); ok {
 		t.Fatal("a plain message continued a chat without threads")
 	}
-	// replyToMe alone counts as a reply to the assistant's own message.
-	replyToMe := plain
-	replyToMe.Attributes = map[string]string{"replyToMe": "true"}
-	if _, ok := index.followUp(channel, config, replyToMe); !ok {
+	// A reply to a message the assistant wrote continues the chat.
+	index.ownWrites = map[string]bool{"a1": true}
+	toAssistant := plain
+	toAssistant.Attributes = map[string]string{"replyTo": "a1", "replyToMe": "true"}
+	if _, ok := index.followUp(channel, config, toAssistant); !ok {
 		t.Fatal("a reply to the assistant did not continue the chat")
+	}
+	// On the person's own account replyToMe also marks a reply to the
+	// person's own message: the person answering their own message to
+	// someone else is not talking to the assistant.
+	toOwnMessage := plain
+	toOwnMessage.Sender = store.MessageEnvelopeSender{ID: "ou_me", IsSelf: true}
+	toOwnMessage.Attributes = map[string]string{"replyTo": "p1", "replyToMe": "true"}
+	if _, ok := index.followUp(channel, FollowUpConfig{Enabled: true, From: FollowUpAnyone}, toOwnMessage); ok {
+		t.Fatal("a reply to the person's own message went to the assistant")
 	}
 }
 
 func TestFollowUpRuleDefaults(t *testing.T) {
 	config := FollowUpRule(store.MessageChannel{})
-	if !config.Enabled || config.From != FollowUpSameSender || len(config.EndCommands) != 1 || config.EndCommands[0] != "/end" {
+	if !config.Enabled || config.From != FollowUpThreadParticipants || len(config.EndCommands) != 1 || config.EndCommands[0] != "/end" {
 		t.Fatalf("defaults: %+v", config)
 	}
 	empty := FollowUpRule(store.MessageChannel{FollowUps: &store.MessageChannelFollowUps{Enabled: false, EndCommands: []string{}}})
-	if empty.Enabled || empty.From != FollowUpSameSender || len(empty.EndCommands) != 0 {
+	if empty.Enabled || empty.From != FollowUpThreadParticipants || len(empty.EndCommands) != 0 {
 		t.Fatalf("a saved rule: %+v", empty)
 	}
 }

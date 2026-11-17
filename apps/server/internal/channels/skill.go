@@ -51,9 +51,12 @@ func SeedInstructions(channel store.MessageChannel, sourceLabel, contextHint str
 	out.WriteString("- `conversation`：会话类型（direct 私聊、self 本人的自聊、group 群聊…）、ID 和名称；`thread`：话题。\n")
 	out.WriteString("- `session`：这是新会话还是接着上一个；`earlier session` 给出同一会话之前的 Foundry 会话 ID，需要时可以用 `read_context` 去读。\n")
 	out.WriteString("- 每条消息的 `rule` 说明它为什么被转来。命中触发词时给出 `trigger` 和去掉触发词后的正文 `text without trigger`（触发词前的 @ 提及在 `mentions before trigger`）；否则正文在 `text`。正文超过 8 KB 时会截断，并标注 `text cut`。\n")
-	out.WriteString("- 续聊的消息 `rule: follow_up`，并有一行 `follow-up: thread … (since …)` 说明它接在哪个话题、从哪条消息开始。\n")
+	out.WriteString("- 续聊的消息 `rule: follow_up`，并有一行 `follow-up: thread … (since …) by …` 说明它接在哪个话题、从哪条消息开始、是谁写的（本人还是别人）。\n")
+	if followUps.From == FollowUpThreadParticipants {
+		out.WriteString("- 已经聊过的话题里，谁的续聊都会转给你；话题外的引用回复只接最初发消息的人。\n")
+	}
 	if contextHint != "" {
-		out.WriteString("- `context` 是读取这条消息前后聊天记录的命令（例如 `" + contextHint + "`）。需要前文时自己去读，Foundry 不会预先拉取。\n")
+		out.WriteString("- `thread root` 和 `thread earlier replies` 是 Foundry 预先读好的话题上下文（发起人、时间、正文或卡片标题）；`context` 命令（例如 `" + contextHint + "`）仍可用，需要更多前文时自己去读。\n")
 	}
 	out.WriteString("- 有 `reply` 时，它是回复这条消息的命令，id 已经填好。\n")
 	out.WriteString("\n## 回复位置\n\n")
@@ -64,7 +67,11 @@ func SeedInstructions(channel store.MessageChannel, sourceLabel, contextHint str
 		if len(followUps.EndCommands) > 0 {
 			end = "，或发 " + quoteList(followUps.EndCommands) + " 结束"
 		}
-		out.WriteString("- 本人可以在同一话题里直接续聊，或引用你的消息回复，不必带触发词" + end + "。\n")
+		if followUps.From == FollowUpThreadParticipants {
+			out.WriteString("- 话题里谁都能直接续聊（不必带触发词），话题外引用你的消息回复时仍只接最初发消息的人" + end + "。\n")
+		} else {
+			out.WriteString("- 本人可以在同一话题里直接续聊，或引用你的消息回复，不必带触发词" + end + "。\n")
+		}
 	}
 	out.WriteString("\n## 处理原则\n\n")
 	if guide := strings.TrimSpace(channel.Guide); guide != "" {

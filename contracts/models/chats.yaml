@@ -270,6 +270,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatAttachment"
+        annotations:
+          description: "`annotations` travel with a user message: the answer passages it annotates."
+          type: array
+          items:
+            $ref: ./sessions.yaml#/components/schemas/SessionInputAnnotation
         requestUsage:
           description:
             "`requestUsage` is the tokens of the model request that produced this step.

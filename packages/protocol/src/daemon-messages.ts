@@ -1,5 +1,8 @@
 import type { NativeArchiveItem, NativeArchiveTarget } from "./chat.js";
-import type { WorkspaceNativeSessionsMoved } from "./contract.gen.js";
+import type {
+  SessionInputAnnotation,
+  WorkspaceNativeSessionsMoved,
+} from "./contract.gen.js";
 // Canonical daemon WebSocket message vocabulary. Every envelope `type` that
 // crosses the server <-> daemon socket is named here exactly once, so the
 // TypeScript worker never spells a wire literal by hand.
@@ -954,6 +957,7 @@ export interface SteerSessionPayload {
   sentBySessionId?: string;
   message?: string;
   attachments?: ChatAttachment[];
+  annotations?: SessionInputAnnotation[];
   sessionId?: string;
   /**
    * The message's id (a queued message's): a steer the server sends again

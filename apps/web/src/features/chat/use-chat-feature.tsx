@@ -62,6 +62,7 @@ import { chatDetailHydrationId } from "./thread/chat-hydration-policy";
 import { useChatTranscript } from "./thread/use-chat-transcript";
 import { useNativeChatHistory } from "./thread/use-native-chat-history";
 import { useChatSelection } from "./session/use-chat-selection";
+import { useChatGroupMembers } from "./session/use-chat-group-members";
 import { useFollowLinkedChat } from "./session/use-linked-chat-session";
 import { selectedChatNotices } from "./thread/chat-thread-notice";
 import { ChatTranscriptHistory } from "./thread/chat-transcript-history";
@@ -188,6 +189,20 @@ export function useChatFeature({
     ],
     [listedSessions, archive.sessions],
   );
+  // A folder's chats older than the list's own window; the folder reads them
+  // on demand instead of hiding them.
+  const groupMembers = useChatGroupMembers(
+    workspaceId,
+    active && ready && !archivedView,
+  );
+  const listedAndMembers = useMemo(() => {
+    if (!groupMembers.sessions.length) return archiveSessions;
+    const known = new Set(archiveSessions.map((session) => session.id));
+    return [
+      ...archiveSessions,
+      ...groupMembers.sessions.filter((session) => !known.has(session.id)),
+    ];
+  }, [archiveSessions, groupMembers.sessions]);
   const [chatDetail, setChatDetail] = useState<ChatThread>();
   const [contextPanelVisible, setContextPanelVisible] = useState(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
@@ -196,7 +211,7 @@ export function useChatFeature({
     nativeChats,
     ready: active && ready && !archivedView,
     selectedChatId,
-    sessions: archiveSessions,
+    sessions: listedAndMembers,
     workspaceId,
   });
   const { selectedThread, sessions, threads, unlistedSelection } = selection;
@@ -659,6 +674,7 @@ export function useChatFeature({
   }) => {
     const { selectionAfterArchive, ...request } = input;
     const result = await archive.change(request);
+    groupMembers.refresh();
     if (result?.archived.includes(selectedId)) {
       const index = list.chats.findIndex((chat) => chat.id === selectedId);
       const next = [
@@ -689,7 +705,12 @@ export function useChatFeature({
         busy={archive.busy}
         error={archive.error}
         readOnly={Boolean(workspaceDenial(workspace, "member"))}
-        onUnarchive={(ids) => archive.change({ chatIds: ids }, true)}
+        onUnarchive={(ids) =>
+          archive.change({ chatIds: ids }, true).then((result) => {
+            groupMembers.refresh();
+            return result;
+          })
+        }
         onRetry={archive.refresh}
       />
     );
@@ -731,6 +752,11 @@ export function useChatFeature({
         channelWorkspace={Boolean(workspace?.channelId)}
         selectedChatId={selectedChatId}
         pendingCounts={pendingCounts}
+        groupMemberCounts={groupMembers.counts}
+        groupMemberLoading={groupMembers.loading}
+        groupMemberLoaded={groupMembers.loaded}
+        groupMemberExhausted={groupMembers.exhausted}
+        onLoadGroupMembers={groupMembers.load}
         threadAttention={threadAttention}
         threadNotice={notices.thread}
         onChatsDeleted={async (ids) => {

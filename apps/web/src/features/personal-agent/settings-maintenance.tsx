@@ -11,6 +11,7 @@ import {
   actOnPersonalAgentMaintenance,
 } from "../../api";
 import { Button } from "../../components/ui/button";
+import { ClampedText } from "../../components/ui/clamped-text";
 import { Alert } from "../../components/ui/alert";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
@@ -137,7 +138,7 @@ export function MaintenanceSection({
       <DividedList density="cozy">
         {jobs.map((job) => (
           <li key={job.id} className="grid min-w-0 gap-1.5 wrap-anywhere">
-            <p>
+            <p className="text-sm leading-[1.45] font-semibold text-ink">
               {workspaces.find((w) => w.id === job.workspaceId)?.name ??
                 job.workspaceId}{" "}
               · {t("maintenance.memory")} · {status(job.status)}
@@ -145,12 +146,14 @@ export function MaintenanceSection({
             {job.reason ? <FieldHint>{reason(job.reason)}</FieldHint> : null}
             {job.result ? (
               <>
-                <p>{job.result.summary}</p>
-                <ul className="min-w-0 wrap-anywhere">
+                <ClampedText>{job.result.summary}</ClampedText>
+                <ul className="grid min-w-0 list-none gap-2 p-0">
                   {job.result.findings.map((f, i) => (
-                    <li key={i}>
-                      <p>{f.summary}</p>
-                      <FieldHint>{f.sourceRefs.join(" · ")}</FieldHint>
+                    <li className="grid min-w-0 gap-0.5" key={i}>
+                      <ClampedText clamp={2}>{f.summary}</ClampedText>
+                      <FieldHint className="m-0">
+                        {f.sourceRefs.join(" · ")}
+                      </FieldHint>
                     </li>
                   ))}
                 </ul>

@@ -1182,10 +1182,10 @@
     "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, itemId ties this helper to it. Returns the session id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
-      "At most 8 sessions it started queued, running or blocked at once.",
+      "At most 20 sessions it started queued, running or blocked at once.",
       "Sessions that start sessions nest at most 4 levels below the first one.",
       "Needs Member in the target workspace; the session runs on that workspace's device, under its logins.",
-      "In the assistant's conversation, only workspaces its permission package includes as a Member can start a helper, and its work counts against the person's limits.",
+      "In the assistant's conversation, only workspaces its permission package includes as a Member can start a helper.",
       "At most 10 attachments, each at most 25 MB, from the caller's own workspace folder.",
       "A verifier runs in the read-only verification sandbox: the workspace is read-only at the operating-system level, it writes only to its temporary directory, and its Foundry tools only read."
     ],
@@ -1339,7 +1339,7 @@
     "summary": "Reads a session's or native chat's summary: status, runtime, lineage, last input and answer, last error, and progress (last event, plan step, open question, running background tasks, detector flags).",
     "limits": [
       "The last input is cut to 300 characters and the answer to 1000.",
-      "Progress flags come from the stored event log: repeatedFailure (3 or more of the same tool failure in the current turn), rateLimitStorm (5 or more rate limits in 10 minutes), quiet (25 or more minutes without activity while running), budget (80% and 95% of the token or time budget)."
+      "Progress flags come from the stored event log: repeatedFailure (3 or more of the same tool failure in the current turn), rateLimitStorm (5 or more rate limits in 10 minutes), quiet (25 or more minutes without activity while running)."
     ],
     "inputSchema": {
       "type": "object",
@@ -1729,7 +1729,6 @@
     "limits": [
       "Only on the person's own devices that allow new projects, inside their managed folders (default ~/Foundry).",
       "Never on a device whose system account other people's devices share.",
-      "At most 3 new projects a day and 10 a week by default (at most 10 and 30).",
       "Registering a folder outside the managed folders asks the person first by default.",
       "Only the person's assistant (a personal_agent session) has it."
     ],

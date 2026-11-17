@@ -165,6 +165,8 @@ var workspaceOwnedRows = []ownedRows{
 	// Device-wide discovery coverage survives deleting any one workspace.
 	{"session_work_runs", "work_id", ownerWork},
 	{"session_work", "session_id", ownerSession},
+	{"session_connector_grants", "session_id", ownerSession},
+	{"account_unusable_observations", "session_id", ownerSession},
 	{"session_work_operations", "thread_id", ownerThread},
 	{"session_work_scopes", "thread_id", ownerThread},
 	{"agent_session_events", "session_id", ownerSession},

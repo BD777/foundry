@@ -733,11 +733,6 @@ func TestOnlyThePersonAnswersProposalsAndChangesSettings(t *testing.T) {
 		t.Fatalf("approval applied twice: %v", f.lifecycle.calls)
 	}
 
-	over := personalagent.DefaultSettings()
-	over.Limits.DailyWorkspaces = personalagent.LimitCaps.DailyWorkspaces + 1
-	raw, _ := json.Marshal(over)
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/personal-agent/settings", string(raw))),
-		http.StatusBadRequest, "a limit above its cap")
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/personal-agent/settings", string(settings))),
 		http.StatusOK, "the person saves settings")
 }
@@ -843,49 +838,26 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	}
 }
 
-// §9: past a limit the server refuses with a readable error and the
-// settings link.
-func TestAssistantLimits(t *testing.T) {
+// The former §9 caps (projects a day, helpers running at once, turns an
+// hour) are gone: a tool call past each one still succeeds.
+func TestAssistantPastFormerCapsStillRuns(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	agent, _ := f.server.store.GetPersonalAgent(ctx, f.aliceID)
-	agent.Settings.Limits.DailyWorkspaces = 1
-	agent.Settings.Limits.ConcurrentSessions = 1
-	agent.Settings.Limits.HourlyTurns = 2
-	if _, err := f.server.store.SavePersonalAgentSettings(ctx, agent.ID, agent.Settings); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"One", "Two", "Three", "Four"} { // the former daily cap was 3
+		args := map[string]any{"name": name, "purpose": "x", "source": map[string]any{"kind": "empty"}}
+		if text, failed := f.tool(t, f.token, "create_workspace", args); failed {
+			t.Fatalf("project %s: %s", name, text)
+		}
 	}
-	create := map[string]any{"name": "One", "purpose": "x", "source": map[string]any{"kind": "empty"}}
-	if text, failed := f.tool(t, f.token, "create_workspace", create); failed {
-		t.Fatalf("first project: %s", text)
-	}
-	text, failed := f.tool(t, f.token, "create_workspace", create)
-	if !failed || !strings.Contains(text, "limit reached") || !strings.Contains(text, personalagent.AssistantSettingsPath(agent.ID)) ||
-		f.lastAction(t).Refusal != store.PersonalAgentRefusalLimit {
-		t.Fatalf("second project the same day: %s", text)
-	}
-
 	delegate := store.CreateAgentSessionInput{WorkspaceID: "ws_alice", AgentID: "agent_ws_alice", Provider: "claude",
 		Prompt: "work", Source: "agent", ParentSessionID: f.conversation.ID}
-	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err != nil && !strings.Contains(err.Error(), "not connected") {
-		t.Fatalf("first helper: %v", err)
+	for range 5 { // the former concurrent cap was 4
+		if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err != nil && !strings.Contains(err.Error(), "not connected") {
+			t.Fatalf("a helper past the former concurrent cap: %v", err)
+		}
 	}
-	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, agent.ID, nil); len(tasks) != 1 {
-		t.Fatalf("the helper is not followed up: %+v", tasks)
-	}
-	helper := f.startSession(t, "ws_alice", f.conversation.ID, "a running helper")
-	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper, "")
-	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err == nil || !strings.Contains(err.Error(), "running at once") {
-		t.Fatalf("past the concurrent limit: %v", err)
-	}
-
-	// Two conversations started this hour: a third turn is refused.
-	f.startSession(t, "ws_pa", "", "another question")
-	if err := f.server.assistant.AdmitTurn(ctx, f.conversation); err == nil || !strings.Contains(err.Error(), "replies in the last hour") {
-		t.Fatalf("past the hourly turns: %v", err)
-	}
-	if err := f.server.assistant.AdmitTurn(ctx, helper); err != nil {
-		t.Fatalf("a helper's turn is not the assistant's: %v", err)
+	for range 61 { // the former hourly cap was 60 turns
+		f.startSession(t, "ws_pa", "", "another question")
 	}
 }
 

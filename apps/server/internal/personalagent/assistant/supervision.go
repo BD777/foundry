@@ -24,8 +24,7 @@ import (
 // StuckAfterMinutes, or unable to reach its model service
 // (ServiceUnreachableAfter of nothing but failed attempts; it is told, not
 // stopped). Notices to one conversation within TaskEventCoalesce go as one.
-// Nothing is told while the assistant is stopped, and the assistant's
-// hourly turn limit applies to them as to any turn.
+// Nothing is told while the assistant is stopped.
 
 // taskReactions follows the sessions the assistant handed work to.
 type taskReactions struct{ s *Service }

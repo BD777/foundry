@@ -21,6 +21,9 @@ type followUpFeed struct {
 	mu      sync.Mutex
 	answers []any
 	wake    chan struct{}
+	// pollPath is the descriptor's poll path; other paths are reads (the
+	// thread root and earlier replies), answered empty without a queued poll.
+	pollPath string
 }
 
 func (f *followUpFeed) push(answer any) {
@@ -34,6 +37,9 @@ func (f *followUpFeed) push(answer any) {
 }
 
 func (f *followUpFeed) Get(ctx context.Context, path string, query url.Values) (int, []byte, http.Header, error) {
+	if f.pollPath != "" && path != f.pollPath {
+		return http.StatusOK, []byte("{}"), http.Header{}, nil
+	}
 	for {
 		f.mu.Lock()
 		if len(f.answers) > 0 {
@@ -160,7 +166,7 @@ func TestFollowUpInTheSameThreadContinuesTheChannelSession(t *testing.T) {
 	if err := f.db.SaveMessageChannel(ctx, channel); err != nil {
 		t.Fatal(err)
 	}
-	feed, inbox := &followUpFeed{wake: make(chan struct{}, 1)}, &followUpInbox{status: map[string]channels.InboxStatus{}, turns: map[string]channels.Turn{}}
+	feed, inbox := &followUpFeed{wake: make(chan struct{}, 1), pollPath: followUpSpec(t).Poll.Path}, &followUpInbox{status: map[string]channels.InboxStatus{}, turns: map[string]channels.Turn{}}
 	now := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
 	runner := channels.NewRunner(channels.Ports{
 		Store: f.db,

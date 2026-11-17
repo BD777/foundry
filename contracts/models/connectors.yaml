@@ -962,9 +962,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConnectorServerHeldWrite"
+        resolvers:
+          description:
+            Read-only routes that resolve one object a write touches into the object a session's
+            grant names, e.g. a message id into its conversation. Foundry calls the route through
+            the instance and reads the pointer; results are cached per account.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldResolver"
+        labels:
+          description:
+            Read-only routes that name an object for the person, e.g. a conversation id into its
+            name. Foundry resolves them when a proposal is created and stores the name with it,
+            so the person's card never calls out. Results are cached per account.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldLabel"
     ConnectorServerHeldWrite:
+      description:
+        One write route's declaration. createdMessageId and footer keep their meaning. objects
+        names each grant object the write touches, so a session holding grants may write inside
+        them; a route without them touches nothing a grant can hold. auxiliary marks a route that
+        only prepares another write (an upload) and is allowed with any grant for the account.
       type: object
-      required: [method, path, createdMessageId]
+      required: [method, path]
       additionalProperties: false
       properties:
         method:
@@ -978,6 +999,90 @@ components:
         footer:
           $ref: "#/components/schemas/ConnectorServerHeldWriteFooter"
           x-go-type-skip-optional-pointer: false
+        objects:
+          description:
+            The grant objects the write touches. from is a named path parameter (":feedId") or a
+            JSON pointer into the request body; each says the value there is an array of ids.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorServerHeldWriteObject"
+        auxiliary:
+          description:
+            The route only prepares another write (an upload nobody else sees yet); it passes
+            with any grant for the account.
+          type: boolean
+        summary:
+          description:
+            What the write does, in the person's words, e.g. 新建云文档. A declaration may carry
+            only a summary; it names the operation and grants nothing, so the write still needs
+            the person's confirmation.
+          type: string
+    ConnectorServerHeldWriteObject:
+      type: object
+      required: [type, from]
+      additionalProperties: false
+      properties:
+        type:
+          description: The grant object's type, e.g. conversation or message.
+          type: string
+        from:
+          description: A named path parameter (":feedId") or a JSON pointer into the request body.
+          type: string
+        each:
+          description: The value at from is an array of ids rather than one id.
+          type: boolean
+    ConnectorServerHeldResolver:
+      description:
+        Maps one object type onto another through a catalogued read route. Only a resolver whose
+        route and pointer validate is used; an unresolvable write stays outside every grant.
+      type: object
+      required: [from, to, method, path, pointer]
+      additionalProperties: false
+      properties:
+        from:
+          description: The object type the write names, e.g. message.
+          type: string
+        to:
+          description: The grant object type to resolve to, e.g. conversation.
+          type: string
+        method:
+          type: string
+          enum: [GET]
+          x-go-type: string
+        path:
+          description: The read route's path as the directory lists it, parameters included.
+          type: string
+        pointer:
+          description: JSON pointer in a successful response to the resolved object's id.
+          type: string
+        ttlSeconds:
+          description: How long a resolved value is cached, 60 to 3600; missing means 600.
+          type: integer
+    ConnectorServerHeldLabel:
+      description:
+        Names one object type through a catalogued read route, so the person reads a name where
+        an id alone would mean nothing. A resolver's route and pointer validate; a failed lookup
+        leaves the object unnamed.
+      type: object
+      required: [object, method, path, pointer]
+      additionalProperties: false
+      properties:
+        object:
+          description: The object type to name, e.g. conversation.
+          type: string
+        method:
+          type: string
+          enum: [GET]
+          x-go-type: string
+        path:
+          description: The read route's path as the directory lists it, parameters included.
+          type: string
+        pointer:
+          description: JSON pointer in a successful response to the object's name.
+          type: string
+        ttlSeconds:
+          description: How long a resolved name is cached, 60 to 3600; missing means 600.
+          type: integer
     ConnectorServerHeldWriteFooter:
       description:
         The write carries a message's text, so a message channel may append its AI footer to that
@@ -1044,6 +1149,40 @@ components:
         ack:
           $ref: "#/components/schemas/ConnectorEventsAck"
           x-go-type-skip-optional-pointer: false
+        reads:
+          description:
+            Named reads of the source, each a catalogued read route whose answer supplies facts the
+            feed's items do not carry (a conversation's readable name, a message's text and card
+            title, a thread's replies). path names that route; args fill each of its parameters from
+            a fact (conversation.id, message.id or thread.id); fields name values in the answer, and
+            items points at a list of answers to read the same fields from.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorEventsRead"
+    ConnectorEventsRead:
+      type: object
+      required: [path, args, fields]
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+          enum: [GET]
+          x-go-type: string
+        path:
+          description: The read route's path as the directory lists it, parameters included.
+          type: string
+        args:
+          description: Route parameter name to the fact it is filled from.
+          type: object
+          additionalProperties:
+            type: string
+        items:
+          description: JSON pointer in the answer to a list of objects; fields are read from each.
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ConnectorEventsValue"
     ConnectorEventsAck:
       description:
         How a channel marks a message while the assistant works on it — a reaction added when a
@@ -1276,6 +1415,9 @@ components:
         domain:
           description: Optional JSON pointer inside each route to its resource domain.
           type: string
+        summary:
+          description: Optional JSON pointer inside each route to a human summary of what it does.
+          type: string
     ConnectorServerHeldProbe:
       type: object
       required: [id, method, path]
@@ -1436,6 +1578,9 @@ components:
         access:
           type: string
         domain:
+          type: string
+        summary:
+          description: The route's human summary, when the source serves one.
           type: string
     ConnectorServerHeldProbeValues:
       type: object

@@ -58,7 +58,7 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
 		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
 		OwnWrites: s.messageChannelOwnWrites, Session: s.messageChannelSessionState,
-		Ack: s.messageChannelAck,
+		Ack: s.messageChannelAck, Working: s.messageChannelWorking, Context: s.messageChannelContext,
 	})
 }
 
@@ -618,12 +618,6 @@ func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, 
 		if !slices.Contains([]string{store.ConnectorAccessLevelOff, store.ConnectorAccessLevelRead, store.ConnectorAccessLevelWrite}, connector.Level) {
 			return channel, bad("a connector's level is off, read or write")
 		}
-		if connector.Writes == "" {
-			connector.Writes = "confirm"
-		}
-		if connector.Writes != "confirm" && connector.Writes != "direct" {
-			return channel, bad("a connector's writes are confirm or direct")
-		}
 		connectors = append(connectors, connector)
 	}
 	scope.Connectors = connectors
@@ -858,7 +852,7 @@ func (i messageChannelInbox) Deliver(ctx context.Context, channel store.MessageC
 		return "", err
 	}
 	entry, err := i.s.assistant.CaptureInbox(ctx, agent, turn.InboxChannel,
-		store.PersonalAgentInboxCapture{MessageID: turn.MessageID, Text: turn.Text})
+		store.PersonalAgentInboxCapture{MessageID: turn.MessageID, Text: turn.Text, Attachments: turn.Attachments})
 	return entry.ID, err
 }
 

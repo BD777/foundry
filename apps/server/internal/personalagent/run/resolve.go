@@ -169,7 +169,7 @@ func (s *Resolver) resolve(ctx context.Context, agent store.PersonalAgent, role,
 		UserID: agent.UserID, AssistantID: agent.ID, Role: role, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, AccountLabel: profile.AccountLabel,
 		Runtime: chosen.Runtime, ProfileID: chosen.ProfileID, AgentID: chosen.Agent.ID, Model: model, Effort: effort,
 		ProfileFingerprint: chosen.Agent.ProfileFingerprint, ProviderOrigin: origin, ProviderConfigHash: providerConfigHash, ConfigHash: configHash,
-		TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes, SelectionReason: reason,
+		SelectionReason: reason,
 	}, nil
 }
 
@@ -178,35 +178,66 @@ type executorModels struct {
 	alternatives  []store.ExecutionModelChoice
 }
 
-func (s *Resolver) executorModels(ctx context.Context, agent store.PersonalAgent, workspaceID string) (executorModels, bool, error) {
-	if settings := agent.Settings.ExecutionModels; settings != nil {
-		return executorModels{
-			defaultChoice: store.ExecutionModelChoice{
-				ProviderKind: settings.ProviderKind, ProviderID: settings.ProviderID,
-				Runtime: settings.Runtime, Model: settings.Model, WorkerGroupID: settings.WorkerGroupID,
-				Effort: settings.Effort,
+// ExecutionModels are the models a person's new session in a workspace runs
+// on: one default and the alternatives the person allows.
+type ExecutionModels struct {
+	Default      store.ExecutionModelChoice
+	Alternatives []store.ExecutionModelChoice
+	// Scope says where Default comes from: "assistant" (the assistant's own
+	// set), "workspace" or "global" (a stored execution default), "" when
+	// none is set.
+	Scope string
+}
+
+// ResolveExecutionModels is the one place the model a new session runs on is
+// chosen when its caller named none: the assistant's own execution models
+// when it has them, else the workspace's stored default, else the person's
+// global one. get_execution_default answers with it, and create_session
+// starts a child that named no model on it.
+func (s *Resolver) ResolveExecutionModels(ctx context.Context, userID string, assistantModels *store.PersonalAgentExecutionModels, workspaceID string) (ExecutionModels, error) {
+	if assistantModels != nil {
+		return ExecutionModels{
+			Default: store.ExecutionModelChoice{
+				ProviderKind: assistantModels.ProviderKind, ProviderID: assistantModels.ProviderID,
+				Runtime: assistantModels.Runtime, Model: assistantModels.Model,
+				WorkerGroupID: assistantModels.WorkerGroupID, Effort: assistantModels.Effort,
 			},
-			alternatives: settings.Alternatives,
-		}, true, nil
+			Alternatives: assistantModels.Alternatives,
+			Scope:        "assistant",
+		}, nil
 	}
 	for _, scope := range []string{workspaceID, ""} {
-		stored, err := s.store.GetExecutionDefault(ctx, agent.UserID, scope)
+		stored, err := s.store.GetExecutionDefault(ctx, userID, scope)
 		if errors.Is(err, store.ErrExecutionDefaultNotFound) {
 			continue
 		}
 		if err != nil {
-			return executorModels{}, false, err
+			return ExecutionModels{}, err
 		}
-		return executorModels{
-			defaultChoice: store.ExecutionModelChoice{
+		from := "global"
+		if stored.WorkspaceID != "" {
+			from = "workspace"
+		}
+		return ExecutionModels{
+			Default: store.ExecutionModelChoice{
 				ProviderKind: store.ExecutionModelChoiceProviderKind(stored.ProviderKind),
 				ProviderID:   stored.ProviderID, Runtime: store.NativeRuntimeID(stored.Runtime),
 				Model: stored.Model, WorkerGroupID: stored.WorkerGroupID, Effort: stored.Effort,
 			},
-			alternatives: stored.Alternatives,
-		}, true, nil
+			Alternatives: stored.Alternatives,
+			Scope:        from,
+		}, nil
 	}
-	return executorModels{}, false, nil
+	return ExecutionModels{}, nil
+}
+
+// executorModels is the assistant's view of the same resolution.
+func (s *Resolver) executorModels(ctx context.Context, agent store.PersonalAgent, workspaceID string) (executorModels, bool, error) {
+	models, err := s.ResolveExecutionModels(ctx, agent.UserID, agent.Settings.ExecutionModels, workspaceID)
+	if err != nil || models.Scope == "" {
+		return executorModels{}, false, err
+	}
+	return executorModels{defaultChoice: models.Default, alternatives: models.Alternatives}, true, nil
 }
 
 func normalizedExecutionChoice(value string) string {
@@ -309,13 +340,8 @@ func (s *Resolver) executorPreference(ctx context.Context, agent store.PersonalA
 		choice.ProviderKind, choice.ProviderID = store.ExecutionModelChoiceProviderKind(member.ProviderKind), member.ProviderID
 		choice.Runtime, choice.Model, choice.Effort = member.Runtime, member.Model, member.Effort
 	}
-	base, err := personalagent.RunPreference(agent.Settings, "executor")
-	if err != nil {
-		return store.PersonalAgentRunPreference{}, "", invalid("%v", err)
-	}
 	preference := store.PersonalAgentRunPreference{
 		ProfileID: choice.ProviderID, Runtime: string(choice.Runtime), Model: choice.Model, Effort: choice.Effort,
-		TokenBudget: base.TokenBudget, TimeoutMinutes: base.TimeoutMinutes,
 	}
 	if err := personalagent.ValidateRunPreference(preference); err != nil {
 		return store.PersonalAgentRunPreference{}, "", invalid("%v", err)
@@ -395,10 +421,6 @@ func (s *Resolver) PinHelperInput(ctx context.Context, agent store.PersonalAgent
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	preference, err := personalagent.RunPreference(agent.Settings, "executor")
-	if err != nil {
-		return invalid("%v", err)
-	}
 	workspace, err := s.store.GetWorkspace(ctx, input.WorkspaceID)
 	if err != nil {
 		return err
@@ -417,7 +439,7 @@ func (s *Resolver) PinHelperInput(ctx context.Context, agent store.PersonalAgent
 		ID: id, InputID: input.InputID, UserID: agent.UserID, AssistantID: agent.ID, Role: "executor",
 		WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID,
 		Runtime: input.Provider, ProfileID: input.ProfileID, AgentID: input.AgentID, Model: input.Model, Effort: effort,
-		ConfigHash: configHash, TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes,
+		ConfigHash:      configHash,
 		SelectionReason: ReasonInputBudget,
 	})
 	if err != nil {
@@ -469,10 +491,6 @@ func (s *Resolver) PinSession(ctx context.Context, agent store.PersonalAgent, op
 	if !errors.Is(err, store.ErrNotFound) {
 		return existing, err
 	}
-	preference, err := personalagent.RunPreference(agent.Settings, role)
-	if err != nil {
-		return store.PersonalAgentRunSnapshot{}, invalid("%v", err)
-	}
 	workspace, err := s.store.GetWorkspace(ctx, session.WorkspaceID)
 	if err != nil {
 		return store.PersonalAgentRunSnapshot{}, err
@@ -504,7 +522,7 @@ func (s *Resolver) PinSession(ctx context.Context, agent store.PersonalAgent, op
 		ID: id, InputID: flow.InputID(operationID), UserID: agent.UserID, AssistantID: agent.ID, Role: role,
 		WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Runtime: session.Provider, ProfileID: session.ProfileID,
 		AgentID: session.AgentID, Model: session.Model, Effort: effort, ConfigHash: configHash,
-		TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes, SelectionReason: ReasonContinuedSession,
+		SelectionReason: ReasonContinuedSession,
 	})
 }
 
@@ -582,9 +600,10 @@ func (s *Resolver) CheckPinned(ctx context.Context, snapshot store.PersonalAgent
 	return fmt.Errorf("pinned account is unavailable; configure an explicit new attempt")
 }
 
-// ExecutionBudget is the budget a pinned run's input carries.
+// ExecutionBudget marks a pinned run's input: its snapshot names the run
+// the control stops. Legacy token and time fields stay zero (DEV-271).
 func ExecutionBudget(snapshot store.PersonalAgentRunSnapshot) *store.SessionExecutionBudget {
-	return &store.SessionExecutionBudget{SnapshotID: snapshot.ID, TokenBudget: snapshot.TokenBudget, TimeoutMinutes: snapshot.TimeoutMinutes}
+	return &store.SessionExecutionBudget{SnapshotID: snapshot.ID}
 }
 
 // Opaque configuration hash, not an authentication assertion. Credentials are

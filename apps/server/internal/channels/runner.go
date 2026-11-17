@@ -67,6 +67,12 @@ type Turn struct {
 	MessageID    string
 	Text         string
 	Raw          []byte
+	// Attachments are files the source's reads made readable for this turn
+	// (a thread root's image, say).
+	Attachments []store.ChatAttachment
+	// Origin is the turn as clients render it, for a context update that
+	// enters a running turn rather than an inbox entry.
+	Origin *store.MessageChannelOrigin
 }
 
 // SessionState is what the dispatcher needs of an earlier session to decide
@@ -123,6 +129,14 @@ type Ports struct {
 	// Session reads an earlier session of a conversation; ok false when it
 	// is gone.
 	Session func(ctx context.Context, sessionID string) (state SessionState, ok bool)
+	// Working reports whether a session still works for its conversation:
+	// its own turn is active, or a session it started is (DEV-268). The
+	// acknowledgement reaction stays on the trigger while it is true.
+	Working func(ctx context.Context, sessionID string) (bool, error)
+	// Context hands other participants' messages to a session's open turn
+	// as facts, never as a trigger; false means the session is not running
+	// now and the messages wait for the next look.
+	Context func(ctx context.Context, channel store.MessageChannelRecord, sessionID string, turn Turn) (bool, error)
 	Now     func() time.Time
 }
 
@@ -132,6 +146,9 @@ type Runner struct {
 	kick    chan struct{}
 	mu      sync.Mutex
 	running map[string]*loop
+	// capped marks conversations whose open window's context cap was hit,
+	// so the next context notice says later messages are not delivered.
+	capped sync.Map
 }
 
 type loop struct{ cancel context.CancelFunc }
@@ -153,12 +170,15 @@ func (r *Runner) Kick() {
 }
 
 // Run starts and stops poll loops as channels are enabled, disabled or
-// removed, until ctx ends.
+// removed, until ctx ends. It waits for the loops it started before it
+// returns, so a restarted runner never races an old loop for the feed.
 func (r *Runner) Run(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
-		r.reconcile(ctx)
+		r.reconcile(ctx, &wg)
 		select {
 		case <-ctx.Done():
 			r.mu.Lock()
@@ -173,7 +193,7 @@ func (r *Runner) Run(ctx context.Context) {
 	}
 }
 
-func (r *Runner) reconcile(ctx context.Context) {
+func (r *Runner) reconcile(ctx context.Context, wg *sync.WaitGroup) {
 	channels, err := r.ports.Store.ListAllMessageChannels(ctx)
 	if err != nil {
 		log.Printf("message channels: list: %v", err)
@@ -202,7 +222,9 @@ func (r *Runner) reconcile(ctx context.Context) {
 		loopCtx, cancel := context.WithCancel(ctx)
 		running := &loop{cancel: cancel}
 		r.running[id] = running
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			r.follow(loopCtx, id)
 			cancel()
 			r.mu.Lock()
@@ -390,12 +412,15 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 			return nil, 0, nil, err
 		}
 	}
+	index.ownWrites = ownWrites
 	var ended []string
 	hour, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-time.Hour).Format(time.RFC3339Nano))
 	day, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-24*time.Hour).Format(time.RFC3339Nano))
 	inHour, inDay := hour.Matched-hour.Held, day.Matched-day.Held
 	held := 0
 	records := make([]store.MessageChannelDeliveryRecord, 0, len(envelopes))
+	var contextWindows map[string]openWindow
+	var contextUse map[string]contextUsage
 	for i, envelope := range envelopes {
 		if envelope.Op != OpNew || envelope.Kind == "reaction" {
 			// v1 hands over new messages only; an edit or a thread change
@@ -430,6 +455,31 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 			if fact, ok := index.followUp(channel.MessageChannel, followUps, envelope); ok {
 				decision = Decision{Keep: true, Rule: RuleFollowUp}
 				record.FollowUp = fact
+			}
+		}
+		if !decision.Keep && !envelope.Sender.IsBot && !envelope.Sender.IsOwnWrite {
+			// Someone else in a conversation whose request is still open:
+			// context for that request, never a trigger (DEV-268).
+			if contextWindows == nil {
+				cache := map[string]bool{}
+				contextWindows = r.openWindows(ctx, channel, cache)
+				contextUse = r.contextUsage(ctx, channel)
+			}
+			if window, ok := contextWindows[record.SessionKey]; ok && envelope.Sender.ID != window.TriggerSenderID {
+				use := contextUse[record.SessionKey]
+				if use.Count >= maxContextMessages || use.Bytes+len(envelope.Text) > maxContextBytes {
+					r.noteContextCap(channel.ID, record.SessionKey)
+					record.Status, record.Reason = store.MessageDeliveryDropped, ReasonContextCapped
+					record.Envelope.Text, record.Envelope.TextTruncated = "", false
+					records = append(records, record)
+					continue
+				}
+				use.Count++
+				use.Bytes += len(envelope.Text)
+				contextUse[record.SessionKey] = use
+				record.Status = store.MessageDeliveryContext
+				records = append(records, record)
+				continue
 			}
 		}
 		if decision.Keep && i < len(raw) && len(raw[i]) <= 64*1024 {

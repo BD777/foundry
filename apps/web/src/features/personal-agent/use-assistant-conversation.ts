@@ -5,6 +5,7 @@ import type {
   PersonalAgentInboxEntry,
 } from "@bd777/foundry-protocol";
 import {
+  actOnPersonalAgentInbox,
   cancelAgentSession,
   capturePersonalAgentInbox,
   getAgentSession,
@@ -17,6 +18,12 @@ import {
   mergeLoadedAgentSession,
 } from "../../lib/agent-session-events";
 import { serverErrorText } from "../../lib/errors";
+import type { ConversationAnnotation } from "../../components/conversation/annotations";
+import { sentAnnotation } from "../../components/conversation/annotations";
+import {
+  receivedAnnotations,
+  sentPromptText,
+} from "../../components/conversation/received-annotations";
 import { onStreamEvent } from "../../stream";
 import {
   assistantLines,
@@ -47,6 +54,7 @@ interface PendingLine {
   text: string;
   at: string;
   attachments: ChatAttachment[];
+  annotations?: ConversationAnnotation[];
 }
 
 function sentInputs(sessions: Iterable<AgentSession>): Set<string> {
@@ -283,8 +291,9 @@ export function useAssistantConversation(
           id: `received:${entry.id}`,
           clientId: entry.messageId,
           role: "person" as const,
-          text: entry.text,
+          text: sentPromptText(entry.text, entry.annotations),
           attachments: entry.attachments,
+          annotations: receivedAnnotations(entry.annotations),
           at: entry.createdAt,
         })),
       ...pending
@@ -293,8 +302,9 @@ export function useAssistantConversation(
           id: `pending:${line.clientId}`,
           clientId: line.clientId,
           role: "person" as const,
-          text: line.text,
+          text: sentPromptText(line.text, line.annotations),
           attachments: line.attachments,
+          annotations: line.annotations,
           at: line.at,
         })),
     ],
@@ -308,6 +318,8 @@ export function useAssistantConversation(
     lines,
     /** Every session of the assistant's projects, for handoff rows. */
     knownSessions,
+    /** The person's saved messages, to match a stopped turn's input. */
+    inbox: ownInbox,
     waitingInbox,
     working: assistantWorking(ordered),
     /** The latest session: queued, it may wait for its offline computer. */
@@ -319,16 +331,26 @@ export function useAssistantConversation(
       text: string,
       clientId: string,
       attachments: ChatAttachment[] = [],
+      annotations: ConversationAnnotation[] = [],
     ): Promise<void> {
       setPending((current) => [
         ...current.filter((line) => line.clientId !== clientId),
-        { clientId, text, at: new Date().toISOString(), attachments },
+        {
+          annotations,
+          at: new Date().toISOString(),
+          attachments,
+          clientId,
+          text,
+        },
       ]);
       try {
         const receipt = await capturePersonalAgentInbox(assistantId, {
           text,
           messageId: clientId,
           attachments: attachments.length ? attachments : undefined,
+          annotations: annotations.length
+            ? annotations.map(sentAnnotation)
+            : undefined,
         });
         setInbox((current) => [
           ...current.filter((entry) => entry.id !== receipt.id),
@@ -344,6 +366,22 @@ export function useAssistantConversation(
         );
         throw reason;
       }
+    },
+    /**
+     * One more attempt of a saved message whose turn ended without an
+     * answer: the same inbox retry the Needs you item offers (DEV-267).
+     */
+    async retryInbox(entry: PersonalAgentInboxEntry): Promise<void> {
+      const updated = await actOnPersonalAgentInbox(assistantId, entry.id, {
+        action: "retry",
+        revision: entry.revision,
+        requestId: crypto.randomUUID(),
+      });
+      setInbox((current) => [
+        ...current.filter((item) => item.id !== updated.id),
+        updated,
+      ]);
+      void read();
     },
     /** Stops the reply being written, not the work it handed off. */
     async stopReply(): Promise<void> {

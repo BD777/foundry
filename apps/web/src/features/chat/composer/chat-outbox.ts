@@ -1,4 +1,6 @@
 import type { ChatAttachment } from "@bd777/foundry-protocol";
+import type { ConversationAnnotation } from "../../../components/conversation/annotations";
+import { stripAnnotationWrapper } from "../../../components/conversation/annotations";
 import type { ChatViewMessage } from "../chat-types";
 
 /**
@@ -17,6 +19,8 @@ export interface OutboxEntry {
   inputId?: string;
   text: string;
   attachments?: ChatAttachment[];
+  /** Annotations on earlier answers; the text carries their wrapper. */
+  annotations?: ConversationAnnotation[];
   /** When it was sent (ISO). */
   at: string;
   state: "pending" | "accepted";
@@ -31,6 +35,13 @@ function transcriptId(entry: OutboxEntry): string | undefined {
     : undefined;
 }
 
+/** The person's own message: an annotated entry's text carries the wrapper. */
+function typedText(entry: OutboxEntry): string {
+  return entry.annotations?.length
+    ? stripAnnotationWrapper(entry.text)
+    : entry.text;
+}
+
 function matches(entry: OutboxEntry, message: ChatViewMessage): boolean {
   const id = transcriptId(entry);
   if (id) return message.id === id;
@@ -42,7 +53,7 @@ function matches(entry: OutboxEntry, message: ChatViewMessage): boolean {
   const at = Date.parse(message.at ?? "");
   return (
     typeof message.text === "string" &&
-    message.text.trim() === entry.text.trim() &&
+    message.text.trim() === typedText(entry).trim() &&
     (!Number.isFinite(at) || at >= Date.parse(entry.at) - clockSkewMs)
   );
 }
@@ -98,12 +109,13 @@ export function withOutbox(
   });
   for (const entry of waiting) {
     result.push({
+      annotations: entry.annotations,
       attachments: entry.attachments ?? [],
       at: entry.at,
       clientId: entry.id,
       id: transcriptId(entry) ?? `outbox:${entry.id}`,
       role: "user",
-      text: entry.text,
+      text: typedText(entry),
     });
   }
   return { messages: result, delivered };

@@ -63,7 +63,7 @@ func (r *Runner) Dispatch(ctx context.Context) {
 func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChannelRecord) error {
 	open, err := r.ports.Store.ListMessageChannelDeliveries(ctx, channel.ID,
 		[]string{store.MessageDeliveryQueued, store.MessageDeliveryDelivered}, 500)
-	if err != nil || len(open) == 0 {
+	if err != nil {
 		return err
 	}
 	sortRecords(open)
@@ -76,7 +76,6 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 	// Follow what was handed over.
 	inFlight := map[string]bool{}
 	statuses := map[string]InboxStatus{}
-	var endedAcks []string
 	for i := range open {
 		record := &open[i]
 		if record.InboxID == "" {
@@ -96,14 +95,7 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 			statuses[record.InboxID] = status
 		}
 		hadSession := record.SessionID != ""
-		wasOpen := record.Status == store.MessageDeliveryQueued || record.Status == store.MessageDeliveryDelivered
 		changed := applyInboxStatus(record, status, r.ports.Now())
-		if changed && wasOpen && record.InboxID != "" && record.Envelope.MessageID != "" &&
-			(record.Status == store.MessageDeliveryDone || record.Status == store.MessageDeliveryFailed) {
-			// The turn this message was handed to ended, whatever the
-			// outcome; take the acknowledgement off it.
-			endedAcks = append(endedAcks, record.Envelope.MessageID)
-		}
 		// The inbox started another session for the same segment (the last
 		// one failed, or the model changed): say so on the record.
 		if !hadSession && record.SessionID != "" && !record.SessionNew {
@@ -120,10 +112,11 @@ func (r *Runner) dispatchChannel(ctx context.Context, channel store.MessageChann
 			inFlight[record.SessionKey] = true
 		}
 	}
-	r.ack(ctx, channel, false, endedAcks)
+	r.settleAcks(ctx, channel)
 	if !channel.Enabled {
 		return nil
 	}
+	r.deliverContext(ctx, channel)
 	// Hand over waiting conversations, oldest first, up to the concurrency.
 	pending := map[string][]int{}
 	var order []string
@@ -297,6 +290,23 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	if decision.Segment > 0 {
 		inboxChannel += fmt.Sprintf(":%d", decision.Segment)
 	}
+	// What the source's reads say about the conversation and the thread
+	// (DEV-268): the readable name and the thread's root and replies.
+	facts := Facts{}
+	if r.ports.Open != nil {
+		if source, err := r.ports.Open(ctx, channel); err == nil {
+			facts = readFacts(ctx, source, batch)
+		}
+	}
+	for i := range batch {
+		if facts.ConversationName == "" {
+			continue
+		}
+		kind := batch[i].Envelope.Conversation.Kind
+		if kind == "direct" || kind == "self" || batch[i].Envelope.Conversation.Name == "" {
+			batch[i].Envelope.Conversation.Name = facts.ConversationName
+		}
+	}
 	label, hint, reply := "", "", ""
 	if r.ports.SourceLabel != nil {
 		label = r.ports.SourceLabel(ctx, channel)
@@ -327,7 +337,7 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	}
 	sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
 	turn := Turn{InboxChannel: inboxChannel, SessionKey: key, Segment: decision.Segment,
-		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: Notice(channel.MessageChannel, label, hint, reply, decision, batch)}
+		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: NoticeWithFacts(channel.MessageChannel, label, hint, reply, decision, batch, facts)}
 	if len(raw) > 0 {
 		turn.Raw, _ = json.MarshalIndent(raw, "", "  ")
 	}
@@ -335,13 +345,23 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	if err != nil {
 		return false, fmt.Errorf("hand over %s: %w", batch[0].ID, err)
 	}
-	for _, record := range batch {
-		record.InboxID, record.Reason = inboxID, ""
-		if err := r.ports.Store.SaveMessageChannelDelivery(ctx, record); err != nil {
+	for i := range batch {
+		batch[i].InboxID, batch[i].Reason = inboxID, ""
+		if err := r.ports.Store.SaveMessageChannelDelivery(ctx, batch[i]); err != nil {
 			return false, err
 		}
 	}
-	r.ack(ctx, channel, true, batchMessageIDs(batch))
+	// The acknowledgement says "still working": it stays while the turn and
+	// every session it starts run, and comes off later (settleAcks, DEV-268).
+	if r.ports.Ack != nil && AckEnabled(channel.MessageChannel) &&
+		r.ack(ctx, channel, true, batchMessageIDs(batch)) == nil {
+		for i := range batch {
+			batch[i].AckHeld = true
+			if err := r.ports.Store.SaveMessageChannelDelivery(ctx, batch[i]); err != nil {
+				return false, err
+			}
+		}
+	}
 	return true, nil
 }
 
@@ -360,9 +380,9 @@ func batchMessageIDs(batch []store.MessageChannelDeliveryRecord) []string {
 
 // ack marks or clears the source's acknowledgement reaction; a failure is
 // logged and never stops the batch.
-func (r *Runner) ack(ctx context.Context, channel store.MessageChannelRecord, add bool, messageIDs []string) {
+func (r *Runner) ack(ctx context.Context, channel store.MessageChannelRecord, add bool, messageIDs []string) error {
 	if r.ports.Ack == nil || len(messageIDs) == 0 || !AckEnabled(channel.MessageChannel) {
-		return
+		return nil
 	}
 	if err := r.ports.Ack(ctx, channel, add, messageIDs); err != nil {
 		action := "remove"
@@ -370,7 +390,9 @@ func (r *Runner) ack(ctx context.Context, channel store.MessageChannelRecord, ad
 			action = "add"
 		}
 		log.Printf("message channel %s: %s reaction: %v", channel.ID, action, err)
+		return err
 	}
+	return nil
 }
 
 // applyInboxStatus moves a record along with its inbox entry; it reports

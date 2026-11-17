@@ -10,6 +10,7 @@ import {
   shouldDisplayAgentSessionEvent,
 } from "../../../lib/agent-session-events";
 import { isSessionLive } from "../../../lib/session-status";
+import { stripAnnotationWrapper } from "../../../components/conversation/annotations";
 import { shouldDisplayResponseEvent } from "./subagent-response-filter";
 import { settledFileReferences } from "./pending-file-references";
 import type { ChatViewMessage } from "../chat-types";
@@ -371,8 +372,16 @@ export function sessionTranscriptEntries(
     const sentBySessionId = event.metadata?.sentBySessionId;
     const steered = event.label === sessionEventLabels.steeredIntoTurn;
     if (event.message) {
+      // An annotated message's text carries the wrapper for the model; the
+      // person sees their own text, with the annotations beside it.
+      const annotated =
+        event.label === sessionEventLabels.userMessage &&
+        (event.message.annotations?.length ?? 0) > 0;
       const update: TranscriptEntry = {
         ...event.message,
+        ...(annotated
+          ? { text: stripAnnotationWrapper(event.message.text ?? "") }
+          : {}),
         id,
         stepId: `agent-session:${session.id}:${event.id}`,
         at: event.message.at ?? event.at,

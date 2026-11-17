@@ -19,6 +19,14 @@ const allowedInlineStyles = new Map([
     },
   ],
   [
+    "components/conversation/answer-annotations.tsx",
+    {
+      reason:
+        "Floating UI's computed position of a marker anchored to a text range is passed through scoped CSS custom properties",
+      requiredSnippet: "--fdy-annotation-",
+    },
+  ],
+  [
     "components/ui/confidence-meter.tsx",
     {
       reason:

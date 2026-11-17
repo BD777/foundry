@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.6.3",
+  "version": "1.6.5",
   "protocol": 1,
   "connectors": [
     {
@@ -327,6 +327,66 @@
               "method": "DELETE",
               "path": "/agent/v1/messages/{message.id}/reactions/{reaction}"
             }
+          },
+          "reads": {
+            "conversation": {
+              "method": "GET",
+              "path": "/agent/v1/conversations/:feedId",
+              "args": { ":feedId": "conversation.id" },
+              "fields": {
+                "name": { "pointer": "/name" },
+                "kind": { "pointer": "/chatMode" }
+              }
+            },
+            "members": {
+              "method": "GET",
+              "path": "/agent/v1/conversations/:feedId/members",
+              "args": { ":feedId": "conversation.id" },
+              "items": "/items",
+              "fields": {
+                "id": { "pointer": "/userId" },
+                "name": { "pointer": "/name" }
+              }
+            },
+            "message": {
+              "method": "GET",
+              "path": "/agent/v1/messages/:messageId",
+              "args": { ":messageId": "message.id" },
+              "fields": {
+                "id": { "pointer": "/item/id" },
+                "sender": { "pointer": "/item/senderName" },
+                "senderId": { "pointer": "/item/senderId" },
+                "isMine": { "pointer": "/item/isMine" },
+                "at": { "pointer": "/item/createdAt", "unit": "rfc3339" },
+                "text": { "template": "{/item/textPreview}" },
+                "title": {
+                  "pointer": "/item/parts/0/metadata/summaryElements/0/content"
+                },
+                "partText": { "pointer": "/item/parts/0/text" },
+                "partKind": { "pointer": "/item/parts/0/kind" },
+                "media": { "pointer": "/item/parts/0/refId" }
+              }
+            },
+            "thread": {
+              "method": "GET",
+              "path": "/agent/v1/messages/:messageId/thread",
+              "args": { ":messageId": "thread.id" },
+              "items": "/items",
+              "fields": {
+                "id": { "pointer": "/id" },
+                "sender": { "pointer": "/senderName" },
+                "senderId": { "pointer": "/senderId" },
+                "isMine": { "pointer": "/isMine" },
+                "at": { "pointer": "/createdAt", "unit": "rfc3339" },
+                "text": { "template": "{/textPreview}" },
+                "title": {
+                  "pointer": "/parts/0/metadata/summaryElements/0/content"
+                },
+                "partText": { "pointer": "/parts/0/text" },
+                "partKind": { "pointer": "/parts/0/kind" },
+                "media": { "pointer": "/parts/0/refId" }
+              }
+            }
           }
         },
         "writes": [
@@ -334,6 +394,7 @@
             "method": "POST",
             "path": "/agent/v1/messages/:messageId/replies",
             "createdMessageId": "/messageId",
+            "objects": [{ "type": "message", "from": ":messageId" }],
             "footer": {
               "text": "/text",
               "markdown": true,
@@ -349,6 +410,7 @@
             "method": "POST",
             "path": "/agent/v1/conversations/:feedId/messages",
             "createdMessageId": "/messageId",
+            "objects": [{ "type": "conversation", "from": ":feedId" }],
             "footer": {
               "text": "/text",
               "markdown": true,
@@ -359,6 +421,114 @@
                 "escape": "markdown"
               }
             }
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/images",
+            "createdMessageId": "/messageId",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/files",
+            "createdMessageId": "/messageId",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/videos",
+            "createdMessageId": "/messageId",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/voice",
+            "createdMessageId": "/messageId",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/messages/:messageId/reactions",
+            "objects": [{ "type": "message", "from": ":messageId" }]
+          },
+          {
+            "method": "DELETE",
+            "path": "/agent/v1/messages/:messageId/reactions/:key",
+            "objects": [{ "type": "message", "from": ":messageId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/read-position",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/read-thread-position",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/threads/:threadId/read-position",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations/:feedId/local-read-position",
+            "objects": [{ "type": "conversation", "from": ":feedId" }]
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/image-uploads",
+            "auxiliary": true
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/documents/drive/items",
+            "summary": "新建云文档"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/documents/drive/upload",
+            "summary": "上传文件到云盘"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/documents/edit",
+            "summary": "编辑文档"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/documents/comments",
+            "summary": "发表文档评论"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/conversations",
+            "summary": "新建群聊"
+          },
+          {
+            "method": "POST",
+            "path": "/agent/v1/calendar/events",
+            "summary": "新建日程"
+          }
+        ],
+        "resolvers": [
+          {
+            "from": "message",
+            "to": "conversation",
+            "method": "GET",
+            "path": "/agent/v1/messages/:messageId",
+            "pointer": "/item/feedId",
+            "ttlSeconds": 600
+          }
+        ],
+        "labels": [
+          {
+            "object": "conversation",
+            "method": "GET",
+            "path": "/agent/v1/conversations/:feedId",
+            "pointer": "/name",
+            "ttlSeconds": 600
           }
         ]
       }

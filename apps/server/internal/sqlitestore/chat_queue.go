@@ -24,6 +24,7 @@ func chatQueueSchema() []string {
 			position INTEGER NOT NULL,
 			text TEXT NOT NULL,
 			attachments_json TEXT NOT NULL DEFAULT '[]',
+			annotations_json TEXT NOT NULL DEFAULT '[]',
 			run_settings_json TEXT NOT NULL DEFAULT '{}',
 			created_by TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
@@ -47,7 +48,7 @@ func chatQueueSchema() []string {
 	}
 }
 
-const chatQueueItemColumns = `id, workspace_id, chat_id, position, text, attachments_json, run_settings_json,
+const chatQueueItemColumns = `id, workspace_id, chat_id, position, text, attachments_json, annotations_json, run_settings_json,
 	created_by, created_at, updated_at, revision, state, error, sent_session_id, maybe_sent, delivery, delivery_at`
 
 // unsentChatQueueStates are the states a queue lists.
@@ -60,10 +61,10 @@ type chatQueueRow struct {
 
 func scanChatQueueRow(scan func(...any) error) (chatQueueRow, error) {
 	var row chatQueueRow
-	var attachments, settings string
+	var attachments, annotations, settings string
 	var maybeSent int
 	item := &row.item
-	if err := scan(&item.ID, &row.workspaceID, &item.ChatID, &item.Position, &item.Text, &attachments, &settings,
+	if err := scan(&item.ID, &row.workspaceID, &item.ChatID, &item.Position, &item.Text, &attachments, &annotations, &settings,
 		&item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.State, &item.Error, &item.SentSessionID, &maybeSent,
 		&item.Delivery, &item.DeliverySince); err != nil {
 		return row, err
@@ -81,6 +82,12 @@ func scanChatQueueRow(scan func(...any) error) (chatQueueRow, error) {
 	}
 	if len(item.Attachments) == 0 {
 		item.Attachments = nil
+	}
+	if err := json.Unmarshal([]byte(annotations), &item.Annotations); err != nil {
+		return row, fmt.Errorf("decode queued message annotations: %w", err)
+	}
+	if len(item.Annotations) == 0 {
+		item.Annotations = nil
 	}
 	if err := json.Unmarshal([]byte(settings), &item.RunSettings); err != nil {
 		return row, fmt.Errorf("decode queued message settings: %w", err)
@@ -155,28 +162,52 @@ func (s *Store) changeChatQueue(ctx context.Context, workspaceID, chatID string,
 	return queue, err
 }
 
-func encodeChatQueueMessage(text string, attachments []store.ChatAttachment, settings store.ChatQueueRunSettings) (string, string, string, error) {
+// addChatQueueAnnotationsColumn adds annotations_json to queues created before
+// annotations existed; fresh databases get it from chatQueueSchema.
+func (s *Store) addChatQueueAnnotationsColumn(ctx context.Context) error {
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('chat_queue_items') WHERE name = 'annotations_json'`).Scan(&present); err != nil {
+		return fmt.Errorf("check chat queue annotations column: %w", err)
+	}
+	if present > 0 {
+		return nil
+	}
+	if _, err := s.conn().ExecContext(ctx, `ALTER TABLE chat_queue_items ADD COLUMN annotations_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		return fmt.Errorf("add chat queue annotations column: %w", err)
+	}
+	return nil
+}
+
+func encodeChatQueueMessage(text string, attachments []store.ChatAttachment, annotations []store.SessionInputAnnotation, settings store.ChatQueueRunSettings) (string, string, string, string, error) {
 	text = strings.TrimSpace(text)
 	attachments = store.NormalizeChatAttachments(attachments)
+	annotations = store.NormalizeSessionInputAnnotations(annotations)
 	if text == "" && len(attachments) == 0 {
-		return "", "", "", store.ErrInvalidChatQueueMessage
+		return "", "", "", "", store.ErrInvalidChatQueueMessage
 	}
 	if attachments == nil {
 		attachments = []store.ChatAttachment{}
 	}
+	if annotations == nil {
+		annotations = []store.SessionInputAnnotation{}
+	}
 	encodedAttachments, err := json.Marshal(attachments)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
+	}
+	encodedAnnotations, err := json.Marshal(annotations)
+	if err != nil {
+		return "", "", "", "", err
 	}
 	encodedSettings, err := json.Marshal(settings)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	return text, string(encodedAttachments), string(encodedSettings), nil
+	return text, string(encodedAttachments), string(encodedAnnotations), string(encodedSettings), nil
 }
 
 func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, createdBy string, input store.EnqueueChatMessageInput) (store.ChatQueue, error) {
-	text, attachments, settings, err := encodeChatQueueMessage(input.Text, input.Attachments, input.RunSettings)
+	text, attachments, annotations, settings, err := encodeChatQueueMessage(input.Text, input.Attachments, input.Annotations, input.RunSettings)
 	if err != nil {
 		return store.ChatQueue{}, err
 	}
@@ -199,8 +230,8 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 			deliveryAt = now
 		}
 		_, err := tx.conn().ExecContext(ctx, `INSERT INTO chat_queue_items (`+chatQueueItemColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0, ?, ?)`,
-			newSessionInputID(), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now, delivery, deliveryAt)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0, ?, ?)`,
+			newSessionInputID(), workspaceID, chatID, last+1, text, attachments, annotations, settings, createdBy, now, now, delivery, deliveryAt)
 		return err
 	})
 }
@@ -237,6 +268,9 @@ func (s *Store) EditChatQueueItem(ctx context.Context, workspaceID, chatID, item
 		if input.Attachments != nil {
 			item.Attachments = *input.Attachments
 		}
+		if input.Annotations != nil {
+			item.Annotations = *input.Annotations
+		}
 		if input.RunSettings != nil {
 			item.RunSettings = *input.RunSettings
 		}
@@ -254,13 +288,13 @@ func (s *Store) EditChatQueueItem(ctx context.Context, workspaceID, chatID, item
 				deliveryAt = ""
 			}
 		}
-		text, attachments, settings, err := encodeChatQueueMessage(item.Text, item.Attachments, item.RunSettings)
+		text, attachments, annotations, settings, err := encodeChatQueueMessage(item.Text, item.Attachments, item.Annotations, item.RunSettings)
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET text = ?, attachments_json = ?, run_settings_json = ?,
+		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET text = ?, attachments_json = ?, annotations_json = ?, run_settings_json = ?,
 			delivery = ?, delivery_at = ?, revision = revision + 1, updated_at = ? WHERE id = ?`,
-			text, attachments, settings, item.Delivery, deliveryAt, now, itemID)
+			text, attachments, annotations, settings, item.Delivery, deliveryAt, now, itemID)
 		return err
 	})
 }

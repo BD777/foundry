@@ -47,12 +47,10 @@ person's next task waits while you work.
 - Read the repository instructions, current changes and active sessions.
 - Preserve work that is already in flight. Name one owner for each tightly
   coupled change.
-- When a child needs a model and nobody named one, read the target
-  workspace's execution models with `get_execution_default`: a default and
-  the alternatives the person allows. Start ordinary workers on the default;
-  when it is a worker group, pass its `workerGroupId` and let Foundry pick the
-  member. A group balances load among interchangeable models; quotas and
-  weights say nothing about capability or cost.
+- Omit model parameters (provider, model, workerGroupId, profileId): Foundry
+  starts the child on the workspace's execution default, and a worker group
+  there picks the member. A group balances load among interchangeable
+  models; quotas and weights say nothing about capability or cost.
 - Use an alternative only when a step falls under a specific bullet of the
   default model's guide (`avoid` or `weaknesses`): pick the alternative whose
   guide fits the step, and quote that bullet in the brief and in your report.
@@ -76,6 +74,16 @@ person's next task waits while you work.
   depends on it.
 - Match checks to risk. Keep narrow changes narrow, and broaden checks when a
   change crosses storage, contracts, permissions or a user workflow.
+- To have a child orchestrate, begin its prompt with /foundry-orchestration.
+
+## Keep the pipeline fast
+
+- Brief the whole surface once: every entry path the change touches (a new turn, a queued message, a message into a running turn), both themes, narrow width, realistic content. Done includes the production build, not only type checks.
+- Ask for a patch against the live base as soon as targeted checks pass; integrate and deploy small patches as they come instead of batching.
+- Check on the deployed development environment with test data rather than local throwaway stacks; time-box each check and run only the tests that cover the slice.
+- Run builds and heavy checks on the strongest available runner; the deployer builds once per deployment.
+- Keep independent slices in parallel workers; serialize only changes to the same files.
+- When a worker is slow, read its progress and cut scope (split it, or ship the finished part) instead of waiting.
 
 ## Write the brief
 

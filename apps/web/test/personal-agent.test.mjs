@@ -49,6 +49,15 @@ globalThis.EventSource = class {
   addEventListener() {}
   close() {}
 };
+// The diff worker, run in-process: happy-dom has no Worker.
+const { createFileDiff } =
+  await import("../src/components/ui/file-diff-engine.ts");
+globalThis.Worker = class {
+  postMessage({ before, after }) {
+    setTimeout(() => this.onmessage?.({ data: createFileDiff(before, after) }));
+  }
+  terminate() {}
+};
 
 const now = Date.now();
 const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
@@ -88,14 +97,7 @@ const settings = {
   activeHoursEnd: "22:00",
   urgentAnytime: true,
   limits: {
-    concurrentSessions: 4,
-    dailySessions: 30,
-    dailyWorkspaces: 3,
-    weeklyWorkspaces: 10,
-    hourlyTurns: 60,
-    dailyDigestSessions: 50,
     stuckAfterMinutes: 240,
-    monthlyTokenBudget: 0,
   },
 };
 const agent = {
@@ -520,16 +522,16 @@ test("presets match §4 and loosening is detected per action", () => {
   );
 });
 
-test("settings problems name the field and the cap", () => {
+test("settings problems name the field", () => {
   assert.deepEqual(model.settingsProblems(settings), []);
   const problems = model.settingsProblems({
     ...settings,
     dailyDigestTime: "9",
-    limits: { ...settings.limits, concurrentSessions: 9 },
+    limits: { ...settings.limits, stuckAfterMinutes: 0 },
   });
   assert.deepEqual(problems, [
     { kind: "time", field: "dailyDigestTime" },
-    { kind: "limit", key: "concurrentSessions", min: 1, max: 8 },
+    { kind: "limit", key: "stuckAfterMinutes", min: 1 },
   ]);
   assert.deepEqual(
     model.settingsProblems({
@@ -557,6 +559,61 @@ test("the conversation shows what was said, not the steps", () => {
   );
   const placed = model.placeProposals(lines, [proposal]);
   assert.ok("proposal" in placed[2]);
+});
+
+test("a turn that ended without an answer says so, with its reason", () => {
+  // The person's message and a tool ran; no answer was written.
+  const unanswered = {
+    ...assistantSession,
+    events: assistantSession.events.slice(0, 2),
+  };
+  const canceled = model
+    .assistantLines([
+      {
+        ...unanswered,
+        status: "canceled",
+        error: "Stopped: observed_token_budget",
+        completedAt: iso(-10 * minute),
+      },
+    ])
+    .at(-1);
+  assert.deepEqual(canceled.ended, {
+    status: "canceled",
+    reason: "Stopped: observed_token_budget",
+    inputId: "in_1",
+  });
+  assert.equal(canceled.text, "");
+
+  // A turn that answered before it was stopped needs no line.
+  const answered = model.assistantLines([
+    { ...assistantSession, status: "canceled", error: "Canceled by user" },
+  ]);
+  assert.equal(answered.at(-1).ended, undefined);
+
+  const failed = model
+    .assistantLines([
+      { ...unanswered, status: "failed", error: "The model refused." },
+    ])
+    .at(-1);
+  assert.deepEqual(failed.ended, {
+    status: "failed",
+    reason: "The model refused.",
+    inputId: "in_1",
+  });
+});
+
+test("connector writes stay out of the home conversation", () => {
+  const write = {
+    ...proposal,
+    id: "pap_write",
+    kind: "connector_write",
+    summary:
+      "The assistant wants to make this openlark change: POST /api/connectors/extensions/openlark/gateway/documents/drive/items.",
+  };
+  assert.deepEqual(
+    model.conversationProposals([proposal, write]).map((item) => item.id),
+    ["prop_1"],
+  );
 });
 
 test("server notices keep their source; a missed input still shows before its answer", () => {
@@ -956,7 +1013,7 @@ test("Channels: a direct chat the assistant takes is shown as the assistant's", 
 });
 
 test("settings: loosening the rules takes a second confirmation", async () => {
-  overview = { agent, homeDeviceOnline: true, usage: undefined };
+  overview = { agent, homeDeviceOnline: true };
   calls = [];
   const page = await render(AssistantSettings, {
     section: "rules",
@@ -983,7 +1040,7 @@ test("settings: loosening the rules takes a second confirmation", async () => {
 });
 
 test("settings: connector levels share the page save line and device-held read is marked", async () => {
-  overview = { agent, homeDeviceOnline: true, usage: undefined };
+  overview = { agent, homeDeviceOnline: true };
   connectorAccounts = connectorAccounts.map((connector) => ({
     ...connector,
     level: "write",
@@ -1099,7 +1156,7 @@ test("settings navigation shows a linked grouped index when no section is open",
   );
   assert.match(index.textContent, /What it knows about you/);
   assert.match(index.textContent, /Which model handles each kind of work/);
-  assert.match(index.textContent, /How much it can run and spend/);
+  assert.match(index.textContent, /When a job counts as possibly stuck/);
   assert.equal(
     page.container
       .querySelector(
@@ -1840,15 +1897,15 @@ test("maintenance preview distinguishes new files from modified files", async ()
   });
   try {
     const reviews = [...page.container.querySelectorAll("button")].filter(
-      (node) => node.textContent.trim() === "Review file change",
+      (node) => node.textContent.trim() === "Review change",
     );
     assert.equal(reviews.length, 2);
     await act(async () => reviews[0].click());
     await settle();
-    assert.match(page.container.textContent, /New file/);
+    assert.match(document.body.textContent, /New file/);
     await act(async () => reviews[1].click());
     await settle();
-    assert.match(page.container.textContent, /Modified file/);
+    assert.match(document.body.textContent, /Modified file/);
   } finally {
     maintenanceJobs = [];
     maintenancePreviewReplies = {};

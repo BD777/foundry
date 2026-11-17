@@ -304,3 +304,21 @@ func (s *Store) CountActiveAgentChildren(ctx context.Context, parentID string) (
 		parentID).Scan(&count)
 	return count, err
 }
+
+// CountActiveAgentDescendants counts every session below sessionID at any
+// depth that still occupies an execution slot: the helpers a channel turn
+// started, and theirs (DEV-268).
+func (s *Store) CountActiveAgentDescendants(ctx context.Context, sessionID string) (int, error) {
+	var count int
+	err := s.conn().QueryRowContext(ctx, `WITH RECURSIVE lineage(id) AS (
+			SELECT id FROM agent_sessions WHERE parent_session_id = ?
+			UNION
+			SELECT child.id FROM agent_sessions child JOIN lineage ON child.parent_session_id = lineage.id
+		)
+		SELECT COUNT(*) FROM agent_sessions
+		WHERE id IN (SELECT id FROM lineage) AND status IN `+store.ActiveSessionStatusesSQL,
+		sessionID).Scan(&count)
+	return count, err
+}
+
+var _ store.SessionDescendantStore = (*Store)(nil)

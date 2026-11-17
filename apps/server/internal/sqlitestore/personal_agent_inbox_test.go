@@ -253,3 +253,35 @@ func TestInboxResolvedFailureCanRetryWithoutReplayingASuccess(t *testing.T) {
 		t.Fatal("success was repeated by failure recovery")
 	}
 }
+
+func TestInboxKeepsAnswerAnnotationsAcrossReplayAndRetry(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	annotations := []store.SessionInputAnnotation{{ID: "ann_1", SelectedText: "passage", Comment: "why", SourceEventID: "evt_answer", MessageAt: "2026-11-17T01:00:00Z"}}
+	input := inboxFixture("person-a", "web", "with-annotations")
+	input.Annotations = annotations
+	first, err := db.CapturePersonalAgentInbox(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Annotations) != 1 || first.Annotations[0].SelectedText != "passage" || first.Annotations[0].Comment != "why" {
+		t.Fatalf("captured annotations = %+v", first.Annotations)
+	}
+	replayed, err := db.CapturePersonalAgentInbox(ctx, input)
+	if err != nil || len(replayed.Annotations) != 1 {
+		t.Fatalf("replay lost its annotations: %+v %v", replayed, err)
+	}
+	changed := input
+	changed.Annotations = nil
+	if _, err := db.CapturePersonalAgentInbox(ctx, changed); !errors.Is(err, store.ErrIdempotencyConflict) {
+		t.Fatalf("changed annotations reused the message id: %v", err)
+	}
+	first.Status, first.WaitingReason = "waiting", "device_offline"
+	first, err = db.SavePersonalAgentInbox(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := db.RetryPersonalAgentInbox(ctx, first.AssistantID, first.ID, first.Revision, inboxFixture("person-a", "web", "retry-annotations"))
+	if err != nil || len(retry.Annotations) != 1 || retry.Annotations[0].ID != "ann_1" {
+		t.Fatalf("retry lost its annotations: %+v %v", retry, err)
+	}
+}

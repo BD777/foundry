@@ -15,6 +15,7 @@ import {
   type ConversationInputContext,
 } from "./conversation-actions";
 import { useConversationDrafts } from "./use-conversation-drafts";
+import { useConversationAnnotations } from "./use-conversation-annotations";
 import { useLocalQueue } from "./use-local-queue";
 import {
   useAwaitingExecution,
@@ -61,6 +62,7 @@ export function useConversationInput(
     },
   });
   const drafts = useConversationDrafts(props);
+  const annotations = useConversationAnnotations(props);
   const local = useLocalQueue({ storageKeyPrefix, threadKey, serverMode });
   const flight = useComposerFlight({
     threadKey,
@@ -92,6 +94,7 @@ export function useConversationInput(
     canSteer,
     unavailable,
     drafts,
+    annotations,
     local,
     server,
     flight,
@@ -125,9 +128,15 @@ export function useConversationInput(
     serverMode,
   ]);
 
-  const hasContent = Boolean(drafts.draft.trim() || props.attachments?.length);
+  const hasContent = Boolean(
+    drafts.draft.trim() ||
+    props.attachments?.length ||
+    annotations.annotations.length,
+  );
   return {
     draft: drafts.draft,
+    /** Annotations on answers that the next message will carry. */
+    annotations,
     queue,
     error: errors[threadKey],
     pending: busy.pending,

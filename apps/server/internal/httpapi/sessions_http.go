@@ -246,7 +246,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
-	note, err := s.resolveNewSession(r.Context(), actorFromContext(r.Context()), &input, false)
+	start, err := s.resolveNewSession(r.Context(), actorFromContext(r.Context()), &input, false)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -272,7 +272,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
-	s.noteMemberRouting(r.Context(), session, note)
+	s.noteMemberRouting(r.Context(), session, start.note)
 	session = s.presentSession(r.Context(), sessions.Slim(session))
 	idempotent.record(r.Context(), session)
 	writeJSON(w, http.StatusCreated, session)

@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  annotatedPromptText,
+  sentAnnotation,
+  stripAnnotationWrapper,
+} from "../../../components/conversation/annotations";
+import { receivedAnnotations } from "../../../components/conversation/received-annotations";
 import type {
   ChatQueue,
   ChatQueueItem,
@@ -71,8 +77,12 @@ export const chatQueueTransport: ChatQueueTransport = {
 function draftOf(item: ChatQueueItem): QueuedDraft {
   return {
     id: item.id,
-    text: item.text,
+    // The server keeps the model's prompt; the queue shows the person's text.
+    text: item.annotations?.length
+      ? stripAnnotationWrapper(item.text)
+      : item.text,
     attachments: item.attachments,
+    annotations: item.annotations,
     state: item.state === "sent" ? "dispatching" : item.state,
     error: item.error,
     maybeSent: item.maybeSent,
@@ -250,8 +260,15 @@ export function useChatQueue({
         transport.enqueue(
           id,
           {
-            text: message.text,
+            // The model reads the annotations wrapper; the queue item keeps
+            // the person's text, so the server stores the composed prompt.
+            text: message.annotations?.length
+              ? annotatedPromptText(message.text, message.annotations)
+              : message.text,
             attachments: message.attachments,
+            ...(message.annotations?.length
+              ? { annotations: message.annotations.map(sentAnnotation) }
+              : {}),
             runSettings: settings.current(),
             ...(options?.steer ? { steer: true } : {}),
             ...(options?.delivery && options.delivery !== "turn_end"
@@ -273,12 +290,16 @@ export function useChatQueue({
         id,
         (items) =>
           items.map((item) => (item.id === itemId ? { ...item, text } : item)),
-        (current) =>
-          transport.edit(id, itemId, {
-            text,
-            expectedRevision:
-              current?.items.find((item) => item.id === itemId)?.revision ?? 0,
-          }),
+        (current) => {
+          const item = current?.items.find((entry) => entry.id === itemId);
+          const annotations = receivedAnnotations(item?.annotations);
+          return transport.edit(id, itemId, {
+            text: annotations?.length
+              ? annotatedPromptText(text, annotations)
+              : text,
+            expectedRevision: item?.revision ?? 0,
+          });
+        },
       ),
     setDelivery: (id, itemId, delivery) =>
       change(
