@@ -102,8 +102,6 @@ export const personalAgent = {
     title: "Role runs and stop receipts",
     boundaries:
       "Stop targets the recorded input, not a later conversation turn. Stopping the assistant pauses new dispatch and requests stops of its executions; independent workspace services keep their own lifecycle.",
-    budgetHint:
-      "Time limits run on the device. Token limits use observed main-runtime input and output, including cached input. Reporting and in-flight requests may overshoot; unreported or child usage is not an exact billing cap.",
     failed: "Could not update run controls",
     refresh: "Refresh runs",
     monitoring: "Monitoring execution",
@@ -116,8 +114,6 @@ export const personalAgent = {
     requestedOnly:
       "These are requested settings. Actual model or effort is known only when the native runtime reports it in the conversation.",
     defaultValue: "Account default",
-    usage:
-      "Observed {{tokens}} / {{budget}} tokens · {{state}} · {{minutes}} minute limit",
     reason: "Reason: {{reason}}",
     open: "Open execution",
     stopInput: "Stop this input",
@@ -510,6 +506,14 @@ export const personalAgent = {
     stopped: "Assistant processing is paused. Say “resume” to carry on.",
     noRuntime:
       "Your assistant can't think yet: {{device}} has no AI sign-in it can use. Set one up on that computer.",
+    /** A turn that ended without an answer (DEV-267). */
+    turnStopped: "Stopped",
+    turnUnfinished: "Did not finish: {{reason}}",
+    turnUnfinishedNoReason: "Did not finish",
+    retryNotSettled:
+      "The last attempt is not confirmed finished yet; try again shortly.",
+    retryChanged: "This message changed, or it cannot be retried now.",
+    retryFailed: "Could not retry this message.",
   },
   commands: {
     accepted: "You said yes: {{summary}}",
@@ -726,7 +730,7 @@ export const personalAgent = {
       connectors: "Connectors",
       entry: "Entry & notifications",
       channels: "Message channels",
-      limits: "Usage & limits",
+      limits: "Stuck notice",
       activity: "Activity",
       files: "Workspace files",
     },
@@ -745,7 +749,7 @@ export const personalAgent = {
       connectors: "Accounts and services it can use",
       entry: "Where it starts and how it reaches you",
       channels: "Messages it receives from connectors",
-      limits: "How much it can run and spend",
+      limits: "When a job counts as possibly stuck",
       activity: "What it has done and what is waiting",
       files: "Every file of the workspaces it runs in",
     },
@@ -874,7 +878,6 @@ export const personalAgent = {
         "Choose a worker group, or a provider, runtime and model, for the assistant override and every alternative.",
       dailyDigestTime: "Write the summary time as HH:MM, for example 09:00.",
       activeHours: "Write the hours as HH:MM, for example 09:00 and 22:00.",
-      limit: "“{{label}}” must be between {{min}} and {{max}}.",
       limitNoMax: "“{{label}}” must be a whole number from {{min}} up.",
     },
     status: {
@@ -1492,11 +1495,14 @@ export const personalAgent = {
           "After a message comes through, later messages in its thread, or replies and quotes of messages the assistant handled, continue the same session without a trigger word.",
         followUpsFrom: "Who may continue",
         followUpFroms: {
+          "thread-participants": "Participants in the thread",
           "same-sender": "The person who started it",
           person: "You",
           anyone: "Anyone",
         },
         followUpFromHints: {
+          "thread-participants":
+            "Anyone may continue a thread where a turn happened; a quote outside a thread still continues only for the person who started it.",
           "same-sender":
             "Other people in the chat can still start a turn with a trigger word.",
           person: "Only messages from your own account continue it.",
@@ -1511,7 +1517,7 @@ export const personalAgent = {
         handoverTitle: "In the chat",
         ack: "React while working",
         ackHint:
-          "Puts the source’s acknowledgement reaction on each message the assistant takes on, and removes it when the turn ends, however it ends.",
+          "Puts the source’s acknowledgement reaction on each message the assistant takes on, and removes it only when the turn and every session it started have ended, however they end.",
         footer: "AI reply footer",
         footerPlaceholder: "> 来自AI",
         footerHint:
@@ -1530,9 +1536,8 @@ export const personalAgent = {
         accessTitle: "Source connector in these conversations",
         access: {
           read: "Read only",
-          confirm: "Read and write · confirm every write",
-          direct:
-            "Read and write · the assistant decides (no confirmation, every write is recorded)",
+          write:
+            "Read and write · replies in the conversation; anything else needs your approval",
         },
         inheritOthers: "Other connectors follow the assistant's permissions",
         workspaces: "Workspaces: follow the assistant's permissions",
@@ -1631,21 +1636,10 @@ export const personalAgent = {
     },
     limits: {
       intro:
-        "Safety limits. When your assistant reaches one, it stops and tells you.",
+        "After a task has gone this long with no one answering, it is reported as possibly stuck, and your assistant tells you.",
       labels: {
-        concurrentSessions: "Things running at once",
-        dailySessions: "Things started per day",
-        dailyWorkspaces: "New projects per day",
-        weeklyWorkspaces: "New projects per week",
-        hourlyTurns: "Replies per hour",
-        dailyDigestSessions: "Project summaries per day",
         stuckAfterMinutes: "Say a job may be stuck after (minutes)",
-        monthlyTokenBudget: "Monthly usage budget (tokens, 0 = none)",
       },
-      now: "Now: {{value}}",
-      max: "At most {{max}}",
-      usageNote:
-        "Usage counts what your computers report; anything they don't report isn't counted.",
     },
     activity: {
       title: "What it changed",

@@ -116,6 +116,72 @@ func TestAssistantProjectedCancellationNeedsNativeEndReceipt(t *testing.T) {
 	}
 }
 
+// The worker's generic "Session was canceled." report can land before the
+// run control's cancel. The server knows why it stopped the run, and that
+// reason replaces the generic one; a completed session is never relabelled
+// (DEV-267).
+func TestAssistantRunControlReasonWinsOverWorkerCancel(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	session := f.conversation
+	if _, _, err := f.server.store.SettleAgentSessionInput(ctx, session.ID, session.Input.ID, "", "", "Session was canceled."); err != nil {
+		t.Fatal(err)
+	}
+	stopped, changed, err := f.server.store.CancelPersonalAgentInput(ctx, session.ID, session.Input.ID, "Stopped: person_requested")
+	if err != nil || !changed {
+		t.Fatalf("the reason was not recorded: changed=%v err=%v", changed, err)
+	}
+	if stopped.Status != "canceled" || stopped.Error != "Stopped: person_requested" {
+		t.Fatalf("stopped session = %q %q", stopped.Status, stopped.Error)
+	}
+
+	other := f.startSession(t, "ws_pa", "", "a turn that finished")
+	if _, err := f.server.store.CompleteAgentSession(ctx, other.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	completed, changed, err := f.server.store.CancelPersonalAgentInput(ctx, other.ID, other.Input.ID, "Stopped: person_requested")
+	if err != nil || changed || completed.Error == "Stopped: person_requested" {
+		t.Fatalf("a completed session was relabelled: %+v changed=%v err=%v", completed, changed, err)
+	}
+}
+
+// Foundry never stops a working assistant turn by its own judgement: a run
+// that has used far past every legacy limit, with a stale observation
+// clock, stays monitoring until someone asks it to stop (DEV-271).
+func TestAssistantLongTurnIsNeverStoppedByFoundry(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	session := f.startSession(t, "ws_pa", "", "a long piece of work")
+	if _, err := f.server.store.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	control, err := f.server.store.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{
+		ID: flow.Key("parctl", session.ID, session.Input.ID), AssistantID: agent.ID, UserID: f.aliceID,
+		SessionID: session.ID, InputID: session.Input.ID, Role: "coordinator",
+		TokenBudget: 1, TimeoutMinutes: 1, ObservedTokens: 9_999_999,
+		LastUsageAt: "2000-01-01T00:00:00Z", UsageState: "native_main_observed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.assistant.ReconcileRunControl(ctx, control)
+	after, err := f.server.store.GetPersonalAgentRunControl(ctx, agent.ID, control.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.State != "monitoring" || after.StopReason != "" || after.ConfirmedAt != "" {
+		t.Fatalf("a working turn was stopped by Foundry: %+v", after)
+	}
+	current, err := f.server.store.GetAgentSessionSummary(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != "running" {
+		t.Fatalf("the session left running: %+v", current)
+	}
+}
+
 func TestAssistantStopRPCIsBoundedWhenDeviceDoesNotAnswer(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()

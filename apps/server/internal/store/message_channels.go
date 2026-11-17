@@ -42,6 +42,10 @@ type MessageChannelDeliveryRecord struct {
 	// message (a thread and when it started, or a quoted message), for the
 	// notice; "" otherwise.
 	FollowUp string
+	// AckHeld says the source's acknowledgement reaction is on this
+	// message's trigger and has not come off yet: it stays while the turn,
+	// and every session it started, is still working (DEV-268).
+	AckHeld bool
 }
 
 // MessageChannelKeyState is where one source conversation of a channel is:
@@ -96,6 +100,7 @@ const (
 	MessageDeliveryDropped   = "dropped"
 	MessageDeliveryHeld      = "held"
 	MessageDeliveryQueued    = "queued"
+	MessageDeliveryContext   = "context"
 	MessageDeliveryDelivered = "delivered"
 	MessageDeliveryDone      = "done"
 	MessageDeliveryFailed    = "failed"

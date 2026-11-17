@@ -241,10 +241,6 @@ func (d assistantDevices) AwayFor(deviceID string, now time.Time) (time.Duration
 	return d.s.hub.awayFor(deviceID, now)
 }
 
-func (d assistantDevices) InputTokens(ctx context.Context, session store.AgentSession) (int64, bool, error) {
-	return d.s.observeAssistantInputTokens(ctx, session)
-}
-
 // awayFor is how long the computer was away before its current connection,
 // from its last drop as the server saw it or, later, as its worker
 // reported it; ok is false when no drop is known. The drop's id tells one
@@ -300,68 +296,6 @@ type nativeTurnUsage struct {
 type wsSessionUsageRead struct {
 	Turns []nativeTurnUsage `json:"turns"`
 	Error string            `json:"error,omitempty"`
-}
-
-// readSessionUsage reads the turns of native sessions' logs on the device.
-func (c *daemonConnection) readSessionUsage(ctx context.Context, provider string, nativeSessionIDs []string) (wsSessionUsageRead, error) {
-	payload, err := json.Marshal(wsReadSessionUsage{Provider: provider, NativeSessionIDs: nativeSessionIDs})
-	if err != nil {
-		return wsSessionUsageRead{}, err
-	}
-	value, err := daemonRequest[wsSessionUsageRead](ctx, c, wsReadSessionUsageType, payload)
-	if err == nil && value.Error != "" {
-		err = errors.New(value.Error)
-	}
-	return value, err
-}
-
-// usageTolerance absorbs the gap between the agent writing its log and the
-// worker reporting the turn.
-const usageTolerance = 5 * time.Second
-
-func parseEventTime(value string) time.Time {
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		return time.Time{}
-	}
-	return parsed
-}
-
-// Native logs include cache tokens in InputTokens. This is an observed main
-// runtime budget, not a provider billing cap: reporting and in-flight requests
-// may overshoot it. The device-local time ceiling remains effective offline.
-func (s *Server) observeAssistantInputTokens(ctx context.Context, session store.AgentSession) (int64, bool, error) {
-	connection := s.hub.connectionFor(session.DeviceID)
-	if connection == nil || session.NativeSessionID == "" {
-		return 0, false, nil
-	}
-	usage, err := connection.readSessionUsage(ctx, session.Provider, []string{session.NativeSessionID})
-	if err != nil {
-		return 0, false, err
-	}
-	start, err := time.Parse(time.RFC3339Nano, session.Input.At)
-	if err != nil {
-		return 0, false, err
-	}
-	var latest *nativeTurnUsage
-	for _, turn := range usage.Turns {
-		at := parseEventTime(turn.StartedAt)
-		ended := parseEventTime(turn.EndedAt)
-		if at.Before(start.Add(-usageTolerance)) || ended.Before(start) {
-			continue
-		}
-		if latest == nil || at.After(parseEventTime(latest.StartedAt)) {
-			copy := turn
-			latest = &copy
-		}
-	}
-	if latest == nil {
-		return 0, false, nil
-	}
-	if latest.InputTokens < 0 || latest.OutputTokens < 0 {
-		return 0, false, fmt.Errorf("native usage was invalid")
-	}
-	return latest.InputTokens + latest.OutputTokens, true, nil
 }
 
 func parsePATime(value string) (time.Time, bool) {

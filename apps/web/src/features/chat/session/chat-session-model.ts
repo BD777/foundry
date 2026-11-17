@@ -491,13 +491,18 @@ export function channelSessionTitle(
   return at ? clockTime(at, { date: "short" }) : undefined;
 }
 
-/** A channel session's row mark (DEV-234): its source and conversation. */
+/** A channel session's row mark (DEV-234): its source, conversation and, for
+ * a thread conversation, that it is one (DEV-268). */
 export function channelOriginMark(
   origin: MessageChannelOriginSummary | undefined,
 ): string | undefined {
   if (!origin) return undefined;
   const name = origin.conversation.name;
-  return name ? `${origin.source} · ${name}` : origin.source;
+  const thread =
+    origin.threadId || origin.threadIsReply
+      ? i18n.t("chat:listRow.channelThread")
+      : "";
+  return [origin.source, name || "", thread].filter(Boolean).join(" · ");
 }
 
 /** A session of the list is the chat `id` names. */

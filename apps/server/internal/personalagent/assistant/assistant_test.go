@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -113,12 +112,6 @@ func TestAssistantRefusalsKeepTheirStatus(t *testing.T) {
 	}
 	if err := notAllowed(store.PersonalAgentActionArchive, settings); refusalStatus(err) != http.StatusUnprocessableEntity || !strings.Contains(err.Error(), settings) {
 		t.Fatalf("not allowed answers %d: %v", refusalStatus(err), err)
-	}
-	// The link the assistant passes on is a full one: a Feishu chat cannot
-	// open a path of the web app.
-	limit := limitRefusal(&personalagent.LimitError{Limit: "dailyWorkspaces", Max: 3}, settings)
-	if kind := refusalKind(limit); kind != store.PersonalAgentRefusalLimit || !strings.Contains(limit.Error(), "/assistants/asst_work/settings") {
-		t.Fatalf("a limit is refused as %s: %v", kind, limit)
 	}
 }
 

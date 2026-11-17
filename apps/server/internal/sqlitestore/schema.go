@@ -168,6 +168,10 @@ func coreSchema() []string {
 			generation_session_id TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (workspace_id, chat_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS account_unusable_observations (
+			runtime TEXT NOT NULL, profile_id TEXT NOT NULL, session_id TEXT NOT NULL, reason TEXT NOT NULL,
+			observed_at TEXT NOT NULL, cooldown_until TEXT NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS idx_account_unusable_observed ON account_unusable_observations(observed_at)`,
 		`CREATE TABLE IF NOT EXISTS chat_layouts (
 			workspace_id TEXT PRIMARY KEY,
 			revision INTEGER NOT NULL,

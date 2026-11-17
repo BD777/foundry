@@ -501,6 +501,37 @@ export function workerProxyEnvironment(
   return next;
 }
 
+/** The standard proxy variables, as programs read them. */
+export const egressVariables = [
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "NO_PROXY",
+  "no_proxy",
+] as const;
+
+/**
+ * The Worker's proxy as the standard variables, for programs the Worker
+ * starts to reach the network for the person: connection helpers and
+ * extension tools. The saved setting wins over the Worker's environment, as
+ * for the Worker's own requests, so `foundry-worker proxy` is the one place a
+ * device's egress is set.
+ */
+export function workerEgressVariables(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const resolved = workerProxyEnvironment(undefined, env);
+  const variables: Record<string, string> = {};
+  for (const name of egressVariables) {
+    const value = resolved[name];
+    if (value) variables[name] = value;
+  }
+  return variables;
+}
+
 /**
  * Fetch with per-origin NO_PROXY. It is the fetch of the undici package the
  * dispatcher comes from: Node's own fetch bundles another undici, and Node 26

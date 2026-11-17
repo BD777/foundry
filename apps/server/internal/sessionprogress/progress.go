@@ -48,7 +48,6 @@ type Flags struct {
 	RepeatedFailure string `json:"repeatedFailure,omitempty"`
 	RateLimitStorm  string `json:"rateLimitStorm,omitempty"`
 	Quiet           string `json:"quiet,omitempty"`
-	Budget          string `json:"budget,omitempty"`
 }
 
 // Empty reports whether no detector found anything.
@@ -56,8 +55,7 @@ func (flags Flags) Empty() bool {
 	return flags == Flags{}
 }
 
-// Detect runs the event-log detectors. Budget needs the session's execution
-// budget, so the caller sets it separately.
+// Detect runs the event-log detectors over the session's event log.
 func Detect(events []store.AgentSessionEvent, status string, now time.Time) Flags {
 	return Flags{
 		RepeatedFailure: RepeatedFailure(events),
@@ -296,49 +294,6 @@ func Quiet(status string, events []store.AgentSessionEvent, now time.Time) strin
 	}
 	return fmt.Sprintf("no activity for %s (last: %s at %s)",
 		silence.Round(time.Minute).String(), label, when.UTC().Format(time.RFC3339))
-}
-
-// Budget reports the mark the current run reached against its token or time
-// budget: empty below 80%, otherwise the percentage and the mark it passed.
-func Budget(tokensUsed, tokenBudget int64, elapsed time.Duration, timeoutMinutes int) string {
-	var parts []string
-	if tokenBudget > 0 {
-		percent := int(float64(tokensUsed) * 100 / float64(tokenBudget))
-		if percent >= 80 {
-			parts = append(parts, fmt.Sprintf("tokens %d%% of %d%s", percent, tokenBudget, mark(percent)))
-		}
-	}
-	if timeoutMinutes > 0 && elapsed > 0 {
-		percent := int(elapsed.Minutes() * 100 / float64(timeoutMinutes))
-		if percent >= 80 {
-			parts = append(parts, fmt.Sprintf("time %d%% of %d min%s", percent, timeoutMinutes, mark(percent)))
-		}
-	}
-	return strings.Join(parts, "; ")
-}
-
-func mark(percent int) string {
-	if percent >= 95 {
-		return " (95% mark)"
-	}
-	return " (80% mark)"
-}
-
-// UsageSince adds up the tokens of the model requests the log recorded at
-// or after since.
-func UsageSince(events []store.AgentSessionEvent, since time.Time) int64 {
-	var total int64
-	for _, event := range events {
-		if event.Metadata == nil || event.Metadata.RequestUsage == nil {
-			continue
-		}
-		if at, ok := parseTime(event.At); ok && !since.IsZero() && at.Before(since) {
-			continue
-		}
-		usage := event.Metadata.RequestUsage
-		total += usage.InputTokens + usage.OutputTokens
-	}
-	return total
 }
 
 // ToolName is the tool a call detail starts with.

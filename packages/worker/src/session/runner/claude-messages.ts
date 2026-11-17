@@ -271,6 +271,7 @@ async function finishClaudeContinuation(
   const continuation = runtime.continuation;
   const notifications = runtime.notifications ?? [];
   const fire = runtime.timers?.takeFire();
+  const steered = runtime.timers?.takeSteerTurn() === true;
   runtime.continuation = undefined;
   runtime.notifications = [];
   if (runtime.pending) runtime.pending.behindContinuation = false;
@@ -308,6 +309,17 @@ async function finishClaudeContinuation(
     emitForClaudeRuntime(runtime, {
       ...event,
       metadata: { ...event.metadata, ...metadata },
+    });
+    return;
+  }
+  if (steered) {
+    // The person's steer, submitted after its turn ended: the steer is
+    // already the person's bubble; this is its answer, not a timer's.
+    emitForClaudeRuntime(runtime, {
+      label: sessionEventLabels.responseStream,
+      detail: answer,
+      level: error ? "error" : "info",
+      metadata,
     });
     return;
   }

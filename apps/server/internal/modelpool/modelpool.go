@@ -185,6 +185,45 @@ func QuotaExhausted(code, text string) bool {
 	return generic429Pattern.MatchString(text) && quotaContext.MatchString(text)
 }
 
+var accountUnusablePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bin arrears\b`),
+	regexp.MustCompile(`(?i)\bservice (?:id )?(?:has been )?isolated\b`),
+	regexp.MustCompile(`(?i)\bpayment required\b`),
+}
+
+var accountDisabledPattern = regexp.MustCompile(`(?i)\baccount (?:is )?(?:disabled|suspended|deactivated|frozen)\b`)
+
+var status402Pattern = regexp.MustCompile(`(?i)^\s*402\b|\b(?:status|http|error|code|api error)\D{0,12}402\b`)
+
+// AccountUnusableReason names why an account cannot serve model requests
+// until its owner fixes billing or access: "402" (billing arrears), "account
+// disabled" or "quota exhausted". It returns "" for any other failure. Unlike
+// a rate limit, waiting does not bring the account back soon.
+func AccountUnusableReason(code, text string) string {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "payment_required", "account_arrears", "insufficient_balance":
+		return "402"
+	case "account_disabled", "account_suspended", "account_deactivated":
+		return "account disabled"
+	}
+	text = strings.TrimSpace(text)
+	if status402Pattern.MatchString(text) {
+		return "402"
+	}
+	for _, pattern := range accountUnusablePatterns {
+		if pattern.MatchString(text) {
+			return "402"
+		}
+	}
+	if accountDisabledPattern.MatchString(text) {
+		return "account disabled"
+	}
+	if QuotaExhausted(code, text) {
+		return "quota exhausted"
+	}
+	return ""
+}
+
 // RateLimited reports whether a terminal failure means the model service
 // throttled this call. Exhausted account quota always wins over a stale
 // rate-limit diagnosis. Otherwise free text is accepted only for known

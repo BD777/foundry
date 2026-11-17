@@ -208,7 +208,8 @@ export function useServerQueue(options: {
     },
     async edit(item: QueuedDraft, text: string) {
       const trimmed = text.trim();
-      if (!trimmed && !item.attachments?.length) return false;
+      if (!trimmed && !item.attachments?.length && !item.annotations?.length)
+        return false;
       if (isLocal(item)) {
         setOutbox(
           threadKey,

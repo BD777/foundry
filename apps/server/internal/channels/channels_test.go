@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -150,11 +151,14 @@ func TestRulesKeepDirectAndMentionedMessagesWithThePrefix(t *testing.T) {
 	}
 }
 
-// feed is a fake event feed: what each poll answers, and what it was asked.
+// feed is a fake event feed: what each poll answers, what its reads answer,
+// and what it was asked.
 type feed struct {
 	mu      sync.Mutex
 	answers []feedAnswer
+	reads   map[string]feedAnswer
 	asked   []url.Values
+	readAt  []string
 }
 
 type feedAnswer struct {
@@ -163,6 +167,18 @@ type feedAnswer struct {
 }
 
 func (f *feed) Get(ctx context.Context, path string, query url.Values) (int, []byte, http.Header, error) {
+	if path != "/agent/v1/changes" {
+		f.mu.Lock()
+		f.readAt = append(f.readAt, path)
+		answer, ok := f.reads[path]
+		f.mu.Unlock()
+		if !ok {
+			raw, _ := json.Marshal(map[string]any{"error": map[string]any{"code": "NOT_FOUND", "message": "no such read"}})
+			return http.StatusNotFound, raw, http.Header{}, nil
+		}
+		raw, _ := json.Marshal(answer.body)
+		return answer.status, raw, http.Header{}, nil
+	}
 	f.mu.Lock()
 	f.asked = append(f.asked, query)
 	if len(f.answers) == 0 {
@@ -239,6 +255,7 @@ type ackCall struct {
 }
 
 type fixture struct {
+	mu           sync.Mutex
 	st           *sqlitestore.Store
 	feed         *feed
 	inbox        *inbox
@@ -251,6 +268,24 @@ type fixture struct {
 	ownWritesErr error
 	acks         []ackCall
 	ackErr       error
+	working      map[string]bool
+	contexts     []contextCall
+}
+
+// contextCall is one context update steered into a session.
+type contextCall struct {
+	sessionID string
+	turn      channels.Turn
+}
+
+func (f *fixture) contextTexts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.contexts))
+	for _, call := range f.contexts {
+		out = append(out, call.turn.Text)
+	}
+	return out
 }
 
 func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
@@ -260,8 +295,8 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	f := &fixture{st: st, feed: &feed{}, inbox: newInbox(), now: time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC),
-		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}}
+	f := &fixture{st: st, feed: &feed{reads: map[string]feedAnswer{}}, inbox: newInbox(), now: time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC),
+		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}, working: map[string]bool{}}
 	spec := openLarkEvents(t)
 	f.runner = channels.NewRunner(channels.Ports{
 		Store: st,
@@ -289,6 +324,18 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 		Session: func(ctx context.Context, id string) (channels.SessionState, bool) {
 			state, ok := f.sessions[id]
 			return state, ok
+		},
+		Working: func(ctx context.Context, id string) (bool, error) {
+			return f.working[id], nil
+		},
+		Context: func(ctx context.Context, channel store.MessageChannelRecord, sessionID string, turn channels.Turn) (bool, error) {
+			if !f.working[sessionID] {
+				return false, nil
+			}
+			f.mu.Lock()
+			f.contexts = append(f.contexts, contextCall{sessionID: sessionID, turn: turn})
+			f.mu.Unlock()
+			return true, nil
 		},
 	})
 	f.channel = store.MessageChannelRecord{UserID: "u1", MessageChannel: store.MessageChannel{
@@ -689,10 +736,10 @@ func TestNoticeStatesTheFactsOfAContinuedAndANewSession(t *testing.T) {
 	notice := channels.Notice(channel, "OpenLark", "olk im context {message.id} --limit 50", "olk im reply {message.id} --thread",
 		channels.Rollover{New: true, Reason: channels.NewIdle, Idle: 6 * time.Hour, Previous: "sess_old", PreviousLast: last}, []store.MessageChannelDeliveryRecord{record})
 	for _, want := range []string{
-		"channel: mch_x \"工作\"\n", "source: OpenLark\n", "conversation: self oc_me \"我\"\n", "session: new (idle 6h0m0s)\n",
+		"channel: mch_x \"工作\"\n", "source: OpenLark\n", "conversation: self oc_me \"我\" (your own chat)\n", "session: new (idle 6h0m0s)\n",
 		"earlier session: sess_old (last active 2026-11-13T04:00:00Z)\n", "context: olk im context 1 --limit 50\n",
 		"reply: olk im reply 1 --thread\n",
-		"  sender is the person: yes\n", "  attribute replyToMe: true\n", "  rule: dm\n", "  trigger: /ai\n", "  text without trigger: 帮我看下\n",
+		"  sender: \"我\" (ou_me), the person\n", "  sender is the person: yes\n", "  attribute replyToMe: true\n", "  rule: dm\n", "  trigger: /ai\n", "  text without trigger: 帮我看下\n",
 	} {
 		if !strings.Contains(notice, want) {
 			t.Errorf("notice lacks %q:\n%s", want, notice)
@@ -783,6 +830,8 @@ func TestFollowUpsContinueAThreadWithoutATrigger(t *testing.T) {
 	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
 	ctx := context.Background()
 	f.channel.Filters.Rules = append(f.channel.Filters.Rules, rule("self", []string{"self"}, "any", "any", "/fd"))
+	// The default follow-up is thread-participants; this test pins same-sender.
+	f.channel.FollowUps = &store.MessageChannelFollowUps{Enabled: true, From: channels.FollowUpSameSender, EndCommands: []string{"/end"}}
 	if err := f.st.SaveMessageChannel(ctx, f.channel); err != nil {
 		t.Fatal(err)
 	}
@@ -1195,5 +1244,286 @@ func TestChannelFolderSlug(t *testing.T) {
 	}
 	if got := channels.FolderSlug(store.MessageChannel{ID: "mch_0e47207b6ad14d91", Name: "!!!"}); got != "channel-0e47207b" {
 		t.Errorf("a name with nothing usable: %q", got)
+	}
+}
+
+// A thread reply from another participant continues the thread's turn when
+// the channel says thread-participants, and is not a trigger either way
+// (DEV-268).
+func TestThreadParticipantRepliesFollowUpBySetting(t *testing.T) {
+	post := func(f *fixture, cursor string, change map[string]any) map[string]string {
+		f.feed.answers = []feedAnswer{changes(cursor, change)}
+		f.poll(t)
+		f.now = f.now.Add(channels.Debounce + time.Second)
+		before := f.inbox.all()
+		f.runner.Dispatch(context.Background())
+		out := map[string]string{}
+		for id, text := range f.inbox.all() {
+			if _, seen := before[id]; !seen {
+				out[id] = text
+			}
+		}
+		return out
+	}
+	resolve := func(f *fixture, entries map[string]string) {
+		for id := range entries {
+			f.inbox.set(id, channels.InboxStatus{Status: "resolved", SessionID: "sess_" + f.inbox.inboxes[id], ResultStatus: "completed"})
+			f.runner.Dispatch(context.Background())
+			f.sessions["sess_"+f.inbox.inboxes[id]] = channels.SessionState{LastActive: f.now}
+		}
+	}
+	other := func(id string) map[string]any {
+		change := larkChange(id, "oc_a", "p2p", "不对吧，这个都不是 autofix 处理的", false, false)
+		change["item"].(map[string]any)["author"] = map[string]any{"id": "ou_other", "name": "区浩辉"}
+		return change
+	}
+
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	f.channel.FollowUps = &store.MessageChannelFollowUps{Enabled: true, From: channels.FollowUpThreadParticipants, EndCommands: []string{"/end"}}
+	if err := f.st.SaveMessageChannel(context.Background(), f.channel); err != nil {
+		t.Fatal(err)
+	}
+	trigger := post(f, "c1", larkChange("m1", "oc_a", "p2p", "/fd 查一下", false, false))
+	if len(trigger) != 1 {
+		t.Fatalf("trigger: %v", trigger)
+	}
+	resolve(f, trigger)
+	following := post(f, "c2", other("m2"))
+	if len(following) != 1 {
+		t.Fatalf("a thread participant's reply continues the thread: %v", following)
+	}
+	for _, text := range following {
+		if !strings.Contains(text, "  rule: follow_up\n") ||
+			!strings.Contains(text, `follow-up: thread th_1 (since `) ||
+			!strings.Contains(text, `by "区浩辉" (ou_other), not the person`) ||
+			!strings.Contains(text, "  sender: \"区浩辉\" (ou_other), not the person\n") {
+			t.Fatalf("follow-up notice lacks who wrote it:\n%s", text)
+		}
+	}
+	// /end ends it, whoever sends it in the thread.
+	if ended := post(f, "c3", func() map[string]any {
+		change := larkChange("m3", "oc_a", "p2p", "/end", false, false)
+		change["item"].(map[string]any)["author"] = map[string]any{"id": "ou_other", "name": "区浩辉"}
+		return change
+	}()); len(ended) != 0 {
+		t.Fatalf("the end command was handed over: %v", ended)
+	}
+	if after := post(f, "c4", other("m4")); len(after) != 0 {
+		t.Fatalf("a follow-up came through after /end: %v", after)
+	}
+
+	// same-sender keeps the old rule: another participant does not continue.
+	same := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	same.channel.FollowUps = &store.MessageChannelFollowUps{Enabled: true, From: channels.FollowUpSameSender, EndCommands: []string{"/end"}}
+	if err := same.st.SaveMessageChannel(context.Background(), same.channel); err != nil {
+		t.Fatal(err)
+	}
+	first := post(same, "s1", larkChange("m1", "oc_a", "p2p", "/fd 查一下", false, false))
+	resolve(same, first)
+	if got := post(same, "s2", other("m2")); len(got) != 0 {
+		t.Fatalf("same-sender dropped another participant's reply: %v", got)
+	}
+	dropped := same.records(t, store.MessageDeliveryDropped)
+	found := false
+	for _, record := range dropped {
+		if record.Envelope.MessageID == "m2" {
+			found = record.Reason == "no_rule_matched" && record.Envelope.Text == ""
+		}
+	}
+	if !found {
+		t.Fatalf("the other participant's reply was not recorded as dropped: %+v", dropped)
+	}
+}
+
+// The acknowledgement reaction stays on the trigger while the turn's helper
+// runs, and comes off once the turn and its helpers have ended (DEV-268).
+func TestAckStaysWhileAHelperRuns(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	ctx := context.Background()
+	f.feed.answers = []feedAnswer{changes("c1", larkChange("m1", "oc_a", "p2p", "/fd 查一下", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	entries := f.inbox.all()
+	if len(entries) != 1 {
+		t.Fatalf("turn: %v", entries)
+	}
+	var inboxID string
+	for id := range entries {
+		inboxID = id
+	}
+	if len(f.acks) != 1 || !f.acks[0].add || len(f.acks[0].ids) != 1 || f.acks[0].ids[0] != "m1" {
+		t.Fatalf("the reaction went on the trigger: %+v", f.acks)
+	}
+	held := f.records(t)
+	if len(held) != 1 || !held[0].AckHeld {
+		t.Fatalf("the delivery remembers its held reaction: %+v", held)
+	}
+	// The turn ends while its helper still runs: the reaction stays.
+	f.inbox.set(inboxID, channels.InboxStatus{Status: "resolved", SessionID: "sess_a", ResultStatus: "completed"})
+	f.working["sess_a"] = true
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 1 {
+		t.Fatalf("the reaction came off while a helper ran: %+v", f.acks)
+	}
+	// The helper ends: the reaction comes off.
+	f.working["sess_a"] = false
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 2 || f.acks[1].add || len(f.acks[1].ids) != 1 || f.acks[1].ids[0] != "m1" {
+		t.Fatalf("the reaction stayed after the helpers ended: %+v", f.acks)
+	}
+	done := f.records(t, store.MessageDeliveryDone)
+	if len(done) != 1 || done[0].AckHeld {
+		t.Fatalf("the delivery no longer holds a reaction: %+v", done)
+	}
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 2 {
+		t.Fatalf("an already settled reaction was removed twice: %+v", f.acks)
+	}
+}
+
+// A thread turn is named as a direct chat with the other participant and
+// carries its root and earlier replies, read through the source's declared
+// reads (DEV-268).
+func TestHandOverNamesAThreadAndReadsItsRoot(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	f.channel.Filters.Rules = append(f.channel.Filters.Rules, rule("self", []string{"direct"}, "any", "yes", "/fd"))
+	if err := f.st.SaveMessageChannel(context.Background(), f.channel); err != nil {
+		t.Fatal(err)
+	}
+	f.feed.reads["/agent/v1/conversations/oc_a"] = feedAnswer{status: 200, body: map[string]any{"name": "区浩辉", "chatMode": "direct"}}
+	f.feed.reads["/agent/v1/messages/th_1"] = feedAnswer{status: 200, body: map[string]any{"item": map[string]any{
+		"id": "th_1", "senderName": "区浩辉", "senderId": "ou_other", "isMine": false,
+		"createdAt": "2026-11-12T16:00:47Z", "textPreview": "",
+		"parts": []any{map[string]any{"kind": "card", "metadata": map[string]any{
+			"summaryElements": []any{map[string]any{"kind": "text", "content": "[缺陷] Word 标尺重复查询完整布局"}},
+		}}},
+	}}}
+	f.feed.reads["/agent/v1/messages/th_1/thread"] = feedAnswer{status: 200, body: map[string]any{"items": []any{
+		map[string]any{"id": "th_1", "senderName": "区浩辉", "senderId": "ou_other", "createdAt": "2026-11-12T16:00:47Z", "parts": []any{}},
+		map[string]any{"id": "m0", "senderName": "区浩辉", "senderId": "ou_other", "createdAt": "2026-11-12T16:00:50Z", "textPreview": "截图在附件"},
+		map[string]any{"id": "m1", "senderName": "邓灿文", "senderId": "ou_me", "isMine": true, "createdAt": "2026-11-12T16:13:20Z", "textPreview": "/fd 查一下"},
+		map[string]any{"id": "m9", "senderName": "区浩辉", "senderId": "ou_other", "createdAt": "2026-11-12T16:20:35Z", "textPreview": "后来的话"},
+	}}}
+	change := larkChange("m1", "oc_a", "p2p", "/fd 查一下这个tag", false, true)
+	change["item"].(map[string]any)["author"] = map[string]any{"id": "ou_me", "name": "邓灿文"}
+	change["item"].(map[string]any)["refs"] = []any{map[string]any{"rel": "parent", "id": "msg:th_1"}}
+	f.feed.answers = []feedAnswer{changes("c1", change)}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(context.Background())
+	texts := f.inbox.all()
+	if len(texts) != 1 {
+		t.Fatalf("turn: %v", texts)
+	}
+	for _, text := range texts {
+		for _, want := range []string{
+			"conversation: direct oc_a \"区浩辉\" (direct chat with 区浩辉)\n",
+			"thread: th_1 (reply); thread under \"区浩辉\" (ou_other), not the person at 2026-11-12T16:00:47Z\n",
+			"\nthread root:\n",
+			"  text: [缺陷] Word 标尺重复查询完整布局\n",
+			"\nthread earlier replies: 1\n",
+			"2026-11-12T16:00:50Z \"区浩辉\" (ou_other), not the person: 截图在附件\n",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("thread notice lacks %q:\n%s", want, text)
+			}
+		}
+		if strings.Contains(text, "后来的话") {
+			t.Fatalf("a reply after the trigger is not handed over:\n%s", text)
+		}
+	}
+	// The resolved name is stored, so the session title and the channel view
+	// name the conversation too.
+	stored := f.records(t)
+	if len(stored) != 1 || stored[0].Envelope.Conversation.Name != "区浩辉" {
+		t.Fatalf("stored conversation name: %+v", stored)
+	}
+}
+
+// Someone else writing in the conversation while the request is open is
+// handed to the running turn as context, never as a trigger; the cap holds
+// and says so (DEV-268).
+func TestOtherParticipantsMessageWhileOpenIsContext(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	ctx := context.Background()
+	f.inbox.mu.Lock()
+	f.inbox.entries["inbox_placeholder"] = channels.InboxStatus{}
+	f.inbox.mu.Unlock()
+	trigger := larkChange("m1", "oc_a", "p2p", "/fd 查一下", false, false)
+	delete(trigger["item"].(map[string]any), "thread")
+	f.feed.answers = []feedAnswer{changes("c1", trigger)}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	var inboxID string
+	for id := range f.inbox.all() {
+		inboxID = id
+	}
+	f.inbox.set(inboxID, channels.InboxStatus{Status: "delivered", SessionID: "sess_a"})
+	f.working["sess_a"] = true
+	f.runner.Dispatch(ctx)
+
+	other := func(id, text string) map[string]any {
+		change := larkChange(id, "oc_a", "p2p", text, false, false)
+		change["item"].(map[string]any)["author"] = map[string]any{"id": "ou_other", "name": "区浩辉"}
+		delete(change["item"].(map[string]any), "thread")
+		return change
+	}
+	f.feed.answers = []feedAnswer{changes("c2", other("c1", "这个单是我之前人工的"))}
+	f.poll(t)
+	f.runner.Dispatch(ctx)
+	if len(f.contextTexts()) != 1 {
+		t.Fatalf("context updates: %+v", f.contextTexts())
+	}
+	f.mu.Lock()
+	if f.contexts[0].sessionID != "sess_a" {
+		t.Fatalf("the context went to the open turn: %+v", f.contexts[0])
+	}
+	f.mu.Unlock()
+	if text := f.contexts[0].turn.Text; !strings.Contains(text, "[Message channel context:") ||
+		!strings.Contains(text, `sender: "区浩辉" (ou_other), not the person`) ||
+		!strings.Contains(text, "not a new request") ||
+		!strings.Contains(text, "这个单是我之前人工的") {
+		t.Fatalf("context notice:\n%s", text)
+	}
+	if inbox := f.inbox.all(); len(inbox) != 1 {
+		t.Fatalf("a context message started an inbox turn: %v", inbox)
+	}
+	f.records(t, store.MessageDeliveryContext)
+
+	// The cap: 21 more messages from the same participant; 20 go, one is
+	// dropped as over the cap.
+	items := make([]map[string]any, 0, 21)
+	for i := 0; i < 21; i++ {
+		items = append(items, other(fmt.Sprintf("cap%d", i), "补充一句"))
+	}
+	f.feed.answers = []feedAnswer{changes("c3", items...)}
+	f.poll(t)
+	f.runner.Dispatch(ctx)
+	if len(f.contextTexts()) < 2 {
+		var statuses []string
+		for _, record := range f.records(t) {
+			statuses = append(statuses, string(record.Status)+":"+record.Reason+":"+record.Envelope.MessageID+":"+record.SessionID)
+		}
+		t.Fatalf("the cap batch was not delivered: %+v; records %v", f.contextTexts(), statuses)
+	}
+	capped := false
+	for _, text := range f.contextTexts() {
+		if strings.Contains(text, "the cap of 20 messages or 8 KB is reached") {
+			capped = true
+		}
+	}
+	if !capped {
+		t.Fatalf("the context notice does not say the cap was reached: %+v", f.contextTexts())
+	}
+	dropped := 0
+	for _, record := range f.records(t, store.MessageDeliveryDropped) {
+		if record.Reason == channels.ReasonContextCapped {
+			dropped++
+		}
+	}
+	if dropped == 0 {
+		t.Fatal("no message was dropped over the context cap")
 	}
 }

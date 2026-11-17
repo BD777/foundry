@@ -68,6 +68,7 @@ type ExtensionGateway struct {
 	permission  permission.Store
 	confirm     gateway.Confirmer
 	footer      ExtensionWriteFooter
+	resolve     extensionResolverCache
 }
 
 type extensionCall struct {
@@ -293,6 +294,31 @@ func (p *extensionGatewayProvider) Classify(r *http.Request, lease *gateway.Leas
 			Message: "the instance classifies " + route.Method + " " + route.Path + " as " + routeLevel + "; its validated token grants " + current + " access",
 		}
 	}
+	if need.Write {
+		// This gateway can send the exact request again once the person
+		// allows it (DEV-265).
+		need.Replay = true
+		// The descriptor says which grant objects the write touches; the
+		// body is rewritten with the channel footer once, so the person's
+		// confirmation holds exactly what Foundry would send (DEV-265).
+		write, declared := extensionWriteDeclaration(data.Descriptor.ServerHeld.Writes, call.Method, call.Route)
+		operation := strings.TrimSpace(route.Summary)
+		if declared {
+			need.Auxiliary = write.Auxiliary
+			facts := p.writeObjects(r.Context(), r, lease, data.Routes, data.Descriptor.ServerHeld.Resolvers, data.Descriptor.ServerHeld.Labels, write, call.Path)
+			need.Body, need.Text = facts.Body, facts.Text
+			if facts.OK {
+				need.Objects, need.Labels = facts.Objects, facts.Labels
+			}
+			if operation == "" {
+				operation = strings.TrimSpace(write.Summary)
+			}
+		}
+		if operation == "" {
+			operation = call.Method + " " + call.Route
+		}
+		need.Operation = operation
+	}
 	return need, nil
 }
 
@@ -376,11 +402,17 @@ func (p *extensionGatewayProvider) Refuse(w http.ResponseWriter, r *http.Request
 			message = cmpOrText(denial.Summary, "This connector write needs confirmation") +
 				" Accept proposal " + denial.ProposalID + " before repeating this exact request."
 		}
+	case gateway.ReasonWriteOutsideGrant:
+		// Message carries the facts the pipeline worded; the person decides.
+		message = cmpOrText(denial.Message, "write_outside_grant: this write waits for the person's confirmation")
+	case gateway.ReasonTooLarge:
+		status = http.StatusRequestEntityTooLarge
+		message = cmpOrText(denial.Message, "the write is too large to hold for the person's confirmation; nothing was sent")
 	}
 	if message == "" {
 		message = "Foundry refused this connector extension request"
 	}
-	return writeExtensionGatewayError(w, status, denial.Reason, denial.Needed, denial.Current, message)
+	return writeExtensionGatewayError(w, status, denial.Reason, denial.Needed, denial.Current, denial.ProposalID, message)
 }
 
 func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Request, x *gateway.Exchange) *gateway.Denial {
@@ -401,15 +433,6 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 		raw, err := io.ReadAll(io.LimitReader(r.Body, int64(requestLimit)+1))
 		if err != nil || len(raw) > requestLimit {
 			return &gateway.Denial{Reason: gateway.ReasonBadRequest, Message: "the connector request body is larger than this instance accepts"}
-		}
-		if x.Need.Write && len(raw) > 0 && p.gateway.footer != nil && x.Lease != nil && x.Lease.Grant.SessionID != "" {
-			if footer, ok := extensionMessageFooter(data.Descriptor.ServerHeld.Writes, call.Method, call.Route); ok {
-				if line, add := p.gateway.footer(r.Context(), x.Lease.Grant.AccountID, x.Lease.Grant.SessionID); add && line != "" {
-					if rewritten, changed := extensionAppendFooter(raw, footer, line); changed {
-						raw = rewritten
-					}
-				}
-			}
 		}
 		body = bytes.NewReader(raw)
 	}
@@ -442,7 +465,7 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		x.Outcome, x.Status = gateway.OutcomeUpstreamError, status
-		writeExtensionGatewayError(w, status, gateway.ReasonUnavailable, "", "", message)
+		writeExtensionGatewayError(w, status, gateway.ReasonUnavailable, "", "", "", message)
 		return nil
 	}
 	defer response.Body.Close()
@@ -456,12 +479,12 @@ func (p *extensionGatewayProvider) Upstream(w http.ResponseWriter, r *http.Reque
 	payload, readErr := io.ReadAll(io.LimitReader(response.Body, int64(responseLimit)+1))
 	if readErr != nil {
 		x.Outcome, x.Status = gateway.OutcomeUpstreamError, http.StatusBadGateway
-		writeExtensionGatewayError(w, http.StatusBadGateway, gateway.ReasonUnavailable, "", "", "the connector response could not be read")
+		writeExtensionGatewayError(w, http.StatusBadGateway, gateway.ReasonUnavailable, "", "", "", "the connector response could not be read")
 		return nil
 	}
 	if len(payload) > responseLimit {
 		x.Outcome, x.Status = gateway.OutcomeUpstreamError, http.StatusBadGateway
-		writeExtensionGatewayError(w, http.StatusBadGateway, gateway.ReasonUnavailable, "", "", "the connector response is larger than this instance accepts")
+		writeExtensionGatewayError(w, http.StatusBadGateway, gateway.ReasonUnavailable, "", "", "", "the connector response is larger than this instance accepts")
 		return nil
 	}
 	if x.Need.Write && response.StatusCode >= 200 && response.StatusCode < 300 {
@@ -502,21 +525,6 @@ func extensionCreatedMessagePointer(writes []store.ConnectorServerHeldWrite, met
 		}
 	}
 	return "", false
-}
-
-// extensionMessageFooter is the descriptor's footer declaration for this
-// write route, when it marks one.
-func extensionMessageFooter(writes []store.ConnectorServerHeldWrite, method, route string) (store.ConnectorServerHeldWriteFooter, bool) {
-	for _, write := range writes {
-		if write.Footer == nil {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(write.Method), method) &&
-			externalaccounts.ExtensionRoutePathMatches(write.Path, route) {
-			return *write.Footer, true
-		}
-	}
-	return store.ConnectorServerHeldWriteFooter{}, false
 }
 
 // extensionAppendFooter appends the channel's footer to the write's text
@@ -788,20 +796,27 @@ func (g *ExtensionGateway) recordCreatedMessage(ctx context.Context, x *gateway.
 	})
 }
 
-func writeExtensionGatewayError(w http.ResponseWriter, status int, reason, needed, current, message string) gateway.Refused {
+func writeExtensionGatewayError(w http.ResponseWriter, status int, reason, needed, current, proposalID, message string) gateway.Refused {
 	code := strings.ToUpper(strings.ReplaceAll(cmpOrText(reason, gateway.ReasonBlocked), "-", "_"))
 	recoverable := status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable
+	foundry := map[string]any{"refused": true, "reason": cmpOrText(reason, gateway.ReasonBlocked)}
+	if reason == gateway.ReasonWriteOutsideGrant {
+		// Only the facts: what the session may write is in the message, and
+		// the proposal is what the person decides (DEV-265).
+		if proposalID != "" {
+			foundry["proposalId"] = proposalID
+		}
+	} else {
+		foundry["needed"], foundry["current"] = needed, current
+		foundry["where"] = "Connectors → this workspace → Private connector"
+	}
 	body := map[string]any{
 		"error": map[string]any{
 			"code":        "FOUNDRY_" + code,
 			"message":     message,
 			"recoverable": recoverable,
 		},
-		"foundry": map[string]any{
-			"refused": true, "reason": cmpOrText(reason, gateway.ReasonBlocked),
-			"needed": needed, "current": current,
-			"where": "Connectors → this workspace → Private connector",
-		},
+		"foundry": foundry,
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

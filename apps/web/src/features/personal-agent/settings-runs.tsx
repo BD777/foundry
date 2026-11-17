@@ -76,7 +76,6 @@ export function RoleRuns({
   return (
     <SettingsGroup title={t("runs.title")}>
       <FieldHint>{t("runs.boundaries")}</FieldHint>
-      <FieldHint>{t("runs.budgetHint")}</FieldHint>
       {error ? (
         <Alert tone="error" title={t("runs.failed")}>
           {error}
@@ -141,14 +140,6 @@ export function RoleRuns({
                   <FieldHint>{t("runs.requestedOnly")}</FieldHint>
                 </>
               ) : null}
-              <FieldHint>
-                {t("runs.usage", {
-                  tokens: run.observedTokens,
-                  budget: run.tokenBudget,
-                  state: run.usageState,
-                  minutes: run.timeoutMinutes,
-                })}
-              </FieldHint>
               {run.stopReason ? (
                 <p>{t("runs.reason", { reason: run.stopReason })}</p>
               ) : null}

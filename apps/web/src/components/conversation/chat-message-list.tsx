@@ -1,5 +1,12 @@
-import { ArrowRight, Files, Hourglass, Pencil } from "lucide-react";
-import { memo, type ReactNode, type RefObject } from "react";
+import {
+  ArrowRight,
+  CircleStop,
+  Files,
+  Hourglass,
+  Pencil,
+  RotateCcw,
+} from "lucide-react";
+import { memo, useState, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
@@ -11,6 +18,12 @@ import { CopyButton } from "../ui/copy-button";
 import { AnswerPreviewButton } from "./answer-preview";
 import { CompactionDivider } from "./compaction-divider";
 import { AttachmentList } from "./attachment-list";
+import {
+  AnswerAnnotations,
+  type AnswerSelectionDraft,
+} from "./answer-annotations";
+import { SentAnnotations } from "./annotation-chip";
+import type { ConversationAnnotation } from "./annotations";
 import {
   AgentQuestionCard,
   AgentQuestionReplyView,
@@ -221,6 +234,15 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
  * appears when the message is pointed at or focused, or sits in the flow
  * where the message always offers it.
  */
+/** The annotations of the shown conversation, and what a finished answer does with them. */
+export interface AnswerAnnotationHost {
+  annotations: readonly ConversationAnnotation[];
+  enabled: boolean;
+  onAdd: (answer: ChatMessageItem, draft: AnswerSelectionDraft) => void;
+  onUpdate: (id: string, comment: string) => void;
+  onRemove: (id: string) => void;
+}
+
 function messageActionClass(always: boolean): string {
   return cn(
     "size-7 rounded-full bg-transparent text-ink-faint transition-[background-color,color,opacity] duration-150 hover:bg-transparent hover:text-ink focus-visible:opacity-100 data-[copied=true]:text-success-text",
@@ -259,6 +281,7 @@ function MessageSender({
 export const ChatMessageRow = memo(
   function ChatMessageRow({
     active = false,
+    answerAnnotations,
     fileActions,
     message,
     onAnswerQuestion,
@@ -267,6 +290,7 @@ export const ChatMessageRow = memo(
   }: {
     /** A turn runs now: an answer to a question goes into it. */
     active?: boolean;
+    answerAnnotations?: AnswerAnnotationHost;
     fileActions?: ConversationFileActions;
     message: ChatMessageItem;
     onAnswerQuestion?: (
@@ -307,6 +331,9 @@ export const ChatMessageRow = memo(
           <span className="h-px bg-line" />
         </div>
       );
+    }
+    if (message.kind === "stopped") {
+      return <StoppedTurnRow message={message} />;
     }
     if (message.kind === "waiting") {
       return (
@@ -405,6 +432,12 @@ export const ChatMessageRow = memo(
       message.sentBy ||
       message.idea;
     const attachmentsAlone = user && attachments && !bubble;
+    // A finished answer takes annotations; a streaming one changes under them.
+    const annotatableAnswer =
+      !user &&
+      !message.streaming &&
+      typeof message.text === "string" &&
+      message.text !== "";
     const answerPreview =
       !user &&
       !message.streaming &&
@@ -487,6 +520,31 @@ export const ChatMessageRow = memo(
             />
           ) : message.questionReply?.length ? (
             <AgentQuestionReplyView replies={message.questionReply} />
+          ) : annotatableAnswer ? (
+            <AnswerAnnotations
+              annotations={answerAnnotations?.annotations}
+              answerId={message.id}
+              enabled={Boolean(answerAnnotations?.enabled)}
+              onAdd={
+                answerAnnotations
+                  ? (draft) => answerAnnotations.onAdd(message, draft)
+                  : undefined
+              }
+              onUpdate={answerAnnotations?.onUpdate}
+              onRemove={answerAnnotations?.onRemove}
+            >
+              <MarkdownContent
+                fileReferences={message.fileReferences}
+                deviceFiles={fileActions?.deviceFiles}
+                fileRoot={fileActions?.root}
+                onImagePreview={onImagePreview}
+                onOpenFileReference={fileActions?.open}
+                typedText={false}
+                streaming={message.streaming}
+              >
+                {message.text}
+              </MarkdownContent>
+            </AnswerAnnotations>
           ) : (
             <MarkdownContent
               fileReferences={message.fileReferences}
@@ -502,6 +560,9 @@ export const ChatMessageRow = memo(
             </MarkdownContent>
           )}
           {user ? null : attachments}
+          {user ? (
+            <SentAnnotations annotations={message.annotations ?? []} />
+          ) : null}
           <TurnHandoffRows handoffs={message.handoffs} />
           {message.origin ? (
             <span className="mt-1 block text-2xs text-ink-faint">
@@ -607,8 +668,64 @@ export const ChatMessageRow = memo(
     left.onAnswerQuestion === right.onAnswerQuestion &&
     left.fileActions === right.fileActions &&
     left.onEditMessage === right.onEditMessage &&
-    left.onImagePreview === right.onImagePreview,
+    left.onImagePreview === right.onImagePreview &&
+    left.answerAnnotations === right.answerAnnotations,
 );
+
+/**
+ * A turn that ended without an answer: one quiet line where the answer
+ * would have been, and the same retry the Needed you item offers (DEV-267).
+ */
+function StoppedTurnRow({ message }: { message: ChatMessageItem }) {
+  const { t } = useTranslation(["conversation", "common"]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const retry = message.onRetry;
+  async function run() {
+    if (!retry || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await retry();
+    } catch (reason) {
+      setError(
+        reason instanceof Error && reason.message
+          ? reason.message
+          : t("stoppedTurn.retryFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div
+      className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 py-[5px] text-sm leading-[1.45] text-ink-muted"
+      role="status"
+    >
+      <CircleStop
+        aria-hidden="true"
+        className="flex-none text-ink-faint"
+        size={15}
+      />
+      <span className="min-w-0">{message.text}</span>
+      {retry ? (
+        <Button
+          aria-busy={busy}
+          disabled={busy}
+          onClick={() => void run()}
+          size="sm"
+          variant="ghost"
+        >
+          <RotateCcw aria-hidden="true" size={14} />
+          {t("stoppedTurn.retry")}
+        </Button>
+      ) : null}
+      {error ? (
+        <span className="basis-full text-2xs text-error-text">{error}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export const ChatMessageList = memo(function ChatMessageList({
   className,

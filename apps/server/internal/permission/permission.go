@@ -38,6 +38,19 @@ type Access struct {
 	// Channel narrows the package for a message channel's session and the
 	// helpers it started (DEV-203): the channel's scope, within the package.
 	Channel *store.MessageChannel
+	// Grants are the objects this session may write on each connector
+	// account without the person's confirmation (DEV-265). A channel's
+	// session holds the conversation its turn came from; sessions it starts
+	// inherit them through the parent chain. Empty means no write grant.
+	Grants []store.SessionConnectorGrant
+}
+
+// GrantObject names one object a write touches: a conversation, a message.
+type GrantObject struct{ Type, ID string }
+
+// grantSessions is the store's session grant lookup, when it has one.
+type grantSessions interface {
+	SessionConnectorGrants(ctx context.Context, sessionID string) ([]store.SessionConnectorGrant, error)
 }
 
 // channelSessions is the store's message channel lookup, when it has one.
@@ -69,7 +82,55 @@ func Resolve(ctx context.Context, st Store, session store.AgentSession) (Access,
 	if own {
 		access.Home = true
 	}
+	grants, err := sessionGrants(ctx, st, session, channel)
+	if err != nil {
+		return Access{}, err
+	}
+	access.Grants = grants
 	return access, nil
+}
+
+// sessionGrants reads what a session may write without confirmation (DEV-265):
+// its own grants, else the nearest granted ancestor's. A channel session
+// dispatched before grants existed derives the same grant the channel layer
+// writes on every turn.
+func sessionGrants(ctx context.Context, st Store, session store.AgentSession, channel *store.MessageChannel) ([]store.SessionConnectorGrant, error) {
+	grants, ok := st.(grantSessions)
+	if !ok {
+		return nil, nil
+	}
+	current := session
+	var origin *store.MessageChannelOrigin
+	for range maxLineage {
+		own, err := grants.SessionConnectorGrants(ctx, current.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		if len(own) > 0 {
+			return own, nil
+		}
+		if origin == nil && current.Input.ChannelOrigin != nil {
+			origin = current.Input.ChannelOrigin
+		}
+		if current.ParentSessionID == "" {
+			break
+		}
+		parent, err := st.GetAgentSessionSummary(ctx, current.ParentSessionID)
+		if errors.Is(err, store.ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		current = parent
+	}
+	if channel != nil && origin != nil && origin.Conversation.ID != "" {
+		return []store.SessionConnectorGrant{{
+			SessionID: session.ID, AccountID: channel.Source.AccountID,
+			ObjectType: "conversation", ObjectID: origin.Conversation.ID, Label: origin.Conversation.Name,
+		}}, nil
+	}
+	return nil, nil
 }
 
 // channelOf is the message channel whose session started session's
@@ -340,19 +401,41 @@ func lowerLevel(a, b string) string {
 	return b
 }
 
-// WritesWithoutConfirmation reports whether a message channel's session
-// may write through accountID without a confirmation card: the person set
-// the channel's writes for it to direct, and writing is allowed at all.
-func (a Access) WritesWithoutConfirmation(accountID string) bool {
-	if !a.Applicable || a.Channel == nil || !a.AllowsConnectorWrite(accountID) {
-		return false
-	}
-	for _, connector := range a.Channel.Scope.Connectors {
-		if connector.AccountID == accountID {
-			return connector.Level == store.ConnectorAccessLevelWrite && connector.Writes == "direct"
+// WriteInsideGrant reports whether a write touching objects through
+// accountID is inside what the session was granted (DEV-265). An auxiliary
+// write only prepares another one and passes with any grant for the account;
+// a write touching no object is outside every grant.
+func (a Access) WriteInsideGrant(accountID string, objects []GrantObject, auxiliary bool) bool {
+	accountID = strings.TrimSpace(accountID)
+	held := false
+	for _, grant := range a.Grants {
+		if grant.AccountID == accountID {
+			held = true
+			break
 		}
 	}
-	return false
+	if !held {
+		return false
+	}
+	if auxiliary {
+		return true
+	}
+	if len(objects) == 0 {
+		return false
+	}
+	for _, object := range objects {
+		found := false
+		for _, grant := range a.Grants {
+			if grant.AccountID == accountID && grant.ObjectType == object.Type && grant.ObjectID == object.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // AllowsConnector reports whether reads may use accountID.

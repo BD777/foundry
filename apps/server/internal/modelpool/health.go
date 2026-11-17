@@ -1,7 +1,6 @@
 package modelpool
 
 import (
-	"sort"
 	"time"
 )
 
@@ -38,6 +37,12 @@ const (
 	// ProbeTimeout frees a half-open probe that never reported back.
 	ProbeTimeout = 2 * time.Minute
 
+	// UnusableCooldown is the open period of an account-unusable breaker when
+	// the provider names no reset time; a named reset time is honoured up to
+	// MaxUnusableCooldown, so a misread date cannot lock an account for good.
+	UnusableCooldown    = time.Hour
+	MaxUnusableCooldown = 24 * time.Hour
+
 	DefaultConcurrency = 4
 	MaxConcurrency     = 16
 	maxLevel           = 3
@@ -69,6 +74,9 @@ type DomainStatus struct {
 	SignalsInWindow int
 	// FailoversLastHour counts sessions moved off the domain in the last hour.
 	FailoversLastHour int
+	// Reason names why the domain's account is unusable, e.g. "402", while
+	// the breaker is open for that. Empty for rate limits.
+	Reason string
 }
 
 // FailoverWindow is the period FailoversLastHour counts.
@@ -93,6 +101,9 @@ type domainHealth struct {
 	probeAt       time.Time
 	probing       bool
 	failovers     []time.Time
+	// reason is set while the account is unusable. It is kept until a probe
+	// succeeds, so clean time alone never clears the breaker.
+	reason string
 }
 
 // HealthTracker holds the live health of every rate-limit domain.
@@ -151,13 +162,35 @@ func (d *domainHealth) reopen(at time.Time) {
 	d.level = min(d.level+1, maxLevel)
 }
 
+// ObserveUnusable opens the domain's breaker for an account-unusable failure
+// (reason names it, e.g. "402"). Retrying in a few seconds cannot help, so the
+// breaker stays open for cooldown and then admits exactly one probe.
+func (t *HealthTracker) ObserveUnusable(key string, at time.Time, cooldown time.Duration, reason string) {
+	d := t.domain(key)
+	d.advance(at)
+	d.lastEvent, d.anchor, d.saturated = at, at, false
+	d.open, d.probing = true, false
+	d.cooldownUntil = at.Add(cooldown)
+	d.reason = reason
+}
+
+// UnusableCooldownFor is the open period for an account-unusable failure: the
+// provider's reset hint when it names one (zero when none), else
+// UnusableCooldown, never beyond MaxUnusableCooldown.
+func UnusableCooldownFor(hint time.Duration) time.Duration {
+	if hint <= 0 {
+		return UnusableCooldown
+	}
+	return min(hint, MaxUnusableCooldown)
+}
+
 // Succeeded records a successful model request on the domain. It closes a
 // half-open breaker: the probe worked.
 func (t *HealthTracker) Succeeded(key string, at time.Time) {
 	d := t.domain(key)
 	d.advance(at)
 	if d.open && !at.Before(d.cooldownUntil) {
-		d.open = false
+		d.open, d.reason = false, ""
 	}
 	d.probing = false
 }
@@ -192,7 +225,7 @@ func (t *HealthTracker) Snapshot(key string, now time.Time, ceiling, active int)
 	if active >= d.limit {
 		d.saturated = true
 	}
-	status := DomainStatus{State: d.state(now), Level: d.level, Limit: d.limit}
+	status := DomainStatus{State: d.state(now), Level: d.level, Limit: d.limit, Reason: d.reason}
 	if d.open && now.Before(d.cooldownUntil) {
 		status.CooldownUntil = d.cooldownUntil
 	}
@@ -257,7 +290,7 @@ func (d *domainHealth) advance(now time.Time) {
 		if d.level > 0 {
 			d.level--
 		}
-		if !d.lastEvent.IsZero() && next.Sub(d.lastEvent) >= ResetAfter {
+		if !d.lastEvent.IsZero() && next.Sub(d.lastEvent) >= ResetAfter && d.reason == "" {
 			d.open, d.probing, d.level, d.limit, d.lastEvent, d.hintUntil = false, false, 0, 0, time.Time{}, time.Time{}
 			d.signals = nil
 			return
@@ -314,55 +347,130 @@ type Candidate struct {
 
 func (c Candidate) tier() int { return max(c.Tier, 1) }
 
-// admissible reports whether a new session may start on the member now.
+// admissible reports whether the member takes a new session at the primary
+// tier: its breaker is closed with headroom, or it holds the half-open probe.
 func (c Candidate) admissible() bool {
 	return c.Health == Probing || c.Health == Healthy && c.Active < c.Limit
 }
 
-// Admit returns the indexes of candidates a new session may take, from the
-// lowest tier that has an admissible member. When no member is admissible,
-// it returns the least-loaded primary member with queued set: the session
-// waits there rather than being refused.
+// spillable reports whether a lower tier takes a session from the member: its
+// breaker is closed (healthy or recovering) with headroom. A probe is never a
+// spill target.
+func (c Candidate) spillable() bool {
+	return (c.Health == Healthy || c.Health == Recovering) && c.Active < c.Limit
+}
+
+// recovering reports whether the member is a closed breaker still within
+// DecayPeriod of a rate limit, with headroom: the last choice before a queue.
+func (c Candidate) recovering() bool {
+	return c.Health == Recovering && c.Active < c.Limit
+}
+
+func (c Candidate) probing() bool { return c.Health == Probing }
+
+// Admit returns the indexes of candidates a new session may take, in this
+// order: a primary member that is admissible; the lowest lower tier with a
+// spillable member (closed breakers only); a recovering primary; a lower
+// tier's probe, only when every primary member is limited, so a half-open
+// account is tested rather than left dead. Otherwise the session queues on the
+// least-loaded primary, preferring one whose breaker is not open. It never
+// refuses and never returns an open (limited) member unless it queues.
 func Admit(candidates []Candidate) (indexes []int, queued bool) {
 	if len(candidates) == 0 {
 		return nil, false
 	}
-	tiers := make([]int, 0, len(candidates))
-	for _, candidate := range candidates {
-		tiers = append(tiers, candidate.tier())
+	primary := lowestTier(candidates)
+	if indexes = membersWhere(candidates, primary, Candidate.admissible); len(indexes) > 0 {
+		return indexes, false
 	}
-	sort.Ints(tiers)
-	for _, tier := range tiers {
-		for _, candidate := range candidates {
-			if candidate.tier() == tier && candidate.admissible() {
-				indexes = append(indexes, candidate.Index)
-			}
-		}
-		if len(indexes) > 0 {
+	if indexes = lowestSpillTier(candidates, primary, Candidate.spillable); len(indexes) > 0 {
+		return indexes, false
+	}
+	if indexes = membersWhere(candidates, primary, Candidate.recovering); len(indexes) > 0 {
+		return indexes, false
+	}
+	if allLimited(candidates, primary) {
+		if indexes = lowestSpillTier(candidates, primary, Candidate.probing); len(indexes) > 0 {
 			return indexes, false
 		}
 	}
-	primary, best := tiers[0], -1
-	for position, candidate := range candidates {
-		if candidate.tier() != primary {
-			continue
-		}
-		if best < 0 || candidate.Active < candidates[best].Active {
-			best = position
-		}
-	}
-	return []int{candidates[best].Index}, true
+	return []int{leastLoadedPrimary(candidates, primary)}, true
 }
 
-// Fallback returns the admissible candidates in the lowest tier above
+func lowestTier(candidates []Candidate) int {
+	lowest := candidates[0].tier()
+	for _, candidate := range candidates {
+		lowest = min(lowest, candidate.tier())
+	}
+	return lowest
+}
+
+// membersWhere returns the indexes of the candidates in tier that satisfy ok.
+func membersWhere(candidates []Candidate, tier int, ok func(Candidate) bool) []int {
+	var indexes []int
+	for _, candidate := range candidates {
+		if candidate.tier() == tier && ok(candidate) {
+			indexes = append(indexes, candidate.Index)
+		}
+	}
+	return indexes
+}
+
+// lowestSpillTier returns the satisfying candidates of the lowest tier above
+// primary, nil when no tier above primary has one.
+func lowestSpillTier(candidates []Candidate, primary int, ok func(Candidate) bool) []int {
+	tier := 0
+	for _, candidate := range candidates {
+		if candidate.tier() > primary && ok(candidate) && (tier == 0 || candidate.tier() < tier) {
+			tier = candidate.tier()
+		}
+	}
+	if tier == 0 {
+		return nil
+	}
+	return membersWhere(candidates, tier, ok)
+}
+
+func allLimited(candidates []Candidate, primary int) bool {
+	for _, candidate := range candidates {
+		if candidate.tier() == primary && candidate.Health != Limited {
+			return false
+		}
+	}
+	return true
+}
+
+// leastLoadedPrimary is the primary member a session queues on: the least
+// loaded one whose breaker is not open, or the least loaded of all when every
+// primary is open.
+func leastLoadedPrimary(candidates []Candidate, primary int) int {
+	best := -1
+	for _, allowLimited := range []bool{false, true} {
+		for position, candidate := range candidates {
+			if candidate.tier() != primary || !allowLimited && candidate.Health == Limited {
+				continue
+			}
+			if best < 0 || candidate.Active < candidates[best].Active {
+				best = position
+			}
+		}
+		if best >= 0 {
+			break
+		}
+	}
+	return candidates[best].Index
+}
+
+// Fallback returns the spillable candidates in the lowest tier above
 // fromTier. The caller restricts candidates to the running session's runtime.
-// It returns nil when none has headroom, and the session stays where it is.
+// It returns nil when none has headroom with a closed breaker, and the session
+// stays where it is.
 func Fallback(candidates []Candidate, fromTier int) []int {
 	fromTier = max(fromTier, 1)
 	var best []int
 	bestTier := 0
 	for _, candidate := range candidates {
-		if candidate.tier() <= fromTier || !candidate.admissible() {
+		if candidate.tier() <= fromTier || !candidate.spillable() {
 			continue
 		}
 		switch {

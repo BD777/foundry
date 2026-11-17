@@ -46,8 +46,8 @@ var definitions = []definition{
 	{dir: "skill-creator", runtime: "claude", source: "Anthropic skills", revision: 1},
 	{dir: "foundry", runtime: "claude", source: "Foundry", revision: 41},
 	{dir: "foundry", runtime: "codex", source: "Foundry", revision: 41},
-	{dir: "foundry-orchestration", runtime: "claude", source: "Foundry", revision: 7},
-	{dir: "foundry-orchestration", runtime: "codex", source: "Foundry", revision: 7},
+	{dir: "foundry-orchestration", runtime: "claude", source: "Foundry", revision: 9},
+	{dir: "foundry-orchestration", runtime: "codex", source: "Foundry", revision: 9},
 }
 
 var skills = mustBuild()

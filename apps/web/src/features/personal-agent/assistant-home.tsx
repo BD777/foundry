@@ -1,5 +1,6 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -19,12 +20,15 @@ import type {
   DeviceProjection,
   MessageChannelView,
   PersonalAgent,
+  PersonalAgentInboxEntry,
   PersonalAgentOverview,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Conversation } from "../../components/conversation/conversation";
+import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import { useChatAttachments } from "../../components/conversation/use-chat-attachments";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
+import type { ConversationAnnotation } from "../../components/conversation/annotations";
 import {
   viewHandoff,
   type TurnHandoff,
@@ -48,10 +52,11 @@ import {
 import { serverErrorText } from "../../lib/errors";
 import type { ToastTone } from "../../components/ui/toast";
 import { channelChatsHref } from "../../lib/in-app-navigation";
-import { listMessageChannels } from "../../api";
+import { ApiError, listMessageChannels } from "../../api";
 import {
   answerableProposal,
   assistantActivity,
+  type AssistantLine,
   channelCommand,
   placeProposals,
   sideSummary,
@@ -86,6 +91,38 @@ export interface AssistantHomeProps {
   /** Everything that needs the person, as the sidebar counts it. */
   needsYouTotal?: number;
   onEvent: (event: AssistantFeatureEvent) => void;
+}
+
+/**
+ * What the home says after a turn that ended without an answer (DEV-267):
+ * a stop by the person stays quiet, a Foundry run limit says why, and a
+ * failure carries its reason.
+ */
+function endedTurnText(
+  ended: NonNullable<AssistantLine["ended"]>,
+  t: TFunction<"personalAgent">,
+): string {
+  if (ended.status === "failed") {
+    const reason = ended.reason?.split("\n")[0]?.trim() ?? "";
+    return reason
+      ? t("conversation.turnUnfinished", { reason })
+      : t("conversation.turnUnfinishedNoReason");
+  }
+  // A stop by the person or the stop switch records why it stopped; the
+  // line stays quiet either way.
+  return t("conversation.turnStopped");
+}
+
+/** Why a retry was refused, in the person's words (DEV-254's codes). */
+function retryFailureText(
+  reason: unknown,
+  t: TFunction<"personalAgent">,
+): string {
+  const code = reason instanceof ApiError ? reason.code : undefined;
+  if (code === "inbox_retry_not_settled")
+    return t("conversation.retryNotSettled");
+  if (code === "inbox_retry_changed") return t("conversation.retryChanged");
+  return t("conversation.retryFailed");
 }
 
 /**
@@ -159,6 +196,20 @@ function AssistantHomeReady({
     agent.id,
     agent.workspaceId,
     agent.formerWorkspaceIds,
+  );
+  // The same inbox retry as the Needs you item (DEV-267). A ref keeps the
+  // transcript's memo from rebuilding whenever the hook returns.
+  const retryRef = useRef(conversation.retryInbox);
+  retryRef.current = conversation.retryInbox;
+  const retrySaved = useCallback(
+    async (entry: PersonalAgentInboxEntry) => {
+      try {
+        await retryRef.current(entry);
+      } catch (reason) {
+        throw new Error(retryFailureText(reason, t));
+      }
+    },
+    [t],
   );
   // The items a handoff can name: the open ones and those updated today.
   const knownItems = useMemo(
@@ -286,7 +337,10 @@ function AssistantHomeReady({
   async function send(
     text: string,
     queuedAttachments?: ChatAttachment[],
-    options?: { idempotencyKey?: string },
+    options?: {
+      idempotencyKey?: string;
+      annotations?: ConversationAnnotation[];
+    },
   ): Promise<true | "replied" | false> {
     const files = queuedAttachments ?? attachments.attachments;
     if (attachments.uploading) {
@@ -320,6 +374,7 @@ function AssistantHomeReady({
       text,
       options?.idempotencyKey ?? crypto.randomUUID(),
       files,
+      options?.annotations,
     );
     if (!queuedAttachments) attachments.removeSent(files);
     return true;
@@ -351,6 +406,20 @@ function AssistantHomeReady({
         continue;
       }
       const { line } = entry;
+      if (line.ended) {
+        const ended = line.ended;
+        const saved = ended.inputId
+          ? conversation.inbox.find((item) => item.inputId === ended.inputId)
+          : undefined;
+        items.push({
+          id: `${line.id}:stopped`,
+          role: "bot",
+          kind: "stopped",
+          text: endedTurnText(ended, t),
+          ...(saved ? { onRetry: () => retrySaved(saved) } : {}),
+        });
+        continue;
+      }
       if (line.startsConversation)
         items.push({
           id: `${line.id}:boundary`,
@@ -363,6 +432,7 @@ function AssistantHomeReady({
         clientId: line.clientId,
         role: line.role === "person" ? "user" : "bot",
         text: line.text,
+        annotations: line.annotations,
         attachments: line.attachments,
         copyText: line.text,
         at: line.at,
@@ -413,8 +483,10 @@ function AssistantHomeReady({
     conversation.lines,
     conversation.latestSession,
     conversation.waitingInbox,
+    conversation.inbox,
     devices,
     handoffOf,
+    retrySaved,
     assistant.proposals,
     t,
   ]);
@@ -594,6 +666,7 @@ function AssistantHomeReady({
           placeholder={t("conversation.placeholder")}
           sendLabel={t("conversation.send")}
           stopLabel={t("conversation.stopReply")}
+          storageKeyPrefix={conversationStoragePrefixes.chat}
           threadKey={`assistant:${agent.workspaceId}`}
         />
       </section>

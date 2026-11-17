@@ -28,6 +28,7 @@ import type {
 import { ExternalConnectionError } from "./external-connection-registry.js";
 import { signalChildGroup } from "../platform/process/process-group.js";
 import { redactSecrets } from "../platform/secret-redaction.js";
+import { workerEgressVariables } from "../platform/server-link/server-proxy.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import {
   tryReadJSONFile,
@@ -236,8 +237,8 @@ const passedVariables =
   /^(HOME|USER|LOGNAME|SHELL|PATH|LANG|LANGUAGE|LC_[A-Z]+|TZ|TMPDIR|XDG_[A-Z_]+|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|FOUNDRY_STATE_ROOT|FOUNDRY_STACK|https?_proxy|HTTPS?_PROXY|all_proxy|ALL_PROXY|no_proxy|NO_PROXY)$/;
 
 /**
- * What the command sees: the account's ordinary environment, without this
- * worker's own credentials or server connection.
+ * What the command sees: the account's ordinary environment and the Worker's
+ * proxy, without this worker's own credentials or server connection.
  */
 export function setupEnvironment(
   profileId: string,
@@ -249,6 +250,7 @@ export function setupEnvironment(
     if (value !== undefined && passedVariables.test(name)) env[name] = value;
   return {
     ...env,
+    ...workerEgressVariables(source),
     HOME: env.HOME ?? homedir(),
     TERM: "dumb",
     NO_COLOR: "1",

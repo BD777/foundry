@@ -60,17 +60,23 @@ import {
 } from "../skills/skill-materializer.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationExecution } from "../session/verification-session.js";
-import { readOnlySessionExecution } from "../session/read-only-workspace-session.js";
+import {
+  readOnlySessionExecution,
+  channelLineageSessionExecution,
+} from "../session/read-only-workspace-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
 import { errorMessage } from "../platform/utils.js";
 
 // Chats run unsandboxed in the workspace itself; Issue-backed sessions run
 // where and how the Issue decides; a verifier, and a session whose workspace
-// is read-only, run in the workspace inside a sandbox that keeps it so.
+// is read-only, run in the workspace inside a sandbox that keeps it so. A
+// session in a message channel's lineage that is not read-only keeps its
+// workspace writable but the person's own files hidden (DEV-265).
 export function sessionExecution(
   rootPath: string,
   session: AgentSession,
   ambient: SessionAmbientEnv,
+  userFiles: "readable" | "hidden" = "readable",
 ): SessionExecution {
   const issueId = session.issueId?.trim();
   if (issueId)
@@ -84,6 +90,8 @@ export function sessionExecution(
     return verificationExecution(session, rootPath, ambient);
   if (isReadOnlyWorkspaceSession(session))
     return readOnlySessionExecution(session, rootPath, ambient);
+  if (userFiles === "hidden")
+    return channelLineageSessionExecution(session, rootPath, ambient);
   return { cwd: rootPath, stateRoot: rootPath };
 }
 
@@ -412,7 +420,10 @@ export async function executeAgentSession(
     await reclaimResources();
     const canceled = isAgentSessionCanceledError(error);
     if (canceled)
-      await emit("Session canceled", "Canceled by user.", "warning");
+      // Whoever stopped the turn (the person, Foundry's run limits, another
+      // session) the device only knows it was stopped; the server records
+      // why (DEV-267).
+      await emit("Session canceled", "The turn was stopped.", "warning");
     flushPendingResponse();
     const stopped = role.stopped?.(error, canceled);
     if (!canceled) reportWorkerFailure(transport, session, error, stopped);

@@ -19,7 +19,7 @@
 
 - 助理的对话（Web 首页、飞书单聊）都经 Server 的收件箱（`personalagent/assistant/inbox.go`）开回合：`run.Resolver.Pin(…, "coordinator", 助理 Workspace)` 固定一份运行快照，再用它建会话或续上一会话。Web 的 `assistantRuntime()`（`features/personal-agent/assistant-model.ts`）已没有调用方。
 - 角色偏好（`personalagent/run_config.go` `RunPreference`）：`roleOverrides.coordinator` → `runDefault`（设置页的“共享默认”）→ 旧字段 `assistantProfileId` / `assistantModel` → `device_default`。账号只在家电脑上找：家电脑上的订阅（`claude_local`、`codex_local`）、启动环境（`limen_default`）与分配给它的服务端 API（model_service）都可选；model 与 effort 按该账号检查（`run/resolve.go`）。
-- 同一个 coordinator 偏好还用于项目概括会话（`workspace_digests.go`，每人每天至多 50 次）；记忆维护（memory）与项目维护（governance）两个后台角色默认也继承 `runDefault`。也就是说，今天给助理选了贵模型，后台整理也用贵模型。
+- 同一个 coordinator 偏好还用于项目概括会话（`workspace_digests.go`，不设每日上限，每小时速率见 §14）；记忆维护（memory）与项目维护（governance）两个后台角色默认也继承 `runDefault`。也就是说，今天给助理选了贵模型，后台整理也用贵模型。
 
 ### 助理派出的会话用什么模型
 
@@ -31,13 +31,13 @@
 
 ### 与 Chat 的接触点
 
-| 方向                    | 现状                                                                                                                                                                                                                                      | 结论     |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| 助理读 Chat 的默认模型  | 不读。executor 走自己的偏好，不经 `agent_defaults` 的飞书群 / 飞书 Bot / Workspace 三层。                                                                                                                                                 | 符合     |
-| 助理写 Chat 的默认模型  | 不写（`personalagent` 里没有任何 `SetAgentDefault`）。                                                                                                                                                                                    | 符合     |
-| 助理的配置影响 Chat     | **影响**：会话不指定账号时（MCP 不带 profile、飞书消息、只给运行时），`pickAccount` 的第二优先级是“本人助理的账号”（`session_accounts.go` `defaultAccountOf` → `assistant.DefaultAccount`，2026-10-15 起，见 `models-and-accounts.md`）。 | 需要去掉 |
-| Chat 的使用影响助理派出 | `device_default` 取“本人在该 Workspace 最近用的账号”。这是设备上的事实，不是 Chat 的配置。                                                                                                                                                | 可接受   |
-| Chat 里的编排           | Chat 会话派子会话不指定账号时，同一 Workspace 内沿用父会话的账号（模型取账号默认，`resolveNewSession` 的 runLikeParent），否则走 Workspace 默认。与助理无关。                                                                             | 保持不变 |
+| 方向                    | 现状                                                                                                                                                                                                                                                                                                                | 结论                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| 助理读 Chat 的默认模型  | 不读。executor 走自己的偏好，不经 `agent_defaults` 的飞书群 / 飞书 Bot / Workspace 三层。                                                                                                                                                                                                                           | 符合                        |
+| 助理写 Chat 的默认模型  | 不写（`personalagent` 里没有任何 `SetAgentDefault`）。                                                                                                                                                                                                                                                              | 符合                        |
+| 助理的配置影响 Chat     | **影响**：会话不指定账号时（MCP 不带 profile、飞书消息、只给运行时），`pickAccount` 的第二优先级是“本人助理的账号”（`session_accounts.go` `defaultAccountOf` → `assistant.DefaultAccount`，2026-10-15 起，见 `models-and-accounts.md`）。                                                                           | 需要去掉                    |
+| Chat 的使用影响助理派出 | `device_default` 取“本人在该 Workspace 最近用的账号”。这是设备上的事实，不是 Chat 的配置。                                                                                                                                                                                                                          | 可接受                      |
+| Chat 里的编排           | Chat 会话派子会话不指定模型时，运行在目标 Workspace 的 execution model 上（`run.ResolveExecutionModels`：助理覆盖 → Workspace → 全局；组则由组选成员），该默认在目标电脑跑不了时退回 Workspace 账号默认并在结果里说明；显式指定的模型/账号原样使用（`resolveNewSession` → `startOnExecutionDefault`）。与助理无关。 | 2026-11-17 起不再沿用父会话 |
 
 ## b. 业界怎么做“强编排、弱执行”
 

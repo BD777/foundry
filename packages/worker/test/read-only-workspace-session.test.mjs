@@ -194,6 +194,40 @@ test("only read-only sessions get the sandbox; a chat runs as before", () => {
   assert.deepEqual(execution.sandbox.profile.readRoots, [path]);
 });
 
+test("a channel-lineage helper keeps its workspace and hides the person's files", () => {
+  const path = workspace();
+  const session = chat("claude");
+  if (!sandboxReady("writable_tree")) {
+    assert.throws(
+      () => sessionExecution(path, session, ambient, "hidden"),
+      /not run/,
+    );
+    return;
+  }
+  const execution = sessionExecution(path, session, ambient, "hidden");
+  assert.equal(execution.cwd, path);
+  assert.ok(execution.sandbox.profile.writeRoots.includes(path));
+  assert.equal(execution.sandbox.profile.userFiles, "hidden");
+  // Readable user files leave a chat unsandboxed, as before.
+  assert.deepEqual(
+    sessionExecution(path, chat("claude"), ambient, "readable"),
+    {
+      cwd: path,
+      stateRoot: path,
+    },
+  );
+  // A read-only channel session still writes only its scratch.
+  if (sandboxReady("readonly_agent")) {
+    const readOnlyExecution = sessionExecution(
+      path,
+      readOnly("claude"),
+      ambient,
+    );
+    assert.equal(readOnlyExecution.sandbox.profile.userFiles, "hidden");
+    assert.ok(!readOnlyExecution.sandbox.profile.writeRoots.includes(path));
+  }
+});
+
 test("the worker declares read-only sessions exactly when the verifier's sandbox is ready", () => {
   const capabilities = availableDaemonCapabilities();
   const ready = sandboxReady("readonly_agent");

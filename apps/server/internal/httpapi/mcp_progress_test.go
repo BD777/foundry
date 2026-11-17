@@ -109,9 +109,6 @@ func TestGetSessionCarriesPullableProgress(t *testing.T) {
 	if progress.Flags.Quiet != "" {
 		t.Fatalf("quiet during an active turn = %q", progress.Flags.Quiet)
 	}
-	if progress.Flags.Budget != "" {
-		t.Fatalf("budget without an execution budget = %q", progress.Flags.Budget)
-	}
 }
 
 func TestReadProgressPagesToolCalls(t *testing.T) {

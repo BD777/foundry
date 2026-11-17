@@ -6,6 +6,7 @@
 import type {
   AgentSession,
   ChatAttachment,
+  SessionInputAnnotation,
   SteerDelivery,
 } from "@bd777/foundry-protocol";
 import { dispatchKey } from "./session-state.js";
@@ -37,6 +38,8 @@ export interface ActiveSessionSteerTarget {
 export interface SteerOptions {
   delivery?: SteerDelivery;
   boundaryLimitMs?: number;
+  /** The answer passages the message annotates; its text carries their wrapper. */
+  annotations?: SessionInputAnnotation[];
 }
 
 /**

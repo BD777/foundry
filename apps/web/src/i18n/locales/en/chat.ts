@@ -4,7 +4,6 @@ export const chat = {
     listUnavailable: "Unavailable while this list is read-only or saving.",
     restored_one: "Restored {{count}} chat",
     restored_other: "Restored {{count}} chats",
-    noChats: "No chats to archive.",
 
     byActor: "By {{actor}}",
     includedCount_one: "{{count}} chat",
@@ -47,8 +46,12 @@ export const chat = {
     nativeAlsoHidden: "Native subagent conversations archived with parent",
     title: "Archived chats",
     action: "Archive",
-    folder_one: "Archive folder ({{count}} chat)",
-    folder_other: "Archive folder ({{count}} chats)",
+    folder: "Archive folder",
+    untitled: "Untitled chat",
+    olderIncluded_one:
+      "{{count}} older chat in this folder is not shown in the chat list; it is listed above and archived too.",
+    olderIncluded_other:
+      "{{count}} older chats in this folder are not shown in the chat list; they are listed above and archived too.",
     stopFirst: "Stop it first",
     description:
       "Archive hides these chats and preserves their history and folder positions.",
@@ -270,6 +273,9 @@ export const chat = {
     savingLayout: "Saving groups and order…",
     loadingLayout: "Loading groups…",
     groupEmpty: "No chats yet",
+    olderChats_one: "{{count}} older chat",
+    olderChats_other: "{{count}} older chats",
+    olderLoading: "Loading older chats…",
     ungrouped: "Ungrouped",
     noMatches: "No chats or groups found",
     resize: "Resize chats list",
@@ -279,6 +285,7 @@ export const chat = {
     pending: "{{count}} pending",
     channelSegment: "Segment {{number}}",
     channelContinued: "Continued",
+    channelThread: "Thread",
     channelNew: {
       first: "New session",
       idle: "New session after a break",

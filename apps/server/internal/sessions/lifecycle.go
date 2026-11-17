@@ -179,9 +179,6 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 	if !takesControl(session) {
 		return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrSessionControlledByIssue}
 	}
-	if err := s.policy.AdmitAssistantTurn(ctx, session); err != nil {
-		return store.AgentSession{}, err
-	}
 	message := strings.TrimSpace(input.Prompt)
 	if store.IsActiveSessionStatus(session.Status) {
 		if input.RequireIdle {
@@ -197,6 +194,7 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 		}
 		// Files steer in with the message, as they arrive with any message.
 		attachments := store.NormalizeChatAttachments(input.Attachments)
+		annotations := store.NormalizeSessionInputAnnotations(input.Annotations)
 		if applied && message == "" && len(attachments) == 0 {
 			return session, nil
 		}
@@ -221,7 +219,7 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 		}
 		steerCtx, cancel := context.WithTimeout(ctx, ControlTimeout)
 		defer cancel()
-		steer := Steer{SentBySessionID: input.SentBySessionID, Message: message, Attachments: attachments, InputID: input.InputID, Delivery: input.Delivery}
+		steer := Steer{SentBySessionID: input.SentBySessionID, Message: message, Attachments: attachments, Annotations: annotations, InputID: input.InputID, Delivery: input.Delivery}
 		if input.Delivery == store.DeliveryBoundary {
 			steer.BoundaryLimitMs = InboxBoundaryLimitMs
 		}

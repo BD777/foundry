@@ -52,6 +52,12 @@ func (h *memberHealth) snapshot(domain string, at time.Time, active int) modelpo
 	return h.tracker.Snapshot(domain, at, 0, active)
 }
 
+func (h *memberHealth) observeUnusable(domain string, at time.Time, cooldown time.Duration, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tracker.ObserveUnusable(domain, at, cooldown, reason)
+}
+
 func (h *memberHealth) recordFailover(domain string, at time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -103,6 +109,7 @@ func (s *Server) workerGroupView(ctx context.Context, group store.StoredWorkerGr
 			State: store.WorkerGroupDomainState(status.State), Level: status.Level, Limit: status.Limit,
 			Active: active[domain], SignalsInWindow: status.SignalsInWindow, FailoversLastHour: status.FailoversLastHour,
 		}
+		view.Reason = status.Reason
 		if !status.CooldownUntil.IsZero() {
 			view.CooldownUntil = status.CooldownUntil.UTC().Format(time.RFC3339Nano)
 		}
@@ -188,6 +195,26 @@ func (h *DaemonHub) observeRateLimitedSession(ctx context.Context, session store
 	h.health.observeRateLimit(domain, session.ID, now, active[domain], retryAfterHint(text, now))
 }
 
+// observeAccountUnusable opens the session's account breaker for a failure
+// the account cannot recover from by itself (billing arrears, exhausted quota,
+// a disabled account). reason is modelpool.AccountUnusableReason's name for it.
+// The observation is stored, so a restart rebuilds the breaker until its cooldown ends.
+func (h *DaemonHub) observeAccountUnusable(ctx context.Context, session store.AgentSession, text, reason string) {
+	if session.ProfileID == "" {
+		return
+	}
+	now := time.Now().UTC()
+	cooldown := modelpool.UnusableCooldownFor(retryAfterHint(text, now))
+	h.health.observeUnusable(memberDomain(session.ProfileID, session.Provider), now, cooldown, reason)
+	observation := store.AccountUnusableObservation{
+		Runtime: session.Provider, ProfileID: session.ProfileID, SessionID: session.ID,
+		Reason: reason, ObservedAt: now, CooldownUntil: now.Add(cooldown),
+	}
+	if err := h.store.RecordAccountUnusable(ctx, observation); err != nil {
+		log.Printf("member health: record account unusable of %s: %v", session.ID, err)
+	}
+}
+
 // retryAfterHint is the wait a rate-limit text names: the reset time the
 // failure parser reads from it, relative to now. Zero when none is named.
 func retryAfterHint(text string, now time.Time) time.Duration {
@@ -265,6 +292,10 @@ func memberNote(zh bool, chosenModel, primaryModel string, status modelpool.Doma
 		return fmt.Sprintf("排队到主力 %s：所有成员都在限流或已满，有空位时开始", primaryModel)
 	case queued:
 		return fmt.Sprintf("Queued on %s: every member is rate limited or full; it starts when a slot frees", primaryModel)
+	case status.Reason != "" && zh:
+		return fmt.Sprintf("备用 %s：%s 账号不可用（%s）", chosenModel, primaryModel, status.Reason)
+	case status.Reason != "":
+		return fmt.Sprintf("Fallback %s: the %s account is unusable (%s)", chosenModel, primaryModel, status.Reason)
 	case minutes > 0 && zh:
 		return fmt.Sprintf("备用 %s：%s 账号限流中，约 %d 分钟后恢复", chosenModel, primaryModel, minutes)
 	case minutes > 0:
@@ -415,6 +446,11 @@ func (s *Server) settledTurnMember(ctx context.Context, session store.AgentSessi
 		return store.WorkerGroupMember{}, false, err
 	}
 	if currentFound && member.ProviderID == session.ProfileID && member.Model == session.Model {
+		return store.WorkerGroupMember{}, false, nil
+	}
+	// Admission queues on a primary when nothing has headroom; a settled
+	// session never moves onto an account whose breaker is open.
+	if s.hub.health.snapshot(memberDomain(member.ProviderID, string(member.Runtime)), time.Now().UTC(), 0).State == modelpool.Limited {
 		return store.WorkerGroupMember{}, false, nil
 	}
 	return member, true, nil
@@ -571,10 +607,21 @@ func (s *Server) restoreMemberHealth(ctx context.Context, now time.Time) error {
 		domain := memberDomain(signal.session.ProfileID, signal.session.Provider)
 		s.hub.health.observeRateLimit(domain, signal.session.ID, signal.at, counts[domain], retryAfterHint(signal.text, signal.at))
 	}
+	observations, err := s.store.AccountUnusableSince(ctx, now.Add(-accountUnusableRestoreWindow), now)
+	if err != nil {
+		return err
+	}
+	for _, observation := range observations {
+		s.hub.health.observeUnusable(memberDomain(observation.ProfileID, observation.Runtime),
+			observation.ObservedAt, observation.CooldownUntil.Sub(observation.ObservedAt), observation.Reason)
+	}
 	return nil
 }
 
 const (
 	restorePageSize = 200
 	restorePages    = 20
+	// accountUnusableRestoreWindow is how far back a restart replays account-unusable
+	// observations. An observation still in its cooldown is replayed whatever its age.
+	accountUnusableRestoreWindow = 24 * time.Hour
 )

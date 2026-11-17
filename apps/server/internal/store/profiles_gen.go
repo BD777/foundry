@@ -689,7 +689,7 @@ type WorkerGroup struct {
 	UpdatedAt string              `json:"updatedAt"`
 }
 
-// WorkerGroupDomain One rate-limit domain of a worker group, an account that members share. `state` is `healthy`, `recovering` (rate limited within the last ten minutes), `probing` (its one half-open probe is free) or `limited` (in cooldown). `cooldownUntil` is set while the account is in cooldown. `level` doubles the cooldown on each reopening and halves each clean ten minutes. `limit` is the concurrent-session limit the server currently allows; `active` is the sessions running on the account now.
+// WorkerGroupDomain One rate-limit domain of a worker group, an account that members share. `state` is `healthy`, `recovering` (rate limited within the last ten minutes), `probing` (its one half-open probe is free) or `limited` (in cooldown). `cooldownUntil` is set while the account is in cooldown. `level` doubles the cooldown on each reopening and halves each clean ten minutes. `limit` is the concurrent-session limit the server currently allows; `active` is the sessions running on the account now. `reason` is set while the account is unusable, as `402` (billing arrears), `quota exhausted` or `account disabled`. Its cooldown is the provider's reset time or one hour, and it clears only after a successful probe.
 type WorkerGroupDomain struct {
 	ProfileID string `json:"profileId"`
 
@@ -697,6 +697,7 @@ type WorkerGroupDomain struct {
 	Runtime           NativeRuntimeID        `json:"runtime"`
 	State             WorkerGroupDomainState `json:"state"`
 	CooldownUntil     string                 `json:"cooldownUntil,omitempty"`
+	Reason            string                 `json:"reason,omitempty"`
 	Level             int                    `json:"level"`
 	Limit             int                    `json:"limit"`
 	Active            int                    `json:"active"`

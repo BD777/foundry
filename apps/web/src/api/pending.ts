@@ -27,7 +27,12 @@ export type PendingSource =
    */
   | "assistant_inbox"
   | "project_upkeep"
-  | "memory_upkeep";
+  | "memory_upkeep"
+  /**
+   * A connector write outside what the session was granted (DEV-265): the
+   * person allows or refuses that exact request.
+   */
+  | "connector_write";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person
@@ -116,6 +121,36 @@ export interface PendingItem {
   updatedAt: string;
   resolvedAt?: string;
   outcome?: PendingOutcome;
+  /** What a connector-write item asks the person to decide (DEV-265). */
+  connectorWrite?: PendingConnectorWriteDetail;
+}
+
+/** One connector write waiting for the person, in structured parts. */
+export interface PendingConnectorWriteDetail {
+  proposalId: string;
+  /** What the write does: message, reaction, or write. */
+  action?: "message" | "reaction" | "write";
+  /** The operation in the person's words, e.g. 新建云文档. */
+  operation?: string;
+  /** When the approval expires. */
+  expiresAt?: string;
+  /** Top-level string fields of the recorded body, as "key: value". */
+  preview?: string[];
+  /** The recorded body as JSON, for a disclosure. */
+  body?: string;
+  accountName?: string;
+  targetType?: string;
+  targetId?: string;
+  /** The target's name, resolved when the proposal was made; empty when
+   * the connector could not name it. */
+  targetName?: string;
+  text?: string;
+  /** The channel conversation the request came from, when it did. */
+  channelName?: string;
+  conversationKind?: string;
+  conversationName?: string;
+  /** The request came from a session the assistant handed work to. */
+  fromHelper?: boolean;
 }
 
 export interface PendingItemList {
@@ -164,4 +199,21 @@ export function retryPendingItem(
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/retry`, {
     body: { requestId },
   });
+}
+
+/**
+ * Allows or refuses the exact connector write a connector-write item stands
+ * for (DEV-265). Allowing makes Foundry send it; refusing sends nothing.
+ */
+export function decidePendingItem(
+  id: string,
+  allow: boolean,
+): Promise<unknown> {
+  return request(
+    "POST",
+    `/api/pending-items/${encodeURIComponent(id)}/decide`,
+    {
+      body: { allow },
+    },
+  );
 }

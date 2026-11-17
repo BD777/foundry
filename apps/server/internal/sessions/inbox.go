@@ -347,9 +347,6 @@ func (s *Service) steerInboxItem(ctx context.Context, session store.AgentSession
 	if s.WaitsForDevice(session) || !s.devices.Connected(session.DeviceID) {
 		return s.ChangeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxHeld, Reason: "device_offline", CountAttempt: true})
 	}
-	if err := s.policy.AdmitAssistantTurn(ctx, session); err != nil {
-		return s.ChangeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxHeld, Reason: err.Error(), CountAttempt: true})
-	}
 	input := store.SendAgentSessionInput{
 		InputID: item.InputID, SentBySessionID: item.SenderSessionID, InputSource: item.InputSource,
 	}

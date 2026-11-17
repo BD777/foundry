@@ -278,9 +278,17 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 			}
 		}
 	}
-	// A message channel's sessions write without a card where the person set
-	// the channel's writes for this account to direct (DEV-203).
-	if d == nil && need.Risk != "" && permissionAccess.Applicable && !permissionAccess.WritesWithoutConfirmation(lease.Account.ID) {
+	// A channel-lineage session writes without a card only inside what it
+	// was granted (DEV-265); every other write waits for the person. Other
+	// sessions keep the connector's risk rule.
+	confirmWrite, grantMiss := need.Risk != "" && permissionAccess.Applicable, false
+	// Only a write is checked against the session's grants; reads keep the
+	// access-level rules (DEV-265).
+	if need.Write && permissionAccess.Applicable && (permissionAccess.Channel != nil || len(permissionAccess.Grants) > 0) {
+		inside := permissionAccess.WriteInsideGrant(lease.Account.ID, need.Objects, need.Auxiliary)
+		confirmWrite, grantMiss = !inside, !inside
+	}
+	if d == nil && confirmWrite {
 		if p.Confirm == nil {
 			d = &Denial{Reason: ReasonInternal, Err: errors.New("risk write has no confirmation service")}
 		} else {
@@ -293,8 +301,14 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 				if refusal != nil {
 					d = refusal
 				} else if !decision.Approved {
+					reason := ReasonNeedsConfirmation
+					message := ""
+					if grantMiss {
+						reason = ReasonWriteOutsideGrant
+						message = grantDenialMessage(permissionAccess, lease.Account, decision.ProposalID)
+					}
 					d = &Denial{
-						Reason: ReasonNeedsConfirmation, ProposalID: decision.ProposalID,
+						Reason: reason, Message: message, ProposalID: decision.ProposalID,
 						Summary: decision.Summary, ExpiresAt: decision.ExpiresAt,
 					}
 				}
@@ -322,9 +336,36 @@ func (p *Pipeline) Serve(w http.ResponseWriter, r *http.Request, device Device) 
 	}
 }
 
+// grantDenialMessage words a write that lies outside the session's grant
+// (DEV-265): what it may write, and that the request waits for the person.
+func grantDenialMessage(access permission.Access, account store.ExternalAccount, proposalID string) string {
+	name := strings.TrimSpace(account.Label)
+	if name == "" {
+		name = account.ID
+	}
+	granted := []string{}
+	for _, grant := range access.Grants {
+		if grant.AccountID == account.ID {
+			granted = append(granted, grant.ObjectType+" "+grant.ObjectID)
+		}
+	}
+	message := "write_outside_grant: this session has no write grant for account " + name
+	if len(granted) > 0 {
+		message = "write_outside_grant: this session may write only to " + strings.Join(granted, ", ") + " on account " + name
+	}
+	if proposalID != "" {
+		message += "; the write waits for the person's confirmation (proposal " + proposalID + ")"
+	}
+	return message + "."
+}
+
 func (p *Pipeline) confirmationRequest(r *http.Request, lease *Lease, need Need) (ConfirmationRequest, error) {
 	body := []byte{}
-	if r.Body != nil && r.Body != http.NoBody {
+	if need.Body != nil {
+		// The provider rewrote the body (a channel footer); the person
+		// approves exactly what Foundry would send (DEV-265).
+		body = need.Body
+	} else if r.Body != nil && r.Body != http.NoBody {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
 		_ = r.Body.Close()
 		r.Body = io.NopCloser(strings.NewReader(string(raw)))
@@ -342,8 +383,10 @@ func (p *Pipeline) confirmationRequest(r *http.Request, lease *Lease, need Need)
 	fingerprint := sha256.Sum256([]byte(lease.Grant.SessionID + "\x00" + lease.Grant.AccountID + "\x00" + method + "\x00" + path + "\x00" + query + "\x00" + hex.EncodeToString(sum[:])))
 	return ConfirmationRequest{
 		Lease: lease, Need: need, Method: method, Path: path, Query: query,
-		BodyDigest: hex.EncodeToString(sum[:]), Fingerprint: hex.EncodeToString(fingerprint[:]),
-		Summary: need.RiskSummary,
+		BodyDigest: hex.EncodeToString(sum[:]), Body: body,
+		Fingerprint: hex.EncodeToString(fingerprint[:]),
+		Summary:     need.RiskSummary,
+		Objects:     need.Objects, Labels: need.Labels, Auxiliary: need.Auxiliary, Text: need.Text, Replay: need.Replay, Operation: need.Operation,
 	}, nil
 }
 

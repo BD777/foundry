@@ -129,13 +129,6 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 		write.Subject = spec.Source.Path
 	}
 	write.Spec = spec
-	usage, err := s.usage(ctx, scope.Agent)
-	if err != nil {
-		return write, err
-	}
-	if err := personalagent.CheckNewWorkspace(scope.Agent.Settings.Limits, usage); err != nil {
-		return write, limitRefusal(err, s.settingsURL(scope.Agent))
-	}
 	write.Decisions = []Decision{{action, personalagent.Decide(scope.Agent.Settings.Policy, action)}}
 	write.Apply = func(ctx context.Context) (any, error) {
 		request := personalagent.NewWorkspace{DeviceID: spec.DeviceID, Name: spec.Name, Purpose: spec.Purpose}

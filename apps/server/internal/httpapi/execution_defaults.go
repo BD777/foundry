@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -62,21 +63,12 @@ func publicExecutionDefault(value store.StoredExecutionModelDefault) store.Execu
 	return public
 }
 
-func publicAssistantExecutionModels(value store.PersonalAgentExecutionModels) store.ExecutionModelDefault {
-	alternatives := make([]store.ExecutionModelChoice, len(value.Alternatives))
-	copy(alternatives, value.Alternatives)
-	for index := range alternatives {
-		alternatives[index].ID = personalagent.ExecutionChoiceID(alternatives[index])
-	}
-	return store.ExecutionModelDefault{
-		ProviderKind: store.ExecutionModelDefaultProviderKind(value.ProviderKind),
-		ProviderID:   value.ProviderID, Runtime: value.Runtime, Model: value.Model,
-		WorkerGroupID: value.WorkerGroupID, Effort: value.Effort,
-		Alternatives: alternatives, Scope: store.ExecutionDefaultScope("assistant"),
-	}
-}
-
-func (s *Server) executionDefaults(ctx context.Context, ownerUserID, workspaceID string) (executionDefaultsView, error) {
+// executionDefaults answers get_execution_default: what is saved for the
+// scope, and the model a new session runs on there. assistantModels, when
+// set, is the assistant's own execution models, which come before the
+// stored default; the effective choice is the one resolver session creation
+// uses too (run.ResolveExecutionModels).
+func (s *Server) executionDefaults(ctx context.Context, ownerUserID, workspaceID string, assistantModels *store.PersonalAgentExecutionModels) (executionDefaultsView, error) {
 	view := executionDefaultsView{WorkspaceID: workspaceID, Effective: noneExecutionDefault()}
 	global, err := s.store.GetExecutionDefault(ctx, ownerUserID, "")
 	if err != nil && !errors.Is(err, store.ErrExecutionDefaultNotFound) {
@@ -87,26 +79,62 @@ func (s *Server) executionDefaults(ctx context.Context, ownerUserID, workspaceID
 		if err := s.fillExecutionDefaultGroup(ctx, &public); err != nil {
 			return view, err
 		}
-		view.Effective = public
 		if workspaceID == "" {
 			view.Saved = &public
 		}
 	}
-	if workspaceID == "" {
-		return view, nil
-	}
-	local, err := s.store.GetExecutionDefault(ctx, ownerUserID, workspaceID)
-	if err != nil && !errors.Is(err, store.ErrExecutionDefaultNotFound) {
-		return view, err
-	}
-	if err == nil {
-		public := publicExecutionDefault(local)
-		if err := s.fillExecutionDefaultGroup(ctx, &public); err != nil {
+	if workspaceID != "" {
+		local, err := s.store.GetExecutionDefault(ctx, ownerUserID, workspaceID)
+		if err != nil && !errors.Is(err, store.ErrExecutionDefaultNotFound) {
 			return view, err
 		}
-		view.Saved, view.Effective = &public, public
+		if err == nil {
+			public := publicExecutionDefault(local)
+			if err := s.fillExecutionDefaultGroup(ctx, &public); err != nil {
+				return view, err
+			}
+			view.Saved = &public
+		}
+	}
+	models, err := s.runs.ResolveExecutionModels(ctx, ownerUserID, assistantModels, workspaceID)
+	if err != nil {
+		return view, err
+	}
+	if models.Scope == "" {
+		return view, nil
+	}
+	effective := publicExecutionModels(models)
+	if err := s.fillExecutionDefaultGroup(ctx, &effective); err != nil {
+		return view, err
+	}
+	view.Effective = effective
+	if assistantModels != nil {
+		// The assistant's own set is what get_execution_default answers, as
+		// before; a stored default stays what its own editor shows.
+		saved := view.Effective
+		view.Saved = &saved
 	}
 	return view, nil
+}
+
+// publicExecutionModels is a resolved execution model as get_execution_default
+// answers it.
+func publicExecutionModels(models run.ExecutionModels) store.ExecutionModelDefault {
+	alternatives := make([]store.ExecutionModelChoice, len(models.Alternatives))
+	copy(alternatives, models.Alternatives)
+	for index := range alternatives {
+		alternatives[index].ID = personalagent.ExecutionChoiceID(alternatives[index])
+	}
+	return store.ExecutionModelDefault{
+		ProviderKind:  store.ExecutionModelDefaultProviderKind(models.Default.ProviderKind),
+		ProviderID:    models.Default.ProviderID,
+		Runtime:       store.NativeRuntimeID(models.Default.Runtime),
+		Model:         models.Default.Model,
+		WorkerGroupID: models.Default.WorkerGroupID,
+		Effort:        models.Default.Effort,
+		Alternatives:  alternatives,
+		Scope:         store.ExecutionDefaultScope(models.Scope),
+	}
 }
 
 func (s *Server) fillExecutionDefaultGroup(ctx context.Context, value *store.ExecutionModelDefault) error {
@@ -236,14 +264,14 @@ func (s *Server) saveExecutionDefault(ctx context.Context, actor Actor, workspac
 	if err := s.store.SetExecutionDefault(ctx, value); err != nil {
 		return executionDefaultsView{}, err
 	}
-	return s.executionDefaults(ctx, m.userID, workspaceID)
+	return s.executionDefaults(ctx, m.userID, workspaceID, nil)
 }
 
 func (s *Server) handleGetExecutionDefault(w http.ResponseWriter, r *http.Request) {
 	m, err := s.providerManagerFor(r.Context(), actorFromContext(r.Context()))
 	if err == nil {
 		var view executionDefaultsView
-		view, err = s.executionDefaults(r.Context(), m.userID, "")
+		view, err = s.executionDefaults(r.Context(), m.userID, "", nil)
 		writeResult(w, view, err)
 		return
 	}
@@ -263,7 +291,7 @@ func (s *Server) handleGetWorkspaceExecutionDefault(w http.ResponseWriter, r *ht
 	m, err := s.providerManagerFor(r.Context(), actorFromContext(r.Context()))
 	if err == nil {
 		var view executionDefaultsView
-		view, err = s.executionDefaults(r.Context(), m.userID, strings.TrimSpace(r.PathValue("id")))
+		view, err = s.executionDefaults(r.Context(), m.userID, strings.TrimSpace(r.PathValue("id")), nil)
 		writeResult(w, view, err)
 		return
 	}
@@ -285,16 +313,13 @@ func (s *Server) getExecutionDefaultForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	view, err := s.executionDefaults(ctx, m.userID, strings.TrimSpace(call.workspace))
+	var assistantModels *store.PersonalAgentExecutionModels
+	if scope, scopeErr := s.paScope(ctx, call.actor); scopeErr == nil {
+		assistantModels = scope.Agent.Settings.ExecutionModels
+	}
+	view, err := s.executionDefaults(ctx, m.userID, strings.TrimSpace(call.workspace), assistantModels)
 	if err != nil {
 		return "", err
-	}
-	if scope, scopeErr := s.paScope(ctx, call.actor); scopeErr == nil && scope.Agent.Settings.ExecutionModels != nil {
-		effective := publicAssistantExecutionModels(*scope.Agent.Settings.ExecutionModels)
-		if err := s.fillExecutionDefaultGroup(ctx, &effective); err != nil {
-			return "", err
-		}
-		view.Saved, view.Effective = &effective, effective
 	}
 	return encodeJSON(view)
 }

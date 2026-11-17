@@ -25,7 +25,10 @@ export function ChatGroupSection({
   disabled,
   dropEdge,
   sessionCount,
-  archiveCount = sessionCount,
+  olderCount = 0,
+  olderLoading = false,
+  olderExpanded = false,
+  onLoadOlder,
   onDelete,
   onArchive,
 }: {
@@ -38,7 +41,12 @@ export function ChatGroupSection({
   disabled?: boolean;
   dropEdge?: string;
   sessionCount: number;
-  archiveCount?: number;
+  /** Members the chat list's window left out; 0 hides the row. */
+  olderCount?: number;
+  olderLoading?: boolean;
+  /** The folder already added a page of its older chats. */
+  olderExpanded?: boolean;
+  onLoadOlder?: () => void;
   onDelete: () => Promise<void>;
   onArchive?: (returnFocusTo: HTMLElement | null) => void;
 }) {
@@ -59,7 +67,6 @@ export function ChatGroupSection({
       <ChatGroupContextMenu
         name={group.name}
         sessionCount={sessionCount}
-        archiveCount={archiveCount}
         disabled={disabled || editing}
         onRename={onEdit}
         onDelete={onDelete}
@@ -146,6 +153,20 @@ export function ChatGroupSection({
         data-group-id={group.id}
       >
         {children}
+        {olderCount > 0 ? (
+          <Button
+            aria-expanded={olderExpanded}
+            className="w-full justify-start gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-ink-muted active:scale-100"
+            disabled={olderLoading || !onLoadOlder}
+            variant="ghost"
+            onClick={onLoadOlder}
+          >
+            <ChevronRight aria-hidden="true" size={14} />
+            {olderLoading
+              ? t("list.olderLoading")
+              : t("list.olderChats", { count: olderCount })}
+          </Button>
+        ) : null}
       </div>
     </section>
   );

@@ -216,6 +216,8 @@ interface components {
       status?: components["schemas"]["TranscriptMessageStatus"];
       /** @description `attachments` travel with a user message. */
       attachments?: components["schemas"]["ChatAttachment"][];
+      /** @description `annotations` travel with a user message: the answer passages it annotates. */
+      annotations?: components["schemas"]["SessionInputAnnotation"][];
       /** @description `requestUsage` is the tokens of the model request that produced this step. Claude reports them when the request stream ends; Codex estimates them from native token-usage updates. */
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats). */
@@ -694,14 +696,61 @@ interface components {
       events?: components["schemas"]["ConnectorEventsSpec"];
       /** @description Write responses that name the message they created, so a message channel can tell an assistant's own writes from people's messages. Each entry names a catalogued write route (method and path exactly as the instance's route directory lists it) and a JSON pointer into a successful response; Foundry records the value with the request's session and account. */
       writes?: components["schemas"]["ConnectorServerHeldWrite"][];
+      /** @description Read-only routes that resolve one object a write touches into the object a session's grant names, e.g. a message id into its conversation. Foundry calls the route through the instance and reads the pointer; results are cached per account. */
+      resolvers?: components["schemas"]["ConnectorServerHeldResolver"][];
+      /** @description Read-only routes that name an object for the person, e.g. a conversation id into its name. Foundry resolves them when a proposal is created and stores the name with it, so the person's card never calls out. Results are cached per account. */
+      labels?: components["schemas"]["ConnectorServerHeldLabel"][];
     };
+    /** @description One write route's declaration. createdMessageId and footer keep their meaning. objects names each grant object the write touches, so a session holding grants may write inside them; a route without them touches nothing a grant can hold. auxiliary marks a route that only prepares another write (an upload) and is allowed with any grant for the account. */
     ConnectorServerHeldWrite: {
       method: string;
       /** @description The route's path as the directory lists it, parameters included. */
       path: string;
       /** @description JSON pointer to the created message's id in the response. */
-      createdMessageId: string;
+      createdMessageId?: string;
       footer?: components["schemas"]["ConnectorServerHeldWriteFooter"];
+      /** @description The grant objects the write touches. from is a named path parameter (":feedId") or a JSON pointer into the request body; each says the value there is an array of ids. */
+      objects?: components["schemas"]["ConnectorServerHeldWriteObject"][];
+      /** @description The route only prepares another write (an upload nobody else sees yet); it passes with any grant for the account. */
+      auxiliary?: boolean;
+      /** @description What the write does, in the person's words, e.g. 新建云文档. A declaration may carry only a summary; it names the operation and grants nothing, so the write still needs the person's confirmation. */
+      summary?: string;
+    };
+    ConnectorServerHeldWriteObject: {
+      /** @description The grant object's type, e.g. conversation or message. */
+      type: string;
+      /** @description A named path parameter (":feedId") or a JSON pointer into the request body. */
+      from: string;
+      /** @description The value at from is an array of ids rather than one id. */
+      each?: boolean;
+    };
+    /** @description Maps one object type onto another through a catalogued read route. Only a resolver whose route and pointer validate is used; an unresolvable write stays outside every grant. */
+    ConnectorServerHeldResolver: {
+      /** @description The object type the write names, e.g. message. */
+      from: string;
+      /** @description The grant object type to resolve to, e.g. conversation. */
+      to: string;
+      /** @enum {string} */
+      method: "GET";
+      /** @description The read route's path as the directory lists it, parameters included. */
+      path: string;
+      /** @description JSON pointer in a successful response to the resolved object's id. */
+      pointer: string;
+      /** @description How long a resolved value is cached, 60 to 3600; missing means 600. */
+      ttlSeconds?: number;
+    };
+    /** @description Names one object type through a catalogued read route, so the person reads a name where an id alone would mean nothing. A resolver's route and pointer validate; a failed lookup leaves the object unnamed. */
+    ConnectorServerHeldLabel: {
+      /** @description The object type to name, e.g. conversation. */
+      object: string;
+      /** @enum {string} */
+      method: "GET";
+      /** @description The read route's path as the directory lists it, parameters included. */
+      path: string;
+      /** @description JSON pointer in a successful response to the object's name. */
+      pointer: string;
+      /** @description How long a resolved name is cached, 60 to 3600; missing means 600. */
+      ttlSeconds?: number;
     };
     /** @description The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it. */
     ConnectorServerHeldWriteFooter: {
@@ -732,6 +781,25 @@ interface components {
       context?: components["schemas"]["ConnectorEventsContext"];
       reply?: components["schemas"]["ConnectorEventsReply"];
       ack?: components["schemas"]["ConnectorEventsAck"];
+      /** @description Named reads of the source, each a catalogued read route whose answer supplies facts the feed's items do not carry (a conversation's readable name, a message's text and card title, a thread's replies). path names that route; args fill each of its parameters from a fact (conversation.id, message.id or thread.id); fields name values in the answer, and items points at a list of answers to read the same fields from. */
+      reads?: {
+        [key: string]: components["schemas"]["ConnectorEventsRead"];
+      };
+    };
+    ConnectorEventsRead: {
+      /** @enum {string} */
+      method?: "GET";
+      /** @description The read route's path as the directory lists it, parameters included. */
+      path: string;
+      /** @description Route parameter name to the fact it is filled from. */
+      args: {
+        [key: string]: string;
+      };
+      /** @description JSON pointer in the answer to a list of objects; fields are read from each. */
+      items?: string;
+      fields: {
+        [key: string]: components["schemas"]["ConnectorEventsValue"];
+      };
     };
     /** @description How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server. */
     ConnectorEventsAck: {
@@ -842,6 +910,8 @@ interface components {
       access: string;
       /** @description Optional JSON pointer inside each route to its resource domain. */
       domain?: string;
+      /** @description Optional JSON pointer inside each route to a human summary of what it does. */
+      summary?: string;
     };
     ConnectorServerHeldProbe: {
       id: string;
@@ -926,6 +996,8 @@ interface components {
       path: string;
       access: string;
       domain?: string;
+      /** @description The route's human summary, when the source serves one. */
+      summary?: string;
     };
     ConnectorServerHeldProbeValues: {
       [key: string]: string;
@@ -2658,13 +2730,11 @@ interface components {
     MessageChannelFilters: {
       rules: components["schemas"]["MessageChannelRule"][];
     };
-    /** @description One connector account for the channel's sessions, capped by the assistant's permission package. writes direct lets them write through it without a confirmation card. */
+    /** @description One connector account for the channel's sessions, capped by the assistant's permission package. Its sessions write only inside the conversation their turn came from; every other write waits for the person's confirmation. */
     MessageChannelConnectorScope: {
       accountId: string;
       /** @enum {string} */
       level: "off" | "read" | "write";
-      /** @enum {string} */
-      writes: "confirm" | "direct";
     };
     /** @description What the channel's sessions and their helpers may use, intersected with the assistant's permission package. connectorDefault inherit keeps the package's level for accounts not listed; off turns them off. workspaces listed keeps only the included ones. */
     MessageChannelScope: {
@@ -2680,8 +2750,9 @@ interface components {
       resetCommands: string[];
     };
     /** @enum {string} */
-    MessageChannelFollowUpFrom: "same-sender" | "person" | "anyone";
-    /** @description Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, same-sender and /end. */
+    MessageChannelFollowUpFrom:
+      "same-sender" | "thread-participants" | "person" | "anyone";
+    /** @description Which messages continue a conversation without a trigger word once a message matched a rule. enabled turns it on; from says who may continue (same-sender, the sender of the message that started the session; thread-participants, anyone in a thread where a turn happened, while a quote outside a thread stays the same sender's; person, the person the assistant works for; anyone). endCommands are words that stop it, matched like trigger words and never handed to the assistant. Missing means enabled, thread-participants and /end. */
     MessageChannelFollowUps: {
       enabled: boolean;
       from: components["schemas"]["MessageChannelFollowUpFrom"];
@@ -2874,7 +2945,13 @@ interface components {
     };
     /** @enum {string} */
     MessageChannelDeliveryStatus:
-      "dropped" | "held" | "queued" | "delivered" | "done" | "failed";
+      | "dropped"
+      | "held"
+      | "queued"
+      | "context"
+      | "delivered"
+      | "done"
+      | "failed";
     /** @description Something the channel's session did after the message arrived. */
     MessageChannelAction: {
       at: string;
@@ -3936,13 +4013,14 @@ interface components {
       createdAt: string;
       updatedAt: string;
     };
-    /** @description One rate-limit domain of a worker group, an account that members share. `state` is `healthy`, `recovering` (rate limited within the last ten minutes), `probing` (its one half-open probe is free) or `limited` (in cooldown). `cooldownUntil` is set while the account is in cooldown. `level` doubles the cooldown on each reopening and halves each clean ten minutes. `limit` is the concurrent-session limit the server currently allows; `active` is the sessions running on the account now. */
+    /** @description One rate-limit domain of a worker group, an account that members share. `state` is `healthy`, `recovering` (rate limited within the last ten minutes), `probing` (its one half-open probe is free) or `limited` (in cooldown). `cooldownUntil` is set while the account is in cooldown. `level` doubles the cooldown on each reopening and halves each clean ten minutes. `limit` is the concurrent-session limit the server currently allows; `active` is the sessions running on the account now. `reason` is set while the account is unusable, as `402` (billing arrears), `quota exhausted` or `account disabled`. Its cooldown is the provider's reset time or one hour, and it clears only after a successful probe. */
     WorkerGroupDomain: {
       profileId: string;
       runtime: components["schemas"]["NativeRuntimeId"];
       /** @enum {string} */
       state: "healthy" | "recovering" | "probing" | "limited";
       cooldownUntil?: string;
+      reason?: string;
       level: number;
       limit: number;
       active: number;
@@ -4623,11 +4701,32 @@ interface components {
       tokenBudget: number;
       timeoutMinutes: number;
     };
+    /** @description One passage of an earlier agent answer the person annotated, sent with a user message. `selectedText` is the passage and `comment` the person's optional comment. The prompt text already carries the model-facing wrapper; this structure is only for display. */
+    SessionInputAnnotation: {
+      id: string;
+      selectedText: string;
+      comment?: string;
+      /** @description `sourceEventId` is the transcript event of the annotated answer. */
+      sourceEventId: string;
+      /**
+       * Format: int64
+       * @description `startOffset` and `endOffset` are the selection's character offsets in the answer's plain text, for re-highlighting; both are set or both absent.
+       */
+      startOffset?: number;
+      /** Format: int64 */
+      endOffset?: number;
+      /** @description `turnNumber` is the answer's turn as the transcript navigator numbers it; set only when the answer is not the latest. */
+      turnNumber?: number;
+      /** @description `messageAt` is when the annotated answer was written (RFC 3339). */
+      messageAt?: string;
+    };
     SessionInput: {
       executionBudget?: components["schemas"]["SessionExecutionBudget"];
       id: string;
       prompt: string;
       attachments?: components["schemas"]["ChatAttachment"][];
+      /** @description `annotations` are the answer passages the person annotated in this message. */
+      annotations?: components["schemas"]["SessionInputAnnotation"][];
       profileTransitionNote?: string;
       importedContext?: string;
       /** @description When the server received the input; its transcript events carry it. */
@@ -5301,11 +5400,18 @@ export type ConnectorServerHeldSpec =
   components["schemas"]["ConnectorServerHeldSpec"];
 export type ConnectorServerHeldWrite =
   components["schemas"]["ConnectorServerHeldWrite"];
+export type ConnectorServerHeldWriteObject =
+  components["schemas"]["ConnectorServerHeldWriteObject"];
+export type ConnectorServerHeldResolver =
+  components["schemas"]["ConnectorServerHeldResolver"];
+export type ConnectorServerHeldLabel =
+  components["schemas"]["ConnectorServerHeldLabel"];
 export type ConnectorServerHeldWriteFooter =
   components["schemas"]["ConnectorServerHeldWriteFooter"];
 export type ConnectorServerHeldWriteFooterFormat =
   components["schemas"]["ConnectorServerHeldWriteFooterFormat"];
 export type ConnectorEventsSpec = components["schemas"]["ConnectorEventsSpec"];
+export type ConnectorEventsRead = components["schemas"]["ConnectorEventsRead"];
 export type ConnectorEventsAck = components["schemas"]["ConnectorEventsAck"];
 export type ConnectorEventsAckCall =
   components["schemas"]["ConnectorEventsAckCall"];
@@ -5842,6 +5948,8 @@ export type AgentSessionEventMetadata =
   components["schemas"]["AgentSessionEventMetadata"];
 export type SessionExecutionBudget =
   components["schemas"]["SessionExecutionBudget"];
+export type SessionInputAnnotation =
+  components["schemas"]["SessionInputAnnotation"];
 export type SessionInput = components["schemas"]["SessionInput"];
 export type SessionSource = components["schemas"]["SessionSource"];
 export type AgentSession = components["schemas"]["AgentSession"];

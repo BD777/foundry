@@ -386,3 +386,70 @@ test("a new chat's accepted message stays in the composer until the chat it star
   assert.equal(h.input.draft, "");
   assert.equal(h.input.sending, false);
 });
+
+test("annotations alone send: the runtime gets the wrapper with an empty request", async (t) => {
+  const sent = [];
+  const h = await harness(t, modes.fixed, {
+    onSend: async (text, attachments, options) => {
+      sent.push({ text, annotations: options?.annotations });
+      return "replied";
+    },
+  });
+  const annotation = {
+    id: "a1",
+    sourceEventId: "answer-1",
+    selectedText: "the passage",
+    comment: "keep this",
+  };
+  await act(async () => h.input.annotations.add(annotation));
+  await h.submit();
+  await h.settle();
+  assert.equal(sent.length, 1);
+  assert.equal(
+    sent[0].text,
+    [
+      "",
+      "# Response annotations:",
+      sent[0].text.split("\n")[2],
+      "<response-annotations>",
+      '[{"id":"a1","text":"the passage","annotation":"keep this","source":{"messageId":"answer-1"}}]',
+      "</response-annotations>",
+      "",
+      "## My request:",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(sent[0].annotations, [annotation]);
+  assert.equal(h.input.annotations.annotations.length, 0);
+});
+
+test("an annotation-only message waits for a running turn and keeps its wrapper", async (t) => {
+  const sent = [];
+  const h = await harness(t, modes.fixed, {
+    threadKey: "workspace:annotated-queue",
+    active: true,
+    activeExecutionId: "r1",
+    onSend: async (text, attachments, options) => {
+      sent.push({ text, annotations: options?.annotations });
+      return "replied";
+    },
+  });
+  await act(async () =>
+    h.input.annotations.add({
+      id: "a2",
+      sourceEventId: "answer-2",
+      selectedText: "second passage",
+    }),
+  );
+  await h.submit();
+  assert.equal(h.input.queue.length, 1);
+  assert.equal(h.input.queue[0].text, "");
+  assert.equal(h.input.queue[0].annotations?.[0]?.id, "a2");
+  assert.equal(h.input.annotations.annotations.length, 0);
+  await h.render({ active: false, activeExecutionId: undefined });
+  await h.settle();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /^# Response annotations:/m);
+  assert.match(sent[0].text, /## My request:\n$/);
+  assert.equal(sent[0].annotations?.[0]?.id, "a2");
+});

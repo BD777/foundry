@@ -27,13 +27,18 @@ export type DomainStatusKey =
   | "workerGroups.domain.limited"
   | "workerGroups.domain.limitedNoEta"
   | "workerGroups.domain.probing"
-  | "workerGroups.domain.recovering";
+  | "workerGroups.domain.recovering"
+  | "workerGroups.domain.unusableArrears"
+  | "workerGroups.domain.unusableQuota"
+  | "workerGroups.domain.unusableDisabled"
+  | "workerGroups.domain.unusableOther";
 
 export interface DomainStatus {
   state: WorkerGroupDomain["state"];
   /** Translation key of the state text, with `values` for its placeholders. */
   key: DomainStatusKey;
-  values: { active: number; limit: number; minutes: number };
+  /** `reason` is the server's cause, set only for an account-unusable domain. */
+  values: { active: number; limit: number; minutes: number; reason?: string };
   /** Switches to a fallback in the last hour; 0 hides the note. */
   failoversLastHour: number;
 }
@@ -55,6 +60,13 @@ export function domainStatus(
     },
     failoversLastHour: domain.failoversLastHour,
   };
+  if (domain.reason) {
+    return {
+      ...base,
+      key: unusableKey(domain.reason),
+      values: { ...base.values, reason: domain.reason },
+    };
+  }
   switch (domain.state) {
     case "healthy":
       return { ...base, key: "workerGroups.domain.healthy" };
@@ -70,6 +82,20 @@ export function domainStatus(
       return { ...base, key: "workerGroups.domain.probing" };
     case "recovering":
       return { ...base, key: "workerGroups.domain.recovering" };
+  }
+}
+
+/** The status text of an account the server reports unusable, by its cause. */
+function unusableKey(reason: string): DomainStatusKey {
+  switch (reason) {
+    case "402":
+      return "workerGroups.domain.unusableArrears";
+    case "quota exhausted":
+      return "workerGroups.domain.unusableQuota";
+    case "account disabled":
+      return "workerGroups.domain.unusableDisabled";
+    default:
+      return "workerGroups.domain.unusableOther";
   }
 }
 

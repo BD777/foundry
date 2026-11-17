@@ -108,13 +108,7 @@ function problemText(
     return t("settings.problems.executionModels");
   if (problem.kind === "time") return t(`settings.problems.${problem.field}`);
   const label = t(`settings.limits.labels.${problem.key}`);
-  return problem.max === undefined
-    ? t("settings.problems.limitNoMax", { label, min: problem.min })
-    : t("settings.problems.limit", {
-        label,
-        min: problem.min,
-        max: problem.max,
-      });
+  return t("settings.problems.limitNoMax", { label, min: problem.min });
 }
 
 function SettingsPanel({
@@ -442,11 +436,7 @@ function SettingsPanel({
                 workspaces={workspaces}
               />
             ) : activeSection === "limits" ? (
-              <LimitsSection
-                change={change}
-                draft={draft}
-                usage={overview.usage}
-              />
+              <LimitsSection change={change} draft={draft} />
             ) : (
               <>
                 <RoleRuns

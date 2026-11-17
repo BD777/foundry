@@ -24,6 +24,7 @@ import type {
   WorkerRuntimeId,
   ConfiguredContextWindow,
 } from "@bd777/foundry-protocol";
+import type { ConversationAnnotation } from "../../components/conversation/annotations";
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type { TurnHandoff } from "../../components/conversation/turn-handoffs";
 import type {
@@ -54,6 +55,8 @@ export interface ChatViewMessage {
   at?: string;
   agentLabel?: string;
   attachments?: ChatAttachment[];
+  /** Annotations on earlier answers that the sent message carried. */
+  annotations?: ConversationAnnotation[];
   copyAlways?: boolean;
   copyText?: string;
   /** How long a process group ran, from its start to its last step. */

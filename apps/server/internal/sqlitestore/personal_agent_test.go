@@ -205,14 +205,6 @@ func TestPersonalAgentAuditFindsCreatedProjectsAndBoundAccounts(t *testing.T) {
 			t.Errorf("%s bound before = %v (%v)", account, bound, err)
 		}
 	}
-	agent := store.PersonalAgent{ID: "asst_a", UserID: "user_a", WorkspaceID: "ws_pa"}
-	usage, err := db.PersonalAgentUsage(ctx, agent, store.PersonalAgentWindows{
-		HourAgo: formatTime(time.Now().Add(-time.Hour)), DayStart: formatTime(time.Now().Add(-time.Hour)),
-		WeekStart: formatTime(time.Now().Add(-time.Hour)), MonthStart: formatTime(time.Now().Add(-time.Hour)),
-	})
-	if err != nil || usage.WorkspacesToday != 1 || usage.WorkspacesThisWeek != 1 {
-		t.Fatalf("usage = %+v (%v)", usage, err)
-	}
 }
 
 // DEV-191 P0: a package saved before identity resources keeps its direct

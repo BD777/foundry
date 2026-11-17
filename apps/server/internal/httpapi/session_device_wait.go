@@ -30,9 +30,14 @@ type mcpSessionBrief struct {
 	InputID              string                `json:"inputId,omitempty"`
 	DeliveredAttachments []deliveredAttachment `json:"deliveredAttachments,omitempty"`
 	WaitingForDevice     string                `json:"waitingForDevice,omitempty"`
+	// RunsOn states, in plain words, the execution model a new session
+	// started on and why: the workspace's execution default it named none
+	// and Foundry chose, its fallback, or a model the caller named outside
+	// the workspace's execution models. Absent when nothing needs saying.
+	RunsOn string `json:"runsOn,omitempty"`
 }
 
-func (s *Server) mcpSessionAnswer(ctx context.Context, session store.AgentSession, attachments []store.ChatAttachment) any {
+func (s *Server) mcpSessionAnswer(ctx context.Context, session store.AgentSession, attachments []store.ChatAttachment) mcpSessionBrief {
 	brief := mcpSessionBrief{
 		ID: session.ID, Title: session.Title, Status: session.Status, Source: session.Source, Error: session.Error,
 		Provider: session.Provider, Profile: session.ProfileLabel, Model: session.Model,

@@ -147,6 +147,10 @@ func (g *Gateway) Refuse(w http.ResponseWriter, r *http.Request, denial *gateway
 		return answer(http.StatusForbidden, 99991672, "Foundry gateway: the assistant has read-only access to this Feishu account; the person changes that in Assistant settings → Connectors")
 	case gateway.ReasonNeedsConfirmation:
 		return answer(http.StatusForbidden, 99991672, "Foundry gateway: this change needs the person's confirmation first ("+denial.Summary+"; proposal "+denial.ProposalID+")")
+	case gateway.ReasonWriteOutsideGrant:
+		return answer(http.StatusForbidden, 99991672, "Foundry gateway: "+denial.Message)
+	case gateway.ReasonTooLarge:
+		return answer(http.StatusRequestEntityTooLarge, 1, "Foundry gateway: "+denial.Message)
 	case gateway.ReasonUnavailable:
 		return answer(http.StatusServiceUnavailable, 1, "Foundry gateway: "+denial.Message)
 	case gateway.ReasonRateLimited:

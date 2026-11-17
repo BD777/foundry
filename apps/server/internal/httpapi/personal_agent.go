@@ -60,6 +60,8 @@ func (s *Server) handlePersonalAgentOverview(w http.ResponseWriter, r *http.Requ
 	// The card's count includes unprocessed messages (DEV-254): bring their
 	// items up to what the inboxes hold before the overview reads them.
 	s.reconcileInboxPending(r.Context(), person.ID, s.openInboxPendingKeys(r.Context(), person.ID))
+	// Connector writes waiting for the person count here too (DEV-265).
+	s.reconcileConnectorWritePending(r.Context(), person.ID, s.openConnectorWritePendingKeys(r.Context(), person.ID))
 	if r.PathValue("assistant") == "" {
 		overview, err := s.assistant.Overview(r.Context(), person.ID)
 		writeResult(w, overview, err)

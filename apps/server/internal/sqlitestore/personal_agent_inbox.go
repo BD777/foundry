@@ -43,6 +43,7 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 		`ALTER TABLE pa_inbox ADD COLUMN dismissed_at TEXT NOT NULL DEFAULT ''`,
 		// A web message keeps the files uploaded for it across retries.
 		`ALTER TABLE pa_inbox ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE pa_inbox ADD COLUMN annotations_json TEXT NOT NULL DEFAULT '[]'`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate personal agent inbox: %w", err)
@@ -51,16 +52,16 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 	return nil
 }
 
-const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone,dismissed_by,dismissed_at,attachments_json`
+const inboxColumns = `id,user_id,assistant_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone,dismissed_by,dismissed_at,attachments_json,annotations_json`
 
 func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEntry, error) {
 	var entry store.PersonalAgentInboxEntry
-	var origin, attachments string
+	var origin, attachments, annotations string
 	err := row.Scan(&entry.ID, &entry.UserID, &entry.AssistantID, &entry.Channel, &entry.MessageID, &entry.Text,
 		&entry.Status, &entry.Revision, &entry.InputID, &entry.SessionID, &entry.WaitingReason,
 		&entry.LeaseUntil, &entry.CreatedAt, &entry.UpdatedAt, &origin, &entry.RootID,
 		&entry.ResultStatus, &entry.ResultText, &entry.ResultError, &entry.ResultTruncated, &entry.NotificationPending, &entry.Timezone,
-		&entry.DismissedBy, &entry.DismissedAt, &attachments)
+		&entry.DismissedBy, &entry.DismissedAt, &attachments, &annotations)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = store.ErrNotFound
 	}
@@ -70,11 +71,15 @@ func scanInbox(row interface{ Scan(...any) error }) (store.PersonalAgentInboxEnt
 	if err == nil && attachments != "" && attachments != "[]" {
 		err = json.Unmarshal([]byte(attachments), &entry.Attachments)
 	}
+	if err == nil && annotations != "" && annotations != "[]" {
+		err = json.Unmarshal([]byte(annotations), &entry.Annotations)
+	}
 	return entry, err
 }
 
 func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) (store.PersonalAgentInboxEntry, error) {
 	entry.Attachments = store.NormalizeChatAttachments(entry.Attachments)
+	entry.Annotations = store.NormalizeSessionInputAnnotations(entry.Annotations)
 	if entry.ID == "" || entry.UserID == "" || entry.AssistantID == "" || entry.MessageID == "" ||
 		(entry.Text == "" && len(entry.Attachments) == 0) ||
 		!(slices.Contains([]string{"web", "feishu"}, entry.Channel) || strings.HasPrefix(entry.Channel, "mc:")) || !store.ValidSessionInputID(entry.InputID) {
@@ -86,7 +91,7 @@ func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.Perso
 			WHERE user_id=? AND channel=? AND message_id=?`, entry.UserID, entry.Channel, entry.MessageID))
 		if err == nil {
 			if existing.Text != entry.Text || existing.InputID != entry.InputID || !reflect.DeepEqual(existing.Origin, entry.Origin) ||
-				!slices.Equal(existing.Attachments, entry.Attachments) {
+				!slices.Equal(existing.Attachments, entry.Attachments) || !reflect.DeepEqual(existing.Annotations, entry.Annotations) {
 				return store.ErrIdempotencyConflict
 			}
 			saved = existing
@@ -111,10 +116,14 @@ func (s *Store) CapturePersonalAgentInbox(ctx context.Context, entry store.Perso
 		if err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		annotations, err := json.Marshal(entry.Annotations)
+		if err != nil {
+			return err
+		}
+		_, err = tx.conn().ExecContext(ctx, `INSERT INTO pa_inbox (`+inboxColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			entry.ID, entry.UserID, entry.AssistantID, entry.Channel, entry.MessageID, entry.Text, entry.Status, entry.Revision,
 			entry.InputID, entry.SessionID, entry.WaitingReason, entry.LeaseUntil, entry.CreatedAt, entry.UpdatedAt, string(origin),
-			entry.RootID, "", "", "", false, false, entry.Timezone, entry.DismissedBy, entry.DismissedAt, string(attachments))
+			entry.RootID, "", "", "", false, false, entry.Timezone, entry.DismissedBy, entry.DismissedAt, string(attachments), string(annotations))
 		saved = entry
 		return err
 	})
@@ -267,7 +276,7 @@ func (s *Store) RetryPersonalAgentInbox(ctx context.Context, assistantID, id str
 			}
 		}
 		next.UserID, next.AssistantID, next.Channel, next.Text, next.Origin, next.RootID = current.UserID, assistantID, current.Channel, current.Text, current.Origin, current.RootID
-		next.Attachments, next.Timezone = current.Attachments, current.Timezone
+		next.Attachments, next.Annotations, next.Timezone = current.Attachments, current.Annotations, current.Timezone
 		if current.SessionID != "" {
 			control, e := scanPARunControl(tx.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_run_controls WHERE assistant_id=? AND input_id=?`, assistantID, current.InputID))
 			if e != nil {

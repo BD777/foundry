@@ -32,17 +32,12 @@ func newSessionRetryService(server *Server) *sessionRetryService {
 
 func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSession, failure string) (bool, error) {
 	code := r.server.sessionAlertFailureCode(ctx, session)
-	if connection := r.server.hub.connectionFor(session.DeviceID); connection == nil ||
-		!connection.hasCapability(store.DaemonCapabilityDispatchRetry) {
+	if reason := modelpool.AccountUnusableReason(code, failure); reason != "" {
+		return r.accountUnusable(ctx, session, failure, code, reason)
+	}
+	if !r.deviceCanRetry(session) {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
 			store.SessionRetryExhausted, "the device's worker does not support dispatch retries", time.Now().UTC())
-		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
-		return false, nil
-	}
-	if modelpool.QuotaExhausted(code, failure) {
-		// Waiting does not bring an exhausted account's quota back.
-		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
-			store.SessionRetryExhausted, failure, time.Now().UTC())
 		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
 		return false, nil
 	}
@@ -53,13 +48,9 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 		return false, nil
 	}
 	r.server.hub.observeRateLimitedSession(ctx, session, failure)
-	current, found, err := r.server.store.GetSessionRetry(ctx, session.ID, session.Input.ID)
+	attempt, err := r.nextAttempt(ctx, session)
 	if err != nil {
 		return false, err
-	}
-	attempt := 1
-	if found && current.Status != store.SessionRetryResolved && current.Status != store.SessionRetryCanceled {
-		attempt = current.Attempt + 1
 	}
 	if attempt > maxSameModelRetries {
 		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
@@ -93,14 +84,77 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 		}
 	}
 	retry.NextAttemptAt = now.Add(delay)
-	blocked, err := r.server.store.ScheduleAgentSessionRetry(ctx, retry, reason)
+	if err := r.schedule(ctx, session, retry, reason, note); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// accountUnusable handles a failure the account cannot recover from by itself
+// (billing arrears, exhausted quota, a disabled account): its breaker opens at
+// once for a long cooldown. A group session moves to a same-runtime fallback
+// member and continues; with no fallback, or outside a group, it fails as it
+// always did.
+func (r *sessionRetryService) accountUnusable(ctx context.Context, session store.AgentSession, failure, code, reason string) (bool, error) {
+	r.server.hub.observeAccountUnusable(ctx, session, failure, reason)
+	if session.WorkerGroupID != "" && r.deviceCanRetry(session) {
+		fallback, current, onFallback, err := r.server.fallbackMember(ctx, session)
+		if err != nil {
+			log.Printf("session retry: fallback for unusable account of %s: %v", session.ID, err)
+		}
+		if onFallback {
+			return r.scheduleAccountFallback(ctx, session, failure, code, reason, fallback, current)
+		}
+	}
+	_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
+		store.SessionRetryExhausted, failure, time.Now().UTC())
+	pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
+	return false, nil
+}
+
+func (r *sessionRetryService) scheduleAccountFallback(ctx context.Context, session store.AgentSession, failure, code, cause string, fallback, current store.WorkerGroupMember) (bool, error) {
+	attempt, err := r.nextAttempt(ctx, session)
 	if err != nil {
 		return false, err
 	}
-	r.server.hub.sessions.Changed(ctx, sessions.Blocked, blocked)
-	event := retryEvent(session, attempt, maxSameModelRetries, retry.NextModel, "Automatic model retry")
-	if err := r.server.store.AppendAgentSessionEvent(ctx, event); err != nil {
+	if attempt > maxSameModelRetries {
+		_ = r.server.store.UpdateSessionRetry(ctx, session.ID, session.Input.ID,
+			store.SessionRetryExhausted, failure, time.Now().UTC())
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
+		return false, nil
+	}
+	now := time.Now().UTC()
+	delay := fallbackRetryDelay + retryJitter(1)
+	retry := store.SessionRetry{
+		SessionID: session.ID, InputID: session.Input.ID, Attempt: attempt,
+		MaxAttempts: maxSameModelRetries, PreviousModel: session.Model,
+		NextModel: fallback.Model, NextProfileID: fallback.ProviderID,
+		LastError: failure, NextAttemptAt: now.Add(delay),
+	}
+	reason := fmt.Sprintf("Account unusable (%s); automatic retry %d/%d on %s in %s",
+		cause, attempt, maxSameModelRetries, fallback.Model, delay.Round(time.Second))
+	note, err := r.server.failoverNote(ctx, session, fallback, current, now)
+	if err != nil {
 		return false, err
+	}
+	if err := r.schedule(ctx, session, retry, reason, note); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// schedule blocks the session on its retry, records the retry event and the
+// optional member note.
+func (r *sessionRetryService) schedule(ctx context.Context, session store.AgentSession, retry store.SessionRetry, reason, note string) error {
+	blocked, err := r.server.store.ScheduleAgentSessionRetry(ctx, retry, reason)
+	if err != nil {
+		return err
+	}
+	r.server.hub.sessions.Changed(ctx, sessions.Blocked, blocked)
+	event := retryEvent(session, retry.Attempt, maxSameModelRetries, retry.NextModel,
+		"Automatic model retry", retryCause(retry.LastError))
+	if err := r.server.store.AppendAgentSessionEvent(ctx, event); err != nil {
+		return err
 	}
 	r.server.hub.sessions.Recorded(ctx, session.WorkspaceID, event)
 	if note != "" {
@@ -108,7 +162,25 @@ func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSes
 			log.Printf("session retry: record failover note %s: %v", session.ID, err)
 		}
 	}
-	return true, nil
+	return nil
+}
+
+// nextAttempt is the number of the input's next automatic retry.
+func (r *sessionRetryService) nextAttempt(ctx context.Context, session store.AgentSession) (int, error) {
+	current, found, err := r.server.store.GetSessionRetry(ctx, session.ID, session.Input.ID)
+	if err != nil {
+		return 0, err
+	}
+	if found && current.Status != store.SessionRetryResolved && current.Status != store.SessionRetryCanceled {
+		return current.Attempt + 1, nil
+	}
+	return 1, nil
+}
+
+// deviceCanRetry reports whether the session's device can run automatic retries.
+func (r *sessionRetryService) deviceCanRetry(session store.AgentSession) bool {
+	connection := r.server.hub.connectionFor(session.DeviceID)
+	return connection != nil && connection.hasCapability(store.DaemonCapabilityDispatchRetry)
 }
 
 func (r *sessionRetryService) Started(ctx context.Context, session store.AgentSession) {
@@ -173,7 +245,7 @@ func (r *sessionRetryService) Pump(ctx context.Context, now time.Time) {
 		}
 		claimed.Input.Prompt = prompt
 		event := retryEvent(claimed, retry.Attempt, retry.MaxAttempts,
-			claimed.Model, "Automatic model retry started")
+			claimed.Model, "Automatic model retry started", retryCause(retry.LastError))
 		if err := r.server.store.AppendAgentSessionEvent(ctx, event); err == nil {
 			r.server.hub.sessions.Recorded(ctx, claimed.WorkspaceID, event)
 		}
@@ -292,11 +364,19 @@ func retryContinuationPrompt(locale string) string {
 	return "The previous attempt was interrupted by a model rate limit. Continue from where it stopped and do not repeat steps that already completed."
 }
 
-func retryEvent(session store.AgentSession, attempt, maxAttempts int, model, label string) store.AgentSessionEvent {
+// retryCause names what the retry recovers from, from the failure it follows.
+func retryCause(lastError string) string {
+	if modelpool.AccountUnusableReason("", lastError) != "" {
+		return "Account unusable"
+	}
+	return "Model rate limit"
+}
+
+func retryEvent(session store.AgentSession, attempt, maxAttempts int, model, label, cause string) store.AgentSessionEvent {
 	if model == "" {
 		model = "the same model"
 	}
-	detail := fmt.Sprintf("Model rate limit. Retrying with %s (attempt %d of %d).", model, attempt, maxAttempts)
+	detail := fmt.Sprintf("%s. Retrying with %s (attempt %d of %d).", cause, model, attempt, maxAttempts)
 	phase := "scheduled"
 	if strings.Contains(strings.ToLower(label), "started") {
 		phase = "started"

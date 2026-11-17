@@ -3,6 +3,7 @@ import {
   cloneElement,
   createContext,
   isValidElement,
+  useCallback,
   useContext,
   useRef,
   useState,
@@ -46,6 +47,7 @@ import {
   RecordsTable,
 } from "../ui/records-table";
 import { Tooltip } from "../ui/tooltip";
+import { AnnotationMirror } from "./answer-annotations";
 
 /*
  * What Streamdown's `components` prop replaces, and what it cannot.
@@ -420,6 +422,10 @@ function MarkdownTable({
   const translations = useMarkdownTranslations();
   const frame = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const answerTable = useCallback(
+    () => frame.current?.querySelector("table") ?? null,
+    [],
+  );
   const markdown = markdownTableSource(source, node);
   const actionsOn =
     typeof controls === "boolean" ? controls : controls.table !== false;
@@ -462,13 +468,15 @@ function MarkdownTable({
           size="viewport"
           title={translations.tableDialog}
         >
-          <RecordsTable
-            className="border border-line shadow-none"
-            scrollLabel={translations.tableDialog}
-            tall={false}
-          >
-            {children}
-          </RecordsTable>
+          <AnnotationMirror source={answerTable}>
+            <RecordsTable
+              className="border border-line shadow-none"
+              scrollLabel={translations.tableDialog}
+              tall={false}
+            >
+              {children}
+            </RecordsTable>
+          </AnnotationMirror>
         </Dialog>
       ) : null}
     </>

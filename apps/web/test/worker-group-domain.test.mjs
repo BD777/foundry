@@ -103,5 +103,33 @@ test("both locales define every worker group domain label", () => {
   const keys = (locale) =>
     keysOf(locale.workerGroups).filter((key) => key.startsWith("domain."));
   assert.deepEqual(keys(zh).sort(), keys(en).sort());
-  assert.equal(keys(en).length, 6);
+  assert.equal(keys(en).length, 10);
+});
+
+test("an account the server reports unusable names its cause in both locales", () => {
+  const causes = {
+    402: "workerGroups.domain.unusableArrears",
+    "quota exhausted": "workerGroups.domain.unusableQuota",
+    "account disabled": "workerGroups.domain.unusableDisabled",
+    "something new": "workerGroups.domain.unusableOther",
+  };
+  for (const [reason, key] of Object.entries(causes)) {
+    const status = domainStatus(domain({ state: "limited", reason }), NOW);
+    assert.equal(status.key, key);
+    assert.equal(status.values.reason, reason);
+    const shortKey = key.replace("workerGroups.domain.", "");
+    assert.ok(en.workerGroups.domain[shortKey], `en ${shortKey}`);
+    assert.ok(zh.workerGroups.domain[shortKey], `zh ${shortKey}`);
+    assert.notEqual(
+      zh.workerGroups.domain[shortKey],
+      en.workerGroups.domain[shortKey],
+    );
+  }
+});
+
+test("a probing account with a reason still shows the unusable cause", () => {
+  assert.equal(
+    domainStatus(domain({ state: "probing", reason: "402" }), NOW).key,
+    "workerGroups.domain.unusableArrears",
+  );
 });

@@ -335,6 +335,21 @@ type ConnectorEventsPoll struct {
 	Gap *ConnectorEventsGap `json:"gap,omitempty"`
 }
 
+// ConnectorEventsRead defines model for ConnectorEventsRead.
+type ConnectorEventsRead struct {
+	Method string `json:"method,omitempty"`
+
+	// Path The read route's path as the directory lists it, parameters included.
+	Path string `json:"path"`
+
+	// Args Route parameter name to the fact it is filled from.
+	Args jsonempty.Map[string] `json:"args"`
+
+	// Items JSON pointer in the answer to a list of objects; fields are read from each.
+	Items  string                              `json:"items,omitempty"`
+	Fields jsonempty.Map[ConnectorEventsValue] `json:"fields"`
+}
+
 // ConnectorEventsReply How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.
 type ConnectorEventsReply struct {
 	Kinds map[string]string `json:"kinds,omitempty"`
@@ -356,6 +371,9 @@ type ConnectorEventsSpec struct {
 
 	// Ack How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server.
 	Ack *ConnectorEventsAck `json:"ack,omitempty"`
+
+	// Reads Named reads of the source, each a catalogued read route whose answer supplies facts the feed's items do not carry (a conversation's readable name, a message's text and card title, a thread's replies). path names that route; args fill each of its parameters from a fact (conversation.id, message.id or thread.id); fields name values in the answer, and items points at a list of answers to read the same fields from.
+	Reads map[string]ConnectorEventsRead `json:"reads,omitempty"`
 }
 
 // ConnectorEventsValue One envelope field, the value at pointer, or template with `{/pointer}` parts. map translates the value (otherwise for values map does not name); unit reads a time (ms or s since the epoch, or rfc3339).
@@ -744,6 +762,22 @@ type ConnectorServerHeldInstancesView struct {
 	Devices jsonempty.List[ConnectorServerHeldDevice] `json:"devices"`
 }
 
+// ConnectorServerHeldLabel Names one object type through a catalogued read route, so the person reads a name where an id alone would mean nothing. A resolver's route and pointer validate; a failed lookup leaves the object unnamed.
+type ConnectorServerHeldLabel struct {
+	// Object The object type to name, e.g. conversation.
+	Object string `json:"object"`
+	Method string `json:"method"`
+
+	// Path The read route's path as the directory lists it, parameters included.
+	Path string `json:"path"`
+
+	// Pointer JSON pointer in a successful response to the object's name.
+	Pointer string `json:"pointer"`
+
+	// TTLSeconds How long a resolved name is cached, 60 to 3600; missing means 600.
+	TTLSeconds int `json:"ttlSeconds,omitempty"`
+}
+
 // ConnectorServerHeldNetwork defines model for ConnectorServerHeldNetwork.
 type ConnectorServerHeldNetwork struct {
 	// Holdings The network paths instances of this connector may choose.
@@ -807,12 +841,34 @@ type ConnectorServerHeldProbeResult struct {
 // ConnectorServerHeldProbeValues defines model for ConnectorServerHeldProbeValues.
 type ConnectorServerHeldProbeValues map[string]string
 
+// ConnectorServerHeldResolver Maps one object type onto another through a catalogued read route. Only a resolver whose route and pointer validate is used; an unresolvable write stays outside every grant.
+type ConnectorServerHeldResolver struct {
+	// From The object type the write names, e.g. message.
+	From string `json:"from"`
+
+	// To The grant object type to resolve to, e.g. conversation.
+	To     string `json:"to"`
+	Method string `json:"method"`
+
+	// Path The read route's path as the directory lists it, parameters included.
+	Path string `json:"path"`
+
+	// Pointer JSON pointer in a successful response to the resolved object's id.
+	Pointer string `json:"pointer"`
+
+	// TTLSeconds How long a resolved value is cached, 60 to 3600; missing means 600.
+	TTLSeconds int `json:"ttlSeconds,omitempty"`
+}
+
 // ConnectorServerHeldRoute One route from a server-held extension's validated probe.
 type ConnectorServerHeldRoute struct {
 	Method string `json:"method"`
 	Path   string `json:"path"`
 	Access string `json:"access"`
 	Domain string `json:"domain,omitempty"`
+
+	// Summary The route's human summary, when the source serves one.
+	Summary string `json:"summary,omitempty"`
 }
 
 // ConnectorServerHeldRoutesExtract defines model for ConnectorServerHeldRoutesExtract.
@@ -831,6 +887,9 @@ type ConnectorServerHeldRoutesExtract struct {
 
 	// Domain Optional JSON pointer inside each route to its resource domain.
 	Domain string `json:"domain,omitempty"`
+
+	// Summary Optional JSON pointer inside each route to a human summary of what it does.
+	Summary string `json:"summary,omitempty"`
 }
 
 // ConnectorServerHeldSession defines model for ConnectorServerHeldSession.
@@ -857,6 +916,12 @@ type ConnectorServerHeldSpec struct {
 
 	// Writes Write responses that name the message they created, so a message channel can tell an assistant's own writes from people's messages. Each entry names a catalogued write route (method and path exactly as the instance's route directory lists it) and a JSON pointer into a successful response; Foundry records the value with the request's session and account.
 	Writes []ConnectorServerHeldWrite `json:"writes,omitempty"`
+
+	// Resolvers Read-only routes that resolve one object a write touches into the object a session's grant names, e.g. a message id into its conversation. Foundry calls the route through the instance and reads the pointer; results are cached per account.
+	Resolvers []ConnectorServerHeldResolver `json:"resolvers,omitempty"`
+
+	// Labels Read-only routes that name an object for the person, e.g. a conversation id into its name. Foundry resolves them when a proposal is created and stores the name with it, so the person's card never calls out. Results are cached per account.
+	Labels []ConnectorServerHeldLabel `json:"labels,omitempty"`
 }
 
 // ConnectorServerHeldStep One group of field ids in a server-held instance form.
@@ -877,7 +942,7 @@ type ConnectorServerHeldUpstream struct {
 	TimeoutSeconds         int               `json:"timeoutSeconds,omitempty"`
 }
 
-// ConnectorServerHeldWrite defines model for ConnectorServerHeldWrite.
+// ConnectorServerHeldWrite One write route's declaration. createdMessageId and footer keep their meaning. objects names each grant object the write touches, so a session holding grants may write inside them; a route without them touches nothing a grant can hold. auxiliary marks a route that only prepares another write (an upload) and is allowed with any grant for the account.
 type ConnectorServerHeldWrite struct {
 	Method string `json:"method"`
 
@@ -885,10 +950,19 @@ type ConnectorServerHeldWrite struct {
 	Path string `json:"path"`
 
 	// CreatedMessageID JSON pointer to the created message's id in the response.
-	CreatedMessageID string `json:"createdMessageId"`
+	CreatedMessageID string `json:"createdMessageId,omitempty"`
 
 	// Footer The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it.
 	Footer *ConnectorServerHeldWriteFooter `json:"footer,omitempty"`
+
+	// Objects The grant objects the write touches. from is a named path parameter (":feedId") or a JSON pointer into the request body; each says the value there is an array of ids.
+	Objects []ConnectorServerHeldWriteObject `json:"objects,omitempty"`
+
+	// Auxiliary The route only prepares another write (an upload nobody else sees yet); it passes with any grant for the account.
+	Auxiliary bool `json:"auxiliary,omitempty"`
+
+	// Summary What the write does, in the person's words, e.g. 新建云文档. A declaration may carry only a summary; it names the operation and grants nothing, so the write still needs the person's confirmation.
+	Summary string `json:"summary,omitempty"`
 }
 
 // ConnectorServerHeldWriteFooter The write carries a message's text, so a message channel may append its AI footer to that field for the assistant's own writes. Only routes marked so are IM messages; writes to documents, files or anything else never get it.
@@ -920,6 +994,18 @@ type ConnectorServerHeldWriteFooterFormat struct {
 
 // ConnectorServerHeldWriteFooterFormatEscape How to escape literal text before it is sent as markdown.
 type ConnectorServerHeldWriteFooterFormatEscape string
+
+// ConnectorServerHeldWriteObject defines model for ConnectorServerHeldWriteObject.
+type ConnectorServerHeldWriteObject struct {
+	// Type The grant object's type, e.g. conversation or message.
+	Type string `json:"type"`
+
+	// From A named path parameter (":feedId") or a JSON pointer into the request body.
+	From string `json:"from"`
+
+	// Each The value at from is an array of ids rather than one id.
+	Each bool `json:"each,omitempty"`
+}
 
 // ConnectorSetup ConnectorSetup is how to set an extension connector up on another device.
 type ConnectorSetup struct {

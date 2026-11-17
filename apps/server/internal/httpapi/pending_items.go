@@ -516,6 +516,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		if s.reconcileInboxPending(ctx, user, inboxOpenKeys(items)) {
 			changed = true
 		}
+		if s.reconcileConnectorWritePending(ctx, user, connectorWriteOpenKeys(items)) {
+			changed = true
+		}
 		if changed {
 			items, err = s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
 		}

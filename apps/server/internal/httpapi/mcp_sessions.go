@@ -270,7 +270,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		reportBack := mcpArgBool(args, "reportBack")
 		input.ReportBack = &reportBack
 	}
-	note, err := s.resolveNewSession(ctx, actor, &input, true)
+	start, err := s.resolveNewSession(ctx, actor, &input, true)
 	if err != nil {
 		return "", err
 	}
@@ -284,8 +284,10 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.noteMemberRouting(ctx, session, note)
-	return encodeJSON(s.mcpSessionAnswer(ctx, session, handed.list()))
+	s.noteMemberRouting(ctx, session, start.note)
+	answer := s.mcpSessionAnswer(ctx, session, handed.list())
+	answer.RunsOn = start.runsOn
+	return encodeJSON(answer)
 }
 
 // messageTarget is the session send_message may write to: one the caller

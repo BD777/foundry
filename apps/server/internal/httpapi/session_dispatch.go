@@ -150,6 +150,12 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		issue = &loaded
 		userFiles = issueUserFiles(loaded, c.actor)
 	}
+	// A session in a message channel's lineage (a helper it started) keeps
+	// its workspace writable, but not the person's own files and sign-ins
+	// (DEV-265). The channel's own session is already read-only.
+	if userFiles == "" && session.Role != store.AgentSessionRoleIssueExecution && channelLineage(ctx, c.hub.store, session) {
+		userFiles = "hidden"
+	}
 	// A digest summary reads its prompt only: without a token it has no
 	// Foundry tools, and it acts as nobody elsewhere (workspace_digests.go).
 	if session.Source == store.SessionSourceDigest {
@@ -208,6 +214,29 @@ func (c *daemonConnection) clearDispatchedSession(sessionID string) {
 	c.dispatchedMu.Lock()
 	delete(c.dispatchedSessions, sessionID)
 	c.dispatchedMu.Unlock()
+}
+
+// channelLineage reports whether session came from a message channel,
+// directly or through a session it started (DEV-265), by the same bounded
+// parent walk permission uses.
+func channelLineage(ctx context.Context, st interface {
+	GetAgentSessionSummary(context.Context, string) (store.AgentSession, error)
+}, session store.AgentSession) bool {
+	current := session
+	for range 8 {
+		if current.Input.ChannelOrigin != nil {
+			return true
+		}
+		if current.ParentSessionID == "" {
+			return false
+		}
+		parent, err := st.GetAgentSessionSummary(ctx, current.ParentSessionID)
+		if err != nil {
+			return false
+		}
+		current = parent
+	}
+	return false
 }
 
 // issueUserFiles decides whether an Issue may use the device owner's own

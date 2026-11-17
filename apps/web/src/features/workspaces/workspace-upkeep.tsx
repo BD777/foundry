@@ -1,34 +1,60 @@
 import { toast } from "../../components/ui/toast";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ContextPatchReply,
+  MaintenancePatch,
   PersonalAgentContextPatch,
   PersonalAgentMaintenance,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import type { ContextPatchReply } from "@bd777/foundry-protocol";
 import {
   actOnWorkspaceUpkeep,
   applyWorkspaceUpkeepPatch,
   listWorkspaceUpkeep,
   previewWorkspaceUpkeepPatch,
 } from "../../api";
-import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
-import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
+import { Button } from "../../components/ui/button";
+import { Chip } from "../../components/ui/chip";
+import { ClampedText } from "../../components/ui/clamped-text";
+import { Dialog } from "../../components/ui/dialog";
 import { DividedList } from "../../components/ui/divided-list";
-import { ButtonRow } from "../../components/ui/button-row";
 import { FieldHint } from "../../components/ui/field";
+import { FileDiff } from "../../components/ui/file-diff";
+import { LoadingState, Spinner } from "../../components/ui/loading";
 import { Panel, PanelHeader } from "../../components/ui/panel";
+import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
+import { Subheading } from "../../components/ui/subheading";
+import { cn } from "../../lib/cn";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
+import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { workspaceDenial } from "../../lib/workspace-access";
+import {
+  firstSentence,
+  sourceRef,
+  summaryBody,
+} from "./workspace-upkeep-model";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  FilePenLine,
+  GitMerge,
+  Hourglass,
+  RotateCcw,
+  X,
+} from "lucide-react";
 
 const upkeepPanel = "grid min-w-0 gap-4 p-5.5 max-[680px]:p-4";
-const endedStates = ["complete", "dismissed", "superseded"];
 /** Accepted changes no longer wait for the person; a conflict still does. */
 const decidedStates = ["applying", "applied"];
+/** Reviews shown before 「查看全部」. */
+const shownReviews = 3;
 
 /** A suggested change the person has not decided yet. */
 function undecided(
@@ -46,12 +72,52 @@ function undecided(
   }, 0);
 }
 
+/** The mark that says what happened: shape and tone, plus the status in words. */
+function StatusMark({ status }: { status: string }) {
+  if (status === "running" || status === "starting")
+    return (
+      <span className="mt-[3px] flex h-4 w-4 flex-none items-center justify-center">
+        <Spinner size={14} />
+      </span>
+    );
+  const { icon: Icon, tone } = {
+    pending: { icon: Hourglass, tone: "text-warning-text" },
+    waiting: { icon: Hourglass, tone: "text-warning-text" },
+    review: { icon: FilePenLine, tone: "text-brand-dark" },
+    failed: { icon: CircleAlert, tone: "text-error-text" },
+    conflict: { icon: CircleAlert, tone: "text-error-text" },
+    complete: { icon: CircleCheck, tone: "text-success-text" },
+    applied: { icon: CircleCheck, tone: "text-success-text" },
+    dismissed: { icon: CircleX, tone: "text-ink-faint" },
+    superseded: { icon: GitMerge, tone: "text-ink-faint" },
+  }[status] ?? { icon: FilePenLine, tone: "text-ink-faint" };
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn("mt-[3px] size-4 flex-none", tone)}
+      strokeWidth={1.8}
+    />
+  );
+}
+
+interface PatchTarget {
+  jobId: string;
+  revision: number;
+  index: number;
+  path: string;
+  reason: string;
+  content: string;
+  baseHash: string;
+}
+
 /**
  * 「项目维护」: Foundry's reviews of this project's instruction files and the
- * file changes they suggest, on the project's own page (DEV-256). It is the
- * project's, not any assistant's, so it is shown to its owner whether or not
- * an assistant is running. Applying still waits for no active conversation in
- * the project, which the server enforces.
+ * file changes they suggest, on the project's own page (DEV-256, DEV-263). It
+ * is the project's, not any assistant's, so it is shown to its owner whether
+ * or not an assistant is running. A review is one collapsed row; its prose,
+ * findings and suggested changes open under it, and a suggested change opens
+ * its diff before anything is written. Applying still waits for no active
+ * conversation in the project, which the server enforces.
  */
 export function WorkspaceUpkeep({
   workspace,
@@ -65,12 +131,14 @@ export function WorkspaceUpkeep({
   const [patches, setPatches] = useState<PersonalAgentContextPatch[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [preview, setPreview] = useState<{
-    jobId: string;
-    revision: number;
-    index: number;
-    source: ContextPatchReply;
-  } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  /** Undefined until the person opens or closes a row; the newest open review shows until then. */
+  const [chosenOpen, setChosenOpen] = useState<string | null>();
+  const [target, setTarget] = useState<PatchTarget>();
+  const [source, setSource] = useState<ContextPatchReply>();
+  const [previewError, setPreviewError] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState("");
   const read = useCallback(async () => {
     const upkeep = await listWorkspaceUpkeep(workspace.id);
     setJobs(upkeep.jobs);
@@ -177,186 +245,303 @@ export function WorkspaceUpkeep({
       ? tm(`maintenance.reasons.${value}` as never)
       : value;
   }
+  async function previewTarget(next: PatchTarget) {
+    setTarget(next);
+    setSource(undefined);
+    setPreviewError("");
+    setApplyError("");
+    setBusy(`${next.jobId}:${next.index}`);
+    try {
+      setSource(
+        await previewWorkspaceUpkeepPatch(
+          workspace.id,
+          next.jobId,
+          next.revision,
+          next.index,
+        ),
+      );
+    } catch (e) {
+      setPreviewError(serverErrorText(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  function openPatch(
+    job: PersonalAgentMaintenance,
+    patch: MaintenancePatch,
+    index: number,
+  ) {
+    void previewTarget({
+      jobId: job.id,
+      revision: job.revision,
+      index,
+      path: patch.path,
+      reason: patch.reason,
+      content: patch.content,
+      baseHash: patch.baseHash,
+    });
+  }
+  function closePatch() {
+    setTarget(undefined);
+    setSource(undefined);
+    setPreviewError("");
+    setApplyError("");
+  }
+  async function applyPatch() {
+    if (!target || !source) return;
+    setApplying(true);
+    setApplyError("");
+    try {
+      await applyWorkspaceUpkeepPatch(
+        workspace.id,
+        target.jobId,
+        target.revision,
+        target.index,
+        source.hash,
+      );
+      closePatch();
+      await read();
+    } catch (e) {
+      setApplyError(serverErrorText(e));
+    } finally {
+      setApplying(false);
+    }
+  }
   const waiting = jobs.reduce(
     (count, job) => count + undecided(job, patches),
     0,
   );
-  const current = jobs.filter((job) => !endedStates.includes(job.status));
-  const ended = jobs.filter((job) => endedStates.includes(job.status));
-  function jobRow(job: PersonalAgentMaintenance) {
+  const ordered = [...jobs].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  );
+  const newestOpen =
+    ordered.find(
+      (job) => job.status === "review" && undecided(job, patches) > 0,
+    )?.id ?? null;
+  const openId = chosenOpen === undefined ? newestOpen : chosenOpen;
+  const visible = showAll ? ordered : ordered.slice(0, shownReviews);
+  const hidden = ordered.length - visible.length;
+  function rowTitle(job: PersonalAgentMaintenance) {
     return (
-      <li key={job.id} className="grid min-w-0 gap-1.5 wrap-anywhere">
-        <p>
-          {status(job.status)}
-          {job.reason ? ` · ${reason(job.reason)}` : ""}
-        </p>
-        {job.result?.summary ? <p>{job.result.summary}</p> : null}
-        {job.result?.findings.length ? (
-          <ul className="min-w-0 wrap-anywhere">
-            {job.result.findings.map((finding, index) => (
-              <li key={index}>
-                <p>{finding.summary}</p>
-                <FieldHint>{finding.sourceRefs.join(" · ")}</FieldHint>
-              </li>
-            ))}
-          </ul>
+      (job.status !== "failed" && job.result?.summary
+        ? firstSentence(job.result.summary)
+        : "") || status(job.status)
+    );
+  }
+  function rowMeta(job: PersonalAgentMaintenance): ReactNode {
+    const when = (
+      <time
+        className="tabular-nums"
+        dateTime={job.createdAt}
+        title={fullWhen(job.createdAt)}
+      >
+        {relativeWhen(job.createdAt)}
+      </time>
+    );
+    if (!job.result) {
+      return (
+        <>
+          {when}
+          <span aria-hidden="true"> · </span>
+          {job.reason ? reason(job.reason) : status(job.status)}
+        </>
+      );
+    }
+    return (
+      <>
+        {when}
+        {job.result.patches.length ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            {t("upkeep.suggestion", { count: job.result.patches.length })}
+          </>
         ) : null}
-        <ButtonRow>
-          {job.sessionId ? (
+        <span aria-hidden="true"> · </span>
+        {status(job.status)}
+      </>
+    );
+  }
+  function menuFor(job: PersonalAgentMaintenance): RowMenuItem[] {
+    const items: RowMenuItem[] = [];
+    if (job.sessionId)
+      items.push({
+        key: "open",
+        label: tm("maintenance.openRun"),
+        icon: <ArrowUpRight aria-hidden="true" size={15} />,
+        onSelect: () => navigateToChat(job.sessionId!, job.workspaceId),
+      });
+    if (["failed", "waiting"].includes(job.status) && job.attempt < 2)
+      items.push({
+        key: "retry",
+        label: tm("maintenance.retry"),
+        icon: <RotateCcw aria-hidden="true" size={15} />,
+        onSelect: () =>
+          void perform(job.id, () =>
+            actOnWorkspaceUpkeep(workspace.id, job.id, job.revision, "retry"),
+          ),
+      });
+    if (
+      ["review", "failed", "pending", "waiting"].includes(job.status) &&
+      (!job.inputId || ["review", "failed"].includes(job.status))
+    )
+      items.push({
+        key: "dismiss",
+        label: tm("maintenance.dismiss"),
+        icon: <X aria-hidden="true" size={15} />,
+        onSelect: () =>
+          void perform(job.id, () =>
+            actOnWorkspaceUpkeep(workspace.id, job.id, job.revision, "dismiss"),
+          ),
+      });
+    return items;
+  }
+  function jobRow(job: PersonalAgentMaintenance) {
+    const expandable =
+      Boolean(job.result) &&
+      !["failed", "waiting", "pending", "starting", "running"].includes(
+        job.status,
+      );
+    const open = expandable && openId === job.id;
+    const contentId = `upkeep-review-${job.id}`;
+    const body = job.result ? summaryBody(job.result.summary) : "";
+    return (
+      <li className="fdy-upkeep-row grid min-w-0 gap-2" key={job.id}>
+        <div className="flex min-w-0 items-start gap-2.5">
+          <StatusMark status={job.status} />
+          {expandable ? (
             <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => navigateToChat(job.sessionId!, job.workspaceId)}
+              aria-controls={contentId}
+              aria-expanded={open}
+              className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start justify-start gap-x-2 gap-y-0.5 rounded-md px-1 py-0 text-left hover:bg-hover-2 active:scale-100"
+              onClick={() => setChosenOpen(open ? null : job.id)}
+              variant="bare"
             >
-              {tm("maintenance.openRun")}
+              <span className="col-start-1 w-full min-w-0 truncate text-sm leading-[1.45] font-semibold text-ink">
+                {rowTitle(job)}
+              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "col-start-2 row-span-2 row-start-1 mt-0.5 size-4 flex-none text-ink-faint transition-transform duration-150",
+                  open && "rotate-180",
+                )}
+              />
+              <span className="col-start-1 row-start-2 flex w-full min-w-0 flex-wrap items-center gap-x-1 text-xs leading-[1.4] text-ink-faint">
+                {rowMeta(job)}
+              </span>
             </Button>
-          ) : null}
-          {["failed", "waiting"].includes(job.status) && job.attempt < 2 ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!!busy}
-              onClick={() =>
-                void perform(job.id, () =>
-                  actOnWorkspaceUpkeep(
-                    workspace.id,
-                    job.id,
-                    job.revision,
-                    "retry",
-                  ),
-                )
-              }
-            >
-              {tm("maintenance.retry")}
-            </Button>
-          ) : null}
-          {["review", "failed", "pending", "waiting"].includes(job.status) &&
-          (!job.inputId || ["review", "failed"].includes(job.status)) ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!!busy}
-              onClick={() =>
-                void perform(job.id, () =>
-                  actOnWorkspaceUpkeep(
-                    workspace.id,
-                    job.id,
-                    job.revision,
-                    "dismiss",
-                  ),
-                )
-              }
-            >
-              {tm("maintenance.dismiss")}
-            </Button>
-          ) : null}
-        </ButtonRow>
-        {job.status === "review"
-          ? job.result?.patches.map((patch, index) => {
-              const operation = patches.find(
-                (candidate) =>
-                  candidate.jobId === job.id && candidate.index === index,
-              );
-              const shown =
-                preview?.jobId === job.id &&
-                preview.index === index &&
-                preview.revision === job.revision
-                  ? preview.source
-                  : null;
-              const baseHash = patch.baseHash || "missing";
-              return (
-                <div
-                  key={patch.path}
-                  className="grid min-w-0 justify-items-start gap-1.5 border-t border-line-soft pt-2"
-                >
-                  <p>
-                    {patch.path} · {patch.reason}
-                  </p>
-                  {operation ? (
-                    <FieldHint>
-                      {status(operation.status)}
-                      {operation.reason ? ` · ${reason(operation.reason)}` : ""}
-                    </FieldHint>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!!busy}
-                    onClick={() =>
-                      void perform(`${job.id}:${index}`, async () => {
-                        setPreview(null);
-                        const source = await previewWorkspaceUpkeepPatch(
-                          workspace.id,
-                          job.id,
-                          job.revision,
-                          index,
-                        );
-                        setPreview({
-                          jobId: job.id,
-                          revision: job.revision,
-                          index,
-                          source,
-                        });
-                      })
-                    }
-                  >
-                    {tm("maintenance.preview")}
-                  </Button>
-                  {shown ? (
-                    <>
-                      <FieldHint>
-                        {baseHash === "missing"
-                          ? tm("maintenance.newFile")
-                          : tm("maintenance.modifiedFile")}
-                      </FieldHint>
-                      <FieldHint>{tm("maintenance.current")}</FieldHint>
-                      <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
-                        {shown.hash === "missing"
-                          ? tm("maintenance.missing")
-                          : shown.content}
-                      </pre>
-                      <FieldHint>{tm("maintenance.proposed")}</FieldHint>
-                      <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
-                        {patch.content}
-                      </pre>
-                      {shown.hash !== baseHash ? (
-                        <Alert tone="warning" title={tm("maintenance.stale")} />
-                      ) : (
-                        <Button
-                          size="sm"
-                          disabled={!!busy || !!operation}
-                          onClick={() =>
-                            void perform(`${job.id}:${index}`, () =>
-                              applyWorkspaceUpkeepPatch(
-                                workspace.id,
-                                job.id,
-                                job.revision,
-                                index,
-                                shown.hash,
-                              ),
-                            )
-                          }
-                        >
-                          {tm("maintenance.apply")}
-                        </Button>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-              );
-            })
-          : null}
+          ) : (
+            <div className="grid min-w-0 flex-1 justify-items-start gap-0.5 px-1 py-0">
+              <span className="w-full min-w-0 truncate text-sm leading-[1.45] font-semibold text-ink">
+                {rowTitle(job)}
+              </span>
+              <span className="flex w-full min-w-0 flex-wrap items-center gap-x-1 text-xs leading-[1.4] text-ink-faint">
+                {rowMeta(job)}
+              </span>
+            </div>
+          )}
+          <RowMenu
+            disabled={Boolean(busy)}
+            items={menuFor(job)}
+            label={t("upkeep.actionsFor", { title: rowTitle(job) })}
+          />
+        </div>
+        {open && job.result ? (
+          <div
+            className="grid min-w-0 gap-3 ps-[30px] max-[680px]:ps-[26px]"
+            id={contentId}
+          >
+            {body ? <ClampedText>{body}</ClampedText> : null}
+            {job.result.findings.length ? (
+              <section className="grid min-w-0 gap-1.5">
+                <Subheading as="h4" size="caption">
+                  {t("upkeep.findings")}
+                </Subheading>
+                <ul className="grid min-w-0 list-none gap-2.5 p-0">
+                  {job.result.findings.map((finding, index) => (
+                    <li className="grid min-w-0 gap-1" key={index}>
+                      <ClampedText clamp={2}>{finding.summary}</ClampedText>
+                      {finding.sourceRefs.length ? (
+                        <span className="flex min-w-0 flex-wrap gap-1">
+                          {finding.sourceRefs.map((ref) => {
+                            const { file, section } = sourceRef(ref);
+                            return (
+                              <Chip key={ref}>
+                                {section ? `${file} › ${section}` : file}
+                              </Chip>
+                            );
+                          })}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {job.status === "review" && job.result.patches.length ? (
+              <section className="grid min-w-0 gap-1.5">
+                <Subheading as="h4" size="caption">
+                  {t("upkeep.suggestions")}
+                </Subheading>
+                <ul className="grid min-w-0 list-none gap-2.5 p-0">
+                  {job.result.patches.map((patch, index) => {
+                    const operation = patches.find(
+                      (candidate) =>
+                        candidate.jobId === job.id && candidate.index === index,
+                    );
+                    return (
+                      <li
+                        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1"
+                        key={patch.path}
+                      >
+                        <div className="grid min-w-0 gap-0.5">
+                          <span
+                            className="min-w-0 truncate font-mono text-sm text-ink"
+                            title={patch.path}
+                          >
+                            {patch.path}
+                          </span>
+                          <ClampedText clamp={2} size="xs">
+                            {patch.reason}
+                          </ClampedText>
+                          {operation ? (
+                            <FieldHint className="m-0">
+                              {status(operation.status)}
+                              {operation.reason
+                                ? ` · ${reason(operation.reason)}`
+                                : ""}
+                            </FieldHint>
+                          ) : null}
+                        </div>
+                        {operation ? null : (
+                          <Button
+                            disabled={Boolean(busy)}
+                            onClick={() => void openPatch(job, patch, index)}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            {t("upkeep.reviewChange")}
+                          </Button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </li>
     );
   }
+  const baseHash = target ? target.baseHash || "missing" : "";
+  const stale = Boolean(source && source.hash !== baseHash);
   return (
     <Panel className={upkeepPanel}>
       <PanelHeader>
         <div>
           <h2>{t("upkeep.title")}</h2>
-          <FieldHint className="mt-1 mb-0 leading-[1.6]">
-            {t("upkeep.description")}
-          </FieldHint>
+          <p>{t("upkeep.description")}</p>
         </div>
         {waiting > 0 ? (
           <Badge tone="warn">{t("upkeep.waiting", { count: waiting })}</Badge>
@@ -365,17 +550,96 @@ export function WorkspaceUpkeep({
       {error ? <Alert tone="error" size="compact" title={error} /> : null}
       {!jobs.length ? (
         <FieldHint className="m-0 leading-[1.6]">{t("upkeep.empty")}</FieldHint>
+      ) : (
+        <DividedList density="cozy">{visible.map(jobRow)}</DividedList>
+      )}
+      {hidden > 0 || showAll ? (
+        <Button
+          aria-expanded={showAll}
+          className="justify-self-start"
+          onClick={() => setShowAll((value) => !value)}
+          size="sm"
+          variant="ghost"
+        >
+          {showAll
+            ? t("upkeep.showLess")
+            : t("upkeep.showAll", { count: ordered.length })}
+        </Button>
       ) : null}
-      {current.length ? (
-        <DividedList density="cozy">{current.map(jobRow)}</DividedList>
-      ) : null}
-      {ended.length ? (
-        <Disclosure>
-          <DisclosureSummary>
-            {t("upkeep.ended", { count: ended.length })}
-          </DisclosureSummary>
-          <DividedList density="cozy">{ended.map(jobRow)}</DividedList>
-        </Disclosure>
+      {target ? (
+        <Dialog
+          busy={applying}
+          description={target.reason}
+          footer={
+            <>
+              <Button
+                disabled={applying}
+                onClick={closePatch}
+                variant="secondary"
+              >
+                {t("upkeep.notNow")}
+              </Button>
+              {source && !stale ? (
+                <Button
+                  busy={applying}
+                  onClick={() => void applyPatch()}
+                  variant="primary"
+                >
+                  {t("upkeep.apply")}
+                </Button>
+              ) : null}
+            </>
+          }
+          onClose={closePatch}
+          size="wide"
+          title={target.path}
+        >
+          {stale ? (
+            <Alert tone="warning" title={tm("maintenance.stale")} />
+          ) : null}
+          {source && !stale ? (
+            <FieldHint className="m-0">
+              {source.hash === "missing"
+                ? tm("maintenance.newFile")
+                : tm("maintenance.modifiedFile")}
+            </FieldHint>
+          ) : null}
+          {previewError ? (
+            <Alert
+              actions={
+                <Button
+                  onClick={() => void previewTarget(target)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {tm("maintenance.retry")}
+                </Button>
+              }
+              size="compact"
+              title={t("upkeep.previewFailed")}
+              tone="error"
+            >
+              {previewError}
+            </Alert>
+          ) : !source ? (
+            <LoadingState label={t("upkeep.loadingChange")} />
+          ) : (
+            <div className="min-w-0 overflow-x-auto">
+              <div className="min-w-[480px]">
+                <FileDiff
+                  after={target.content}
+                  before={
+                    source.hash === "missing" ? "" : (source.content ?? "")
+                  }
+                  errorCopy="file"
+                />
+              </div>
+            </div>
+          )}
+          {applyError ? (
+            <Alert size="compact" title={applyError} tone="error" />
+          ) : null}
+        </Dialog>
       ) : null}
     </Panel>
   );

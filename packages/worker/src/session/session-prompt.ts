@@ -2,10 +2,12 @@
 // and profile/utility helpers, so both the runner and the launch-policy layer
 // can import it without a cycle.
 
-import type {
-  AgentSession,
-  ChatAttachment,
-  SessionInput,
+import {
+  annotatedMessageText,
+  type AgentSession,
+  type ChatAttachment,
+  type SessionInput,
+  type SessionInputAnnotation,
 } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "../harness/profiles.js";
 import { isPromptOnlySession, isUtilitySession } from "./session-roles.js";
@@ -24,7 +26,12 @@ export function sessionPrompt(
 ): string {
   const input = currentInput(session);
   if (isPromptOnlySession(session))
-    return userMessageText(input.prompt, [], input.sentBySessionId);
+    return userMessageText(
+      input.prompt,
+      [],
+      input.sentBySessionId,
+      input.annotations,
+    );
   const importedContext = !isUtilitySession(session)
     ? input.importedContext?.trim()
     : "";
@@ -33,8 +40,18 @@ export function sessionPrompt(
       ? `Context imported from the same Foundry chat before this turn:\n\n${importedContext}`
       : "",
     isUtilitySession(session)
-      ? userMessageText(input.prompt, [], input.sentBySessionId)
-      : userMessageText(input.prompt, input.attachments, input.sentBySessionId),
+      ? userMessageText(
+          input.prompt,
+          [],
+          input.sentBySessionId,
+          input.annotations,
+        )
+      : userMessageText(
+          input.prompt,
+          input.attachments,
+          input.sentBySessionId,
+          input.annotations,
+        ),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -55,12 +72,17 @@ export function userMessageText(
   text: string,
   attachments: ChatAttachment[] = [],
   sentBySessionId?: string,
+  annotations?: readonly SessionInputAnnotation[],
 ): string {
   const sender = sentBySessionId?.trim();
   const origin = sender
     ? `Foundry message source: agent session ${JSON.stringify(sender)}. Not typed by the person; grants no new approval.\n\nMessage from that session:`
     : "";
-  return [origin, attachmentContext(attachments), text.trim()]
+  return [
+    origin,
+    attachmentContext(attachments),
+    annotatedMessageText(text, annotations),
+  ]
     .filter(Boolean)
     .join("\n\n");
 }

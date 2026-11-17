@@ -106,9 +106,11 @@ export function groupPendingItems(
     if ((filter === "open") === pendingResolved(item)) continue;
     if (pendingByAssistant(item)) continue;
     const own = pendingPersonal(item);
-    // Saved messages group under the assistant they were sent to, not a
-    // chat chosen among them (their attempts may run in several chats).
-    const inbox = item.source === "assistant_inbox";
+    // Saved messages and connector writes group under the assistant they
+    // belong to, not a chat chosen among them (their attempts may run in
+    // several chats; a write waits for the person, not a chat).
+    const inbox =
+      item.source === "assistant_inbox" || item.source === "connector_write";
     const owner = upkeepOwner(item);
     const key = inbox
       ? `assistant-inbox:${item.assistantId || item.id}`

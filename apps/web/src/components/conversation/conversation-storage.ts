@@ -1,3 +1,4 @@
+import type { ConversationAnnotation } from "./annotations";
 import type { QueuedDraft } from "./conversation-types";
 
 /**
@@ -16,6 +17,8 @@ export type ConversationStoragePrefix =
 
 export interface StoredConversation {
   draft: string;
+  /** Annotations on answers the person has not sent yet, kept with the draft. */
+  annotations: ConversationAnnotation[];
   queue: QueuedDraft[];
   updatedAt: number;
 }
@@ -64,6 +67,16 @@ function isConversationKey(key: string): boolean {
   ].some((prefix) => key.startsWith(`${prefix}:`));
 }
 
+function isStoredAnnotation(item: unknown): item is ConversationAnnotation {
+  if (!item || typeof item !== "object") return false;
+  const candidate = item as Partial<ConversationAnnotation>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.sourceEventId === "string" &&
+    typeof candidate.selectedText === "string"
+  );
+}
+
 function parseEntry(raw: string): StoredConversation {
   try {
     const value = JSON.parse(raw) as Partial<StoredConversation> & {
@@ -72,6 +85,9 @@ function parseEntry(raw: string): StoredConversation {
     if (value && typeof value === "object" && value.v === entryVersion) {
       return {
         draft: typeof value.draft === "string" ? value.draft : "",
+        annotations: Array.isArray(value.annotations)
+          ? value.annotations.filter(isStoredAnnotation)
+          : [],
         queue: Array.isArray(value.queue)
           ? value.queue.filter(
               (item): item is QueuedDraft =>
@@ -87,7 +103,7 @@ function parseEntry(raw: string): StoredConversation {
   } catch {
     /* A plain-text draft from before entries were JSON. */
   }
-  return { draft: raw, queue: [], updatedAt: Date.now() };
+  return { draft: raw, annotations: [], queue: [], updatedAt: Date.now() };
 }
 
 /** The stored entry, an empty one when absent, or undefined when storage is unusable. */
@@ -97,7 +113,7 @@ export function readConversation(key: string): StoredConversation | undefined {
   try {
     const raw = store.getItem(key);
     return raw === null
-      ? { draft: "", queue: [], updatedAt: 0 }
+      ? { draft: "", annotations: [], queue: [], updatedAt: 0 }
       : parseEntry(raw);
   } catch {
     return undefined;
@@ -130,12 +146,13 @@ function isQuotaError(error: unknown): boolean {
  */
 export function writeConversation(
   key: string,
-  value: Pick<StoredConversation, "draft" | "queue">,
+  value: Pick<StoredConversation, "draft" | "queue"> &
+    Partial<Pick<StoredConversation, "annotations">>,
 ): boolean {
   const store = storage();
   if (!store) return false;
   try {
-    if (!value.draft && !value.queue.length) {
+    if (!value.draft && !value.queue.length && !value.annotations?.length) {
       store.removeItem(key);
       return true;
     }
@@ -143,6 +160,7 @@ export function writeConversation(
       v: entryVersion,
       updatedAt: Date.now(),
       draft: value.draft,
+      annotations: value.annotations ?? [],
       queue: value.queue,
     });
     if (raw.length > conversationStorageLimits.maxEntryChars) return false;

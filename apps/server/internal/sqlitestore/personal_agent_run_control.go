@@ -6,8 +6,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// setCanceledAgentSessionError records why an already-canceled session was
+// stopped, without changing its status or waking it. The worker often
+// reports the generic cancel first; the run-control reason replaces it.
+func (s *Store) setCanceledAgentSessionError(ctx context.Context, id, reason string) (store.AgentSession, error) {
+	session, err := s.GetAgentSessionRecord(ctx, id)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if session.Status != "canceled" {
+		return session, nil
+	}
+	session.Error = strings.TrimSpace(reason)
+	if err := s.saveAgentSession(ctx, session, time.Time{}, time.Now().UTC()); err != nil {
+		return store.AgentSession{}, err
+	}
+	return session, nil
+}
 
 func (s *Store) setupPersonalAgentRunControls(ctx context.Context) error {
 	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pa_run_controls(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,assistant_id TEXT NOT NULL DEFAULT '',session_id TEXT NOT NULL,input_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL)`)
@@ -155,6 +176,17 @@ func (s *Store) CancelPersonalAgentInput(ctx context.Context, sessionID, inputID
 		}
 		if isTerminalAgentSession(current.Status) {
 			result = current
+			// The worker's own completion report can land before this
+			// cancel, with its generic "Session was canceled.". The server
+			// knows why it stopped the run, and that reason is the truth
+			// (DEV-267).
+			if current.Status == "canceled" && strings.TrimSpace(reason) != "" && current.Error != strings.TrimSpace(reason) {
+				updated, e := tx.setCanceledAgentSessionError(ctx, sessionID, reason)
+				if e != nil {
+					return e
+				}
+				result, changed = updated, true
+			}
 			return nil
 		}
 		result, err = tx.CancelAgentSession(ctx, sessionID, reason)

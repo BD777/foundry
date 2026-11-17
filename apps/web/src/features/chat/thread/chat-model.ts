@@ -31,6 +31,10 @@ import {
 
 import { agentSessionFailureMessage } from "./chat-failure";
 import {
+  receivedAnnotations,
+  sentPromptText,
+} from "../../../components/conversation/received-annotations";
+import {
   processActivityLine,
   processToolLimitMs,
   processToolName,
@@ -272,11 +276,15 @@ function chatMessagesForSession(
     )
   ) {
     messages.push({
+      annotations: receivedAnnotations(session.input?.annotations),
       attachments: session.input?.attachments ?? [],
       id: `agent-session:${session.id}:${session.input?.id ?? "prompt"}`,
       at: session.startedAt,
       role: "user",
-      text: session.input?.prompt ?? session.prompt,
+      text: sentPromptText(
+        session.input?.prompt ?? session.prompt,
+        session.input?.annotations,
+      ),
       ...(session.input?.channelOrigin
         ? { channelOrigin: session.input.channelOrigin }
         : {}),
@@ -324,6 +332,7 @@ function chatMessagesForSession(
       const steer = segment.id ? activity.steers.get(segment.id) : undefined;
       const blocker = steer?.blockers[0];
       messages.push({
+        annotations: receivedAnnotations(segment.annotations),
         attachments: segment.attachments,
         id: segment.id,
         role: "user",
@@ -429,11 +438,12 @@ function chatMessagesForSession(
   if (pendingInput) {
     // The same id as the event's message, so nothing remounts when it lands.
     messages.push({
+      annotations: receivedAnnotations(pendingInput.annotations),
       attachments: pendingInput.attachments ?? [],
       at: pendingInput.at,
       id: `agent-session:${session.id}:${pendingInput.id}`,
       role: "user",
-      text: pendingInput.prompt,
+      text: sentPromptText(pendingInput.prompt, pendingInput.annotations),
       ...(pendingInput.channelOrigin
         ? { channelOrigin: pendingInput.channelOrigin }
         : {}),

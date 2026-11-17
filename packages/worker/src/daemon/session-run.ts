@@ -98,7 +98,12 @@ export async function runAgentSession(
             )
           : {
               prepare: async () => ({
-                execution: sessionExecution(workspacePath, session, ambient),
+                execution: sessionExecution(
+                  workspacePath,
+                  session,
+                  ambient,
+                  payload.userFiles === "hidden" ? "hidden" : "readable",
+                ),
                 session,
               }),
             },

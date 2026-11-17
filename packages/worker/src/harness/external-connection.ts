@@ -15,6 +15,12 @@ import {
   signalChildGroup,
 } from "../platform/process/process-group.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
+import {
+  egressVariables,
+  workerEgressVariables,
+} from "../platform/server-link/server-proxy.js";
+
+const onwardProxy = new Set<string>(egressVariables);
 
 export interface ExternalConnectionConfig {
   /** Absolute executable and literal arguments, never a shell command. */
@@ -347,15 +353,25 @@ async function prepareExternalConnectionOnce(
   const lost = new AbortController();
   const base = externalConnectionBaseEnvironment(input.env);
   const directory = mkdtempSync(join(tmpdir(), "foundry-connection-"));
-  // Only connection-relevant values and basic OS lookup reach the helper.
-  // Host paths and settings travel in the private request, not argv or logs.
-  const helperEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) =>
-      ["PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "SYSTEMROOT"].includes(
-        name,
+  // Only connection-relevant values (the Worker's proxy among them) and basic
+  // OS lookup reach the helper. Host paths and settings travel in the private
+  // request, not argv or logs.
+  const helperEnv = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) =>
+        [
+          "PATH",
+          "HOME",
+          "USER",
+          "LOGNAME",
+          "LANG",
+          "TZ",
+          "SYSTEMROOT",
+        ].includes(name),
       ),
     ),
-  );
+    ...workerEgressVariables(),
+  };
   const child = spawnProcessGroup(config.executable, config.args ?? [], {
     cwd: directory,
     env: { ...helperEnv, TMPDIR: directory },
@@ -467,9 +483,17 @@ async function prepareExternalConnectionOnce(
             cwd: input.cwd,
             configHome: base.CLAUDE_CONFIG_DIR,
             settings,
-            environment: Object.fromEntries(
-              Object.entries(base).filter(([name]) => removable(name)),
-            ),
+            // The launch's onward proxy is the device's (saved Worker
+            // setting, else the environment), as for every program the
+            // Worker starts; the native process's own variables are as before.
+            environment: {
+              ...Object.fromEntries(
+                Object.entries(base).filter(
+                  ([name]) => removable(name) && !onwardProxy.has(name),
+                ),
+              ),
+              ...workerEgressVariables(base),
+            },
           }) + "\n",
         );
         // A rejected preparation still clears its timer when the helper closes.

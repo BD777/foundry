@@ -32,6 +32,11 @@ import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
 import { devicePathReference } from "./file-path-candidate";
 import { FoundryIdLink } from "./foundry-id-link";
 import { remarkFoundryIds } from "./remark-foundry-ids";
+import {
+  parseAnnotationReferenceHref,
+  remarkCodexAnnotations,
+} from "./remark-codex-annotations";
+import { AnnotationReference } from "./annotation-reference";
 import { LocalImage } from "./local-image";
 import { markdownPlugins, useMarkdownMermaid } from "./markdown-mermaid";
 import type {
@@ -230,6 +235,11 @@ function MarkdownLink({
   node,
   ...props
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
+  const reference = props.href
+    ? parseAnnotationReferenceHref(props.href)
+    : undefined;
+  if (reference)
+    return <AnnotationReference id={reference.id} index={reference.index} />;
   const foundryId = nodeProperty(node, "dataFoundryId");
   if (foundryId)
     return (
@@ -435,6 +445,7 @@ const markdownRemarkPlugins = [
   remarkCjkFriendlyGfmStrikethrough,
   remarkAutolinkCjkBoundary,
   remarkFoundryIds,
+  remarkCodexAnnotations,
 ];
 
 // Text a person typed keeps its line breaks, as chat products do; agent

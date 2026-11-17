@@ -166,26 +166,6 @@ async function mapConcurrent<T, R>(
 }
 
 /**
- * Claude Code namespaces plugin skills: `/name` typed for a workspace skill
- * becomes `/foundry-workspace:name`. Any other command is left to Claude Code.
- */
-export function claudeManagedPrompt(
-  prompt: string,
-  managed: ManagedSkillRuntime | undefined,
-): string {
-  if (!managed) return prompt;
-  return prompt.replace(/^\s*\/([\w:-]+)(?=\s|$)/, (match, name: string) => {
-    const skill = managed.skills.find(
-      (skill) =>
-        skill.name === name ||
-        skill.invocationName === name ||
-        skill.aliases?.includes(name),
-    );
-    return skill ? `/foundry-workspace:${skill.name}` : match;
-  });
-}
-
-/**
  * Ensure the selected revisions are present on disk and return the runtime
  * tree. An empty selection returns a ready but empty tree (default-deny).
  */

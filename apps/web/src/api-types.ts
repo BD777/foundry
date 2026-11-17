@@ -15,6 +15,7 @@ import type {
   CodexSandboxMode,
   CodexSpeed,
   FoundryDataProjection,
+  SessionInputAnnotation,
   SessionSource,
   WorkerRuntimeId,
   WorkspaceAccessRole,
@@ -123,6 +124,8 @@ export interface UploadChatAttachmentsInput {
 export interface CreateAgentSessionInput {
   agentId: string;
   attachments?: ChatAttachment[];
+  /** The answer passages the person annotated in this message. */
+  annotations?: SessionInputAnnotation[];
   /** Continues this device-native chat: the new session adopts it. */
   chatId?: string;
   claudeEffort?: ClaudeEffort;

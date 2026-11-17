@@ -40,22 +40,23 @@ type NativeSessionRef struct {
 // SendAgentSessionInput is a new message for an idle session. Setting the
 // agent, provider or profile switches the runtime the session continues on.
 type SendAgentSessionInput struct {
-	ExecutionBudget                *SessionExecutionBudget `json:"-"`
-	PersonalAgentOperationID       string                  `json:"-"`
-	PersonalAgentOperationRevision int64                   `json:"-"`
-	AgentID                        string                  `json:"agentId,omitempty"`
-	Provider                       string                  `json:"provider,omitempty"`
-	ProfileID                      string                  `json:"profileId,omitempty"`
-	Model                          string                  `json:"model,omitempty"`
-	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode               string                  `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy            string                  `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed                     string                  `json:"codexSpeed,omitempty"`
-	Prompt                         string                  `json:"prompt"`
-	Attachments                    []ChatAttachment        `json:"attachments,omitempty"`
-	ProfileTransitionNote          string                  `json:"profileTransitionNote,omitempty"`
+	ExecutionBudget                *SessionExecutionBudget  `json:"-"`
+	PersonalAgentOperationID       string                   `json:"-"`
+	PersonalAgentOperationRevision int64                    `json:"-"`
+	AgentID                        string                   `json:"agentId,omitempty"`
+	Provider                       string                   `json:"provider,omitempty"`
+	ProfileID                      string                   `json:"profileId,omitempty"`
+	Model                          string                   `json:"model,omitempty"`
+	ClaudeEffort                   string                   `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode           string                   `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort           string                   `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode               string                   `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy            string                   `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed                     string                   `json:"codexSpeed,omitempty"`
+	Prompt                         string                   `json:"prompt"`
+	Attachments                    []ChatAttachment         `json:"attachments,omitempty"`
+	Annotations                    []SessionInputAnnotation `json:"annotations,omitempty"`
+	ProfileTransitionNote          string                   `json:"profileTransitionNote,omitempty"`
 	// RequireIdle refuses (ErrAgentSessionActive) a message to a running
 	// session instead of steering it: the sender meant the next turn.
 	RequireIdle bool `json:"requireIdle,omitempty"`
@@ -174,12 +175,13 @@ type CreateAgentSessionInput struct {
 	CodexSpeed                     string                  `json:"codexSpeed,omitempty"`
 	Prompt                         string                  `json:"prompt"`
 	// Title names the session; empty: the start of the prompt.
-	Title                 string           `json:"title,omitempty"`
-	Attachments           []ChatAttachment `json:"attachments,omitempty"`
-	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string           `json:"importedContext,omitempty"`
-	ParentSessionID       string           `json:"parentSessionId,omitempty"`
-	IssueID               string           `json:"issueId,omitempty"`
+	Title                 string                   `json:"title,omitempty"`
+	Attachments           []ChatAttachment         `json:"attachments,omitempty"`
+	Annotations           []SessionInputAnnotation `json:"annotations,omitempty"`
+	ProfileTransitionNote string                   `json:"profileTransitionNote,omitempty"`
+	ImportedContext       string                   `json:"importedContext,omitempty"`
+	ParentSessionID       string                   `json:"parentSessionId,omitempty"`
+	IssueID               string                   `json:"issueId,omitempty"`
 	// ForkSessionID starts the session from a copy of another session's
 	// native history; neither writes into the other's transcript.
 	ForkSessionID string `json:"forkSessionId,omitempty"`

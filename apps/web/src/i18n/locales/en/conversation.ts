@@ -201,6 +201,11 @@ export const conversation = {
     imagePreview: "Image preview",
     closeImagePreview: "Close image preview",
   },
+  /** A turn that ended without an answer: one line and a retry (DEV-267). */
+  stoppedTurn: {
+    retry: "Retry",
+    retryFailed: "Could not retry this turn",
+  },
   /** Duration and tokens of one turn, as the agent's SDK reported them. */
   usage: {
     milliseconds: "{{value}}ms",
@@ -438,5 +443,27 @@ export const conversation = {
     alreadySent: "This message was already sent.",
     queueChanged: "The queue changed in another tab; showing the latest.",
     queueFailed: "The queue could not be changed. Try again.",
+  },
+  annotations: {
+    comment: "Comment",
+    addComment: "Add comment",
+    commentLabel: "Comment on the selected text",
+    commentPlaceholder: "Add an optional comment…",
+    submit: "Add comment",
+    markerLabel: "Comment {{number}}",
+    noComment: "No comment",
+    chip_one: "{{count}} comment",
+    chip_other: "{{count}} comments",
+    listTitle: "Comments",
+    selected: "Selected text",
+    commentOn: "Your comment",
+    edit: "Edit comment",
+    remove: "Delete comment",
+    clearAll: "Clear all comments",
+    reference: "Annotation {{index}}",
+    selectedLine: "Selected: {{text}}",
+    commentLine: "Comment: {{text}}",
+    sentCount_one: "{{count}} comment",
+    sentCount_other: "{{count}} comments",
   },
 };

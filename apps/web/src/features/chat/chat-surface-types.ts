@@ -132,6 +132,15 @@ export interface ChatSurfaceProps {
   attachments?: ChatAttachment[];
   chats: ChatListItem[];
   chatTitle: ReactNode;
+  /** Each folder's listable chats: what it draws and what it still holds. */
+  groupMemberCounts?: Readonly<Record<string, number>>;
+  groupMemberLoading?: Readonly<Record<string, boolean>>;
+  /** The folder has added at least one page of its older chats. */
+  groupMemberLoaded?: Readonly<Record<string, boolean>>;
+  /** A folder read every page it had: it adds no older row again. */
+  groupMemberExhausted?: Readonly<Record<string, boolean>>;
+  /** Reads the next page of a folder's chats the list's window left out. */
+  onLoadGroupMembers?: (groupId: string) => void;
   /** Open pending items per chat (DEV-079), from the shell. */
   pendingCounts?: Readonly<Record<string, number>>;
   /** Pinned above the open chat's composer: what it waits for the person on. */

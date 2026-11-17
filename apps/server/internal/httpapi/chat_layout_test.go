@@ -32,6 +32,11 @@ func TestChatLayoutHTTP(t *testing.T) {
 		{http.MethodPost, "/api/chat-layout/delete-group", `{"workspaceId":"ws_layout","groupId":"g","expectedRevision":1}`, 409},
 		{http.MethodPost, "/api/chat-layout/delete-group", `{"workspaceId":"ws_layout","groupId":"missing","expectedRevision":2}`, 404},
 		{http.MethodPost, "/api/chat-layout/delete-group", `{"workspaceId":"ws_layout","groupId":"g","expectedRevision":2}`, 200},
+		{http.MethodGet, "/api/chat-layout/member-counts", "", 404},
+		{http.MethodGet, "/api/chat-layout/member-counts?workspaceId=missing", "", 404},
+		{http.MethodGet, "/api/chat-layout/member-counts?workspaceId=ws_layout", "", 200},
+		{http.MethodGet, "/api/chat-layout/members?workspaceId=ws_layout", "", 400},
+		{http.MethodGet, "/api/chat-layout/members?workspaceId=ws_layout&groupId=missing", "", 404},
 	} {
 		r := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		w := httptest.NewRecorder()

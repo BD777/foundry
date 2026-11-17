@@ -97,3 +97,27 @@ func TestQuotaExhaustedUsesStructuredCodeAndQuotaText(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountUnusableReasonClassifiesArrearsAndDisabledAccounts(t *testing.T) {
+	tests := []struct {
+		code, text, want string
+	}{
+		{"", "402 The account associated with the API Key is in arrears and the accessed service ID has been isolated", "402"},
+		{"", "API Error: 402 Payment Required", "402"},
+		{"account_arrears", "", "402"},
+		{"", "Your account is in arrears", "402"},
+		{"", "Your account is suspended", "account disabled"},
+		{"account_disabled", "", "account disabled"},
+		{"", "insufficient_quota", "quota exhausted"},
+		{"model_quota_exhausted", "", "quota exhausted"},
+		{"", "API Error: 429 rate_limit_error", ""},
+		{"model_rate_limit", "Rate limited, waiting to retry", ""},
+		{"", "API Error: 400 invalid request", ""},
+		{"", "the transcript has 402 lines", ""},
+	}
+	for _, test := range tests {
+		if got := AccountUnusableReason(test.code, test.text); got != test.want {
+			t.Errorf("AccountUnusableReason(%q, %q) = %q, want %q", test.code, test.text, got, test.want)
+		}
+	}
+}

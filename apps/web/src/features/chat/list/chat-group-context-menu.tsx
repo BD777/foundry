@@ -12,7 +12,6 @@ import { Dialog } from "../../../components/ui/dialog";
 export function ChatGroupContextMenu({
   name,
   sessionCount,
-  archiveCount = sessionCount,
   disabled,
   onRename,
   onDelete,
@@ -21,7 +20,6 @@ export function ChatGroupContextMenu({
 }: {
   name: string;
   sessionCount: number;
-  archiveCount?: number;
   disabled?: boolean;
   onRename: () => void;
   onDelete: () => Promise<void>;
@@ -75,20 +73,14 @@ export function ChatGroupContextMenu({
             </ContextMenuEntry>
             {onArchive ? (
               <ContextMenuEntry
-                disabled={busy || !archiveCount}
-                reason={
-                  !archiveCount
-                    ? t("archive.noChats")
-                    : busy
-                      ? t("archive.listUnavailable")
-                      : undefined
-                }
+                disabled={busy}
+                reason={busy ? t("archive.listUnavailable") : undefined}
                 onSelect={() => {
                   movingFocus.current = true;
                   onArchive();
                 }}
               >
-                {t("archive.folder", { count: archiveCount })}
+                {t("archive.folder")}
               </ContextMenuEntry>
             ) : null}
             <ContextMenuEntry

@@ -57,27 +57,9 @@ func PresetPolicy(preset string) (store.PersonalAgentPolicy, bool) {
 	return policy, true
 }
 
-// DefaultLimits are §9's defaults.
+// DefaultLimits are the limits §9 still sets: the stuck notice's default.
 var DefaultLimits = store.PersonalAgentLimits{
-	ConcurrentSessions:  4,
-	DailySessions:       30,
-	DailyWorkspaces:     3,
-	WeeklyWorkspaces:    10,
-	HourlyTurns:         60,
-	DailyDigestSessions: 50,
-	StuckAfterMinutes:   240,
-	MonthlyTokenBudget:  0,
-}
-
-// LimitCaps are §9's hard caps: the panel cannot set more. A zero cap
-// (StuckAfterMinutes, MonthlyTokenBudget) has none.
-var LimitCaps = store.PersonalAgentLimits{
-	ConcurrentSessions:  8,
-	DailySessions:       100,
-	DailyWorkspaces:     10,
-	WeeklyWorkspaces:    30,
-	HourlyTurns:         120,
-	DailyDigestSessions: 200,
+	StuckAfterMinutes: 240,
 }
 
 // DefaultSettings are a new assistant's settings (§11). Devices is filled

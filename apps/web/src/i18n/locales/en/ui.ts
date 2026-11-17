@@ -121,6 +121,10 @@ export const ui = {
   selectMenu: {
     placeholder: "Select",
   },
+  text: {
+    showMore: "Show more",
+    showLess: "Show less",
+  },
   slashMenu: {
     label: "Skills",
     empty: "No skills match “{{query}}”.",

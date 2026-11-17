@@ -20,12 +20,17 @@ import (
 type cfGatewayStore struct {
 	*sqlitestore.Store
 	session store.AgentSession
-	removed bool
+	// sessions are further sessions the store answers, by id (a helper, say).
+	sessions map[string]store.AgentSession
+	removed  bool
 	// aliceDevices are devices besides device-alice that alice owns.
 	aliceDevices map[string]bool
 }
 
 func (s *cfGatewayStore) GetAgentSessionSummary(_ context.Context, id string) (store.AgentSession, error) {
+	if session, ok := s.sessions[id]; ok {
+		return session, nil
+	}
 	if id != s.session.ID {
 		return store.AgentSession{}, store.ErrNotFound
 	}

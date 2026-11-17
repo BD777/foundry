@@ -79,9 +79,6 @@ export async function runProfileCommandSession(
       process.env.FOUNDRY_SESSION_TIMEOUT_MS ??
         (isUtilitySession(session) ? 180000 : 900000),
     );
-    const minutes = session.input?.executionBudget?.timeoutMinutes;
-    if (minutes && minutes > 0)
-      timeoutMs = Math.min(timeoutMs, Math.min(minutes, 240) * 60_000);
     const timeout = setTimeout(() => {
       timedOut = true;
       stopAgentProcess(child);

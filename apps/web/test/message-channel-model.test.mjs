@@ -81,7 +81,7 @@ test("a new channel turns on the standard places, with no trigger word", () => {
   const draft = newChannelDraft("acct_chat");
   assert.deepEqual(draft.filter.triggers, []);
   assert.deepEqual(draft.filter.custom, []);
-  assert.equal(draft.access, "direct");
+  assert.equal(draft.access, "write");
   assert.equal(draft.inheritOtherConnectors, true);
   assert.equal(draft.sessionKey, "thread");
   assert.deepEqual(draft.session, { idleMinutes: 240, resetCommands: [] });
@@ -205,14 +205,14 @@ test("the input round-trips and keeps other connectors' scope", () => {
       }),
     ],
   };
-  draft.access = "confirm";
+  draft.access = "write";
   draft.inheritOtherConnectors = false;
   const previous = {
     source,
     scope: {
       connectors: [
-        { accountId: "acct_mail", level: "read", writes: "confirm" },
-        { accountId: "acct_chat", level: "read", writes: "confirm" },
+        { accountId: "acct_mail", level: "read" },
+        { accountId: "acct_chat", level: "read" },
       ],
     },
   };
@@ -229,8 +229,8 @@ test("the input round-trips and keeps other connectors' scope", () => {
   assert.deepEqual(input.scope, {
     connectorDefault: "off",
     connectors: [
-      { accountId: "acct_mail", level: "read", writes: "confirm" },
-      { accountId: "acct_chat", level: "write", writes: "confirm" },
+      { accountId: "acct_mail", level: "read" },
+      { accountId: "acct_chat", level: "write" },
     ],
     workspaces: { scope: "all", include: [], exclude: [] },
     identityResources: [],
@@ -240,7 +240,7 @@ test("the input round-trips and keeps other connectors' scope", () => {
     { ...input, id: "mc_1", assistantId: "asst", createdAt: "", updatedAt: "" },
     [source],
   );
-  assert.equal(back.access, "confirm");
+  assert.equal(back.access, "write");
   assert.equal(back.inheritOtherConnectors, false);
   assert.deepEqual(back.filter.triggers, ["/ai", "？问"]);
   assert.deepEqual(back.filter.places, ["direct"]);
@@ -488,7 +488,7 @@ test("the session rule loads, validates and goes to the server", () => {
   assert.deepEqual(draft.session, { idleMinutes: 240, resetCommands: [] });
   assert.deepEqual(draft.followUps, {
     enabled: true,
-    from: "same-sender",
+    from: "thread-participants",
     endCommands: ["/end"],
   });
   draft.session = { idleMinutes: 45, resetCommands: ["/new", "two words"] };
@@ -532,7 +532,7 @@ test("the session rule loads, validates and goes to the server", () => {
   assert.deepEqual(toggled.session, { idleMinutes: 240, resetCommands: [] });
   assert.deepEqual(toggled.followUps, {
     enabled: true,
-    from: "same-sender",
+    from: "thread-participants",
     endCommands: ["/end"],
   });
   assert.equal(toggled.workspaceId, "ws_chan");

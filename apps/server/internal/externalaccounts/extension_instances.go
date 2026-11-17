@@ -813,11 +813,13 @@ func extensionRoutes(document any, extract store.ConnectorServerHeldRoutesExtrac
 		pathRaw, _ := extensionJSONValue(item, extract.Path)
 		accessRaw, _ := extensionJSONValue(item, extract.Access)
 		domainRaw, _ := extensionJSONValue(item, extract.Domain)
+		summaryRaw, _ := extensionJSONValue(item, extract.Summary)
 		route := store.ConnectorServerHeldRoute{
-			Method: strings.ToUpper(extensionScalar(methodRaw)),
-			Path:   extensionScalar(pathRaw),
-			Access: strings.ToLower(extensionScalar(accessRaw)),
-			Domain: extensionScalar(domainRaw),
+			Method:  strings.ToUpper(extensionScalar(methodRaw)),
+			Path:    extensionScalar(pathRaw),
+			Access:  strings.ToLower(extensionScalar(accessRaw)),
+			Domain:  extensionScalar(domainRaw),
+			Summary: extensionScalar(summaryRaw),
 		}
 		if route.Method == "" || route.Path == "" || route.Access == "" {
 			continue

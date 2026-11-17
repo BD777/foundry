@@ -6,7 +6,6 @@ export const chat: Translation<typeof en> = {
     listUnavailable: "列表只读或正在保存，暂不可用。",
     restored_one: "已恢复 {{count}} 条对话",
     restored_other: "已恢复 {{count}} 条对话",
-    noChats: "没有可归档的对话。",
 
     byActor: "由 {{actor}} 归档",
     includedCount_one: "{{count}} 个对话",
@@ -44,8 +43,12 @@ export const chat: Translation<typeof en> = {
     nativeAlsoHidden: "随父对话一起归档的原生子代理对话",
     title: "已归档对话",
     action: "归档",
-    folder_one: "归档文件夹（{{count}} 个对话）",
-    folder_other: "归档文件夹（{{count}} 个对话）",
+    folder: "归档文件夹",
+    untitled: "无标题对话",
+    olderIncluded_one:
+      "文件夹里还有 {{count}} 个较早的对话不在侧边栏显示，已列在上面，也会一起归档。",
+    olderIncluded_other:
+      "文件夹里还有 {{count}} 个较早的对话不在侧边栏显示，已列在上面，也会一起归档。",
     stopFirst: "请先停止",
     description: "归档会隐藏这些对话，并保留记录及原文件夹位置。",
     nativeDetails: "原生副本",
@@ -257,6 +260,9 @@ export const chat: Translation<typeof en> = {
     savingLayout: "正在保存分组和顺序…",
     loadingLayout: "正在加载分组…",
     groupEmpty: "暂无会话",
+    olderChats_one: "更早的 {{count}} 个对话",
+    olderChats_other: "更早的 {{count}} 个对话",
+    olderLoading: "正在加载更早的对话…",
     ungrouped: "未分组",
     noMatches: "未找到会话或分组",
     resize: "调整对话列表宽度",
@@ -266,6 +272,7 @@ export const chat: Translation<typeof en> = {
     pending: "{{count}} 项待处理",
     channelSegment: "第 {{number}} 段",
     channelContinued: "续聊",
+    channelThread: "话题",
     channelNew: {
       first: "新会话",
       idle: "空闲后新会话",

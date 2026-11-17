@@ -67,7 +67,7 @@ const profile = { id: "claude_local", runtime: "claude", label: "Claude" };
 /** Starts a turn that stays open until something is steered into it. */
 async function openTurn(
   session = chatSession(),
-  { cwd, runtime, rejectReceipt = false } = {},
+  { cwd, runtime, rejectReceipt = false, managedSkills } = {},
 ) {
   cwd ??= join(root, `ws-${randomUUID()}`);
   mkdirSync(cwd, { recursive: true });
@@ -84,6 +84,7 @@ async function openTurn(
     },
     async () => {},
     () => {},
+    managedSkills,
   );
   for (let waited = 0; received.length === 0; waited += 10) {
     if (waited > 5000) throw new Error("the turn never reached the agent");
@@ -314,6 +315,72 @@ test("Codex active steer carries sender identity and preserves image input and t
     finish();
     await running;
   }
+});
+
+test("a Codex steer opening with a selected skill's name reaches the turn as $name", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  let receivedInput;
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    steer: async (input) => {
+      receivedInput = input;
+    },
+  };
+  const managedSkills = {
+    pluginDir: "/plugin",
+    skills: [
+      { name: "foundry-orchestration", dir: "/skills/foundry-orchestration" },
+    ],
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async () => {}, managedSkills },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await steerActiveSessionOnce(
+      id,
+      "source-steer",
+      "/foundry-orchestration Please inspect",
+      [image],
+      "sess_sender",
+    );
+    assert.equal(
+      receivedInput[0].text,
+      userMessageText(
+        "$foundry-orchestration Please inspect",
+        [image],
+        "sess_sender",
+      ),
+    );
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("a Claude steer opening with a selected skill's name reaches Claude as its plugin command", async () => {
+  const managedSkills = {
+    pluginDir: "/plugin",
+    skills: [
+      { name: "foundry-orchestration", dir: "/skills/foundry-orchestration" },
+    ],
+  };
+  const { session, finished } = await openTurn(undefined, { managedSkills });
+  await steerActiveSession(session.id, "/foundry-orchestration plan it", []);
+  await finished;
+  assert.equal(received[1], "/foundry-workspace:foundry-orchestration plan it");
 });
 
 test("Codex terminal failure closes its producer and releases its writer before returning", async () => {

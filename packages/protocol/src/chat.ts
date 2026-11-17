@@ -1,5 +1,5 @@
 // Chats: threads, transcripts, layout, titles and queued messages.
-import type { ChatAttachment } from "./contract.gen.js";
+import type { ChatAttachment, SessionInputAnnotation } from "./contract.gen.js";
 export type {
   AgentQuestion,
   ChatArchive,
@@ -68,6 +68,8 @@ export interface ChatQueueItem {
   position: number;
   text: string;
   attachments?: ChatAttachment[];
+  /** The answer passages the message annotates; its text carries their wrapper. */
+  annotations?: SessionInputAnnotation[];
   runSettings: ChatQueueRunSettings;
   createdBy?: string;
   createdAt: string;
@@ -110,6 +112,8 @@ export interface ChatQueue {
 export interface EnqueueChatMessageInput {
   text: string;
   attachments?: ChatAttachment[];
+  /** The answer passages the message annotates; its text carries their wrapper. */
+  annotations?: SessionInputAnnotation[];
   runSettings: ChatQueueRunSettings;
   /**
    * Into the chat's running turn at once (an answer to the Agent's
@@ -123,6 +127,7 @@ export interface EnqueueChatMessageInput {
 export interface EditChatQueueItemInput {
   text?: string;
   attachments?: ChatAttachment[];
+  annotations?: SessionInputAnnotation[];
   runSettings?: ChatQueueRunSettings;
   delivery?: ChatMessageDelivery;
   expectedRevision: number;
@@ -165,6 +170,8 @@ export interface ArchiveChatsResult {
   nativeAlsoHidden?: ArchiveHiddenChat[];
   batchId: string;
   archived: string[];
+  /** Each archived chat's shown title, for chats the list does not draw. */
+  archivedTitles?: Record<string, string>;
   blockers: ArchiveBlocker[];
   pausedWork: ArchivePausedWork[];
 }

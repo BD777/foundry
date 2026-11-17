@@ -26,10 +26,6 @@ func refusalKind(err error) string {
 	if kind, ok := personalagent.RefusalKind(err); ok {
 		return kind
 	}
-	var limit *personalagent.LimitError
-	if errors.As(err, &limit) {
-		return store.PersonalAgentRefusalLimit
-	}
 	if errors.Is(err, errStopped) {
 		return store.PersonalAgentRefusalStopped
 	}
@@ -109,9 +105,9 @@ func (s *Service) RunTool(ctx context.Context, scope Scope, tool string, args ma
 }
 
 // runWrite is how every write tool runs (§4, §5): refused while the
-// assistant is stopped or the write is invalid, not the person's or past a
-// limit; denied, proposed or applied as the policy says; audited in
-// pa_actions whatever happens.
+// assistant is stopped or the write is invalid, not the person's; denied,
+// proposed or applied as the policy says; audited in pa_actions whatever
+// happens.
 func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args map[string]json.RawMessage, plan Planner) (any, error) {
 	record := store.PersonalAgentActionRecord{UserID: scope.Agent.UserID, AssistantID: scope.Agent.ID, SessionID: scope.SessionID, Tool: tool}
 	var spec []byte
@@ -218,7 +214,7 @@ func (s *Service) supersedeProposals(ctx context.Context, proposal store.Persona
 }
 
 // applyProposal applies an accepted proposal's spec as the person's
-// assistant, re-checking what may have changed since (ownership, limits).
+// assistant, re-checking what may have changed since (ownership).
 func (s *Service) applyProposal(ctx context.Context, proposal store.PersonalAgentProposal) (any, error) {
 	agent, err := s.store.GetAssistant(ctx, proposal.AssistantID)
 	if err != nil {

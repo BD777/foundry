@@ -11,6 +11,10 @@ import {
   createAgentSession,
   sendAgentSessionMessage,
 } from "../../../api";
+import {
+  type ConversationAnnotation,
+  sentAnnotation,
+} from "../../../components/conversation/annotations";
 import { moveRuntimeChoice } from "../../../components/conversation/conversation-storage";
 import type { ConversationSendOutcome } from "../../../components/conversation/conversation-types";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
@@ -138,11 +142,21 @@ export function useChatSend({
   async function send(
     draft: string,
     queuedAttachments?: ChatAttachment[],
-    options?: { idempotencyKey?: string },
+    options?: {
+      idempotencyKey?: string;
+      annotations?: ConversationAnnotation[];
+    },
   ): Promise<ConversationSendOutcome> {
-    const prompt = draft.trim();
+    // An annotated prompt starts with its wrapper's newline: only the caller
+    // trims the person's own text inside it.
+    const annotations = options?.annotations ?? [];
+    const prompt = annotations.length > 0 ? draft : draft.trim();
     const effectiveAttachments = queuedAttachments ?? attachments.attachments;
-    if (!prompt && effectiveAttachments.length === 0) {
+    if (
+      !prompt &&
+      effectiveAttachments.length === 0 &&
+      annotations.length === 0
+    ) {
       await notify(i18n.t("chat:notices.emptyPrompt"));
       return false;
     }
@@ -193,14 +207,17 @@ export function useChatSend({
       // One id for this message: its Idempotency-Key, its input id and its
       // outbox entry, which tells the composer once the transcript shows it.
       const clientId = options?.idempotencyKey ?? crypto.randomUUID();
+      const sentAnnotations = annotations.map(sentAnnotation);
       const message = {
         ...composerChoices(selectedAgent),
         attachments: effectiveAttachments,
+        ...(sentAnnotations.length > 0 ? { annotations: sentAnnotations } : {}),
         inputId: clientId,
         prompt,
       };
       let session: AgentSession;
       outbox.add({
+        ...(annotations.length > 0 ? { annotations } : {}),
         at: new Date().toISOString(),
         attachments: effectiveAttachments,
         id: clientId,

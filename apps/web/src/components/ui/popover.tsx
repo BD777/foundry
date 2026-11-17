@@ -9,6 +9,15 @@ const popoverSurface = `z-110 max-h-[var(--radix-popover-content-available-heigh
   max-w-[min(360px,var(--radix-popover-content-available-width,calc(100vw-24px)))] overflow-auto
   rounded-md border px-3 py-2.5 text-xs font-semibold leading-[1.45] [overflow-wrap:anywhere]`;
 
+/* floating: the inverted tooltip surface. card: the page's own surface, for a
+   form or a list inside the panel, whose controls use the page ink tokens. */
+const popoverSurfaces = {
+  floating: "border-floating-line bg-floating text-floating-ink shadow-drop",
+  card: "border-line bg-surface text-ink shadow-floating",
+} as const;
+
+export type PopoverSurface = keyof typeof popoverSurfaces;
+
 /**
  * A small floating panel opened by click, Enter or Space and closed by Escape
  * or an outside click: details that a hover tooltip would hide from touch and
@@ -20,6 +29,9 @@ export function Popover({
   trigger,
   label,
   openOnHover = false,
+  open,
+  onOpenChange,
+  surface = "floating",
 }: {
   children: ReactNode;
   className?: string;
@@ -27,25 +39,31 @@ export function Popover({
   label?: string;
   /** Hover/focus preview, with click/touch pinning and normal dismissal. */
   openOnHover?: boolean;
+  /** Controlled: the caller opens and closes it, e.g. after a submit. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** A form or list panel holds page controls, so it sits on the card surface. */
+  surface?: PopoverSurface;
 }) {
   if (openOnHover)
     return (
-      <PreviewPopover trigger={trigger} label={label} className={className}>
+      <PreviewPopover
+        trigger={trigger}
+        label={label}
+        className={className}
+        surface={surface}
+      >
         {children}
       </PreviewPopover>
     );
   return (
-    <PopoverPrimitive.Root>
+    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
           aria-label={label}
           align="start"
-          className={cn(
-            popoverSurface,
-            "border-floating-line bg-floating text-floating-ink shadow-drop",
-            className,
-          )}
+          className={cn(popoverSurface, popoverSurfaces[surface], className)}
           collisionPadding={12}
           sideOffset={6}
         >
@@ -63,11 +81,13 @@ function PreviewPopover({
   children,
   className,
   label,
+  surface,
 }: {
   trigger: ReactNode;
   children: ReactNode;
   className?: string;
   label?: string;
+  surface: PopoverSurface;
 }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -139,11 +159,7 @@ function PreviewPopover({
           align="start"
           sideOffset={6}
           collisionPadding={12}
-          className={cn(
-            popoverSurface,
-            "border-floating-line bg-floating text-floating-ink shadow-drop",
-            className,
-          )}
+          className={cn(popoverSurface, popoverSurfaces[surface], className)}
           onPointerEnter={clear}
           onPointerLeave={leave}
           onFocus={clear}

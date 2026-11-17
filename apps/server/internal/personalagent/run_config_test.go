@@ -17,7 +17,7 @@ func TestRoleOverrideDoesNotAccidentallyInheritAnotherDeviceAccount(t *testing.T
 		t.Fatalf("mixed defaults: %+v %v", memory, err)
 	}
 	coordinator, err := RunPreference(settings, "coordinator")
-	if err != nil || coordinator.ProfileID != "account-a" || coordinator.TokenBudget != 500000 || coordinator.TimeoutMinutes == 0 {
+	if err != nil || coordinator.ProfileID != "account-a" || coordinator.TokenBudget != 0 || coordinator.TimeoutMinutes != 0 {
 		t.Fatalf("default: %+v %v", coordinator, err)
 	}
 	if _, err := RunPreference(settings, "unknown"); err == nil {

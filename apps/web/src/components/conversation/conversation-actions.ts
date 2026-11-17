@@ -5,6 +5,8 @@ import type {
   ConversationSendOutcome,
   QueuedDraft,
 } from "./conversation-types";
+import { annotatedPromptText } from "./annotations";
+import type { ConversationAnnotations } from "./use-conversation-annotations";
 import { whileSending } from "./conversation-storage";
 import type { ConversationDrafts } from "./use-conversation-drafts";
 import type { LocalQueue } from "./use-local-queue";
@@ -26,6 +28,7 @@ export interface ConversationInputContext {
   canSteer: boolean;
   unavailable: boolean;
   drafts: ConversationDrafts;
+  annotations: ConversationAnnotations;
   local: LocalQueue;
   server: ReturnType<typeof useServerQueue>;
   flight: ComposerFlight;
@@ -55,6 +58,7 @@ function parkInQueue(
   if (ctx.serverMode) ctx.server.add(item, key);
   else ctx.local.append(key, item);
   ctx.drafts.update("", key);
+  if (item.annotations?.length) ctx.annotations.clear(key);
   item.attachments?.forEach((attachment) =>
     host.onAttachmentRemove?.(attachment.id),
   );
@@ -108,6 +112,7 @@ function settleAccepted(
     typeof outcome === "object" && outcome.threadKey !== key
       ? outcome.threadKey
       : undefined;
+  if (!item) ctx.annotations.clear(key);
   if (!item && movedTo && ctx.latest().threadKey === key) {
     ctx.flight.handOff(key);
     moveThread(ctx, key, movedTo, { carryDraft: false });
@@ -152,7 +157,13 @@ export async function sendMessage(
 ) {
   const host = ctx.latest();
   const key = host.threadKey;
-  const text = item?.text ?? ctx.drafts.read(key);
+  // A queued message keeps the person's text; its annotations travel with it.
+  const attached = item ? (item.annotations ?? []) : ctx.annotations.read(key);
+  const typed = item ? item.text : ctx.drafts.read(key);
+  // The model reads the wrapper in every path; only the composed message has it.
+  const text = attached.length
+    ? annotatedPromptText(typed.trim(), attached)
+    : typed;
   const immediate = Boolean(
     !item && !host.attachments?.length && host.canSendDuringExecution?.(text),
   );
@@ -182,24 +193,33 @@ export async function sendMessage(
     try {
       const outcome = item
         ? await whileSending(item.id, () =>
-            host.onSend(text, item.attachments, { idempotencyKey: item.id }),
+            host.onSend(text, item.attachments, {
+              idempotencyKey: item.id,
+              annotations: attached,
+            }),
           )
-        : await host.onSend(text, undefined, { idempotencyKey: clientId });
+        : await host.onSend(text, undefined, {
+            idempotencyKey: clientId,
+            annotations: attached,
+          });
       if (!outcome) throw new Error(i18n.t("conversation:errors.notSent"));
       if (outcome === "queue") {
         // A turn started meanwhile; the message waits for it to end.
-        if (!item)
+        if (!item) {
           parkInQueue(ctx, host, {
             id: crypto.randomUUID(),
-            text: text.trim(),
+            text: typed.trim(),
             attachments: [...(host.attachments ?? [])],
+            ...(attached.length ? { annotations: [...attached] } : {}),
           });
+          ctx.annotations.clear(key);
+        }
         ctx.status.resume(key);
         return;
       }
       settleAccepted(ctx, host, item, outcome);
     } catch (reason) {
-      restoreUnsent(ctx, item, text, key);
+      restoreUnsent(ctx, item, typed, key);
       ctx.status.report(reason, key);
     }
   } finally {
@@ -224,6 +244,7 @@ async function enqueueDraft(
       return;
     }
     ctx.drafts.update("", key);
+    if (item.annotations?.length) ctx.annotations.clear(key);
     item.attachments?.forEach((attachment) =>
       host.onAttachmentRemove?.(attachment.id),
     );
@@ -246,7 +267,10 @@ export function submitDraft(
   if (host.disabled || host.readOnly || host.attachmentUploading) return;
   if (ctx.flight.sendingKey() === key) return;
   const text = ctx.drafts.read(key);
-  if (!text.trim() && !host.attachments?.length) return;
+  const attached = ctx.annotations.read(key);
+  // Annotations alone are a message: the model gets the wrapper with an
+  // empty "My request" section, as a Codex App sends it.
+  if (!text.trim() && !host.attachments?.length && !attached.length) return;
   if (
     !host.attachments?.length &&
     host.canSendDuringExecution?.(text) &&
@@ -271,6 +295,7 @@ export function submitDraft(
     id: crypto.randomUUID(),
     text: text.trim(),
     attachments: [...(host.attachments ?? [])],
+    ...(attached.length ? { annotations: [...attached] } : {}),
     targetExecutionId: host.activeExecutionId,
     ...(ctx.serverMode && ctx.canSteer && chosen !== "turn_end"
       ? { delivery: chosen }
@@ -404,6 +429,8 @@ export function queueControls(ctx: ConversationInputContext) {
     edit(item: QueuedDraft) {
       if (ctx.flight.sendingKey() === threadKey) return;
       ctx.drafts.update(item.text);
+      if (item.annotations?.length)
+        ctx.annotations.restore(item.annotations, threadKey);
       if (item.attachments?.length)
         ctx.latest().onAttachmentsRestore?.(item.attachments);
       removeQueued(ctx, item.id, threadKey);

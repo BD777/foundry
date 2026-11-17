@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   answerIssueQuestion,
+  decidePendingItem,
   enqueueChatMessage,
   isAbortError,
   listPendingItems,
@@ -28,6 +29,8 @@ export interface PendingItems {
   reply: (item: PendingItem, text: string) => Promise<void>;
   /** Asks for one more attempt of an unprocessed assistant message. */
   retry: (item: PendingItem) => Promise<void>;
+  /** Allows or refuses the connector write an item stands for (DEV-265). */
+  decide: (item: PendingItem, allow: boolean) => Promise<void>;
 }
 
 /**
@@ -114,7 +117,15 @@ export function usePendingItems(enabled = true): PendingItems {
     [refresh],
   );
 
-  return { list, failed, refresh, changeState, reply, retry };
+  const decide = useCallback<PendingItems["decide"]>(
+    async (item, allow) => {
+      await decidePendingItem(item.id, allow);
+      refresh();
+    },
+    [refresh],
+  );
+
+  return { list, failed, refresh, changeState, reply, retry, decide };
 }
 
 /** The list the app shows: without Issues' items while Issues are off. */

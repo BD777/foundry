@@ -1,5 +1,5 @@
 // Package assistant is the person's assistant at work
-// (docs/personal-agent.md): who it is and the limits it is held to
+// (docs/personal-agent.md): who it is and what it may do
 // (conversation admission, the stop switch, proposals), what its runs are
 // given (its prompt and each turn's context), where it lives (setup,
 // moving home), the writes its tools make (one propose-or-apply pipeline,
@@ -22,7 +22,7 @@
 //	svc.Observers()                                  // its reactions to sessions
 //	svc.ScopeFor(ctx, agent, sessionID, turn)        // what one conversation may manage
 //	svc.RunTool(ctx, scope, tool, args)              // a write tool: refused, proposed or applied
-//	svc.AdmitSession(ctx, input); svc.AdmitTurn(ctx, session) // the limits
+//	svc.AdmitSession(ctx, input)                     // the stop switch and devices
 //	svc.RunFor(ctx, session)                         // a run's instructions and turn context
 //	svc.Stop(ctx, agent); svc.Resume(ctx, agent)     // one assistant's stop switch
 //	svc.DecideProposal(ctx, agent, id, accept, via) // the person's answer
@@ -62,6 +62,7 @@ type Store interface {
 	store.WorkStore
 	store.PersonalAgentStore
 	store.PermissionPackageStore
+	store.SessionConnectorGrantStore
 	store.PersonalAgentListStore
 	store.PersonalAgentInboxStore
 	store.PersonalAgentRuntimeStore
@@ -133,9 +134,6 @@ type Devices interface {
 	// AwayFor is how long the device was away before its current
 	// connection; dropID tells one absence from another.
 	AwayFor(deviceID string, now time.Time) (away time.Duration, dropID string, ok bool)
-	// InputTokens are the tokens the session's current turn used, as its
-	// device's native logs report them.
-	InputTokens(ctx context.Context, session store.AgentSession) (int64, bool, error)
 }
 
 // Channel is the person's Feishu direct chat as the assistant uses it:
@@ -250,6 +248,11 @@ type Service struct {
 	archiveSessions Planner
 	origin          string
 	fileTimeout     time.Duration
+
+	// ConnectorReplay sends an accepted connector write through Foundry and
+	// reports a factual detail (a created message id, say); nil when no
+	// connector gateway is wired (DEV-265).
+	ConnectorReplay func(ctx context.Context, proposal store.PersonalAgentProposal) (string, error)
 
 	// archiveItemSessions and restoreItemSessions are the item ports (Ports).
 	archiveItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, sessionIDs []string) error

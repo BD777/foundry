@@ -241,9 +241,86 @@ func (s *Store) ListArchivedSessions(ctx context.Context, ws, mode string) ([]st
 	return values, nil
 }
 
+// chatArchiveState reports which of ids still exist as a session or a chat and
+// which already carry an archive marker, by id or native alias: the same keys
+// archiveInfo and the chat list use. A position left behind by a move or a
+// deleted chat is neither, so a folder neither counts nor re-archives it.
+func (s *Store) chatArchiveState(ctx context.Context, ws string, ids []string) (exists, archived map[string]bool, err error) {
+	exists, archived = map[string]bool{}, map[string]bool{}
+	if len(ids) == 0 {
+		return exists, archived, nil
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	keys := map[string]bool{}
+	err = scanRows(ctx, s.reader(), `SELECT archive_key FROM chat_archives WHERE workspace_id=?`, func(rows *sql.Rows) error {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return err
+		}
+		keys[key] = true
+		return nil
+	}, ws)
+	if err != nil {
+		return nil, nil, err
+	}
+	found := func(id, provider, native string) {
+		if !want[id] {
+			return
+		}
+		exists[id] = true
+		if keys["id:"+id] || (provider != "" && native != "" && keys["native:"+provider+":"+native]) {
+			archived[id] = true
+		}
+	}
+	for _, query := range []string{
+		`SELECT agent_sessions.id, agent_sessions.provider, COALESCE(json_extract(agent_sessions.payload_json, '$.nativeSessionId'), '') FROM agent_sessions WHERE agent_sessions.workspace_id=? AND ` + visibleAgentSessionSQL,
+		`SELECT chats.id, chats.provider, COALESCE(chats.native_session_id, '') FROM chats WHERE chats.workspace_id IN (?, '') AND ` + visibleChatSQL,
+	} {
+		err = scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
+			var id, provider, native string
+			if err := rows.Scan(&id, &provider, &native); err != nil {
+				return err
+			}
+			found(id, provider, native)
+			return nil
+		}, ws)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return exists, archived, nil
+}
+
+// chatTitleOverrides reads the person's renamed titles for ids; the payload
+// title names the chat otherwise.
+func (s *Store) chatTitleOverrides(ctx context.Context, ws string, ids []string) (map[string]string, error) {
+	titles := map[string]string{}
+	if len(ids) == 0 {
+		return titles, nil
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	err := scanRows(ctx, s.reader(), `SELECT chat_id, title FROM chat_titles WHERE workspace_id=?`, func(rows *sql.Rows) error {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return err
+		}
+		if want[id] && strings.TrimSpace(title) != "" {
+			titles[id] = title
+		}
+		return nil
+	}, ws)
+	return titles, err
+}
+
 // Resolving IDs in the store and rechecking in the write transaction prevents a
 // client-side filtered list from making a partial folder archive.
-func (s *Store) ArchiveChatIDs(ctx context.Context, input store.ArchiveChatsInput) ([]string, error) {
+func (s *Store) ArchiveChatIDs(ctx context.Context, input store.ArchiveChatsInput, restore bool) ([]string, error) {
 	if input.WorkspaceID == "" {
 		return nil, store.ErrInvalidArchive
 	}
@@ -264,7 +341,8 @@ func (s *Store) ArchiveChatIDs(ctx context.Context, input store.ArchiveChatsInpu
 		return nil, err
 	}
 	ids := slices.Clone(input.ChatIDs)
-	if input.GroupID != "" {
+	inFolder := input.GroupID != ""
+	if inFolder {
 		layout, err := s.GetChatLayout(ctx, input.WorkspaceID)
 		if err != nil {
 			return nil, err
@@ -283,6 +361,18 @@ func (s *Store) ArchiveChatIDs(ctx context.Context, input store.ArchiveChatsInpu
 				ids = append(ids, p.ChatID)
 			}
 		}
+	}
+	// Archiving acts on the chats the folder still holds: an archived member
+	// stays archived, and a position whose chat is gone is not a chat. A
+	// restore does take members that are archived; that is its point.
+	if !restore {
+		exists, archived, err := s.chatArchiveState(ctx, input.WorkspaceID, ids)
+		if err != nil {
+			return nil, err
+		}
+		ids = slices.DeleteFunc(ids, func(id string) bool {
+			return archived[id] || (inFolder && !exists[id])
+		})
 	}
 	if input.BatchID != "" {
 		var err error
@@ -370,13 +460,13 @@ func (s *Store) withArchiveReadTx(ctx context.Context, fn func(tx *Store) error)
 }
 
 func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput, restore bool) (store.ArchiveChatsResult, error) {
-	result := store.ArchiveChatsResult{Archived: []string{}, Blockers: []store.ArchiveBlocker{}, PausedWork: []store.ArchivePausedWork{}}
+	result := store.ArchiveChatsResult{Archived: []string{}, ArchivedTitles: map[string]string{}, Blockers: []store.ArchiveBlocker{}, PausedWork: []store.ArchivePausedWork{}}
 	run := s.withTx
 	if input.DryRun {
 		run = s.withArchiveReadTx
 	}
 	err := run(ctx, func(tx *Store) error {
-		ids, err := tx.ArchiveChatIDs(ctx, input)
+		ids, err := tx.ArchiveChatIDs(ctx, input, restore)
 		if err != nil {
 			return err
 		}
@@ -387,7 +477,8 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 		seenWork := map[string]bool{}
 		for _, id := range ids {
 			subject, e := tx.archiveSubject(ctx, input.WorkspaceID, id)
-			// Historical unknown placements are retained and get archive markers too.
+			// A folder's stale positions were left out when its ids resolved;
+			// an explicit id that names nothing is an error below.
 			if e != nil && !errors.Is(e, store.ErrNotFound) && !errors.Is(e, sql.ErrNoRows) {
 				return e
 			}
@@ -457,6 +548,27 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 			}
 			subjects = append(subjects, subject)
 			result.Archived = append(result.Archived, id)
+		}
+		// Name each chat as the list would, the renamed title winning: the
+		// confirmation lists chats the sidebar's window does not draw.
+		renamed, err := tx.chatTitleOverrides(ctx, input.WorkspaceID, ids)
+		if err != nil {
+			return err
+		}
+		for _, subject := range subjects {
+			title := ""
+			switch {
+			case subject.session != nil:
+				title = subject.session.Title
+			case subject.chat != nil:
+				title = subject.chat.Title
+			}
+			if override := renamed[subject.id]; override != "" {
+				title = override
+			}
+			if title != "" {
+				result.ArchivedTitles[subject.id] = title
+			}
 		}
 		if input.DryRun {
 			return nil

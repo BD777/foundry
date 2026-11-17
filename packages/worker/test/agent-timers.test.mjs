@@ -457,3 +457,42 @@ test("each timer names the tool that made it; a wake-up keeps its exact time und
   });
   assert.deepEqual(fired, ["cron_9"]);
 });
+
+test("a steer the Worker pushed is the person's prompt, not a timer, when Claude submits it after its turn ended", async () => {
+  let active = true;
+  const { events, tracker } = makeTracker({ isActiveTurn: () => active });
+  const hooks = tracker.hooks();
+  const steer = "/foundry-orchestration 另外你看看这个skill";
+  tracker.expectSteer(steer);
+  // Claude runs it as a turn of its own once the Foundry turn it joined ended.
+  active = false;
+  await hooks.UserPromptSubmit[0].hooks[0]({ prompt: steer });
+  assert.equal(tracker.takeFire(), undefined);
+  assert.equal(events.length, 0, "no timer fire is published for the steer");
+  assert.equal(tracker.takeSteerTurn(), true);
+  assert.equal(tracker.takeSteerTurn(), false, "a steer is taken once");
+
+  // A steer Claude submitted while its turn ran is no turn of its own.
+  tracker.expectSteer(steer);
+  active = true;
+  await hooks.UserPromptSubmit[0].hooks[0]({ prompt: steer });
+  assert.equal(tracker.takeSteerTurn(), false);
+
+  // A real timer still fires as a timer, and a steer never names one.
+  await hooks.PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: {
+      cron: "28,58 * * * *",
+      prompt: "巡检 20 台容器",
+      recurring: true,
+    },
+    tool_response: { id: "9b17c9d2", recurring: true },
+  });
+  active = false;
+  tracker.expectSteer("巡检 20 台容器 补充");
+  await hooks.UserPromptSubmit[0].hooks[0]({ prompt: "巡检 20 台容器" });
+  const fire = tracker.takeFire();
+  assert.equal(fire.id, "9b17c9d2");
+  assert.equal(events.at(-1).metadata.timerFire.origin, "scheduled");
+  assert.equal(tracker.takeSteerTurn(), false);
+});

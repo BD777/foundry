@@ -69,6 +69,8 @@ func TestFoundryOrchestrationSkillPackageHasARecordedRevision(t *testing.T) {
 		5: "ed6674cbf74a097c599d4ba07dc10b03017b9f4dc63f5e78fa26742addc93f80", // explicit invocation only
 		6: "845dd9654a2a0cd9cc86564797d82b4cfe341b59d8ba34bb98cecb4a165b537c", // execution models: default plus alternatives; guides describe their own model only
 		7: "d7c78c57935e8cbf3d00d161b423e3395abf7497551984461173fc00fee62616", // DEV-253: watch a running child through pull progress; steer only on a decision or blocker
+		8: "e54e6a912d671a45e50083f5c267ba05269e6bae386cfa29e309f75050daf85d", // DEV-269: omit model parameters; Foundry starts the child on the workspace's execution default
+		9: "15b086d420113fe27e3e3b1752944d81b04ed66434b37bc6b250529aa1d13681", // DEV-270: a child orchestrates when its prompt begins with /foundry-orchestration; the pipeline-speed section
 	}
 	claude, _ := Lookup("builtin-claude-foundry-orchestration")
 	codex, _ := Lookup("builtin-codex-foundry-orchestration")
