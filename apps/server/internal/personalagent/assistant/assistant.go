@@ -175,8 +175,13 @@ func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, con
 	if task.Status != store.PersonalAgentTaskRunning {
 		task.EndedAt = sessionEndedAt(session)
 	}
-	if _, err := s.store.CreatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task); err != nil {
+	saved, err := s.store.CreatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task)
+	if err != nil {
 		log.Printf("personal agent %s: record task for %s: %v", agent.UserID, session.ID, err)
+		return
+	}
+	if err := s.refreshItemHelpers(ctx, agent.ID, saved.ItemID); err != nil {
+		log.Printf("personal agent %s: show helper %s on item %s: %v", agent.UserID, session.ID, saved.ItemID, err)
 	}
 }
 

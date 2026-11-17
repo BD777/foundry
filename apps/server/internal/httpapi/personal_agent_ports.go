@@ -327,6 +327,10 @@ func (c assistantChannel) DeliverAssistantInboxResult(ctx context.Context, entry
 	return c.s.feishu.DeliverAssistantInboxResult(ctx, entry, workspaceID, sessionURL)
 }
 
+func (c assistantChannel) TellPerson(ctx context.Context, agent store.PersonalAgent, note, sessionURL string) (bool, error) {
+	return c.s.feishu.TellPerson(ctx, agent, note, sessionURL)
+}
+
 // assistantAccounts is assistant.Accounts: runAccounts and the tools'
 // answer of them.
 type assistantAccounts struct{ runAccounts }

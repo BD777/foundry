@@ -44,8 +44,14 @@ type MessageChannelDeliveryRecord struct {
 	FollowUp string
 	// AckHeld says the source's acknowledgement reaction is on this
 	// message's trigger and has not come off yet: it stays while the turn,
-	// and every session it started, is still working (DEV-268).
+	// every session it started, and a hand-over it left open still hold
+	// (DEV-268, DEV-279).
 	AckHeld bool
+	// AckAddedAt and AckRemovedAt record when the reaction went on and came
+	// off the message, so the channel's audit says when the assistant said
+	// "on it", not only whether it did (DEV-279).
+	AckAddedAt   string
+	AckRemovedAt string
 }
 
 // MessageChannelKeyState is where one source conversation of a channel is:

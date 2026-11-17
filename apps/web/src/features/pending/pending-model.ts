@@ -110,7 +110,9 @@ export function groupPendingItems(
     // belong to, not a chat chosen among them (their attempts may run in
     // several chats; a write waits for the person, not a chat).
     const inbox =
-      item.source === "assistant_inbox" || item.source === "connector_write";
+      item.source === "assistant_inbox" ||
+      item.source === "connector_write" ||
+      item.source === "notice";
     const owner = upkeepOwner(item);
     const key = inbox
       ? `assistant-inbox:${item.assistantId || item.id}`
@@ -267,6 +269,8 @@ export function pendingPrimary(item: PendingItem): PendingPrimary {
   // A project's suggestions are decided on the project's page (DEV-256).
   if (item.source === "project_upkeep") return "none";
   if (item.source === "memory_upkeep") return "none";
+  // A note needs no answer: the person reads it and dismisses it (DEV-278).
+  if (item.source === "notice") return "none";
   if (pendingPersonal(item)) return "open";
   // A GitHub scope the session's device lacks (DEV-136): its picker there.
   if (item.rule === "github_scope" && item.deviceId) return "grant";

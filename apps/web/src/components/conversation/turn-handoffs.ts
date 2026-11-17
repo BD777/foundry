@@ -319,13 +319,17 @@ function toolResultBody(text: string): string | undefined {
   return sectionBlock(text, "Result|Output", "Error");
 }
 
-/** The short reason under an Error section part of the call's detail. */
+/**
+ * The short reason under an Error section part of the call's detail. A body
+ * of exactly `null` is no error: the worker wrote it for a call whose error
+ * was null (DEV-288), and stored transcripts still carry it.
+ */
 function toolError(text: string): string {
   const start = sectionStart(text, "Error");
   if (start === undefined) return "";
   const lineStart = text.indexOf("\n", start);
   const body = (lineStart < 0 ? "" : text.slice(lineStart + 1)).trim();
-  if (!body) return "";
+  if (!body || body === "null") return "";
   return shortenReason(body);
 }
 

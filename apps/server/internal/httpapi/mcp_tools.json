@@ -1242,7 +1242,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Files to copy to the session: paths in your workspace folder or att_… ids you were given; at most 10, 25 MB each. They land in one folder under .foundry/attachments of its workspace (deliveredAttachments lists the paths); a session on another device sees only files handed over this way."
+          "description": "Files to copy to the session: paths in your workspace folder, paths in your own temp folder ($TMPDIR), or att_… ids you were given; at most 10, 25 MB each. They land in one folder under .foundry/attachments of its workspace (deliveredAttachments lists the paths); a session on another device sees only files handed over this way."
         },
         "verification": {
           "type": "boolean",
@@ -1518,7 +1518,7 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member; in an Issue, only its sessions, not its execution or clarification. An idle session runs it; profileId, provider or model switches its runtime first. Running delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after running tool calls; at most 2 per sender per 30 minutes); turn_end at turn end or after 10 minutes, and to an idle creator after the sender's turn ends (at most 10 minutes). Queued, finishing or offline sessions hold messages (waitingForDevice); several held messages start one turn. A failed turn that never reached its model holds the message until a turn runs, with growing retry waits. Sessions keep messages: the same inputId, or the same text to the same session within 10 minutes, returns the earlier receipt. Only sessions you created report their turns to you. Returns the session status and receipt (inputId, delivery, state, deliverAt).",
+    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member; in an Issue, only its sessions, not its execution or clarification. An idle session runs it; profileId, provider or model switches its runtime first. Running delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after running tool calls; at most 2 per sender per 30 minutes); turn_end at turn end or after 10 minutes, and to an idle creator after the sender's turn ends (at most 10 minutes). Queued, finishing or offline sessions hold messages (waitingForDevice); several held messages start one turn. A turn that failed before reaching its model holds the message for retries. The same inputId, or the same text to the same session within 10 minutes, returns the earlier receipt. Only sessions you created report their turns to you. itemId moves one of your helpers to an open item of the person's list; the items' plans follow. Returns its status and the receipt.",
     "summary": "Messages a session: steers a running one or continues an idle one, and can switch its runtime first.",
     "limits": [
       "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
@@ -1551,7 +1551,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Files to copy to the session: paths in your workspace folder or att_… ids you were given; at most 10, 25 MB each. They land in one folder under .foundry/attachments of its workspace (deliveredAttachments lists the paths); a session on another device sees only files handed over this way."
+          "description": "Files to copy to the session: paths in your workspace folder, paths in your own temp folder ($TMPDIR), or att_… ids you were given; at most 10, 25 MB each. They land in one folder under .foundry/attachments of its workspace (deliveredAttachments lists the paths); a session on another device sees only files handed over this way."
         },
         "profileId": {
           "type": "string"
@@ -1562,6 +1562,10 @@
         },
         "model": {
           "type": "string"
+        },
+        "itemId": {
+          "type": "string",
+          "description": "Your helper (one create_session started) moves to this item of the person's list: one of yours, open and not archived. Without it the helper stays on its item."
         }
       },
       "required": ["sessionId", "prompt"]
@@ -2177,7 +2181,7 @@
   },
   {
     "name": "update_list",
-    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId links a task. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs.",
+    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId is your task (list_tasks) that helps with this item; it moves here from the item it was on. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs.",
     "summary": "Adds to or updates the person's list of items (plans and done things) from their own words; keeps each item's owner, summary and archive; can set a reminder.",
     "limits": [
       "One item per call; text at most 200 characters, when at most 60, summary at most 1500.",
@@ -2236,7 +2240,7 @@
             },
             "taskId": {
               "type": "string",
-              "description": "Your task helping with it (list_tasks); empty unlinks."
+              "description": "Your task (list_tasks) that helps with this item; the task moves here from its previous item."
             },
             "quote": {
               "type": "string",
@@ -2317,6 +2321,7 @@
                 },
                 "workRefs": {
                   "type": "array",
+                  "description": "Issues and services this plan works with. Helpers are not set here: a helper's link to the item is its task (update_list taskId, send_message itemId or create_session itemId), and the plan lists it and keeps it when the plan changes.",
                   "maxItems": 32,
                   "items": {
                     "type": "object",
@@ -2427,10 +2432,11 @@
   },
   {
     "name": "needs_you",
-    "description": "The person's one list of what waits for them (questions, approvals, failed turns, steps only they can take, stuck helpers), each item handled by you or by them. Your items stay yours until you decide. op list: the open items, yours (handler assistant) and the person's (also from chats they started themselves). op hand_over: give one of your items to the person with note, one sentence in their language saying what is needed; with sessionId and no open item (a helper asked in its answer, without a question card) it adds one. Their answer in the list reaches the helper. op resolve: close one of your items. Answering a helper with send_message, or a new dispatch to it, closes its items by itself.",
-    "summary": "Lists, hands over and closes the items in the person's \"needs you\" list.",
+    "description": "The person's one list of what waits for them (questions, approvals, failed turns, steps only they can take, stuck helpers), each item handled by you or by them. Your items stay yours until you decide. op list: the open items, yours (handler assistant) and the person's (also from chats they started themselves). op hand_over: give one of your items to the person with note, one sentence in their language saying what is needed; with sessionId and no open item (a helper asked in its answer, without a question card) it adds one. Their answer in the list reaches the helper. op tell: put a short note in the person's list when there is something they should know but nothing to decide; it needs no answer, never reaches a helper, and the person dismisses it. sessionId names the conversation that has the news (default: this one). op resolve: close one of your items. Answering a helper with send_message, or a new dispatch to it, closes its items by itself.",
+    "summary": "Lists, hands over, tells and closes the items in the person's \"needs you\" list.",
     "limits": [
       "Only the items of the assistant's own person; hand_over and resolve only items of its own helpers.",
+      "op tell only from the assistant's own conversations (this one or a message channel's).",
       "Only the person's assistant (a personal_agent session) has it."
     ],
     "inputSchema": {
@@ -2438,7 +2444,7 @@
       "properties": {
         "op": {
           "type": "string",
-          "enum": ["list", "hand_over", "resolve"]
+          "enum": ["list", "hand_over", "tell", "resolve"]
         },
         "itemId": {
           "type": "string",
@@ -2446,11 +2452,11 @@
         },
         "sessionId": {
           "type": "string",
-          "description": "A helper session: its open items you handle (hand_over, resolve)."
+          "description": "A helper session: its open items you handle (hand_over, resolve). tell: the conversation with the news (default this one)."
         },
         "note": {
           "type": "string",
-          "description": "hand_over: what the person reads, one or two plain sentences (at most 600 characters)."
+          "description": "hand_over and tell: what the person reads, one or two plain sentences (at most 600 characters)."
         }
       },
       "required": ["op"]

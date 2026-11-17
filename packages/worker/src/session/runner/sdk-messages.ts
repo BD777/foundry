@@ -971,12 +971,19 @@ export function sdkToolCallDetail(
       `Result\n\n\`\`\`json\n${truncateForEvent(safeJSONString(item.result), 2400)}\n\`\`\``,
     );
   }
-  if (item.error !== undefined) {
-    parts.push(
-      `Error\n\n${sdkString(item.error) || safeJSONString(item.error)}`,
-    );
+  const error = toolErrorText(item.error);
+  if (error) {
+    parts.push(`Error\n\n${truncateForEvent(error, 1024)}`);
   }
   return parts.join("\n\n");
+}
+
+/** A call's error as text: null, false and empty values state no error. */
+function toolErrorText(value: unknown): string {
+  if (typeof value === "boolean" || !hasMeaningfulToolPayload(value)) {
+    return "";
+  }
+  return sdkString(value) || safeJSONString(value);
 }
 
 export function hasMeaningfulToolPayload(value: unknown): boolean {

@@ -155,6 +155,25 @@ test("status marks show only while a chat is open, never on other pages", () => 
   setDocumentChat(undefined);
 });
 
+test("an unseen assistant answer marks the page title and icon", () => {
+  setDocumentChat(undefined);
+  setDocumentUnread(false);
+  setDocumentPage({
+    primary: "Devices",
+    context: "my-feishu",
+    assistantUnread: true,
+  });
+  assert.equal(document.title, "✅ Devices · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon-unread.png");
+  setDocumentPage({
+    primary: "Devices",
+    context: "my-feishu",
+    assistantUnread: false,
+  });
+  assert.equal(document.title, "Devices · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon.png");
+});
+
 test("the tab icon carries the same mark, and idle restores the app icon", () => {
   setDocumentUnread(false);
   setDocumentPage({ primary: "Chats", context: "ws" });

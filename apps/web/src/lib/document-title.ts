@@ -46,6 +46,8 @@ export interface DocumentTitleParts {
   running?: boolean;
   /** The open chat's finished answer is unseen. */
   unread?: boolean;
+  /** The assistant's home conversation holds an answer the person has not seen. */
+  assistantUnread?: boolean;
   /**
    * The open chat's turn ended, but background tasks, subagents or a
    * timer's run go on.
@@ -58,7 +60,7 @@ export interface DocumentTitleParts {
 export function tabStatus(parts: DocumentTitleParts): TabStatus {
   if (parts.waitingChildCount) return "waiting";
   if (parts.running) return "running";
-  if (parts.unread) return "unread";
+  if (parts.unread || parts.assistantUnread) return "unread";
   if (parts.background) return "background";
   return "idle";
 }
@@ -119,7 +121,8 @@ function apply(): void {
           waitingChildCount: chat.waitingChildCount,
         }
       : {}),
-    // Status marks belong to an open chat; other pages never carry them.
+    // The open chat's own unseen answer marks it; the assistant's home
+    // conversation carries its own mark on any page (DEV-278).
     unread: chat ? unread : false,
   };
   document.title = buildDocumentTitle(parts);

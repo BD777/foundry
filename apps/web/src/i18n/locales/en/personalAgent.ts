@@ -1517,7 +1517,7 @@ export const personalAgent = {
         handoverTitle: "In the chat",
         ack: "React while working",
         ackHint:
-          "Puts the source’s acknowledgement reaction on each message the assistant takes on, and removes it only when the turn and every session it started have ended, however they end.",
+          "Puts the source’s acknowledgement reaction on each message the assistant takes on, and removes it only when the turn, every session it started, and anything it handed to you that you have not answered have ended, however they end.",
         footer: "AI reply footer",
         footerPlaceholder: "> 来自AI",
         footerHint:
@@ -1627,6 +1627,8 @@ export const personalAgent = {
         fromSelf: "Sent by me",
         noText: "No text",
         actions: {
+          reaction_added: "Processing reaction added",
+          reaction_removed: "Processing reaction removed",
           connector_write: "Connector write",
           connector_refused: "Refused request",
           needs_you: "Handed to you",

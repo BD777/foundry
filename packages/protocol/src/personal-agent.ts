@@ -220,6 +220,16 @@ export interface PersonalAgentNeedsYou {
 }
 
 /**
+ * Whether the assistant's home conversation holds an answer newer than the
+ * person's last view of it (DEV-278).
+ */
+export interface AssistantHomeUnread {
+  unread: boolean;
+  /** The newest answer's time; absent before the first one. */
+  lastAnswerAt?: string;
+}
+
+/**
  * One row of the card: the item as the needs-you page reads it (the
  * fields its headline is made of), and where it came from.
  */

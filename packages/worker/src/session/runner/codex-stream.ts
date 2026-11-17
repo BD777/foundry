@@ -1,4 +1,5 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
+import { parseAgentQuestionReply } from "@bd777/foundry-protocol";
 import {
   codexWriteRefusal,
   workspaceWriteRefusedLabel,
@@ -187,11 +188,17 @@ export async function runCodexStreamedTurn(
         ) => {
           thread.observeInput?.(message);
           // The person's answer to a prompt Codex waits on is that
-          // prompt's answer, not a message of its own (only the person's:
-          // an agent's message, or one with files, goes to Codex as is).
+          // prompt's answer, not a message of its own. An agent answers
+          // with the reply envelope naming the question (its creator's
+          // answer to a child's question); that envelope reaches Codex as
+          // the person's answer would, without the sender's preface. Any
+          // other agent's message, or one with files, goes to Codex as is.
+          const answersQuestion =
+            attachments.length === 0 &&
+            parseAgentQuestionReply(message) !== undefined;
           if (
             attachments.length === 0 &&
-            !sentBySessionId &&
+            (!sentBySessionId || answersQuestion) &&
             thread.answerQuestion?.(message) === true
           ) {
             await recordSteer(
@@ -206,12 +213,13 @@ export async function runCodexStreamedTurn(
                 .catch(() => {});
             return;
           }
+          const from = answersQuestion ? undefined : sentBySessionId;
           if (options?.delivery !== "boundary")
             return applySteer(
               message,
               attachments,
               steerId,
-              sentBySessionId,
+              from,
               options?.annotations,
             );
           boundary.hold({
@@ -222,7 +230,7 @@ export async function runCodexStreamedTurn(
                 message,
                 attachments,
                 steerId,
-                sentBySessionId,
+                from,
                 options?.annotations,
               ),
           });

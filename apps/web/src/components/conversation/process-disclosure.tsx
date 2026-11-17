@@ -27,6 +27,7 @@ import {
   type ProcessDisplayItem,
 } from "./chat-process-display";
 import { formatDuration, stepUsageSummary, stepUsageTitle } from "./turn-usage";
+import { AnnotatedText } from "./annotation-reference";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessElapsed } from "./process-elapsed";
 import type {
@@ -187,7 +188,7 @@ function ProcessDisclosureItem({
             <Chip>{item.snippet}</Chip>
           ) : (
             <span className="fdy-chat-process-item-value relative min-w-0 truncate text-xs font-medium text-ink-muted">
-              {item.snippet}
+              <AnnotatedText text={item.snippet} />
             </span>
           )
         ) : null}

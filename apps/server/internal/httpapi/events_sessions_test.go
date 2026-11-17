@@ -81,8 +81,8 @@ func typesForTest[O any](observers []O) []string {
 // were told; the session it gets carries no transcript. Changes are followed
 // by a scheduled run's outcome, Feishu's card, the chat's queue, the chat's
 // title, leases, the assistant's tasks, inbox results and run controls, the
-// session's inbox, its report to its parent, pending items, digests and,
-// last, an Issue's run starting. Its transcript's events are followed by
+// session's inbox, its report to its parent, pending items, digests, the
+// assistant's home answer marks and, last, an Issue's run starting. Its transcript's events are followed by
 // Feishu's card, the chat's queue, its inbox and pending items, and a
 // device's report that it ended by naming.
 func TestSessionObserversReactInOrderAfterViewers(t *testing.T) {
@@ -93,7 +93,7 @@ func TestSessionObserversReactInOrderAfterViewers(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		{"changes", typesForTest(events.Observing().Changes), []string{"httpapi.workRunReactions", "httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "assistant.taskReactions", "assistant.inboxReactions", "assistant.runControlReactions", "httpapi.sessionAlertReactions", "sessions.inboxReactions", "httpapi.childReportReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions", "httpapi.waitingChildReactions", "issues.executionStarts"}},
+		{"changes", typesForTest(events.Observing().Changes), []string{"httpapi.workRunReactions", "httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "assistant.taskReactions", "assistant.inboxReactions", "assistant.runControlReactions", "httpapi.sessionAlertReactions", "sessions.inboxReactions", "httpapi.childReportReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions", "httpapi.waitingChildReactions", "httpapi.homeAnswerReactions", "issues.executionStarts"}},
 		{"transcript events", typesForTest(events.Observing().Events), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "httpapi.sessionAlertReactions", "sessions.inboxReactions", "httpapi.pendingReactions", "httpapi.childQuestionReactions"}},
 		{"reported ends", typesForTest(events.Observing().Ends), []string{"*httpapi.chatTitleService"}},
 		{"issue updates", typesForTest(server.issues.Observing()), []string{"httpapi.feishuReactions", "httpapi.pendingReactions", "httpapi.workspaceDigestReactions"}},

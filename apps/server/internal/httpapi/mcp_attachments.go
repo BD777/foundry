@@ -23,6 +23,11 @@ import (
 // workspace the receiving session runs in, chunk by chunk over the daemon
 // channel. A session on another device so receives the files too.
 //
+// A file may also be named by its absolute path in the caller's own temp
+// folder (its TMPDIR, outside the workspace, DEV-281): where the session
+// keeps what it makes while it works. Another session's temp folder is
+// refused, and the refusal says where the file is.
+//
 // The files one call hands over share a folder and keep their names
 // (.foundry/attachments/<date>/<batch>/calc.py), so files sent together
 // can still import or include each other. They stay unpublished part files
@@ -126,7 +131,7 @@ func (s *Server) mcpAttachments(ctx context.Context, actor Actor, targetWorkspac
 	batch := &handedOver{workspace: target}
 	names := map[string]bool{}
 	for index, ref := range refs {
-		path, name := ref, filepath.Base(ref)
+		path, name, tempOf := ref, filepath.Base(ref), ""
 		if attachment, ok := given[ref]; ok {
 			path, name = attachment.Path, attachment.Name
 		} else if strings.HasPrefix(ref, "att_") {
@@ -134,8 +139,10 @@ func (s *Server) mcpAttachments(ctx context.Context, actor Actor, targetWorkspac
 			return nil, &statusError{http.StatusNotFound, errors.New("no attachment " + ref + " among those your session was given")}
 		} else if !filepath.IsAbs(path) {
 			path = filepath.Join(source.LocalPath, path)
+		} else if !pathWithin(source.LocalPath, path) {
+			tempOf = caller.ID
 		}
-		attachment, relativePath, err := s.copyAttachment(ctx, source, target, filepath.Clean(path), name, folder, attachmentID(batchID, index), names)
+		attachment, relativePath, err := s.copyAttachment(ctx, source, target, filepath.Clean(path), tempOf, name, folder, attachmentID(batchID, index), names)
 		if err != nil {
 			s.discardHandedOver(ctx, batch)
 			return nil, err
@@ -188,11 +195,28 @@ func givenAttachments(session store.AgentSession) map[string]store.ChatAttachmen
 	return given
 }
 
+// pathWithin says whether path is folder or inside it.
+func pathWithin(folder, path string) bool {
+	if folder == "" {
+		return false
+	}
+	folder, path = filepath.Clean(folder), filepath.Clean(path)
+	return path == folder || strings.HasPrefix(path, strings.TrimSuffix(folder, "/")+"/")
+}
+
 // copyAttachment streams one file from the source device into folder of
-// the target workspace's attachments, under its own name, unpublished.
-func (s *Server) copyAttachment(ctx context.Context, source, target store.WorkspaceProjection, path, name, folder, id string, names map[string]bool) (store.ChatAttachment, string, error) {
+// the target workspace's attachments, under its own name, unpublished. A
+// non-empty tempOf reads the file from that session's temp folder instead
+// of the workspace.
+func (s *Server) copyAttachment(ctx context.Context, source, target store.WorkspaceProjection, path, tempOf, name, folder, id string, names map[string]bool) (store.ChatAttachment, string, error) {
 	read := func(offset int64) (attachmentChunk, error) {
-		chunk, err := s.hub.ReadWorkspaceFileChunk(ctx, source, path, offset, maxMCPAttachmentBytes)
+		var chunk attachmentChunk
+		var err error
+		if tempOf != "" {
+			chunk, err = s.hub.ReadSessionTempFileChunk(ctx, source, tempOf, path, offset, maxMCPAttachmentBytes)
+		} else {
+			chunk, err = s.hub.ReadWorkspaceFileChunk(ctx, source, path, offset, maxMCPAttachmentBytes)
+		}
 		if err != nil {
 			return chunk, attachmentSourceError(path, err)
 		}
@@ -245,6 +269,12 @@ func (s *Server) copyAttachment(ctx context.Context, source, target store.Worksp
 func attachmentSourceError(path string, err error) error {
 	var refusal attachmentRefusal
 	switch {
+	case errors.As(err, &refusal) && refusal.code == "other_session_temp":
+		return &statusError{http.StatusNotFound, errors.New(path + " is in another session's private temp folder; attachments are files in your workspace or your own temp folder; the session that made it can attach it with send_message")}
+	case errors.As(err, &refusal) && refusal.code == "outside_temp":
+		return &statusError{http.StatusNotFound, errors.New(path + " is outside your workspace folder and your own temp folder; attachments are files in your workspace or your own temp folder")}
+	case errors.As(err, &refusal) && refusal.code == "no_temp_folder":
+		return &statusError{http.StatusNotFound, errors.New(path + " is outside your workspace folder, and your session has no temp folder yet; attachments are files in your workspace or your own temp folder")}
 	case errors.As(err, &refusal) && refusal.code == "too_large":
 		return &statusError{http.StatusRequestEntityTooLarge, fmt.Errorf("%s is larger than %d MB, the most one attachment may hold", path, maxMCPAttachmentBytes>>20)}
 	case errors.As(err, &refusal) && slices.Contains([]string{"not_found", "invalid_path", "unsupported"}, refusal.code):

@@ -133,6 +133,13 @@ type Ports struct {
 	// its own turn is active, or a session it started is (DEV-268). The
 	// acknowledgement reaction stays on the trigger while it is true.
 	Working func(ctx context.Context, sessionID string) (bool, error)
+	// HandOver reports whether the assistant turn that ran an inbox entry
+	// handed an item to the person that is still open (DEV-279). The
+	// acknowledgement reaction stays on the trigger while it is true: that
+	// turn is waiting on the person, not done. Hand-overs of other turns of
+	// the conversation do not count. An error is treated as still open, like
+	// Working.
+	HandOver func(ctx context.Context, assistantID, inboxID string) (bool, error)
 	// Context hands other participants' messages to a session's open turn
 	// as facts, never as a trigger; false means the session is not running
 	// now and the messages wait for the next look.

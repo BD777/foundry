@@ -1324,3 +1324,34 @@ test("a refused retry says why in the person's words, never the server's sentenc
   await act(async () => root.unmount());
   host.remove();
 });
+
+test("a notice is a short row the person can open or dismiss", async () => {
+  const notice = item({
+    id: "pnd_notice_1",
+    source: "notice",
+    title: "The image did not make it into the thread",
+    excerpt: "The image did not make it into the thread.",
+    note: "The image did not make it into the thread.",
+  });
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [notice],
+  });
+  const card = host.querySelector('[data-source="notice"]');
+  assert.ok(card, "the notice has its own row");
+  assert.match(card.textContent, /The image did not make it into the thread\./);
+  assert.ok(buttonNamed(card, "Open message"), "it links to the conversation");
+  const got = buttonNamed(card, "Got it");
+  assert.ok(got, "it can be dismissed");
+  await act(async () => got.click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.path.includes("/state") && call.body?.state === "dismissed",
+    ),
+  );
+  await act(async () => root.unmount());
+  host.remove();
+});

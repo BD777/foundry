@@ -598,6 +598,21 @@ func (s *Server) messageChannelWorking(ctx context.Context, sessionID string) (b
 	return descendants > 0, nil
 }
 
+// messageChannelHandOver reports whether the assistant turn that ran a channel
+// message's inbox entry left an item with the person that is still open: the
+// reaction says that turn is on the request, not done (DEV-279). Hand-overs of
+// other turns of the same conversation do not count.
+func (s *Server) messageChannelHandOver(ctx context.Context, assistantID, inboxID string) (bool, error) {
+	if inboxID == "" {
+		return false, nil
+	}
+	entry, err := s.store.GetPersonalAgentInbox(ctx, assistantID, inboxID)
+	if err != nil {
+		return false, err
+	}
+	return s.store.OpenHandOverForInput(ctx, entry.InputID)
+}
+
 // messageChannelContext steers other participants' messages into a running
 // turn as facts, at a boundary; it never starts a turn. false means the
 // session is not running now and the messages wait.

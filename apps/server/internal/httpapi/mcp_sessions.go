@@ -323,6 +323,15 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if target.ArchivedAt != "" {
 		return "", store.ErrSessionArchived
 	}
+	if itemID := mcpArgString(args, "itemId"); itemID != "" {
+		scope, err := s.paScope(ctx, call.actor)
+		if err != nil {
+			return "", err
+		}
+		if err := s.assistant.MoveHelper(ctx, scope, target.ID, itemID); err != nil {
+			return "", err
+		}
+	}
 	attachments, err := s.mcpAttachments(ctx, call.actor, target.WorkspaceID, mcpArgList(args, "attachments"))
 	if err != nil {
 		return "", err

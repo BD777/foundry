@@ -440,3 +440,69 @@ func TestNeedsYouStoppedAssistantKeepsItsItems(t *testing.T) {
 		t.Fatalf("asked while stopped: %+v", open[helper2.ID])
 	}
 }
+
+// A session tells the person something that needs no decision (DEV-278):
+// one dismissable row in Needs you, the same note kept once, and no reply
+// to anything.
+func TestNeedsYouTellPutsOneDismissableNote(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	const note = "The image did not make it into the thread."
+
+	text, failed := f.needsYou(t, map[string]any{"op": "tell", "note": note})
+	if failed || !strings.Contains(text, `"told"`) || !strings.Contains(text, note) {
+		t.Fatalf("tell = %s (failed %v)", text, failed)
+	}
+	list, _ := f.open(t)
+	if len(list.Items) != 1 {
+		t.Fatalf("items = %+v", list.Items)
+	}
+	item := list.Items[0]
+	if item.Source != store.PendingSourceNotice || item.SessionID != f.conversation.ID ||
+		store.PendingHandledBy(item.PendingItem) != store.PendingHandlerPerson || item.Note != note {
+		t.Fatalf("notice = %+v", item)
+	}
+	if list.Open != 1 || list.AssistantOpen != 0 {
+		t.Fatalf("counts: open %d assistant %d", list.Open, list.AssistantOpen)
+	}
+	// The same note from the same conversation stays one open item.
+	if _, failed := f.needsYou(t, map[string]any{"op": "tell", "note": note}); failed {
+		t.Fatal("repeating a note failed")
+	}
+	if list, _ = f.open(t); len(list.Items) != 1 || list.Items[0].Occurrences != 1 {
+		t.Fatalf("repeat stacked: %+v", list.Items)
+	}
+
+	// The person dismisses it like any other item.
+	raw := strings.NewReader(`{"state":"dismissed"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/pending-items/"+item.ID+"/state", raw)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	f.server.testActor = &Actor{Kind: ActorAccount, Account: &store.User{ID: f.aliceID}}
+	defer func() { f.server.testActor = nil }()
+	f.server.Routes().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("dismiss: %d %s", recorder.Code, recorder.Body)
+	}
+	if _, open := f.open(t); len(open) != 0 {
+		t.Fatalf("dismissed notice still open: %+v", open)
+	}
+	stored, err := f.db.GetPendingItem(context.Background(), f.aliceID, item.ID)
+	if err != nil || stored.State != store.PendingDismissed || stored.Outcome != store.PendingOutcomePersonDismissedNotNeeded {
+		t.Fatalf("dismissed notice = %+v (%v)", stored, err)
+	}
+}
+
+// tell only takes a conversation of this assistant, and only a note.
+func TestNeedsYouTellRefusesOtherSessionsAndAnEmptyNote(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	if text, failed := f.needsYou(t, map[string]any{"op": "tell", "note": ""}); !failed || !strings.Contains(text, "note") {
+		t.Fatalf("empty note = %s (failed %v)", text, failed)
+	}
+	// The helper is not the assistant's own conversation.
+	if text, failed := f.needsYou(t, map[string]any{"op": "tell", "sessionId": f.helper.ID, "note": "news"}); !failed {
+		t.Fatalf("tell from a helper = %s", text)
+	}
+	if list, _ := f.open(t); len(list.Items) != 0 {
+		t.Fatalf("refused tells recorded items: %+v", list.Items)
+	}
+}

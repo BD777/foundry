@@ -321,4 +321,20 @@ func (s *Store) CountActiveAgentDescendants(ctx context.Context, sessionID strin
 	return count, err
 }
 
+// OpenHandOverInLineage reports whether sessionID or a session below it, at
+// any depth, has an item open that the assistant handed to the person: the
+// turn is still on the request until they answer or dismiss it (DEV-279).
+func (s *Store) OpenHandOverInLineage(ctx context.Context, sessionID string) (bool, error) {
+	var count int
+	err := s.conn().QueryRowContext(ctx, `WITH RECURSIVE lineage(id) AS (
+			SELECT ?
+			UNION
+			SELECT child.id FROM agent_sessions child JOIN lineage ON child.parent_session_id = lineage.id
+		)
+		SELECT COUNT(*) FROM pending_items
+		WHERE session_id IN (SELECT id FROM lineage) AND state = ? AND handler = ? AND outcome = ?`,
+		sessionID, store.PendingOpen, store.PendingHandlerPerson, store.PendingOutcomeHandedOver).Scan(&count)
+	return count > 0, err
+}
+
 var _ store.SessionDescendantStore = (*Store)(nil)

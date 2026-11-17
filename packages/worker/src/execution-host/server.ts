@@ -66,6 +66,7 @@ import { executionHostPaths } from "./paths.js";
 import {
   clearHostStopped,
   knownHostRoots,
+  markHostRetiring,
   seniorHostPresent,
 } from "./roots.js";
 import { startHostLiveness } from "./liveness.js";
@@ -119,6 +120,7 @@ export async function serveExecutionHost(
   const entry = fileURLToPath(new URL("./main.js", import.meta.url));
   const stamp = runtimeStamp(entry);
   clearHostStopped(paths.root);
+  markHostRetiring(paths.root, false);
   const startedAt = Date.now();
   writePrivateJSONAtomic(resolve(paths.root, "identity.json"), {
     startedAt,
@@ -229,7 +231,7 @@ export async function serveExecutionHost(
   const cancelUpgrade = () => {
     if (!draining) return;
     draining = false;
-    observedSessionWork()?.setDraining(false);
+    observedSessionWork()?.setDraining(retiring);
     setTimerRevivalPaused(retiring);
     clearTimeout(drainTimer);
   };
@@ -343,6 +345,9 @@ export async function serveExecutionHost(
     },
     retire: ({ retiring: next }) => {
       retiring = next;
+      markHostRetiring(paths.root, next);
+      // A retiring host hands the device's shared work over: no heartbeats.
+      observedSessionWork()?.setDraining(next || draining);
       setTimerRevivalPaused(next || draining);
       if (next) closeIdleRuntimes();
       announce();

@@ -11,6 +11,7 @@ import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { agentQuestionReplyText } from "@bd777/foundry-protocol";
 
 // The runtime's config home is a scratch folder, set before modules read it.
 const root = realpathSync(mkdtempSync(join(tmpdir(), "foundry-steer-")));
@@ -311,6 +312,68 @@ test("Codex active steer carries sender identity and preserves image input and t
       path: image.path,
     });
     assert.equal(events[0][4].text, "Please inspect");
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("a Codex steer from the session that created it answers a question as the envelope, unprefixed", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const received = [];
+  const asked = [];
+  const answer = agentQuestionReplyText(
+    "msg_question",
+    [{ title: "Which greeting?" }],
+    ["Bonjour"],
+  );
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    answerQuestion: (message) => {
+      asked.push(message);
+      return false;
+    },
+    steer: async (input) => {
+      received.push(input[0].text);
+    },
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async () => {} },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await steerActiveSessionOnce(
+      id,
+      "answer-steer",
+      answer,
+      [],
+      "sess_creator",
+    );
+    await steerActiveSessionOnce(
+      id,
+      "plain-steer",
+      "Also check tests",
+      [],
+      "sess_creator",
+    );
+    assert.deepEqual(asked, [answer]);
+    assert.equal(received[0].trim(), answer.trim());
+    assert.equal(
+      received[1],
+      userMessageText("Also check tests", [], "sess_creator"),
+    );
   } finally {
     finish();
     await running;

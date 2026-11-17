@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -106,8 +107,30 @@ func (r *Runner) openWindows(ctx context.Context, channel store.MessageChannelRe
 	return windows
 }
 
-// settleAcks takes the acknowledgement reaction off messages whose turn, and
-// every session it started, have ended.
+// handedOver reports whether the turn that ran a delivery's inbox entry left
+// an item the person still has to answer, memoized for one pass (DEV-279).
+// Unreadable state counts as an open hand-over: the reaction waits rather
+// than say the turn is done.
+func (r *Runner) handedOver(ctx context.Context, cache map[string]bool, assistantID, inboxID string) bool {
+	if inboxID == "" || r.ports.HandOver == nil {
+		return false
+	}
+	if value, ok := cache[inboxID]; ok {
+		return value
+	}
+	value := false
+	if open, err := r.ports.HandOver(ctx, assistantID, inboxID); err == nil {
+		value = open
+	} else {
+		value = true
+	}
+	cache[inboxID] = value
+	return value
+}
+
+// settleAcks takes the acknowledgement reaction off messages whose turn,
+// every session it started, and every hand-over the turn left open, have
+// ended (DEV-268, DEV-279).
 func (r *Runner) settleAcks(ctx context.Context, channel store.MessageChannelRecord) {
 	if r.ports.Ack == nil || !AckEnabled(channel.MessageChannel) {
 		return
@@ -117,18 +140,20 @@ func (r *Runner) settleAcks(ctx context.Context, channel store.MessageChannelRec
 	if err != nil {
 		return
 	}
-	cache := map[string]bool{}
+	working := map[string]bool{}
+	openHandOvers := map[string]bool{}
 	var remove []string
 	var settled []store.MessageChannelDeliveryRecord
 	for _, record := range records {
 		if !record.AckHeld || record.Envelope.MessageID == "" {
 			continue
 		}
-		if r.working(ctx, cache, record.SessionID) {
+		if r.working(ctx, working, record.SessionID) || r.handedOver(ctx, openHandOvers, record.AssistantID, record.InboxID) {
 			continue
 		}
 		remove = append(remove, record.Envelope.MessageID)
 		record.AckHeld = false
+		record.AckRemovedAt = r.ports.Now().UTC().Format(time.RFC3339Nano)
 		settled = append(settled, record)
 	}
 	if len(remove) == 0 {

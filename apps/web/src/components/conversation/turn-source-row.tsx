@@ -13,10 +13,13 @@ import type { AgentBackgroundTaskOutput } from "@bd777/foundry-protocol";
 import { CodeBlockCopyButton } from "streamdown";
 import { isAbortError, readBackgroundTaskOutput } from "../../api";
 import { cn } from "../../lib/cn";
+import { chatHref } from "../../lib/in-app-navigation";
 import { clockTime, fullWhen } from "../../lib/time-format";
+import { AppLink } from "../ui/app-link";
 import { Button } from "../ui/button";
 import { CodeBlock, codeBlockActionClass } from "../ui/code-block";
 import { LoadingState } from "../ui/loading";
+import { AnnotatedText } from "./annotation-reference";
 import { MarkdownContent } from "./markdown-content";
 import { sourceBody, type TurnSource } from "./turn-source";
 import type {
@@ -190,17 +193,28 @@ function SourceSessionLink({
 }) {
   const { t } = useTranslation("conversation");
   if (!title) return null;
-  return source.onOpen ? (
-    <Button
-      onClick={source.onOpen}
-      size="inline"
-      title={t("message.openSender", { title })}
-      variant="link"
-    >
-      {title}
+  if (source.onOpen)
+    return (
+      <Button
+        onClick={source.onOpen}
+        size="inline"
+        title={t("message.openSender", { title })}
+        variant="link"
+      >
+        {title}
+      </Button>
+    );
+  if (!source.sessionId)
+    return <strong className="font-medium text-ink">{title}</strong>;
+  return (
+    <Button asChild size="inline" variant="link">
+      <AppLink
+        href={chatHref(source.sessionId)}
+        title={t("message.openSender", { title })}
+      >
+        {title}
+      </AppLink>
     </Button>
-  ) : (
-    <strong className="font-medium text-ink">{title}</strong>
   );
 }
 
@@ -233,7 +247,7 @@ function SourceBody({
             long && !open && "max-h-[122px] overflow-hidden",
           )}
         >
-          {text}
+          <AnnotatedText text={text} />
         </div>
       )}
       {long ? (

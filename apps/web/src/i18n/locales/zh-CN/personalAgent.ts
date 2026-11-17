@@ -1410,7 +1410,7 @@ export const personalAgent: Translation<typeof en> = {
         handoverTitle: "聊天里的标记",
         ack: "处理中给消息加表情",
         ackHint:
-          "助理接手每条消息时，在来源的聊天里给它加上「处理中」表情；这一轮和它启动的会话都结束后才移除，无论成功、失败还是取消。",
+          "助理接手每条消息时，在来源的聊天里给它加上「处理中」表情；这一轮、它启动的会话，以及它交给你处理、你还没答复的事都结束后才移除，无论成功、失败还是取消。",
         footer: "AI 回复说明",
         footerPlaceholder: "> 来自AI",
         footerHint:
@@ -1514,6 +1514,8 @@ export const personalAgent: Translation<typeof en> = {
         fromSelf: "我自己发的",
         noText: "没有文本",
         actions: {
+          reaction_added: "加上了处理中表情",
+          reaction_removed: "移除了处理中表情",
           connector_write: "连接器写入",
           connector_refused: "被拒绝的请求",
           needs_you: "交给你处理",

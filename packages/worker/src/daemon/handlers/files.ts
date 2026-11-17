@@ -59,9 +59,14 @@ import {
   AttachmentError,
   abortAttachmentUpload,
   readAttachmentImageChunk,
+  readSessionTempFileChunk,
   readWorkspaceFileChunk,
   writeAttachmentChunk,
 } from "../../workspace/workspace-attachments.js";
+import {
+  knownSessionScratchDirectory,
+  otherSessionScratchDirectories,
+} from "../../resources/resource-pool.js";
 import { readDeviceFile } from "../../session/files/device-files.js";
 import {
   safeDirectoryListing,
@@ -168,24 +173,35 @@ function onAttachmentRead(envelope: ProtocolEnvelope, ctx: DaemonContext) {
         payload.scope === "workspace"
           ? readWorkspaceFileChunk
           : readAttachmentImageChunk;
-      const chunk = await (payload.scope !== "workspace" && payload.variant
-        ? readAttachmentPreviewChunk(
-            {
-              workspacePath: ctx.roster.folderFor(payload.workspaceId),
+      const chunk =
+        payload.scope === "session_temp"
+          ? readSessionTempFileChunk({
+              tempFolder: knownSessionScratchDirectory(payload.sessionId ?? ""),
+              otherTempFolders: otherSessionScratchDirectories(
+                payload.sessionId ?? "",
+              ),
               path: payload.path,
               offset: payload.offset,
               maxBytes: payload.maxBytes,
-              chunkBytes: payload.chunkBytes,
-            },
-            payload.variant,
-          )
-        : read({
-            workspacePath: ctx.roster.folderFor(payload.workspaceId),
-            path: payload.path,
-            offset: payload.offset,
-            maxBytes: payload.maxBytes,
-            chunkBytes: payload.chunkBytes,
-          }));
+            })
+          : await (payload.scope !== "workspace" && payload.variant
+              ? readAttachmentPreviewChunk(
+                  {
+                    workspacePath: ctx.roster.folderFor(payload.workspaceId),
+                    path: payload.path,
+                    offset: payload.offset,
+                    maxBytes: payload.maxBytes,
+                    chunkBytes: payload.chunkBytes,
+                  },
+                  payload.variant,
+                )
+              : read({
+                  workspacePath: ctx.roster.folderFor(payload.workspaceId),
+                  path: payload.path,
+                  offset: payload.offset,
+                  maxBytes: payload.maxBytes,
+                  chunkBytes: payload.chunkBytes,
+                }));
       return {
         size: chunk.size,
         ...("realPath" in chunk

@@ -16,6 +16,7 @@ func TestInboxEntryNeedsThePersonOnlyWhenAnAttemptFailedOrItWaitsOnThem(t *testi
 	}{
 		{"failed attempt", store.PersonalAgentInboxEntry{Status: "delivered", SessionID: "sess_1", ResultStatus: "failed"}, true},
 		{"stopped attempt", store.PersonalAgentInboxEntry{Status: "delivered", SessionID: "sess_1", ResultStatus: "canceled"}, true},
+		{"settled stopped attempt", store.PersonalAgentInboxEntry{Status: "resolved", SessionID: "sess_1", ResultStatus: "canceled"}, false},
 		{"waits on the computer", store.PersonalAgentInboxEntry{Status: "waiting", WaitingReason: "device_offline"}, true},
 		{"busy assistant clears itself", store.PersonalAgentInboxEntry{Status: "waiting", WaitingReason: "assistant_busy"}, false},
 		{"attempt still running", store.PersonalAgentInboxEntry{Status: "delivered", SessionID: "sess_1"}, false},

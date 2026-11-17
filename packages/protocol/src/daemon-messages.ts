@@ -725,7 +725,9 @@ export interface AttachmentReadPayload {
   offset: number;
   maxBytes: number;
   /** "workspace": any file of the workspace, not only an image attachment. */
-  scope?: "workspace";
+  scope?: "workspace" | "session_temp";
+  /** With "session_temp": the session whose own temp folder holds the file. */
+  sessionId?: string;
   /** Image derivative; omitted reads original bytes. */
   variant?: "preview" | "placeholder";
   /** Smaller blocks keep original-image progress responsive. */

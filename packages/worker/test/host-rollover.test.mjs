@@ -26,8 +26,10 @@ import { ExecutionHostFleet } from "../dist/execution-host/fleet.js";
 import { adoptStoppedHost } from "../dist/execution-host/adoption.js";
 import {
   generationRoot,
+  hostIsRetiring,
   hostWasStopped,
   knownHostRoots,
+  markHostRetiring,
   markHostStopped,
   seniorHostLive,
   seniorHostPresent,
@@ -67,7 +69,7 @@ async function until(check) {
 }
 
 /** A host speaking the control protocol, as the real one answers it. */
-function fakeHost(root, { entry, version, capable = true }) {
+function fakeHost(root, { entry, version, capable = true, stuck = false }) {
   const identity = processIdentity(process.pid);
   const host = {
     root,
@@ -76,6 +78,8 @@ function fakeHost(root, { entry, version, capable = true }) {
     claims: [],
     resident: [],
     retiring: false,
+    /** Busy with something no turn holds: refuses the gentle switch modes. */
+    stuck,
     requests: [],
     sockets: new Set(),
     alive: true,
@@ -94,7 +98,7 @@ function fakeHost(root, { entry, version, capable = true }) {
     version: host.version,
     entry: host.entry,
     runtimeStamp: host.entry,
-    busy: host.claims.length > 0,
+    busy: host.claims.length > 0 || host.stuck,
     serverURL,
     pid: process.pid,
     startTime: identity.startTime,
@@ -158,7 +162,8 @@ function fakeHost(root, { entry, version, capable = true }) {
           return answer({ inputId: request.inputId, stopped: true });
         case "prepare_upgrade":
           return answer({
-            ready: request.mode === "now" || !host.claims.length,
+            ready:
+              request.mode === "now" || (!host.claims.length && !host.stuck),
           });
         default:
           return answer({});
@@ -242,6 +247,7 @@ async function device(t, oldHost = {}, behaviour = {}) {
   };
   const fleet = new ExecutionHostFleet(serverURL, driver, {
     serviceStartMs: 300,
+    idleStopMs: behaviour.idleStopMs,
   });
   const transport = new ReliableSessionTransport();
   transport.bind({ readyState: 1, send: () => {} });
@@ -898,4 +904,104 @@ test("a stopped host's unfinished work is found, so its identity is kept", () =>
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+});
+
+test("a retired host that is idle but refuses the gentle switch is stopped after its quiet period", async (t) => {
+  const d = await device(t, { stuck: true });
+  await d.boot();
+  await d.fleet.refresh();
+  assert.deepEqual(d.stopped, [], "not before the quiet period passes");
+
+  const quick = await device(t, { stuck: true }, { idleStopMs: 0 });
+  await quick.boot();
+  await until(() => quick.stopped.includes(quick.oldRoot));
+  assert.ok(quick.old.order.includes("prepare_upgrade"));
+  assert.equal(quick.old.alive, false);
+  assert.equal(quick.newHost().alive, true, "the newest host keeps running");
+});
+
+test("a senior host the daemon retires does not hold the device's work", () => {
+  const base = mkdtempSync(join(tmpdir(), "host-senior-retiring-"));
+  try {
+    const me = join(base, "me");
+    const senior = join(base, "senior");
+    mkdirSync(me);
+    mkdirSync(senior);
+    writeFileSync(
+      join(senior, "identity.json"),
+      JSON.stringify({
+        pid: process.pid,
+        startTime: processIdentity(process.pid).startTime,
+        startedAt: 1_000,
+      }),
+    );
+    const roots = [senior, me];
+    const self = { root: me, startedAt: 5_000 };
+    assert.equal(seniorHostPresent(self, new Map(), 0, 60_000, roots), true);
+    markHostRetiring(senior, true);
+    assert.equal(seniorHostPresent(self, new Map(), 0, 60_000, roots), false);
+    markHostRetiring(senior, false);
+    assert.equal(seniorHostPresent(self, new Map(), 0, 60_000, roots), true);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+/** An older host the daemon did not retire: the marker must come from the daemon. */
+function writeOlderIdentity(root) {
+  writeFileSync(
+    join(root, "identity.json"),
+    JSON.stringify({
+      pid: process.pid,
+      startTime: processIdentity(process.pid).startTime,
+      startedAt: 1_000,
+    }),
+  );
+}
+
+test("an older host retired by an earlier daemon is marked, stopped once idle, and the current host takes the work", async (t) => {
+  const d = await device(t, {}, { idleStopMs: 0 });
+  d.old.retiring = true;
+  writeOlderIdentity(d.oldRoot);
+  const self = { root: d.newRoot, startedAt: 5_000 };
+  const roots = [d.oldRoot, d.newRoot];
+  assert.equal(
+    seniorHostPresent(self, new Map(), Date.now(), 60_000, roots),
+    true,
+  );
+
+  await d.boot();
+  assert.equal(hostIsRetiring(d.oldRoot), true, "the daemon wrote the marker");
+  assert.equal(
+    seniorHostPresent(self, new Map(), Date.now(), 60_000, roots),
+    false,
+    "the current host no longer waits for it",
+  );
+  await until(() => d.stopped.includes(d.oldRoot));
+  assert.equal(d.old.alive, false);
+  assert.equal(d.newHost().alive, true, "the current host keeps running");
+});
+
+test("an older host with an active claim is marked but not stopped until the turn ends", async (t) => {
+  const d = await device(t, {}, { idleStopMs: 0 });
+  d.old.retiring = true;
+  d.old.claims = [{ sessionId: "busy", inputId: "b1" }];
+  await d.boot();
+  assert.equal(hostIsRetiring(d.oldRoot), true, "the daemon wrote the marker");
+  await pause(300);
+  await d.fleet.refresh();
+  assert.deepEqual(d.stopped, [], "a running turn is never stopped");
+
+  d.old.claims = [];
+  await d.fleet.refresh();
+  await until(() => d.stopped.includes(d.oldRoot));
+  assert.equal(d.newHost().alive, true);
+});
+
+test("an older host without the rollover capability is not marked", async (t) => {
+  const d = await device(t, { capable: false }, { idleStopMs: 0 });
+  d.old.retiring = true;
+  await d.boot();
+  await pause(300);
+  assert.equal(hostIsRetiring(d.oldRoot), false, "it cannot pause its timers");
 });

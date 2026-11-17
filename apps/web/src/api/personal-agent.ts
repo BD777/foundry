@@ -4,6 +4,7 @@ import type {
   AssistantFileMove,
   AssistantFileRevert,
   AssistantFileWrite,
+  AssistantHomeUnread,
   AssistantInstructionsDefault,
   AssistantWorkspaceList,
   AgentSession,
@@ -118,6 +119,20 @@ export function getPersonalAgent(
   assistantId?: string,
 ): Promise<PersonalAgentOverview> {
   return request("GET", personalAgentApiBase(assistantId));
+}
+
+/** Whether the home conversation holds an answer the person has not seen. */
+export function getAssistantHomeUnread(
+  assistantId?: string,
+): Promise<AssistantHomeUnread> {
+  return request("GET", `${personalAgentApiBase(assistantId)}/home-unread`);
+}
+
+/** The person is looking at the home conversation: mark its answers seen. */
+export function markAssistantHomeSeen(
+  assistantId?: string,
+): Promise<AssistantHomeUnread> {
+  return request("POST", `${personalAgentApiBase(assistantId)}/home-seen`);
 }
 
 export function getPersonalAgentConnectors(

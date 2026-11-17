@@ -1,4 +1,5 @@
 export { AssistantHome, type AssistantHomeProps } from "./assistant-home";
+export { useAssistantHomeUnread } from "./use-assistant-home-unread";
 export { AssistantList, type AssistantListProps } from "./assistant-list";
 export {
   AssistantSettings,

@@ -351,12 +351,14 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 			return false, err
 		}
 	}
-	// The acknowledgement says "still working": it stays while the turn and
-	// every session it starts run, and comes off later (settleAcks, DEV-268).
+	// The acknowledgement says "still working": it stays while the turn, every
+	// session it starts and any hand-over that turn leaves open still hold, and
+	// comes off later (settleAcks, DEV-268, DEV-279).
 	if r.ports.Ack != nil && AckEnabled(channel.MessageChannel) &&
 		r.ack(ctx, channel, true, batchMessageIDs(batch)) == nil {
+		addedAt := r.ports.Now().UTC().Format(time.RFC3339Nano)
 		for i := range batch {
-			batch[i].AckHeld = true
+			batch[i].AckHeld, batch[i].AckAddedAt = true, addedAt
 			if err := r.ports.Store.SaveMessageChannelDelivery(ctx, batch[i]); err != nil {
 				return false, err
 			}

@@ -269,6 +269,8 @@ type fixture struct {
 	acks         []ackCall
 	ackErr       error
 	working      map[string]bool
+	handOvers    map[string]bool
+	handOverErr  error
 	contexts     []contextCall
 }
 
@@ -296,7 +298,7 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	f := &fixture{st: st, feed: &feed{reads: map[string]feedAnswer{}}, inbox: newInbox(), now: time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC),
-		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}, working: map[string]bool{}}
+		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}, working: map[string]bool{}, handOvers: map[string]bool{}}
 	spec := openLarkEvents(t)
 	f.runner = channels.NewRunner(channels.Ports{
 		Store: st,
@@ -327,6 +329,9 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 		},
 		Working: func(ctx context.Context, id string) (bool, error) {
 			return f.working[id], nil
+		},
+		HandOver: func(ctx context.Context, assistantID, inboxID string) (bool, error) {
+			return f.handOvers[inboxID], f.handOverErr
 		},
 		Context: func(ctx context.Context, channel store.MessageChannelRecord, sessionID string, turn channels.Turn) (bool, error) {
 			if !f.working[sessionID] {
@@ -1379,6 +1384,128 @@ func TestAckStaysWhileAHelperRuns(t *testing.T) {
 	f.runner.Dispatch(ctx)
 	if len(f.acks) != 2 {
 		t.Fatalf("an already settled reaction was removed twice: %+v", f.acks)
+	}
+}
+
+// The acknowledgement reaction keeps saying "on it" after the turn ends
+// while a hand-over it left open waits for the person, and comes off once
+// they answer or dismiss it (DEV-279). The delivery records when the
+// reaction went on and came off.
+func TestAckStaysWhileThePersonHasTheHandOver(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	ctx := context.Background()
+	f.feed.answers = []feedAnswer{changes("c1", larkChange("m1", "oc_a", "p2p", "/fd 问一下本人", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	entries := f.inbox.all()
+	if len(entries) != 1 {
+		t.Fatalf("turn: %v", entries)
+	}
+	var inboxID string
+	for id := range entries {
+		inboxID = id
+	}
+	if len(f.acks) != 1 || !f.acks[0].add || len(f.acks[0].ids) != 1 || f.acks[0].ids[0] != "m1" {
+		t.Fatalf("the reaction went on the trigger: %+v", f.acks)
+	}
+	queued := f.records(t, store.MessageDeliveryQueued)
+	if len(queued) != 1 || !queued[0].AckHeld || queued[0].AckAddedAt == "" || queued[0].AckRemovedAt != "" {
+		t.Fatalf("the delivery records the reaction going on: %+v", queued)
+	}
+	// The turn ends, but what it handed to the person is still open.
+	f.inbox.set(inboxID, channels.InboxStatus{Status: "resolved", SessionID: "sess_a", ResultStatus: "completed"})
+	f.handOvers[inboxID] = true
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 1 {
+		t.Fatalf("the reaction came off while the person still had the hand-over: %+v", f.acks)
+	}
+	// A hand-over that cannot be read keeps the reaction: it waits rather
+	// than claim the turn is done.
+	f.handOvers[inboxID], f.handOverErr = false, errors.New("the items could not be read")
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 1 {
+		t.Fatalf("an unreadable hand-over took the reaction off: %+v", f.acks)
+	}
+	// The person answers or dismisses it: the reaction comes off.
+	f.handOverErr = nil
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 2 || f.acks[1].add || len(f.acks[1].ids) != 1 || f.acks[1].ids[0] != "m1" {
+		t.Fatalf("the reaction stayed after the person answered: %+v", f.acks)
+	}
+	done := f.records(t, store.MessageDeliveryDone)
+	if len(done) != 1 || done[0].AckHeld || done[0].AckRemovedAt == "" || done[0].AckAddedAt == "" {
+		t.Fatalf("the delivery records both moments: %+v", done)
+	}
+	f.runner.Dispatch(ctx)
+	if len(f.acks) != 2 {
+		t.Fatalf("an already settled reaction was removed twice: %+v", f.acks)
+	}
+}
+
+// Two messages in one conversation session: the first turn hands an item to
+// the person and leaves it open, the second turn ends with nothing open. The
+// first reaction stays for its own hand-over; the second comes off, since the
+// earlier hand-over belongs to another turn (DEV-279).
+func TestAckOfALaterTurnIgnoresAnEarlierHandOver(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	ctx := context.Background()
+	newestTurn := func(except string) string {
+		for id := range f.inbox.all() {
+			if f.inbox.keys[id] == "c:oc_a" && id != except {
+				return id
+			}
+		}
+		return ""
+	}
+	f.feed.answers = []feedAnswer{changes("c1", larkChange("m1", "oc_a", "p2p", "/fd one", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	firstTurn := newestTurn("")
+	if firstTurn == "" {
+		t.Fatal("no turn for the first message")
+	}
+	f.inbox.set(firstTurn, channels.InboxStatus{Status: "resolved", SessionID: "sess_a", ResultStatus: "completed"})
+	f.handOvers[firstTurn] = true
+	f.runner.Dispatch(ctx)
+
+	f.feed.answers = []feedAnswer{changes("c2", larkChange("m2", "oc_a", "p2p", "/fd two", false, false))}
+	f.poll(t)
+	f.now = f.now.Add(channels.Debounce + time.Second)
+	f.runner.Dispatch(ctx)
+	secondTurn := newestTurn(firstTurn)
+	if secondTurn == "" {
+		t.Fatal("no turn for the second message")
+	}
+	f.inbox.set(secondTurn, channels.InboxStatus{Status: "resolved", SessionID: "sess_a", ResultStatus: "completed"})
+	f.runner.Dispatch(ctx)
+
+	if last := f.acks[len(f.acks)-1]; last.add || joinedAckIDs(last.ids) != "m2" {
+		t.Fatalf("the answered message kept its reaction for an earlier turn's hand-over: %+v", f.acks)
+	}
+	for _, call := range f.acks {
+		if !call.add && slices.Contains(call.ids, "m1") {
+			t.Fatalf("the first turn's reaction came off while its hand-over was open: %+v", f.acks)
+		}
+	}
+	done := f.records(t, store.MessageDeliveryDone)
+	kept := map[string]bool{}
+	for _, record := range done {
+		kept[record.Envelope.MessageID] = record.AckHeld
+	}
+	if held, ok := kept["m1"]; !ok || !held {
+		t.Fatalf("the first message's reaction is not held: %+v", done)
+	}
+	if held, ok := kept["m2"]; !ok || held {
+		t.Fatalf("the second message's reaction is still held: %+v", done)
+	}
+
+	// The person answers the first hand-over: its reaction comes off now.
+	f.handOvers[firstTurn] = false
+	f.runner.Dispatch(ctx)
+	if last := f.acks[len(f.acks)-1]; last.add || joinedAckIDs(last.ids) != "m1" {
+		t.Fatalf("the first reaction stayed after the person answered: %+v", f.acks)
 	}
 }
 

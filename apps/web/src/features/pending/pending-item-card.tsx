@@ -10,6 +10,7 @@ import {
   Hand,
   Hourglass,
   Inbox,
+  Info,
   KeyRound,
   MessageCircleQuestion,
   MessagesSquare,
@@ -59,6 +60,7 @@ const kindIcon = {
   bundle_update: { icon: PackageX, tone: "error" },
   message_channel: { icon: MessagesSquare, tone: "warn" },
   connector_write: { icon: MessagesSquare, tone: "warn" },
+  notice: { icon: Info, tone: "brass" },
 } as const;
 
 /**
@@ -121,6 +123,15 @@ export function PendingItemCard({
     return (
       <ConnectorWriteItemCard
         item={item}
+        pending={pending}
+        showOrigin={showOrigin}
+      />
+    );
+  if (item.source === "notice")
+    return (
+      <NoticeItemCard
+        item={item}
+        onOpenMessage={onOpenMessage}
         pending={pending}
         showOrigin={showOrigin}
       />
@@ -524,6 +535,124 @@ export function PendingItemCard({
         items={menu}
         label={t("item.more", { title })}
       />
+    </article>
+  );
+}
+
+/**
+ * A note the assistant's session sends the person that needs no decision
+ * (DEV-278): what it says, where it came from, and two things it allows —
+ * open the conversation, or say it was read.
+ */
+function NoticeItemCard({
+  item,
+  onOpenMessage,
+  pending,
+  showOrigin,
+}: {
+  item: PendingItem;
+  onOpenMessage: (item: PendingItem) => void;
+  pending: Pick<PendingItems, "changeState">;
+  showOrigin: boolean;
+}) {
+  const { t } = useTranslation("pending");
+  const titleId = useId();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const resolved = pendingResolved(item);
+  const note = (item.note || item.excerpt || item.title).trim();
+  const origin = pendingOrigin(
+    item,
+    t("page.untitled"),
+    t("page.personal"),
+    t("page.defaultAssistant"),
+  );
+  const dismiss = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await pending.changeState(item, "dismissed");
+    } catch (reason) {
+      setError(
+        t("item.changeFailed", {
+          error: reason instanceof Error ? reason.message : String(reason),
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <article
+      aria-labelledby={titleId}
+      className="fdy-pending-item grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 px-4 py-3.5 not-first:border-t not-first:border-line-soft max-[640px]:px-3"
+      data-source={item.source}
+      data-state={item.state}
+    >
+      <IconBox
+        aria-hidden="true"
+        className={resolved ? "opacity-60" : undefined}
+        size="chat"
+        tone={resolved ? "muted" : "brass"}
+      >
+        <Info size={15} />
+      </IconBox>
+      <div className="grid min-w-0 gap-1.5">
+        <p
+          className={cn(
+            "min-w-0 text-sm leading-[1.45] wrap-anywhere",
+            resolved ? "text-ink-muted" : "text-ink",
+          )}
+          id={titleId}
+        >
+          {note}
+        </p>
+        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+          {showOrigin ? (
+            <>
+              <span className="text-ink">
+                {t(`item.origin.${origin.kind}`, { name: origin.name })}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
+          <span className="text-ink-muted">{t("source.notice")}</span>
+          <span aria-hidden="true">·</span>
+          <time
+            className="tabular-nums"
+            dateTime={resolved ? item.resolvedAt : item.createdAt}
+            title={resolved ? item.resolvedAt : item.createdAt}
+          >
+            {resolved
+              ? t("item.resolved", {
+                  state: t(`state.${item.state}`),
+                  when: relativeWhen(item.resolvedAt || item.updatedAt),
+                })
+              : relativeWhen(item.createdAt)}
+          </time>
+        </p>
+        {!resolved ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {item.sessionId ? (
+              <Button onClick={() => onOpenMessage(item)} size="sm">
+                {t("item.openMessage")}
+                <ArrowRight aria-hidden="true" size={14} />
+              </Button>
+            ) : null}
+            <Button
+              disabled={busy}
+              onClick={() => void dismiss()}
+              size="sm"
+              variant="ghost"
+            >
+              <Check aria-hidden="true" size={14} />
+              {t("item.gotIt")}
+            </Button>
+          </div>
+        ) : null}
+        {error ? <Alert size="compact" title={error} tone="error" /> : null}
+      </div>
     </article>
   );
 }

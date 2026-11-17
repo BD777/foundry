@@ -207,6 +207,14 @@ type PersonalAgentNeedsYou struct {
 	Items []PersonalAgentNeedsYouItem `json:"items"`
 }
 
+// AssistantHomeUnread is whether the assistant's home conversation holds an
+// answer newer than the person's last view of it (DEV-278). LastAnswerAt is
+// the newest answer's time, empty before the first one.
+type AssistantHomeUnread struct {
+	Unread       bool   `json:"unread"`
+	LastAnswerAt string `json:"lastAnswerAt,omitempty"`
+}
+
 // PersonalAgentNeedsYouItem is one row of an assistant's home card: the
 // item as the needs-you page reads it, so the card says what is needed the
 // way that page does, and where it came from.
@@ -636,6 +644,20 @@ type PersonalAgentStore interface {
 	DefaultAssistant(ctx context.Context, ownerUserID string) (PersonalAgent, error)
 	// AssistantForWorkspace is the assistant whose home workspace this is.
 	AssistantForWorkspace(ctx context.Context, workspaceID string) (PersonalAgent, error)
+	// AssistantForHomeConversation is the assistant whose home conversation
+	// this workspace holds: its current home workspace or one it left. It
+	// never matches a message channel's workspace.
+	AssistantForHomeConversation(ctx context.Context, workspaceID string) (PersonalAgent, error)
+	// MarkAssistantHomeAnswer records that the home conversation got an
+	// answer at at, keeping the newest time (DEV-278).
+	MarkAssistantHomeAnswer(ctx context.Context, assistantID, at string) error
+	// MarkAssistantHomeSeen moves the person's last view of the home
+	// conversation to its newest answer, atomically: an answer recorded
+	// after this call stays unseen.
+	MarkAssistantHomeSeen(ctx context.Context, assistantID string) error
+	// AssistantHomeUnread is whether the home conversation holds an answer
+	// newer than its last seen point (DEV-278).
+	AssistantHomeUnread(ctx context.Context, assistantID string) (AssistantHomeUnread, error)
 	// AssistantForFeishuApp is the owner's assistant bound to the Feishu app,
 	// ErrNotFound when the app has no explicit binding.
 	AssistantForFeishuApp(ctx context.Context, ownerUserID, appID string) (PersonalAgent, error)

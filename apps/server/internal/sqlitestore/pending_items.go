@@ -600,7 +600,7 @@ func (s *Store) GetPendingItem(ctx context.Context, userID, id string) (store.Pe
 	return item, err
 }
 
-func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, reason, outcome string) (store.PendingItem, error) {
+func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, reason, outcome, inputID string) (store.PendingItem, error) {
 	if handler != store.PendingHandlerPerson && handler != store.PendingHandlerAssistant {
 		return store.PendingItem{}, fmt.Errorf("an item is handled by the person or the assistant")
 	}
@@ -627,6 +627,7 @@ func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, 
 		}
 		if handler == store.PendingHandlerPerson {
 			item.HandedReason, item.HandedAt = reason, now
+			item.HandedInputID = inputID
 			item.Outcome = outcome
 			logged = item
 		}
@@ -637,6 +638,23 @@ func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, 
 		logPendingOutcome(logged)
 	}
 	return result, err
+}
+
+// OpenHandOverForInput reports whether an item handed to the person by the
+// assistant turn inputID is still open. Rows handed over before the turn was
+// recorded never match: their turn is unknown (DEV-279).
+func (s *Store) OpenHandOverForInput(ctx context.Context, inputID string) (bool, error) {
+	if inputID == "" {
+		return false, nil
+	}
+	var count int
+	err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM pending_items
+		WHERE state = ? AND handler = ? AND outcome = ? AND json_extract(payload_json, '$.handedInputId') = ?`,
+		store.PendingOpen, store.PendingHandlerPerson, store.PendingOutcomeHandedOver, inputID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("read open hand-overs: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (s *Store) MarkPendingItemNotified(ctx context.Context, userID, id, at string) error {

@@ -168,6 +168,10 @@ type SessionDescendantStore interface {
 	// CountActiveAgentDescendants counts every session below sessionID, at
 	// any depth, that still occupies an execution slot.
 	CountActiveAgentDescendants(ctx context.Context, sessionID string) (int, error)
+	// OpenHandOverInLineage reports whether sessionID or a session it
+	// started, at any depth, handed an item to the person that is still
+	// open: the request waits on their answer, not on the assistant.
+	OpenHandOverInLineage(ctx context.Context, sessionID string) (bool, error)
 }
 
 type Store interface {

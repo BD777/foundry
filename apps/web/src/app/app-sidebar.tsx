@@ -4,6 +4,8 @@ import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FoundrySidebar,
+  type SidebarNavBadge,
+  type SidebarNavItem,
   type SidebarNavSection,
 } from "../components/ui/app-shell";
 import { useAccountSession } from "./accounts-gate";
@@ -26,6 +28,8 @@ export interface AppSidebarProps {
     activeSkills: number;
     /** Open pending items across the person's chats and Issues. */
     pending: number;
+    /** An answer in the assistant's home conversation the person has not seen. */
+    assistantUnread?: boolean;
   };
   onNavSelect: (view: SidebarView) => void;
   onNotice: (message: string, tone?: ToastTone) => void;
@@ -34,6 +38,21 @@ export interface AppSidebarProps {
   status?: readonly StatusItem[];
   workspaceName: string;
   workspaceSelector: ReactNode;
+}
+
+/** The badge a nav item shows, from the shell's counts. */
+export function navBadge(
+  item: SidebarNavItem<SidebarView>,
+  counts: AppSidebarProps["counts"],
+): SidebarNavBadge | undefined {
+  if (item.id === "assistant" && counts.assistantUnread) return { dot: true };
+  if (item.id === "issues" && counts.review)
+    return { children: counts.review, tone: "brass" };
+  if (item.id === "skills")
+    return { children: counts.activeSkills, tone: "neutral" };
+  if (item.id === "pending" && counts.pending)
+    return { children: counts.pending, tone: "brass" };
+  return undefined;
 }
 
 /** The app's navigation: sections with live counts, theme and language. */
@@ -51,7 +70,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const account = useAccountSession();
   const { t } = useTranslation("shell");
-  const { review, running, activeSkills, pending } = counts;
+  const { review, running, activeSkills, pending, assistantUnread } = counts;
   const pageTitle =
     activeView === "workspace" ? t("nav.overview") : t(`views.${activeView}`);
   const sections = useMemo<Array<SidebarNavSection<SidebarView>>>(
@@ -79,14 +98,13 @@ export function AppSidebar({
             section.id === "assistant" && item.id === "assistant"
               ? assistantName || t("nav.assistant")
               : t(`nav.${item.label as NavLabel}`),
-          badge:
-            item.id === "issues" && review
-              ? { children: review, tone: "brass" }
-              : item.id === "skills"
-                ? { children: activeSkills, tone: "neutral" }
-                : item.id === "pending" && pending
-                  ? { children: pending, tone: "brass" }
-                  : undefined,
+          badge: navBadge(item, {
+            review,
+            running,
+            activeSkills,
+            pending,
+            assistantUnread,
+          }),
           liveCount:
             item.id === "issues" && running ? { children: running } : undefined,
         })),
@@ -99,6 +117,7 @@ export function AppSidebar({
       running,
       activeSkills,
       pending,
+      assistantUnread,
       workspaceSelector,
       workspaceName,
       t,

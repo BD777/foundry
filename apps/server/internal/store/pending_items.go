@@ -44,6 +44,11 @@ const (
 	// session was granted waits for the person's answer (DEV-265). One item
 	// per proposal; answering it allows or refuses that exact request.
 	PendingSourceConnectorWrite = "connector_write"
+	// PendingSourceNotice: something the assistant's session tells the
+	// person that needs no decision or answer (DEV-278), e.g. a channel
+	// session saying a file did not make it into the thread. The person
+	// dismisses it; nothing reaches the helper.
+	PendingSourceNotice = "notice"
 )
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
@@ -174,6 +179,11 @@ type PendingItem struct {
 	Note         string `json:"note,omitempty"`
 	HandedReason string `json:"handedReason,omitempty"`
 	HandedAt     string `json:"handedAt,omitempty"`
+	// HandedInputID is the input of the assistant's turn that handed the
+	// item to the person (DEV-279): a channel message's reaction waits only
+	// for the hand-overs its own turn made. Rows handed over before it was
+	// recorded have none.
+	HandedInputID string `json:"handedInputId,omitempty"`
 	// DeadlineAt is historical: the old 10-minute hand-over time, kept for
 	// rows written before Foundry stopped making that decision.
 	// AcknowledgedAt records that the assistant read the item with needs_you;
@@ -281,7 +291,11 @@ type PendingItemStore interface {
 	GetPendingItem(ctx context.Context, userID, id string) (PendingItem, error)
 	// HandPendingItem changes who handles one of the person's open items,
 	// with the note that goes with it; an item no longer open is refused.
-	HandPendingItem(ctx context.Context, userID, id, handler, note, reason, outcome string) (PendingItem, error)
+	// inputID is the assistant's turn that hands it to the person.
+	HandPendingItem(ctx context.Context, userID, id, handler, note, reason, outcome, inputID string) (PendingItem, error)
+	// OpenHandOverForInput reports whether an item the person has not
+	// answered was handed to them by the assistant turn inputID (DEV-279).
+	OpenHandOverForInput(ctx context.Context, inputID string) (bool, error)
 }
 
 // PendingHandledBy is who handles an item: the person unless it says the

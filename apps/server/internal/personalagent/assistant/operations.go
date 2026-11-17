@@ -342,8 +342,6 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 	if err != nil || item.IntentRevision != op.IntentRevision || item.Plan == nil {
 		return
 	}
-	previous := *item.Plan
-	previous.WorkRefs = append([]store.PersonalAgentWorkReference(nil), item.Plan.WorkRefs...)
 	linked := false
 	for _, ref := range item.Plan.WorkRefs {
 		if ref.Kind == "session" && ref.ID == sessionID {
@@ -355,13 +353,20 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 	} else {
 		for _, task := range tasks {
 			if task.SessionID == sessionID {
-				if e := s.tieTaskToItem(ctx, task, item.ID); e != nil {
+				if e := s.setTaskItem(ctx, task, item.ID); e != nil {
 					log.Printf("personal agent %s: tie task %s to item %s: %v", op.AssistantID, task.ID, item.ID, e)
 				}
 				break
 			}
 		}
 	}
+	// The tie above saved the item again: edit its current copy.
+	item, err = s.store.GetPersonalAgentItem(ctx, op.AssistantID, op.ItemID)
+	if err != nil || item.IntentRevision != op.IntentRevision || item.Plan == nil {
+		return
+	}
+	previous := *item.Plan
+	previous.WorkRefs = append([]store.PersonalAgentWorkReference(nil), item.Plan.WorkRefs...)
 	if op.ReplaceOwner {
 		for i, ref := range item.Plan.WorkRefs {
 			if ref.Kind == "session" && ref.ID == op.TargetSessionID && ref.Relation == "executing" {
@@ -370,7 +375,7 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 		}
 	}
 	if !linked {
-		item.Plan.WorkRefs = append(item.Plan.WorkRefs, store.PersonalAgentWorkReference{Kind: "session", ID: sessionID, WorkspaceID: op.WorkspaceID, Relation: "executing"})
+		item.Plan.WorkRefs = withSessionRelation(item.Plan.WorkRefs, sessionID, op.WorkspaceID, "executing")
 	}
 	switch op.Status {
 	case "review":
@@ -384,4 +389,16 @@ func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOpera
 		return
 	}
 	_, _ = s.store.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item) // next reconciliation retries a concurrent edit
+}
+
+// withSessionRelation sets the relation of a session's reference on an item's
+// plan, adding the reference when the item has none for it.
+func withSessionRelation(refs []store.PersonalAgentWorkReference, sessionID, workspaceID, relation string) []store.PersonalAgentWorkReference {
+	for i, ref := range refs {
+		if ref.Kind == "session" && ref.ID == sessionID {
+			refs[i].Relation = relation
+			return refs
+		}
+	}
+	return append(refs, store.PersonalAgentWorkReference{Kind: "session", ID: sessionID, WorkspaceID: workspaceID, Relation: relation})
 }

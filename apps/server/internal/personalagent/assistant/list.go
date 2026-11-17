@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -106,7 +107,15 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		if err := s.validateItemPlan(ctx, scope.Agent, item.ID, spec.Item.Plan); err != nil {
 			return write, err
 		}
-		item.Plan, personal = spec.Item.Plan, true
+		var previous []store.PersonalAgentWorkReference
+		if item.Plan != nil {
+			previous = item.Plan.WorkRefs
+		}
+		plan, err := s.withHelperRefs(ctx, scope.Agent.ID, item.ID, *spec.Item.Plan, previous)
+		if err != nil {
+			return write, err
+		}
+		item.Plan, personal = &plan, true
 	}
 	if spec.Item.Text != nil {
 		text, err := personalagent.ListItemText(*spec.Item.Text)
@@ -263,7 +272,11 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if !found {
 				return nil, invalid("task %q is no longer one of your tasks", taskID)
 			}
-			if err := s.tieTaskToItem(ctx, task, saved.ID); err != nil {
+			if err := s.setTaskItem(ctx, task, saved.ID); err != nil {
+				return nil, err
+			}
+			// The tie saved the item again: answer with its current revision.
+			if saved, err = s.store.GetPersonalAgentItem(ctx, assistantID, saved.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -343,14 +356,90 @@ func (s *Service) findTask(ctx context.Context, assistantID, taskID string) (sto
 	return store.PersonalAgentTask{}, false, nil
 }
 
-// tieTaskToItem ties a task to the item it helps with (pa_tasks.item_id); the
-// item's timeline records the helper starting on it.
-func (s *Service) tieTaskToItem(ctx context.Context, task store.PersonalAgentTask, itemID string) error {
+// setTaskItem moves a helper to the item it works on. pa_tasks.item_id is the
+// one record of which helpers work on an item; the plans of the item it leaves
+// and the item it joins show that helper as a session reference.
+func (s *Service) setTaskItem(ctx context.Context, task store.PersonalAgentTask, itemID string) error {
 	if task.ItemID == itemID {
+		return s.refreshItemHelpers(ctx, task.AssistantID, itemID)
+	}
+	previous := task.ItemID
+	task.ItemID = itemID
+	if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task); err != nil {
+		return err
+	}
+	for _, id := range []string{previous, itemID} {
+		if err := s.refreshItemHelpers(ctx, task.AssistantID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refreshItemHelpers brings an item's session references in line with the
+// helpers pa_tasks ties to it. An item with no plan has nowhere to keep them;
+// its plan takes them when one is set.
+func (s *Service) refreshItemHelpers(ctx context.Context, assistantID, itemID string) error {
+	if itemID == "" {
 		return nil
 	}
-	task.ItemID = itemID
-	return s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorAssistant, task)
+	item, err := s.store.GetPersonalAgentItem(ctx, assistantID, itemID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if item.Plan == nil {
+		return nil
+	}
+	plan, err := s.withHelperRefs(ctx, assistantID, itemID, *item.Plan, item.Plan.WorkRefs)
+	if err != nil {
+		return err
+	}
+	if slices.Equal(plan.WorkRefs, item.Plan.WorkRefs) {
+		return nil
+	}
+	item.Plan = &plan
+	_, err = s.store.SavePersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
+	return err
+}
+
+// withHelperRefs returns plan with its session references replaced by the
+// helpers pa_tasks ties to itemID. A helper keeps the relation it had on the
+// item (observing when new); the plan's own session references are not kept:
+// helpers are linked by their task, never by the plan. Other references stay
+// as given. An empty itemID (a new item) has no helpers yet.
+func (s *Service) withHelperRefs(ctx context.Context, assistantID, itemID string, plan store.PersonalAgentItemPlan, previous []store.PersonalAgentWorkReference) (store.PersonalAgentItemPlan, error) {
+	refs := make([]store.PersonalAgentWorkReference, 0, len(plan.WorkRefs))
+	for _, ref := range plan.WorkRefs {
+		if ref.Kind != "session" {
+			refs = append(refs, ref)
+		}
+	}
+	if itemID != "" {
+		tasks, err := s.store.ListPersonalAgentTasks(ctx, assistantID, nil)
+		if err != nil {
+			return plan, err
+		}
+		for _, task := range tasks {
+			if task.ItemID != itemID || task.SessionID == "" {
+				continue
+			}
+			relation := "observing"
+			for _, ref := range previous {
+				if ref.Kind == "session" && ref.ID == task.SessionID {
+					relation = ref.Relation
+				}
+			}
+			refs = append(refs, store.PersonalAgentWorkReference{Kind: "session", ID: task.SessionID, WorkspaceID: task.WorkspaceID, Relation: relation})
+		}
+	}
+	if len(refs) == 0 {
+		refs = nil
+	}
+	plan.WorkRefs = refs
+	return plan, nil
 }
 
 // listQuery is read_list's arguments. from and to bound updatedAt as RFC 3339
@@ -929,4 +1018,23 @@ func (s *Service) digestItems(ctx context.Context, assistantID, closedSince stri
 		}
 		offset = page.NextOffset
 	}
+}
+
+// MoveHelper ties one of the assistant's helpers to an open item of the
+// person's list (send_message itemId). The item it leaves and the item it
+// joins follow.
+func (s *Service) MoveHelper(ctx context.Context, scope Scope, sessionID, itemID string) error {
+	if err := s.HelperItem(ctx, scope, itemID); err != nil {
+		return err
+	}
+	tasks, err := s.store.ListPersonalAgentTasks(ctx, scope.Agent.ID, nil)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if task.SessionID == sessionID {
+			return s.setTaskItem(ctx, task, itemID)
+		}
+	}
+	return invalid("session %s is not one of your helpers: only helpers create_session started can be tied to an item", sessionID)
 }

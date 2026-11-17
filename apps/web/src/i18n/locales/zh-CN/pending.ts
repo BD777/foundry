@@ -44,6 +44,7 @@ export const pending: Translation<typeof en> = {
     assistant_inbox: "没处理的消息",
     project_upkeep: "项目维护",
     memory_upkeep: "记忆整理",
+    notice: "助理留言",
   },
   upkeep: {
     title_one: "{{project}}：{{count}} 条修改建议待确认",
@@ -115,6 +116,7 @@ export const pending: Translation<typeof en> = {
     done: "标记完成",
     dismiss: "忽略",
     notNeeded: "不需要我",
+    gotIt: "知道了",
     useRecommended: "用“{{option}}”回复（推荐）",
     fixInChat: "去对话中处理",
     jumpToMessage: "跳到这条消息",
