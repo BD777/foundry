@@ -23,6 +23,7 @@ async function withDom(body) {
     "Event",
     "MouseEvent",
     "getComputedStyle",
+    "MutationObserver",
   ])
     globals[key] = window[key];
   for (const [key, value] of Object.entries(globals)) {
