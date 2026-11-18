@@ -69,6 +69,8 @@ test("the reply uses Codex's envelope and reads back", () => {
       index: 0,
       question: "Which scope?",
       answer: "Created in Q4",
+      noAnswer: false,
+      reason: "",
     },
   ]);
   assert.equal(parseAgentQuestionReply("plain text"), undefined);
