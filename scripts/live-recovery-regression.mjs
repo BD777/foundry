@@ -12,6 +12,11 @@
 // from the dev database into the stack's fresh database; the secret is opened
 // with the dev key file by path. Nothing is printed. Cases and environments:
 // docs/live-regression.md (C10, C19, C20).
+//
+// C19 asserts by topology: when the execution host survives the kill (macOS
+// launchd service) the input completes; when it is gone (Linux without
+// XDG_RUNTIME_DIR, no host at all) the input is marked lost. See
+// scripts/lib/execution-host-topology.mjs.
 
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -34,6 +39,11 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { parseArgs } from "node:util";
+import {
+  processAlive,
+  executionHosts,
+  stopExecutionHosts,
+} from "./lib/execution-host-topology.mjs";
 
 const home = homedir();
 const OWNER = "live-recovery-owner";
@@ -72,6 +82,10 @@ const secretKey = resolve(
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const active = new Set(["queued", "running", "blocked"]);
+// C19: a gone execution host's input is marked lost within this long after the kill.
+const LOST_WITHIN_MS = 60_000;
+// Time for a killed execution host to exit before its state is read.
+const HOST_SETTLE_MS = 2000;
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -600,6 +614,12 @@ class Stack {
       killTree(this.worker.pid);
       await exited;
     }
+    // The execution host may outlive the Worker (macOS): stop the one this stack started.
+    try {
+      console.log(await stopExecutionHosts(this.state, this.home));
+    } catch (error) {
+      console.error(`execution host not stopped: ${error.message}`);
+    }
     if (this.serverRunning()) await this.stopServer();
     if (keep) console.log(`kept ${this.root}`);
     else rmSync(this.root, { recursive: true, force: true });
@@ -629,9 +649,11 @@ async function cancelOrphan(live, id) {
 }
 
 const cases = {
-  // C19: a Worker killed mid-input. Once it is back, the input fails as lost
-  // within seconds (not the 30-minute timeout), and the next message resumes
-  // the native context.
+  // C19: a Worker killed mid-input. What the input reports after the restart
+  // depends on the execution host, which the kill may or may not reach:
+  // alive, the restarted Worker adopts the run and the input completes; gone,
+  // the input fails as lost within LOST_WITHIN_MS. Either way the next message
+  // resumes the native context.
   async "worker-restart"(stack) {
     const live = await stack.live();
     const session = await live.start(
@@ -639,15 +661,38 @@ const cases = {
     );
     await live.running(session.id);
     await sleep(8000);
+    const hosts = executionHosts(stack.state);
     const killedAt = Date.now();
     await stack.killWorker();
+    await sleep(HOST_SETTLE_MS);
+    const hostAlive = hosts.some((host) => processAlive(host.pid));
+    const hostName =
+      hosts.length > 0
+        ? `execution host ${hosts.map((host) => host.pid).join(", ")}`
+        : "no execution host (the turn ran inside the Worker)";
     stack.startWorker();
-    const lost = await live.settle(session.id, 120_000);
+    const settled = await live.settle(session.id, 120_000);
     const seconds = Math.round((Date.now() - killedAt) / 1000);
-    check(
-      lost.status === "failed" && /result was lost/.test(lost.error ?? ""),
-      `after the restart: ${lost.status} ${lost.error ?? lost.response}`,
-    );
+    let outcome;
+    if (hostAlive) {
+      check(
+        settled.status === "completed" && /DONE/.test(settled.response ?? ""),
+        `${hostName} alive after the kill, so the input should complete with DONE: ${settled.status} ${settled.response ?? settled.error}`,
+      );
+      outcome = `${hostName} alive after the kill: the input completed with DONE after ${seconds}s`;
+    } else {
+      check(
+        settled.status === "failed" &&
+          /result was lost/.test(settled.error ?? ""),
+        `${hostName} gone after the kill, so the input should be lost: ${settled.status} ${settled.response ?? settled.error}`,
+      );
+      check(
+        seconds * 1000 <= LOST_WITHIN_MS,
+        `the input was lost after ${seconds}s, over ${LOST_WITHIN_MS / 1000}s`,
+      );
+      outcome = `${hostName} gone after the kill: the input was lost ${seconds}s after the kill`;
+    }
+    console.log(`path: ${hostAlive ? "alive" : "gone"}; ${outcome}`);
     await live.send(
       session.id,
       "Ignore the interrupted task. Which codeword did I give you? Reply with just it.",
@@ -663,7 +708,7 @@ const cases = {
       ),
       "the native context was dropped after the restart",
     );
-    return `input lost ${seconds}s after the kill; the next message resumed with PEAR-4`;
+    return `${outcome}; the next message resumed with PEAR-4`;
   },
 
   // C10: a Worker killed while a second input runs. The first input's
