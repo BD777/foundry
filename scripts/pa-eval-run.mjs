@@ -768,7 +768,7 @@ function sandbox(provider, cli, realLogins = true, writable = []) {
       ]
     : [];
   // After the tmpfs /tmp, so a run root under /tmp stays visible.
-  for (const dir of [...writable, ...loginDirs])
+  for (const dir of loginDirs)
     if (existsSync(dir)) args.push("--bind", dir, dir);
   // A login's config folder is writable as a whole; the files the person
   // owns in it come back read-only. Without a login the folder is hidden.
@@ -810,6 +810,10 @@ function sandbox(provider, cli, realLogins = true, writable = []) {
   const runtime = resolve(cli, "../../../../..");
   if (runtime.startsWith(at(".foundry") + "/"))
     args.push("--ro-bind", runtime, runtime);
+  // Last, so the run folder stays writable where a hidden folder (a
+  // tmpfs over ~/.foundry) covers its real path.
+  for (const dir of writable)
+    if (existsSync(dir)) args.push("--bind", dir, dir);
   args.push("--unshare-pid", "--proc", "/proc", "--die-with-parent", "--");
   return args;
 }
