@@ -1,6 +1,6 @@
 # DEV-306 — assistant's own turn lost when its computer drops
 
-Status: deployed to dev as train 91 (2026-11-18); pending the person's acceptance; merged to main (PR #…).
+Status: deployed to dev as train 91 (2026-11-18); pending the person's acceptance; merged to main (PR #279).
 
 ## Problem
 
