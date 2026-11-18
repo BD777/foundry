@@ -643,10 +643,16 @@ export class CodexQuestionGate {
           (reply) => nativeItemId(reply.itemId) === itemId,
         );
         if (answers.length === 0) continue;
-        waiting.settle(answered(waiting.prompt, byIndex(answers)));
-        taken = true;
+        if (answers.some((reply) => reply.noAnswer))
+          waiting.settle({ result: waiting.prompt.decline });
+        else {
+          waiting.settle(answered(waiting.prompt, byIndex(answers)));
+          taken = true;
+        }
       }
-      return taken;
+      // A no-answer reply is not taken: the envelope carries the reason, and
+      // it must reach the turn now, not when the turn ends.
+      return taken && replies.every((reply) => !reply.noAnswer);
     }
     const reply = message.trim();
     const first = this.waiting.values().next().value;

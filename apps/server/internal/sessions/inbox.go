@@ -314,16 +314,35 @@ func (s *Service) placeInboxItems(ctx context.Context, sessionID string, items [
 		if len(due) == 0 || childReportsGathering(items, due, now) {
 			return items
 		}
-		batch := make([]store.SessionInboxItem, 0, len(due))
-		for _, index := range due {
+		take := turnBatch(items, due)
+		batch := make([]store.SessionInboxItem, 0, len(take))
+		for _, index := range take {
 			batch = append(batch, items[index])
 		}
 		placed := s.startTurnWithInboxItems(ctx, session, batch)
-		for position, index := range due {
+		for position, index := range take {
 			items[index] = placed[position]
 		}
 		return items
 	}
+}
+
+// turnBatch is the due messages one turn takes. A question's answer is the
+// person's own words: it starts a turn alone, and the other messages wait for
+// the next pass, so an answer is never merged into a turn with other messages.
+func turnBatch(items []store.SessionInboxItem, due []int) []int {
+	for _, index := range due {
+		if isQuestionAnswer(items[index].InputSource) {
+			return []int{index}
+		}
+	}
+	return due
+}
+
+// isQuestionAnswer reports whether an input is the person's answer to an
+// assistant's question (DEV-293).
+func isQuestionAnswer(source *store.AgentSessionInputSource) bool {
+	return source != nil && source.Kind == "foundry_notice" && source.NoticeKind == store.NoticeKindQuestionAnswer
 }
 
 // holdableReason reports a reason a message waits for, not one it is

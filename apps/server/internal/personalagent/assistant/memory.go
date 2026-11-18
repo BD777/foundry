@@ -217,12 +217,14 @@ func (s *Service) personSaid(ctx context.Context, sessionID string, turn store.S
 			if event.Metadata != nil {
 				input.TimerFire = event.Metadata.TimerFire
 				input.SentBySessionID = event.Metadata.SentBySessionID
+				input.InputSource = event.Metadata.InputSource
 			}
 			add(input)
 		case event.Label == store.EventLabelSteeredIntoTurn:
 			input := store.SessionInput{Prompt: event.Detail}
 			if event.Metadata != nil {
 				input.SentBySessionID = event.Metadata.SentBySessionID
+				input.InputSource = event.Metadata.InputSource
 			}
 			add(input)
 		}

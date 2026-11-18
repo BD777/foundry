@@ -49,6 +49,10 @@ const (
 	// session saying a file did not make it into the thread. The person
 	// dismisses it; nothing reaches the helper.
 	PendingSourceNotice = "notice"
+	// PendingSourceAssistantQuestion: a question the assistant asks the person
+	// itself (needs_you ask, DEV-293). It does not wait: the person's answer
+	// comes back to the asking conversation as a Foundry message.
+	PendingSourceAssistantQuestion = "assistant_question"
 )
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
@@ -112,6 +116,12 @@ const (
 	PendingOutcomeAutoResolved             = "auto_resolved"
 	PendingOutcomePersonAnswered           = "person_answered"
 	PendingOutcomePersonDismissedNotNeeded = "person_dismissed_not_needed"
+	// PendingOutcomeWithdrawn: the assistant withdrew its own question
+	// (needs_you resolve on an assistant_question item) before anyone answered.
+	PendingOutcomeWithdrawn = "withdrawn"
+	// PendingOutcomeAssistantClosed: the assistant closed a helper's item with
+	// a reason and no answer (needs_you resolve with reason); CloseReason says why.
+	PendingOutcomeAssistantClosed = "assistant_closed"
 )
 
 // PendingFailureCategory names the root cause a turn_failed item groups by.
@@ -155,6 +165,12 @@ type PendingItem struct {
 	Options        []string `json:"options,omitempty"`
 	Recommendation string   `json:"recommendation,omitempty"`
 	Occurrences    int      `json:"occurrences"`
+	// Approval says a question asks for approval: its options are Approve and
+	// Deny, and a reply that is neither does not decide it (DEV-294).
+	Approval bool `json:"approval,omitempty"`
+	// Detail is what an approval asks about, as the prompt showed it: the
+	// command, or the changes (Markdown, trimmed to pendingContextLimit).
+	Detail string `json:"detail,omitempty"`
 	// Count is how many things wait for the person, for an item that counts
 	// them (project upkeep: its undecided suggested changes).
 	Count int `json:"count,omitempty"`
@@ -173,6 +189,14 @@ type PendingItem struct {
 	// Handler is who handles it while open: PendingHandlerPerson (also when
 	// empty) or PendingHandlerAssistant.
 	Handler string `json:"handler,omitempty"`
+	// Answer is the text an answered item was closed with, as the helper or
+	// the person received it (trimmed to PendingAnswerLimit characters), and
+	// AnsweredBy who gave it (PendingAnsweredBy*).
+	Answer     string `json:"answer,omitempty"`
+	AnsweredBy string `json:"answeredBy,omitempty"`
+	// CloseReason is why the assistant closed the item without an answer
+	// (outcome assistant_closed), trimmed to PendingAnswerLimit characters.
+	CloseReason string `json:"closeReason,omitempty"`
 	// Note is what the assistant told the person when it handed the item
 	// over; HandedReason why it went to the person (PendingHanded*), and
 	// HandedAt when.
@@ -250,6 +274,23 @@ type PendingResolution struct {
 	ResolutionDetail string
 	Outcome          string
 	AcknowledgedAt   string
+	Answer           PendingAnswer
+}
+
+// PendingAnswerLimit bounds the answer text an item keeps.
+const PendingAnswerLimit = 1000
+
+// Who answered an item: the assistant, for its helper's question, or the person.
+const (
+	PendingAnsweredByAssistant = "assistant"
+	PendingAnsweredByPerson    = "person"
+)
+
+// PendingAnswer is the text an item was answered with and who answered it. The
+// zero value answers nothing.
+type PendingAnswer struct {
+	Text string
+	By   string
 }
 
 // PendingItemStore keeps pending items.
@@ -280,7 +321,10 @@ type PendingItemStore interface {
 	SetPendingItemState(ctx context.Context, userID, id, state string) (PendingItem, error)
 	// ResolvePendingItem closes one of the person's items with the outcome
 	// its handler gave it.
-	ResolvePendingItem(ctx context.Context, userID, id, state, outcome string) (PendingItem, error)
+	ResolvePendingItem(ctx context.Context, userID, id, state, outcome string, answer PendingAnswer) (PendingItem, error)
+	// ClosePendingItem marks one of the person's items done by the assistant
+	// without an answer, recording its reason (outcome assistant_closed).
+	ClosePendingItem(ctx context.Context, userID, id, reason string) (PendingItem, error)
 	// MarkPendingItemNotified records that the assistant heard about an
 	// item's arrival.
 	MarkPendingItemNotified(ctx context.Context, userID, id, at string) error

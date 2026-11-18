@@ -20,6 +20,7 @@ import (
 // reaches; a session working in an Issue sees only that one, and they
 // change nothing.
 func TestIssueToolsReadIssuesWithinReach(t *testing.T) {
+	skipWhileIssuesHidden(t)
 	db, chat := lineageFixture(t)
 	ctx := context.Background()
 	handler := NewServer(db).Routes()
@@ -140,11 +141,11 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 		// Credential-backed read tools also require a live personal grant;
 		// verifiers never receive those credentials.
 		// Model providers are managed only from the person's own chats.
-		if tool.readOnly && !personalAgentMCPTools[tool.name] && !modelProviderMCPTools[tool.name] {
+		if tool.readOnly && !personalAgentMCPTools[tool.name] && !modelProviderMCPTools[tool.name] && !issueMCPTools[tool.name] {
 			want = append(want, tool.name)
 		}
 	}
-	for _, name := range []string{"read_context", "list_issues", "get_issue"} {
+	for _, name := range []string{"read_context"} {
 		if !slices.Contains(want, name) {
 			t.Fatalf("%s is not marked read-only", name)
 		}

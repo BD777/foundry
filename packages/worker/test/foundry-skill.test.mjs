@@ -138,12 +138,24 @@ test("every CLI command calls a Foundry tool with arguments it takes", () => {
         );
     }
   }
+  // Hidden on the Server while Issues are off (issuesEnabled in
+  // apps/server/internal/httpapi/mcp_issues_write.go): no command, not listed.
+  const hiddenTools = new Set([
+    "ask_person",
+    "issues",
+    "list_issues",
+    "get_issue",
+  ]);
   assert.deepEqual(
     [...tools.keys()].filter(
-      (name) => !commanded.has(name) && name !== "ask_person",
+      (name) => !commanded.has(name) && !hiddenTools.has(name),
     ),
     [],
     "every tool has a command",
+  );
+  assert.ok(
+    !Object.hasOwn(foundryCommands, "issue"),
+    "the issue command group is hidden with the Issue tools",
   );
 });
 

@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -178,40 +177,27 @@ func TestConnectorInstancesMCPCreateProbeAndListWithoutSecrets(t *testing.T) {
 			t.Fatalf("binding survived unbind: %+v", bindings)
 		}
 	}
-	revoked, failed := connectorMCPCall(t, f.handler, token, map[string]any{
-		"action": "revoke", "kind": "acme-api", "instanceId": created.ID,
-	}, false)
-	if failed || !strings.Contains(revoked, `"status": "revoked"`) {
-		t.Fatalf("revoke = %q (error %v)", revoked, failed)
+	// Signing out and deleting are the person's (docs/personal-agent.md §4):
+	// the agent is refused and the account stays.
+	for _, action := range []string{"revoke", "delete"} {
+		answer, failed := connectorMCPCall(t, f.handler, token, map[string]any{
+			"action": action, "kind": "acme-api", "instanceId": created.ID,
+		}, false)
+		if !failed || !strings.Contains(answer, "the person's to do") {
+			t.Fatalf("%s by an agent = %q (error %v)", action, answer, failed)
+		}
 	}
-	deleted, failed := connectorMCPCall(t, f.handler, token, map[string]any{
-		"action": "delete", "kind": "acme-api", "instanceId": created.ID,
-	}, false)
-	if failed || !strings.Contains(deleted, `"status": "deleted"`) {
-		t.Fatalf("delete = %q (error %v)", deleted, failed)
+	if _, err := f.server.store.GetExternalAccount(ctx, created.AccountID); err != nil {
+		t.Fatalf("a refused delete removed the account: %v", err)
 	}
-	if _, err := f.server.store.GetExternalAccount(ctx, created.AccountID); !errors.Is(err, store.ErrExternalAccountNotFound) {
-		t.Fatalf("deleted account = %v", err)
-	}
-	if _, err := f.server.store.GetExternalProviderApp(ctx, created.ID); !errors.Is(err, store.ErrExternalAppNotFound) {
-		t.Fatalf("deleted instance = %v", err)
-	}
-	events, err := f.server.store.ListExternalAccountEvents(ctx, created.AccountID, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deletionAudited := false
-	for _, event := range events {
-		deletionAudited = deletionAudited || event.Kind == "extension_instance_deleted"
-	}
-	if !deletionAudited {
-		t.Fatalf("delete audit missing: %+v", events)
+	if _, err := f.server.store.GetExternalProviderApp(ctx, created.ID); err != nil {
+		t.Fatalf("a refused delete removed the instance: %v", err)
 	}
 	listedText, failed = connectorMCPCall(t, f.handler, token, map[string]any{
 		"action": "list", "kind": "acme-api",
 	}, false)
-	if failed || strings.Contains(listedText, created.ID) {
-		t.Fatalf("list after delete = %q (error %v)", listedText, failed)
+	if failed || !strings.Contains(listedText, created.ID) {
+		t.Fatalf("list after a refused delete = %q (error %v)", listedText, failed)
 	}
 
 	badSecret := "mcp-wrong-secret-value"
@@ -254,8 +240,9 @@ func TestConnectorInstancesMCPCreateProbeAndListWithoutSecrets(t *testing.T) {
 			}
 		}
 	}
-	if audited != 11 {
-		t.Fatalf("connector audit events = %d, want 11: %+v", audited, sessionEvents)
+	// The refused revoke and delete never ran, so they leave no audit row.
+	if audited != 9 {
+		t.Fatalf("connector audit events = %d, want 9: %+v", audited, sessionEvents)
 	}
 	if len(upstreamCalls) < 5 {
 		t.Fatalf("upstream probe calls = %v", upstreamCalls)

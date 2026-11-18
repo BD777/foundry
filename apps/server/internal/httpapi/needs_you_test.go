@@ -400,8 +400,12 @@ func TestNeedsYouOfflineItemsStayWithTheAssistant(t *testing.T) {
 	if open[f.helper.ID].Handler != store.PendingHandlerAssistant || list.Open != 0 || list.AssistantOpen != 2 {
 		t.Fatalf("back online, the item left the person's list: %+v (open %d)", open[f.helper.ID], list.Open)
 	}
-	// The assistant may still settle it; then it is gone.
-	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "sessionId": f.helper.ID}); failed {
+	// Its helper waits for answers: a bare resolve is refused; with a reason
+	// the helper hears it, and the item is gone.
+	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "sessionId": f.helper.ID}); !failed || !strings.Contains(text, "waits for an answer") {
+		t.Fatalf("bare resolve of a waiting helper's items: failed %v, %s", failed, text)
+	}
+	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "sessionId": f.helper.ID, "reason": "no one will answer this"}); failed {
 		t.Fatalf("resolve: %s", text)
 	}
 	if list, open = f.open(t); open[f.helper.ID].ID != "" || list.Open != 0 {

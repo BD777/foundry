@@ -119,6 +119,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/personal_agent_maintenance.go",
   "apps/server/internal/store/personal_agent_run_control.go",
   "apps/server/internal/store/personal_agent_operation.go",
+  "apps/server/internal/httpapi/personal_agent_notify.go",
   "apps/server/internal/store/knowledge.go",
   "apps/server/internal/store/knowledge_vault.go",
   "apps/server/internal/store/knowledge_entries.go",

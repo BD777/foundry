@@ -31,6 +31,8 @@ var personalAgentMCPTools = map[string]bool{
 	"read_memory":          true,
 	"list_computers":       true,
 	"needs_you":            true,
+	"assistant_settings":   true,
+	"assistant_channels":   true,
 }
 
 // assistantWithheldMCPTools are tools the assistant does not get (§5): work

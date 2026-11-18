@@ -17,6 +17,18 @@ const NoticePrefix = "[Foundry] "
 // Notice is a server message to the assistant.
 func Notice(text string) string { return NoticePrefix + strings.TrimSpace(text) }
 
+// AnswerSeparator ends the framing of the person's answer to a question the
+// assistant asked (AnswerFrame). What follows it is the person's own words.
+const AnswerSeparator = "\nTheir answer:\n"
+
+// AnswerFrame is the input a person's answer to an assistant question
+// becomes: Foundry's line naming the question, then the answer as they gave
+// it. The framing never holds a line break inside the question (%q escapes it),
+// so the first AnswerSeparator is the frame's own.
+func AnswerFrame(question, answer string) string {
+	return Notice(fmt.Sprintf("the person answered your question %q.", question)) + AnswerSeparator + strings.TrimSpace(answer)
+}
+
 // IsNotice reports whether an input came from the server.
 func IsNotice(prompt string) bool {
 	return strings.HasPrefix(strings.TrimSpace(prompt), strings.TrimSpace(NoticePrefix))
@@ -60,6 +72,15 @@ func PersonWords(input store.SessionInput) (string, bool) {
 			return input.Prompt, true
 		case "channel":
 			return channelPersonWords(input.Prompt)
+		case "foundry_notice":
+			// A person's answer to a question the assistant asked (DEV-293): the
+			// framing is Foundry's, the answer after it is the person's.
+			if input.InputSource.NoticeKind != store.NoticeKindQuestionAnswer {
+				return "", false
+			}
+			_, answer, found := strings.Cut(input.Prompt, AnswerSeparator)
+			answer = strings.TrimSpace(answer)
+			return answer, found && answer != ""
 		default:
 			return "", false
 		}

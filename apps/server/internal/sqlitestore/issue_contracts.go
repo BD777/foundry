@@ -103,8 +103,15 @@ func (s *Store) resolveCheckerDigests(ctx context.Context, issue store.Issue, co
 	return nil
 }
 
+// CreateContract saves a draft. A person's draft is the person's (origin
+// user); an agent's, sent for the person, is a proposal they confirm
+// (origin agent_proposal, as the clarification's drafts are).
 func (s *Store) CreateContract(ctx context.Context, issueID string, input store.ContractDraftInput, actor store.ActorRef, requestID string) (store.IssueContract, error) {
-	return s.createContractDraft(ctx, issueID, input, actor, requestID, "user")
+	origin := "user"
+	if actor.Kind == "agent" {
+		origin = "agent_proposal"
+	}
+	return s.createContractDraft(ctx, issueID, input, actor, requestID, origin)
 }
 
 func (s *Store) createContractDraft(ctx context.Context, issueID string, input store.ContractDraftInput, actor store.ActorRef, requestID, origin string) (store.IssueContract, error) {

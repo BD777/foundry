@@ -123,8 +123,14 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 			return nil
 		}
 	}
-	role, verifier := s.mcpCallerRole(ctx, actor)
+	role, verifier, inIssue := s.mcpCallerRole(ctx, actor)
 	return func(name string) error {
+		if issueMCPTools[name] && !issuesEnabled {
+			return &statusError{http.StatusForbidden, errors.New("Issues are turned off on this Foundry server: " + name + " is not available")}
+		}
+		if inIssue && issuesMCPTools[name] {
+			return &statusError{http.StatusForbidden, errors.New(name + " is not available to an Issue's own sessions: the person creates and changes Issues in Foundry")}
+		}
 		if err := mcpToolAllowed(role, verifier, name); err != nil {
 			return err
 		}
@@ -132,15 +138,15 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 	}
 }
 
-// mcpCallerRole is the role and verifier flag of the caller's session ("",
-// false for a person or a device).
-func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool) {
+// mcpCallerRole is the role, verifier flag and Issue binding of the caller's
+// session (all zero for a person or a device).
+func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool, bool) {
 	if actor.Agent() {
 		if session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID); err == nil {
-			return s.assistant.SessionRole(ctx, session), session.Source == store.SessionSourceVerification
+			return s.assistant.SessionRole(ctx, session), session.Source == store.SessionSourceVerification, session.IssueID != ""
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 // mcpToolAllowed is the rule mcpToolAvailability applies to a session of
@@ -169,6 +175,12 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	}
 	if assistantWithheldMCPTools[name] && role == store.AgentSessionRolePersonalAgent {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to the person's assistant")}
+	}
+	if issuesMCPTools[name] && role != "" {
+		return &statusError{http.StatusForbidden, errors.New(name + " is for the person's own chats and the sessions they start: an Issue, a verifier and the assistant do not create or change Issues with it")}
+	}
+	if foundrySettingsMCPTools[name] && role != "" {
+		return &statusError{http.StatusForbidden, errors.New(name + " is for the person's own chats and the sessions they start: an Issue, a verifier and the assistant do not change Foundry settings with it (the assistant has assistant_settings)")}
 	}
 	return nil
 }
@@ -452,6 +464,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"get_issue": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.issueForMCP(call.r.Context(), call.actor, mcpArgString(call.args, "issueId"))
 	}),
+	"issues":          mcpTextTool((*Server).issuesForMCP),
 	"send_message":    mcpTextTool((*Server).sendMessageForMCP),
 	"cancel_session":  mcpTextTool((*Server).cancelSessionForMCP),
 	"archive_session": mcpTextTool((*Server).archiveSessionForMCP),
@@ -470,6 +483,9 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"read_knowledge":       mcpTextTool((*Server).readKnowledgeForMCP),
 	"dispatch_item":        mcpTextTool((*Server).dispatchItemForMCP),
 	"needs_you":            mcpTextTool((*Server).needsYouForMCP),
+	"assistant_settings":   mcpTextTool((*Server).assistantSettingsForMCP),
+	"assistant_channels":   mcpTextTool((*Server).assistantChannelsForMCP),
+	"foundry_settings":     mcpTextTool((*Server).foundrySettingsForMCP),
 	"cancel_item_dispatch": mcpTextTool((*Server).cancelPendingDispatchForMCP),
 	"update_list":          mcpTextTool((*Server).updateListForMCP),
 	"read_list":            mcpTextTool((*Server).readListForMCP),
@@ -519,6 +535,9 @@ func (s *Server) mcpToolPreflight(r *http.Request, actor Actor, name string, arg
 		return "", &statusError{http.StatusBadRequest, errors.New("unknown tool: " + name)}
 	}
 	if err := s.mcpToolAvailability(r.Context(), actor)(name); err != nil {
+		return "", err
+	}
+	if err := mcpPersonOnly(actor, name, args); err != nil {
 		return "", err
 	}
 	if err := s.checkCommandLease(r.Context(), actor, args); err != nil {

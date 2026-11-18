@@ -2,7 +2,7 @@ import type { ToastTone } from "../../components/ui/toast";
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { OctagonX, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import type { DeviceProjection, PersonalAgent } from "@bd777/foundry-protocol";
 import { movePersonalAgentHome } from "../../api";
 import { Badge } from "../../components/ui/badge";
@@ -14,6 +14,8 @@ import { SettingsField, SettingsGroup } from "./settings-field";
 import type { AssistantController } from "./use-assistant";
 import { PaMuted } from "./pa-muted";
 import { ButtonRow } from "../../components/ui/button-row";
+import { visibleTasks } from "./assistant-model";
+import { StopAssistantButton } from "./stop-assistant-button";
 
 const online = (device: DeviceProjection) => device.status === "connected";
 
@@ -88,20 +90,16 @@ export function StatusSection({
                 {busy === "switch" ? t("home.resuming") : t("home.resume")}
               </Button>
             ) : (
-              <Button
-                aria-busy={busy === "switch"}
-                disabled={Boolean(busy)}
-                onClick={() =>
+              <StopAssistantButton
+                busy={busy === "switch"}
+                helperCount={visibleTasks(assistant.tasks).active.length}
+                onStop={() =>
                   void run("switch", t("loadFailed"), async () => {
                     onNotice(await assistant.stopAll());
                   })
                 }
                 size="sm"
-                variant="secondary"
-              >
-                <OctagonX aria-hidden="true" size={14} />
-                {busy === "switch" ? t("home.stopping") : t("home.stopAll")}
-              </Button>
+              />
             )}
           </ButtonRow>
         </SettingsField>

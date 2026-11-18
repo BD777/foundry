@@ -19,6 +19,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
+	"github.com/foundry-dev/foundry/apps/server/internal/personnotice"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessionalerts"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
@@ -86,6 +87,7 @@ type Backend interface {
 	store.SessionInboxStore
 	store.SessionAlertStore
 	store.PendingItemStore
+	store.PersonNoticeStore
 	store.AgentDefaultStore
 	store.ChatArchiveStore
 	store.ChatGroupMemberStore
@@ -209,8 +211,13 @@ type Server struct {
 	// assistant is the person's assistant at work
 	// (personalagent/assistant), over the ports in personal_agent_ports.go.
 	assistant *assistant.Service
+	// noticeTests counts the assistant's test notices (assistant_settings).
+	noticeTests noticeTestLimiter
 	// messageChannels runs the assistants' message channels (DEV-203).
 	messageChannels *channels.Runner
+	// personNotices sends the notices about items that wait for the person
+	// (DEV-294); sinks register on it before the background jobs start.
+	personNotices *personnotice.Dispatcher
 	// skillRepos reads git repositories for the skill library; repoMu runs
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
@@ -300,6 +307,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
 	server.assistant = newAssistant(server, sessionEvents)
 	server.messageChannels = newMessageChannelRunner(server)
+	server.personNotices = personnotice.New(store)
+	server.personNotices.SetSinkResolver(server.resolveNoticeSink)
 	devices := newDeviceEvents(stream, store, data, server)
 	devices.workspaceContentChanged = server.refreshWorkspaceDigests
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
@@ -320,6 +329,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.connectors.Confirmations.OnChanged = server.assistant.ProposalChanged
 	}
 	server.assistant.ConnectorReplay = server.connectors.Extensions.ReplayConfirmedWrite
+	server.assistant.SaveSettingsChecked = server.saveAssistantSettings
+	server.assistant.SaveChannel = server.saveAssistantChannel
+	server.assistant.ChannelInputOf = server.assistantChannelInput
 	server.hub.connectors = server.connectors
 	server.resources = newResourceService(store, server.hub, stream)
 	server.hub.resources = server.resources
@@ -333,6 +345,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistant.RunFor
+	server.hub.responsibleFor = server.assistant.ResponsibleFor
 	server.hub.settleIssueSession = server.issueService.Settle
 	server.hub.awaitSessionStart = server.sessionService.AwaitStart
 	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
@@ -368,6 +381,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	feishu.SetWebOrigin(options.AllowedOrigin)
 	server.feishu.Integrations = options.Integrations
 	server.feishu.PersonalAgents = personalAgentDesk{server}
+	server.feishu.Notices = feishuNoticeDesk{s: server}
 	server.feishu.Issues = issueDesk{server}
 	server.wireFeishuEvents(store, options.Integrations)
 	// Everything on the server that reacts to sessions, in this order.

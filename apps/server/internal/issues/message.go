@@ -32,7 +32,15 @@ var (
 	ErrExecuting = errors.New("issue_executing: the Agent is executing; reply once this turn ends")
 	// ErrMayNotDecide: only the Issue's creator or a workspace maintainer answers its questions.
 	ErrMayNotDecide = errors.New("may_not_decide: only the Issue's creator or a workspace maintainer may answer its questions")
+	// ErrAgentMayNotAnswer: an agent relays messages for the person, but the answer to
+	// the Issue's question is the person's own.
+	ErrAgentMayNotAnswer = errors.New("the Issue waits on a question that the person answers: agents do not answer it through Foundry")
 )
+
+// ViaAgent is Actor.Via for a message an agent relays for the person (the
+// issues MCP tool). It may ask where the Issue stands, clarify its draft or
+// give feedback; it may not answer the question the Issue waits on.
+const ViaAgent = "agent"
 
 // Message is a person's message in an Issue's conversation.
 type Message struct {
@@ -72,6 +80,9 @@ func (s *Service) Message(ctx context.Context, by Actor, issueID string, message
 	case issue.Status == "accepted" || issue.Status == "abandoned":
 		return "", store.Issue{}, conflict(ErrClosed)
 	case issue.Question != nil && issue.Status == "blocked":
+		if by.Via == ViaAgent {
+			return "", store.Issue{}, &sessions.Refusal{Status: http.StatusForbidden, Err: ErrAgentMayNotAnswer}
+		}
 		if !MayDecide(issue, by.UserID, by.Role) {
 			return "", store.Issue{}, &sessions.Refusal{Status: http.StatusForbidden, Err: ErrMayNotDecide}
 		}

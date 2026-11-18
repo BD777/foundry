@@ -9,58 +9,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-type summaryMap map[string]store.AgentSession
-
-func (m summaryMap) GetAgentSessionSummary(_ context.Context, id string) (store.AgentSession, error) {
-	if session, ok := m[id]; ok {
-		return session, nil
-	}
-	return store.AgentSession{}, store.ErrNotFound
-}
-
-// Who answers: the person's own chat, a child's parent up a chain that
-// reaches a person, the child's own chat when its parent is gone, and
-// nobody where no person is at the root.
-func TestQuestionsToFollowsTheChainToAPerson(t *testing.T) {
-	sessions := summaryMap{
-		"chat":         {ID: "chat", Source: store.SessionSourceChat, CreatedByUserID: "u"},
-		"child":        {ID: "child", Source: store.SessionSourceAgent, ParentSessionID: "chat", CreatedByUserID: "u"},
-		"grandchild":   {ID: "grandchild", Source: store.SessionSourceAgent, ParentSessionID: "child", CreatedByUserID: "u"},
-		"archived":     {ID: "archived", Source: store.SessionSourceChat, ArchivedAt: "2026-11-06T00:00:00Z"},
-		"orphan":       {ID: "orphan", Source: store.SessionSourceAgent, ParentSessionID: "archived", CreatedByUserID: "u"},
-		"lost":         {ID: "lost", Source: store.SessionSourceAgent, ParentSessionID: "deleted", CreatedByUserID: "u"},
-		"scheduled":    {ID: "scheduled", Source: store.SessionSourceChat, ParentSessionID: "chat", CreatedByUserID: "u"},
-		"timerChild":   {ID: "timerChild", Source: store.SessionSourceAgent, ParentSessionID: "scheduled", CreatedByUserID: "u"},
-		"issueRun":     {ID: "issueRun", Source: store.SessionSourceIssue, IssueID: "iss_1", CreatedByUserID: "u"},
-		"issueChild":   {ID: "issueChild", Source: store.SessionSourceAgent, ParentSessionID: "issueRun", CreatedByUserID: "u"},
-		"assistant":    {ID: "assistant", Source: store.SessionSourceChat, Role: store.AgentSessionRolePersonalAgent, CreatedByUserID: "u"},
-		"utility":      {ID: "utility", Source: store.SessionSourceNaming},
-		"verifier":     {ID: "verifier", Source: store.SessionSourceVerification, ParentSessionID: "chat", CreatedByUserID: "u"},
-		"stoppedChild": {ID: "stoppedChild", Source: store.SessionSourceAgent, ParentSessionID: "stopped", CreatedByUserID: "u"},
-		"stopped":      {ID: "stopped", Source: store.SessionSourceChat, Status: "canceled", CreatedByUserID: "u"},
-	}
-	for _, check := range []struct{ id, to, parent string }{
-		{"chat", questionsToPerson, ""},
-		{"child", questionsToParent, "chat"},
-		{"grandchild", questionsToParent, "child"},
-		{"orphan", questionsToParent, ""},
-		{"lost", questionsToParent, ""},
-		{"stoppedChild", questionsToParent, ""},
-		{"scheduled", "", ""},
-		{"timerChild", "", ""},
-		{"issueRun", "", ""},
-		{"issueChild", "", ""},
-		{"assistant", "", ""},
-		{"utility", "", ""},
-		{"verifier", "", ""},
-	} {
-		to, parent := questionsTo(context.Background(), sessions, sessions[check.id], 0)
-		if to != check.to || parent != check.parent {
-			t.Errorf("questionsTo(%s) = %q, %q; want %q, %q", check.id, to, parent, check.to, check.parent)
-		}
-	}
-}
-
 // A child's question reaches its parent's inbox as soon as it is recorded,
 // with how to answer; the parent's plain answer becomes the reply envelope.
 func TestChildQuestionIsRelayedAndAnsweredInPlainText(t *testing.T) {

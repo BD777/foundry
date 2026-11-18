@@ -67,6 +67,9 @@ type Write struct {
 	// exactly what will change or be lost.
 	ProposalSummary string
 	Apply           func(ctx context.Context) (any, error)
+	// Report, when set, shapes an applied write's answer once its audit row
+	// exists, so the answer can name that row (the undo id).
+	Report func(result any, actionID string) any
 }
 
 // Planner checks and resolves one write tool's arguments for scope.
@@ -91,6 +94,10 @@ func (s *Service) planner(tool string) (Planner, bool) {
 		return s.planUpdateList, true
 	case "archive_session":
 		return s.archiveSessions, s.archiveSessions != nil
+	case settingsTool:
+		return s.planSettings, true
+	case channelsTool:
+		return s.planChannelWrite, true
 	}
 	return nil, false
 }
@@ -159,7 +166,10 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 	}
 	record.Outcome = store.PersonalAgentOutcomeApplied
 	record.WorkspaceID = cmp.Or(record.WorkspaceID, workspaceIDOf(result))
-	s.recordAction(ctx, record, spec)
+	saved := s.recordAction(ctx, record, spec)
+	if write.Report != nil {
+		return write.Report(result, saved.ID), nil
+	}
 	return result, nil
 }
 
@@ -240,6 +250,10 @@ func (s *Service) applyProposal(ctx context.Context, proposal store.PersonalAgen
 		plan = s.planRemoveDevice
 	case store.PersonalAgentActionArchiveSession:
 		plan = s.archiveSessions
+	case store.PersonalAgentProposalSettings:
+		plan = s.planSettings
+	case store.PersonalAgentProposalChannel:
+		plan = s.planChannelWrite
 	default:
 		plan = s.planUpdateWorkspace
 	}

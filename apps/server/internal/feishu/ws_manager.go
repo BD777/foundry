@@ -118,6 +118,9 @@ type WSManager struct {
 	// PersonalAgents is the person's assistant as their direct chat reaches
 	// it (personal_agent.go); nil: direct chats go where their route points.
 	PersonalAgents PersonalAgentDesk
+	// Notices is what a notice card shows and where its presses are settled
+	// (notice.go); nil: notice cards cannot be answered.
+	Notices NoticeDesk
 	// Issues is the Issue workflow as a group thread reaches it; without
 	// it, /issue is an ordinary message.
 	Issues IssueDesk
@@ -415,6 +418,7 @@ func (m *WSManager) Publish(ctx context.Context, workspaceID string) {
 func (m *WSManager) ConnectionChanged(appID string, status feishuevents.Status) {
 	if status.Connected {
 		log.Printf("[feishu] bot app %s connected", appID)
+		m.backfillGroupPeersInBackground(appID)
 	} else {
 		log.Printf("[feishu] bot app %s: %s", appID, status.Detail)
 	}
@@ -566,7 +570,9 @@ func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageI
 		m.replyFailure(ctx, app.client, messageID, "配对失败", "助理只在单聊里回答，不能绑定到群。请在和机器人的单聊里发送这个配对码。", "不支持群聊")
 		return nil
 	}
-	chat := store.FeishuBotRoute{Kind: store.FeishuRouteChat, ChatID: chatID, BoundUserID: pairing.PairingCodeCreatedBy}
+	// The sender proved the code's person by sending it from their account, so
+	// their open_id on this app is the identity the bot writes to.
+	chat := store.FeishuBotRoute{Kind: store.FeishuRouteChat, ChatID: chatID, BoundUserID: pairing.PairingCodeCreatedBy, PeerOpenID: sender}
 	var nameErr error
 	if chatType == "p2p" {
 		chat.Kind, chat.PeerOpenID = store.FeishuRouteP2P, sender

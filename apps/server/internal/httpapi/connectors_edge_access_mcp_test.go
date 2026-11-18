@@ -120,11 +120,11 @@ func TestEdgeAccessMCPManagesCredentialsWithoutSecrets(t *testing.T) {
 		strings.Contains(unproxied, clientID) || strings.Contains(unproxied, clientSecret) {
 		t.Fatalf("unproxied secretValues = %q (error %v)", unproxied, failed)
 	}
-	deleted, failed := edgeAccessMCPCall(t, f.handler, token, map[string]any{
+	// Deleting an edge access rule is the person's (docs/personal-agent.md §4).
+	if refused, failed := edgeAccessMCPCall(t, f.handler, token, map[string]any{
 		"action": "delete", "id": created.ID,
-	}, false)
-	if failed || !strings.Contains(deleted, `"status": "deleted"`) {
-		t.Fatalf("delete = %q (error %v)", deleted, failed)
+	}, false); !failed || !strings.Contains(refused, "the person's to do") {
+		t.Fatalf("delete by an agent = %q (error %v)", refused, failed)
 	}
 
 	if err := mcpToolAllowed(store.AgentSessionRoleIssueExecution, false, "edge_access"); err == nil {

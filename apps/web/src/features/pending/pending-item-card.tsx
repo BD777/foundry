@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { ApiError, type PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ClampedText } from "../../components/ui/clamped-text";
 import { ButtonRow } from "../../components/ui/button-row";
@@ -32,6 +33,7 @@ import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
 import { navigateToConnectorGrant } from "../../lib/in-app-navigation";
 import {
+  pendingApprovalDetail,
   pendingFailure,
   pendingHeadline,
   pendingInboxReason,
@@ -41,6 +43,7 @@ import {
   pendingGitHubScopes,
   pendingPrimary,
   pendingResolved,
+  pendingStatusKey,
   pendingTitle,
   type PendingFailure,
 } from "./pending-model";
@@ -61,6 +64,7 @@ const kindIcon = {
   message_channel: { icon: MessagesSquare, tone: "warn" },
   connector_write: { icon: MessagesSquare, tone: "warn" },
   notice: { icon: Info, tone: "brass" },
+  assistant_question: { icon: MessagesSquare, tone: "brass" },
 } as const;
 
 /**
@@ -97,6 +101,7 @@ export function PendingItemCard({
   const { t } = useTranslation("pending");
   const titleId = useId();
   const hintId = useId();
+  const recommendedId = useId();
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [shown, setShown] = useState<"" | "context" | "error">("");
   const [replying, setReplying] = useState(false);
@@ -161,14 +166,28 @@ export function PendingItemCard({
   // it made from its own words shows their first line as its title, so the
   // note shows only when it says more (a draft on later lines, a cut title).
   const note = (item.note ?? "").trim();
-  const handed =
-    item.handler !== "assistant" && item.handedReason
-      ? item.handedReason === "assistant"
-        ? item.rule === "handed_over" && note === item.title.trim()
-          ? ""
-          : note
-        : t(`item.handed.${item.handedReason}`)
+  // The assistant handed it over itself: its words say why it needs the
+  // person. An item made from those words already shows them as its title,
+  // so only the fact of the hand-over is shown then.
+  const handedByAssistant =
+    item.handler !== "assistant" && item.handedReason === "assistant";
+  const handedNote =
+    handedByAssistant &&
+    !(item.rule === "handed_over" && note === item.title.trim())
+      ? note
       : "";
+  const handedReasonText =
+    item.handler !== "assistant" &&
+    item.handedReason &&
+    item.handedReason !== "assistant"
+      ? t(`item.handed.${item.handedReason}`)
+      : "";
+  const assistantDecided = resolved && item.outcome === "assistant_answered";
+  // The assistant closed it with a reason and no answer: not a decision.
+  const assistantClosed = resolved && item.outcome === "assistant_closed";
+  const closeReason = (item.closeReason ?? "").trim();
+  // What an approval asks the person to allow: the command or the paths.
+  const approvalDetail = pendingApprovalDetail(item);
   // A classified failure says what to do; its raw error waits in the menu.
   const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
   const canReply =
@@ -177,7 +196,7 @@ export function PendingItemCard({
     Boolean(item.sessionId || (item.issueId && item.eventId));
   const when = resolved
     ? t("item.resolved", {
-        state: t(`state.${item.state}`),
+        state: t(pendingStatusKey(item)),
         when: relativeWhen(item.resolvedAt || item.updatedAt),
       })
     : relativeWhen(item.createdAt);
@@ -297,28 +316,35 @@ export function PendingItemCard({
         {item.options!.map((option) => {
           const label = pendingOptionLabel(option);
           const recommended = option === item.recommendation;
+          // The option's name is its label; the recommended mark is only
+          // described, so the name stays exactly the option (DEV-296).
           return (
-            <Button
-              className="h-auto min-h-[27px] py-1 text-left whitespace-normal"
-              aria-label={
-                recommended
-                  ? t("item.useRecommended", { option: label })
-                  : t("item.useOption", { option: label })
-              }
-              data-busy={sendingOption === option ? "true" : undefined}
-              disabled={Boolean(busy)}
-              key={option}
-              onClick={() => void send(label, option)}
-              size="sm"
-              variant={recommended ? "primary" : "secondary"}
-            >
-              <span>{label}</span>
+            <Fragment key={option}>
+              <Button
+                aria-describedby={recommended ? recommendedId : undefined}
+                className="h-auto min-h-[27px] py-1 text-left whitespace-normal"
+                data-busy={sendingOption === option ? "true" : undefined}
+                disabled={Boolean(busy)}
+                onClick={() => void send(label, option)}
+                size="sm"
+                variant={recommended ? "primary" : "secondary"}
+              >
+                <span>{label}</span>
+                {recommended ? (
+                  <span
+                    aria-hidden="true"
+                    className="fdy-pending-item-recommended flex-none font-normal whitespace-nowrap opacity-80"
+                  >
+                    · {t("item.recommended")}
+                  </span>
+                ) : null}
+              </Button>
               {recommended ? (
-                <span className="fdy-pending-item-recommended flex-none font-normal whitespace-nowrap opacity-80">
-                  · {t("item.recommended")}
+                <span className="sr-only" id={recommendedId}>
+                  {t("item.recommended")}
                 </span>
               ) : null}
-            </Button>
+            </Fragment>
           );
         })}
       </div>
@@ -348,6 +374,15 @@ export function PendingItemCard({
     action = (
       <Button onClick={() => onOpenMessage(item)} size="sm">
         {primaryOpenLabel}
+        <ArrowRight aria-hidden="true" size={14} />
+      </Button>
+    );
+  // A decision the assistant made is undone in its conversation: the person
+  // reads what it said there and replies, if they disagree.
+  else if (assistantDecided && item.sessionId)
+    action = (
+      <Button onClick={() => onOpenMessage(item)} size="sm" variant="secondary">
+        {t("item.openAssistantAnswer")}
         <ArrowRight aria-hidden="true" size={14} />
       </Button>
     );
@@ -435,14 +470,64 @@ export function PendingItemCard({
             {hint}
           </p>
         ) : null}
-        {handed && item.handedReason === "assistant_timeout" ? (
-          <p className="fdy-pending-item-reason min-w-0 text-xs leading-[1.5] text-ink-muted wrap-anywhere">
-            {handed}
+        {assistantDecided ? (
+          <p className="fdy-pending-item-decided min-w-0">
+            <Badge dot={false} size="xs" tone="brass">
+              {t("item.assistantDecided")}
+            </Badge>
           </p>
-        ) : handed ? (
-          <p className="fdy-pending-item-handed min-w-0 text-xs leading-[1.5] text-ink wrap-anywhere">
-            <span className="font-semibold">{t("item.fromAssistant")}</span>{" "}
-            {handed}
+        ) : null}
+        {assistantDecided && item.answer?.trim() ? (
+          <ClampedText
+            clamp={2}
+            lessLabel={t("item.showLess")}
+            moreLabel={t("item.showMore")}
+            size="sm"
+            tone="ink"
+          >
+            {item.answer.trim()}
+          </ClampedText>
+        ) : null}
+        {assistantClosed && !closeReason ? (
+          <p className="fdy-pending-item-closed min-w-0">
+            <Badge dot={false} size="xs">
+              {t("item.assistantClosed")}
+            </Badge>
+          </p>
+        ) : null}
+        {assistantClosed && closeReason ? (
+          <ClampedText
+            clamp={2}
+            className="fdy-pending-item-closed"
+            lessLabel={t("item.showLess")}
+            moreLabel={t("item.showMore")}
+            size="sm"
+            tone="ink"
+          >
+            {t("item.assistantClosedReason", { reason: closeReason })}
+          </ClampedText>
+        ) : null}
+        {handedByAssistant ||
+        (handedReasonText && item.handedReason !== "assistant_timeout") ? (
+          <div className="fdy-pending-item-handed min-w-0 rounded-lg bg-panel-soft px-2.5 py-2">
+            <ClampedText
+              clamp={3}
+              lessLabel={t("item.showLess")}
+              moreLabel={t("item.showMore")}
+              size="sm"
+              tone="ink"
+            >
+              <strong className="font-semibold">
+                {t("item.fromAssistant")}
+              </strong>{" "}
+              {handedByAssistant
+                ? handedNote || t("item.handedByAssistant")
+                : handedReasonText}
+            </ClampedText>
+          </div>
+        ) : handedReasonText ? (
+          <p className="fdy-pending-item-reason min-w-0 text-xs leading-[1.5] text-ink-muted wrap-anywhere">
+            {handedReasonText}
           </p>
         ) : null}
         {detail ? (
@@ -455,6 +540,20 @@ export function PendingItemCard({
           >
             {detail}
           </ClampedText>
+        ) : null}
+        {approvalDetail ? (
+          <div className="fdy-pending-item-approval min-w-0 rounded-lg bg-panel-soft px-2.5 py-2">
+            <ClampedText
+              clamp={3}
+              className="font-mono break-all"
+              lessLabel={t("item.showLess")}
+              moreLabel={t("item.showMore")}
+              size="xs"
+              tone="ink"
+            >
+              {approvalDetail}
+            </ClampedText>
+          </div>
         ) : null}
         {shown ? (
           <blockquote

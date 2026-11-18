@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "open-lark",
   "name": "OpenLark",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "protocol": 1,
   "connectors": [
     {
@@ -96,9 +96,25 @@
               "zh-CN": "留空时使用 OpenLark 的主账号；地址和令牌校验通过后，也可以从探测出的列表中选择账号。"
             },
             "optionsFrom": "probe:accounts"
+          },
+          {
+            "id": "notifyChat",
+            "type": "text",
+            "required": false,
+            "label": "Notice chat (self)",
+            "labels": {
+              "zh-CN": "通知会话（自聊）"
+            },
+            "help": "The ID of your own chat with OpenLark. Foundry sends notices about items that need you there. Leave empty to send none.",
+            "helps": {
+              "zh-CN": "你与 OpenLark 的自聊会话 ID。需要你处理的事项通知会发到这里；留空则不发送通知。"
+            }
           }
         ],
-        "steps": [["baseUrl", "readToken"], ["account"]],
+        "steps": [
+          ["baseUrl", "readToken"],
+          ["account", "notifyChat"]
+        ],
         "probe": [
           {
             "id": "capabilities",
@@ -530,7 +546,24 @@
             "pointer": "/name",
             "ttlSeconds": 600
           }
-        ]
+        ],
+        "notify": {
+          "version": 1,
+          "format": "markdown",
+          "target": {
+            "field": "notifyChat",
+            "conversationKind": "self"
+          },
+          "send": {
+            "method": "POST",
+            "path": "/agent/v1/conversations/{target}/messages",
+            "body": "{\"clientId\":\"{notice.id}\",\"editorType\":\"markdown\",\"text\":\"{text|json}\\n\\n[在 Foundry 中处理]({link|json})\"}"
+          },
+          "sent": {
+            "messageId": "/messageId"
+          },
+          "replyTo": "attributes.replyTo"
+        }
       }
     }
   ]

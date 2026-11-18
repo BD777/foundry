@@ -8,10 +8,12 @@
  *
  *   foundry mcp                 stdio MCP server for agents outside Foundry
  *   foundry session <verb>      read, start, steer and wait on sessions
- *   foundry issue list|get      Issues, read-only
+ *   foundry issue <verb>        Issues: list, get, and the issues tool's ops (schema, validate, create, draft, comment, retry)
  *   foundry feishu subscribe|events  a connected Feishu app's events
  *   foundry workspace <verb>    find, read, create, change and archive workspaces
  *   foundry assistant <verb>    the assistant's memory, rules, tasks and the person's list
+ *   foundry assistant-settings|assistant-channels <verb>  the assistant's settings and message channels (assistant sessions only)
+ *   foundry foundry-settings <verb>  the person's execution default, worker groups and device names
  *   foundry device list         devices, whether online, and what they offer
  *   foundry profile|model list  runnable profiles and their models
  *   foundry edge-access <verb>  list, add, replace, delete or provision edge credentials
@@ -20,6 +22,7 @@
  * Operational worker commands remain on the separate `foundry-worker` bin.
  */
 
+import { isActiveSessionStatus } from "@bd777/foundry-protocol";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,17 +43,26 @@ import { runMcpServer } from "./agent-surface/foundry-mcp.js";
 import { claudeConfigDir } from "./harness/native/native-homes.js";
 import { errorMessage } from "./platform/utils.js";
 
-/** A command's words after the verb: its positional word and its flags. */
+/**
+ * A command's words after the verb: its positional word and its flags. The
+ * CLI's own flags (cliFlags) land in `cli`, not in the tool's arguments.
+ */
 function toolArguments(
   name: string,
   command: ToolCommand,
   words: string[],
-): { args: Record<string, unknown>; server?: string } {
+): {
+  args: Record<string, unknown>;
+  cli: Record<string, unknown>;
+  server?: string;
+} {
   const flags: Record<string, FlagSpec> = {
     ...foundryCommonFlags,
     ...command.flags,
   };
+  const cliFlags = command.cliFlags ?? {};
   const args: Record<string, unknown> = { ...command.fixed };
+  const cli: Record<string, unknown> = {};
   let server: string | undefined;
   for (let index = 0; index < words.length; index++) {
     const word = words[index]!;
@@ -70,12 +82,13 @@ function toolArguments(
       server = value();
       continue;
     }
-    const spec = flags[word];
+    const toolSpec = flags[word];
+    const spec = toolSpec ?? cliFlags[word];
     if (!spec)
       throw new FoundryClientError(
-        `foundry ${name} reads no ${word} (it reads ${Object.keys(flags).join(", ")})`,
+        `foundry ${name} reads no ${word} (it reads ${Object.keys({ ...flags, ...cliFlags }).join(", ")})`,
       );
-    const [target, key] = flagTarget(args, spec);
+    const [target, key] = flagTarget(toolSpec ? args : cli, spec);
     switch (spec.kind) {
       case "boolean":
         if (spec.adds) appendList(target, key, spec.adds);
@@ -123,7 +136,7 @@ function toolArguments(
     throw new FoundryClientError(
       `foundry ${name} needs <${command.positional}>`,
     );
-  return { args, server };
+  return { args, cli, server };
 }
 
 /** The object and key a flag sets: the argument, or a field of it. */
@@ -152,9 +165,64 @@ async function runToolCommand(
   command: ToolCommand,
   words: string[],
 ): Promise<void> {
-  const { args, server } = toolArguments(name, command, words);
+  const { args, cli, server } = toolArguments(name, command, words);
   const client = new FoundryClient(resolveConfig({ serverURL: server }));
+  if (command.waits) {
+    await waitForSession(
+      client,
+      command.tool,
+      args,
+      cli.timeoutMs as number | undefined,
+    );
+    return;
+  }
   console.log(await client.callTool(command.tool, args));
+}
+
+/** How long `session wait` polls before it stops, and how often it asks. */
+const DEFAULT_WAIT_MS = 600_000;
+const WAIT_POLL_MS = 2_000;
+
+/**
+ * Asks the tool until the session is no longer queued, running or blocked,
+ * then prints the answer `session get` gives. Past the timeout it fails and
+ * says so; the same command waits again.
+ */
+async function waitForSession(
+  client: FoundryClient,
+  tool: string,
+  args: Record<string, unknown>,
+  timeoutMs = DEFAULT_WAIT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const answer = await client.callTool(tool, args);
+    const status = sessionStatusOf(answer);
+    if (!isActiveSessionStatus(status)) {
+      console.log(answer);
+      return;
+    }
+    const left = deadline - Date.now();
+    if (left <= 0)
+      throw new FoundryClientError(
+        `session is still ${status} after ${timeoutMs} ms; run session wait again to keep waiting`,
+      );
+    await new Promise((wake) => setTimeout(wake, Math.min(WAIT_POLL_MS, left)));
+  }
+}
+
+function sessionStatusOf(answer: string): string {
+  let summary: { status?: unknown };
+  try {
+    summary = JSON.parse(answer) as { status?: unknown };
+  } catch (error) {
+    throw new FoundryClientError(
+      `get_session did not answer with JSON: ${errorMessage(error)}`,
+    );
+  }
+  if (typeof summary.status !== "string")
+    throw new FoundryClientError("get_session answered without a status");
+  return summary.status;
 }
 
 /** The skills shipped in this package's skills/ folder. */
@@ -226,6 +294,30 @@ function runSkillCommand(args: string[]): void {
   );
 }
 
+/** Each flag as usage shows it: a boolean takes no word, the others name their kind. */
+function flagSummary(flags: Record<string, FlagSpec>): string[] {
+  return Object.entries(flags).map(([flag, { kind }]) =>
+    kind === "boolean"
+      ? flag
+      : `${flag} <${kind === "file" || kind === "jsonFile" ? "path" : kind}>`,
+  );
+}
+
+/** `foundry <command> <verb> --help`: one verb's words, flags and tool. */
+function verbUsage(name: string, command: ToolCommand): string {
+  const words = [`foundry ${name}`];
+  if (command.positional) words.push(`<${command.positional}>`);
+  const flags = flagSummary({
+    ...foundryCommonFlags,
+    ...command.cliFlags,
+    ...command.flags,
+  });
+  return [
+    `${words.join(" ")}${flags.length ? ` [${flags.join(" ")}]` : ""}`,
+    `  calls ${command.tool} on the server; --server <url> overrides FOUNDRY_SERVER_URL`,
+  ].join("\n");
+}
+
 function usage(): string {
   const lines = [
     "foundry — the Foundry tools from a shell",
@@ -238,11 +330,7 @@ function usage(): string {
       if (!isToolCommand(spec)) continue;
       const words = [`foundry ${command} ${verb}`];
       if (spec.positional) words.push(`<${spec.positional}>`);
-      const flags = Object.entries(spec.flags).map(([flag, { kind }]) =>
-        kind === "boolean"
-          ? flag
-          : `${flag} <${kind === "file" || kind === "jsonFile" ? "path" : kind}>`,
-      );
+      const flags = flagSummary({ ...spec.cliFlags, ...spec.flags });
       lines.push(
         `  ${words.join(" ")}${flags.length ? ` [${flags.join(" ")}]` : ""}   (${spec.tool})`,
       );
@@ -251,7 +339,7 @@ function usage(): string {
   lines.push(
     "  foundry skill [list | <name> | install <name> [--dir <skills folder>]]",
     "",
-    "Every tool command also reads --workspace <id> and --server <url>; each prints the tool's answer.",
+    "Every tool command also reads --workspace <id> and --server <url>; each prints the tool's answer. `foundry <command> <verb> --help` prints one verb's flags.",
     "Credentials are read from FOUNDRY_SESSION_TOKEN, FOUNDRY_LEASE_TOKEN (one compute lease's commands) or the local paired daemon config.",
   );
   return lines.join("\n");
@@ -271,6 +359,10 @@ async function main(): Promise<void> {
     runSkillCommand(rest);
     return;
   }
+  if (rest[0] === "--help" || rest[0] === "-h") {
+    process.stdout.write(usage() + "\n");
+    return;
+  }
   const verbs = foundryCommands[command];
   const [verb = "", ...words] = rest;
   const spec = verbs?.[verb];
@@ -283,6 +375,10 @@ async function main(): Promise<void> {
         "\n",
     );
     process.exitCode = 2;
+    return;
+  }
+  if (words.includes("--help")) {
+    process.stdout.write(verbUsage(`${command} ${verb}`, spec) + "\n");
     return;
   }
   await runToolCommand(`${command} ${verb}`, spec, words);

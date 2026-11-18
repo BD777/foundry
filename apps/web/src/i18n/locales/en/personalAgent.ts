@@ -474,6 +474,15 @@ export const personalAgent = {
     openSettings: "Settings",
     stopAll: "Stop assistant work",
     stopping: "Stopping…",
+    stopConfirm: {
+      title: "Stop assistant work?",
+      body: "The assistant pauses new work and cancels the helpers it is running right now. Resume at any time to carry on.",
+      bodyWithCount_one:
+        "The assistant pauses new work and cancels the {{count}} helper it is running right now. Resume at any time to carry on.",
+      bodyWithCount_other:
+        "The assistant pauses new work and cancels the {{count}} helpers it is running right now. Resume at any time to carry on.",
+      confirm: "Stop",
+    },
     resume: "Resume",
     resuming: "Resuming…",
     stopped: {
@@ -522,6 +531,8 @@ export const personalAgent = {
   proposal: {
     kicker: "Needs your OK",
     account: "Account",
+    kind: "Kind",
+    kinds: { channel_change: "Message channel" },
     accept: "OK",
     decline: "No thanks",
     expires: "Expires {{when}}",
@@ -1258,6 +1269,59 @@ export const personalAgent = {
       feishuAppUsedBy: "Used by {{assistant}}",
       feishuHint: "Apps and pairing are set up in Connectors.",
       openConnectors: "Open Connectors",
+      notifyTitle: "Notices to you",
+      notifyChannel: "Notice connector",
+      notifyHint:
+        "Items that need your answer (questions, approvals, hand-overs, requests) go to your own chat on the chosen connector.",
+      notifyNone: "No notices",
+      notifyRecommended: " (recommended)",
+      notifyNoConnectors:
+        "No connector takes notices yet. Add and check an OpenLark connector and it appears here.",
+      notifyListFailed:
+        "The connectors could not be listed. Reload the page to try again.",
+      notifyInstanceUnavailable: "{{name}} cannot take notices yet. {{reason}}",
+      notifyInstanceReasons: {
+        waiting_device:
+          "No online device reaches it. Notices are retried automatically and marked not delivered after several failed tries.",
+        connector_not_notifiable:
+          "Its installed extension does not take notices yet. Once the updated extension is installed, reload this page and Foundry picks it up.",
+        feishu_not_paired:
+          "Send the pairing code once in a Feishu direct chat with the Foundry bot.",
+        feishu_not_reachable:
+          "The Foundry bot cannot message you in Feishu: you are outside the app's availability range.",
+        instance_unavailable:
+          "Foundry cannot read this connector right now. Reload the page to try again.",
+      },
+      notifyKinds: "Kinds to notify",
+      notifyFinding: "Finding your chat with yourself…",
+      notifyFound: "Found your chat with yourself: {{name}}.",
+      notifyMissing: "The chat was not found automatically",
+      notifyChatId: "Chat ID",
+      notifyUseChat: "Use this chat",
+      notifyTest: "Send a test notice",
+      notifyTesting: "Sending…",
+      notifyTestSent:
+        "The test notice was sent. Check your chat with yourself.",
+      notifyTestFailed: "The test notice failed.",
+      notifyTestFailedWith: "The test notice failed: {{reason}}",
+      notifyKindLabels: {
+        question: "Questions",
+        approval: "Approvals",
+        hand_over: "Hand-overs",
+        ask: "Requests",
+      },
+      notifyReasons: {
+        self_chat_not_found:
+          "No chat with yourself was found on this connector.",
+        chat_not_found: "That chat ID was not found.",
+        chat_not_self: "That chat is not your chat with yourself.",
+        connector_unreachable:
+          "The connector cannot be reached right now. Try again later.",
+        waiting_device: "No online device reaches this connector.",
+        connector_not_notifiable: "This connector does not take notices.",
+        instance_unavailable: "This connector cannot be read.",
+        default: "No chat with yourself could be found.",
+      },
       digestTitle: "Daily summary",
       dailyDigest: "Send me a daily summary",
       dailyDigestTime: "At",

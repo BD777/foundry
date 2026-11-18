@@ -33,6 +33,9 @@ import type {
   PersonalAgentActionRecord,
   PersonalAgentConnector,
   PersonalAgentConnectorsView,
+  PersonalAgentNotifyChatResult,
+  PersonalAgentNotifyInstancesResult,
+  PersonalAgentNotifyTestResult,
   PersonalAgentItem,
   PersonalAgentItemDetail,
   PersonalAgentItemEditInput,
@@ -139,6 +142,35 @@ export function getPersonalAgentConnectors(
   assistantId?: string,
 ): Promise<PersonalAgentConnectorsView> {
   return request("GET", `${personalAgentApiBase(assistantId)}/connectors`);
+}
+
+/** Finds the person's self chat on a connector and fills it in, or checks the chat id typed. */
+export function findPersonalAgentNotifyChat(
+  assistantId: string | undefined,
+  input: { connectorInstanceId: string; chatId?: string },
+): Promise<PersonalAgentNotifyChatResult> {
+  return request("POST", `${personalAgentApiBase(assistantId)}/notify/chat`, {
+    body: input,
+  });
+}
+
+/** Sends one test notice to the chosen connector and reports the result. */
+export function getPersonalAgentNotifyInstances(
+  assistantId: string | undefined,
+): Promise<PersonalAgentNotifyInstancesResult> {
+  return request(
+    "GET",
+    `${personalAgentApiBase(assistantId)}/notify/instances`,
+  );
+}
+
+export function sendPersonalAgentTestNotice(
+  assistantId: string | undefined,
+  connectorInstanceId: string,
+): Promise<PersonalAgentNotifyTestResult> {
+  return request("POST", `${personalAgentApiBase(assistantId)}/notify/test`, {
+    body: { connectorInstanceId },
+  });
 }
 
 /** Replaces every connector-account override; omitted accounts become write. */

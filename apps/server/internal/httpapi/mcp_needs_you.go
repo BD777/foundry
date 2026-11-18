@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
@@ -16,8 +18,9 @@ import (
 
 // needs_you (docs/assistant-orchestration.md §h): the assistant reads the
 // person's one list of what waits for them, hands its own helpers' items to
-// the person with a note, and closes those it handled another way. Only a
-// personal_agent session lists the tool.
+// the person with a note, asks the person a question it cannot settle (ask),
+// and closes those it handled another way. Only a personal_agent session lists
+// the tool.
 
 // needsYouNoteLimit bounds what the assistant writes for the person.
 const needsYouNoteLimit = 600
@@ -95,9 +98,16 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 			}
 		}
 		return encodeJSON(map[string]any{"told": s.needsYouLineOf(ctx, item)})
+	case "ask":
+		return s.askNeedsYou(call, scope)
 	case "resolve":
 	default:
-		return "", &statusError{http.StatusBadRequest, fmt.Errorf("op is list, hand_over, tell or resolve")}
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("op is list, hand_over, tell, ask or resolve")}
+	}
+	if itemID != "" && (op == "hand_over" || op == "resolve") {
+		if item, err := s.store.GetPendingItem(ctx, user, itemID); err == nil && item.Source == store.PendingSourceAssistantQuestion {
+			return s.assistantQuestionOp(call, scope, op, item)
+		}
 	}
 	if (itemID == "") == (sessionID == "") {
 		return "", &statusError{http.StatusBadRequest, fmt.Errorf("name exactly one of itemId and sessionId")}
@@ -106,17 +116,10 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var changed []needsYouLine
 	if op == "resolve" {
-		for _, item := range items {
-			resolved, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomeAssistantAnswered)
-			if err != nil {
-				return "", err
-			}
-			changed = append(changed, s.needsYouLineOf(ctx, resolved))
-		}
-		return encodeJSON(map[string]any{"resolved": changed})
+		return s.resolveNeedsYou(call, scope, helper, items)
 	}
+	var changed []needsYouLine
 	if len(items) == 0 {
 		// A helper that asked in its answer, without a question card.
 		now := formatPendingTime(time.Now())
@@ -135,13 +138,134 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		return encodeJSON(map[string]any{"handedOver": []needsYouLine{s.needsYouLineOf(ctx, item)}})
 	}
 	for _, item := range items {
-		handed, err := s.store.HandPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver, scope.Turn.ID)
+		handed, err := s.handPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver, scope.Turn.ID)
 		if err != nil {
 			return "", err
 		}
 		changed = append(changed, s.needsYouLineOf(ctx, handed))
 	}
 	return encodeJSON(map[string]any{"handedOver": changed})
+}
+
+// resolveNeedsYou closes the items of one of the assistant's helpers. A helper
+// waiting on one of them gets what the item needs: its answer (answer, which
+// goes exactly as send_message sends an answer) or the reason it gets none
+// (reason, the same reply envelope marked noAnswer). An item closed without
+// an answer is assistant_closed, with the reason it was closed for.
+func (s *Server) resolveNeedsYou(call mcpCall, scope assistant.Scope, helper store.AgentSession, items []store.PendingItem) (string, error) {
+	ctx := call.r.Context()
+	answer := strings.TrimSpace(mcpArgString(call.args, "answer"))
+	reason := strings.TrimSpace(mcpArgString(call.args, "reason"))
+	if answer != "" && reason != "" {
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("resolve takes an answer or a reason, not both")}
+	}
+	if utf8.RuneCountInString(reason) > needsYouNoteLimit {
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("reason must be 1 to %d characters", needsYouNoteLimit)}
+	}
+	waiting := waitingItems(items)
+	switch {
+	case len(waiting) > 0 && answer == "" && reason == "":
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("the helper waits for an answer to this item: resolve it with answer (sent to the helper) or with reason (why it gets none)")}
+	case len(waiting) == 0 && (answer != "" || reason != ""):
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("nothing waits for an answer to this item: resolve it without answer or reason")}
+	}
+	switch {
+	case answer != "":
+		prompt := answer
+		if mcpArgString(call.args, "itemId") != "" {
+			prompt = s.answerToItem(ctx, helper, waiting[0], answer)
+		}
+		args, err := mcpStringArgs(map[string]string{"sessionId": helper.ID, "prompt": prompt})
+		if err != nil {
+			return "", err
+		}
+		if _, err := s.sendMessageForMCP(mcpCall{r: call.r, actor: call.actor, args: args}); err != nil {
+			return "", err
+		}
+	case reason != "":
+		prompt, err := s.noAnswerPrompt(ctx, helper, waiting, reason)
+		if err != nil {
+			return "", err
+		}
+		args, err := mcpStringArgs(map[string]string{"sessionId": helper.ID, "prompt": prompt})
+		if err != nil {
+			return "", err
+		}
+		if _, err := s.sendMessageForMCP(mcpCall{r: call.r, actor: call.actor, args: args}); err != nil {
+			return "", err
+		}
+	}
+	var closedWith store.PendingAnswer
+	if answer != "" {
+		closedWith = store.PendingAnswer{Text: answer, By: store.PendingAnsweredByAssistant}
+	}
+	var resolved []needsYouLine
+	for _, item := range items {
+		var closed store.PendingItem
+		var err error
+		if answer != "" {
+			closed, err = s.store.ResolvePendingItem(ctx, scope.Agent.UserID, item.ID, store.PendingDone, store.PendingOutcomeAssistantAnswered, closedWith)
+		} else {
+			// Closed without an answer: the reason (maybe empty) is what the
+			// person sees, never "the assistant answered".
+			closed, err = s.store.ClosePendingItem(ctx, scope.Agent.UserID, item.ID, reason)
+		}
+		if err != nil {
+			return "", err
+		}
+		resolved = append(resolved, s.needsYouLineOf(ctx, closed))
+	}
+	return encodeJSON(map[string]any{"resolved": resolved})
+}
+
+// answerToItem is the reply envelope that answers an item's question, so the
+// answer lands on that question and not on the helper's newest one.
+func (s *Server) answerToItem(ctx context.Context, helper store.AgentSession, item store.PendingItem, answer string) string {
+	return agentQuestionReplyText(item.MessageID, s.questionOf(ctx, helper, item), answer)
+}
+
+// questionOf is the question an item asks: its title in the helper's event,
+// else the item's own title.
+func (s *Server) questionOf(ctx context.Context, helper store.AgentSession, item store.PendingItem) string {
+	if event, found := s.questionEvent(ctx, helper, item.MessageID); found && len(event.Message.Questions) > 0 {
+		return event.Message.Questions[0].Title
+	}
+	return item.Title
+}
+
+// noAnswerPrompt is the reply that tells the helper its waiting questions
+// get no answer, and why.
+func (s *Server) noAnswerPrompt(ctx context.Context, helper store.AgentSession, waiting []store.PendingItem, reason string) (string, error) {
+	questions := make([]questionRef, 0, len(waiting))
+	for _, item := range waiting {
+		questions = append(questions, questionRef{itemID: item.MessageID, question: s.questionOf(ctx, helper, item)})
+	}
+	return agentQuestionNoAnswerText(reason, questions)
+}
+
+// waitingItems are the items a helper waits on for an answer: its open
+// questions and approvals (an open item is one it has had no answer to).
+func waitingItems(items []store.PendingItem) []store.PendingItem {
+	var out []store.PendingItem
+	for _, item := range items {
+		if item.Source == store.PendingSourceQuestion {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// mcpStringArgs encodes text arguments as the MCP call arguments carry them.
+func mcpStringArgs(values map[string]string) (map[string]json.RawMessage, error) {
+	args := make(map[string]json.RawMessage, len(values))
+	for key, value := range values {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		args[key] = raw
+	}
+	return args, nil
 }
 
 // needsYouTargets are the open items an op names: the item, or the open

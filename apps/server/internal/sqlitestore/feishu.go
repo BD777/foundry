@@ -14,11 +14,37 @@ import (
 
 var _ store.FeishuBotStore = (*Store)(nil)
 
+// addFeishuOpenIDErrorColumn adds open_id_error to a route table made before it
+// existed; a fresh table gets it from its CREATE TABLE.
+func (s *Store) addFeishuOpenIDErrorColumn(ctx context.Context) error {
+	var tables int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'feishu_bot_routes'`).Scan(&tables); err != nil {
+		return fmt.Errorf("check feishu bot routes table: %w", err)
+	}
+	if tables == 0 {
+		return nil
+	}
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('feishu_bot_routes') WHERE name = 'open_id_error'`).Scan(&present); err != nil {
+		return fmt.Errorf("check feishu open_id error column: %w", err)
+	}
+	if present > 0 {
+		return nil
+	}
+	if _, err := s.conn().ExecContext(ctx, `ALTER TABLE feishu_bot_routes ADD COLUMN open_id_error TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("add feishu open_id error column: %w", err)
+	}
+	return nil
+}
+
 // setupFeishu creates the Workspace Bots' tables: the routes that send a
 // Connectors Feishu app's events to workspaces, the topic threads the bots
 // follow, and the event ids already routed (so a redelivery after a restart
 // is not routed twice).
 func (s *Store) setupFeishu(ctx context.Context) error {
+	if err := s.addFeishuOpenIDErrorColumn(ctx); err != nil {
+		return err
+	}
 	statements := []string{
 		// A chat's name is refreshed from Feishu; the last check and why it
 		// failed are kept (chat_name_checked_at, chat_name_error), and a
@@ -38,7 +64,8 @@ func (s *Store) setupFeishu(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			chat_name_checked_at TEXT NOT NULL DEFAULT '',
 			chat_name_error TEXT NOT NULL DEFAULT '',
-			peer_open_id TEXT NOT NULL DEFAULT ''
+			peer_open_id TEXT NOT NULL DEFAULT '',
+			open_id_error TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_bot_routes_pairing ON feishu_bot_routes (workspace_id) WHERE kind = 'pairing'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_bot_routes_chat ON feishu_bot_routes (app_id, chat_id) WHERE kind <> 'pairing'`,
@@ -79,19 +106,19 @@ const feishuRouteColumns = `id, app_id, workspace_id, kind, chat_id, chat_name, 
 
 // feishuRouteReadColumns are feishuRouteColumns plus what a route learns
 // after it is inserted.
-const feishuRouteReadColumns = feishuRouteColumns + `, chat_name_checked_at, chat_name_error, peer_open_id`
+const feishuRouteReadColumns = feishuRouteColumns + `, chat_name_checked_at, chat_name_error, peer_open_id, open_id_error`
 
 // qualifiedFeishuRouteColumns are feishuRouteReadColumns of the alias r.
 const qualifiedFeishuRouteColumns = `r.id, r.app_id, r.workspace_id, r.kind, r.chat_id, r.chat_name, r.bound_user_id,
 	r.pairing_code, r.pairing_code_created_by, r.pairing_code_expires_at, r.created_at, r.updated_at,
-	r.chat_name_checked_at, r.chat_name_error, r.peer_open_id`
+	r.chat_name_checked_at, r.chat_name_error, r.peer_open_id, r.open_id_error`
 
 func scanFeishuRoute(row interface{ Scan(dest ...any) error }) (store.FeishuBotRoute, error) {
 	var route store.FeishuBotRoute
 	var kind string
 	err := row.Scan(&route.ID, &route.AppID, &route.WorkspaceID, &kind, &route.ChatID, &route.ChatName, &route.BoundUserID,
 		&route.PairingCode, &route.PairingCodeCreatedBy, &route.PairingCodeExpiresAt, &route.CreatedAt, &route.UpdatedAt,
-		&route.ChatNameCheckedAt, &route.ChatNameError, &route.PeerOpenID)
+		&route.ChatNameCheckedAt, &route.ChatNameError, &route.PeerOpenID, &route.OpenIDError)
 	route.Kind = store.FeishuRouteKind(kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.FeishuBotRoute{}, store.ErrNotFound
@@ -109,10 +136,10 @@ func (s *Store) insertFeishuRoute(ctx context.Context, route store.FeishuBotRout
 	}
 	route.UpdatedAt = now
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO feishu_bot_routes (`+feishuRouteReadColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		route.ID, route.AppID, route.WorkspaceID, string(route.Kind), route.ChatID, route.ChatName, route.BoundUserID,
 		route.PairingCode, route.PairingCodeCreatedBy, route.PairingCodeExpiresAt, route.CreatedAt, route.UpdatedAt,
-		route.ChatNameCheckedAt, route.ChatNameError, route.PeerOpenID); err != nil {
+		route.ChatNameCheckedAt, route.ChatNameError, route.PeerOpenID, route.OpenIDError); err != nil {
 		return store.FeishuBotRoute{}, fmt.Errorf("save feishu bot route: %w", err)
 	}
 	return route, nil
@@ -238,17 +265,63 @@ func (s *Store) BindFeishuChat(ctx context.Context, pairing store.FeishuBotRoute
 		if changed, _ := result.RowsAffected(); changed == 0 {
 			return store.ErrNotFound
 		}
-		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM feishu_bot_routes WHERE kind <> 'pairing' AND chat_id = ?
-			AND app_id IN (SELECT id FROM external_provider_apps WHERE client_id = (SELECT client_id FROM external_provider_apps WHERE id = ?))`,
-			chat.ChatID, pairing.AppID); err != nil {
-			return fmt.Errorf("unroute the chat from where it went before: %w", err)
-		}
-		chat.ID, chat.AppID, chat.WorkspaceID = "", pairing.AppID, pairing.WorkspaceID
-		chat.PairingCode, chat.PairingCodeCreatedBy, chat.PairingCodeExpiresAt = "", "", ""
-		bound, err = tx.insertFeishuRoute(ctx, chat)
+		bound, err = tx.routeFeishuChat(ctx, pairing.AppID, pairing.WorkspaceID, chat)
 		return err
 	})
 	return bound, err
+}
+
+// routeFeishuChat routes chat to workspaceID on appID, replacing where the chat
+// routed before on the same Feishu app. A redeemed pairing code and a direct
+// chat that Feishu opened by open_id both create their route here.
+func (s *Store) routeFeishuChat(ctx context.Context, appID, workspaceID string, chat store.FeishuBotRoute) (store.FeishuBotRoute, error) {
+	if _, err := s.conn().ExecContext(ctx, `DELETE FROM feishu_bot_routes WHERE kind <> 'pairing' AND chat_id = ?
+		AND app_id IN (SELECT id FROM external_provider_apps WHERE client_id = (SELECT client_id FROM external_provider_apps WHERE id = ?))`,
+		chat.ChatID, appID); err != nil {
+		return store.FeishuBotRoute{}, fmt.Errorf("unroute the chat from where it went before: %w", err)
+	}
+	chat.ID, chat.AppID, chat.WorkspaceID = "", appID, workspaceID
+	chat.PairingCode, chat.PairingCodeCreatedBy, chat.PairingCodeExpiresAt = "", "", ""
+	return s.insertFeishuRoute(ctx, chat)
+}
+
+// BindFeishuDirectChat routes a direct chat that Feishu opened by the person's
+// open_id: the route BindFeishuChat makes, without a pairing code.
+func (s *Store) BindFeishuDirectChat(ctx context.Context, appID, workspaceID string, chat store.FeishuBotRoute) (store.FeishuBotRoute, error) {
+	if chat.ChatID == "" || chat.BoundUserID == "" || chat.PeerOpenID == "" {
+		return store.FeishuBotRoute{}, errors.New("bind a direct chat: it needs its chat, the person and their open_id")
+	}
+	chat.Kind = store.FeishuRouteP2P
+	var bound store.FeishuBotRoute
+	err := s.withTx(ctx, func(tx *Store) error {
+		var err error
+		bound, err = tx.routeFeishuChat(ctx, appID, workspaceID, chat)
+		return err
+	})
+	return bound, err
+}
+
+// SetFeishuGroupPeer records the open_id of the person a group route is bound to,
+// once: a route that has one keeps it.
+func (s *Store) SetFeishuGroupPeer(ctx context.Context, routeID, openID string) error {
+	if _, err := s.conn().ExecContext(ctx, `UPDATE feishu_bot_routes SET peer_open_id = ? WHERE id = ? AND kind = 'chat' AND peer_open_id = ''`,
+		openID, routeID); err != nil {
+		return fmt.Errorf("record the person of feishu group route %s: %w", routeID, err)
+	}
+	return nil
+}
+
+// SetFeishuOpenIDError records why a direct message to the route's PeerOpenID
+// failed, or clears it with "".
+func (s *Store) SetFeishuOpenIDError(ctx context.Context, routeID, reason string) error {
+	result, err := s.conn().ExecContext(ctx, `UPDATE feishu_bot_routes SET open_id_error = ? WHERE id = ?`, reason, routeID)
+	if err != nil {
+		return fmt.Errorf("record the open_id error of feishu chat route %s: %w", routeID, err)
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteFeishuBotRoute(ctx context.Context, workspaceID, routeID string) error {

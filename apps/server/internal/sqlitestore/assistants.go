@@ -141,6 +141,7 @@ var assistantRecordTables = []struct{ table, backfillWhere string }{
 	{"pa_run_controls", ""},
 	{"pa_maintenance", ""},
 	{"pa_context_patches", ""},
+	{"person_notices", ""},
 	{"pending_items", ` AND handler = 'assistant'`},
 }
 

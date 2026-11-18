@@ -700,6 +700,34 @@ interface components {
       resolvers?: components["schemas"]["ConnectorServerHeldResolver"][];
       /** @description Read-only routes that name an object for the person, e.g. a conversation id into its name. Foundry resolves them when a proposal is created and stores the name with it, so the person's card never calls out. Results are cached per account. */
       labels?: components["schemas"]["ConnectorServerHeldLabel"][];
+      notify?: components["schemas"]["ConnectorServerHeldNotify"];
+    };
+    /** @description How Foundry tells the person about an item that needs them, as pure data. Foundry sends one message per notice through the instance's gateway to the conversation named by target, and reads the person's reply by the message it quotes. A version above the one this Foundry reads is refused; a Foundry from before this section ignores the section. */
+    ConnectorServerHeldNotify: {
+      /** @description The notify contract version. This Foundry reads version 1. */
+      version: number;
+      /** @description How the notice text is written. Only markdown for now. */
+      format: string;
+      target: components["schemas"]["ConnectorServerHeldNotifyTarget"];
+      send: components["schemas"]["ConnectorServerHeldNotifySend"];
+      sent: components["schemas"]["ConnectorServerHeldNotifySent"];
+      /** @description The events envelope field (for example attributes.replyTo) that names the message a reply quotes. Empty when replies are not read. */
+      replyTo?: string;
+    };
+    /** @description The conversation the notices go to. field names a text field of serverHeld.fields whose value the person fills in; conversationKind is self (the person's own chat) for now. */
+    ConnectorServerHeldNotifyTarget: {
+      field: string;
+      conversationKind: string;
+    };
+    /** @description One notice request. method and path name a catalogued write route at or below the upstream prefix. The path may use {target} and {notice.id}, path-escaped. The body may also use {text|json} and {link|json}, the notice text and its Web link as the inside of a JSON string. */
+    ConnectorServerHeldNotifySend: {
+      method: string;
+      path: string;
+      body?: string;
+    };
+    /** @description Where the sent message's id is in a successful answer, as a JSON pointer. */
+    ConnectorServerHeldNotifySent: {
+      messageId: string;
     };
     /** @description One write route's declaration. createdMessageId and footer keep their meaning. objects names each grant object the write touches, so a session holding grants may write inside them; a route without them touches nothing a grant can hold. auxiliary marks a route that only prepares another write (an upload) and is allowed with any grant for the account. */
     ConnectorServerHeldWrite: {
@@ -3223,6 +3251,10 @@ interface components {
       /** @description Why the guide changed: which sessions, what happened. */
       changeSummary: string;
     };
+    PendingItemAnswerInput: {
+      /** @description The person's answer as they typed it. Foundry trims it; an answer to an assistant's question goes to that conversation as the person's own words. */
+      text: string;
+    };
     /**
      * @description What one assistant may do through one connector account.
      * @enum {string}
@@ -5398,6 +5430,14 @@ export type ConnectorSetup = components["schemas"]["ConnectorSetup"];
 export type ConnectorHolding = components["schemas"]["ConnectorHolding"];
 export type ConnectorServerHeldSpec =
   components["schemas"]["ConnectorServerHeldSpec"];
+export type ConnectorServerHeldNotify =
+  components["schemas"]["ConnectorServerHeldNotify"];
+export type ConnectorServerHeldNotifyTarget =
+  components["schemas"]["ConnectorServerHeldNotifyTarget"];
+export type ConnectorServerHeldNotifySend =
+  components["schemas"]["ConnectorServerHeldNotifySend"];
+export type ConnectorServerHeldNotifySent =
+  components["schemas"]["ConnectorServerHeldNotifySent"];
 export type ConnectorServerHeldWrite =
   components["schemas"]["ConnectorServerHeldWrite"];
 export type ConnectorServerHeldWriteObject =
@@ -5753,6 +5793,8 @@ export type ModelGuideResolveBatchResult =
   components["schemas"]["ModelGuideResolveBatchResult"];
 export type ModelGuideUpsertInput =
   components["schemas"]["ModelGuideUpsertInput"];
+export type PendingItemAnswerInput =
+  components["schemas"]["PendingItemAnswerInput"];
 export type ConnectorAccessLevel =
   components["schemas"]["ConnectorAccessLevel"];
 export type PermissionListScope = components["schemas"]["PermissionListScope"];

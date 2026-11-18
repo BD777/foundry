@@ -16,6 +16,7 @@ import (
 // The execution asks through the ask_person Foundry tool; only the Issue's
 // creator or a maintainer answers, and the answer resumes the Issue.
 func TestExecutionAsksThePersonThroughFoundryTools(t *testing.T) {
+	skipWhileIssuesHidden(t)
 	f := newIsolationFixture(t)
 	ctx := context.Background()
 	db := f.server.store

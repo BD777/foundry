@@ -31,6 +31,9 @@ const (
 	ReasonFollowUpEnd = "follow_up_end"
 	// ReasonOwnWrite is why the assistant's own write was dropped.
 	ReasonOwnWrite = "own_write"
+	// ReasonNoticeAnswer is why a person's reply to a notice was dropped:
+	// it answered the notice's item and does not go to the assistant (DEV-294).
+	ReasonNoticeAnswer = "notice_answer"
 	// NewFollowUpEnd is the key state's reason: the next trigger starts a
 	// new session because the conversation's follow-ups were ended.
 	NewFollowUpEnd = "ended"

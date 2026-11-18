@@ -114,6 +114,9 @@ func (d personalAgentDesk) Resume(ctx context.Context, assistantID, userID, _ st
 		return feishu.PersonalAgentResumed{}, err
 	}
 	tasks, err := d.s.assistant.Resume(ctx, agent)
+	if err == nil {
+		d.s.resumedAssistant(ctx, agent)
+	}
 	resumed := feishu.PersonalAgentResumed{}
 	for _, task := range tasks {
 		resumed.Stopped = append(resumed.Stopped, task.Title)

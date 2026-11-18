@@ -48,9 +48,15 @@ type FeishuBotRoute struct {
 	// ChatNameError why that failed (the name kept is the one before).
 	ChatNameCheckedAt string `json:"chatNameCheckedAt,omitempty"`
 	ChatNameError     string `json:"chatNameError,omitempty"`
-	// PeerOpenID is the other person of a direct chat (their open_id with
-	// the app), which names the chat.
+	// PeerOpenID is the open_id, on the route's app, of the person the route
+	// is bound to: a direct chat's other person, or the sender of the pairing
+	// code in a group (who proved it by sending it from their account). It is
+	// how the bot writes to that person first.
 	PeerOpenID string `json:"-"`
+	// OpenIDError is why the last direct message to PeerOpenID failed when
+	// Feishu refused it (the person is outside the app's availability range).
+	// It is cleared by the next success.
+	OpenIDError string `json:"-"`
 	// BoundUserID is the account the bot acts as in the chat: whoever
 	// generated the pairing code the chat used.
 	BoundUserID string `json:"boundUserId,omitempty"`
@@ -179,6 +185,17 @@ type FeishuBotStore interface {
 	RecordFeishuChatName(ctx context.Context, routeID, name, failure string, checkedAt time.Time) error
 	// SetFeishuChatPeer records the other person of a direct chat route.
 	SetFeishuChatPeer(ctx context.Context, routeID, openID string) error
+	// SetFeishuOpenIDError records why a direct message to the route's
+	// PeerOpenID failed, or clears it with "".
+	SetFeishuOpenIDError(ctx context.Context, routeID, reason string) error
+	// SetFeishuGroupPeer records the open_id of the person a group route is bound
+	// to, when the route has none yet.
+	SetFeishuGroupPeer(ctx context.Context, routeID, openID string) error
+	// BindFeishuDirectChat routes a direct chat that Feishu opened by
+	// open_id (chat.ChatID, with chat.PeerOpenID and chat.BoundUserID) on
+	// appID to workspaceID. It is the route BindFeishuChat creates, without a
+	// pairing code.
+	BindFeishuDirectChat(ctx context.Context, appID, workspaceID string, chat FeishuBotRoute) (FeishuBotRoute, error)
 	// DeleteFeishuBotRoute unbinds one chat of the workspace.
 	DeleteFeishuBotRoute(ctx context.Context, workspaceID, routeID string) error
 	// FeishuProviderAppsByClientID lists every Connectors app registered

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -137,6 +138,42 @@ func TestAssistantNoticesCoalesce(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the gathered notices were never sent")
+	}
+}
+
+// An item answered or closed while its notice waits is not told, and an
+// item noticed again while it waits is told once.
+func TestAssistantNoticesSkipItemsClosedWhileTheyWait(t *testing.T) {
+	previous := CoalesceNotices
+	CoalesceNotices = 100 * time.Millisecond
+	t.Cleanup(func() { CoalesceNotices = previous })
+	var notices notices
+	sent := make(chan string, 4)
+	send := func(text string) { sent <- text }
+	now := time.Now()
+	notices.add("sess_c", "en", "first", now, send)
+	var closedItemOpen atomic.Bool
+	closedItemOpen.Store(true)
+	closed := noticeLine{key: "pnd_closed", text: "closed item", due: closedItemOpen.Load}
+	notices.addLine("sess_c", "en", closed, now, send)
+	notices.addLine("sess_c", "en", closed, now, send)
+	notices.addLine("sess_c", "en", noticeLine{key: "pnd_open", text: "open item", due: func() bool { return true }}, now, send)
+	closedItemOpen.Store(false)
+	if text := <-sent; text != "first" {
+		t.Fatalf("first = %q", text)
+	}
+	select {
+	case text := <-sent:
+		if text != "open item" {
+			t.Fatalf("gathered notice = %q, want only the open item", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the open item's notice was never sent")
+	}
+	select {
+	case text := <-sent:
+		t.Fatalf("a closed item was told: %q", text)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

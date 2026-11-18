@@ -29,10 +29,12 @@ const { runClaudeWorkspaceSession } =
   await import("../dist/session/runner/claude-turn.js");
 const { steerActiveSession } =
   await import("../dist/session/session-helpers.js");
-const { agentQuestionReplyText } = await import("@bd777/foundry-protocol");
+const { agentQuestionNoAnswerText, agentQuestionReplyText } =
+  await import("@bd777/foundry-protocol");
 const {
   ClaudeQuestionGate,
   claudeAsksPerson,
+  claudeQuestionTool,
   claudeQuestions,
   sessionQuestionsTo,
 } = await import("../dist/session/runner/claude-questions.js");
@@ -156,6 +158,81 @@ test("a person's chat sees Claude's question and its answer settles the call", a
     (event) => event.label === "Steered into active turn",
   );
   assert.equal(steered.detail, reply.trim());
+});
+
+test("a no-answer reply denies a waiting question; it is not taken, so its reason reaches Claude", async () => {
+  const gate = new ClaudeQuestionGate("person", {
+    sessionId: "sess_gate",
+    show() {},
+    waitMs: 60_000,
+  });
+  const callId = `toolu_${randomUUID()}`;
+  const decision = gate.canUseTool(claudeQuestionTool, question, {
+    toolUseID: callId,
+  });
+  assert.equal(gate.waits, true);
+  const reply = agentQuestionNoAnswerText(
+    callId,
+    question.questions[0].question,
+    "Resolved elsewhere",
+  );
+  assert.equal(gate.take(reply), false);
+  assert.deepEqual(await decision, {
+    behavior: "deny",
+    message: "No answer is given to this question.",
+  });
+  assert.equal(gate.waits, false);
+});
+
+test("an answer to a waiting question is taken and allows the call with it", async () => {
+  const gate = new ClaudeQuestionGate("person", {
+    sessionId: "sess_gate",
+    show() {},
+    waitMs: 60_000,
+  });
+  const callId = `toolu_${randomUUID()}`;
+  const decision = gate.canUseTool(claudeQuestionTool, question, {
+    toolUseID: callId,
+  });
+  const reply = agentQuestionReplyText(callId, claudeQuestions(question), [
+    "Bonjour",
+  ]);
+  assert.equal(gate.take(reply), true);
+  const result = await decision;
+  assert.equal(result.behavior, "allow");
+  assert.equal(
+    result.updatedInput.answers[question.questions[0].question],
+    "Bonjour",
+  );
+});
+
+test("an assistant's answer envelope settles an open question, though another session sent it", async () => {
+  const session = chatSession();
+  const { events, finished } = await runTurn(session);
+  await until(() => asked(events), "the question");
+  const shown = asked(events);
+  const reply = agentQuestionReplyText(
+    shown.message.id,
+    shown.message.questions,
+    ["Bonjour", "Emoji"],
+  );
+  await steerActiveSession(
+    session.id,
+    reply,
+    [],
+    "question:" + shown.message.id,
+    "sess_creator",
+  );
+  await finished;
+  assert.deepEqual(calls.at(-1).result.updatedInput.answers, {
+    "Which greeting should the README use?": "Bonjour",
+    "Which extras?": "Emoji",
+  });
+  assert.equal(
+    received.length,
+    1,
+    "the envelope answered; Claude did not also get it as a message",
+  );
 });
 
 test("an unanswered question lets Claude go on: its tool reports no answer", async () => {

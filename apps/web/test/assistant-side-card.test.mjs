@@ -89,3 +89,40 @@ test("the narrow summary names only the sections that hold something", () => {
   );
   assert.deepEqual(sideSummary({ needsYou: 0, list: 0, tasks: 0 }), []);
 });
+
+test("the entry lists the newest three titles, and each opens its item", async () => {
+  const opened = [];
+  const longTitle =
+    "Reconcile the Q4 supplier invoices against the purchase orders the export left unmatched, then tell me which ones still need a signature from finance before the month closes";
+  const items = [
+    { id: "pnd_1", title: longTitle },
+    { id: "pnd_2", title: "Choose the report format" },
+    { id: "pnd_3", title: "Confirm the channel reply" },
+    { id: "pnd_4", title: "Fourth, not listed" },
+  ];
+  const page = await render(NeedsYouSection, {
+    count: 4,
+    items,
+    onOpenItem: (itemId) => opened.push(itemId),
+  });
+  const rows = [...page.container.querySelectorAll("button")];
+  assert.deepEqual(
+    rows.map((row) => row.textContent.trim()),
+    [longTitle, "Choose the report format", "Confirm the channel reply"],
+  );
+  assert.equal(rows[0].getAttribute("title"), longTitle);
+  assert.equal(page.container.querySelectorAll("a").length, 1);
+  await act(async () => rows[1].click());
+  assert.deepEqual(opened, ["pnd_2"]);
+  await page.unmount();
+});
+
+test("without titles the entry is only the count row", async () => {
+  const page = await render(NeedsYouSection, {
+    count: 2,
+    onOpenItem: () => {},
+  });
+  assert.equal(page.container.querySelectorAll("button").length, 0);
+  assert.equal(page.container.querySelectorAll("a").length, 1);
+  await page.unmount();
+});

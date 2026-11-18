@@ -68,7 +68,7 @@ func TestEveryCatalogToolHasAHandler(t *testing.T) {
 func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	db, chat := lineageFixture(t)
 	ctx := context.Background()
-	handler := NewServer(db).Routes()
+	handler := NewServerWithOptions(db, ServerOptions{}).Routes()
 	mint := func(sessionID string) string {
 		t.Helper()
 		token, err := db.MintAgentSessionToken(ctx, sessionID)
@@ -79,14 +79,14 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	}
 
 	chatToken := mint(chat.ID)
-	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames(append(personalAgentToolNames(), "ask_person")...)) {
-		t.Fatalf("a chat sees %v, want role tools without ask_person, assistant tools or an unbound credential tool", names)
+	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames(append(personalAgentToolNames(), "ask_person", "issues", "list_issues", "get_issue")...)) {
+		t.Fatalf("a chat sees %v, want role tools without assistant tools or an unbound credential tool", names)
 	}
 	call := mcpToolCaller(t, handler, chatToken)
 	if text, isError := call("cloudflare", map[string]any{"action": "accounts"}); !isError || text != "unknown tool: cloudflare" {
 		t.Fatalf("Cloudflare is reached through cf and the gateway, not a tool: %q", text)
 	}
-	if text, isError := call("ask_person", map[string]any{"question": "Deploy?"}); !isError || !strings.Contains(text, "only an Issue's execution can ask the person") {
+	if text, isError := call("ask_person", map[string]any{"question": "Deploy?"}); !isError || !strings.Contains(text, "Issues are turned off") {
 		t.Fatalf("a chat calling ask_person = %q", text)
 	}
 	if text, isError := call("read_list", map[string]any{}); !isError || !strings.Contains(text, "only available to the person's assistant") {
@@ -130,8 +130,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(append(append(personalAgentToolNames(), modelProviderToolNames()...), repositorySourceToolNames()...), "connector_instances", "connector_packages", "edge_access", "model_guides")...)) {
-		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider, skill source, connector package, edge access, model guide or personal credential tools", names)
+	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(append(append(personalAgentToolNames(), modelProviderToolNames()...), repositorySourceToolNames()...), "connector_instances", "connector_packages", "edge_access", "model_guides", "foundry_settings", "issues", "list_issues", "get_issue", "ask_person")...)) {
+		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider, skill source, connector package, edge access, model guide, foundry settings or personal credential tools", names)
 	}
 }
 

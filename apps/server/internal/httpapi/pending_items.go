@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
@@ -49,7 +51,8 @@ func (s *Server) pendingSession(ctx context.Context, sessionID string) (store.Ag
 	return session, s.pendingKept(ctx, session)
 }
 
-// pendingKept reports whether items are kept for session.
+// pendingKept reports whether items are kept for session: a chat the person
+// started, or a helper its assistant answers for.
 func (s *Server) pendingKept(ctx context.Context, session store.AgentSession) bool {
 	if pendingChat(session) {
 		return true
@@ -57,8 +60,7 @@ func (s *Server) pendingKept(ctx context.Context, session store.AgentSession) bo
 	if session.ArchivedAt != "" || session.IssueID != "" || session.Source != store.SessionSourceAgent {
 		return false
 	}
-	_, helper := s.assistant.HelperOf(ctx, session)
-	return helper
+	return s.assistant.ResponsibleFor(ctx, session).Party == assistant.ResponsibleAssistant
 }
 
 // pendingAnswers reports whether an input to session answers what it showed
@@ -84,6 +86,90 @@ func pendingChannelPersonMessage(origin *store.MessageChannelOrigin) bool {
 	return false
 }
 
+// answerTextOf is the answer a message delivers: the answers in a question's
+// reply envelope (what the answer card and an assistant's answer send), or the
+// message itself.
+func answerTextOf(message string) string {
+	text := strings.TrimSpace(message)
+	open := strings.Index(text, agentQuestionReplyOpen)
+	if open < 0 {
+		return text
+	}
+	body := text[open+len(agentQuestionReplyOpen):]
+	if end := strings.Index(body, agentQuestionReplyClose); end >= 0 {
+		body = body[:end]
+	}
+	var entries []struct {
+		Answer string `json:"answer"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &entries); err != nil {
+		return text
+	}
+	answers := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if answer := strings.TrimSpace(entry.Answer); answer != "" {
+			answers = append(answers, answer)
+		}
+	}
+	return strings.Join(answers, "\n")
+}
+
+// itemAnswer is the answer an answer envelope gives one question item.
+type itemAnswer struct {
+	itemID string
+	text   string
+}
+
+// answersByItem is what each question item an answer envelope names is
+// answered with: its entries' answers, in order. named is false for a message
+// without a reply envelope (a plain steer), which answers the session's items.
+func answersByItem(message string) (answers []itemAnswer, named bool) {
+	text := strings.TrimSpace(message)
+	open := strings.Index(text, agentQuestionReplyOpen)
+	if open < 0 {
+		return nil, false
+	}
+	body := text[open+len(agentQuestionReplyOpen):]
+	if end := strings.Index(body, agentQuestionReplyClose); end >= 0 {
+		body = body[:end]
+	}
+	var entries []struct {
+		QuestionItemID string `json:"questionItemId"`
+		Answer         string `json:"answer"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &entries); err != nil {
+		return nil, false
+	}
+	byItem := map[string][]string{}
+	var order []string
+	for _, entry := range entries {
+		itemID := replyItemID(entry.QuestionItemID)
+		answer := strings.TrimSpace(entry.Answer)
+		if itemID == "" || answer == "" {
+			continue
+		}
+		if _, seen := byItem[itemID]; !seen {
+			order = append(order, itemID)
+		}
+		byItem[itemID] = append(byItem[itemID], answer)
+	}
+	for _, itemID := range order {
+		answers = append(answers, itemAnswer{itemID: itemID, text: strings.Join(byItem[itemID], "\n")})
+	}
+	return answers, true
+}
+
+// replyItemID is the runtime's question item an envelope entry names: the second
+// element of its questionItemId array, ["request_user_input_async", "<call id>", <index>].
+func replyItemID(questionItemID string) string {
+	var target []any
+	if json.Unmarshal([]byte(questionItemID), &target) != nil || len(target) < 2 {
+		return ""
+	}
+	itemID, _ := target[1].(string)
+	return itemID
+}
+
 // pendingAnswerable are the sources an answer to a session settles.
 var pendingAnswerable = []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands, store.PendingSourceHelperStuck}
 
@@ -96,6 +182,9 @@ func pendingChat(session store.AgentSession) bool {
 
 func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
 	if event.Label == store.EventLabelSteeredIntoTurn {
+		if event.Metadata != nil && isAssistantQuestionAnswer(event.Metadata.InputSource) {
+			return
+		}
 		// The person (or a helper's assistant) steered a running turn: what
 		// it showed before is answered.
 		session, kept := r.s.pendingSession(ctx, event.SessionID)
@@ -104,15 +193,27 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 			sender = event.Metadata.SentBySessionID
 		}
 		if kept && pendingAnswers(session, sender) {
-			outcome := store.PendingOutcomePersonAnswered
+			outcome, by := store.PendingOutcomePersonAnswered, store.PendingAnsweredByPerson
 			acknowledgedAt := ""
 			if session.ParentSessionID != "" && sender == session.ParentSessionID {
-				outcome, acknowledgedAt = store.PendingOutcomeAssistantAnswered, event.At
+				outcome, by, acknowledgedAt = store.PendingOutcomeAssistantAnswered, store.PendingAnsweredByAssistant, event.At
 			}
-			r.resolve(ctx, store.PendingResolution{
+			resolution := store.PendingResolution{
 				SessionID: event.SessionID, Before: event.At, State: store.PendingReplied,
 				Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
-			})
+			}
+			if answers, named := answersByItem(event.Detail); named {
+				// An answer envelope answers the items it names, each with its
+				// own answers; the other open items stay open.
+				for _, answer := range answers {
+					resolution.MessageID = answer.itemID
+					resolution.Answer = store.PendingAnswer{Text: answer.text, By: by}
+					r.resolve(ctx, resolution)
+				}
+			} else {
+				resolution.Answer = store.PendingAnswer{Text: answerTextOf(event.Detail), By: by}
+				r.resolve(ctx, resolution)
+			}
 		}
 		return
 	}
@@ -127,11 +228,13 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 	if workspace, err := r.s.store.GetWorkspace(ctx, session.WorkspaceID); err == nil {
 		workspacePath = workspace.LocalPath
 	}
-	handler, assistantID := r.s.assistant.Handler(ctx, session)
-	for _, item := range pendingItemsFromEvent(event, workspacePath) {
+	responsible := r.s.assistant.ResponsibleFor(ctx, session)
+	handler, assistantID := responsible.Handler()
+	holdsTurn := responsible.Party == assistant.ResponsiblePerson
+	for _, item := range pendingItemsFromEvent(event, workspacePath, holdsTurn) {
 		item.UserID, item.WorkspaceID, item.SessionID = session.CreatedByUserID, session.WorkspaceID, session.ID
 		item.Handler, item.AssistantID = handler, assistantID
-		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
+		if _, _, err := r.s.recordPendingItem(ctx, item); err != nil {
 			log.Printf("record pending item of %s: %v", event.ID, err)
 		}
 	}
@@ -150,21 +253,22 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		// answers nothing.
 		input := session.Input
 		if input.ID == "" || !pendingAnswers(session, input.SentBySessionID) || input.TimerFire != nil ||
-			!pendingChannelPersonMessage(input.ChannelOrigin) {
+			!pendingChannelPersonMessage(input.ChannelOrigin) || isAssistantQuestionAnswer(input.InputSource) {
 			return
 		}
 		before := input.At
 		if before == "" {
 			before = formatPendingTime(time.Now())
 		}
-		outcome := store.PendingOutcomePersonAnswered
+		outcome, by := store.PendingOutcomePersonAnswered, store.PendingAnsweredByPerson
 		acknowledgedAt := ""
 		if session.ParentSessionID != "" && input.SentBySessionID == session.ParentSessionID {
-			outcome, acknowledgedAt = store.PendingOutcomeAssistantAnswered, before
+			outcome, by, acknowledgedAt = store.PendingOutcomeAssistantAnswered, store.PendingAnsweredByAssistant, before
 		}
 		r.resolve(ctx, store.PendingResolution{
 			SessionID: session.ID, Before: before, State: store.PendingReplied,
 			Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
+			Answer: store.PendingAnswer{Text: answerTextOf(input.Prompt), By: by},
 		})
 	case sessions.Completed:
 		// A stuck helper's turn ended, however; a stopped session waits for
@@ -257,8 +361,10 @@ func pendingCandidateEvent(event store.AgentSessionEvent) bool {
 }
 
 // pendingItemsFromEvent is what an event holds for the person, without the
-// person and session it belongs to.
-func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) []store.PendingItem {
+// person and session it belongs to. holdsTurn says the question waits in the
+// person's own chat: only then is it held by its turn. A question a helper
+// raised waits for its responsible party's answer, not the turn.
+func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string, holdsTurn bool) []store.PendingItem {
 	message := event.Message
 	if message != nil && len(message.Questions) > 0 {
 		items := make([]store.PendingItem, 0, len(message.Questions))
@@ -269,14 +375,15 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 				continue
 			}
 			rule := ""
-			if message.Delivery == "" {
+			if holdsTurn && message.Delivery == "" {
 				rule = store.PendingRuleHeld
 			}
 			items = append(items, store.PendingItem{
 				EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceQuestion, Rule: rule,
 				Key:   "question:" + event.SessionID + ":" + message.ID + ":" + strconv.Itoa(index),
 				Title: pendingTitle(title), Excerpt: textcut.Excerpt(title, pendingExcerptLimit), Context: answer,
-				Options: question.Options, Recommendation: pendingRecommendation(question.Options),
+				Options: question.Options, Recommendation: pendingRecommendation(question.Options), Approval: question.Approval,
+				Detail: approvalDetail(question),
 			})
 		}
 		return items
@@ -310,6 +417,15 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 		Key:   "hands:" + event.SessionID + ":" + rule,
 		Title: pendingTitle(line), Excerpt: textcut.Excerpt(excerpt, pendingExcerptLimit), Context: textcut.Excerpt(command, pendingContextLimit),
 	}}
+}
+
+// approvalDetail is what an approval asks about (its command, or the changes),
+// kept on the item so the list shows it after the prompt is gone.
+func approvalDetail(question store.AgentQuestion) string {
+	if !question.Approval {
+		return ""
+	}
+	return textcut.Excerpt(strings.TrimSpace(question.Detail), pendingContextLimit)
 }
 
 // toolOutput is what a tool printed: a tool event's text is its command,

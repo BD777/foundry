@@ -53,7 +53,7 @@ func (r pendingReactions) recordTurnFailure(ctx context.Context, session store.A
 		return
 	}
 	classified := classifyTurnFailure(code, detail, time.Now().UTC())
-	handler, assistantID := r.s.assistant.Handler(ctx, session)
+	handler, assistantID := r.s.assistant.ResponsibleFor(ctx, session).Handler()
 	eventID := terminalFailureEventID(ctx, r.s, session, detail)
 	item := store.PendingItem{
 		EventID:          eventID,

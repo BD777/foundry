@@ -56,7 +56,7 @@ func TestNeedsHandsMatchesOnlyNarrowToolErrors(t *testing.T) {
 	}
 	// A command that only mentions an error matches nothing: only the output is read.
 	event := toolEvent("evt_cmd", "sess", "grep -rn 'sudo: a password is required' src", "src/a.go:1: no match")
-	if items := pendingItemsFromEvent(event, workspace); len(items) != 0 {
+	if items := pendingItemsFromEvent(event, workspace, true); len(items) != 0 {
 		t.Fatalf("a command mentioning an error made items %+v", items)
 	}
 }
@@ -377,5 +377,27 @@ func TestQueuedChannelTurnNeedsThePersonsOwnWords(t *testing.T) {
 		store.MessageChannelOriginMessage{ID: "om_person", Sender: store.MessageEnvelopeSender{IsSelf: true}}))
 	if open() {
 		t.Fatal("the person's message did not resolve the card")
+	}
+}
+
+// An approval keeps what it asks about on its item, so the list shows the
+// command after the prompt is gone; an ordinary question keeps no detail.
+func TestApprovalKeepsWhatItAsksAbout(t *testing.T) {
+	event := store.AgentSessionEvent{ID: "evt_approval", SessionID: "sess_approval", Message: &store.TranscriptMessage{
+		ID: "msg_approval",
+		Questions: []store.AgentQuestion{
+			{Title: "Allow this command?", Options: []string{"Approve", "Deny"}, Approval: true, Detail: "```sh\nrm -rf build\n```\nIn `/work`"},
+			{Title: "Which file?", Options: []string{"a.txt"}, Detail: "not kept"},
+		},
+	}}
+	items := pendingItemsFromEvent(event, "", false)
+	if len(items) != 2 {
+		t.Fatalf("items = %+v, want the approval and the question", items)
+	}
+	if !items[0].Approval || !strings.Contains(items[0].Detail, "rm -rf build") {
+		t.Fatalf("approval item = %+v, want its command kept", items[0])
+	}
+	if items[1].Detail != "" {
+		t.Fatalf("an ordinary question kept a detail: %q", items[1].Detail)
 	}
 }

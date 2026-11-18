@@ -68,7 +68,7 @@ test("a tool that ends before its response settles opens the boundary at its end
   hold.close();
 });
 
-test("a message held past its limit enters anyway; one held at the turn's end stays undelivered", async () => {
+test("a message held past its limit enters anyway; one held at the turn's end is handed back undelivered", async () => {
   const applied = [];
   const hold = new CodexBoundaryHold(() => {}, 10);
   hold.hold({
@@ -85,7 +85,12 @@ test("a message held past its limit enters anyway; one held at the turn's end st
   await hold.settled();
   assert.deepEqual(applied, ["late"]);
   assert.deepEqual(hold.pendingIds(), ["kept"]);
-  hold.close();
+  const undelivered = hold.close();
+  assert.deepEqual(
+    undelivered.map((steer) => steer.steerId),
+    ["kept"],
+    "the turn's end names the steer it did not deliver",
+  );
   await wait(20);
   assert.deepEqual(applied, ["late"], "the ended turn delivers nothing more");
   assert.throws(() => hold.hold({ limitMs: 1, apply: async () => {} }));

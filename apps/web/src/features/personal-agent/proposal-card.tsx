@@ -59,6 +59,10 @@ export function ProposalCard({
   const [error, setError] = useState("");
   const pending = proposal.status === "pending";
   const connectorAccount = connectorAccountName(proposal);
+  const kindLabel =
+    proposal.kind === "channel_change"
+      ? t("proposal.kinds.channel_change")
+      : "";
 
   async function answer(accept: boolean): Promise<void> {
     setBusy(accept ? "accept" : "decline");
@@ -93,6 +97,12 @@ export function ProposalCard({
         <p className="m-0 text-xs leading-[1.5] text-ink-muted wrap-anywhere">
           <span className="font-semibold">{t("proposal.account")}:</span>{" "}
           {connectorAccount}
+        </p>
+      ) : null}
+      {kindLabel ? (
+        <p className="m-0 text-xs leading-[1.5] text-ink-muted wrap-anywhere">
+          <span className="font-semibold">{t("proposal.kind")}:</span>{" "}
+          {kindLabel}
         </p>
       ) : null}
       {proposal.status === "failed" && proposal.error ? (

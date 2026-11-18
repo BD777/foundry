@@ -57,6 +57,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupSessionInbox,
 		s.setupSessionAlerts,
 		s.setupPendingItems,
+		s.setupPersonNotices,
 		// Before the orphan prune (RunMaintenance), so an issue number only
 		// orphaned rows still mention is not handed out again.
 		s.raiseIssueSequence,

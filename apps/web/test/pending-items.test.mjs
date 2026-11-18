@@ -3,6 +3,10 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import {
+  agentQuestionReplyText,
+  nativeQuestionItemId,
+} from "@bd777/foundry-protocol";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window({ url: "https://foundry.example/" });
@@ -48,12 +52,16 @@ const {
   pendingForSession,
   pendingFailure,
   pendingHeadline,
+  pendingFocusItemId,
   pendingInboxReason,
+  pendingItemDomId,
   pendingOptionLabel,
   pendingMatchesAssistant,
   pendingOrigin,
   pendingPrimary,
+  pendingReplyRoute,
   pendingReplyText,
+  pendingStatusKey,
 } = await import("../src/features/pending/pending-model.ts");
 const { PendingFeature } =
   await import("../src/features/pending/pending-feature.tsx");
@@ -235,6 +243,25 @@ test("a reply quotes the item's own words, line by line", () => {
     ),
     "> Line one\n>\n> Line two\n\nKeep them",
   );
+});
+
+test("a question's reply names the runtime's call id, as the question card does", () => {
+  const asked = item({
+    source: "question",
+    title: "a.txt or b.txt?",
+    messageId: "01a1eca1-8475-7bbe-b3b9-5b01c61d7d28/call_7aa501bc",
+    sessionId: "sess_helper",
+  });
+  assert.equal(
+    pendingReplyText(asked, "b.txt"),
+    agentQuestionReplyText(
+      "call_7aa501bc",
+      [{ title: "a.txt or b.txt?" }],
+      ["b.txt"],
+    ),
+  );
+  assert.equal(nativeQuestionItemId("turn-1/call_x"), "call_x");
+  assert.equal(nativeQuestionItemId("call_x"), "call_x");
 });
 
 test("an item's words are shown once: the excerpt only when it adds to the headline", () => {
@@ -462,6 +489,69 @@ const menuItem = (name) =>
     (node) => node.textContent.trim() === name,
   );
 
+/**
+ * The name a screen reader (and getByRole) gives a button: its aria-label,
+ * else its text without aria-hidden parts.
+ */
+function accessibleName(element) {
+  if (element.hasAttribute("aria-label"))
+    return element.getAttribute("aria-label").trim();
+  const copy = element.cloneNode(true);
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]'))
+    hidden.remove();
+  return copy.textContent.trim();
+}
+
+const optionButton = (host, label) =>
+  [...host.querySelectorAll("button")].find(
+    (button) => accessibleName(button) === label,
+  );
+
+test("an option is a button named by its label; the recommended mark is described, not named (DEV-296)", async () => {
+  const list = {
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      item({
+        source: "assistant_question",
+        title: "Which test file should I use?",
+        excerpt: "Which test file should I use?",
+        options: ["a.txt", "b.txt"],
+        recommendation: "a.txt",
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list);
+  const first = optionButton(host, "a.txt");
+  const second = optionButton(host, "b.txt");
+  assert.ok(first, host.innerHTML);
+  assert.ok(second, host.innerHTML);
+  for (const option of [first, second]) {
+    assert.equal(option.tagName, "BUTTON");
+    assert.equal(option.type, "button");
+    assert.equal(option.hasAttribute("aria-label"), false);
+    assert.equal(option.hasAttribute("tabindex"), false);
+  }
+  // The recommended option says so as its description, not inside its name.
+  assert.equal(second.hasAttribute("aria-describedby"), false);
+  const described = host.ownerDocument.getElementById(
+    first.getAttribute("aria-describedby"),
+  );
+  assert.equal(described?.textContent, "Recommended");
+  assert.match(first.textContent, /Recommended/);
+  // A button is answered by its click, which the browser also fires for Enter
+  // on the focused button: the reply goes to the question's own answer route.
+  await act(async () => second.click());
+  const answered = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_1/answer"),
+  );
+  assert.ok(answered, JSON.stringify(calls));
+  assert.equal(answered.method, "POST");
+  assert.equal(answered.body.text, "b.txt");
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 test("the page shows an item in its own words and replies into its chat", async () => {
   const list = {
     open: 1,
@@ -490,9 +580,7 @@ test("the page shows an item in its own words and replies into its chat", async 
     1,
   );
   // The recommended option is the filled one, saying so in words.
-  const recommended = host.querySelector(
-    'button[aria-label="Reply with “Alpha” (recommended)"]',
-  );
+  const recommended = optionButton(host, "Alpha");
   assert.ok(recommended, host.innerHTML);
   assert.match(recommended.className, /fdy-button-primary/);
   assert.match(recommended.textContent, /Alpha· Recommended/);
@@ -501,11 +589,7 @@ test("the page shows an item in its own words and replies into its chat", async 
   assert.equal(buttonNamed(host, "Open message"), undefined);
   assert.ok(buttonNamed(host, "Reply"));
   // An option is the answer: one click sends it into the chat.
-  await act(async () =>
-    host
-      .querySelector('button[aria-label="Reply with “Run them too”"]')
-      .click(),
-  );
+  await act(async () => optionButton(host, "Run them too").click());
   const sent = calls.find((call) =>
     call.path.includes("/api/chats/sess_1/queue"),
   );
@@ -1354,4 +1438,469 @@ test("a notice is a short row the person can open or dismiss", async () => {
   );
   await act(async () => root.unmount());
   host.remove();
+});
+
+test("a hand-over shows the assistant's note as its reason, clamped, and says who handed it over", async () => {
+  const note =
+    "The export needs your pick of colour for the header: three palettes pass the contrast check, and the helper waits at the next step until you choose one, then finishes the report.";
+  const handed = item({
+    id: "handed-note",
+    sessionId: "sess_1",
+    title: "Which colour for the header?",
+    excerpt: "Which colour for the header?",
+    handler: "person",
+    handedReason: "assistant",
+    note,
+  });
+  const { host, root } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [handed],
+  });
+  const block = host.querySelector(".fdy-pending-item-handed");
+  assert.ok(block, "the hand-over is its own block");
+  assert.equal(block.textContent, `Your assistant: ${note}`);
+  assert.ok(
+    block.querySelector(".fdy-clamped-text .line-clamp-3"),
+    "the note clamps to three lines and offers the rest",
+  );
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a hand-over whose note only repeats the title says it was handed over, without the title twice", async () => {
+  const handed = item({
+    id: "handed-title",
+    sessionId: "sess_1",
+    title: "Which colour for the header?",
+    excerpt: "Which colour for the header?",
+    handler: "person",
+    handedReason: "assistant",
+    rule: "handed_over",
+    note: "Which colour for the header?",
+  });
+  const { host, root } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [handed],
+  });
+  const block = host.querySelector(".fdy-pending-item-handed");
+  assert.ok(block);
+  assert.equal(block.textContent, "Your assistant: handed this to you.");
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a decision the assistant made is marked in 已处理 and opens its chat to reply", async () => {
+  const answered = item({
+    id: "answered",
+    sessionId: "sess_1",
+    workspaceId: "ws_1",
+    messageId: "msg_9",
+    title: "Pick the export format",
+    excerpt: "Pick the export format",
+    state: "done",
+    outcome: "assistant_answered",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const mine = item({
+    id: "mine",
+    sessionId: "sess_2",
+    title: "Keep the closed rows blocked?",
+    excerpt: "Keep the closed rows blocked?",
+    state: "replied",
+    outcome: "person_answered",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const { host, root } = await render({
+    open: 0,
+    bySession: {},
+    items: [answered, mine],
+  });
+  const resolvedFilter = [...host.querySelectorAll("*")].find(
+    (element) =>
+      element.children.length === 0 &&
+      element.textContent === "Resolved · 7 days",
+  );
+  assert.ok(resolvedFilter, "the resolved filter");
+  await act(
+    async () =>
+      resolvedFilter.closest("button")?.click() ?? resolvedFilter.click(),
+  );
+  const decided = host.querySelector('[data-state="done"]');
+  assert.ok(decided, "the assistant's decision is listed as resolved");
+  assert.ok(
+    decided.querySelector(".fdy-pending-item-decided"),
+    "marked as the assistant's decision",
+  );
+  assert.match(decided.textContent, /Your assistant decided this/);
+  const open = buttonNamed(decided, "Open the chat to see or reply");
+  assert.ok(open, "the person can open the chat and reply there");
+  await act(async () => open.click());
+  assert.match(window.location.search, /message=msg_9/);
+  const mineCard = host.querySelector('[data-state="replied"]');
+  assert.ok(mineCard);
+  assert.equal(mineCard.querySelector(".fdy-pending-item-decided"), null);
+  assert.doesNotMatch(mineCard.textContent, /Your assistant decided this/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("the assistant's answer sits under its mark, clamped to two lines; without one the card is as before", async () => {
+  const sentence = "导出选 PDF，理由是报表要发给客户，PDF 在各设备上版式一致。";
+  const answer = sentence
+    .repeat(Math.ceil(300 / sentence.length))
+    .slice(0, 300);
+  assert.equal(answer.length, 300);
+  const answered = item({
+    id: "answered-long",
+    sessionId: "sess_1",
+    messageId: "msg_9",
+    title: "Pick the export format",
+    excerpt: "Pick the export format",
+    state: "done",
+    outcome: "assistant_answered",
+    answer,
+    answeredBy: "assistant",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const bare = item({
+    id: "answered-bare",
+    sessionId: "sess_2",
+    title: "Pick the file name",
+    excerpt: "Pick the file name",
+    state: "done",
+    outcome: "assistant_answered",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const { host, root } = await render({
+    open: 0,
+    bySession: {},
+    items: [answered, bare],
+  });
+  const resolvedFilter = [...host.querySelectorAll("*")].find(
+    (element) =>
+      element.children.length === 0 &&
+      element.textContent === "Resolved · 7 days",
+  );
+  assert.ok(resolvedFilter, "the resolved filter");
+  await act(
+    async () =>
+      resolvedFilter.closest("button")?.click() ?? resolvedFilter.click(),
+  );
+  const longCard = [...host.querySelectorAll('[data-state="done"]')].find(
+    (card) => card.textContent.includes("Pick the export format"),
+  );
+  assert.ok(longCard, "the answered card");
+  const clamped = longCard.querySelector(".fdy-clamped-text");
+  assert.ok(clamped, "the answer is a clamped text");
+  assert.ok(clamped.querySelector(".line-clamp-2"), "two lines");
+  assert.equal(clamped.textContent, answer);
+  const mark = longCard.querySelector(".fdy-pending-item-decided");
+  assert.ok(
+    mark.compareDocumentPosition(clamped) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    "the answer comes after the mark",
+  );
+  const bareCard = [...host.querySelectorAll('[data-state="done"]')].find(
+    (card) => card.textContent.includes("Pick the file name"),
+  );
+  assert.ok(bareCard, "the card without an answer");
+  assert.ok(bareCard.querySelector(".fdy-pending-item-decided"));
+  assert.equal(bareCard.querySelector(".fdy-clamped-text"), null);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+async function showResolvedItems(host) {
+  const resolvedFilter = [...host.querySelectorAll("*")].find(
+    (element) =>
+      element.children.length === 0 &&
+      element.textContent === "Resolved · 7 days",
+  );
+  assert.ok(resolvedFilter, "the resolved filter");
+  await act(
+    async () =>
+      resolvedFilter.closest("button")?.click() ?? resolvedFilter.click(),
+  );
+}
+
+const cardTitled = (host, title, state) =>
+  [...host.querySelectorAll(`[data-state="${state}"]`)].find((card) =>
+    card.textContent.includes(title),
+  );
+
+test("an item the assistant closed with a reason says so, not that it decided it (assistant_closed)", async () => {
+  const closed = item({
+    id: "closed-reason",
+    sessionId: "sess_1",
+    title: "Send the report to the client?",
+    excerpt: "Send the report to the client?",
+    state: "dismissed",
+    outcome: "assistant_closed",
+    closeReason: "The client already got it on Monday.",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const bare = item({
+    id: "closed-bare",
+    sessionId: "sess_2",
+    title: "Rename the folder?",
+    excerpt: "Rename the folder?",
+    state: "dismissed",
+    outcome: "assistant_closed",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const { host, root } = await render({
+    open: 0,
+    bySession: {},
+    items: [closed, bare],
+  });
+  await showResolvedItems(host);
+  const withReason = cardTitled(
+    host,
+    "Send the report to the client?",
+    "dismissed",
+  );
+  assert.ok(withReason, "the closed card");
+  assert.match(
+    withReason.textContent,
+    /Closed by the assistant: The client already got it on Monday\./,
+  );
+  assert.ok(withReason.querySelector(".fdy-pending-item-closed"));
+  assert.equal(withReason.querySelector(".fdy-pending-item-decided"), null);
+  assert.doesNotMatch(withReason.textContent, /Your assistant decided this/);
+  const withoutReason = cardTitled(host, "Rename the folder?", "dismissed");
+  assert.ok(withoutReason, "the closed card without a reason");
+  assert.match(withoutReason.textContent, /Closed by the assistant/);
+  assert.doesNotMatch(withoutReason.textContent, /Closed by the assistant:/);
+  assert.equal(withoutReason.querySelector(".fdy-clamped-text"), null);
+  assert.equal(withoutReason.querySelector(".fdy-pending-item-decided"), null);
+  assert.doesNotMatch(withoutReason.textContent, /Your assistant decided this/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an approval shows its command without the fence lines, open and resolved; without detail it is as before", async () => {
+  const command = "git push origin main";
+  const commandDetail = [
+    "```sh",
+    command,
+    "```",
+    "In `/home/windeng/repo`",
+  ].join("\n");
+  const open = item({
+    id: "approval-open",
+    sessionId: "sess_1",
+    title: "Allow this command?",
+    excerpt: "Allow this command?",
+    options: ["Approve", "Deny"],
+    approval: true,
+    detail: commandDetail,
+  });
+  const resolved = item({
+    id: "approval-done",
+    sessionId: "sess_2",
+    title: "Allow these file changes?",
+    excerpt: "Allow these file changes?",
+    options: ["Approve", "Deny"],
+    approval: true,
+    detail: "- `src/a.ts`\n- `src/b.ts`",
+    state: "replied",
+    outcome: "person_answered",
+    resolvedAt: "2026-11-17T09:00:00Z",
+  });
+  const bare = item({
+    id: "approval-bare",
+    sessionId: "sess_3",
+    title: "Allow this other command?",
+    excerpt: "Allow this other command?",
+    options: ["Approve", "Deny"],
+    approval: true,
+  });
+  const { host, root } = await render({
+    open: 0,
+    bySession: {},
+    items: [open, resolved, bare],
+  });
+  const openCard = cardTitled(host, "Allow this command?", "open");
+  assert.ok(openCard, "the open approval card");
+  const openDetail = openCard.querySelector(".fdy-pending-item-approval");
+  assert.ok(openDetail, "the detail shows in the open card");
+  assert.ok(openDetail.querySelector(".font-mono"), "monospace");
+  assert.match(openDetail.textContent, /^git push origin main/);
+  assert.doesNotMatch(openDetail.textContent, /```/);
+  assert.ok(buttonNamed(openCard, "Approve"), "Approve stays");
+  assert.ok(buttonNamed(openCard, "Deny"), "Deny stays");
+  const bareCard = cardTitled(host, "Allow this other command?", "open");
+  assert.ok(bareCard, "the approval card without detail");
+  assert.equal(bareCard.querySelector(".fdy-pending-item-approval"), null);
+  assert.ok(buttonNamed(bareCard, "Approve"));
+  await showResolvedItems(host);
+  const resolvedCard = cardTitled(host, "Allow these file changes?", "replied");
+  assert.ok(resolvedCard, "the resolved approval card");
+  const resolvedDetail = resolvedCard.querySelector(
+    ".fdy-pending-item-approval",
+  );
+  assert.ok(resolvedDetail, "the detail shows in the resolved card");
+  assert.match(resolvedDetail.textContent, /src\/a\.ts/);
+  assert.match(resolvedDetail.textContent, /src\/b\.ts/);
+  assert.doesNotMatch(resolvedDetail.textContent, /`/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a reply to an older question item names that question's message, so it answers that question (DEV-292b)", async () => {
+  const { parseAgentQuestionReply, agentQuestionReplyText } =
+    await import("../src/components/conversation/agent-questions.ts");
+  const older = "2026-11-17T08:00:00Z";
+  const newer = "2026-11-18T08:00:00Z";
+  const list = {
+    open: 2,
+    bySession: { sess_1: 2 },
+    items: [
+      item({
+        id: "pnd_new",
+        source: "question",
+        messageId: "sess_1/msg_new_7",
+        title: "Use the monthly totals instead?",
+        excerpt: "Use the monthly totals instead?",
+        createdAt: newer,
+        updatedAt: newer,
+      }),
+      item({
+        id: "pnd_old",
+        source: "question",
+        messageId: "sess_1/turn_3/msg_old_42",
+        title: "Q4 cumulative or per month?",
+        excerpt: "Q4 cumulative or per month?",
+        createdAt: older,
+        updatedAt: older,
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list);
+  const olderCard = [...host.querySelectorAll("article")].find((article) =>
+    article.textContent.includes("Q4 cumulative or per month?"),
+  );
+  assert.ok(olderCard, "the older question is listed");
+  await act(async () => buttonNamed(olderCard, "Reply").click());
+  const textarea = olderCard.querySelector("textarea");
+  assert.ok(textarea, "its own reply box");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    ).set;
+    setter.call(textarea, "per month");
+    textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await act(async () => buttonNamed(olderCard, "Send").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const sent = calls.find((call) =>
+    call.path.includes("/api/chats/sess_1/queue"),
+  );
+  assert.ok(sent, JSON.stringify(calls));
+  assert.equal(sent.body.steer, true);
+  assert.equal(
+    sent.body.text,
+    agentQuestionReplyText(
+      "msg_old_42",
+      [{ title: "Q4 cumulative or per month?" }],
+      ["per month"],
+    ),
+  );
+  assert.deepEqual(parseAgentQuestionReply(sent.body.text), [
+    {
+      itemId: "msg_old_42",
+      index: 0,
+      question: "Q4 cumulative or per month?",
+      answer: "per month",
+      noAnswer: false,
+      reason: "",
+    },
+  ]);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("other items keep the quoted reply, even with a message id", async () => {
+  const failed = item({
+    source: "turn_failed",
+    messageId: "sess_1/msg_fail_3",
+    title: "API Error: 503",
+    excerpt: "API Error: 503",
+  });
+  assert.equal(
+    pendingReplyText(failed, "Retry later"),
+    "> API Error: 503\n\nRetry later",
+  );
+});
+
+test("a reply goes to the item an assistant asked, and a withdrawn question says so", () => {
+  assert.equal(
+    pendingReplyRoute({ source: "assistant_question", sessionId: "sess_home" }),
+    "answer",
+  );
+  assert.equal(
+    pendingReplyRoute({ source: "question", sessionId: "sess_1" }),
+    "chat",
+  );
+  assert.equal(
+    pendingReplyRoute({
+      source: "issue_question",
+      issueId: "iss_1",
+      eventId: "evt_1",
+      sessionId: "sess_1",
+    }),
+    "issue",
+  );
+  assert.equal(pendingReplyRoute({ source: "notice" }), "none");
+  assert.equal(
+    pendingStatusKey({ state: "done", outcome: "withdrawn" }),
+    "outcome.withdrawn",
+  );
+  assert.equal(
+    pendingStatusKey({ state: "done", outcome: "person_answered" }),
+    "state.done",
+  );
+});
+
+test("an assistant's question is answered through its item, one option at a time", async () => {
+  const list = {
+    open: 1,
+    bySession: { sess_home: 1 },
+    items: [
+      item({
+        id: "pnd_q1",
+        source: "assistant_question",
+        sessionId: "sess_home",
+        title: "Which folder should the receipt go to?",
+        excerpt: "Which folder should the receipt go to?",
+        options: ["Q3 folder", "Travel"],
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list);
+  assert.match(host.textContent, /Your assistant asks/, host.innerHTML);
+  await act(async () => optionButton(host, "Travel").click());
+  const answered = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_q1/answer"),
+  );
+  assert.ok(answered, JSON.stringify(calls));
+  assert.equal(answered.method, "POST");
+  assert.deepEqual(answered.body, { text: "Travel" });
+  assert.equal(
+    calls.some((call) => call.path.includes("/api/chats/")),
+    false,
+    "the answer went into the chat as a message",
+  );
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a notice's link names its item, and the item's card has its own id", () => {
+  assert.equal(pendingFocusItemId("?item=pnd_1"), "pnd_1");
+  assert.equal(pendingFocusItemId("?item="), "");
+  assert.equal(pendingFocusItemId(""), "");
+  assert.equal(pendingItemDomId("pnd_1"), "pending-item-pnd_1");
 });

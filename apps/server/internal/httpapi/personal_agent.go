@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -117,11 +118,32 @@ func (s *Server) handleSavePersonalAgentSettings(w http.ResponseWriter, r *http.
 	if !decodeJSONRequest(w, r, &settings) {
 		return
 	}
-	agent, err := s.assistant.SaveSettings(r.Context(), agent, settings)
+	agent, err := s.saveAssistantSettings(r.Context(), agent, settings)
+	writeResult(w, agent, err)
+}
+
+// saveAssistantSettings is the one save of an assistant's settings: the
+// notice setting is checked against its connector (a changed sink only), then
+// the settings are saved. PUT /api/personal-agent/settings and the assistant's
+// assistant_settings tool both save through it.
+func (s *Server) saveAssistantSettings(ctx context.Context, agent store.PersonalAgent, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
+	notify, err := normalizePersonalAgentNotify(settings.Notify)
+	if err != nil {
+		return agent, &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
+	}
+	settings.Notify = notify
+	if err := s.checkPersonalAgentNotify(ctx, agent, agent.Settings.Notify, notify); err != nil {
+		var failure notifyError
+		if errors.As(err, &failure) {
+			return agent, &personalagent.Refusal{Status: http.StatusBadRequest, Err: err}
+		}
+		return agent, &personalagent.Refusal{Status: http.StatusBadGateway, Err: err}
+	}
+	saved, err := s.assistant.SaveSettings(ctx, agent, settings)
 	if errors.Is(err, store.ErrNotFound) {
 		err = assistant.ErrNoAssistant
 	}
-	writeResult(w, agent, err)
+	return saved, err
 }
 
 // personalAgentSwitch answers the stop switch and resuming with the fixed
@@ -158,6 +180,7 @@ func (s *Server) handleResumePersonalAgent(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
+	s.resumedAssistant(r.Context(), agent)
 	agent, err = s.store.GetAssistant(r.Context(), agent.ID)
 	language := personalagent.LanguageOf(agent.Settings, s.personFrom(r).Locale)
 	stopped := make([]string, 0, len(tasks))

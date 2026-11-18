@@ -93,8 +93,8 @@ func contentSha256(content string) string {
 // checkMessageChannelWorkspace accepts a workspace the person chose for a
 // channel: one they work in, on the assistant's home device, not the home
 // itself.
-func (s *Server) checkMessageChannelWorkspace(ctx context.Context, r *http.Request, agent store.PersonalAgent, workspaceID string) error {
-	scope, err := s.requestScope(r)
+func (s *Server) checkMessageChannelWorkspace(ctx context.Context, agent store.PersonalAgent, workspaceID string) error {
+	scope, err := s.scopeOfContext(ctx)
 	if err != nil {
 		return err
 	}

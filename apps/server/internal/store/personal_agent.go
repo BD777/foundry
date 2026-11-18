@@ -97,6 +97,16 @@ var PersonalAgentActions = []string{
 // PersonalAgentProposalRelaxRules is the proposal kind of loosening rules.
 const PersonalAgentProposalRelaxRules = "relax_rules"
 
+// PersonalAgentProposalSettings is a change to the assistant's own settings
+// that spends money or widens reach (assistant_settings, DEV-298): accepting
+// it applies the recorded patch.
+const PersonalAgentProposalSettings = "settings_change"
+
+// PersonalAgentProposalChannel is a message channel the assistant creates or
+// a change that widens one (assistant_channels, DEV-298 S3): accepting it
+// re-plans the recorded arguments and saves the channel as the person's route does.
+const PersonalAgentProposalChannel = "channel_change"
+
 // PersonalAgentProposalConnectorWrite is one risk write through a connector.
 // Accepting it allows the same request once; the gateway consumes it.
 const PersonalAgentProposalConnectorWrite = "connector_write"
@@ -162,6 +172,26 @@ type PersonalAgentSettings struct {
 	ActiveHoursEnd     string                                `json:"activeHoursEnd"`
 	UrgentAnytime      bool                                  `json:"urgentAnytime"`
 	Limits             PersonalAgentLimits                   `json:"limits"`
+	Notify             PersonalAgentNotifySettings           `json:"notify"`
+	// Revision counts the saves of these settings (SavePersonalAgentSettings
+	// sets it; a caller's value is ignored). assistant_settings compares it
+	// with what the assistant read (DEV-298).
+	Revision int64 `json:"revision"`
+}
+
+// PersonalAgentNotifySettings is where the person's notices go (DEV-294): at
+// most one connector instance whose descriptor takes notices, with the notice
+// kinds it receives. An empty Sinks means no notices.
+type PersonalAgentNotifySettings struct {
+	Sinks []PersonalAgentNotifySink `json:"sinks"`
+}
+
+// PersonalAgentNotifySink names one connector instance and the notice kinds
+// (question, approval, hand_over, ask) it receives. Its self chat is the
+// instance's notify field, filled by discovery.
+type PersonalAgentNotifySink struct {
+	ConnectorInstanceID string   `json:"connectorInstanceId"`
+	Kinds               []string `json:"kinds"`
 }
 
 // PersonalAgentExecutionModels is this assistant's helper override: the same
@@ -748,6 +778,10 @@ type PersonalAgentStore interface {
 	// the retention.
 	RecordPersonalAgentAction(ctx context.Context, record PersonalAgentActionRecord, args json.RawMessage) (PersonalAgentActionRecord, error)
 	ListPersonalAgentActions(ctx context.Context, assistantID string, limit int) ([]PersonalAgentActionRecord, error)
+	// GetPersonalAgentAction is one audit row of the assistant with its
+	// arguments as recorded (the spec, for undoing a settings change),
+	// ErrNotFound when the assistant has no such row.
+	GetPersonalAgentAction(ctx context.Context, assistantID, actionID string) (PersonalAgentActionRecord, json.RawMessage, error)
 	// PersonalAgentCreatedWorkspace reports whether the assistant created
 	// the workspace.
 	PersonalAgentCreatedWorkspace(ctx context.Context, assistantID, workspaceID string) (bool, error)

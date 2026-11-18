@@ -484,10 +484,15 @@ export class ClaudeQuestionGate {
           (reply) => nativeItemId(reply.itemId) === itemId,
         );
         if (answers.length === 0) continue;
-        waiting.settle(settled(waiting, answers, this.host.afterPlan));
-        taken = true;
+        if (answers.some((reply) => reply.noAnswer)) waiting.settle(noAnswer);
+        else {
+          waiting.settle(settled(waiting, answers, this.host.afterPlan));
+          taken = true;
+        }
       }
-      return taken;
+      // A no-answer reply is not taken: its envelope carries the reason, and
+      // the turn must read it.
+      return taken && replies.every((reply) => !reply.noAnswer);
     }
     const reply = message.trim();
     const first = this.waiting.values().next().value;
@@ -543,6 +548,12 @@ function settled(
     updatedInput: { ...waiting.input, answers: byQuestion },
   };
 }
+
+/** A question or approval that gets no answer: it is denied, and says so. */
+const noAnswer: ClaudePermissionResult = {
+  behavior: "deny",
+  message: "No answer is given to this question.",
+};
 
 /** No answer: Claude Code's tool then tells the model the user did not answer. */
 function unanswered(input: Record<string, unknown>): ClaudePermissionResult {

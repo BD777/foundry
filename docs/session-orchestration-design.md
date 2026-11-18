@@ -363,7 +363,7 @@ verifier 的只读沙箱）；`references/diagnosing.md` 只解释错误和状�
 
 - HTTP MCP 的 OAuth 2.1（PKCE + Authorization Server Metadata + scoped tokens）：现在 `/api/mcp` 沿用已有的凭据链（会话令牌、登录会话、设备凭据），Foundry 之外的 Agent 没有自己的凭据，只能在已配对的设备上经 `foundry` CLI / `foundry mcp` 以设备主人的身份接入。
 - 按 actor 限频：MCP 没有频率限制，只有派生深度 4 与每个父会话 8 个活动子会话的上限（`sqlitestore/session_lineage.go`）。现有限流只有登录锁定（`httpapi/auth.go`）和飞书网关按应用限流（`internal/feishugateway/ratelimit.go`）。
-- `foundry` CLI 还没有和真实的外部 Agent 一起用过。
+- `foundry` CLI 已由真实的外部 Agent（Codex gpt-6-luna，从设备 shell 直接启动，不经 Foundry）用过：派出、等待、读取与归档都经 CLI 完成（[DEV-302](devlog/DEV-302-cli-external-agent.md)）。尚缺：安装后设备 PATH 上没有 `foundry` 命令；`session wait` 与动词 `--help` 的修复待 Worker 更新后生效。
 
 **验证情况：**
 

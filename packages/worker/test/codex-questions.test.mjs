@@ -4,7 +4,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { agentQuestionReplyText } from "@bd777/foundry-protocol";
+import {
+  agentQuestionNoAnswerText,
+  agentQuestionReplyText,
+} from "@bd777/foundry-protocol";
 import { CodexAppServerThread } from "../dist/session/runner/codex-app-server.js";
 
 // A fake Codex app-server: no model is called. Each turn/start sends the
@@ -219,6 +222,48 @@ test("a person answers requestUserInput by option; unanswered, it gets no answer
     "ask-1",
   );
   assert.equal(late.steers().length, 0, "no answers says it all");
+});
+
+test("a no-answer reply declines the waiting prompt; it is not taken, so its reason reaches Codex", async (t) => {
+  const questioned = fixture(t, userInput, { to: "person" });
+  let taken;
+  await runTurn(questioned.thread, (message) => {
+    taken = questioned.thread.answerQuestion(
+      agentQuestionNoAnswerText(
+        message.id,
+        "Which color?",
+        "Resolved elsewhere",
+      ),
+    );
+  });
+  assert.equal(taken, false);
+  assert.deepEqual(questioned.responses()[0].result, { answers: {} });
+
+  const approval = fixture(t, command, { to: "person" });
+  let approvalTaken;
+  await runTurn(approval.thread, (message) => {
+    approvalTaken = approval.thread.answerQuestion(
+      agentQuestionNoAnswerText(
+        message.id,
+        message.questions[0].title,
+        "Not needed",
+      ),
+    );
+  });
+  assert.equal(approvalTaken, false);
+  assert.deepEqual(approval.responses()[0].result, { decision: "decline" });
+});
+
+test("an answer to a waiting prompt is taken, not left to Codex as a message", async (t) => {
+  const { thread, responses } = fixture(t, userInput, { to: "person" });
+  let taken;
+  await runTurn(thread, (message) => {
+    taken = thread.answerQuestion(answer(message, "Blue"));
+  });
+  assert.equal(taken, true);
+  assert.deepEqual(responses()[0].result, {
+    answers: { color: { answers: ["Blue"] } },
+  });
 });
 
 test("a request Codex resolves itself closes its card", async (t) => {

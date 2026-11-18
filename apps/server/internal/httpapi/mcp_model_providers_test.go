@@ -17,6 +17,16 @@ type providerTools struct {
 	t     *testing.T
 	f     *externalAccountsFixture
 	token string
+	// cookie makes the calls as the signed-in person instead of an agent
+	// token: key entry, key clearing and deletion are the person's (§4).
+	cookie string
+}
+
+// personProviders is the person's own MCP calls: the person signed in, the
+// way the Model providers page is used, so the steps agents may not take
+// (secret entry, deletion) run as the person.
+func (f *externalAccountsFixture) personProviders() providerTools {
+	return providerTools{t: f.t, f: f, cookie: f.alice}
 }
 
 func (f *externalAccountsFixture) providerSession(input store.CreateAgentSessionInput) providerTools {
@@ -43,8 +53,13 @@ func (f *externalAccountsFixture) providerSession(input store.CreateAgentSession
 func (p providerTools) call(tool, arguments string) (string, bool, string) {
 	p.t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + arguments + `}}`
-	response := doAuthCall(p.t, p.f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: body,
-		headers: map[string]string{"Authorization": "Bearer " + p.token, "Content-Type": "application/json"}})
+	call := authCall{method: http.MethodPost, path: "/api/mcp", body: body,
+		headers: map[string]string{"Authorization": "Bearer " + p.token, "Content-Type": "application/json"}}
+	if p.cookie != "" {
+		call = authCall{method: http.MethodPost, path: "/api/mcp", body: body, cookie: p.cookie, origin: accountsTestOrigin,
+			headers: map[string]string{"Content-Type": "application/json"}}
+	}
+	response := doAuthCall(p.t, p.f.handler, call)
 	if strings.Contains(response.Body.String(), providerTestKey) {
 		p.t.Fatalf("%s answered the key: %s", tool, response.Body.String())
 	}
@@ -128,7 +143,7 @@ func TestModelProviderToolsManageAnEndpointLikeThePage(t *testing.T) {
 	alice := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.aliceID})
 
 	var created mcpProvider
-	alice.ok("save_model_provider", `{"runtime":"claude","label":"Relay","baseUrl":"relay.example/v1/messages","apiKey":"`+providerTestKey+`","model":"claude-opus-5-5"}`, &created)
+	f.personProviders().ok("save_model_provider", `{"runtime":"claude","label":"Relay","baseUrl":"relay.example/v1/messages","apiKey":"`+providerTestKey+`","model":"claude-opus-5-5"}`, &created)
 	if created.Kind != providerKindAPI || created.BaseURL != "https://relay.example" || created.Model != "claude-opus-5-5" ||
 		created.KeySet == nil || !*created.KeySet || len(created.Devices) != 0 {
 		t.Fatalf("created = %+v; want the corrected endpoint with a key and no devices", created)
@@ -192,13 +207,13 @@ func TestModelProviderToolsManageAnEndpointLikeThePage(t *testing.T) {
 	if updated.BaseURL != "https://relay2.example" || !*updated.KeySet || updated.Devices[0].Check != nil {
 		t.Fatalf("updated = %+v", updated)
 	}
-	alice.ok("save_model_provider", `{"providerId":"`+created.ID+`","clearApiKey":true}`, &updated)
+	f.personProviders().ok("save_model_provider", `{"providerId":"`+created.ID+`","clearApiKey":true}`, &updated)
 	if *updated.KeySet {
 		t.Fatal("clearApiKey kept the key")
 	}
 
 	var deleted map[string]any
-	alice.ok("delete_model_provider", `{"providerId":"`+created.ID+`"}`, &deleted)
+	f.personProviders().ok("delete_model_provider", `{"providerId":"`+created.ID+`"}`, &deleted)
 	if deleted["deleted"] != created.ID {
 		t.Fatalf("deleted = %+v", deleted)
 	}
@@ -216,10 +231,17 @@ func TestModelProviderToolsCopyAServerHeldKey(t *testing.T) {
 	alice := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.aliceID})
 
 	var codexProvider mcpProvider
-	alice.ok("save_model_provider", `{"runtime":"codex","label":"TokenHub Codex","baseUrl":"https://tokenhub.example/v1","apiKey":"`+providerTestKey+`","model":"deepseek-v4.1-flash-1017"}`, &codexProvider)
+	f.personProviders().ok("save_model_provider", `{"runtime":"codex","label":"TokenHub Codex","baseUrl":"https://tokenhub.example/v1","apiKey":"`+providerTestKey+`","model":"deepseek-v4.1-flash-1017"}`, &codexProvider)
 
 	var claudeProvider mcpProvider
-	alice.ok("save_model_provider", `{"runtime":"claude","label":"TokenHub Claude","baseUrl":"https://tokenhub.example/v1","copyApiKeyFromProviderId":"`+codexProvider.ID+`","model":"deepseek-v4.1-flash-1017","deviceIds":["dev_alice"]}`, &claudeProvider)
+	// The agent copies a key the person entered: allowed, and the key is not in the answer.
+	copied, failed, refused := alice.call("save_model_provider", `{"runtime":"claude","label":"TokenHub Claude","baseUrl":"https://tokenhub.example/v1","copyApiKeyFromProviderId":"`+codexProvider.ID+`","model":"deepseek-v4.1-flash-1017","deviceIds":["dev_alice"]}`)
+	if failed || refused != "" || strings.Contains(copied, providerTestKey) {
+		t.Fatalf("copy by the agent: %q (error %v %q)", copied, failed, refused)
+	}
+	if err := json.Unmarshal([]byte(copied), &claudeProvider); err != nil {
+		t.Fatalf("copy answer is not a provider: %v", err)
+	}
 	if claudeProvider.BaseURL != "https://tokenhub.example" || claudeProvider.KeySet == nil || !*claudeProvider.KeySet ||
 		len(claudeProvider.Devices) != 1 {
 		t.Fatalf("copied provider = %+v", claudeProvider)
@@ -231,7 +253,7 @@ func TestModelProviderToolsCopyAServerHeldKey(t *testing.T) {
 	if text, failed, _ := alice.call("save_model_provider", `{"runtime":"claude","label":"Missing","baseUrl":"https://missing.example","copyApiKeyFromProviderId":"prof_missing"}`); !failed || !strings.Contains(text, "source API endpoint not found") {
 		t.Fatalf("missing source: %q", text)
 	}
-	if text, failed, _ := alice.call("save_model_provider", `{"providerId":"`+claudeProvider.ID+`","apiKey":"replacement","copyApiKeyFromProviderId":"`+codexProvider.ID+`"}`); !failed || !strings.Contains(text, "without apiKey") {
+	if text, failed, _ := f.personProviders().call("save_model_provider", `{"providerId":"`+claudeProvider.ID+`","apiKey":"replacement","copyApiKeyFromProviderId":"`+codexProvider.ID+`"}`); !failed || !strings.Contains(text, "without apiKey") {
 		t.Fatalf("conflicting key inputs: %q", text)
 	}
 }
@@ -241,26 +263,27 @@ func TestModelProviderToolsCopyAServerHeldKey(t *testing.T) {
 // Issue's sessions, verifiers and utility sessions get no provider tool.
 func TestModelProviderToolsRefuseOthers(t *testing.T) {
 	f := newExternalAccountsFixture(t)
-	alice := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.aliceID})
 	var created mcpProvider
-	alice.ok("save_model_provider", `{"runtime":"codex","label":"Gateway","baseUrl":"https://gw.example","apiKey":"`+providerTestKey+`"}`, &created)
+	f.personProviders().ok("save_model_provider", `{"runtime":"codex","label":"Gateway","baseUrl":"https://gw.example","apiKey":"`+providerTestKey+`"}`, &created)
 	if created.BaseURL != "https://gw.example/v1" {
 		t.Fatalf("codex endpoint = %q", created.BaseURL)
 	}
 
 	bob := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.bobID, AgentID: "agent_bob", WorkspaceID: "ws_bob"})
-	for _, call := range []struct{ tool, args string }{
-		{"save_model_provider", `{"providerId":"` + created.ID + `","label":"Mine now"}`},
-		{"save_model_provider", `{"runtime":"claude","label":"Stolen","baseUrl":"https://stolen.example","copyApiKeyFromProviderId":"` + created.ID + `"}`},
-		{"delete_model_provider", `{"providerId":"` + created.ID + `"}`},
-		{"check_model_provider", `{"providerId":"` + created.ID + `","deviceId":"dev_alice"}`},
-		{"save_model_provider", `{"runtime":"claude","label":"X","baseUrl":"https://x.example","deviceIds":["dev_alice"]}`},
-		{"set_model_defaults", `{"providerId":"claude_local","deviceId":"dev_alice","model":"opus"}`},
-		{"sign_in_subscription", `{"deviceId":"dev_alice","runtime":"claude","action":"start"}`},
+	// Deletion is refused for every agent before the owner check (§4), so
+	// Bob's delete is answered with that refusal; the others reach the owner check.
+	for _, call := range []struct{ tool, args, want string }{
+		{"save_model_provider", `{"providerId":"` + created.ID + `","label":"Mine now"}`, "not found"},
+		{"save_model_provider", `{"runtime":"claude","label":"Stolen","baseUrl":"https://stolen.example","copyApiKeyFromProviderId":"` + created.ID + `"}`, "not found"},
+		{"delete_model_provider", `{"providerId":"` + created.ID + `"}`, "the person's to do"},
+		{"check_model_provider", `{"providerId":"` + created.ID + `","deviceId":"dev_alice"}`, "not found"},
+		{"save_model_provider", `{"runtime":"claude","label":"X","baseUrl":"https://x.example","deviceIds":["dev_alice"]}`, "not found"},
+		{"set_model_defaults", `{"providerId":"claude_local","deviceId":"dev_alice","model":"opus"}`, "not found"},
+		{"sign_in_subscription", `{"deviceId":"dev_alice","runtime":"claude","action":"start"}`, "not found"},
 	} {
-		text, failed, _ := bob.call(call.tool, call.args)
-		if !failed || !strings.Contains(text, "not found") {
-			t.Fatalf("bob %s: %q", call.tool, text)
+		text, failed, refused := bob.call(call.tool, call.args)
+		if answer := text + refused; !failed || !strings.Contains(answer, call.want) {
+			t.Fatalf("bob %s: %q %q", call.tool, text, refused)
 		}
 	}
 	var bobs struct {
@@ -422,8 +445,11 @@ func TestSignInSubscriptionRelaysTheDevicesSignIn(t *testing.T) {
 	if step.VerificationURL != "https://chatgpt.example/device" || step.UserCode != "ABCD-1234" {
 		t.Fatalf("step = %+v", step)
 	}
-	if text, failed, _ := alice.call("sign_in_subscription", `{"deviceId":"dev_alice","runtime":"codex","action":"code"}`); !failed || !strings.Contains(text, "operation") {
-		t.Fatalf("code without an operation: %q", text)
+	// Submitting a sign-in code is the person's own step; an agent's call is
+	// refused before the handler (DEV-298c), so it comes back as a JSON-RPC
+	// refusal (the helper's third value) rather than an error result.
+	if text, failed, refused := alice.call("sign_in_subscription", `{"deviceId":"dev_alice","runtime":"codex","action":"code"}`); !failed || refused == "" || !strings.Contains(refused, "person's to do") {
+		t.Fatalf("code as an agent: text=%q failed=%v refused=%q", text, failed, refused)
 	}
 }
 

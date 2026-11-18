@@ -1,7 +1,6 @@
 package connectors
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -385,6 +384,11 @@ func checkServerHeld(descriptor store.ConnectorDescriptor) error {
 			return err
 		}
 	}
+	if serverHeld.Notify != nil {
+		if err := checkServerHeldNotify(*serverHeld.Notify, *serverHeld); err != nil {
+			return err
+		}
+	}
 	if len(serverHeld.Writes) > 20 {
 		return fmt.Errorf("serverHeld.writes lists at most 20 write responses")
 	}
@@ -734,48 +738,102 @@ func checkEventsValue(what string, field store.ConnectorEventsValue) error {
 	return nil
 }
 
+// ackPlaceholders are the only values an acknowledgement request may use.
+var ackPlaceholders = requestPlaceholders{plain: []string{"message.id", "reaction"}}
+
 // checkEventsAckCall checks one acknowledgement request: a catalogued write
 // route below the upstream prefix, with only the two ack placeholders.
 func checkEventsAckCall(what string, call store.ConnectorEventsAckCall, prefix string) error {
-	switch strings.ToUpper(strings.TrimSpace(call.Method)) {
-	case "POST", "PUT", "PATCH", "DELETE":
-	default:
-		return fmt.Errorf("%s.method is a write method", what)
-	}
-	if err := checkExtensionPath(what+".path", call.Path); err != nil {
+	if err := checkCatalogedWriteCall(what, call.Method, call.Path, call.Body, prefix); err != nil {
 		return err
 	}
-	if call.Path != prefix && !strings.HasPrefix(call.Path, strings.TrimRight(prefix, "/")+"/") {
-		return fmt.Errorf("%s.path must be at or below the upstream prefix %s", what, prefix)
+	if err := checkRequestTemplate(what+".path", call.Path, false, ackPlaceholders); err != nil {
+		return err
 	}
-	if len(call.Body) > 1000 {
-		return fmt.Errorf("%s.body is at most 1000 characters", what)
+	if call.Body == "" {
+		return nil
 	}
-	rest := call.Path
-	for _, match := range ackPlaceholderPattern.FindAllString(rest, -1) {
-		if match != "{message.id}" && match != "{reaction}" {
-			return fmt.Errorf("%s.path may only use {message.id} and {reaction}", what)
+	if err := checkRequestTemplate(what+".body", call.Body, true, ackPlaceholders); err != nil {
+		return err
+	}
+	return checkFilledBody(what+".body", call.Body, map[string]string{"message.id": "x", "reaction": "OnIt"})
+}
+
+// notifyVersion is the notify contract version this Foundry reads.
+const notifyVersion = 1
+
+// notifyPlaceholders are the values a notice request may use: the target and the
+// notice id in the path and the body, the notice text and its Web link only as
+// JSON strings in the body.
+var notifyPlaceholders = requestPlaceholders{plain: []string{"target", "notice.id"}, json: []string{"text", "link"}}
+
+// checkServerHeldNotify checks a server-held connector's notify section (DEV-294):
+// a version this Foundry reads, a markdown format, a self target that names a
+// text field, a catalogued write whose path names the target and whose body
+// carries the notice, a JSON pointer to the sent id, and an envelope field for
+// replies.
+func checkServerHeldNotify(notify store.ConnectorServerHeldNotify, serverHeld store.ConnectorServerHeldSpec) error {
+	if notify.Version > notifyVersion {
+		return fmt.Errorf("serverHeld.notify: this Foundry is too old for notify version %d; update Foundry", notify.Version)
+	}
+	if notify.Version != notifyVersion {
+		return fmt.Errorf("serverHeld.notify.version is %d", notifyVersion)
+	}
+	if notify.Format != "markdown" {
+		return fmt.Errorf("serverHeld.notify.format is markdown")
+	}
+	if notify.Target.ConversationKind != "self" {
+		return fmt.Errorf("serverHeld.notify.target.conversationKind is self for now")
+	}
+	if !hasTextField(serverHeld.Fields, notify.Target.Field) {
+		return fmt.Errorf("serverHeld.notify.target.field names a text field of serverHeld.fields")
+	}
+	send := notify.Send
+	if err := checkCatalogedWriteCall("serverHeld.notify.send", send.Method, send.Path, send.Body, serverHeld.Upstream.PathPrefix); err != nil {
+		return err
+	}
+	if err := checkRequestTemplate("serverHeld.notify.send.path", send.Path, false, notifyPlaceholders); err != nil {
+		return err
+	}
+	if !strings.Contains(send.Path, "{target}") {
+		return fmt.Errorf("serverHeld.notify.send.path must use {target}")
+	}
+	if send.Body == "" {
+		return fmt.Errorf("serverHeld.notify.send.body is required")
+	}
+	if err := checkRequestTemplate("serverHeld.notify.send.body", send.Body, true, notifyPlaceholders); err != nil {
+		return err
+	}
+	if !strings.Contains(send.Body, "{text|json}") {
+		return fmt.Errorf("serverHeld.notify.send.body must use {text|json}")
+	}
+	samples := map[string]string{"target": "x", "notice.id": "x", "text": "x", "link": "x"}
+	if err := checkFilledBody("serverHeld.notify.send.body", send.Body, samples); err != nil {
+		return err
+	}
+	if notify.Sent.MessageID == "" || !jsonPointer(notify.Sent.MessageID) {
+		return fmt.Errorf("serverHeld.notify.sent.messageId is a JSON pointer")
+	}
+	if notify.ReplyTo != "" {
+		if serverHeld.Events == nil {
+			return fmt.Errorf("serverHeld.notify.replyTo names an envelope field, which needs serverHeld.events")
 		}
-		rest = strings.ReplaceAll(rest, match, "")
-	}
-	if strings.ContainsAny(rest, "{}") {
-		return fmt.Errorf("%s.path may only use {message.id} and {reaction}", what)
-	}
-	if call.Body != "" {
-		for _, match := range ackPlaceholderPattern.FindAllString(call.Body, -1) {
-			if match != "{message.id}" && match != "{reaction}" {
-				return fmt.Errorf("%s.body may only use {message.id} and {reaction}", what)
-			}
-		}
-		filled := strings.NewReplacer("{message.id}", "x", "{reaction}", "OnIt").Replace(call.Body)
-		if !json.Valid([]byte(filled)) {
-			return fmt.Errorf("%s.body must be JSON", what)
+		if _, ok := serverHeld.Events.Envelope.Fields[notify.ReplyTo]; !ok {
+			return fmt.Errorf("serverHeld.notify.replyTo %q is not an events envelope field", notify.ReplyTo)
 		}
 	}
 	return nil
 }
 
-var ackPlaceholderPattern = regexp.MustCompile(`\{[^{}]*\}`)
+// hasTextField reports whether fields declares id as a text field.
+func hasTextField(fields []store.ConnectorField, id string) bool {
+	for _, field := range fields {
+		if field.ID == id && field.Type == "text" {
+			return true
+		}
+	}
+	return false
+}
 
 // checkEventsCondition: a JSON pointer, and a bounded value or a second
 // pointer to compare with.

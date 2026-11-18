@@ -1481,6 +1481,25 @@ test("a connector write proposal names the account beside its summary", async ()
   await page.unmount();
 });
 
+test("a channel change proposal names its kind beside its summary", async () => {
+  const channelProposal = {
+    ...proposal,
+    kind: "channel_change",
+    summary: "Shall I change the message channel “Ops”: enabled?",
+  };
+  const page = await render(ProposalCard, {
+    proposal: channelProposal,
+    onAnswer: async () => {},
+  });
+  assert.match(
+    page.container.textContent,
+    /Shall I change the message channel “Ops”: enabled\?/,
+  );
+  assert.match(page.container.textContent, /Kind:\s*Message channel/);
+  assert.ok(button(page.container, "OK"));
+  await page.unmount();
+});
+
 test("memory location is independent from the assistant home and survives an offline source", async () => {
   overview = { agent, homeDeviceOnline: true };
   calls = [];

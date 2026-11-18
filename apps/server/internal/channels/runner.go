@@ -122,6 +122,17 @@ type Ports struct {
 	// never start or continue a session. An error means the check could not
 	// run: the batch is not delivered and is retried.
 	OwnWrites func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error)
+	// NoticeEchoes is the set of message ids Foundry sent to the person as
+	// notices (DEV-294) through the channel's source. A notice coming back
+	// is never the person's words, so it is dropped like an own write. An
+	// error means the check could not run, as for OwnWrites.
+	NoticeEchoes func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error)
+	// NoticeReply settles the person's reply to a notice (DEV-294) when it
+	// quotes one the channel's connector sent to the person's self chat. A
+	// reply it settles is dropped, like an own write; any other reply goes on
+	// to the assistant's inbox as before. A reply that could not be settled
+	// is not consumed, so the person's words are never lost to a failure.
+	NoticeReply func(ctx context.Context, channel store.MessageChannelRecord, envelope store.MessageEnvelope) bool
 	// Ack puts the source's acknowledgement reaction on the messages of a
 	// handed batch (add) and takes it away when their turn ends (remove).
 	// Failures never block delivery; the runner logs them.
@@ -420,6 +431,13 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 		}
 	}
 	index.ownWrites = ownWrites
+	var echoes map[string]bool
+	if r.ports.NoticeEchoes != nil {
+		var err error
+		if echoes, err = r.ports.NoticeEchoes(ctx, channel); err != nil {
+			return nil, 0, nil, err
+		}
+	}
 	var ended []string
 	hour, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-time.Hour).Format(time.RFC3339Nano))
 	day, _ := r.ports.Store.CountMessageChannelDeliveries(ctx, channel.ID, now.Add(-24*time.Hour).Format(time.RFC3339Nano))
@@ -441,8 +459,14 @@ func (r *Runner) decide(ctx context.Context, channel store.MessageChannelRecord,
 		record.ChannelID = channel.ID
 		record.CreatedAt = now.Add(time.Duration(i) * time.Microsecond).Format(time.RFC3339Nano)
 		record.Envelope = envelope
-		if envelope.Sender.IsOwnWrite || ownWrites[envelope.MessageID] || ownWrites[envelope.ID] {
+		if envelope.Sender.IsOwnWrite || ownWrites[envelope.MessageID] || ownWrites[envelope.ID] || echoes[envelope.MessageID] {
 			record.Status, record.Reason = store.MessageDeliveryDropped, ReasonOwnWrite
+			record.Envelope.Text, record.Envelope.TextTruncated = "", false
+			records = append(records, record)
+			continue
+		}
+		if r.ports.NoticeReply != nil && r.ports.NoticeReply(ctx, channel, envelope) {
+			record.Status, record.Reason = store.MessageDeliveryDropped, ReasonNoticeAnswer
 			record.Envelope.Text, record.Envelope.TextTruncated = "", false
 			records = append(records, record)
 			continue

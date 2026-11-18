@@ -15,9 +15,9 @@ import (
 
 // "Needs you" (docs/assistant-orchestration.md §h): one list of what waits
 // for the person, each open item handled by the person or their assistant.
-// The assistant always owns its helpers' items. They queue while it is
-// stopped or its home computer is offline; if it neither reads nor handles
-// one before the persisted deadline, the server hands it to the person.
+// The assistant owns its helpers' items (ResponsibleFor says which). They
+// queue while it is stopped or its home computer is offline, and nothing
+// hands them to the person on a timer.
 
 // PendingFor is the one visibility rule for an assistant's "needs you"
 // view. It returns open items assigned to it, visible workspace items, and
@@ -97,33 +97,23 @@ func (s *Service) HelperOf(ctx context.Context, session store.AgentSession) (sto
 	return agent, true
 }
 
-// Handler is who handles a new item of session: always the assistant for
-// its helper, regardless of whether it is stopped or its computer is
-// offline; and the assistant the helper works for ("" for none).
-func (s *Service) Handler(ctx context.Context, session store.AgentSession) (handler, assistantID string) {
-	agent, ok := s.HelperOf(ctx, session)
-	if !ok {
-		return store.PendingHandlerPerson, ""
-	}
-	return store.PendingHandlerAssistant, agent.ID
-}
-
 // helperStuckExcerptChars bounds what a stuck helper's item quotes.
 const helperStuckExcerptChars = 600
 
 // recordHelperStuck keeps a helper that cannot reach its model service or
-// runs past the stuck limit as the assistant's item. It queues even while
-// the assistant is stopped or offline.
+// runs past the stuck limit as its responsible party's item (its assistant
+// for a helper). It queues even while the assistant is stopped or offline.
 func (s *Service) recordHelperStuck(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, line string) {
 	title := session.Title
 	if title == "" {
 		title = task.Title
 	}
+	handler, assistantID := s.ResponsibleFor(ctx, session).Handler()
 	item := store.PendingItem{
-		UserID: agent.UserID, AssistantID: agent.ID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
+		UserID: agent.UserID, AssistantID: assistantID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
 		Source: store.PendingSourceHelperStuck, Key: "stuck:" + session.ID + ":" + session.Input.ID,
 		Title: textcut.Excerpt(firstLineOf(title), 200), Excerpt: textcut.Excerpt(line, helperStuckExcerptChars),
-		Handler: store.PendingHandlerAssistant,
+		Handler: handler,
 	}
 	if _, _, err := s.store.RecordPendingItem(ctx, item); err != nil {
 		log.Printf("personal agent %s: record stuck helper %s: %v", agent.UserID, session.ID, err)
@@ -137,6 +127,9 @@ func (s *Service) recordHelperStuck(ctx context.Context, agent store.PersonalAge
 func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAgent, item store.PendingItem) bool {
 	if agent.State != store.PersonalAgentActive || item.State != store.PendingOpen {
 		return false
+	}
+	if item.Source == store.PendingSourceMessageChannel {
+		return s.notifyChannelItem(ctx, agent, item)
 	}
 	session, err := s.store.GetAgentSessionSummary(ctx, item.SessionID)
 	if err != nil {
@@ -157,7 +150,7 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 	question := textcut.Excerpt(strings.TrimSpace(item.Title), 240)
 	line := fmt.Sprintf(pendingNoticeTexts[languageIndex(language)],
 		helper, session.ID, question, item.ID)
-	s.notices.add(conversationID, language, line, time.Now(), func(text string) {
+	s.notices.addLine(conversationID, language, noticeLine{key: item.ID, text: line, due: s.stillOpen(agent.UserID, item.ID)}, time.Now(), func(text string) {
 		current, err := s.store.GetAssistant(context.Background(), agent.ID)
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
@@ -170,6 +163,81 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 		}
 	})
 	return true
+}
+
+// channelItemKeyPrefix starts the key of a message channel's item:
+// "message-channel:<channel id>:<key>".
+const channelItemKeyPrefix = "message-channel:"
+
+// notifyChannelItem tells the assistant about an open item of a message
+// channel, in the channel's conversation: the item has no session of its
+// own. It reports whether a notice was queued; "" for a channel with no
+// conversation yet.
+func (s *Service) notifyChannelItem(ctx context.Context, agent store.PersonalAgent, item store.PendingItem) bool {
+	conversationID := s.channelConversation(ctx, agent, item)
+	if conversationID == "" {
+		return false
+	}
+	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
+	line := fmt.Sprintf(channelItemNoticeTexts[languageIndex(language)], textcut.Excerpt(strings.TrimSpace(item.Title), 240), item.ID)
+	s.notices.addLine(conversationID, language, noticeLine{key: item.ID, text: line, due: s.stillOpen(agent.UserID, item.ID)}, time.Now(), func(text string) {
+		current, err := s.store.GetAssistant(context.Background(), agent.ID)
+		if err != nil || current.State != store.PersonalAgentActive {
+			return
+		}
+		s.tell(context.Background(), conversationID, store.NoticeKindChannelItem, text)
+	})
+	return true
+}
+
+// stillOpen says whether a pending item is still open when its notice would
+// go out: a notice queued while it waited is dropped once it was answered or
+// closed.
+func (s *Service) stillOpen(userID, itemID string) func() bool {
+	return func() bool {
+		item, err := s.store.GetPendingItem(context.Background(), userID, itemID)
+		return err == nil && item.State == store.PendingOpen
+	}
+}
+
+// channelConversation is the conversation a channel's item is told in: the
+// channel's most recently active session of the assistant, not archived.
+func (s *Service) channelConversation(ctx context.Context, agent store.PersonalAgent, item store.PendingItem) string {
+	channelID, ok := channelOfItem(item)
+	if !ok || s.messageChannels == nil {
+		return ""
+	}
+	sessionIDs, err := s.messageChannels.MessageChannelSessions(ctx, agent.ID, channelID)
+	if err != nil {
+		log.Printf("personal agent %s: channel %s sessions: %v", agent.ID, channelID, err)
+		return ""
+	}
+	latest, latestAt := "", ""
+	for _, id := range sessionIDs {
+		session, err := s.store.GetAgentSessionSummary(ctx, id)
+		if err != nil || session.ArchivedAt != "" {
+			continue
+		}
+		if latest == "" || session.ActivityAt > latestAt {
+			latest, latestAt = session.ID, session.ActivityAt
+		}
+	}
+	return latest
+}
+
+// channelOfItem is the message channel an item's key names.
+func channelOfItem(item store.PendingItem) (string, bool) {
+	rest, ok := strings.CutPrefix(item.Key, channelItemKeyPrefix)
+	if !ok {
+		return "", false
+	}
+	channelID, _, found := strings.Cut(rest, ":")
+	return channelID, found && channelID != ""
+}
+
+var channelItemNoticeTexts = [2]string{
+	"消息通道有一条事项需要你处理：%s。事项 %s。",
+	"A message channel has an item for you: %s. Item %s.",
 }
 
 var pendingNoticeTexts = [2]string{

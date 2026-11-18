@@ -273,12 +273,6 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       { groupId: "grp_1" },
     ],
     [
-      ["issue", "list", "--status", "blocked,verifying"],
-      "list_issues",
-      { status: ["blocked", "verifying"] },
-    ],
-    [["issue", "get", "ISS-7"], "get_issue", { issueId: "ISS-7" }],
-    [
       ["profile", "list", "--runtime", "codex"],
       "list_profiles",
       { runtime: "codex" },
@@ -590,6 +584,58 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       { query: "tea", limit: 5 },
     ],
     [["assistant", "computers"], "list_computers", {}],
+    [
+      [
+        "assistant-settings",
+        "update",
+        "--patch",
+        '{"dailyDigest":true}',
+        "--expected-revision",
+        "4",
+      ],
+      "assistant_settings",
+      { op: "update", patch: { dailyDigest: true }, expectedRevision: 4 },
+    ],
+    [
+      ["assistant-settings", "notify-test", "--connector", "builtin:feishu"],
+      "assistant_settings",
+      { op: "notify_test", connectorInstanceId: "builtin:feishu" },
+    ],
+    [
+      ["assistant-channels", "update", "chn_1", "--patch", '{"enabled":false}'],
+      "assistant_channels",
+      { op: "update", channelId: "chn_1", patch: { enabled: false } },
+    ],
+    [["assistant-channels", "list"], "assistant_channels", { op: "list" }],
+    [
+      ["foundry-settings", "get", "--area", "devices"],
+      "foundry_settings",
+      { op: "get", area: "devices" },
+    ],
+    [
+      [
+        "foundry-settings",
+        "update",
+        "--area",
+        "worker_groups",
+        "--id",
+        "wg_1",
+        "--patch",
+        '{"label":"Fast"}',
+      ],
+      "foundry_settings",
+      {
+        op: "update",
+        area: "worker_groups",
+        id: "wg_1",
+        patch: { label: "Fast" },
+      },
+    ],
+    [
+      ["foundry-settings", "undo", "--action-id", "act_1"],
+      "foundry_settings",
+      { op: "undo", actionId: "act_1" },
+    ],
   ];
   for (const [args, tool, expected] of runs) {
     const before = calls.length;
@@ -748,4 +794,72 @@ test("inside a Foundry session the CLI works a lease with its command token", as
     op: "run",
     args: { command: "true" },
   });
+});
+
+test("session wait polls a session until it settles, then prints its answer", async (t) => {
+  let polls = 0;
+  const { calls, url } = await fakeTools(t, () => [
+    polls++ === 0
+      ? '{"id":"sess_9","status":"running"}'
+      : '{"id":"sess_9","status":"completed","lastAnswer":"2026-11-18"}',
+    false,
+  ]);
+  const env = {
+    FOUNDRY_SERVER_URL: url,
+    FOUNDRY_SESSION_TOKEN: "token-1",
+    FOUNDRY_WORKSPACE_ID: "",
+  };
+
+  const waited = await foundry(["session", "wait", "sess_9"], env);
+  assert.equal(waited.code, 0, waited.stderr);
+  assert.equal(
+    waited.stdout.trim(),
+    '{"id":"sess_9","status":"completed","lastAnswer":"2026-11-18"}',
+  );
+  assert.deepEqual(
+    calls.map((call) => [call.name, call.arguments]),
+    [
+      ["get_session", { sessionId: "sess_9" }],
+      ["get_session", { sessionId: "sess_9" }],
+    ],
+  );
+});
+
+test("session wait stops at --timeout-ms and says the session is still running", async (t) => {
+  const { calls, url } = await fakeTools(t, () => [
+    '{"id":"sess_9","status":"running"}',
+    false,
+  ]);
+  const env = {
+    FOUNDRY_SERVER_URL: url,
+    FOUNDRY_SESSION_TOKEN: "token-1",
+    FOUNDRY_WORKSPACE_ID: "",
+  };
+
+  const waited = await foundry(
+    ["session", "wait", "sess_9", "--timeout-ms", "1"],
+    env,
+  );
+  assert.equal(waited.code, 1);
+  assert.match(waited.stderr, /session is still running after 1 ms/);
+  assert.ok(calls.length >= 1);
+  for (const call of calls)
+    assert.deepEqual(call.arguments, { sessionId: "sess_9" });
+});
+
+test("a verb's --help prints its flags without calling the server", async (t) => {
+  const { calls, url } = await fakeTools(t, () => ["unused", false]);
+  const env = {
+    FOUNDRY_SERVER_URL: url,
+    FOUNDRY_SESSION_TOKEN: "token-1",
+    FOUNDRY_WORKSPACE_ID: "",
+  };
+
+  const help = await foundry(["session", "wait", "--help"], env);
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(
+    help.stdout,
+    /^foundry session wait <sessionId> \[--workspace <string> --timeout-ms <number>\]/,
+  );
+  assert.deepEqual(calls, []);
 });

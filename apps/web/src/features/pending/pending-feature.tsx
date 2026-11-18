@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type { PendingItem } from "../../api";
@@ -20,6 +20,8 @@ import { PendingItemCard } from "./pending-item-card";
 import {
   groupPendingItems,
   pendingByAssistant,
+  pendingFocusItemId,
+  pendingItemDomId,
   pendingMatchesAssistant,
   pendingPersonal,
   type PendingAssistantFilter,
@@ -54,6 +56,13 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
   const [assistantFilter, setAssistantFilter] =
     useState<PendingAssistantFilter>("all");
   const { list } = pending;
+  // A notice's link names its item: the page shows it and scrolls to it once.
+  const [focusItemId] = useState(() =>
+    pendingFocusItemId(window.location.search),
+  );
+  const focusItem = list?.items.find((item) => item.id === focusItemId);
+  const focusResolved = focusItem !== undefined && focusItem.state !== "open";
+  const focusScrolled = useRef(false);
   const filteredItems = useMemo(
     () =>
       list?.items.filter((item) =>
@@ -75,6 +84,16 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
         : [],
     [list, filteredItems, filter, t],
   );
+  useEffect(() => {
+    if (focusResolved) setFilter("resolved");
+  }, [focusResolved]);
+  useEffect(() => {
+    if (!focusItemId || focusScrolled.current) return;
+    const card = document.getElementById(pendingItemDomId(focusItemId));
+    if (!card) return;
+    focusScrolled.current = true;
+    card.scrollIntoView({ block: "center" });
+  }, [focusItemId, groups]);
   const assistantItems = useMemo(
     () => filteredItems.filter(pendingByAssistant),
     [filteredItems],
@@ -194,13 +213,14 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
               </header>
               <div className="grid min-w-0 rounded-xl bg-panel shadow-card">
                 {group.items.map((item) => (
-                  <PendingItemCard
-                    item={item}
-                    key={item.id}
-                    onOpenMessage={openPendingItem}
-                    pending={pending}
-                    showOrigin
-                  />
+                  <div id={pendingItemDomId(item.id)} key={item.id}>
+                    <PendingItemCard
+                      item={item}
+                      onOpenMessage={openPendingItem}
+                      pending={pending}
+                      showOrigin
+                    />
+                  </div>
                 ))}
               </div>
             </section>

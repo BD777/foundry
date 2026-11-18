@@ -69,7 +69,7 @@ func (s *Server) reconcileConnectorWritePending(ctx context.Context, userID stri
 			key := connectorWritePendingKey(proposal.ID)
 			current[key] = true
 			item := s.connectorWritePendingItem(ctx, proposal, agent)
-			if _, recorded, err := s.store.RecordPendingItem(ctx, item); err == nil {
+			if _, recorded, err := s.recordPendingItem(ctx, item); err == nil {
 				changed = changed || recorded
 			}
 		}
@@ -199,7 +199,7 @@ func (s *Server) handleDecidePendingItem(w http.ResponseWriter, r *http.Request)
 		writeResult(w, proposal, err)
 		return
 	}
-	if _, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomePersonAnswered); err != nil {
+	if _, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomePersonAnswered, store.PendingAnswer{}); err != nil {
 		writeError(w, http.StatusInternalServerError, "the write was answered, but its item could not be closed")
 		return
 	}

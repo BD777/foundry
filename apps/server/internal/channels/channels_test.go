@@ -266,12 +266,18 @@ type fixture struct {
 	sessions     map[string]channels.SessionState
 	ownWrites    map[string]bool
 	ownWritesErr error
+	noticeEchoes map[string]bool
 	acks         []ackCall
 	ackErr       error
 	working      map[string]bool
 	handOvers    map[string]bool
 	handOverErr  error
 	contexts     []contextCall
+
+	// noticeReplies are the messages the notice-reply port settles; noticeAsked
+	// are the messages it was asked about, in order.
+	noticeReplies map[string]bool
+	noticeAsked   []string
 }
 
 // contextCall is one context update steered into a session.
@@ -298,7 +304,7 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	f := &fixture{st: st, feed: &feed{reads: map[string]feedAnswer{}}, inbox: newInbox(), now: time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC),
-		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}, working: map[string]bool{}, handOvers: map[string]bool{}}
+		sessions: map[string]channels.SessionState{}, ownWrites: map[string]bool{}, noticeEchoes: map[string]bool{}, noticeReplies: map[string]bool{}, working: map[string]bool{}, handOvers: map[string]bool{}}
 	spec := openLarkEvents(t)
 	f.runner = channels.NewRunner(channels.Ports{
 		Store: st,
@@ -314,6 +320,13 @@ func newFixture(t *testing.T, limits store.MessageChannelLimits) *fixture {
 		},
 		OwnWrites: func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error) {
 			return f.ownWrites, f.ownWritesErr
+		},
+		NoticeEchoes: func(ctx context.Context, channel store.MessageChannelRecord) (map[string]bool, error) {
+			return f.noticeEchoes, nil
+		},
+		NoticeReply: func(ctx context.Context, channel store.MessageChannelRecord, envelope store.MessageEnvelope) bool {
+			f.noticeAsked = append(f.noticeAsked, envelope.MessageID)
+			return f.noticeReplies[envelope.MessageID]
 		},
 		Ack: func(ctx context.Context, channel store.MessageChannelRecord, add bool, ids []string) error {
 			f.acks = append(f.acks, ackCall{add: add, ids: append([]string(nil), ids...)})
@@ -1652,5 +1665,27 @@ func TestOtherParticipantsMessageWhileOpenIsContext(t *testing.T) {
 	}
 	if dropped == 0 {
 		t.Fatal("no message was dropped over the context cap")
+	}
+}
+
+// A notice Foundry sent comes back in the feed like the person's own words.
+// It is dropped before the assistant inbox, as an own write is, and the
+// person's message in the same batch is still delivered.
+func TestNoticeEchoIsDroppedBeforeTheInbox(t *testing.T) {
+	f := newFixture(t, store.MessageChannelLimits{PerHour: 20, PerDay: 100, Concurrency: 3})
+	f.noticeEchoes["m7"] = true
+	echo := larkChange("m7", "oc_self", "p2p", "/fd [合成] 通知", false, true)
+	person := larkChange("m8", "oc_self", "p2p", "/fd 本人说", false, false)
+	f.feed.answers = []feedAnswer{changes("c1", echo, person)}
+	f.poll(t)
+
+	queued := f.records(t, store.MessageDeliveryQueued)
+	if len(queued) != 1 || queued[0].Envelope.MessageID != "m8" {
+		t.Fatalf("only the person's message is delivered: %+v", queued)
+	}
+	dropped := f.records(t, store.MessageDeliveryDropped)
+	if len(dropped) != 1 || dropped[0].Envelope.MessageID != "m7" ||
+		dropped[0].Reason != channels.ReasonOwnWrite || dropped[0].Envelope.Text != "" {
+		t.Fatalf("the notice echo is dropped without its text: %+v", dropped)
 	}
 }

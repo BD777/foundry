@@ -45,6 +45,7 @@ export const pending = {
     project_upkeep: "Project upkeep",
     memory_upkeep: "Memory upkeep",
     notice: "A note from your assistant",
+    assistant_question: "Your assistant asks",
   },
   upkeep: {
     title_one: "{{project}}: {{count}} suggested change to confirm",
@@ -67,6 +68,9 @@ export const pending = {
     done: "Done",
     dismissed: "Dismissed",
   },
+  outcome: {
+    withdrawn: "Withdrawn",
+  },
   item: {
     origin: {
       assistant: "Assistant · {{name}}",
@@ -75,6 +79,11 @@ export const pending = {
       personal: "Source · {{name}}",
     },
     fromAssistant: "Your assistant:",
+    handedByAssistant: "handed this to you.",
+    assistantDecided: "Your assistant decided this",
+    assistantClosed: "Closed by the assistant",
+    assistantClosedReason: "Closed by the assistant: {{reason}}",
+    openAssistantAnswer: "Open the chat to see or reply",
     handed: {
       assistant_stopped:
         "it is stopped, so this came to you. Answer here, or resume it.",
@@ -93,7 +102,6 @@ export const pending = {
     showLess: "Show less",
     options: "Options",
     recommended: "Recommended",
-    useOption: "Reply with “{{option}}”",
     reply: "Reply",
     replyLabel: "Reply to “{{title}}”",
     replyHint:
@@ -120,7 +128,6 @@ export const pending = {
     dismiss: "Dismiss",
     notNeeded: "Not for me",
     gotIt: "Got it",
-    useRecommended: "Reply with “{{option}}” (recommended)",
     fixInChat: "Fix in chat",
     jumpToMessage: "Jump to message",
     showError: "Show the error",

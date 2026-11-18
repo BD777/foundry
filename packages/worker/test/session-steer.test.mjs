@@ -11,7 +11,10 @@ import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { agentQuestionReplyText } from "@bd777/foundry-protocol";
+import {
+  agentQuestionNoAnswerText,
+  agentQuestionReplyText,
+} from "@bd777/foundry-protocol";
 
 // The runtime's config home is a scratch folder, set before modules read it.
 const root = realpathSync(mkdtempSync(join(tmpdir(), "foundry-steer-")));
@@ -378,6 +381,143 @@ test("a Codex steer from the session that created it answers a question as the e
     finish();
     await running;
   }
+});
+
+test("an answer no open question takes enters the turn at once, even as a boundary steer", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const received = [];
+  // A Codex async question is no prompt the turn waits on: nothing takes its answer.
+  const answer = agentQuestionReplyText(
+    "call_async",
+    [{ title: "Which file?" }],
+    ["b.txt"],
+  );
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    answerQuestion: () => false,
+    steer: async (input) => {
+      received.push(input[0].text);
+    },
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async () => {} },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await steerActiveSessionOnce(id, "answer-steer", answer, [], "", {
+      delivery: "boundary",
+      boundaryLimitMs: 60_000,
+    });
+    assert.equal(
+      received.length,
+      1,
+      "the answer waits for a tool boundary the turn may never reach",
+    );
+    assert.equal(received[0].trim(), answer.trim());
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("a no-answer reply enters the turn at once, even as a boundary steer, so its reason is read", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const received = [];
+  const reply = agentQuestionNoAnswerText(
+    "call_async",
+    "Which file?",
+    "The assistant already resolved it",
+  );
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    answerQuestion: () => false,
+    steer: async (input) => {
+      received.push(input[0].text);
+    },
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async () => {} },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await steerActiveSessionOnce(id, "reason-steer", reply, [], "", {
+      delivery: "boundary",
+      boundaryLimitMs: 60_000,
+    });
+    assert.equal(
+      received.length,
+      1,
+      "the reason waits for a tool boundary the turn may never reach",
+    );
+    assert.equal(received[0].trim(), reply.trim());
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("a boundary steer the turn ends before it reaches is reported, not dropped", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const notices = [];
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    answerQuestion: () => false,
+    steer: async () => {},
+  };
+  const running = runCodexStreamedTurn(
+    {
+      emit: async (label, detail) => {
+        if (label === "Notice") notices.push(detail);
+      },
+    },
+    thread,
+    "initial",
+    id,
+  );
+  await steerActiveSessionOnce(id, "held-steer", "Also check tests", [], "", {
+    delivery: "boundary",
+    boundaryLimitMs: 60_000,
+  });
+  finish();
+  await running;
+  assert.ok(
+    notices.some((notice) => notice.includes("held-steer")),
+    `no report of the undelivered steer: ${JSON.stringify(notices)}`,
+  );
 });
 
 test("a Codex steer opening with a selected skill's name reaches the turn as Codex's skill input", async () => {
