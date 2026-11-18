@@ -157,8 +157,7 @@ func (s *Store) RecordPendingItem(ctx context.Context, item store.PendingItem) (
 	err := s.withTx(ctx, func(tx *Store) error {
 		nowTime := time.Now().UTC()
 		now := formatTime(nowTime)
-		existing, err := scanPendingItem(tx.conn().QueryRowContext(ctx, `SELECT `+pendingItemColumns+`
-			FROM pending_items WHERE item_key = ? ORDER BY state = ? DESC, created_at DESC LIMIT 1`, item.Key, store.PendingOpen))
+		existing, err := latestPendingItem(ctx, tx.conn(), item.Key)
 		if err == nil && existing.State != store.PendingOpen && existing.EventID == item.EventID {
 			// An event reported again after its item was resolved stays resolved.
 			result = existing
@@ -263,9 +262,7 @@ func (s *Store) MergePendingItems(ctx context.Context, target store.PendingItem,
 	var result store.PendingItem
 	changed := false
 	err := s.withTx(ctx, func(tx *Store) error {
-		existing, err := scanPendingItem(tx.conn().QueryRowContext(ctx, `SELECT `+pendingItemColumns+`
-			FROM pending_items WHERE item_key = ? AND state = ? ORDER BY created_at LIMIT 1`,
-			target.Key, store.PendingOpen))
+		existing, err := pendingItemAt(ctx, tx.conn(), "item_key = ? AND state = ?", []any{target.Key, store.PendingOpen}, false)
 		targetExists := err == nil
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("read merged pending item: %w", err)
@@ -729,4 +726,26 @@ func (s *Store) ListOpenAssistantPendingItems(ctx context.Context) ([]store.Pend
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// latestPendingItem is the newest open item of key, or else its newest item.
+func latestPendingItem(ctx context.Context, db dbExecutor, key string) (store.PendingItem, error) {
+	item, err := pendingItemAt(ctx, db, "item_key = ? AND state = ?", []any{key, store.PendingOpen}, true)
+	if errors.Is(err, sql.ErrNoRows) {
+		return pendingItemAt(ctx, db, "item_key = ?", []any{key}, true)
+	}
+	return item, err
+}
+
+// pendingItemAt is the item matching where whose created_at is the newest (or
+// the oldest), sql.ErrNoRows when none matches.
+func pendingItemAt(ctx context.Context, db dbExecutor, where string, args []any, newest bool) (store.PendingItem, error) {
+	rowID, found, err := timeEdgeRowID(ctx, db, "pending_items", "created_at", where, args, newest)
+	if err != nil {
+		return store.PendingItem{}, err
+	}
+	if !found {
+		return store.PendingItem{}, sql.ErrNoRows
+	}
+	return scanPendingItem(db.QueryRowContext(ctx, `SELECT `+pendingItemColumns+` FROM pending_items WHERE rowid = ?`, rowID))
 }

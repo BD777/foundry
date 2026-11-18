@@ -244,10 +244,18 @@ func (s *Store) FindFeishuChatRoute(ctx context.Context, clientID, chatID string
 	if chatID == "" || clientID == "" {
 		return store.FeishuBotRoute{}, store.ErrNotFound
 	}
+	rowID, found, err := timeEdgeRowID(ctx, s.reader(), "feishu_bot_routes", "updated_at",
+		"kind <> 'pairing' AND chat_id = ? AND app_id IN (SELECT id FROM external_provider_apps WHERE client_id = ?)",
+		[]any{chatID, clientID}, true)
+	if err != nil {
+		return store.FeishuBotRoute{}, err
+	}
+	if !found {
+		return store.FeishuBotRoute{}, store.ErrNotFound
+	}
 	return scanFeishuRoute(s.reader().QueryRowContext(ctx, `SELECT `+qualifiedFeishuRouteColumns+`
 		FROM feishu_bot_routes r JOIN external_provider_apps a ON a.id = r.app_id
-		WHERE r.kind <> 'pairing' AND r.chat_id = ? AND a.client_id = ?
-		ORDER BY r.updated_at DESC LIMIT 1`, chatID, clientID))
+		WHERE r.rowid = ?`, rowID))
 }
 
 func (s *Store) BindFeishuChat(ctx context.Context, pairing store.FeishuBotRoute, chat store.FeishuBotRoute) (store.FeishuBotRoute, error) {
@@ -406,10 +414,14 @@ func (s *Store) GetFeishuChatThread(ctx context.Context, rootMessageID string) (
 // FeishuThreadForIssue is the thread following the Issue, the newest if a
 // thread was started for it again.
 func (s *Store) FeishuThreadForIssue(ctx context.Context, issueID string) (store.FeishuChatThread, error) {
-	row := s.conn().QueryRowContext(ctx, `
-		SELECT `+feishuThreadColumns+`
-		FROM feishu_chat_threads WHERE issue_id = ? ORDER BY created_at DESC LIMIT 1`, issueID)
-	return scanFeishuThread(row)
+	rowID, found, err := timeEdgeRowID(ctx, s.conn(), "feishu_chat_threads", "created_at", "issue_id = ?", []any{issueID}, true)
+	if err != nil {
+		return store.FeishuChatThread{}, err
+	}
+	if !found {
+		return store.FeishuChatThread{}, store.ErrNotFound
+	}
+	return scanFeishuThread(s.conn().QueryRowContext(ctx, `SELECT `+feishuThreadColumns+` FROM feishu_chat_threads WHERE rowid = ?`, rowID))
 }
 
 const feishuThreadColumns = `root_message_id, workspace_id, chat_id, latest_session_id, card_message_id, issue_id, reported, created_at, updated_at`

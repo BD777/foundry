@@ -51,7 +51,7 @@ func TestRecordAgentSessionEventIgnoresAnEventSentAgain(t *testing.T) {
 	if after.LastActivityAt != before.LastActivityAt {
 		t.Fatalf("activity moved from %s to %s", before.LastActivityAt, after.LastActivityAt)
 	}
-	if len(after.Events) != 2 || after.Events[1].ID != event.ID || after.Events[1].At != first.Format(time.RFC3339Nano) {
+	if len(after.Events) != 2 || after.Events[1].ID != event.ID || !sameInstant(after.Events[1].At, first) {
 		t.Fatalf("events after the repeat = %+v", after.Events)
 	}
 

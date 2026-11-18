@@ -583,7 +583,7 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, actor string, task 
 	var out store.PersonalAgentTask
 	err := s.withTx(ctx, func(tx *Store) error {
 		if task.SessionID != "" {
-			old, e := scanTask(tx.reader().QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id=? AND session_id=? ORDER BY created_at DESC LIMIT 1`, task.AssistantID, task.SessionID))
+			old, e := latestTaskForSession(ctx, tx.reader(), task.AssistantID, task.SessionID)
 			if e == nil {
 				if old.WorkspaceID != task.WorkspaceID {
 					return store.ErrIdempotencyConflict
@@ -824,4 +824,16 @@ func (s *Store) PersonalAgentActiveSessions(ctx context.Context, agent store.Per
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// latestTaskForSession is the newest task of the assistant's session.
+func latestTaskForSession(ctx context.Context, db dbExecutor, assistantID, sessionID string) (store.PersonalAgentTask, error) {
+	rowID, found, err := timeEdgeRowID(ctx, db, "pa_tasks", "created_at", "assistant_id = ? AND session_id = ?", []any{assistantID, sessionID}, true)
+	if err != nil {
+		return store.PersonalAgentTask{}, err
+	}
+	if !found {
+		return store.PersonalAgentTask{}, store.ErrNotFound
+	}
+	return scanTask(db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE rowid = ?`, rowID))
 }

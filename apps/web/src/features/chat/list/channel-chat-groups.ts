@@ -25,6 +25,39 @@ function chatTime(chat: ChatListItem): string {
 }
 
 /**
+ * Orders two server times by instant. The server writes UTC with trimmed
+ * fractions in older rows, so text order can disagree within a second. The
+ * whole second compares by Date.parse, and the fraction compares as digits
+ * padded to nine places. Date.parse runs on whole seconds only: Safari
+ * rejects fractions longer than three digits. A missing or unreadable time
+ * sorts first.
+ */
+function compareTimes(left: string, right: string): number {
+  const a = timeKey(left);
+  const b = timeKey(right);
+  if (a.second !== b.second) return a.second < b.second ? -1 : 1;
+  if (a.fraction === b.fraction) return 0;
+  return a.fraction < b.fraction ? -1 : 1;
+}
+
+function timeKey(value: string): { second: number; fraction: string } {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z$/.exec(
+    value,
+  );
+  if (match) {
+    return {
+      second: Date.parse(`${match[1]}Z`),
+      fraction: (match[2] ?? "").padEnd(9, "0"),
+    };
+  }
+  const parsed = Date.parse(value);
+  return {
+    second: Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed,
+    fraction: "",
+  };
+}
+
+/**
  * A channel workspace's chats grouped by source conversation, groups and
  * their sessions newest first. Sessions without an origin (not a channel
  * turn) are left out.
@@ -52,7 +85,7 @@ export function channelChatGroups(
   }
   for (const group of groups.values()) {
     group.chats.sort((left, right) =>
-      chatTime(right).localeCompare(chatTime(left)),
+      compareTimes(chatTime(right), chatTime(left)),
     );
     const newest = group.chats[0]?.channelOrigin;
     if (newest) {
@@ -62,6 +95,6 @@ export function channelChatGroups(
     }
   }
   return [...groups.values()].sort((left, right) =>
-    (right.lastAt ?? "").localeCompare(left.lastAt ?? ""),
+    compareTimes(right.lastAt ?? "", left.lastAt ?? ""),
   );
 }

@@ -909,7 +909,14 @@ func (s *Store) getAgent(ctx context.Context, id string, workspaceID string, pro
 		return getJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE id = ?`, id)
 	}
 	if workspaceID != "" && provider != "" {
-		return getJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE workspace_id = ? AND provider = ? ORDER BY updated_at DESC LIMIT 1`, workspaceID, provider)
+		rowID, found, err := timeEdgeRowID(ctx, s.conn(), "agents", "updated_at", "workspace_id = ? AND provider = ?", []any{workspaceID, provider}, true)
+		if err != nil {
+			return store.AgentProjection{}, err
+		}
+		if !found {
+			return store.AgentProjection{}, store.ErrNotFound
+		}
+		return getJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE rowid = ?`, rowID)
 	}
 	return store.AgentProjection{}, store.ErrNotFound
 }
@@ -1196,8 +1203,14 @@ func encode(value any) (string, error) {
 	return string(payload), nil
 }
 
+// timeLayout is the stored form of every time: RFC3339 in UTC with all nine
+// fraction digits. RFC3339Nano trims trailing zeros, and stored times are
+// compared as text, so ".59147Z" would sort after ".591471Z" though it is
+// earlier. Fixed width makes text order time order.
+const timeLayout = store.EventTimeLayout
+
 func formatTime(value time.Time) string {
-	return value.UTC().Format(time.RFC3339Nano)
+	return value.UTC().Format(timeLayout)
 }
 
 func titleFromInput(input string) string {

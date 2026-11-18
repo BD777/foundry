@@ -44,23 +44,54 @@ func (s *Store) SessionNativeHistory(ctx context.Context, sessionID string) (sto
 	return history, err == nil, err
 }
 
+// AgentSessionOldestEventCursor is the cursor of the session's earliest
+// stored event, empty when it has none.
 func (s *Store) AgentSessionOldestEventCursor(ctx context.Context, sessionID string) (string, error) {
-	var rowID int64
-	var createdAt string
-	err := s.reader().QueryRowContext(ctx, `SELECT rowid, created_at FROM agent_session_events
-		WHERE session_id = ? ORDER BY created_at, rowid LIMIT 1`, sessionID).Scan(&rowID, &createdAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
+	createdAt, rowID, found, err := oldestSessionEvent(ctx, s.reader(), sessionID)
+	if err != nil || !found {
 		return "", err
 	}
 	return encodeEventsCursor(createdAt, rowID), nil
 }
 
-// nativeHistoryTimeLayout writes every fraction digit: event order is
-// created_at's text, and an imported event must sort before the oldest.
-const nativeHistoryTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+// oldestSessionEvent finds the session's earliest stored event by time, the
+// order the event window reads them in. created_at's text is not that order:
+// RFC3339Nano trims trailing zeros, so ".59147Z" sorts after ".591471Z" yet is
+// earlier. The text picks the earliest second, a fixed-width prefix that sorts
+// correctly; the rows of that second are then compared by parsed time.
+func oldestSessionEvent(ctx context.Context, db dbExecutor, sessionID string) (createdAt string, rowID int64, found bool, err error) {
+	var first string
+	err = db.QueryRowContext(ctx, `SELECT created_at FROM agent_session_events
+		WHERE session_id = ? ORDER BY created_at LIMIT 1`, sessionID).Scan(&first)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	if len(first) < len(secondPrefixLayout) {
+		return "", 0, false, fmt.Errorf("invalid stored event time %q", first)
+	}
+	second := first[:len(secondPrefixLayout)]
+	var oldestAt time.Time
+	err = scanRows(ctx, db, `SELECT rowid, created_at FROM agent_session_events
+		WHERE session_id = ? AND created_at >= ? AND created_at < ?`, func(rows *sql.Rows) error {
+		var id int64
+		var stored string
+		if err := rows.Scan(&id, &stored); err != nil {
+			return err
+		}
+		at, err := time.Parse(time.RFC3339Nano, stored)
+		if err != nil {
+			return fmt.Errorf("read event time %q: %w", stored, err)
+		}
+		if !found || at.Before(oldestAt) || (at.Equal(oldestAt) && id < rowID) {
+			oldestAt, rowID, createdAt, found = at, id, stored, true
+		}
+		return nil
+	}, sessionID, second, second+"~")
+	return createdAt, rowID, found, err
+}
 
 func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, history store.NativeHistory, page []store.TranscriptMessage, next int64) error {
 	return s.withTx(ctx, func(tx *Store) error {
@@ -75,9 +106,8 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 		if err != nil {
 			return err
 		}
-		var oldest string
-		if err := tx.conn().QueryRowContext(ctx, `SELECT COALESCE(MIN(created_at), '') FROM agent_session_events
-			WHERE session_id = ?`, sessionID).Scan(&oldest); err != nil {
+		oldest, _, _, err := oldestSessionEvent(ctx, tx.conn(), sessionID)
+		if err != nil {
 			return err
 		}
 		// Codex logs a step twice on adjacent lines; a pair across a page's
@@ -118,7 +148,7 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 				ID: "evt_native_" + sessionID + "_h" + message.ID, SessionID: sessionID, At: at,
 				Label: store.EventLabelNativeTranscript, Level: "info", Message: &message,
 			}
-			stored := createdAt.Format(nativeHistoryTimeLayout)
+			stored := createdAt.Format(timeLayout)
 			payload, err := encodeSessionEvent(event, stored)
 			if err != nil {
 				return err

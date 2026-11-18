@@ -146,11 +146,15 @@ func (s *Store) UnresolvedPersonalAgentInboxResults(ctx context.Context, limit i
 }
 
 func (s *Store) PersonalAgentInboxSession(ctx context.Context, assistantID, channel string) (string, error) {
-	var id string
-	err := s.reader().QueryRowContext(ctx, `SELECT session_id FROM pa_inbox WHERE assistant_id=? AND channel=? AND session_id<>'' ORDER BY created_at DESC,rowid DESC LIMIT 1`, assistantID, channel).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	rowID, found, err := timeEdgeRowID(ctx, s.reader(), "pa_inbox", "created_at", "assistant_id=? AND channel=? AND session_id<>''", []any{assistantID, channel}, true)
+	if err != nil {
+		return "", err
+	}
+	if !found {
 		return "", store.ErrNotFound
 	}
+	var id string
+	err = s.reader().QueryRowContext(ctx, `SELECT session_id FROM pa_inbox WHERE rowid = ?`, rowID).Scan(&id)
 	return id, err
 }
 
