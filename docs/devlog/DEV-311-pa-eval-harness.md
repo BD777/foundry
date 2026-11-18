@@ -2,7 +2,7 @@
 
 [事项索引](README.md) · [个人助理评测](../personal-agent.md#13-评测) · 证据报告 `.foundry/reports/pa1-baseline-2026-11-19.md`（§9–§12）
 
-状态：**脚本已提交 PR，未合并**。`--sandbox-check` 在本机通过，在 sg-chaos 上失败（见「检查」）；合并与否等待编排者决定。无部署。
+状态：**已通过 CI，待合并**（PR #283，head `c6f0bd86`，2026-11-18 23:19Z 全部检查通过）。`--sandbox-check` 在本机与 sg-chaos（默认 TMPDIR 与 `TMPDIR=/tmp`）均 3/3 通过。无部署。
 
 ## 问题
 
@@ -20,19 +20,21 @@
 
 ## 检查
 
-| 检查                                                 | 结果                                                             |
-| ---------------------------------------------------- | ---------------------------------------------------------------- |
-| `node --check`（四个 `.mjs`）                        | 通过                                                             |
-| `node --test scripts/pa-eval-score.test.mjs`         | 39 项 PASS，0 FAIL                                               |
-| `bash -n scripts/pa-eval-stack.sh`                   | 通过                                                             |
-| `prettier --check` 四个 `.mjs`                       | 通过（先用 `prettier --write` 格式化，格式化后 39 项检查仍通过） |
-| `node scripts/pa-eval-run.mjs --sandbox-check`，本机 | 3/3 PASS                                                         |
-| 同上，sg-chaos，`TMPDIR` 为默认值                    | **FAIL**：写入运行目录失败                                       |
-| 同上，sg-chaos，`TMPDIR=/tmp`                        | 3/3 PASS                                                         |
+| 检查                                                    | 结果                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------- |
+| `node --check`（四个 `.mjs`）                           | 通过                                                             |
+| `node --test scripts/pa-eval-score.test.mjs`            | 39 项 PASS，0 FAIL                                               |
+| `bash -n scripts/pa-eval-stack.sh`                      | 通过                                                             |
+| `prettier --check` 四个 `.mjs`                          | 通过（先用 `prettier --write` 格式化，格式化后 39 项检查仍通过） |
+| `node scripts/pa-eval-run.mjs --sandbox-check`，本机    | 3/3 PASS                                                         |
+| 同上，sg-chaos，`TMPDIR` 为默认值（修复前，`4e4fbaed`） | **FAIL**：写入运行目录失败                                       |
+| 同上，sg-chaos，`TMPDIR=/tmp`（修复前）                 | 3/3 PASS                                                         |
+| 同上，sg-chaos，`TMPDIR` 为默认值，修复后 `c6f0bd86`    | 3/3 PASS                                                         |
+| 同上，sg-chaos，`TMPDIR=/tmp`，修复后 `c6f0bd86`        | 3/3 PASS                                                         |
 
-**sg-chaos 失败的根因**：沙箱的运行目录取自 `TMPDIR`（`mkdtemp(resolve(TMPDIR || tmpdir(), ...))`）。sg-chaos 上 `TMPDIR` 是 `$HOME/.foundry/compute/.tmp/lease_*`，位于被沙箱隐藏的家目录之下，所以探测目录在沙箱内不存在。本机 `TMPDIR` 在 `/tmp`，因此通过。这个问题在 sg-chaos 上会影响任何运行，不只是检查本身。修复方向（未实施，待编排者决定）：运行目录固定在 `/tmp` 下，或沙箱把运行目录绑定到它的真实路径。修改会改变 §9 的运行环境，需要重跑。
+**sg-chaos 失败的根因**：沙箱的运行目录取自 `TMPDIR`（`mkdtemp(resolve(TMPDIR || tmpdir(), ...))`）。sg-chaos 上 `TMPDIR` 是 `$HOME/.foundry/compute/.tmp/lease_*`，位于 `--tmpfs ~/.foundry` 之下。可写绑定原先在 tmpfs 之前加入，被后挂载的 tmpfs 遮住，因此探测目录在沙箱内不存在。修复：可写绑定移到最后，仍绑定在真实路径上；登录目录的位置不变，以免覆盖只读叠加。未强制使用 `/tmp`。
 
-报告的评测运行把运行目录放在 `/tmp/fdy-*` 下（§10 列出的目录），与 sg-chaos 的失败不是同一条路径；报告中的结果数字不因本次失败而改变，但修复后仍需确认运行目录的位置。
+报告的评测运行把运行目录放在 `/tmp/fdy-*` 下（§10 列出的目录），与 sg-chaos 的失败不是同一条路径；报告中的结果数字不因本次修复而改变（修复只改变运行目录的挂载顺序，不改变判分与夹具）。
 
 ## 运行结果（非生产，见限制）
 
@@ -41,7 +43,7 @@
 ## 验收步骤
 
 1. `node --test scripts/pa-eval-score.test.mjs`，预期 39 项 PASS。
-2. 在干净的 Linux 主机上 `node scripts/pa-eval-run.mjs --sandbox-check`，预期三项 PASS；若 `TMPDIR` 位于家目录下，预期会失败（见上）。
+2. 在干净的 Linux 主机上分别以默认 `TMPDIR` 与 `TMPDIR=/tmp` 运行 `node scripts/pa-eval-run.mjs --sandbox-check`，预期每次三项 PASS，且 `/var/tmp`、`$HOME`、`/etc` 的写入失败。
 
 ## 限制
 
