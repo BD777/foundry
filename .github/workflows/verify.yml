@@ -75,6 +75,13 @@ jobs:
       - name: Test the protocol and Worker packages and audit the contracts
         run: pnpm verify:packages
 
+      # C19 in CI: the real Server and Worker daemon, with the Claude model
+      # replaced by a stand-in CLI (see the script's header).
+      - name: Recover a Worker killed mid-input
+        run: |
+          pnpm --filter '@bd777/foundry-worker...' build
+          node scripts/ci-worker-restart.mjs --server-binary "$RUNNER_TEMP/foundry-evidence-server"
+
   go:
     runs-on: ubuntu-latest
     timeout-minutes: 20

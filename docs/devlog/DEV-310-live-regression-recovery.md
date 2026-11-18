@@ -56,7 +56,7 @@ isolated stacks run profile prof_2c4c55cc-e65e-4c76-bbed-4495af2b7617; cases: wo
 
 ## CI 决定
 
-**不加入 CI。** 理由：三个用例需要 dev 库中封存的档案凭据与 dev 密钥（经路径引用），以及真实模型调用；CI 没有这两者。替代方案：在 sg-chaos 上定时运行（或由人在需要时运行），其输出记入本文件。
+**2026-11-19 更新：C19 的假模型版本已加入 CI（见下），真实模型的三个用例仍不加入 CI。** 原理由：三个用例需要 dev 库中封存的档案凭据与 dev 密钥（经路径引用），以及真实模型调用；CI 没有这两者。替代方案：在 sg-chaos 上定时运行（或由人在需要时运行），其输出记入本文件。
 
 ## 限制
 
@@ -64,3 +64,32 @@ isolated stacks run profile prof_2c4c55cc-e65e-4c76-bbed-4495af2b7617; cases: wo
 - 每个用例各自的栈，一次运行中三个用例串行，未覆盖并发。
 - 未在 CanWendeMac-mini 运行（那里的 Claude 也未登录）。
 - 进程控制只在 Linux 上运行过。
+
+## 拓扑断言（2026-11-19）
+
+C19 原先假设输入必然以"结果丢失"失败，这只对执行宿主不存在或已死的情形成立。执行宿主设计上独立于 Worker（DEV-286b 收养），在 macOS 上它是 launchd 服务，`kill -9` Worker 之后宿主与其中的 Claude 进程仍在，重启后的 Worker 收养该运行，输入以回答 DONE 完成。两种结果都是正确行为，因此 C19 改为按拓扑断言：
+
+- 宿主存活（`<stack state>/execution-hosts/<key>/identity.json` 记录的 pid 仍在）：输入在重启后以 DONE 完成、不标丢失。
+- 宿主不存在或已死：输入在 60 秒内以"结果丢失"失败。
+- 两种情形下，下一条消息都续上原生上下文（PEAR-4）。脚本打印走的是哪一支，两支都不成立则失败。
+
+实现：`scripts/lib/execution-host-topology.mjs`（读取本栈宿主、判断存活、拆除时只停本栈的宿主；macOS 上按 pid 找 launchd 标签后 bootout）；`scripts/ci-worker-restart.mjs`（新，假模型，CI）；`scripts/live-recovery-regression.mjs` 的 C19 同样改为拓扑断言，并在拆除时停止本栈的宿主。`scripts/fixtures/fake-claude-code.cjs` 写入 CLAUDE_CONFIG_DIR 下的 JSONL 转录，恢复时由 Worker 检查其存在。
+
+### 运行记录
+
+- sg-chaos（Linux，fake 运行时，`scripts/ci-worker-restart.mjs`，构建产物：Server dev023-candidate、Worker 0.5.7-dev.369）：走"宿主不存在"分支（Worker 未启动宿主，因为环境中没有 XDG_RUNTIME_DIR），输入在 kill 后 5 s 以"结果丢失"失败，随后续上 PEAR-4，退出码 0，拆除后无残留进程。
+- CanWendeMac-mini（macOS，fake 运行时，从源码构建 Server 与 Worker，基线 159b8b35）：走"宿主存活"分支，宿主 pid 38290 在 kill 后存活，输入在 kill 后 83 s 以 DONE 完成，随后续上 PEAR-4，退出码 0，拆除后无残留宿主。
+- sg-chaos（Linux，真实模型：DEV-310 的 TokenHub 档案，`scripts/live-recovery-regression.mjs --cases worker-restart`，预编译 Server 与 Worker，内存守卫）：走"宿主不存在"分支，输入在 kill 后 9 s 以"结果丢失"失败，随后续上 PEAR-4，退出码 0，用时 47 s，运行后无残留进程。
+- 在此之前的两次 mini 运行：第一次（旧断言）的输入以 DONE 完成，原因即宿主存活；第二次（新断言，宿主路径写错为 `execution-host`）误判为"无宿主"，宿主本身仍在运行。两次都已清理（launchd 任务卸载，进程结束），用户的宿主与 Worker 未动。
+
+### CI 增量
+
+- 新增步骤：`pnpm --filter '@bd777/foundry-worker...' build` 加上 `ci-worker-restart.mjs`。
+- 实测：Worker 构建在 CanWendeMac-mini 上 3 s（依赖已安装）；sg-chaos 上的用例约 26 s（墙钟，含启动 Server 与 Worker）。
+- 估计：GitHub Ubuntu 上增加约 1 分钟（构建冷启动与用例合计）。这是估计，尚未在 GitHub 上运行。
+
+### 限制
+
+- 真实模型的 C19 已在 sg-chaos 上运行（"宿主不存在"分支，见上）。在 macOS 上用真实模型走"宿主存活"分支尚未验证。
+- C10、C20 的拆除现在也会停止本栈的宿主；它们在 macOS 上的行为未重新验证。
+- CI 只覆盖 Linux 的"宿主不存在"分支；"宿主存活"分支只在 macOS 上运行过。
