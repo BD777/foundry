@@ -418,7 +418,7 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 
 - **来源**：本人在现有各 Workspace 里真实发起的会话的第一条消息（dev 数据库，`scripts/pa-eval-build.mjs` 导出，人名、邮箱、密钥替换），金标准 = 它实际所在的 Workspace；加上手写的“答复即可 / 应新建 / 应先问”样例；上线后追加 `pa_routing_decisions` 中被本人纠正的条目。每条：`request`、当时的 L0 索引快照、`gold = {class, target: <ws>|new|answer|ask}`。
 - **指标**：明确样例 top-1 ≥ 90%；“确定 / 较确定”直接执行中的错投 ≤ 3%；歧义样例中提问的比例 ≥ 80%；“应新建”的精确率与召回率各 ≥ 85%；默认说话方式下回复里的禁用词 = 0（词表正则）；每条请求的平均提问数 ≤ 0.2。
-- **跑法**：`scripts/pa-eval-run.mjs` 在 scratch stack（`FOUNDRY_INTEGRATIONS=off`）上建好夹具 Workspace，用真实助理会话（原生 CLI）逐条回放，抓取工具调用判分；需要模型判断的项（是否是人话）由一个只读的 Foundry 判定会话完成，不直接调用模型接口。
+- **跑法**：`scripts/pa-eval-run.mjs` 在 scratch stack（`FOUNDRY_INTEGRATIONS=off`）上运行，每次都用新库（`scripts/pa-eval-seed.mjs` 写入一个合成用户和夹具 Workspace，不复用 dev 数据库，也不重置任何真实用户的登录），使用已构建好的二进制；用真实助理会话（原生 CLI）逐条回放，抓取工具调用判分；评测进程在只读绑定宿主的沙箱中运行，只有本次运行目录可写。需要模型判断的项（是否是人话）由一个只读的 Foundry 判定会话完成，不直接调用模型接口。
 
 **验收场景**（`cases/personal-agent/*.case.json`，真实浏览器与真实单聊）：
 
