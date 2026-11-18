@@ -209,6 +209,20 @@ func BuildFailedCard(title, markdownContent, errorMsg string) string {
 }
 
 func BuildPairingSuccessCard(workspaceName string) string {
+	return pairingSuccessCard(fmt.Sprintf("**本飞书群已成功绑定至工作区**：`%s`\n\n- 💡 **发起新任务**：在群内 `@机器人 <你的需求或问题>`，机器人将在该话题（Thread）中启动对应的 Agent 会话；\n- 💬 **多轮连续对话**：在已创建的话题（Thread）中直接回复即可继续追问，**无需再次 @ 机器人**。", workspaceName))
+}
+
+// BuildDirectPairingSuccessCard is the pairing card of a direct chat. When the
+// person's assistant takes the chat, its messages go to the assistant, which
+// answers in the chat; otherwise they start sessions in the workspace.
+func BuildDirectPairingSuccessCard(workspaceName string, toAssistant bool) string {
+	if toAssistant {
+		return pairingSuccessCard("**本单聊已关联至你的助理**\n\n- 💬 在此单聊发送的消息都由你的助理接收，助理会直接在这里回答。")
+	}
+	return pairingSuccessCard(fmt.Sprintf("**本单聊已关联至工作区**：`%s`\n\n- 💬 在此单聊发送的消息会发起或继续该工作区的 Agent 会话。", workspaceName))
+}
+
+func pairingSuccessCard(content string) string {
 	card := FeishuCard{
 		Schema: "2.0",
 		Config: CardConfig{WideScreenMode: true, UpdateMulti: true},
@@ -218,10 +232,7 @@ func BuildPairingSuccessCard(workspaceName string) string {
 		},
 		Body: CardBody{
 			Elements: []CardElement{
-				MarkdownElement{
-					Tag:     "markdown",
-					Content: fmt.Sprintf("**本飞书群已成功绑定至工作区**：`%s`\n\n- 💡 **发起新任务**：在群内 `@机器人 <你的需求或问题>`，机器人将在该话题（Thread）中启动对应的 Agent 会话；\n- 💬 **多轮连续对话**：在已创建的话题（Thread）中直接回复即可继续追问，**无需再次 @ 机器人**。", workspaceName),
-				},
+				MarkdownElement{Tag: "markdown", Content: content},
 			},
 		},
 	}

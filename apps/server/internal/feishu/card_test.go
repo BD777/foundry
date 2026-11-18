@@ -81,3 +81,20 @@ func TestNormalizeFeishuMarkdown(t *testing.T) {
 		t.Errorf("expected empty line and space for heading, got:\n%s", got)
 	}
 }
+
+// Each pairing card says what its chat is linked to: a group's copy names the
+// group and its @ mention, a direct chat's copy says where its messages go.
+func TestPairingSuccessCardCopyMatchesTheChat(t *testing.T) {
+	group := BuildPairingSuccessCard("Foundry-Main")
+	if !strings.Contains(group, "本飞书群已成功绑定至工作区") || !strings.Contains(group, "@机器人") {
+		t.Errorf("group card = %s, want the group copy", group)
+	}
+	toAssistant := BuildDirectPairingSuccessCard("Foundry-Main", true)
+	if !strings.Contains(toAssistant, "本单聊已关联至你的助理") || !strings.Contains(toAssistant, "助理会直接在这里回答") || strings.Contains(toAssistant, "群") {
+		t.Errorf("direct card to the assistant = %s, want the assistant copy without group wording", toAssistant)
+	}
+	toWorkspace := BuildDirectPairingSuccessCard("Foundry-Main", false)
+	if !strings.Contains(toWorkspace, "本单聊已关联至工作区**：`Foundry-Main`") || strings.Contains(toWorkspace, "群") {
+		t.Errorf("direct card to a workspace = %s, want the workspace copy without group wording", toWorkspace)
+	}
+}

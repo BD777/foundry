@@ -208,6 +208,7 @@ func (m *WSManager) PersonalAgentProposalChanged(proposal store.PersonalAgentPro
 // pairedDirectChat is one of the person's direct chats with the Foundry bot,
 // by the client id of its app.
 type pairedDirectChat struct {
+	appID    string
 	clientID string
 	chatID   string
 }
@@ -237,9 +238,23 @@ func (m *WSManager) pairedDirectChats(ctx context.Context, userID, assistantID s
 		if assistant == nil || assistant.route.AssistantID != assistantID {
 			continue
 		}
-		chats = append(chats, pairedDirectChat{clientID: providerApp.ClientID, chatID: route.ChatID})
+		chats = append(chats, pairedDirectChat{appID: route.AppID, clientID: providerApp.ClientID, chatID: route.ChatID})
 	}
 	return chats
+}
+
+// DirectChatAppIDs are the ids of the Feishu apps the person's direct chats with
+// the bot that their assistant takes run on, each app once.
+func (m *WSManager) DirectChatAppIDs(ctx context.Context, userID, assistantID string) []string {
+	var appIDs []string
+	seen := map[string]bool{}
+	for _, chat := range m.pairedDirectChats(ctx, userID, assistantID) {
+		if !seen[chat.appID] {
+			seen[chat.appID] = true
+			appIDs = append(appIDs, chat.appID)
+		}
+	}
+	return appIDs
 }
 
 // assistantDirectChat is a running app and direct chat of the person's that

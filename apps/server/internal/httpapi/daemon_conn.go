@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
 )
@@ -97,6 +98,8 @@ type daemonConnection struct {
 	// sessionWorkspaces caches where streamed session events belong.
 	sessionWorkspaces   map[string]string
 	sessionWorkspacesMu sync.Mutex
+	orphanAsks          map[string]assistant.LostTurn
+	orphanAsksMu        sync.Mutex
 	done                chan struct{}
 	finished            chan struct{}
 	hub                 *DaemonHub

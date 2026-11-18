@@ -25,6 +25,9 @@ type DaemonHub struct {
 	// assistant (assistant.Service.RunFor); ok is false for any other
 	// session.
 	assistantRun func(ctx context.Context, session store.AgentSession) (run assistant.Run, ok bool, err error)
+	// assistantTurnLost tells an assistant conversation that its turn was
+	// interrupted when its computer went away (assistant.Service.TurnLost).
+	assistantTurnLost func(ctx context.Context, session store.AgentSession, lost assistant.LostTurn)
 	// responsibleFor is who answers a session's questions and items
 	// (assistant.Service.ResponsibleFor).
 	responsibleFor func(ctx context.Context, session store.AgentSession) assistant.Responsibility

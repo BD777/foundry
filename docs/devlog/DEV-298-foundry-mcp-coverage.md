@@ -98,6 +98,27 @@ DEV-297（`personal_agent_notify.go` 的实例过滤）与这三个函数在同�
 - 权限包未接入（见类别表）。
 - 提议接受时不检查修订号：提议之后的其他设置改动不会阻止接受。
 
+## DEV-298b 助理可列出可用的通知去处（train 75，2026-11-18）
+
+状态：已部署 dev（train 75，2026-11-18）；待本人验收；已合入 main（PR #278）。
+
+### 问题
+
+`notify_find_chat` 与 `notify_test` 都需要 `connectorInstanceId`，S1 没有让助理列出可选扩展实例的操作；选择只能由人在设置页完成。
+
+### 改动
+
+- `apps/server/internal/httpapi/mcp_assistant_settings.go`：新增 `notify_instances`（`assistantNotifyInstances`）。列出本人的扩展实例，每项 `connectorInstanceId`、`label`、`reason`（能收通知时为空），不返回 `kind`；非扩展应用被排除。
+
+### 测试
+
+- `mcp_assistant_settings_test.go`：列表含 `reason`，非扩展应用被排除。
+
+### 限制
+
+- 与 S1 相同：`notify_find_chat` 与 `notify_test` 的成功路径没有端到端测试。
+- 未在 dev 上由助理实际调用 `notify_instances` 验收。
+
 ## S3 与人专属边界（DEV-298c）
 
 状态：实现完成，远端定向检查通过；已部署 dev（2026-11-18）；待本人验收；已合入 main（PR #278）；补丁 `/tmp/DEV-298c.patch`。依据：报告 §4（边界）、§5（设计）、§6 S3。
@@ -443,7 +464,7 @@ DEV-297（`personal_agent_notify.go` 的实例过滤）与这三个函数在同�
 
 - 服务端开关与 web 常量需要人一起设置；只改服务端时，web 仍隐藏 Issues，但 agent 可写。
 - Foundry 技能文档仍描述 `issue` 命令；关闭时 agent 会收到拒绝信息。技能文本未改（跨两个副本，需同步的 worker 测试）。
-- 未部署；dev 环境需要决定是否设置 `FOUNDRY_ISSUES_ENABLED`（默认关闭，无需设置即符合本次目标）。
+- 已部署 dev（train 85，2026-11-18）。原先待决定的 `FOUNDRY_ISSUES_ENABLED` 开关已由 DEV-298h（train 87）取代：Issue 工具写死隐藏。
 
 ### 验收（部署 dev 后）
 
@@ -571,3 +592,77 @@ DEV-297（`personal_agent_notify.go` 的实例过滤）与这三个函数在同�
 - DEV-298f（sess_1794999903993907336）：只用 `op schema`（约 3 KB），agent 写出的草案首次校验即通过。
 - DEV-298g（train 85 之后）：新会话的 ToolSearch 找不到 issues 工具。
 - 待本人验收：DEV-298a、298c、298e、298h、305、305b（见各自小节状态）。
+
+## DEV-305c 助理主页的 pair_code 自动绑定机器人（2026-11-18）
+
+状态：已部署 dev（train 92，2026-11-18）；Agent 代验收（2026-11-18，范围见验收记录）；已合入 main（PR #…）。
+
+### 问题
+
+`foundry_settings {op: pair_code, area: feishu}` 对助理主页 workspace（默认助理的 home，例如 ws_240d283d）返回「pick the Feishu app the bot runs on first」。`SetFeishuPairingCode` 只更新 workspace 已有的 `kind='pairing'` 路由行；助理主页没有 bot，所以没有这一行，无法发配对码。助理的单聊因此无法经 `/pair` 建立。
+
+### 调查
+
+- 单聊路由到助理与 workspace 无关：`chatRoute` → `assistantFor` → `routeAssistant` → `personalAgentDesk.Route`（`internal/httpapi/personal_agent_feishu.go:40`）按 `BoundUserID` + app 找默认助理；助理的 `TakesDirectChats` 为真（`feishuDirectChat` 且 `feishuAppId` 为空或等于该 app，`internal/personalagent/assistant/instructions.go:369`）时，单聊路由的 `WorkspaceID` 改为助理 home，原 workspace 记为 `previousWorkspaceID`（`internal/feishu/ws_manager.go` `routeAssistant`）。所以单聊配对在任何 workspace 上都会送达助理；决定性的只有绑定人、app，以及助理是否接单聊。
+- 群聊不走助理：`/pair` 处理器对 personal_agent workspace 的群配对给出「助理只在单聊里回答」（`ws_manager.go` `handlePairCommand`）。
+- 绑定 bot 的唯一入口是 `SetWorkspaceFeishuBotApp`（`internal/sqlitestore/feishu.go:181`），由 `POST /api/workspaces/{id}/feishu`（`handleSaveWorkspaceFeishuBot`，`internal/httpapi/feishu.go`）调用；开启助理的飞书单聊不会自动建立 pairing 路由。
+- `WSManager.Sync` 只为有 pairing 路由的 app 建立连接（`routedApps`），绑定后必须 Sync，否则 bot 收不到 `/pair`。
+
+### 改动
+
+- `internal/httpapi/feishu.go`：`generateFeishuPairingCode` 在 workspace 没有 bot 时调用新增的 `bindAssistantHomeBot`。该函数只对默认助理的 home 生效：助理未开启飞书单聊则拒绝（409，说明原因）；否则 `assistantDirectChatApp` 选 app：`feishuAppId` 指定的（必须在人的飞书 app 列表中），否则人唯一的飞书 app；多于一个且未指定则拒绝（409，提示设置 `feishuAppId`）；没有则拒绝。选定后用 `SetWorkspaceFeishuBotApp`（与 workspace bot 设置同一路径）建 pairing 路由并 `Sync`，再发码。非助理 home 的 workspace 仍返回原来的「pick the Feishu app」。HTTP 路由 `POST /api/workspaces/{id}/feishu/pair-code` 与 foundry_settings 共用此逻辑。
+- `internal/httpapi/feishu_pairing_home_test.go`（新增）：单 app 发码；多 app 未指定被拒且不建 bot；`feishuAppId` 指定的 app 被使用；助理不接单聊被拒；非 home 的 workspace 不被自动绑定。
+- `internal/feishu/pair_assistant_home_test.go`（新增）：单聊配对在非 home workspace 时路由到助理（previous 为原 workspace）；助理 home 的 `/pair` 单聊绑定路由 ws_pa，并路由到助理（previous 为空）。
+
+### 测试与检查
+
+- `go test ./internal/httpapi -run 'PairCode'`：5 个新测试通过；`-run 'PairCode|FoundrySettings|NoticeBot'` 通过。
+- `go test ./internal/feishu/ -run 'Pair|Route|Assistant'` 通过。
+- `go test ./internal/httpapi -run 'Pair|Feishu|FoundrySettings|PersonalAgent' -count=1`：通过（本地 worktree，162s）。
+- `go vet ./internal/feishu/ ./internal/httpapi/`，`gofmt -l` 无输出。
+
+### 限制
+
+- 已部署 dev（train 92，2026-11-18）。开发时的基线是 HEAD `e03dfd61` 加共享树差异，现已过时。
+- 人有两个飞书 app 且助理 `feishuAppId` 为空时，仍会拒绝发码：需要把助理的 `feishuAppId` 设为 bot 所在的 app（按产品规则由人或其 agent 设置，不由系统猜测）。
+- 未测真实飞书：`/pair` 的 WebSocket 投递需部署后在 dev 上用真实私聊验证。
+
+### 验收（部署 dev 后）
+
+1. 确认默认助理 `feishuDirectChat` 为开，`feishuAppId` 指向 bot 所在的 app。
+2. 调用 `foundry_settings {op: pair_code, area: feishu, workspaceId: <助理 home>}`：应返回 `status: issued` 与 `FND-` 码；若返回拒绝，原因应指向 `feishuAppId` 或飞书 app 数量。
+3. 人的飞书账号在和机器人的单聊中发送 `/pair <码>`：应回复配对成功卡片；之后 `GET /api/workspaces/{home}/feishu` 的 chats 中出现 `p2p` 路由。
+4. 在该单聊发一条普通消息：应进入助理（助理会话出现），不进入群所在的 workspace。
+
+## DEV-305d 助理的已配对单聊决定 pair_code 用哪个飞书 app（2026-11-18）
+
+状态：已部署 dev（train 93，2026-11-18）；Agent 代验收（2026-11-18，仅发码与配对路由范围，见验收记录）；已合入 main（PR #…）。
+
+### 问题
+
+助理主页的 `pair_code` 在人有两个飞书 app 且助理未设 `feishuAppId` 时一律拒绝（DEV-305c）。但助理已经有一条配对好的单聊（p2p 路由，经 ws_8d046eba 建立，路由到默认助理），它所在的 app 并不含糊。拒绝是错的：单聊已经说明了 app。
+
+### 改动
+
+- `internal/feishu/personal_agent_cards.go`：`pairedDirectChat` 带上路由的 app id；新增导出的 `DirectChatAppIDs`，列出助理接单聊的人的配对单聊所在的 app（每个 app 一次），复用既有的 `pairedDirectChats` 查询。
+- `internal/httpapi/feishu.go`：`assistantDirectChatApp` 在 `feishuAppId` 之后、按 app 数量判断之前：配对单聊只在一个 app 上，就用它；在多个 app 上，拒绝（409，提示设置 `feishuAppId`）；没有配对单聊时，沿用原有规则。
+
+### 测试
+
+- `internal/httpapi/feishu_pairing_home_test.go`：`TestPairCodeUsesTheAppOfTheAssistantsPairedDirectChat`（两个 app、未指定 `feishuAppId`、一条配对单聊 → 码发在该单聊的 app 上）；`TestPairCodeRefusesWhenTheAssistantsDirectChatsRunOnTwoApps`（单聊分布在两个 app 上 → 拒绝，不建 bot）。原有「多 app 且无路由 → 拒绝」测试保留。
+
+### 检查
+
+- `go test ./internal/httpapi -run 'PairCode'`：全部通过（9 个）。
+- `go test ./internal/feishu/ -run 'Pair|Route|Assistant|Card'` 与 `go test ./internal/httpapi -run 'PairCode|FoundrySettings|NoticeBot|Pair|Feishu'`：见交付说明。
+
+### 限制
+
+- 已部署 dev（train 93，2026-11-18）。
+- 单聊所在 app 必须是人的飞书 app 之一，由配对时的人保证；未额外校验 app 是否仍在 Connectors 中。
+
+## 2026-11-18 dev 验收记录（Agent 代验收，DEV-305c / 305d）
+
+- 部署 train 93 后，在助理主页 ws_240d283d 上调用 `foundry_settings {op: pair_code, area: feishu}` 返回了配对码（16:00:09Z，动作 `paa_9edf1013…`）。主页的新配对路由在 `xapp_da08c856…` 上，与本人 13:19:47Z 已配对的单聊路由是同一个 app。
+- 同一调用在 train 93 之前被拒绝，提示「several Feishu apps…」；这正是 DEV-305d 修复的缺口。
+- 范围外：单聊配对成功卡片的文案只有单元测试覆盖；本次没有做新的配对，也没有在真实飞书中执行 `/pair`（验收步骤 3、4 待本人在飞书操作）。
