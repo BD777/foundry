@@ -344,7 +344,7 @@ e2e-alice 没有 OpenLark 账号，因此实际验收只能在本人自聊中进
   - `node scripts/audit-module-boundaries.mjs`：0 条跟踪违规。
   - `node scripts/generate-contracts.mjs --check`：通过，无破坏性变更。
   - Web `tsc --noEmit`：见下方结果记录。
-  - 未改 Go 代码，未运行 `go test`。未提交，未部署。
+  - 未改 Go 代码，未运行 `go test`。已部署 dev（train 77，2026-11-18）。
 
 ## 2026-11-18 dev 验收记录（Agent 代验收，DEV-294 / 297）
 

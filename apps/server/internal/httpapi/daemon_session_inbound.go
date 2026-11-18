@@ -146,6 +146,8 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
 		return err
 	}
+	// Whether this answers the reconnect's question about the input (DEV-306).
+	asked, wasAsked := c.takeOrphanAsk(payload.SessionID, payload.InputID)
 	existing, existingErr := c.hub.store.GetAgentSessionRecord(ctx, payload.SessionID)
 	if existingErr == nil && staleSessionInput(existing, payload.InputID, payload.DispatchID) {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
@@ -215,6 +217,11 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 			c.hub.sessionRetryDone(ctx, session, session.Status == "failed")
 		}
 		c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
+		// The server counted the input running, the device says it runs no
+		// such turn and kept no result: the turn was cut off (DEV-306).
+		if wasAsked && deviceLostTurn(payload) && c.hub.assistantTurnLost != nil {
+			c.hub.assistantTurnLost(ctx, session, asked)
+		}
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		c.hub.sessions.EndReported(ctx, session)
 	}

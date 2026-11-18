@@ -119,8 +119,15 @@ func (s *Server) handleGenerateFeishuPairingCode(w http.ResponseWriter, r *http.
 // both run it. accountID is the account the paired chat acts as.
 func (s *Server) generateFeishuPairingCode(ctx context.Context, workspaceID, accountID string) (store.FeishuPairingCodeResult, error) {
 	code := generatePairingCode()
+	hash := feishu.HashPairingCode(code)
 	expiresAt := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)
-	route, err := s.store.SetFeishuPairingCode(ctx, workspaceID, feishu.HashPairingCode(code), accountID, expiresAt)
+	route, err := s.store.SetFeishuPairingCode(ctx, workspaceID, hash, accountID, expiresAt)
+	if errors.Is(err, store.ErrNotFound) {
+		if err := s.bindAssistantHomeBot(ctx, workspaceID, accountID); err != nil {
+			return store.FeishuPairingCodeResult{}, err
+		}
+		route, err = s.store.SetFeishuPairingCode(ctx, workspaceID, hash, accountID, expiresAt)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return store.FeishuPairingCodeResult{}, &statusError{http.StatusConflict, errors.New("pick the Feishu app the bot runs on first")}
 	}
@@ -128,6 +135,65 @@ func (s *Server) generateFeishuPairingCode(ctx context.Context, workspaceID, acc
 		return store.FeishuPairingCodeResult{}, err
 	}
 	return store.FeishuPairingCodeResult{WorkspaceID: workspaceID, PairingCode: code, PairingCodeExpiresAt: route.PairingCodeExpiresAt}, nil
+}
+
+// bindAssistantHomeBot gives the default assistant's home workspace its bot,
+// when it has none, on the app the assistant's direct chat runs on. It does
+// nothing for any other workspace, so the caller keeps its answer.
+func (s *Server) bindAssistantHomeBot(ctx context.Context, workspaceID, userID string) error {
+	agent, err := s.store.DefaultAssistant(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && agent.WorkspaceID != workspaceID) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !agent.Settings.FeishuDirectChat {
+		return &statusError{http.StatusConflict, errors.New("the assistant does not take Feishu direct messages: turn on its Feishu direct chat in its settings first")}
+	}
+	appID, err := s.assistantDirectChatApp(ctx, agent, userID)
+	if err != nil {
+		return err
+	}
+	if err := s.store.SetWorkspaceFeishuBotApp(ctx, workspaceID, appID); err != nil {
+		return err
+	}
+	s.feishu.Sync(context.WithoutCancel(ctx))
+	return nil
+}
+
+// assistantDirectChatApp is the Feishu app the assistant's direct chat runs on:
+// the one its feishuAppId names, else the person's only Feishu app. With several
+// apps and none named it refuses, so no app is guessed.
+func (s *Server) assistantDirectChatApp(ctx context.Context, agent store.PersonalAgent, userID string) (string, error) {
+	choices, err := s.feishuBotChoices(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if named := agent.Settings.FeishuAppID; named != "" {
+		for _, app := range choices {
+			if app.ID == named {
+				return app.ID, nil
+			}
+		}
+		return "", &statusError{http.StatusConflict, errors.New("the Feishu app the assistant is set to (feishuAppId) is not one of your Feishu apps in Connectors")}
+	}
+	// A direct chat the assistant already has runs on its app: no guess is needed.
+	apps := s.feishu.DirectChatAppIDs(ctx, userID, agent.ID)
+	switch {
+	case len(apps) == 1:
+		return apps[0], nil
+	case len(apps) > 1:
+		return "", &statusError{http.StatusConflict, errors.New("the assistant's direct chats run on several Feishu apps: set its feishuAppId to the app its direct chat runs on, then issue the code again")}
+	}
+	switch len(choices) {
+	case 1:
+		return choices[0].ID, nil
+	case 0:
+		return "", &statusError{http.StatusConflict, errors.New("connect a Feishu app in Connectors first, then pair the assistant's chat")}
+	default:
+		return "", &statusError{http.StatusConflict, errors.New("you have several Feishu apps and the assistant names none: set its feishuAppId to the app its direct chat runs on, then issue the code again")}
+	}
 }
 
 // handleUnbindFeishuChat stops routing one chat to the workspace.

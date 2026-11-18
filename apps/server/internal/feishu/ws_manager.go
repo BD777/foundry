@@ -587,7 +587,8 @@ func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageI
 		chat.ChatNameError = nameErr.Error()
 	}
 	previous, _ := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID)
-	if _, err := m.store.BindFeishuChat(ctx, pairing, chat); err != nil {
+	bound, err := m.store.BindFeishuChat(ctx, pairing, chat)
+	if err != nil {
 		log.Printf("[feishu] failed to bind chat %s to %s: %v", chatID, pairing.WorkspaceID, err)
 		detail := "保存绑定信息失败，请稍后重试。"
 		if errors.Is(err, store.ErrNotFound) {
@@ -597,7 +598,11 @@ func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageI
 		return nil
 	}
 	log.Printf("[feishu] paired workspace %s (%s) with %s chat %s on app %s", pairing.WorkspaceID, wsName, chat.Kind, chatID, app.clientID)
-	if _, err := app.client.ReplyCard(ctx, messageID, BuildPairingSuccessCard(wsName)); err != nil {
+	card := BuildPairingSuccessCard(wsName)
+	if chatType == "p2p" {
+		card = BuildDirectPairingSuccessCard(wsName, m.assistantFor(ctx, bound) != nil)
+	}
+	if _, err := app.client.ReplyCard(ctx, messageID, card); err != nil {
 		log.Printf("[feishu] failed to send pairing success card: %v", err)
 	}
 	m.Publish(ctx, pairing.WorkspaceID)

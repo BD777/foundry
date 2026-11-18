@@ -345,6 +345,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistant.RunFor
+	server.hub.assistantTurnLost = server.assistant.TurnLost
 	server.hub.responsibleFor = server.assistant.ResponsibleFor
 	server.hub.settleIssueSession = server.issueService.Settle
 	server.hub.awaitSessionStart = server.sessionService.AwaitStart

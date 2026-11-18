@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
@@ -337,6 +338,11 @@ func (c *daemonConnection) recoverOrphanedAgentSessions() {
 		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
+	backAt := time.Now()
+	var droppedAt time.Time
+	if away, _, known := c.hub.awayFor(deviceID, backAt); known {
+		droppedAt = backAt.Add(-away)
+	}
 	for _, session := range sessions {
 		if session.Status != "running" && session.Status != "blocked" {
 			continue
@@ -351,6 +357,39 @@ func (c *daemonConnection) recoverOrphanedAgentSessions() {
 			continue
 		}
 		log.Printf("asking %s about orphaned session %s input %s", deviceID, session.ID, session.Input.ID)
+		c.noteOrphanAsk(session.ID, assistant.LostTurn{DeviceID: deviceID, InputID: session.Input.ID, DroppedAt: droppedAt, BackAt: backAt})
 		c.queue(wsEnvelope{Type: wsRecoverSessionType, Payload: payload})
 	}
+}
+
+// noteOrphanAsk remembers that this connection asked its device about the
+// session's input, for the device's answer (takeOrphanAsk).
+func (c *daemonConnection) noteOrphanAsk(sessionID string, lost assistant.LostTurn) {
+	c.orphanAsksMu.Lock()
+	defer c.orphanAsksMu.Unlock()
+	if c.orphanAsks == nil {
+		c.orphanAsks = map[string]assistant.LostTurn{}
+	}
+	c.orphanAsks[sessionID] = lost
+}
+
+// takeOrphanAsk returns the question asked about the session's input, once,
+// and whether there was one: an answer to a question this connection never
+// asked (a turn's own completion) is not a recovery.
+func (c *daemonConnection) takeOrphanAsk(sessionID, inputID string) (assistant.LostTurn, bool) {
+	c.orphanAsksMu.Lock()
+	defer c.orphanAsksMu.Unlock()
+	lost, ok := c.orphanAsks[sessionID]
+	if !ok || lost.InputID != inputID {
+		return assistant.LostTurn{}, false
+	}
+	delete(c.orphanAsks, sessionID)
+	return lost, true
+}
+
+// deviceLostTurn is the device's answer to recover_session that it runs no
+// such turn and kept no result for it: the turn was interrupted. A recorded
+// result, or a canceled turn, is not.
+func deviceLostTurn(payload wsSessionCompletedPayload) bool {
+	return payload.Error != "" && payload.Response == "" && !store.IsCanceledTurnFailure(payload.Error)
 }
