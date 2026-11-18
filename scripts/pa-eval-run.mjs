@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Runs the Personal Agent eval (docs/personal-agent.md §13) on a scratch stack
-// (scripts/scratch-stack.sh: a throwaway server on a copy of the dev database,
-// FOUNDRY_INTEGRATIONS=off), never on a live one.
+// Runs the Personal Agent eval (docs/personal-agent.md §13) on a hermetic
+// stack (--stack-dir: a prebuilt server binary on a fresh database seeded with
+// the eval set's fixture projects and one server model profile,
+// FOUNDRY_INTEGRATIONS=off, dead proxy), never on a live one. Nothing is
+// built; the Worker is the one installed on this computer.
 //
 //   e2e (--e2e)        a real model: a sample of cases, each a fresh assistant
 //                      session in the Personal Agent workspace (the person's
@@ -41,17 +43,17 @@
 //                      computer name; then "我一般 7 点下班，到时提醒我" must
 //                      set reminders at 19:00 on the after-work items.
 //
-// Setup, all through the stack's HTTP API except two writes to the scratch
-// copy: the eval's own chats are hidden (chat_deletions) so digests cannot
-// contain the answer, and the person gets a random password on the copy. A
+// Setup, all through the stack's HTTP API, as the stack's synthetic user
+// (password in DIR/data/eval-user.password; never the person's account). A
 // worker is paired to the person with its own state root and HOME under the
 // instance (e2e: CLAUDE_CONFIG_DIR / CODEX_HOME point at the real logins, or
 // --worker-home real), the assistant is set up on it. Each e2e case then
 // runs a real assistant turn;
 // its dispatched workspace is the routing answer.
 //
-// usage: node scripts/pa-eval-run.mjs [--e2e] [--sample N]
+// usage: node scripts/pa-eval-run.mjs --stack-dir DIR [--e2e] [--sample N]
 //          [--only id,id] [--judge] [--instance NAME] [--reuse] [--keep]
+//          [--profile ID[,model[,effort]]] [--max-cost-usd N]
 //          [--user USERNAME] [--provider claude|codex] [--model M]
 //          [--worker-home scratch|real] [--case-timeout-s N] [--eval DIR]
 //          [--out FILE] [--scenario a1a2|plans] [--scenario-timeout-s N]
@@ -62,12 +64,24 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { resolve } from "node:path";
+import {
+  classifyOutcome,
+  DISPATCH_TOOLS,
+  cardAsksIn,
+  parseJudgeAnswer,
+  parseToolEvent,
+  questionsIn,
+} from "./pa-eval-score.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -81,7 +95,6 @@ const usage = () =>
     )
     .map((l) => l.replace(/^\/\/ ?/, ""))
     .join("\n");
-const scratchScript = resolve(root, "scripts/scratch-stack.sh");
 const liveDB = resolve(homedir(), ".foundry/server/foundry.db");
 
 // §13 gates.
@@ -140,7 +153,9 @@ function parseArgs(argv) {
     instance: "pa-eval",
     reuse: false,
     keep: false,
-    user: "",
+    user: "pa1-eval",
+    stackDir: process.env.PA_EVAL_STACK_DIR || "",
+    maxCostUsd: 20,
     provider: "claude",
     model: "",
     workerHome: "",
@@ -176,6 +191,21 @@ function parseArgs(argv) {
       case "--instance":
         args.instance = value();
         break;
+      case "--max-cost-usd":
+        args.maxCostUsd = Number(value());
+        break;
+      case "--stack-dir":
+        args.stackDir = value();
+        break;
+      case "--profile": {
+        const [id, model, effort] = value().split(",");
+        Object.assign(runProfile, {
+          id,
+          model: model || "",
+          effort: effort || runProfile.effort,
+        });
+        break;
+      }
       case "--reuse":
         args.reuse = true;
         break;
@@ -276,58 +306,81 @@ function goldKind(c) {
 
 // --- scratch stack -------------------------------------------------------------
 
+// A prepared hermetic stack directory (--stack-dir): bin/foundry-server (a
+// prebuilt binary), data/foundry.db (fresh, seeded) and
+// data/eval-user.password (the synthetic user's). Nothing is built and no
+// database is copied; the server runs on a free port and stops at the end.
 class Stack {
-  constructor(name) {
+  constructor(name, dir) {
+    if (!dir) throw new SetupError("--stack-dir is required");
     this.name = name;
-    this.root =
-      process.env.SCRATCH_ROOT ||
-      resolve(process.env.TMPDIR || tmpdir(), "foundry-scratch");
-    this.dir = resolve(this.root, name);
+    this.dir = resolve(dir);
     this.evalDir = resolve(this.dir, "pa-eval");
-  }
-
-  run(args, { allowFail = false } = {}) {
-    const result = spawnSync(scratchScript, args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: cleanEnv(process.env),
-    });
-    if (result.status !== 0 && !allowFail)
-      throw new SetupError(
-        `scratch-stack.sh ${args.join(" ")} failed:\n${result.stderr || result.stdout}`,
-      );
-    return result;
+    this.bin = resolve(this.dir, "bin/foundry-server");
+    this.dbPath = resolve(this.dir, "data/foundry.db");
+    this.pidFile = resolve(this.dir, "server.pid");
   }
 
   load() {
-    const env = readFileSync(resolve(this.dir, "instance.env"), "utf8");
-    const get = (k) =>
-      (new RegExp(`^${k}=(.*)$`, "m").exec(env) || [])[1] || "";
-    this.url = get("URL");
-    this.sourceDB = get("SOURCE_DB");
-    this.dbPath = resolve(this.dir, "data/foundry.db");
-    if (!this.url) throw new SetupError(`no URL in ${this.dir}/instance.env`);
-    if (
-      resolve(this.dbPath) === resolve(liveDB) ||
-      resolve(this.dbPath) === resolve(this.sourceDB || liveDB)
-    )
+    if (!existsSync(this.bin) || !existsSync(this.dbPath))
+      throw new SetupError(`no server binary or database in ${this.dir}`);
+    if (resolve(this.dbPath) === resolve(liveDB))
       throw new SetupError("refusing to use the live database");
     mkdirSync(this.evalDir, { recursive: true, mode: 0o700 });
   }
 
-  up({ keepDB = false } = {}) {
-    log(
-      keepDB
-        ? `restarting ${this.name} on its DB copy`
-        : `starting scratch stack ${this.name} (DB copy)`,
-    );
-    this.run(["up", this.name, ...(keepDB ? ["--keep-db"] : [])]);
+  password() {
+    return readFileSync(
+      resolve(this.dir, "data/eval-user.password"),
+      "utf8",
+    ).trim();
+  }
+
+  async up() {
     this.load();
+    this.down();
+    const port = await freePort();
+    this.url = `http://127.0.0.1:${port}`;
+    log(`starting ${this.bin} on ${this.url}`);
+    mkdirSync(resolve(this.dir, "logs"), { recursive: true });
+    const logFile = openSync(resolve(this.dir, "logs/server.log"), "a");
+    const child = spawn(this.bin, [], {
+      env: {
+        ...this.serverEnv(),
+        FOUNDRY_HOST: "127.0.0.1",
+        PORT: String(port),
+        FOUNDRY_WEB_ORIGIN: this.url,
+      },
+      stdio: ["ignore", logFile, logFile],
+      detached: true,
+    });
+    child.unref();
+    writeFileSync(this.pidFile, String(child.pid));
+    for (let i = 0; i < 120; i++) {
+      const ok = await fetch(`${this.url}/healthz`)
+        .then((r) => r.ok)
+        .catch(() => false);
+      if (ok) return;
+      await sleep(500);
+    }
+    throw new SetupError(
+      `the server did not start (${this.dir}/logs/server.log)`,
+    );
   }
 
   down() {
-    this.run(["down", this.name], { allowFail: true });
+    const pid = existsSync(this.pidFile)
+      ? Number(readFileSync(this.pidFile, "utf8"))
+      : 0;
+    if (!pid || !isOurs(pid, this.bin)) return;
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      return;
+    }
+    for (let i = 0; i < 40 && isOurs(pid, this.bin); i++)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    if (isOurs(pid, this.bin)) process.kill(pid, "SIGKILL");
   }
 
   // The environment every run of this instance's server binary gets, as
@@ -345,7 +398,11 @@ class Stack {
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost",
       FOUNDRY_DB_PATH: this.dbPath,
-      FOUNDRY_SECRET_KEY_PATH: resolve(this.dir, "data/foundry-secret.key"),
+      // The key the seeded profile's secret is wrapped with, referenced
+      // read-only where it lives, never copied.
+      FOUNDRY_SECRET_KEY_PATH:
+        process.env.PA_EVAL_SECRET_KEY_PATH ||
+        resolve(this.dir, "data/foundry-secret.key"),
       FOUNDRY_STATE_ROOT: resolve(this.dir, "state"),
       FOUNDRY_INTEGRATIONS: "off",
     };
@@ -353,7 +410,7 @@ class Stack {
 
   setPassword(username, password) {
     const result = spawnSync(
-      resolve(this.dir, "bin/foundry-server"),
+      this.bin,
       ["users", "reset-password", "--username", username, "--password-stdin"],
       {
         input: password,
@@ -369,7 +426,7 @@ class Stack {
 
   createUser(username, password) {
     const env = this.serverEnv();
-    const bin = resolve(this.dir, "bin/foundry-server");
+    const bin = this.bin;
     const created = spawnSync(
       bin,
       [
@@ -385,52 +442,17 @@ class Stack {
     );
     if (created.status !== 0) this.setPassword(username, password);
   }
-
-  // Hide the eval's own chats on the copy: a digest built from them would
-  // hold the answer to the case they came from.
-  async hideChats(items) {
-    const { DatabaseSync } = await importSQLite();
-    const db = new DatabaseSync(this.dbPath);
-    try {
-      db.exec("PRAGMA busy_timeout = 10000");
-      const insert = db.prepare(
-        "INSERT OR IGNORE INTO chat_deletions(workspace_id, deletion_key) VALUES (?, ?)",
-      );
-      for (const { workspaceId, id } of items)
-        insert.run(workspaceId, `id:${id}`);
-    } finally {
-      db.close();
-    }
-  }
-
-  async firstAdmin() {
-    const { DatabaseSync } = await importSQLite();
-    const db = new DatabaseSync(this.dbPath, { readOnly: true });
-    try {
-      return (
-        db
-          .prepare(
-            "SELECT username FROM users WHERE role = 'admin' AND username <> 'scratch-admin' ORDER BY created_at LIMIT 1",
-          )
-          .get()?.username || ""
-      );
-    } finally {
-      db.close();
-    }
-  }
 }
 
-async function importSQLite() {
-  const emit = process.emitWarning;
-  process.emitWarning = (warning, ...rest) =>
-    String(warning).includes("SQLite")
-      ? undefined
-      : emit.call(process, warning, ...rest);
-  try {
-    return await import("node:sqlite");
-  } finally {
-    process.emitWarning = emit;
-  }
+function freePort() {
+  return new Promise((done, fail) => {
+    const server = createServer();
+    server.on("error", fail);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => done(port));
+    });
+  });
 }
 
 // A Foundry session exports FOUNDRY_* naming its own (live) stack; none of it
@@ -561,18 +583,34 @@ class Worker {
       workerHome === "real"
         ? homedir()
         : resolve(stack.evalDir, `${name}-home`);
-    this.realLogins = workerHome === "scratch";
-    this.cli = resolve(root, "packages/worker/dist/cli.js");
+    // A seeded server profile is the model: the person's own logins (and
+    // their CLAUDE.md, memory and transcripts) stay out of the run.
+    this.realLogins = workerHome === "scratch" && !runProfile.id;
+    // The Worker installed on this computer (nothing is built here).
+    this.cli = realpathSync(
+      process.env.PA_EVAL_WORKER_CLI ||
+        resolve(
+          homedir(),
+          ".foundry/runtime/current/node_modules/@bd777/foundry-worker/dist/cli.js",
+        ),
+    );
     this.pidFile = resolve(stack.evalDir, `${name}.pid`);
     this.logPath = resolve(stack.evalDir, `${name}.log`);
   }
 
+  // Only what the harness sets reaches the worker: the caller's session
+  // (a Foundry or Claude Code session) exports CLAUDE_*, ANTHROPIC_MODEL,
+  // CLAUDE_EFFORT, proxies and a TMPDIR under its own run folder, any of
+  // which would change the model, the route or the sandbox. A login's folder
+  // is set below, from the harness's own choice.
   env({ logins }) {
-    const inherited = cleanEnv(process.env);
-    // Without logins the worker has no way to reach a model.
-    if (!logins)
-      for (const k of Object.keys(inherited))
-        if (/^(ANTHROPIC_|OPENAI_|CLAUDE_|CODEX_)/.test(k)) delete inherited[k];
+    const inherited = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([k]) =>
+          ["PATH", "USER", "LOGNAME", "LANG", "TZ"].includes(k) ||
+          k.startsWith("LC_"),
+      ),
+    );
     const env = {
       ...inherited,
       FOUNDRY_STATE_ROOT: this.stateRoot,
@@ -582,11 +620,13 @@ class Worker {
       FOUNDRY_ACTIVE_RUNTIME_TTL_MS: "15000",
       HOME: this.home,
     };
-    if (logins && this.realLogins) {
+    // Only the run's own provider's login: another one on the device would
+    // be the person's account serving the assistant's upkeep.
+    if (logins && this.realLogins && this.provider === "claude")
       env.CLAUDE_CONFIG_DIR =
         process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), ".claude");
+    if (logins && this.realLogins && this.provider === "codex")
       env.CODEX_HOME = process.env.CODEX_HOME || resolve(homedir(), ".codex");
-    }
     return env;
   }
 
@@ -601,9 +641,7 @@ class Worker {
 
   async pair(client) {
     if (!existsSync(this.cli))
-      throw new SetupError(
-        `no worker build at ${this.cli} (pnpm --filter @bd777/foundry-worker build)`,
-      );
+      throw new SetupError(`no installed worker at ${this.cli}`);
     mkdirSync(this.home, { recursive: true, mode: 0o700 });
     mkdirSync(this.stateRoot, { recursive: true, mode: 0o700 });
     const before = new Set((await client.get("/api/devices")).map((d) => d.id));
@@ -626,8 +664,13 @@ class Worker {
         `worker setup failed: ${result.stderr || result.stdout}`,
       );
     const after = await client.get("/api/devices");
-    const device = after.find((d) => !before.has(d.id));
-    if (!device)
+    // This server lists a device from its first connection on; setup wrote
+    // the id it was given.
+    const deviceFile = resolve(this.stateRoot, "device.json");
+    const device =
+      after.find((d) => !before.has(d.id)) ||
+      (existsSync(deviceFile) && JSON.parse(readFileSync(deviceFile, "utf8")));
+    if (!device?.id)
       throw new SetupError("the paired worker did not appear as a device");
     return device.id;
   }
@@ -638,7 +681,12 @@ class Worker {
     const logFile = openSync(this.logPath, "a");
     const command = ["node", this.cli, "connect"];
     const [file, ...argv] = logins
-      ? [...sandbox(this.provider), ...command]
+      ? [
+          ...sandbox(this.provider, this.cli, this.realLogins, [
+            this.stack.evalDir,
+          ]),
+          ...command,
+        ]
       : command;
     const child = spawn(file, argv, {
       env: this.env({ logins }),
@@ -684,12 +732,14 @@ class Worker {
 
 // With a model, the assistant is a full agent on this computer, which is
 // the person's own, not a fixture: real requests ("update feishu-cli and
-// install its skills") would really run. The worker and everything it
-// starts see the person's home read-only, except the Claude/Codex state a
-// login needs, and do not see their keys and tokens at all; setuid
-// programs (sudo) do not work inside. The scratch instance under TMPDIR
-// stays writable.
-function sandbox(provider) {
+// install its skills") would really run. The worker and everything it starts
+// see the whole host read-only (--ro-bind / /), with a private /dev, /proc and
+// /tmp and their own process view (--unshare-pid). They can write only to
+// `writable` (the run's own folder: the Worker's state, home and fixture
+// workspaces) and, with a real login, to that login's config folder. Keys and
+// tokens under the person's home are hidden (tmpfs). `--sandbox-check` proves
+// this from inside. Setuid programs (sudo) do not work inside.
+function sandbox(provider, cli, realLogins = true, writable = []) {
   const bwrap = ["/usr/bin/bwrap", "/bin/bwrap"].find((p) => existsSync(p));
   if (!bwrap)
     throw new SetupError(
@@ -697,30 +747,51 @@ function sandbox(provider) {
     );
   const home = homedir();
   const at = (...parts) => resolve(home, ...parts);
-  const args = [bwrap, "--dev-bind", "/", "/", "--ro-bind", home, home];
-  const writable = [
-    process.env.CLAUDE_CONFIG_DIR || at(".claude"),
-    ...(provider === "codex" ? [process.env.CODEX_HOME || at(".codex")] : []),
+  const args = [
+    bwrap,
+    "--ro-bind",
+    "/",
+    "/",
+    "--dev",
+    "/dev",
+    "--proc",
+    "/proc",
+    "--tmpfs",
+    "/tmp",
   ];
-  for (const dir of writable)
+  const loginDirs = realLogins
+    ? [
+        process.env.CLAUDE_CONFIG_DIR || at(".claude"),
+        ...(provider === "codex"
+          ? [process.env.CODEX_HOME || at(".codex")]
+          : []),
+      ]
+    : [];
+  // After the tmpfs /tmp, so a run root under /tmp stays visible.
+  for (const dir of [...writable, ...loginDirs])
     if (existsSync(dir)) args.push("--bind", dir, dir);
-  const claude = process.env.CLAUDE_CONFIG_DIR || at(".claude");
-  for (const name of [
-    "CLAUDE.md",
-    "settings.json",
-    "settings.local.json",
-    "skills",
-    "rules",
-    "notes",
-    "commands",
-    "hooks",
-    "agents",
-    "plugins",
-  ]) {
-    const path = resolve(claude, name);
-    if (existsSync(path)) args.push("--ro-bind", path, path);
+  // A login's config folder is writable as a whole; the files the person
+  // owns in it come back read-only. Without a login the folder is hidden.
+  if (realLogins) {
+    const claude = process.env.CLAUDE_CONFIG_DIR || at(".claude");
+    for (const name of [
+      "CLAUDE.md",
+      "settings.json",
+      "settings.local.json",
+      "skills",
+      "rules",
+      "notes",
+      "commands",
+      "hooks",
+      "agents",
+      "plugins",
+    ]) {
+      const path = resolve(claude, name);
+      if (existsSync(path)) args.push("--ro-bind", path, path);
+    }
   }
   for (const secret of [
+    ...(realLogins ? [] : [".claude", ".codex"]),
     ".ssh",
     ".foundry",
     ".feishu-cli",
@@ -734,8 +805,56 @@ function sandbox(provider) {
     const path = at(secret);
     if (existsSync(path)) args.push("--tmpfs", path);
   }
+  // The installed Worker lives under the hidden ~/.foundry: its runtime
+  // folder comes back read-only, nothing else of it.
+  const runtime = resolve(cli, "../../../../..");
+  if (runtime.startsWith(at(".foundry") + "/"))
+    args.push("--ro-bind", runtime, runtime);
   args.push("--unshare-pid", "--proc", "/proc", "--die-with-parent", "--");
   return args;
+}
+
+// --sandbox-check: the sandbox proven from inside. A write under the run's own
+// folder succeeds; writes to /var/tmp, to the home directory and to /etc fail;
+// the process list is the sandbox's own (--unshare-pid). Exit 0 when all hold.
+function sandboxCheck() {
+  const root = mkdtempSync(
+    resolve(process.env.TMPDIR || tmpdir(), "pa-eval-sandbox-"),
+  );
+  const probes = [
+    "/var/tmp/pa-eval-sandbox-probe",
+    resolve(homedir(), "pa-eval-sandbox-probe"),
+    "/etc/pa-eval-sandbox-probe",
+  ];
+  const script = [
+    `echo x > '${resolve(root, "inside-probe")}' && echo INSIDE_WRITE_OK`,
+    ...probes.map(
+      (p) => `(echo x > '${p}') 2>/dev/null && echo 'OUTSIDE_WRITE ${p}'`,
+    ),
+    'echo "PROCESSES $(ls /proc | grep -c "^[0-9]")"',
+  ].join("; ");
+  try {
+    const [file, ...argv] = [
+      ...sandbox("claude", "/nonexistent/cli.js", false, [root]),
+      "sh",
+      "-c",
+      script,
+    ];
+    const result = spawnSync(file, argv, { encoding: "utf8", timeout: 30000 });
+    const out = result.stdout || "";
+    const processes = Number(/PROCESSES (\d+)/.exec(out)?.[1] ?? NaN);
+    const checks = [
+      ["write inside the run folder succeeds", out.includes("INSIDE_WRITE_OK")],
+      ["no write outside the run folder", !out.includes("OUTSIDE_WRITE")],
+      ["own process view (--unshare-pid)", processes > 0 && processes < 30],
+    ];
+    for (const [name, pass] of checks)
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}`);
+    if (!checks.every(([, pass]) => pass)) console.log(out, result.stderr);
+    return checks.every(([, pass]) => pass) ? 0 : 1;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function isOurs(pid, needle) {
@@ -791,8 +910,13 @@ async function startAssistantSession(client, agent, provider, model, prompt) {
     workspaceId: agent.workspaceId,
     prompt,
     source: "chat",
-    ...(pick ? { agentId: pick.id, provider: pick.provider } : { provider }),
-    ...(model ? { model } : {}),
+    // A seeded server profile has no per-device agent: the session names it.
+    ...(runProfile.id
+      ? { provider: runProfile.runtime, profileId: runProfile.id }
+      : pick
+        ? { agentId: pick.id, provider: pick.provider }
+        : { provider }),
+    ...(model || runProfile.model ? { model: model || runProfile.model } : {}),
   };
   const { status, data } = await client.request("POST", "/api/agent-sessions", {
     body,
@@ -804,6 +928,9 @@ async function startAssistantSession(client, agent, provider, model, prompt) {
     );
   return data;
 }
+
+// --profile ID[,model[,effort]]: the seeded server profile the run uses.
+const runProfile = { id: "", runtime: "claude", model: "", effort: "high" };
 
 // A paired, connected worker for the signed-in person and their assistant.
 async function workerAndAssistant(client, worker, logins) {
@@ -820,7 +947,38 @@ async function workerAndAssistant(client, worker, logins) {
   }
   await worker.start({ logins });
   await worker.waitConnected(client, deviceId, true);
+  // The seeded server profile (--profile) is the eval worker's model: bound
+  // to it before the assistant exists, the assistant's default right after,
+  // so its first project summaries run on it too.
+  if (runProfile.id)
+    await client.request(
+      "PUT",
+      `/api/devices/${encodeURIComponent(deviceId)}/profiles`,
+      { body: { deviceId, profileIds: [runProfile.id] } },
+    );
   let agent = await ensureAssistant(client, deviceId);
+  if (
+    runProfile.id &&
+    agent.settings?.runDefault?.profileId !== runProfile.id
+  ) {
+    const run = {
+      profileId: runProfile.id,
+      runtime: runProfile.runtime,
+      model: runProfile.model,
+      effort: runProfile.effort,
+    };
+    await client.request("PUT", "/api/personal-agent/settings", {
+      body: {
+        ...agent.settings,
+        runDefault: run,
+        assistantProfileId: run.profileId,
+        assistantModel: run.model,
+        timezone: agent.settings?.timezone || "Asia/Shanghai",
+      },
+    });
+    agent = (await client.get("/api/personal-agent")).agent;
+    log(`assistant runs on ${run.profileId} ${run.model} (${run.effort})`);
+  }
   // A person whose assistant already lives on one of their computers (offline
   // on the copy) would queue every case for it: the eval's worker is home.
   if (agent.homeDeviceId !== deviceId) {
@@ -858,30 +1016,6 @@ function sampleCases(cases, n, only) {
   return picked.slice(0, Math.max(n, groups.size * 2));
 }
 
-// "Bash\n\n```json\n{...}\n```" -> { name, args }; MCP names lose their prefix.
-// A call that failed still shows the decision: the scratch copy's projects
-// sit on the person's own computers, which are offline here, so starting
-// work there is refused; where the assistant tried to put it is what counts.
-function parseToolEvent(event) {
-  const message = event.message || {};
-  if (
-    message.kind !== "tool" ||
-    (event.label !== "Used tool" && event.label !== "Tool failed")
-  )
-    return null;
-  const detail = event.detail || message.text || "";
-  const rawName = detail.split("\n", 1)[0].trim();
-  const name = rawName.split(/__|\.|\/|:/).pop();
-  const block = /```json\n([\s\S]*?)\n```/.exec(detail);
-  let args = {};
-  try {
-    args = block ? JSON.parse(block[1]) : {};
-  } catch {
-    args = {};
-  }
-  return { name, rawName, args, failed: event.label === "Tool failed" };
-}
-
 function turnUsage(events) {
   const usage = {
     durationMs: 0,
@@ -898,14 +1032,6 @@ function turnUsage(events) {
   return usage;
 }
 
-function questionsIn(reply) {
-  const text = reply
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/https?:\/\/\S+/g, "");
-  return (text.match(/？|\?(?=\s|$|["”』」)])/g) || []).length;
-}
-
 function bannedIn(reply, request) {
   const text = reply
     .replace(/```[\s\S]*?```/g, "")
@@ -916,74 +1042,9 @@ function bannedIn(reply, request) {
     .map(([term]) => term);
 }
 
-// What the assistant did with a request, from its tool calls and reply.
-function classifyOutcome(tools, reply, assistantWorkspace, offline = []) {
-  const created = tools.filter((t) => t.name === "create_workspace");
-  const dispatched = tools
-    .filter((t) => ["create_session", "send_message"].includes(t.name))
-    .map(
-      (t) =>
-        t.args.workspaceId ||
-        (t.name === "create_session" ? assistantWorkspace : ""),
-    )
-    .filter(Boolean);
-  const external = dispatched.filter((w) => w !== assistantWorkspace);
-  if (created.length)
-    return { decision: "new", workspaceId: external[0] || "" };
-  if (external.length) return { decision: "project", workspaceId: external[0] };
-  if (questionsIn(reply) > 0) return { decision: "ask" };
-  // Work for a project whose computer is offline cannot start (the scratch
-  // copy's computers all are): the assistant says where it belongs and that
-  // it starts once the computer is back. That is its decision when it names
-  // exactly one such project.
-  const named = mentionedProjects(reply, offline);
-  if (named.length === 1)
-    return { decision: "project", workspaceId: named[0], byMention: true };
-  return { decision: "answer" };
-}
-
-// The offline projects a reply names: by name in quotes, as the assistant
-// names projects (a bare word may be something else: "Foundry", the
-// product), and by name and computer when several share the name.
-function mentionedProjects(reply, projects) {
-  const text = reply.toLowerCase();
-  const quoted = (name) => {
-    const n = name
-      .toLowerCase()
-      .trim()
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return (
-      n.length >= 2 &&
-      new RegExp(`[『「“"‘'«]\\s*${n}\\s*[』」”"’'»]`).test(text)
-    );
-  };
-  const has = (word) => {
-    const w = word.toLowerCase().trim();
-    if (w.length < 2) return false;
-    const ascii = /^[\x00-\x7f]+$/.test(w);
-    return ascii
-      ? new RegExp(
-          `(^|[^a-z0-9_-])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9_-])`,
-        ).test(text)
-      : text.includes(w);
-  };
-  const byName = new Map();
-  for (const p of projects)
-    if (quoted(p.name)) byName.set(p.name, [...(byName.get(p.name) || []), p]);
-  const named = [];
-  for (const group of byName.values()) {
-    const picked =
-      group.length === 1
-        ? group
-        : group.filter((p) => p.device && has(p.device));
-    if (picked.length === 1) named.push(picked[0].id);
-    else return [];
-  }
-  return named;
-}
-
 async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
-  await worker.start({ logins: true });
+  // A restart would orphan the project summaries the setup just started.
+  if (!worker.pid || !worker.logins) await worker.start({ logins: true });
   await worker.waitConnected(client, deviceId, true);
   const knownWorkspaces = new Set(
     (await client.get("/api/workspaces")).map((w) => w.id),
@@ -998,13 +1059,32 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
         w.id !== agent.workspaceId &&
         devices.get(w.deviceId)?.status !== "connected",
     )
-    .map((w) => ({
-      id: w.id,
-      name: w.name,
-      device: w.deviceLabel || devices.get(w.deviceId)?.label || "",
-    }));
+    .map((w) => {
+      const device = w.deviceLabel || devices.get(w.deviceId)?.label || "";
+      return {
+        id: w.id,
+        name: w.name,
+        device,
+        ref: device ? `${w.name}@${device}` : "",
+      };
+    });
+  summaries.push(...(await waitForSummaries(client, agent, worker.stack)));
+  const summaryCost = summaries.reduce((t, x) => t + x.costUsd, 0);
+  log(`project summaries: ${summaries.length}, $${summaryCost.toFixed(2)}`);
   const rows = [];
   for (const [i, c] of sample.entries()) {
+    await waitForMemory();
+    const spent = rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
+    if (rows.length >= 3) {
+      const projected =
+        summaryCost + spent + (spent / rows.length) * (sample.length - i);
+      if (projected > args.maxCostUsd) {
+        log(
+          `stopping before ${c.id}: projected $${projected.toFixed(2)} > $${args.maxCostUsd}`,
+        );
+        break;
+      }
+    }
     log(`e2e ${i + 1}/${sample.length} ${c.id}`);
     let session;
     let error = null;
@@ -1080,23 +1160,122 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
       timedOut,
       wallMs: Date.now() - caseStarted,
       usage: turnUsage(events),
+      // Enough of each call to score the row again (rescoreRows).
       tools: tools.map((t) => ({
         name: t.name,
         workspaceId: t.args.workspaceId || "",
+        ...(t.args.op ? { op: t.args.op } : {}),
+        ...(t.failed ? { failed: true } : {}),
       })),
       proposals: events.filter((e) =>
         /needs_confirmation/.test(JSON.stringify(e.message || e.detail || "")),
       ).length,
       helpersCancelled: cancelled.size,
       reply,
-      questions: questionsIn(reply),
+      questions: questionsIn(reply) + cardAsksIn(tools),
       banned: bannedIn(reply, c.request),
       ...outcome,
     });
   }
   await worker.stop();
+  e2eOffline.splice(0, e2eOffline.length, ...offline);
   return rows;
 }
+
+// The offline projects of the run, for scoring rows again after the judge.
+const e2eOffline = [];
+
+// A row scored again from what it stored, with the judge's reading of whether
+// the reply asks (classifyOutcome). The first decision stays as
+// `decisionByMark` when the reading changed it.
+function rescoreRows(rows, assistantWorkspace, verdicts) {
+  const byId = new Map(verdicts.map((v) => [v.id, v]));
+  for (const r of rows) {
+    if (r.error || typeof r.reply !== "string") continue;
+    const v = byId.get(r.id);
+    const asks = typeof v?.asks === "boolean" ? v.asks : undefined;
+    const tools = r.tools.map((t) => ({
+      name: t.name,
+      args: { workspaceId: t.workspaceId, ...(t.op ? { op: t.op } : {}) },
+    }));
+    const outcome = classifyOutcome(
+      tools,
+      r.reply,
+      assistantWorkspace,
+      e2eOffline,
+      { asks },
+    );
+    const before = r.decisionByMark || r.decision;
+    delete r.workspaceId;
+    delete r.byMention;
+    delete r.judgedAsks;
+    delete r.decisionByMark;
+    Object.assign(r, outcome, asks === undefined ? {} : { judgedAsks: asks });
+    if (before !== r.decision) r.decisionByMark = before;
+  }
+}
+
+// The first summary of every project runs when the assistant is set up
+// (§14); the cases wait for them, one model session at a time otherwise.
+async function waitForSummaries(client, agent, stack, timeoutMs = 40 * 60_000) {
+  const { DatabaseSync } = await import("node:sqlite");
+  const pending = () => {
+    const db = new DatabaseSync(stack.dbPath, { readOnly: true });
+    try {
+      return db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM workspace_digests WHERE summarized_at = ''",
+        )
+        .get().n;
+    } finally {
+      db.close();
+    }
+  };
+  const until = Date.now() + timeoutMs;
+  for (let left = pending(); left > 0 && Date.now() < until; left = pending()) {
+    log(`waiting for ${left} project summaries`);
+    await sleep(20_000);
+  }
+  // Ended summary sessions leave the list; their usage is in the digest
+  // records' sessions, read from the store.
+  const db = new DatabaseSync(stack.dbPath, { readOnly: true });
+  let rows = [];
+  try {
+    rows = db
+      .prepare(
+        "SELECT id, status FROM agent_sessions WHERE workspace_id = ? AND json_extract(payload_json, '$.source') = 'digest'",
+      )
+      .all(agent.workspaceId);
+  } finally {
+    db.close();
+  }
+  const out = [];
+  for (const s of rows) {
+    const detail = await client
+      .get(`/api/agent-sessions/${encodeURIComponent(s.id)}`)
+      .catch(() => null);
+    out.push({
+      id: s.id,
+      status: s.status,
+      costUsd: turnUsage(detail?.events || []).costUsd,
+    });
+  }
+  log(`project summaries left unsummarized: ${pending()}`);
+  return out;
+}
+
+// A case starts only while the computer has memory to spare.
+async function waitForMemory(minMB = 800) {
+  for (;;) {
+    const info = readFileSync("/proc/meminfo", "utf8");
+    const mb = Number(/MemAvailable:\s+(\d+)/.exec(info)?.[1] || 0) / 1024;
+    if (mb >= minMB) return;
+    log(`MemAvailable ${Math.round(mb)} MB < ${minMB}: pausing`);
+    await sleep(30_000);
+  }
+}
+
+const summaries = [];
 
 // Each case starts from the same state: projects it created are removed
 // from the copy (their folders stay under the worker's scratch HOME), and
@@ -1137,7 +1316,7 @@ async function cancelHelpers(
   const tools = (detail.events || []).map(parseToolEvent).filter(Boolean);
   const targets = new Set(
     tools
-      .filter((t) => ["create_session", "send_message"].includes(t.name))
+      .filter((t) => DISPATCH_TOOLS.includes(t.name))
       .map((t) => t.args.workspaceId || assistantWorkspace),
   );
   if (tools.some((t) => t.name === "create_workspace")) {
@@ -1291,13 +1470,27 @@ function scoreE2E(rows, cases, names) {
   return { metrics, checks, misses };
 }
 
-// One read-only Foundry session rates every reply; no direct model call.
+// Read-only Foundry sessions rate the replies, a batch at a time; no direct
+// model call. Per reply: plain language, more than one question, and whether
+// it asks the person (the ask reading classifyOutcome uses: free text, so a
+// model reads it, not a word list). On a seeded server profile (--profile)
+// the judge runs on it too.
+const judgeBatch = 20;
+
 async function judgeReplies(client, worker, deviceId, rows, cases, args) {
   const judged = rows.filter((r) => r.reply);
   if (!judged.length) return null;
   const folder = resolve(worker.home, "pa-eval-judge");
   mkdirSync(folder, { recursive: true });
-  // Registering the folder asks the worker: it must be connected first.
+  // Registering the folder asks the worker: it must be connected first. The
+  // e2e run just stopped it; until the server has seen that connection end,
+  // the device still reads as connected and the new one is not yet in use.
+  await worker.stop();
+  await worker
+    .waitConnected(client, deviceId, false, 60_000)
+    .catch(() =>
+      log("the worker still reads as connected; starting it anyway"),
+    );
   await worker.start({ logins: true });
   await worker.waitConnected(client, deviceId, true);
   const workspace = await client.post("/api/workspaces", {
@@ -1305,44 +1498,65 @@ async function judgeReplies(client, worker, deviceId, rows, cases, args) {
     path: folder,
   });
   const byId = new Map(cases.map((c) => [c.id, c]));
-  const items = judged.map((r) => ({
-    id: r.id,
-    request: byId.get(r.id).request,
-    reply: r.reply,
-  }));
-  const prompt = [
-    "You are rating replies a personal assistant gave to a non-technical person. Do not use any tools and do not change any files.",
-    "For each item, decide whether the reply is plain, human language a non-technical person understands at once (no software jargon they did not use themselves, no ids, no file paths), and whether it asked more than one question.",
-    'Answer with only a JSON array, one object per item: {"id": "...", "plain": true|false, "multipleQuestions": true|false, "reason": "<= 15 words"}.',
-    "",
-    JSON.stringify(items, null, 1),
-  ].join("\n");
+  const verdicts = [];
+  const sessions = [];
+  let costUsd = 0;
   try {
-    const session = await client.post("/api/agent-sessions", {
-      workspaceId: workspace.id,
-      prompt,
-      source: "chat",
-      provider: args.provider,
-      ...(args.model ? { model: args.model } : {}),
-      codexSandboxMode: "read-only",
-      codexApprovalPolicy: "never",
-      claudePermissionMode: "dontAsk",
-    });
-    const until = Date.now() + 600_000;
-    let detail = session;
-    while (
-      Date.now() < until &&
-      !["completed", "failed", "canceled"].includes(detail.status)
-    ) {
-      await sleep(4000);
-      detail = await client.get(
-        `/api/agent-sessions/${encodeURIComponent(session.id)}?events=none`,
+    for (let at = 0; at < judged.length; at += judgeBatch) {
+      const items = judged.slice(at, at + judgeBatch).map((r) => ({
+        id: r.id,
+        request: byId.get(r.id).request,
+        reply: r.reply,
+      }));
+      const prompt = [
+        "You are rating replies a personal assistant gave to a non-technical person. Do not use any tools and do not change any files.",
+        "For each item decide:",
+        "- plain: the reply is plain, human language a non-technical person understands at once (no software jargon they did not use themselves, no ids, no file paths).",
+        "- multipleQuestions: it asked more than one question.",
+        "- asks: the reply leaves the next step to the person by asking them to choose, confirm or supply something (which one of several things, a missing link, name, file or text, a yes/no) before the assistant goes on, with or without a question mark, including a numbered list of options to pick from. false when it answers, reports, or says it will do the work, and any question is only an optional offer on top. Saying a computer is offline and the work starts once it is back is not asking.",
+        'Answer with only a JSON array, one object per item: {"id": "...", "plain": true|false, "multipleQuestions": true|false, "asks": true|false, "reason": "<= 15 words"}.',
+        "",
+        JSON.stringify(items, null, 1),
+      ].join("\n");
+      const session = await client.post("/api/agent-sessions", {
+        workspaceId: workspace.id,
+        prompt,
+        source: "chat",
+        ...(runProfile.id
+          ? { provider: runProfile.runtime, profileId: runProfile.id }
+          : { provider: args.provider }),
+        ...(args.model || runProfile.model
+          ? { model: args.model || runProfile.model }
+          : {}),
+        codexSandboxMode: "read-only",
+        codexApprovalPolicy: "never",
+        claudePermissionMode: "dontAsk",
+      });
+      sessions.push(session.id);
+      const until = Date.now() + 600_000;
+      let detail = session;
+      while (
+        Date.now() < until &&
+        !["completed", "failed", "canceled"].includes(detail.status)
+      ) {
+        await sleep(4000);
+        detail = await client.get(
+          `/api/agent-sessions/${encodeURIComponent(session.id)}`,
+        );
+      }
+      costUsd += turnUsage(detail.events || []).costUsd;
+      const batch = parseJudgeAnswer(detail.response || "");
+      const wanted = new Set(items.map((x) => x.id));
+      verdicts.push(...batch.filter((v) => wanted.has(v.id)));
+      log(
+        `judge batch ${at / judgeBatch + 1}: ${batch.length}/${items.length} verdicts`,
       );
     }
-    const match = /\[[\s\S]*\]/.exec(detail.response || "");
-    const verdicts = match ? JSON.parse(match[0]) : [];
     return {
-      sessionId: session.id,
+      sessionIds: sessions,
+      costUsd: round(costUsd, 4),
+      judged: judged.length,
+      verdictCount: verdicts.length,
       plainShare: ratio(
         verdicts.filter((v) => v.plain).length,
         verdicts.length,
@@ -1353,6 +1567,7 @@ async function judgeReplies(client, worker, deviceId, rows, cases, args) {
       multipleQuestions: verdicts
         .filter((v) => v.multipleQuestions)
         .map((v) => v.id),
+      verdicts,
     };
   } finally {
     await worker.stop();
@@ -1475,10 +1690,16 @@ async function runRoutingAndE2E(
       args,
       names,
     );
-    report.e2e = { ...scoreE2E(rows, cases, names), rows };
+    report.e2e = {
+      ...scoreE2E(rows, cases, names),
+      rows,
+      summaries,
+      assistantWorkspace: agent.workspaceId,
+      offline: e2eOffline,
+    };
     report.checks.push(...report.e2e.checks);
     // The rows are the run's result: a judge that fails must not lose them.
-    if (args.judge)
+    if (args.judge) {
       report.judge = await judgeReplies(
         client,
         worker,
@@ -1490,6 +1711,23 @@ async function runRoutingAndE2E(
         log(`the judge failed: ${error.message}`);
         return { error: error.message };
       });
+      // The judge's reading of whether a reply asks replaces the question
+      // mark; the scores are taken again from the stored rows.
+      if (report.judge?.verdicts?.length) {
+        rescoreRows(rows, agent.workspaceId, report.judge.verdicts);
+        const scored = scoreE2E(rows, cases, names);
+        report.e2e.byMark = {
+          metrics: report.e2e.metrics,
+          checks: report.e2e.checks,
+          misses: report.e2e.misses,
+        };
+        Object.assign(report.e2e, scored);
+        report.checks = report.checks.filter(
+          (c) => !c.name.startsWith("e2e: "),
+        );
+        report.checks.push(...scored.checks);
+      }
+    }
   }
 }
 
@@ -1822,12 +2060,48 @@ async function settle(client, sessionId, until) {
 
 const activeWorkers = new Set();
 
+// --rescore FILE: a stored report scored again, in place, with the current
+// scorer and the judge verdicts it holds (report.judge.verdicts). The
+// offline projects come from the report or, for older reports, from the eval
+// set's index (the fixture's computers are the index's).
+function rescoreReport(file) {
+  const path = resolve(file);
+  const report = JSON.parse(readFileSync(path, "utf8"));
+  const { cases, index, names } = loadEvalSet(
+    resolve(homedir(), ".foundry/pa-eval/set"),
+  );
+  const offline =
+    report.e2e.offline ||
+    index.projects.map((p) => ({
+      id: p.workspaceId,
+      name: p.name,
+      device: p.computer,
+      ref: p.ref,
+    }));
+  e2eOffline.splice(0, e2eOffline.length, ...offline);
+  const assistant = report.e2e.assistantWorkspace || "";
+  rescoreRows(report.e2e.rows, assistant, report.judge?.verdicts || []);
+  const scored = scoreE2E(report.e2e.rows, cases, names);
+  Object.assign(report.e2e, scored, { offline, assistantWorkspace: assistant });
+  report.checks = [
+    ...report.checks.filter((c) => !c.name.startsWith("e2e: ")),
+    ...scored.checks,
+  ];
+  report.rescoredAt = new Date().toISOString();
+  writeFileSync(path, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
+  printReport(report);
+  return report.checks.some((c) => c.pass === false) ? 1 : 0;
+}
+
 // --- main ------------------------------------------------------------------------
 
 async function main() {
+  if (process.argv.includes("--sandbox-check")) process.exit(sandboxCheck());
+  const rescoreAt = process.argv.indexOf("--rescore");
+  if (rescoreAt > 0) process.exit(rescoreReport(process.argv[rescoreAt + 1]));
   const args = parseArgs(process.argv);
   const { cases, names } = loadEvalSet(args.evalDir);
-  const stack = new Stack(args.instance);
+  const stack = new Stack(args.instance, args.stackDir);
   const worker = new Worker(stack, args.workerHome, "worker", args.provider);
   const report = {
     startedAt: new Date().toISOString(),
@@ -1837,27 +2111,11 @@ async function main() {
   };
   let failed = false;
   try {
-    if (args.reuse && existsSync(resolve(stack.dir, "instance.env"))) {
-      stack.load();
-    } else {
-      stack.up();
-      // Hide the eval's own chats and give the person a password on the copy,
-      // then restart so nothing cached predates either.
-      await stack.hideChats(
-        cases
-          .filter((c) => c.source)
-          .map((c) => ({
-            workspaceId: c.observed.workspaceId,
-            id: c.source.id,
-          })),
-      );
-    }
-    const username = args.user || (await stack.firstAdmin());
-    if (!username) throw new SetupError("no person to act as (--user)");
-    args.user = username;
-    const password = randomBytes(18).toString("base64url");
-    stack.setPassword(username, password);
-    if (!args.reuse) stack.up({ keepDB: true });
+    // A fresh seeded database holds no eval chats to hide, and the run signs
+    // in as its own synthetic user, never the person.
+    await stack.up();
+    const username = args.user;
+    const password = stack.password();
     const client = new Client(stack.url);
     await client.post("/api/auth/login", { username, password });
     log(`signed in as ${username} on ${stack.url}`);
@@ -1894,7 +2152,7 @@ async function main() {
   } catch (error) {
     await worker.stop().catch(() => {});
     for (const w of activeWorkers) await w.stop().catch(() => {});
-    if (!args.keep && !args.reuse) stack.down();
+    stack.down();
     console.error(
       `pa-eval: ${error instanceof SetupError ? "" : "unexpected error: "}${error.message}`,
     );
@@ -1914,10 +2172,8 @@ async function main() {
   mkdirSync(resolve(out, ".."), { recursive: true });
   writeFileSync(out, JSON.stringify(report, null, 2) + "\n");
   printReport(report);
-  console.log(
-    `\nreport: ${out}${args.keep ? `\nstack kept: scripts/scratch-stack.sh down ${args.instance}` : ""}`,
-  );
-  if (!args.keep && !args.reuse) stack.down();
+  console.log(`\nreport: ${out}`);
+  stack.down();
   process.exit(failed ? 1 : 0);
 }
 
