@@ -144,7 +144,8 @@ func TestAppendedEventKeepsTheTimeItCarries(t *testing.T) {
 	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	stamped := time.Now().UTC().Add(time.Second).Format(time.RFC3339Nano)
+	streamed := time.Now().UTC().Add(time.Second)
+	stamped := streamed.Format(time.RFC3339Nano)
 	if err := db.AppendAgentSessionEvent(ctx, store.AgentSessionEvent{ID: "evt_stamped", SessionID: session.ID, At: stamped, Label: "Response stream", Level: "info"}); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestAppendedEventKeepsTheTimeItCarries(t *testing.T) {
 	for _, event := range events {
 		at[event.ID] = event.At
 	}
-	if at["evt_stamped"] != stamped {
+	if !sameInstant(at["evt_stamped"], streamed) {
 		t.Fatalf("stored at = %q, want the streamed %q", at["evt_stamped"], stamped)
 	}
 	summary, err := db.GetAgentSessionSummary(ctx, session.ID)

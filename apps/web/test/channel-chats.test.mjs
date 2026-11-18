@@ -172,3 +172,25 @@ test("a channel turn's origin reaches its chat message", async () => {
   assert.equal(turn?.channelOrigin?.messages[0].text, "/ai check the build");
   assert.equal(turn?.text, "facts");
 });
+
+test("channel chats order by instant, not by trimmed text", () => {
+  // ".59147Z" is earlier than ".591471Z", though as text it sorts after it.
+  const trimmed = "2026-11-16T06:00:00.59147Z";
+  const later = "2026-11-16T06:00:00.591471Z";
+  const sameConversation = channelChatGroups([
+    chat("trimmed", trimmed, origin("a", "Ops")),
+    chat("later", later, origin("a", "Ops")),
+  ]);
+  assert.deepEqual(
+    sameConversation[0].chats.map((entry) => entry.id),
+    ["later", "trimmed"],
+  );
+  const groups = channelChatGroups([
+    chat("ops", trimmed, origin("a", "Ops", { lastAt: trimmed })),
+    chat("design", later, origin("b", "Design", { lastAt: later })),
+  ]);
+  assert.deepEqual(
+    groups.map((group) => group.conversation.name),
+    ["Design", "Ops"],
+  );
+});

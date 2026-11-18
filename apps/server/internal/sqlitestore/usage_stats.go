@@ -385,14 +385,17 @@ func (s *Store) UsageContextModel(ctx context.Context, sessionID, inputID string
 		return "", fmt.Errorf("find usage turn input: %w", err)
 	}
 	var model string
-	err = s.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json, '$.metadata.contextUsage.model'), '')
-		FROM agent_session_events
-		WHERE session_id = ? AND created_at >= ?
-			AND COALESCE(json_extract(payload_json, '$.metadata.contextUsage.model'), '') <> ''
-		ORDER BY created_at DESC, rowid DESC LIMIT 1`, sessionID, since).Scan(&model)
-	if errors.Is(err, sql.ErrNoRows) {
+	rowID, found, err := timeEdgeRowID(ctx, s.reader(), "agent_session_events", "created_at",
+		`session_id = ? AND created_at >= ? AND COALESCE(json_extract(payload_json, '$.metadata.contextUsage.model'), '') <> ''`,
+		[]any{sessionID, since}, true)
+	if err != nil {
+		return "", fmt.Errorf("find usage context model: %w", err)
+	}
+	if !found {
 		return "", nil
 	}
+	err = s.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json, '$.metadata.contextUsage.model'), '')
+		FROM agent_session_events WHERE rowid = ?`, rowID).Scan(&model)
 	if err != nil {
 		return "", fmt.Errorf("read usage context model: %w", err)
 	}

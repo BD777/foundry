@@ -40,13 +40,15 @@ func (s *Store) setupOwnership(ctx context.Context) error {
 }
 
 func (s *Store) earliestAdmin(ctx context.Context) (string, error) {
-	var id string
-	err := s.conn().QueryRowContext(ctx, `SELECT id FROM users
-		WHERE role = ? AND disabled_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 1`, store.RoleAdmin).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	rowID, found, err := timeEdgeRowID(ctx, s.conn(), "users", "created_at", "role = ? AND disabled_at IS NULL", []any{store.RoleAdmin}, false)
+	if err != nil {
+		return "", fmt.Errorf("find earliest admin: %w", err)
+	}
+	if !found {
 		return "", nil
 	}
-	if err != nil {
+	var id string
+	if err := s.conn().QueryRowContext(ctx, `SELECT id FROM users WHERE rowid = ?`, rowID).Scan(&id); err != nil {
 		return "", fmt.Errorf("find earliest admin: %w", err)
 	}
 	return id, nil

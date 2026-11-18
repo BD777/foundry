@@ -326,9 +326,12 @@ func (s *Store) compactBackgroundSnapshots(ctx context.Context, sessionID string
 	}
 	// The session's first event stays: a transcript without the session's
 	// start time counts its duration from it.
-	var firstRowID int64
-	if err := s.reader().QueryRowContext(ctx, `SELECT rowid FROM agent_session_events WHERE session_id = ? ORDER BY created_at, rowid LIMIT 1`, sessionID).Scan(&firstRowID); err != nil {
+	firstRowID, found, err := timeEdgeRowID(ctx, s.reader(), "agent_session_events", "created_at", "session_id = ?", []any{sessionID}, false)
+	if err != nil {
 		return 0, err
+	}
+	if !found {
+		return 0, sql.ErrNoRows
 	}
 	keep := map[int]bool{}
 	for index, item := range snapshots {

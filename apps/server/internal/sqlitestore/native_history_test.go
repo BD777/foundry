@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -77,5 +78,35 @@ func TestAContinuedNativeChatImportsItsEarlierHistoryOldestFirst(t *testing.T) {
 	}
 	if older, _, _, err := db.AgentSessionEventWindowSpan(ctx, session.ID, cursor, 50); err != nil || len(older) != 0 {
 		t.Fatalf("before the oldest = %v, %v", older, err)
+	}
+}
+
+// RFC3339Nano trims trailing zeros: the earlier event's text (".59147Z")
+// sorts after the later one's (".591471Z"), so the oldest cursor must be
+// chosen by time, the order the event window reads in.
+func TestNativeHistoryOldestCursorOrdersByTimeNotTrimmedText(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	registerTwoRuntimes(t, db, "ws_cursor")
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_cursor", AgentID: "agent_codex", Provider: "codex", Prompt: "continue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier := time.Date(2026, 10, 23, 5, 0, 0, 591470000, time.UTC)
+	later := time.Date(2026, 10, 23, 5, 0, 0, 591471000, time.UTC)
+	for _, event := range []struct {
+		id string
+		at time.Time
+	}{{"evt_later", later}, {"evt_earlier", earlier}} {
+		if err := db.saveAgentSessionEvent(ctx, store.AgentSessionEvent{ID: event.id, SessionID: session.ID, At: formatTime(event.at), Label: store.EventLabelNativeTranscript, Level: "info"}, event.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursor, err := db.AgentSessionOldestEventCursor(ctx, session.ID)
+	if err != nil || cursor == "" {
+		t.Fatal(cursor, err)
+	}
+	if older, _, _, err := db.AgentSessionEventWindowSpan(ctx, session.ID, cursor, 50); err != nil || len(older) != 0 {
+		t.Fatalf("before the oldest = %v, %v; the cursor must name the earliest event, not the one whose text sorts first", older, err)
 	}
 }

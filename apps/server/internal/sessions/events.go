@@ -200,6 +200,9 @@ func (e *Events) Changed(ctx context.Context, change Change, session store.Agent
 // Recorded streams an event added to a session's transcript to the
 // viewers of workspaceID, the session's, then tells its observers.
 func (e *Events) Recorded(ctx context.Context, workspaceID string, event store.AgentSessionEvent) {
+	// The live copy shows the time a later read returns: the store wrote it in
+	// its canonical width, which the caller's text may not have.
+	event.At = store.CanonicalTime(event.At)
 	sessionTranscriptEvent.Publish(e.stream, eventstream.Route{Workspace: workspaceID}, event)
 	if store.SessionStateKey(event) != "" {
 		e.panels.Add(event.SessionID, workspaceID)

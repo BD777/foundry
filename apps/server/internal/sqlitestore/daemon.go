@@ -328,10 +328,16 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 		if workspaceID == "" {
 			workspaceID = tx.workspaceIDForDevice(ctx, deviceID)
 		}
-		claimed, err := getJSON[store.Issue](ctx, tx.conn(), `SELECT payload_json FROM issues
-			WHERE status = 'pending' AND json_extract(payload_json, '$.contractState') = 'confirmed'
-			AND (? = '' OR workspace_id = ? OR workspace_id = '')
-			ORDER BY updated_at ASC LIMIT 1`, workspaceID, workspaceID)
+		rowID, found, err := timeEdgeRowID(ctx, tx.conn(), "issues", "updated_at",
+			"status = 'pending' AND json_extract(payload_json, '$.contractState') = 'confirmed' AND (? = '' OR workspace_id = ? OR workspace_id = '')",
+			[]any{workspaceID, workspaceID}, false)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return store.ErrNotFound
+		}
+		claimed, err := getJSON[store.Issue](ctx, tx.conn(), `SELECT payload_json FROM issues WHERE rowid = ?`, rowID)
 		if err != nil {
 			return err
 		}

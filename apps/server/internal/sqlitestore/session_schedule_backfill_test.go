@@ -56,8 +56,8 @@ func TestSessionSchedulesAreKeptAndListedForTheirDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Scheduled == nil || restored.Scheduled.ReportedAt != "2026-10-11T05:02:03Z" || len(restored.Scheduled.Timers) != 2 ||
-		restored.Scheduled.Timers[0].FirstSeenAt != "2026-10-10T06:27:13Z" || restored.Scheduled.Timers[1].FirstSeenAt != "2026-10-11T05:02:03Z" {
+	if restored.Scheduled == nil || restored.Scheduled.ReportedAt != "2026-10-11T05:02:03.000000000Z" || len(restored.Scheduled.Timers) != 2 ||
+		restored.Scheduled.Timers[0].FirstSeenAt != "2026-10-10T06:27:13.000000000Z" || restored.Scheduled.Timers[1].FirstSeenAt != "2026-10-11T05:02:03.000000000Z" {
 		t.Fatalf("schedule = %+v", restored.Scheduled)
 	}
 	if cleared, err := db.GetAgentSessionSummary(ctx, deleted.ID); err != nil || cleared.Scheduled != nil {
@@ -66,7 +66,7 @@ func TestSessionSchedulesAreKeptAndListedForTheirDevice(t *testing.T) {
 
 	// A later snapshot keeps when each timer was first seen.
 	snapshot(kept.ID, "evt_k3", "2026-10-11T06:00:00Z", inspect, remind)
-	if later, _ := db.GetAgentSessionSummary(ctx, kept.ID); later.Scheduled == nil || later.Scheduled.Timers[0].FirstSeenAt != "2026-10-10T06:27:13Z" {
+	if later, _ := db.GetAgentSessionSummary(ctx, kept.ID); later.Scheduled == nil || later.Scheduled.Timers[0].FirstSeenAt != "2026-10-10T06:27:13.000000000Z" {
 		t.Fatalf("schedule after another snapshot = %+v", later.Scheduled)
 	}
 
@@ -75,7 +75,7 @@ func TestSessionSchedulesAreKeptAndListedForTheirDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(sent) != 1 || sent[0].SessionID != kept.ID || sent[0].NativeSessionID != "native_kept" || len(sent[0].Timers) != 2 ||
-		sent[0].Timers[0].Prompt != "巡检" || sent[0].Timers[0].FirstSeenAt != "2026-10-10T06:27:13Z" {
+		sent[0].Timers[0].Prompt != "巡检" || sent[0].Timers[0].FirstSeenAt != "2026-10-10T06:27:13.000000000Z" {
 		t.Fatalf("device timers = %+v", sent)
 	}
 	if other, err := db.DeviceSessionTimers(ctx, "dev_other", time.Now()); err != nil || len(other) != 0 {

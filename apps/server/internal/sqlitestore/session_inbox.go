@@ -141,16 +141,19 @@ func (s *Store) AdmitSessionInboxItem(ctx context.Context, item store.SessionInb
 			return nil
 		}
 		if rules.DedupWindow > 0 {
-			repeat, err := scanSessionInboxItem(db.QueryRowContext(ctx, `SELECT `+sessionInboxColumns+` FROM session_inbox
-				WHERE session_id = ? AND sender_session_id = ? AND text_hash = ? AND state != ? AND created_at >= ?
-				ORDER BY created_at DESC LIMIT 1`,
-				item.SessionID, item.SenderSessionID, item.TextHash, store.InboxFailed, formatTime(now.Add(-rules.DedupWindow))))
-			if err == nil {
+			rowID, found, err := timeEdgeRowID(ctx, db, "session_inbox", "created_at",
+				`session_id = ? AND sender_session_id = ? AND text_hash = ? AND state != ? AND created_at >= ?`,
+				[]any{item.SessionID, item.SenderSessionID, item.TextHash, store.InboxFailed, formatTime(now.Add(-rules.DedupWindow))}, true)
+			if err != nil {
+				return fmt.Errorf("find repeated inbox message: %w", err)
+			}
+			if found {
+				repeat, err := scanSessionInboxItem(db.QueryRowContext(ctx, `SELECT `+sessionInboxColumns+` FROM session_inbox WHERE rowid = ?`, rowID))
+				if err != nil {
+					return fmt.Errorf("find repeated inbox message: %w", err)
+				}
 				admission = store.SessionInboxAdmission{Item: repeat, Duplicate: true}
 				return nil
-			}
-			if !errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("find repeated inbox message: %w", err)
 			}
 		}
 		item.Delivery = item.RequestedDelivery
