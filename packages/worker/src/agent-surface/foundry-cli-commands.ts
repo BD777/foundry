@@ -38,6 +38,10 @@ export interface ToolCommand {
   positional?: string;
   fixed?: Record<string, unknown>;
   flags: Record<string, FlagSpec>;
+  /** Flags the CLI reads itself (not sent to the tool), such as a wait's timeout. */
+  cliFlags?: Record<string, FlagSpec>;
+  /** The CLI polls the tool until the session is no longer queued, running or blocked. */
+  waits?: boolean;
 }
 
 /** A command the CLI runs itself, without a server. */
@@ -195,6 +199,13 @@ export const foundryCommands: Record<
         ...maxBytes,
       },
     },
+    wait: {
+      tool: "get_session",
+      positional: "sessionId",
+      waits: true,
+      cliFlags: { "--timeout-ms": flag("timeoutMs", "number") },
+      flags: {},
+    },
     thread: {
       tool: "read_context",
       positional: "sessionId",
@@ -284,13 +295,6 @@ export const foundryCommands: Record<
       },
     },
     group: { tool: "list_group_sessions", positional: "groupId", flags: {} },
-  },
-  issue: {
-    list: {
-      tool: "list_issues",
-      flags: { "--status": flag("status", "list") },
-    },
-    get: { tool: "get_issue", positional: "issueId", flags: {} },
   },
   feishu: {
     subscribe: {
@@ -451,6 +455,104 @@ export const foundryCommands: Record<
       },
     },
     computers: { tool: "list_computers", flags: {} },
+  },
+  // The assistant's own settings and channels. Only a personal_agent session
+  // may call them; for anyone else the server refuses the call.
+  "assistant-settings": {
+    get: {
+      tool: "assistant_settings",
+      fixed: { op: "get" },
+      flags: { "--sections": flag("sections", "list") },
+    },
+    update: {
+      tool: "assistant_settings",
+      fixed: { op: "update" },
+      flags: {
+        "--patch": flag("patch", "json"),
+        "--patch-file": flag("patch", "jsonFile"),
+        "--expected-revision": flag("expectedRevision", "number"),
+        "--undo": flag("undo"),
+      },
+    },
+    "notify-instances": {
+      tool: "assistant_settings",
+      fixed: { op: "notify_instances" },
+      flags: {},
+    },
+    "notify-find-chat": {
+      tool: "assistant_settings",
+      fixed: { op: "notify_find_chat" },
+      flags: {
+        "--connector": flag("connectorInstanceId"),
+        "--chat": flag("chatId"),
+      },
+    },
+    "notify-test": {
+      tool: "assistant_settings",
+      fixed: { op: "notify_test" },
+      flags: { "--connector": flag("connectorInstanceId") },
+    },
+  },
+  "assistant-channels": {
+    list: { tool: "assistant_channels", fixed: { op: "list" }, flags: {} },
+    peers: {
+      tool: "assistant_channels",
+      fixed: { op: "peers" },
+      flags: { "--account": flag("accountId") },
+    },
+    test: {
+      tool: "assistant_channels",
+      fixed: { op: "test" },
+      flags: {
+        "--filters": flag("filters", "json"),
+        "--filters-file": flag("filters", "jsonFile"),
+        "--samples": flag("samples", "json"),
+        "--samples-file": flag("samples", "jsonFile"),
+        "--recent": flag("recent", "boolean"),
+        "--source": flag("sourceAccountId"),
+      },
+    },
+    create: {
+      tool: "assistant_channels",
+      fixed: { op: "create" },
+      flags: {
+        "--channel": flag("channel", "json"),
+        "--channel-file": flag("channel", "jsonFile"),
+      },
+    },
+    update: {
+      tool: "assistant_channels",
+      positional: "channelId",
+      fixed: { op: "update" },
+      flags: {
+        "--patch": flag("patch", "json"),
+        "--patch-file": flag("patch", "jsonFile"),
+        "--undo": flag("undo"),
+      },
+    },
+  },
+  // The person's Foundry setup no other tool covers (area: execution,
+  // workspace_defaults, worker_groups, devices).
+  "foundry-settings": {
+    get: {
+      tool: "foundry_settings",
+      fixed: { op: "get" },
+      flags: { "--area": flag("area"), "--id": flag("id") },
+    },
+    update: {
+      tool: "foundry_settings",
+      fixed: { op: "update" },
+      flags: {
+        "--area": flag("area"),
+        "--id": flag("id"),
+        "--patch": flag("patch", "json"),
+      },
+    },
+    undo: {
+      tool: "foundry_settings",
+      fixed: { op: "undo" },
+      flags: { "--action-id": flag("actionId") },
+    },
   },
   device: {
     list: {

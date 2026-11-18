@@ -790,6 +790,45 @@ type ConnectorServerHeldNetwork struct {
 // ConnectorServerHeldNetworkPath Where an instance's upstream requests leave Foundry.
 type ConnectorServerHeldNetworkPath = string
 
+// ConnectorServerHeldNotify How Foundry tells the person about an item that needs them, as pure data. Foundry sends one message per notice through the instance's gateway to the conversation named by target, and reads the person's reply by the message it quotes. A version above the one this Foundry reads is refused; a Foundry from before this section ignores the section.
+type ConnectorServerHeldNotify struct {
+	// Version The notify contract version. This Foundry reads version 1.
+	Version int `json:"version"`
+
+	// Format How the notice text is written. Only markdown for now.
+	Format string `json:"format"`
+
+	// Target The conversation the notices go to. field names a text field of serverHeld.fields whose value the person fills in; conversationKind is self (the person's own chat) for now.
+	Target ConnectorServerHeldNotifyTarget `json:"target"`
+
+	// Send One notice request. method and path name a catalogued write route at or below the upstream prefix. The path may use {target} and {notice.id}, path-escaped. The body may also use {text|json} and {link|json}, the notice text and its Web link as the inside of a JSON string.
+	Send ConnectorServerHeldNotifySend `json:"send"`
+
+	// Sent Where the sent message's id is in a successful answer, as a JSON pointer.
+	Sent ConnectorServerHeldNotifySent `json:"sent"`
+
+	// ReplyTo The events envelope field (for example attributes.replyTo) that names the message a reply quotes. Empty when replies are not read.
+	ReplyTo string `json:"replyTo,omitempty"`
+}
+
+// ConnectorServerHeldNotifySend One notice request. method and path name a catalogued write route at or below the upstream prefix. The path may use {target} and {notice.id}, path-escaped. The body may also use {text|json} and {link|json}, the notice text and its Web link as the inside of a JSON string.
+type ConnectorServerHeldNotifySend struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Body   string `json:"body,omitempty"`
+}
+
+// ConnectorServerHeldNotifySent Where the sent message's id is in a successful answer, as a JSON pointer.
+type ConnectorServerHeldNotifySent struct {
+	MessageID string `json:"messageId"`
+}
+
+// ConnectorServerHeldNotifyTarget The conversation the notices go to. field names a text field of serverHeld.fields whose value the person fills in; conversationKind is self (the person's own chat) for now.
+type ConnectorServerHeldNotifyTarget struct {
+	Field            string `json:"field"`
+	ConversationKind string `json:"conversationKind"`
+}
+
 // ConnectorServerHeldOptionsExtract defines model for ConnectorServerHeldOptionsExtract.
 type ConnectorServerHeldOptionsExtract struct {
 	// Items JSON pointer to the array of option objects.
@@ -922,6 +961,9 @@ type ConnectorServerHeldSpec struct {
 
 	// Labels Read-only routes that name an object for the person, e.g. a conversation id into its name. Foundry resolves them when a proposal is created and stores the name with it, so the person's card never calls out. Results are cached per account.
 	Labels []ConnectorServerHeldLabel `json:"labels,omitempty"`
+
+	// Notify How Foundry tells the person about an item that needs them, as pure data. Foundry sends one message per notice through the instance's gateway to the conversation named by target, and reads the person's reply by the message it quotes. A version above the one this Foundry reads is refused; a Foundry from before this section ignores the section.
+	Notify *ConnectorServerHeldNotify `json:"notify,omitempty"`
 }
 
 // ConnectorServerHeldStep One group of field ids in a server-held instance form.

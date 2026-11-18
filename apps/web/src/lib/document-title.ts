@@ -14,13 +14,17 @@ import { i18n } from "../i18n";
  * chat whose agent only holds timers is idle too (it waits, often for days):
  * the chat's "scheduled · next at" note and its list row's clock say it will
  * wake.
+ *
+ * On a chat page the mark means only that chat. The assistant's unseen home
+ * answer is the sidebar's 助理 dot there; on any other page (the assistant
+ * page itself, settings, lists) it is the assistant state: 💬 and its icon.
  */
 export const appName = "Foundry";
 
 const maxPrimaryLength = 60;
 
 export type TabStatus =
-  "waiting" | "running" | "unread" | "background" | "idle";
+  "waiting" | "running" | "unread" | "background" | "assistant" | "idle";
 
 /**
  * Each state's title marker and icon (in public/, made by
@@ -34,6 +38,7 @@ export const tabStatusMarks: Record<
   running: { marker: "⏳", icon: "foundry-icon-running.png" },
   unread: { marker: "✅", icon: "foundry-icon-unread.png" },
   background: { marker: "⚙️", icon: "foundry-icon-background.png" },
+  assistant: { marker: "💬", icon: "foundry-icon-assistant.png" },
   idle: { marker: "", icon: "foundry-icon.png" },
 };
 
@@ -46,7 +51,10 @@ export interface DocumentTitleParts {
   running?: boolean;
   /** The open chat's finished answer is unseen. */
   unread?: boolean;
-  /** The assistant's home conversation holds an answer the person has not seen. */
+  /**
+   * The assistant's home conversation holds an answer the person has not
+   * seen. Marks only a page that is not a chat (see apply).
+   */
   assistantUnread?: boolean;
   /**
    * The open chat's turn ended, but background tasks, subagents or a
@@ -60,8 +68,9 @@ export interface DocumentTitleParts {
 export function tabStatus(parts: DocumentTitleParts): TabStatus {
   if (parts.waitingChildCount) return "waiting";
   if (parts.running) return "running";
-  if (parts.unread || parts.assistantUnread) return "unread";
+  if (parts.unread) return "unread";
   if (parts.background) return "background";
+  if (parts.assistantUnread) return "assistant";
   return "idle";
 }
 
@@ -121,9 +130,11 @@ function apply(): void {
           waitingChildCount: chat.waitingChildCount,
         }
       : {}),
-    // The open chat's own unseen answer marks it; the assistant's home
-    // conversation carries its own mark on any page (DEV-278).
+    // The open chat's own unseen answer marks it.
     unread: chat ? unread : false,
+    // A chat page shows only its chat's state; the assistant's unseen answer
+    // is the sidebar's 助理 dot there (DEV-304).
+    assistantUnread: chat ? false : page.assistantUnread,
   };
   document.title = buildDocumentTitle(parts);
   applyIcon(tabStatus(parts));

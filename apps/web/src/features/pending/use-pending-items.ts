@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   answerIssueQuestion,
+  answerPendingItem,
   decidePendingItem,
   enqueueChatMessage,
   isAbortError,
@@ -11,7 +12,7 @@ import {
   type PendingItemList,
 } from "../../api";
 import { issuesEnabled } from "../../lib/feature-flags";
-import { pendingReplyText } from "./pending-model";
+import { pendingReplyRoute, pendingReplyText } from "./pending-model";
 
 /** How often the list is read again while the page is visible. */
 const pendingPollMs = 20_000;
@@ -88,9 +89,12 @@ export function usePendingItems(enabled = true): PendingItems {
 
   const reply = useCallback<PendingItems["reply"]>(
     async (item, text) => {
-      if (item.source === "issue_question" && item.issueId && item.eventId) {
+      const route = pendingReplyRoute(item);
+      if (route === "issue" && item.issueId && item.eventId) {
         await answerIssueQuestion(item.issueId, item.eventId, text.trim());
-      } else if (item.sessionId) {
+      } else if (route === "answer") {
+        await answerPendingItem(item.id, text.trim(), crypto.randomUUID());
+      } else if (route === "chat" && item.sessionId) {
         // As the composer answers an Agent's question: into a running turn
         // at once, or the chat's next message when nothing runs.
         const result = await enqueueChatMessage(

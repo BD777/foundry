@@ -60,7 +60,7 @@ func TestOpenHandOverIsScopedToItsTurn(t *testing.T) {
 	assertOpen("input_turn_c", false)
 	assertOpen("", false)
 
-	if _, err := db.ResolvePendingItem(ctx, user, first.ID, store.PendingDone, store.PendingOutcomePersonAnswered); err != nil {
+	if _, err := db.ResolvePendingItem(ctx, user, first.ID, store.PendingDone, store.PendingOutcomePersonAnswered, store.PendingAnswer{}); err != nil {
 		t.Fatal(err)
 	}
 	assertOpen("input_turn_a", false)

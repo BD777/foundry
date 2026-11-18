@@ -210,6 +210,12 @@
 
 帮手的子会话（孙辈）提问照 DEV-148 交给帮手自己，不记项。
 
+**负责方（DEV-291）**：一个会话的问题、审批、失败与卡住，交给创建它的那一层，由 `personalagent/assistant/responsibility.go` 的 `ResponsibleFor` 决定，所有来源都调它。助理的帮手交给助理（助理停下时等它恢复，不交给本人）；普通编排会话的子会话交给父会话的收件箱；本人开的对话和助理自己的会话（首页、消息通道）交给本人。频道的保留与缺口条目归频道的助理，助理停下时归本人。`needs_you resolve` 对有人在等答复的条目必须给 `answer`（送达帮手，和 `send_message` 一样）或 `reason`（告诉帮手得不到答复），只有没人等的条目可以直接关闭。负责人的答复记在条目上：`answer`（答复原文，最多 1000 字）与 `answeredBy`（`assistant` 或 `person`）。
+
+**提问（DEV-293，`needs_you op=ask`）**：助理在自己的会话（首页或消息通道）里遇到只有本人能定的事，用 `ask` 提一个问题（一句话，可选 2–4 个选项）。它记为来源 `assistant_question`、`handler=person`、`assistantId` 为该助理、`sessionId` 为发问的会话、`excerpt` 为问题本身；同一会话的同一未结问题只保留一项。`ask` 立即返回，助理不等待。
+
+**答复（DEV-293，`POST /api/pending-items/{id}/answer`，正文 `{text}`）**：本人答复条目的唯一入口，只限本人，带幂等键（同一键的重复请求回放第一次的结果）。对 `assistant_question` 条目：答复按本人的原话交给发问的会话，框架是一条 `[Foundry]` 消息（`personalagent.AnswerFrame`：一行写明问的是哪个问题，之后是本人的答复原文）；经收件箱送达（`requestedDelivery=boundary`，`inputSource` 为 `foundry_notice` / `question_answer`），空闲时开始一轮，运行中在下一个边界送达，离线时排队。收件箱的发送方是发问的会话本身，因为收件箱只接受会话发来的消息。`PersonWords` 把这条输入的答复部分当作本人的原话（记忆的引用核对与取证都认），框架部分不算。条目随后记为 `state=done`、`outcome=person_answered`、`answer`（答复原文）、`answeredBy=person`。其他种类的条目返回 409「answer this item in its conversation」。`resolve` 只带 `itemId` 时撤回自己的未结问题（`outcome=withdrawn`，不发送任何消息）。飞书等其他渠道的答复尚未接入（DEV-294）。
+
 ### 状态转换
 
 ```

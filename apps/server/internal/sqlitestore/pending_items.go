@@ -134,6 +134,17 @@ func (s *Store) savePendingItem(ctx context.Context, item store.PendingItem) err
 	if err != nil {
 		return fmt.Errorf("save pending item: %w", err)
 	}
+	if item.State != store.PendingOpen {
+		// However the item closed, a notice the person has not answered yet
+		// no longer asks: queued ones are never sent, sent ones are answered
+		// on the web (DEV-294). A notice being sent is left to its send.
+		_, err := s.conn().ExecContext(ctx, `UPDATE person_notices SET state = ?, updated_at = ?, card_stale = 1
+			WHERE item_id = ? AND state IN (?, ?)`,
+			store.NoticeSuperseded, personNoticeTimeText(time.Now()), item.ID, store.NoticeQueued, store.NoticeSent)
+		if err != nil {
+			return fmt.Errorf("supersede the notices of a closed item: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -424,6 +435,7 @@ func (s *Store) ResolvePendingItems(ctx context.Context, resolution store.Pendin
 			item.State, item.UpdatedAt, item.ResolvedAt = resolution.State, now, now
 			item.ResolutionReason, item.ResolutionDetail = resolution.ResolutionReason, resolution.ResolutionDetail
 			item.Outcome = pendingResolutionOutcome(resolution, item)
+			setPendingAnswer(&item, resolution.Answer)
 			if resolution.AcknowledgedAt != "" && item.AcknowledgedAt == "" {
 				item.AcknowledgedAt = resolution.AcknowledgedAt
 			}
@@ -545,12 +557,22 @@ func (s *Store) SetPendingItemState(ctx context.Context, userID, id, state strin
 	if state == store.PendingDismissed {
 		outcome = store.PendingOutcomePersonDismissedNotNeeded
 	}
-	return s.ResolvePendingItem(ctx, userID, id, state, outcome)
+	return s.ResolvePendingItem(ctx, userID, id, state, outcome, store.PendingAnswer{})
 }
 
 // ResolvePendingItem changes one item by its handler's decision. Reopening
 // clears the outcome and gives an assistant-handled item a fresh deadline.
-func (s *Store) ResolvePendingItem(ctx context.Context, userID, id, state, outcome string) (store.PendingItem, error) {
+func (s *Store) ResolvePendingItem(ctx context.Context, userID, id, state, outcome string, answer store.PendingAnswer) (store.PendingItem, error) {
+	return s.resolvePendingItem(ctx, userID, id, state, outcome, answer, "")
+}
+
+// ClosePendingItem marks an item done by the assistant without an answer,
+// with the reason it closed it.
+func (s *Store) ClosePendingItem(ctx context.Context, userID, id, reason string) (store.PendingItem, error) {
+	return s.resolvePendingItem(ctx, userID, id, store.PendingDone, store.PendingOutcomeAssistantClosed, store.PendingAnswer{}, reason)
+}
+
+func (s *Store) resolvePendingItem(ctx context.Context, userID, id, state, outcome string, answer store.PendingAnswer, closeReason string) (store.PendingItem, error) {
 	if state != store.PendingOpen && state != store.PendingDone && state != store.PendingDismissed {
 		return store.PendingItem{}, fmt.Errorf("an item can be marked done, dismissed or open")
 	}
@@ -578,9 +600,11 @@ func (s *Store) ResolvePendingItem(ctx context.Context, userID, id, state, outco
 			item.ResolvedAt = ""
 			item.ResolutionReason, item.ResolutionDetail = "", ""
 			item.Outcome, item.AcknowledgedAt, item.NotifiedAt = "", "", ""
-			item.DeadlineAt = ""
+			item.DeadlineAt, item.CloseReason = "", ""
 		} else {
 			item.Outcome = outcome
+			setPendingAnswer(&item, answer)
+			item.CloseReason = cutPendingText(closeReason)
 			logged = item
 		}
 		result = item
@@ -590,6 +614,23 @@ func (s *Store) ResolvePendingItem(ctx context.Context, userID, id, state, outco
 		logPendingOutcome(logged)
 	}
 	return result, err
+}
+
+// setPendingAnswer records the answer an item was closed with, cut to
+// PendingAnswerLimit characters; an empty answer changes nothing.
+func setPendingAnswer(item *store.PendingItem, answer store.PendingAnswer) {
+	if text := cutPendingText(answer.Text); text != "" {
+		item.Answer, item.AnsweredBy = text, answer.By
+	}
+}
+
+// cutPendingText trims text and keeps at most PendingAnswerLimit characters.
+func cutPendingText(text string) string {
+	text = strings.TrimSpace(text)
+	if runes := []rune(text); len(runes) > store.PendingAnswerLimit {
+		text = string(runes[:store.PendingAnswerLimit])
+	}
+	return text
 }
 
 func (s *Store) GetPendingItem(ctx context.Context, userID, id string) (store.PendingItem, error) {

@@ -231,10 +231,17 @@ func (s *Server) assistantChannelWorkspaces(ctx context.Context, access permissi
 
 // requestScope computes the scope once per request.
 func (s *Server) requestScope(r *http.Request) (accessScope, error) {
-	if cached, ok := r.Context().Value(scopeContextKey{}).(accessScope); ok {
+	return s.scopeOfContext(r.Context())
+}
+
+// scopeOfContext is the scope of the actor in ctx, reused when the request
+// already computed it. A write that runs outside its request (an accepted
+// proposal) is checked against the scope of the person who accepted it.
+func (s *Server) scopeOfContext(ctx context.Context) (accessScope, error) {
+	if cached, ok := ctx.Value(scopeContextKey{}).(accessScope); ok {
 		return cached, nil
 	}
-	return s.scopeFor(r.Context(), actorFromContext(r.Context()))
+	return s.scopeFor(ctx, actorFromContext(ctx))
 }
 
 type scopeContextKey struct{}

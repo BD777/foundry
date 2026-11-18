@@ -57,9 +57,10 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 		Store: st, Open: s.openMessageChannelSource, Inbox: messageChannelInbox{s},
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
 		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
-		OwnWrites: s.messageChannelOwnWrites, Session: s.messageChannelSessionState,
-		Ack: s.messageChannelAck, Working: s.messageChannelWorking, HandOver: s.messageChannelHandOver,
-		Context: s.messageChannelContext,
+		OwnWrites: s.messageChannelOwnWrites, NoticeEchoes: s.messageChannelNoticeEchoes,
+		Session: s.messageChannelSessionState,
+		Ack:     s.messageChannelAck, Working: s.messageChannelWorking, HandOver: s.messageChannelHandOver,
+		Context: s.messageChannelContext, NoticeReply: s.messageChannelNoticeReply,
 	})
 }
 
@@ -70,31 +71,34 @@ func (s *Server) handleListMessageChannels(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	list, err := s.messageChannelList(r.Context(), agent)
+	writeResult(w, list, err)
+}
+
+// messageChannelList is the assistant's channels as the person sees them,
+// the conversations they hold and the sources they may pick.
+func (s *Server) messageChannelList(ctx context.Context, agent store.PersonalAgent) (store.MessageChannelList, error) {
 	st, err := s.messageChannelStore()
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.MessageChannelList{}, err
 	}
-	records, err := st.ListMessageChannels(r.Context(), agent.UserID, agent.ID)
+	records, err := st.ListMessageChannels(ctx, agent.UserID, agent.ID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.MessageChannelList{}, err
 	}
 	list := store.MessageChannelList{Channels: []store.MessageChannelView{}, Sources: []store.MessageChannelSource{}}
 	for _, record := range records {
-		view, err := s.messageChannelView(r.Context(), agent, record)
+		view, err := s.messageChannelView(ctx, agent, record)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelList{}, err
 		}
 		list.Channels = append(list.Channels, view)
 	}
-	if list.ChannelSessionIDs, err = st.MessageChannelSessions(r.Context(), agent.ID, ""); err != nil {
-		writeResult(w, nil, err)
-		return
+	if list.ChannelSessionIDs, err = st.MessageChannelSessions(ctx, agent.ID, ""); err != nil {
+		return store.MessageChannelList{}, err
 	}
-	list.Sources, err = s.messageChannelSources(r.Context(), agent.UserID)
-	writeResult(w, list, err)
+	list.Sources, err = s.messageChannelSources(ctx, agent.UserID)
+	return list, err
 }
 
 func (s *Server) handleCreateMessageChannel(w http.ResponseWriter, r *http.Request) {
@@ -110,16 +114,26 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	st, err := s.messageChannelStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
 	var input store.MessageChannelInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	ctx := r.Context()
+	view, err := s.saveMessageChannelInput(r.Context(), agent, id, input)
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	writeResultWithStatus(w, status, view, err)
+}
+
+// saveMessageChannelInput creates the assistant's channel (empty id) or saves
+// the channel with id, with the checks the person's route runs. The
+// assistant's channel writes (assistant_channels) save through it too.
+func (s *Server) saveMessageChannelInput(ctx context.Context, agent store.PersonalAgent, id string, input store.MessageChannelInput) (store.MessageChannelView, error) {
+	st, err := s.messageChannelStore()
+	if err != nil {
+		return store.MessageChannelView{}, err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	record := store.MessageChannelRecord{UserID: agent.UserID}
 	wasEnabled := false
@@ -128,26 +142,22 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	if id == "" {
 		existing, err := st.ListMessageChannels(ctx, agent.UserID, agent.ID)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelView{}, err
 		}
 		if len(existing) >= maxMessageChannelsPerAssistant {
-			writeError(w, http.StatusConflict, fmt.Sprintf("an assistant has at most %d message channels", maxMessageChannelsPerAssistant))
-			return
+			return store.MessageChannelView{}, &statusError{http.StatusConflict, fmt.Errorf("an assistant has at most %d message channels", maxMessageChannelsPerAssistant)}
 		}
 		record.ID, record.AssistantID, record.CreatedAt = "mch_"+strings.ReplaceAll(uuid.NewString(), "-", "")[:20], agent.ID, now
 	} else {
 		record, err = st.GetMessageChannel(ctx, id)
 		if err != nil || record.UserID != agent.UserID || record.AssistantID != agent.ID {
-			writeError(w, http.StatusNotFound, "not found")
-			return
+			return store.MessageChannelView{}, &statusError{http.StatusNotFound, errors.New("not found")}
 		}
 		wasEnabled, previousAck, previousFooter = record.Enabled, record.Ack, record.Footer
 	}
-	channel, err := s.cleanMessageChannelInput(ctx, r, agent, input)
+	channel, err := s.cleanMessageChannelInput(ctx, agent, input)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.MessageChannelView{}, err
 	}
 	record.Name, record.Enabled, record.Source, record.Filters = channel.Name, channel.Enabled, channel.Source, channel.Filters
 	record.Guide, record.SessionKey, record.Scope, record.Limits = channel.Guide, channel.SessionKey, channel.Scope, channel.Limits
@@ -164,27 +174,23 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 	}
 	record.SkillName, record.UpdatedAt = channels.SkillName(record.MessageChannel), now
 	if channel.WorkspaceID != "" && channel.WorkspaceID != record.WorkspaceID {
-		if err := s.checkMessageChannelWorkspace(ctx, r, agent, channel.WorkspaceID); err != nil {
-			writeResult(w, nil, err)
-			return
+		if err := s.checkMessageChannelWorkspace(ctx, agent, channel.WorkspaceID); err != nil {
+			return store.MessageChannelView{}, err
 		}
 		record.WorkspaceID = channel.WorkspaceID
 		if err := s.seedMessageChannelInstructions(ctx, record, true); err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelView{}, err
 		}
 	}
 	if record.WorkspaceID == "" {
 		workspaceID, err := s.createMessageChannelWorkspace(ctx, agent, record)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelView{}, err
 		}
 		record.WorkspaceID = workspaceID
 	}
 	if err := st.SaveMessageChannel(ctx, record); err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.MessageChannelView{}, err
 	}
 	if record.Enabled && !wasEnabled && (id == "" || input.ResumeFromNow) {
 		// A new channel, or one the person resumes from now, starts at the
@@ -192,19 +198,13 @@ func (s *Server) saveMessageChannel(w http.ResponseWriter, r *http.Request, id s
 		runtime, _ := st.GetMessageChannelRuntime(ctx, record.ID)
 		runtime.ChannelID, runtime.Cursor, runtime.State, runtime.Detail = record.ID, "", channels.StateStarting, ""
 		if err := st.SaveMessageChannelRuntime(ctx, runtime); err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelView{}, err
 		}
 	}
 	if s.messageChannels != nil {
 		s.messageChannels.Kick()
 	}
-	view, err := s.messageChannelView(ctx, agent, record)
-	status := http.StatusOK
-	if id == "" {
-		status = http.StatusCreated
-	}
-	writeResultWithStatus(w, status, view, err)
+	return s.messageChannelView(ctx, agent, record)
 }
 
 func (s *Server) handleDeleteMessageChannel(w http.ResponseWriter, r *http.Request) {
@@ -467,7 +467,7 @@ func (s *Server) messageChannelFeed(ctx context.Context, userID string, app stor
 	return nil, data.Descriptor
 }
 
-func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, agent store.PersonalAgent, input store.MessageChannelInput) (store.MessageChannel, error) {
+func (s *Server) cleanMessageChannelInput(ctx context.Context, agent store.PersonalAgent, input store.MessageChannelInput) (store.MessageChannel, error) {
 	bad := func(format string, args ...any) error {
 		return &statusError{http.StatusBadRequest, fmt.Errorf(format, args...)}
 	}
@@ -632,7 +632,7 @@ func (s *Server) cleanMessageChannelInput(ctx context.Context, r *http.Request, 
 	}
 	probe := store.PermissionPackage{Owner: agent.UserID, Workspaces: scope.Workspaces}
 	probe.IdentityResources.Allowed = scope.IdentityResources
-	if invalidWorkspaces, invalidResources, err := s.invalidPermissionPackageReferences(ctx, r, probe); err != nil {
+	if invalidWorkspaces, invalidResources, err := s.invalidPermissionPackageReferences(ctx, probe); err != nil {
 		return channel, err
 	} else if len(invalidWorkspaces)+len(invalidResources) > 0 {
 		return channel, bad("scope names workspaces or resources you cannot reach")
@@ -837,8 +837,10 @@ func (s *Server) messageChannelSourceLabel(ctx context.Context, channel store.Me
 	return label
 }
 
-// tellAboutMessageChannel puts an item for the person in needs-you, once
-// per channel and key while it is open.
+// tellAboutMessageChannel puts an item about a channel in needs-you, once per
+// channel and key while it is open. It stays the channel's assistant's, stopped
+// or not: the assistant hears of it in the channel's conversation and decides
+// it. Only the assistant's own failures go to the person.
 func (s *Server) tellAboutMessageChannel(ctx context.Context, channel store.MessageChannelRecord, key, title, detail string) {
 	agent, err := s.store.GetAssistant(ctx, channel.AssistantID)
 	if err != nil {
@@ -847,7 +849,7 @@ func (s *Server) tellAboutMessageChannel(ctx context.Context, channel store.Mess
 	_, _, err = s.store.RecordPendingItem(ctx, store.PendingItem{
 		UserID: channel.UserID, AssistantID: agent.ID, WorkspaceID: agent.WorkspaceID,
 		Source: store.PendingSourceMessageChannel, Key: "message-channel:" + channel.ID + ":" + key,
-		Title: title, Excerpt: detail, Handler: store.PendingHandlerPerson,
+		Title: title, Excerpt: detail, Handler: store.PendingHandlerAssistant,
 	})
 	if err != nil && ctx.Err() == nil {
 		s.connectors.ServerHeld.Logf("message channel %s: needs-you item: %v", channel.ID, err)
@@ -912,9 +914,15 @@ func (s *Server) handleTestMessageChannelRules(w http.ResponseWriter, r *http.Re
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
+	result, err := s.testMessageChannelRules(r.Context(), agent, input)
+	writeResult(w, result, err)
+}
+
+// testMessageChannelRules runs the channel's matcher on the samples and, when
+// asked, on the source's recent messages. It saves nothing.
+func (s *Server) testMessageChannelRules(ctx context.Context, agent store.PersonalAgent, input store.MessageChannelTestInput) (store.MessageChannelTestResult, error) {
 	if len(input.Filters.Rules) > 20 || len(input.Samples) > 20 {
-		writeError(w, http.StatusBadRequest, "at most 20 rules and 20 samples")
-		return
+		return store.MessageChannelTestResult{}, &statusError{http.StatusBadRequest, errors.New("at most 20 rules and 20 samples")}
 	}
 	result := store.MessageChannelTestResult{Verdicts: []store.MessageChannelVerdict{}}
 	verdict := func(envelope store.MessageEnvelope) store.MessageChannelVerdict {
@@ -935,10 +943,9 @@ func (s *Server) handleTestMessageChannelRules(w http.ResponseWriter, r *http.Re
 		result.Verdicts = append(result.Verdicts, item)
 	}
 	if input.Recent && input.SourceAccountID != "" {
-		recent, err := s.recentMessageChannelEnvelopes(r.Context(), agent.UserID, input.SourceAccountID, 30)
+		recent, err := s.recentMessageChannelEnvelopes(ctx, agent.UserID, input.SourceAccountID, 30)
 		if err != nil {
-			writeResult(w, nil, err)
-			return
+			return store.MessageChannelTestResult{}, err
 		}
 		for _, envelope := range recent {
 			if envelope.Text != "" {
@@ -960,7 +967,7 @@ func (s *Server) handleTestMessageChannelRules(w http.ResponseWriter, r *http.Re
 			result.Verdicts = append(result.Verdicts, item)
 		}
 	}
-	writeJSON(w, http.StatusOK, result)
+	return result, nil
 }
 
 // handleMessageChannelPeers lists the conversations and senders the
@@ -970,10 +977,16 @@ func (s *Server) handleMessageChannelPeers(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	recent, err := s.recentMessageChannelEnvelopes(r.Context(), agent.UserID, r.URL.Query().Get("accountId"), 500)
+	peers, err := s.messageChannelPeers(r.Context(), agent, r.URL.Query().Get("accountId"))
+	writeResult(w, peers, err)
+}
+
+// messageChannelPeers are the conversations and senders the assistant's
+// channels saw recently on one source account, for picking them by name.
+func (s *Server) messageChannelPeers(ctx context.Context, agent store.PersonalAgent, accountID string) (store.MessageChannelPeers, error) {
+	recent, err := s.recentMessageChannelEnvelopes(ctx, agent.UserID, accountID, 500)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.MessageChannelPeers{}, err
 	}
 	peers := store.MessageChannelPeers{Conversations: []store.MessageChannelPeer{}, Senders: []store.MessageChannelPeer{}}
 	conversations, senders := map[string]int{}, map[string]int{}
@@ -996,7 +1009,7 @@ func (s *Server) handleMessageChannelPeers(w http.ResponseWriter, r *http.Reques
 			ConversationKind: envelope.Conversation.Kind, Count: 1, LastSeenAt: envelope.OccurredAt})
 		add(&peers.Senders, senders, store.MessageChannelPeer{ID: envelope.Sender.ID, Name: envelope.Sender.Name, Count: 1, LastSeenAt: envelope.OccurredAt})
 	}
-	writeJSON(w, http.StatusOK, peers)
+	return peers, nil
 }
 
 // recentMessageChannelEnvelopes are the newest messages, at most limit and

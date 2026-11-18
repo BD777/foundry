@@ -296,10 +296,20 @@ type notices struct {
 
 type conversationNotices struct {
 	sentAt   time.Time
-	pending  []string
+	pending  []noticeLine
 	language string
 	send     func(string)
 	timer    *time.Timer
+}
+
+// noticeLine is one line gathered for a conversation. Key, when set, makes a
+// later line with the same key replace the gathered one, so a thing noticed
+// again while it waits is told once. Due, when set, says whether the line
+// still holds when it would go out; one that no longer does is dropped.
+type noticeLine struct {
+	key  string
+	text string
+	due  func() bool
 }
 
 // CoalesceNotices is TaskEventCoalesce; tests shorten it.
@@ -308,6 +318,14 @@ var CoalesceNotices = personalagent.TaskEventCoalesce
 // add hands line, or the lines gathered with it, to send, which marks them
 // as Foundry's (tell).
 func (n *notices) add(conversationID, language, line string, now time.Time, send func(text string)) {
+	n.addLine(conversationID, language, noticeLine{text: line}, now, send)
+}
+
+// addLine is add for a line that may stop holding before it goes out.
+func (n *notices) addLine(conversationID, language string, line noticeLine, now time.Time, send func(text string)) {
+	if line.due != nil && !line.due() {
+		return
+	}
 	n.mu.Lock()
 	if n.byConversation == nil {
 		n.byConversation = map[string]*conversationNotices{}
@@ -328,14 +346,28 @@ func (n *notices) add(conversationID, language, line string, now time.Time, send
 		n.mu.Unlock()
 		// Not on the caller's goroutine: a steer waits for the device, whose
 		// own report may be what called.
-		go send(line)
+		go send(line.text)
 		return
 	}
-	notices.pending = append(notices.pending, line)
+	notices.gather(line)
 	if notices.timer == nil {
 		notices.timer = time.AfterFunc(notices.sentAt.Add(CoalesceNotices).Sub(now), func() { n.flush(conversationID) })
 	}
 	n.mu.Unlock()
+}
+
+// gather adds line to the pending ones, replacing a pending line of the same
+// key.
+func (c *conversationNotices) gather(line noticeLine) {
+	if line.key != "" {
+		for index := range c.pending {
+			if c.pending[index].key == line.key {
+				c.pending[index] = line
+				return
+			}
+		}
+	}
+	c.pending = append(c.pending, line)
 }
 
 func (n *notices) flush(conversationID string) {
@@ -345,9 +377,20 @@ func (n *notices) flush(conversationID string) {
 		n.mu.Unlock()
 		return
 	}
-	lines, send, language := notices.pending, notices.send, notices.language
+	gathered, send, language := notices.pending, notices.send, notices.language
 	notices.pending, notices.timer, notices.sentAt = nil, nil, time.Now()
 	n.mu.Unlock()
+	// Checked as the lines go out: an item answered or closed while its
+	// line waited is not told.
+	var lines []string
+	for _, line := range gathered {
+		if line.due == nil || line.due() {
+			lines = append(lines, line.text)
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
 	text := lines[0]
 	if len(lines) > 1 {
 		text = fmt.Sprintf(taskNoticeTexts["batch"][languageIndex(language)], len(lines), strings.Join(lines, "\n- "))

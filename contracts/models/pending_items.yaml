@@ -1,0 +1,25 @@
+openapi: 3.1.0
+info:
+  title: Foundry pending items
+  version: 1.0.0
+  description:
+    'Pending items ("Needs you"): the answer a person gives to an item (POST
+    /api/pending-items/{id}/answer). Part of the Foundry contract
+    (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript
+    types and Go models (apps/server/internal/store/pending_items_gen.go).'
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    PendingItemAnswerInput:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description:
+            The person's answer as they typed it. Foundry trims it; an answer to an
+            assistant's question goes to that conversation as the person's own words.

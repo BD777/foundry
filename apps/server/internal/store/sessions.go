@@ -103,10 +103,17 @@ const (
 	NoticeKindDigest          = "digest"
 	NoticeKindProposalOutcome = "proposal_outcome"
 	NoticeKindHelperQuestion  = "helper_question"
+	NoticeKindChannelItem     = "channel_item"
 	NoticeKindDeviceBack      = "device_back"
 	NoticeKindOperation       = "operation"
 	NoticeKindSupervision     = "supervision"
 	NoticeKindUpkeep          = "upkeep"
+	// NoticeKindQuestionAnswer: the person answered a question the assistant
+	// asked (needs_you ask, DEV-293); the answer names the question.
+	NoticeKindQuestionAnswer = "question_answer"
+	// NoticeKindDecisionNote: the person's reply to an approval that did not
+	// decide it, delivered as more information (DEV-294).
+	NoticeKindDecisionNote = "decision_note"
 )
 
 // SessionInputSourceOf is a stored input's structured source (DEV-246): what

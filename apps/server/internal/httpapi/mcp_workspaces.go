@@ -206,6 +206,9 @@ func (s *Server) listModelsForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	profileID := mcpArgString(call.args, "profileId")
+	if profileID == "" {
+		return "", &statusError{http.StatusBadRequest, errors.New("list_models needs a profileId: list the profiles with list_profiles (foundry profile list), then pass one as profileId (--profile)")}
+	}
 	for _, profile := range profiles {
 		if profile.ID != profileID {
 			continue

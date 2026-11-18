@@ -258,6 +258,17 @@ type Service struct {
 	// connector gateway is wired (DEV-265).
 	ConnectorReplay func(ctx context.Context, proposal store.PersonalAgentProposal) (string, error)
 
+	// SaveSettingsChecked saves a whole settings value after the checks the
+	// save needs outside this package (the notice connector, DEV-298); the
+	// settings handler and assistant_settings both save through it.
+	SaveSettingsChecked func(ctx context.Context, agent store.PersonalAgent, settings store.PersonalAgentSettings) (store.PersonalAgent, error)
+
+	// SaveChannel saves a message channel as the person's channel route does
+	// (empty id creates one), with the same checks; ChannelInputOf reads a
+	// channel's input for a patch (assistant_channels, DEV-298 S3).
+	SaveChannel    func(ctx context.Context, agent store.PersonalAgent, id string, input store.MessageChannelInput, resumeFromNow bool) (store.MessageChannelView, error)
+	ChannelInputOf func(ctx context.Context, agent store.PersonalAgent, id string) (store.MessageChannelInput, error)
+
 	// archiveItemSessions and restoreItemSessions are the item ports (Ports).
 	archiveItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, sessionIDs []string) error
 	restoreItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, cascaded []store.PersonalAgentItemEvent) error

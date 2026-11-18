@@ -3,6 +3,7 @@ import {
   type AgentSession,
   type AgentSubagentTranscript,
   type SessionFileRecord,
+  nativeQuestionItemId,
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import {
@@ -236,7 +237,7 @@ export function sessionTranscriptEntries(
           // in: the id after the turn's input id ("<input>/<call id>").
           ...(event.message?.questions?.length
             ? {
-                questionItemId: event.message.id.split("/").at(-1),
+                questionItemId: nativeQuestionItemId(event.message.id),
                 ...(event.message.delivery
                   ? { questionDelivery: event.message.delivery }
                   : {}),

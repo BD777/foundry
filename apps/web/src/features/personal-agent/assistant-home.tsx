@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   MessagesSquare,
-  OctagonX,
   Play,
   Plus,
   SlidersHorizontal,
@@ -68,6 +67,7 @@ import { AssistantGate } from "./assistant-gate";
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantCreateDialog } from "./assistant-list";
 import { ItemsCard } from "./items-card";
+import { StopAssistantButton } from "./stop-assistant-button";
 import { closedToday } from "./items-model";
 import { ProposalCard } from "./proposal-card";
 import { NeedsYouSection } from "./assistant-side-card";
@@ -519,7 +519,11 @@ function AssistantHomeReady({
   // there is not.
   const sideSections = (
     <>
-      <NeedsYouSection count={needsYouTotal ?? needsYou?.open ?? 0} />
+      <NeedsYouSection
+        count={needsYouTotal ?? needsYou?.open ?? 0}
+        items={needsYou?.items}
+        onOpenItem={(itemId) => onEvent({ type: "pending.item", itemId })}
+      />
       <ItemsCard
         closed={closedToday(assistant.todayItems.value?.items ?? [])}
         onOpenAll={() => onEvent({ type: "items.open" })}
@@ -576,15 +580,11 @@ function AssistantHomeReady({
               {switching === "resume" ? t("home.resuming") : t("home.resume")}
             </Button>
           ) : (
-            <Button
-              aria-busy={switching === "stop"}
-              disabled={Boolean(switching)}
-              onClick={() => void flip("stop")}
-              variant="secondary"
-            >
-              <OctagonX aria-hidden="true" size={15} />
-              {switching === "stop" ? t("home.stopping") : t("home.stopAll")}
-            </Button>
+            <StopAssistantButton
+              busy={switching === "stop"}
+              helperCount={visibleTasks(assistant.tasks).active.length}
+              onStop={() => void flip("stop")}
+            />
           )}
           <Button
             onClick={() => onEvent({ type: "settings.open" })}

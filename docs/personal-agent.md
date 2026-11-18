@@ -117,19 +117,19 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 
 **新增 MCP 工具**（只对 `personal_agent` 角色列出；`mcp_tools.json` + `mcp_personal_agent.go`）：
 
-| 工具                                                                                      | 类别 | 作用                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get_workspace(workspaceId, include[])`                                                   | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                                                                                                                                      |
-| `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`                   | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`                                                                                                                    |
-| `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})`                  | 写   | §4；返回前后对比或提议                                                                                                                                                                                    |
-| `archive_workspace(workspaceId, restore?)`                                                | 写   | §4                                                                                                                                                                                                        |
-| `remove_device(deviceId, note?)`                                                          | 写   | 删除本人拥有的一台设备及其全部项目与会话；预览写进卡片，永远先问，不受策略影响                                                                                                                            |
-| `remember(op, item)`                                                                      | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                                                                                                                                      |
-| `update_rules(change)`                                                                    | 写   | §4 规则变更                                                                                                                                                                                               |
-| `list_tasks(status?)`                                                                     | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                                                                                                                                      |
-| `update_list(op, item)`                                                                   | 写   | 事项（`pa_items`）：`add` / `update` 增改，`archive` / `restore` 归档与恢复；可设 `owner`、`summary`、帮手（`taskId`）与到点提醒（§6）                                                                    |
-| `read_list(status?, owner?, from?, to?, closedSince?, includeArchived?, limit?, offset?)` | 读   | 事项，一次一页：文字、时间、owner、状态、摘要、帮手状态；不含事件与计划（§6）                                                                                                                             |
-| `needs_you(op, itemId?, sessionId?, note?)`                                               | 读写 | 本人的“等你处理”列表：读全部未结项；把自己帮手的项交给本人（附一句话）、把一条不需要决定的话告诉本人（`tell`，见 §7），或在别处解决后关闭，见[助理编排 §h](assistant-orchestration.md#h-一条等你处理管道) |
+| 工具                                                                                      | 类别 | 作用                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_workspace(workspaceId, include[])`                                                   | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                                                                                                                                                                                                                               |
+| `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`                   | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`                                                                                                                                                                                                             |
+| `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})`                  | 写   | §4；返回前后对比或提议                                                                                                                                                                                                                                                                             |
+| `archive_workspace(workspaceId, restore?)`                                                | 写   | §4                                                                                                                                                                                                                                                                                                 |
+| `remove_device(deviceId, note?)`                                                          | 写   | 删除本人拥有的一台设备及其全部项目与会话；预览写进卡片，永远先问，不受策略影响                                                                                                                                                                                                                     |
+| `remember(op, item)`                                                                      | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                                                                                                                                                                                                                               |
+| `update_rules(change)`                                                                    | 写   | §4 规则变更                                                                                                                                                                                                                                                                                        |
+| `list_tasks(status?)`                                                                     | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                                                                                                                                                                                                                               |
+| `update_list(op, item)`                                                                   | 写   | 事项（`pa_items`）：`add` / `update` 增改，`archive` / `restore` 归档与恢复；可设 `owner`、`summary`、帮手（`taskId`）与到点提醒（§6）                                                                                                                                                             |
+| `read_list(status?, owner?, from?, to?, closedSince?, includeArchived?, limit?, offset?)` | 读   | 事项，一次一页：文字、时间、owner、状态、摘要、帮手状态；不含事件与计划（§6）                                                                                                                                                                                                                      |
+| `needs_you(op, itemId?, sessionId?, note?, question?, options?)`                          | 读写 | 本人的“等你处理”列表：读全部未结项；把自己帮手的项交给本人（附一句话）、把一条不需要决定的话告诉本人（`tell`，见 §7）、向本人提一个只有他能回答的问题（`ask`，不等待，答复回到发问的会话），或在别处解决后关闭，并可撤回自己的问题，见[助理编排 §h](assistant-orchestration.md#h-一条等你处理管道) |
 
 参数的确切形状以 `mcp_tools.json` 为准：`source = {kind: "empty" | "clone" | "existing", url?, path?}`；`skills` 与 `connectors` 在 `update_workspace` 里是 `{add[], remove[]}`（连接器按账号 id）；`include` ⊆ `live / instructions / note`，默认全部；`remember` 的 `op` = `add / update / forget`，`item = {id?, content? ≤300 字符, inferred?}`；`update_rules` 的 `change = {action, decision}`。写工具在策略为“先问”时返回 `{status: "needs_confirmation", proposalId, summary, expiresAt}`（`PersonalAgentNeedsConfirmation`）。
 
@@ -260,7 +260,7 @@ projects; they never talk to the person. You speak for all of them, once, clearl
 Decide which one, silently:
 1. Stop or resume. (Plain "stop" is handled before you see it; if the person asks you to
    stop one thing, cancel just that.)
-2. Reply to something pending: an answer to your question, or feedback on work in progress.
+2. Reply to something pending: a helper's question, or feedback on work in progress. The answer to a question you asked (needs_you ask) is the person's decision: act on it.
 3. A question you can answer directly: general knowledge, advice, "how is X going",
    "what did we do last week". Answer it; look things up with tools if needed.
 4. Something to remember or a rule ("I prefer…", "from now on ask me before…"). Use
@@ -322,8 +322,11 @@ note in cards/<project id>.md ("Wants X here, not in Y") so you do not repeat th
   what you could not do and where they can do it themselves, without technical detail.
 - Approval covers exactly what was approved, once. Do not treat it as permission for
   similar actions later.
-- When you answer a helper's question or approval for the person, say so in that reply:
-  what you decided, and that it was your decision for them.
+- A helper's question or approval comes to you: answer or approve it yourself when you can
+  (approvals too, when you are confident), and say in that reply what you decided and that
+  it was your decision for them. What you cannot settle goes to the person with
+  needs_you hand_over; a question only they can answer, which is your own, goes with
+  needs_you ask, and their answer comes back to you as a message.
 
 # Step 4: do it yourself, or hand it off?
 Do it yourself when it takes a handful of steps and is not part of a project: answering,

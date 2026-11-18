@@ -44,7 +44,6 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import type { WorkerRelease } from "@bd777/foundry-protocol";
@@ -81,6 +80,7 @@ import {
   workerShimPath,
 } from "./worker-identity.js";
 import { tildePath } from "../platform/paths.js";
+import { installFoundryCommand, writeCommandShim } from "./foundry-command.js";
 
 export { ownPackage, runtimeRoot, workerShimPath };
 export type { PackageIdentity };
@@ -89,8 +89,6 @@ export type { PackageIdentity };
 export function currentRuntimeCli(name: string): string {
   return join(runtimeRoot(), "current", "node_modules", name, "dist", "cli.js");
 }
-
-const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
 /**
  * Writes this machine's `foundry-worker` command: it runs the installed
@@ -103,19 +101,11 @@ export function writeWorkerShim(
 ): string | undefined {
   if (process.platform !== "darwin" && process.platform !== "linux")
     return undefined;
-  const path = workerShimPath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const stack = ["FOUNDRY_STACK", "FOUNDRY_STATE_ROOT"]
-    .map((key) => [key, process.env[key]?.trim()] as const)
-    .filter(([, value]) => value)
-    .map(([key, value]) => `export ${key}=${shellQuote(value!)}\n`)
-    .join("");
-  writeFileSync(
-    path,
-    `#!/bin/sh\n# Foundry worker on this machine; written by install and update.\n${stack}exec ${shellQuote(node)} ${shellQuote(currentRuntimeCli(name))} "$@"\n`,
-    { mode: 0o755 },
-  );
-  return path;
+  return writeCommandShim(workerShimPath(), {
+    header: "Foundry worker on this machine; written by install and update.",
+    cli: currentRuntimeCli(name),
+    node,
+  });
 }
 
 function reportWorkerShim(name: string): void {
@@ -125,6 +115,7 @@ function reportWorkerShim(name: string): void {
   console.log(
     `Run \`${shown} doctor\` to check this device, \`${shown} update\` to update it.`,
   );
+  for (const line of installFoundryCommand(name)) console.log(line);
 }
 
 /** Version of the installed runtime in use, if `install` installed one. */

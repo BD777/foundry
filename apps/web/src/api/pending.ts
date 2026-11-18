@@ -37,7 +37,13 @@ export type PendingSource =
    * A note from the assistant that needs no decision (DEV-278): the person
    * reads it and dismisses it.
    */
-  | "notice";
+  | "notice"
+  /**
+   * A question the assistant asks the person itself (needs_you ask, DEV-293):
+   * the person answers it here, and the answer goes to the assistant's
+   * conversation.
+   */
+  | "assistant_question";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person
@@ -56,11 +62,14 @@ export type PendingHandedReason =
 /** How the item ended; escalation is replaced by the person's later action. */
 export type PendingOutcome =
   | "assistant_answered"
+  /** The assistant closed the item with a reason and no answer (closeReason). */
+  | "assistant_closed"
   | "handed_over"
   | "escalated_timeout"
   | "auto_resolved"
   | "person_answered"
-  | "person_dismissed_not_needed";
+  | "person_dismissed_not_needed"
+  | "withdrawn";
 
 export type PendingState =
   "open" | "replied" | "superseded" | "done" | "dismissed";
@@ -126,6 +135,16 @@ export interface PendingItem {
   updatedAt: string;
   resolvedAt?: string;
   outcome?: PendingOutcome;
+  /** The answer the item got, at most 1,000 characters (DEV-291). */
+  answer?: string;
+  /** Who gave the answer (DEV-291). */
+  answeredBy?: "assistant" | "person";
+  /** The reason the assistant gave when it closed the item (outcome assistant_closed). */
+  closeReason?: string;
+  /** An approval asks for this: Markdown with the command or the changed paths. */
+  approval?: boolean;
+  /** The approval's detail, Markdown: a ```sh command or a list of changed paths. */
+  detail?: string;
   /** What a connector-write item asks the person to decide (DEV-265). */
   connectorWrite?: PendingConnectorWriteDetail;
 }
@@ -204,6 +223,23 @@ export function retryPendingItem(
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/retry`, {
     body: { requestId },
   });
+}
+
+/**
+ * The person's answer to an item (POST /api/pending-items/{id}/answer). An
+ * assistant's question goes to its conversation as the person's words and
+ * closes the item; other items are answered in their conversation.
+ */
+export function answerPendingItem(
+  id: string,
+  text: string,
+  idempotencyKey: string,
+): Promise<unknown> {
+  return request(
+    "POST",
+    `/api/pending-items/${encodeURIComponent(id)}/answer`,
+    { body: { text }, idempotencyKey },
+  );
 }
 
 /**

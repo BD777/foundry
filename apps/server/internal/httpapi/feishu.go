@@ -104,25 +104,30 @@ func (s *Server) handleSaveWorkspaceFeishuBot(w http.ResponseWriter, r *http.Req
 }
 
 // handleGenerateFeishuPairingCode issues a code that binds the chat it is
-// sent in to the workspace; the chat then acts as the caller.
+// sent from to the workspace.
 func (s *Server) handleGenerateFeishuPairingCode(w http.ResponseWriter, r *http.Request) {
-	workspaceID := r.PathValue("id")
-	code := generatePairingCode()
-	expiresAt := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)
-	route, err := s.store.SetFeishuPairingCode(r.Context(), workspaceID, feishu.HashPairingCode(code), actorFromContext(r.Context()).AccountID(), expiresAt)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "pick the Feishu app the bot runs on first")
-		return
-	}
+	issued, err := s.generateFeishuPairingCode(r.Context(), r.PathValue("id"), actorFromContext(r.Context()).AccountID())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, store.FeishuPairingCodeResult{
-		WorkspaceID:          workspaceID,
-		PairingCode:          code,
-		PairingCodeExpiresAt: route.PairingCodeExpiresAt,
-	})
+	writeJSON(w, http.StatusOK, issued)
+}
+
+// generateFeishuPairingCode stores a new code on the workspace's bot route for
+// its app, valid for 10 minutes. The HTTP route and foundry_settings pair_code
+// both run it. accountID is the account the paired chat acts as.
+func (s *Server) generateFeishuPairingCode(ctx context.Context, workspaceID, accountID string) (store.FeishuPairingCodeResult, error) {
+	code := generatePairingCode()
+	expiresAt := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)
+	route, err := s.store.SetFeishuPairingCode(ctx, workspaceID, feishu.HashPairingCode(code), accountID, expiresAt)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.FeishuPairingCodeResult{}, &statusError{http.StatusConflict, errors.New("pick the Feishu app the bot runs on first")}
+	}
+	if err != nil {
+		return store.FeishuPairingCodeResult{}, err
+	}
+	return store.FeishuPairingCodeResult{WorkspaceID: workspaceID, PairingCode: code, PairingCodeExpiresAt: route.PairingCodeExpiresAt}, nil
 }
 
 // handleUnbindFeishuChat stops routing one chat to the workspace.

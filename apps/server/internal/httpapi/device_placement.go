@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"slices"
@@ -247,31 +248,32 @@ func (s *Server) handleSetDeviceLabels(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	labels, err := personalagent.NormalizeLabels(input.Labels)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	deviceID := r.PathValue("deviceId")
-	devices, err := s.store.ListDevices(r.Context())
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	index := slices.IndexFunc(devices, func(device store.DeviceProjection) bool { return device.ID == deviceID })
-	if index < 0 {
-		writeError(w, http.StatusNotFound, "device not found")
-		return
-	}
-	device := devices[index]
 	userID := ""
 	if account := actorFromContext(r.Context()).Account; account != nil {
 		userID = account.ID
 	}
-	if err := s.store.SetDeviceLabels(r.Context(), deviceID, labels, userID); err != nil {
-		writeResult(w, nil, err)
-		return
+	placement, err := s.setDeviceLabels(r.Context(), r.PathValue("deviceId"), input.Labels, userID)
+	writeResult(w, placement, err)
+}
+
+// setDeviceLabels replaces a device's labels and answers its placement (the
+// device route and foundry_settings). updatedBy is the person who saves them.
+func (s *Server) setDeviceLabels(ctx context.Context, deviceID string, labelsIn []store.DeviceLabel, updatedBy string) (store.DevicePlacement, error) {
+	labels, err := personalagent.NormalizeLabels(labelsIn)
+	if err != nil {
+		return store.DevicePlacement{}, &statusError{http.StatusBadRequest, err}
 	}
-	placements, err := s.devicePlacements(r.Context(), []store.DeviceProjection{device}, time.Now())
-	writeResult(w, placements[deviceID], err)
+	devices, err := s.store.ListDevices(ctx)
+	if err != nil {
+		return store.DevicePlacement{}, err
+	}
+	index := slices.IndexFunc(devices, func(device store.DeviceProjection) bool { return device.ID == deviceID })
+	if index < 0 {
+		return store.DevicePlacement{}, &statusError{http.StatusNotFound, errors.New("device not found")}
+	}
+	if err := s.store.SetDeviceLabels(ctx, deviceID, labels, updatedBy); err != nil {
+		return store.DevicePlacement{}, err
+	}
+	placements, err := s.devicePlacements(ctx, []store.DeviceProjection{devices[index]}, time.Now())
+	return placements[deviceID], err
 }

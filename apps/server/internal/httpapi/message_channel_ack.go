@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/channels"
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -80,7 +80,10 @@ func (s *Server) messageChannelAck(ctx context.Context, channel store.MessageCha
 // checkMessageChannelAckRoute requires the call to be a catalogued write
 // route the instance's access allows.
 func (s *Server) checkMessageChannelAckRoute(data store.ExtensionInstanceData, call store.ConnectorEventsAckCall, reaction string) error {
-	path := fillAckTemplate(call.Path, "<message>", reaction)
+	path, err := fillAckTemplate(call.Path, false, "<message>", reaction)
+	if err != nil {
+		return err
+	}
 	route, ok := externalaccounts.ExtensionRouteFor(data.Routes, call.Method, path)
 	if !ok || !strings.EqualFold(strings.TrimSpace(route.Access), externalaccounts.ExtensionAccessWrite) ||
 		!externalaccounts.ExtensionAccessAllowsRoute(data.Descriptor.ServerHeld.Access, data.ProbeValues, route) {
@@ -92,13 +95,16 @@ func (s *Server) checkMessageChannelAckRoute(data store.ExtensionInstanceData, c
 func (s *Server) sendMessageChannelAck(ctx context.Context, app store.ExternalProviderApp, deviceID string, call store.ConnectorEventsAckCall, reaction, messageID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	path := fillAckTemplate(call.Path, messageID, reaction)
+	path, err := fillAckTemplate(call.Path, false, messageID, reaction)
+	if err != nil {
+		return fmt.Errorf("the reaction path: %w", err)
+	}
 	var body io.Reader
 	headers := http.Header{}
 	if strings.TrimSpace(call.Body) != "" {
-		payload := fillAckTemplate(call.Body, messageID, reaction)
-		if !json.Valid([]byte(payload)) {
-			return errors.New("the reaction body template did not produce JSON")
+		payload, err := fillAckTemplate(call.Body, true, messageID, reaction)
+		if err != nil {
+			return fmt.Errorf("the reaction body: %w", err)
 		}
 		body = bytes.NewReader([]byte(payload))
 		headers.Set("Content-Type", "application/json")
@@ -115,12 +121,13 @@ func (s *Server) sendMessageChannelAck(ctx context.Context, app store.ExternalPr
 	return nil
 }
 
-// fillAckTemplate replaces the two values an ack call may use.
-func fillAckTemplate(template, messageID, reaction string) string {
-	return strings.NewReplacer(
-		"{message.id}", url.PathEscape(messageID),
-		"{reaction}", url.PathEscape(reaction),
-	).Replace(template)
+// fillAckTemplate fills an acknowledgement path (body false) or body template
+// with the message id and reaction key, with the connector template rules.
+func fillAckTemplate(template string, body bool, messageID, reaction string) (string, error) {
+	return connectors.FillRequestTemplate(template, map[string]string{
+		"message.id": messageID,
+		"reaction":   reaction,
+	}, body)
 }
 
 // recordMessageChannelAckFailure leaves the failure in the channel's recent

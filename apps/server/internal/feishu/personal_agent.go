@@ -137,8 +137,17 @@ func (m *WSManager) chatRoute(ctx context.Context, app *botApp, chatID string) (
 // assistantFor is the person's assistant when it takes the direct chat;
 // nil for groups, and for a direct chat it does not take.
 func (m *WSManager) assistantFor(ctx context.Context, route store.FeishuBotRoute) *assistantChat {
+	if route.Kind != store.FeishuRouteP2P {
+		return nil
+	}
+	return m.routeAssistant(ctx, route)
+}
+
+// routeAssistant is the assistant a route's app and workspace resolve to for the
+// route's person, nil when there is none or it does not take the route.
+func (m *WSManager) routeAssistant(ctx context.Context, route store.FeishuBotRoute) *assistantChat {
 	desk := m.PersonalAgents
-	if desk == nil || route.Kind != store.FeishuRouteP2P || route.BoundUserID == "" {
+	if desk == nil || route.BoundUserID == "" {
 		return nil
 	}
 	assistant, ok, err := desk.Route(ctx, route.BoundUserID, route.AppID, route.WorkspaceID)

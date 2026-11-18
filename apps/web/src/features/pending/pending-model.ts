@@ -1,5 +1,10 @@
 import type { TFunction } from "i18next";
+import {
+  agentQuestionReplyText,
+  nativeQuestionItemId,
+} from "@bd777/foundry-protocol";
 import type { PendingItem } from "../../api";
+import type { PendingState } from "../../api/pending";
 import { pendingPersonal } from "../../lib/pending-display";
 import { clockTime } from "../../lib/time-format";
 
@@ -163,11 +168,75 @@ export function groupPendingItems(
 }
 
 /**
- * The message a reply sends to the chat: the item's own words quoted, so
- * the Agent knows what it answers even after its context was compacted,
- * then the person's reply.
+ * The message a reply sends to the chat. A question answers in the envelope
+ * the chat's question card uses (DEV-292b), naming the question's message
+ * the way the card does, so the reply answers that question. Any other item:
+ * its own words quoted, so the Agent knows what it answers even after its
+ * context was compacted, then the person's reply.
  */
+/**
+ * Where a reply to an item goes: an Issue's question, the assistant's own
+ * question (answered through the item), or the item's chat.
+ */
+export type PendingReplyRoute = "issue" | "answer" | "chat" | "none";
+
+export function pendingReplyRoute(
+  item: Pick<PendingItem, "source" | "issueId" | "eventId" | "sessionId">,
+): PendingReplyRoute {
+  if (item.source === "issue_question" && item.issueId && item.eventId)
+    return "issue";
+  if (item.source === "assistant_question") return "answer";
+  if (item.sessionId) return "chat";
+  return "none";
+}
+
+/**
+ * The item a notice's link opens: `/pending?item=<id>` (DEV-294). Empty when
+ * the address names none.
+ */
+export function pendingFocusItemId(search: string): string {
+  return new URLSearchParams(search).get("item") ?? "";
+}
+
+/** The DOM id of one item's card on the Pending page, where a link scrolls to. */
+export function pendingItemDomId(itemId: string): string {
+  return `pending-item-${itemId}`;
+}
+
+/** The i18n key of a resolved item's status: a withdrawn question says so. */
+export function pendingStatusKey(
+  item: Pick<PendingItem, "state" | "outcome">,
+): "outcome.withdrawn" | `state.${PendingState}` {
+  return item.outcome === "withdrawn"
+    ? "outcome.withdrawn"
+    : `state.${item.state}`;
+}
+
+/**
+ * The approval's detail as the person reads it: the command or the changed
+ * paths, without the Markdown fence lines and inline code marks around them.
+ * Shown as plain text, never rendered as Markdown; empty for a non-approval.
+ */
+export function pendingApprovalDetail(
+  item: Pick<PendingItem, "approval" | "detail">,
+): string {
+  if (!item.approval) return "";
+  return (item.detail ?? "")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("```"))
+    .map((line) => line.replace(/`([^`]*)`/g, "$1"))
+    .join("\n")
+    .trim();
+}
+
 export function pendingReplyText(item: PendingItem, reply: string): string {
+  const messageId = item.messageId;
+  if (item.source === "question" && messageId && item.title.trim())
+    return agentQuestionReplyText(
+      nativeQuestionItemId(messageId),
+      [{ title: item.title.trim() }],
+      [reply],
+    );
   const quoted = item.excerpt
     .trim()
     .split("\n")

@@ -978,6 +978,71 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConnectorServerHeldLabel"
+        notify:
+          $ref: "#/components/schemas/ConnectorServerHeldNotify"
+          x-go-type-skip-optional-pointer: false
+    ConnectorServerHeldNotify:
+      description:
+        How Foundry tells the person about an item that needs them, as pure data. Foundry sends one
+        message per notice through the instance's gateway to the conversation named by target, and
+        reads the person's reply by the message it quotes. A version above the one this Foundry reads
+        is refused; a Foundry from before this section ignores the section.
+      type: object
+      required: [version, format, target, send, sent]
+      additionalProperties: false
+      properties:
+        version:
+          description: The notify contract version. This Foundry reads version 1.
+          type: integer
+        format:
+          description: How the notice text is written. Only markdown for now.
+          type: string
+        target:
+          $ref: "#/components/schemas/ConnectorServerHeldNotifyTarget"
+        send:
+          $ref: "#/components/schemas/ConnectorServerHeldNotifySend"
+        sent:
+          $ref: "#/components/schemas/ConnectorServerHeldNotifySent"
+        replyTo:
+          description:
+            The events envelope field (for example attributes.replyTo) that names the message a
+            reply quotes. Empty when replies are not read.
+          type: string
+    ConnectorServerHeldNotifyTarget:
+      description:
+        The conversation the notices go to. field names a text field of serverHeld.fields whose
+        value the person fills in; conversationKind is self (the person's own chat) for now.
+      type: object
+      required: [field, conversationKind]
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+        conversationKind:
+          type: string
+    ConnectorServerHeldNotifySend:
+      description:
+        One notice request. method and path name a catalogued write route at or below the upstream
+        prefix. The path may use {target} and {notice.id}, path-escaped. The body may also use
+        {text|json} and {link|json}, the notice text and its Web link as the inside of a JSON string.
+      type: object
+      required: [method, path]
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        body:
+          type: string
+    ConnectorServerHeldNotifySent:
+      description: Where the sent message's id is in a successful answer, as a JSON pointer.
+      type: object
+      required: [messageId]
+      additionalProperties: false
+      properties:
+        messageId:
+          type: string
     ConnectorServerHeldWrite:
       description:
         One write route's declaration. createdMessageId and footer keep their meaning. objects

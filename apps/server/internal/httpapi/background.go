@@ -66,6 +66,9 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},
+		{"person-notices", func(ctx context.Context) {
+			everyFromNow(ctx, personNoticePumpInterval, nil, s.pumpPersonNotices)
+		}},
 		// Not an integration: moves run with FOUNDRY_INTEGRATIONS=off too.
 		{"workspace-migrations", s.runWorkspaceMigrations},
 		{"device-removals", func(ctx context.Context) {

@@ -122,7 +122,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		toolPins = mergeToolPins(toolPins, packagePins)
 		session.SkillRefs = refs
 	}
-	session.QuestionsTo, _ = questionsTo(ctx, c.hub.store, session, 0)
+	session.QuestionsTo, _ = questionRouting(c.hub.responsibleFor(ctx, session))
 	if session.Source != store.SessionSourceVerification && !store.IsPromptOnlySessionSource(session.Source) {
 		drafts, err := c.hub.store.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
 		if err != nil {

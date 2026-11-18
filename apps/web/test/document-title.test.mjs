@@ -155,7 +155,7 @@ test("status marks show only while a chat is open, never on other pages", () => 
   setDocumentChat(undefined);
 });
 
-test("an unseen assistant answer marks the page title and icon", () => {
+test("an unseen assistant answer marks a non-chat page as 💬 with its own icon", () => {
   setDocumentChat(undefined);
   setDocumentUnread(false);
   setDocumentPage({
@@ -163,8 +163,8 @@ test("an unseen assistant answer marks the page title and icon", () => {
     context: "my-feishu",
     assistantUnread: true,
   });
-  assert.equal(document.title, "✅ Devices · my-feishu — Foundry");
-  assert.equal(icon.getAttribute("href"), "/foundry-icon-unread.png");
+  assert.equal(document.title, "💬 Devices · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon-assistant.png");
   setDocumentPage({
     primary: "Devices",
     context: "my-feishu",
@@ -172,6 +172,61 @@ test("an unseen assistant answer marks the page title and icon", () => {
   });
   assert.equal(document.title, "Devices · my-feishu — Foundry");
   assert.equal(icon.getAttribute("href"), "/foundry-icon.png");
+});
+
+test("a chat page shows its own state, never the assistant's unseen answer", () => {
+  setDocumentChat(undefined);
+  setDocumentUnread(false);
+  setDocumentPage({
+    primary: "Chats",
+    context: "my-feishu",
+    assistantUnread: true,
+  });
+  setDocumentChat({ title: "修复Agent接口发图片", running: false });
+  assert.equal(document.title, "修复Agent接口发图片 · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon.png");
+  setDocumentChat({ title: "修复Agent接口发图片", running: true });
+  assert.equal(document.title, "⏳ 修复Agent接口发图片 · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon-running.png");
+  setDocumentChat({ title: "修复Agent接口发图片", running: false });
+  setDocumentUnread(true);
+  assert.equal(document.title, "✅ 修复Agent接口发图片 · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon-unread.png");
+  setDocumentUnread(false);
+  setDocumentChat(undefined);
+  assert.equal(document.title, "💬 Chats · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon-assistant.png");
+  setDocumentPage({ primary: "Chats", context: "my-feishu" });
+  assert.equal(document.title, "Chats · my-feishu — Foundry");
+  assert.equal(icon.getAttribute("href"), "/foundry-icon.png");
+});
+
+test("a chat's own unseen answer marks its chat even while the assistant waits", () => {
+  setDocumentChat(undefined);
+  setDocumentUnread(false);
+  setDocumentPage({
+    primary: "Chats",
+    context: "my-feishu",
+    assistantUnread: true,
+  });
+  setDocumentChat({ title: "Digest the group", running: false });
+  setDocumentUnread(true);
+  assert.equal(document.title, "✅ Digest the group · my-feishu — Foundry");
+  setDocumentUnread(false);
+  setDocumentChat(undefined);
+});
+
+test("the assistant mark is its own state, not the unread one", () => {
+  assert.equal(tabStatusMarks.assistant.marker, "💬");
+  assert.notEqual(
+    tabStatusMarks.assistant.icon,
+    tabStatusMarks.unread.icon,
+    "the assistant's icon is never the green unread dot",
+  );
+  assert.equal(
+    buildDocumentTitle({ primary: "Devices", assistantUnread: true }),
+    "💬 Devices — Foundry",
+  );
 });
 
 test("the tab icon carries the same mark, and idle restores the app icon", () => {

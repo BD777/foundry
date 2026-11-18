@@ -87,12 +87,17 @@ export class CodexBoundaryHold {
     return this.held.flatMap((entry) => (entry.steerId ? [entry.steerId] : []));
   }
 
-  /** The turn ended: nothing more is delivered by it. */
-  close(): void {
+  /**
+   * The turn ended: nothing more is delivered by it. Returns the steers it
+   * held and never delivered, so the caller can report them.
+   */
+  close(): HeldSteer[] {
     this.closed = true;
     if (this.settle) clearTimeout(this.settle);
-    for (const entry of this.held) clearTimeout(entry.timer);
+    const undelivered = this.held;
+    for (const entry of undelivered) clearTimeout(entry.timer);
     this.held = [];
+    return undelivered;
   }
 
   /** Waits for the deliveries started so far. */

@@ -144,6 +144,8 @@ export const serverPackages = {
   permission: ["jsonempty", "store"],
   // Message channels (DEV-203): feeds, filters and delivery, over ports.
   channels: ["store"],
+  // Person notices (DEV-294): sinks and the dispatcher; names no connector.
+  personnotice: ["store"],
   // jsonempty names the required map/list types in generated server-held
   // extension API results; it is a leaf collection package, not a policy
   // dependency or a reverse edge into the Connectors module.

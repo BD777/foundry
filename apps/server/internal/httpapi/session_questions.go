@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
@@ -32,8 +33,6 @@ const (
 	// request_user_input_async), answered by a steer naming them.
 	questionDeliveryNextTurn = "next_turn"
 	questionDeliveryAsync    = "async"
-	// questionChainLimit bounds the walk up nested orchestrators.
-	questionChainLimit = 8
 	// relayedQuestionDetailLimit is how much of a plan a relay carries.
 	relayedQuestionDetailLimit = 4000
 )
@@ -41,64 +40,44 @@ const (
 // relayedQuestionSpace names the inbox ids of relayed questions.
 var relayedQuestionSpace = uuid.MustParse("3c0f7b8e-5d21-4f6a-9b3e-7a4c2d1e8f60")
 
-// questionsTo is who answers the session's prompts ("person", "parent" or
-// "": nobody) and, for "parent", the live parent that relays them ("" when
-// the parent is gone: the question then waits in the child's own chat).
-func (s *Server) questionsTo(ctx context.Context, session store.AgentSession) (string, string) {
-	return questionsTo(ctx, s.store, session, 0)
+// questionRouting is the Worker's questionsTo value for a session (questionsToPerson,
+// questionsToParent or "": nobody) and, for a parent, the live session that
+// takes its questions ("" when it is gone: the question then waits in the
+// child's own chat).
+func questionRouting(responsible assistant.Responsibility) (string, string) {
+	switch responsible.Party {
+	case assistant.ResponsiblePerson:
+		return questionsToPerson, ""
+	case assistant.ResponsibleAssistant, assistant.ResponsibleSession:
+		return questionsToParent, responsible.SessionID
+	}
+	return "", ""
 }
 
-// sessionSummaries reads the sessions a chain of parents walks.
-type sessionSummaries interface {
-	GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error)
-}
-
-func questionsTo(ctx context.Context, summaries sessionSummaries, session store.AgentSession, depth int) (string, string) {
-	if session.IssueID != "" || session.Role != "" || depth > questionChainLimit {
-		return "", ""
-	}
-	if session.ParentSessionID == "" {
-		if session.Source == "" || session.Source == store.SessionSourceChat {
-			return questionsToPerson, ""
-		}
-		return "", ""
-	}
-	// Only a session an agent created answers to it: a scheduled run
-	// (source chat) and a verifier answer to their own owners.
-	if session.Source != store.SessionSourceAgent {
-		return "", ""
-	}
-	parent, err := summaries.GetAgentSessionSummary(ctx, session.ParentSessionID)
-	if err != nil || parent.ArchivedAt != "" || parent.Status == "canceled" {
-		// No live parent: the person answers in the child's own chat.
-		return questionsToParent, ""
-	}
-	if to, _ := questionsTo(ctx, summaries, parent, depth+1); to == "" {
-		return "", ""
-	}
-	return questionsToParent, parent.ID
-}
-
-// questionWaits reports whether a question waits for the person's (or a
-// parent's) answer: it ended the turn, or the turn runs on without it.
-func questionWaits(delivery string) bool {
-	return delivery == questionDeliveryNextTurn || delivery == questionDeliveryAsync
-}
-
-// relayChildQuestion puts a child's question that waits for an answer in its
-// parent's inbox at once.
+// relayChildQuestion puts a question a child raised in its responsible
+// party's inbox at once, whatever its delivery: a question the person holds
+// in their own chat is not relayed. A stopped assistant keeps the question
+// until it resumes (relayHelperQuestionsOnResume).
 func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessionEvent) {
 	message := event.Message
-	if message == nil || len(message.Questions) == 0 || !questionWaits(message.Delivery) {
+	if message == nil || len(message.Questions) == 0 {
 		return
 	}
 	child, err := s.store.GetAgentSessionSummary(ctx, event.SessionID)
 	if err != nil {
 		return
 	}
-	to, parentID := s.questionsTo(ctx, child)
-	if to != questionsToParent || parentID == "" {
+	responsible := s.assistant.ResponsibleFor(ctx, child)
+	to, parentID := questionRouting(responsible)
+	if to != questionsToParent {
+		return
+	}
+	if parentID == "" {
 		log.Printf("session question kept in its chat: session=%s message=%s reason=%q", child.ID, message.ID, "no live parent answers it")
+		return
+	}
+	if responsible.Party == assistant.ResponsibleAssistant && responsible.Assistant.State != store.PersonalAgentActive {
+		log.Printf("session question kept for the stopped assistant: session=%s message=%s", child.ID, message.ID)
 		return
 	}
 	if s.questionAnswered(ctx, child, *message) {
@@ -106,23 +85,55 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 		return
 	}
 	prompt := s.relayedQuestionText(child, *message)
-	// A helper of the person's assistant (§h): a stopped assistant gets no
-	// question it would read only after resuming; the person has it in
-	// their list already. A running one may hand it to the person.
-	if parent, err := s.store.GetAgentSessionSummary(ctx, parentID); err == nil {
-		if agent, ok := s.assistant.Conversation(ctx, parent); ok {
-			if agent.State != store.PersonalAgentActive {
-				log.Printf("session question kept for the person: session=%s message=%s reason=%q", child.ID, message.ID, "the assistant is stopped")
-				return
-			}
-			prompt += fmt.Sprintf("If only the person can decide, do not guess: hand it to them with needs_you (op hand_over, sessionId %s, note: one plain sentence for the person); they answer it in their list and it reaches the helper.\n", child.ID)
-		}
+	// A helper of the person's assistant (§h): a running assistant may hand it
+	// to the person when only they can decide.
+	if responsible.Party == assistant.ResponsibleAssistant {
+		prompt += fmt.Sprintf("If only the person can decide, do not guess: hand it to them with needs_you (op hand_over, sessionId %s, note: one plain sentence for the person); they answer it in their list and it reaches the helper.\n", child.ID)
 	}
 	item := store.SessionInboxItem{
 		SessionID: parentID, InputID: uuid.NewSHA1(relayedQuestionSpace, []byte(child.ID+"\x00"+message.ID)).String(),
 		SenderSessionID: child.ID, Prompt: prompt, RequestedDelivery: store.DeliveryBoundary,
 	}
 	s.admitChildReport(ctx, child, item)
+}
+
+// relayHelperQuestionsOnResume relays to a resumed assistant the questions
+// its helpers raised while it was stopped and that still wait for an answer.
+// Each is one inbox item keyed by its question, so a question relayed before
+// is not relayed twice, and an answered or superseded one is not relayed.
+func (s *Server) relayHelperQuestionsOnResume(ctx context.Context, agent store.PersonalAgent) {
+	items, err := s.store.ListVisiblePendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", 500)
+	if err != nil {
+		log.Printf("assistant %s: list helper questions on resume: %v", agent.ID, err)
+		return
+	}
+	for _, item := range items {
+		if item.AssistantID != agent.ID || item.Source != store.PendingSourceQuestion || item.MessageID == "" || item.SessionID == "" {
+			continue
+		}
+		child, err := s.store.GetAgentSessionSummary(ctx, item.SessionID)
+		if err != nil {
+			continue
+		}
+		if event, found := s.questionEvent(ctx, child, item.MessageID); found {
+			s.relayChildQuestion(ctx, event)
+		}
+	}
+}
+
+// questionEvent is the recorded event that carries a child's question, if it
+// is among the child's latest events.
+func (s *Server) questionEvent(ctx context.Context, child store.AgentSession, messageID string) (store.AgentSessionEvent, bool) {
+	events, _, err := s.store.AgentSessionEventWindow(ctx, child.ID, "", 200)
+	if err != nil {
+		return store.AgentSessionEvent{}, false
+	}
+	for _, event := range events {
+		if event.Message != nil && event.Message.ID == messageID && len(event.Message.Questions) > 0 {
+			return event, true
+		}
+	}
+	return store.AgentSessionEvent{}, false
 }
 
 // relayedQuestionText is what the parent reads: who asks, what, and how
@@ -194,7 +205,7 @@ func (s *Server) waitingQuestion(ctx context.Context, child store.AgentSession) 
 		if event.Label == store.EventLabelSteeredIntoTurn && strings.Contains(event.Detail, agentQuestionReplyOpen) {
 			break
 		}
-		if message := event.Message; message != nil && len(message.Questions) > 0 && questionWaits(message.Delivery) {
+		if message := event.Message; message != nil && len(message.Questions) > 0 {
 			return *message, true
 		}
 	}
@@ -254,6 +265,33 @@ func agentQuestionReplyText(itemID, question, answer string) string {
 	target, _ := json.Marshal([]any{"request_user_input_async", nativeQuestionID(itemID), 0})
 	entries, _ := json.Marshal([]map[string]string{{"questionItemId": string(target), "question": question, "answer": answer}})
 	return agentQuestionReplyOpen + "\n" + string(entries) + "\n" + agentQuestionReplyClose + "\n"
+}
+
+// questionRef is one question of a helper's item: the item of its message and
+// the question's title.
+type questionRef struct {
+	itemID   string
+	question string
+}
+
+// agentQuestionNoAnswerText gives each question no answer, and says why: the
+// reply envelope of agentQuestionReplyText, one entry per question, each marked
+// noAnswer with the reason. The Worker applies it at once, as it does an
+// answer, and the helper reads that its question will not be answered.
+func agentQuestionNoAnswerText(reason string, questions []questionRef) (string, error) {
+	entries := make([]map[string]any, 0, len(questions))
+	for _, question := range questions {
+		target, err := json.Marshal([]any{"request_user_input_async", nativeQuestionID(question.itemID), 0})
+		if err != nil {
+			return "", fmt.Errorf("encode question %s: %w", question.itemID, err)
+		}
+		entries = append(entries, map[string]any{"questionItemId": string(target), "question": question.question, "noAnswer": true, "reason": reason})
+	}
+	raw, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("encode the no-answer reply: %w", err)
+	}
+	return agentQuestionReplyOpen + "\n" + string(raw) + "\n" + agentQuestionReplyClose + "\n", nil
 }
 
 // childQuestionReactions relays a child's question to its parent as soon

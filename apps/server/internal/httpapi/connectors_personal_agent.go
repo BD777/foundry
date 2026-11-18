@@ -34,7 +34,7 @@ func (s *Server) handleSavePersonalAgentPermissionPackage(w http.ResponseWriter,
 	pkg.ID = agent.PermissionPackageID
 	pkg.Owner = agent.UserID
 	pkg = permission.Normalize(pkg)
-	invalidWorkspaces, invalidResources, err := s.invalidPermissionPackageReferences(r.Context(), r, pkg)
+	invalidWorkspaces, invalidResources, err := s.invalidPermissionPackageReferences(r.Context(), pkg)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -68,11 +68,11 @@ func (s *Server) handleSavePersonalAgentPermissionPackage(w http.ResponseWriter,
 
 // invalidPermissionPackageReferences checks every named workspace and
 // identity resource against the same reach the person's own requests use.
-func (s *Server) invalidPermissionPackageReferences(ctx context.Context, r *http.Request, pkg store.PermissionPackage) ([]string, []string, error) {
+func (s *Server) invalidPermissionPackageReferences(ctx context.Context, pkg store.PermissionPackage) ([]string, []string, error) {
 	invalidWorkspaces := []string{}
 	workspaceIDs := append(append([]string{}, pkg.Workspaces.Include...), pkg.Workspaces.Exclude...)
 	if len(workspaceIDs) > 0 {
-		scope, err := s.requestScope(r)
+		scope, err := s.scopeOfContext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -87,6 +87,10 @@ func TestListProfilesShowsAssignedModelServices(t *testing.T) {
 	if body := alice("list_models", `{"profileId":"`+service.ID+`"}`); strings.Contains(body, "unknown profile") {
 		t.Fatalf("list_models does not find the service: %s", body)
 	}
+	// No profile: the answer says one is required and where to find them.
+	if body := alice("list_models", `{}`); !strings.Contains(body, "needs a profileId") || !strings.Contains(body, "list_profiles") || strings.Contains(body, "unknown profile") {
+		t.Fatalf("list_models without a profile: %s", body)
+	}
 
 	// Another person's agent reaches neither the device nor the service.
 	if body := mcpAs(f.bobID)("list_profiles", `{"deviceId":"dev_alice"}`); strings.Contains(body, service.ID) || !strings.Contains(body, "device not found") {

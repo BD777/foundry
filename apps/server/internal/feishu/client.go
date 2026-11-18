@@ -28,6 +28,8 @@ type botClient interface {
 	ChatName(ctx context.Context, chatID string) (string, error)
 	UserName(ctx context.Context, openID string) (string, error)
 	MessageResource(ctx context.Context, messageID, fileKey, resourceType string) (MessageFile, error)
+	SendCardToOpenID(ctx context.Context, openID string, cardJSON string) (messageID, chatID string, err error)
+	ChatUserOpenIDs(ctx context.Context, chatID string) ([]string, error)
 }
 
 // NewClient is a bot client for the app; baseURL "" is Feishu's.
@@ -74,6 +76,71 @@ func (c *Client) ReplyCardWithKey(ctx context.Context, messageID, cardJSON, key 
 		return "", fmt.Errorf("feishu reply card: missing message id in response")
 	}
 	return *resp.Data.MessageId, nil
+}
+
+// notReachableCodes are Feishu's refusals to message a person: 230013, the bot
+// has no availability to the user (outside its range); 230029, the user has
+// resigned.
+var notReachableCodes = map[int]bool{230013: true, 230029: true}
+
+// ChatUserOpenIDs lists the open_ids of a group's user members, paging through
+// the group. Members Feishu lists as other than users are not in it.
+func (c *Client) ChatUserOpenIDs(ctx context.Context, chatID string) ([]string, error) {
+	var openIDs []string
+	pageToken := ""
+	for {
+		builder := larkim.NewGetChatMembersReqBuilder().ChatId(chatID).MemberIdType("open_id").PageSize(100)
+		if pageToken != "" {
+			builder = builder.PageToken(pageToken)
+		}
+		resp, err := c.lark.Im.V1.ChatMembers.Get(ctx, builder.Build())
+		if err != nil {
+			return nil, fmt.Errorf("feishu list chat members: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("feishu list chat members failed [%d]: %s", resp.Code, resp.Msg)
+		}
+		if resp.Data == nil {
+			return openIDs, nil
+		}
+		for _, member := range resp.Data.Items {
+			if member != nil && member.MemberIdType != nil && *member.MemberIdType == "open_id" && member.MemberId != nil {
+				openIDs = append(openIDs, *member.MemberId)
+			}
+		}
+		if resp.Data.HasMore == nil || !*resp.Data.HasMore || resp.Data.PageToken == nil {
+			return openIDs, nil
+		}
+		pageToken = *resp.Data.PageToken
+	}
+}
+
+// SendCardToOpenID posts a card in the direct chat Feishu opens with the person
+// (receive_id_type open_id). It returns the card's message id and that chat's
+// id. A person Feishu will not message is ErrUserNotReachable.
+func (c *Client) SendCardToOpenID(ctx context.Context, openID string, cardJSON string) (string, string, error) {
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.CreateMessageV1ReceiveIDTypeOpenId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(openID).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(cardJSON).
+			Build()).
+		Build()
+	resp, err := c.lark.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return "", "", fmt.Errorf("feishu send card by open_id: %w", err)
+	}
+	if !resp.Success() {
+		if notReachableCodes[resp.Code] {
+			return "", "", fmt.Errorf("%w: feishu [%d]: %s", ErrUserNotReachable, resp.Code, resp.Msg)
+		}
+		return "", "", fmt.Errorf("feishu send card by open_id failed [%d]: %s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.MessageId == nil || resp.Data.ChatId == nil {
+		return "", "", fmt.Errorf("feishu send card by open_id: missing message or chat id in response")
+	}
+	return *resp.Data.MessageId, *resp.Data.ChatId, nil
 }
 
 // SendCard posts a card to the chat, outside any thread.

@@ -76,6 +76,9 @@ const (
 	ownerSession
 	ownerThread
 	ownerWork
+	// ownerItem is a pending item: the workspace, session or Issue it
+	// belongs to decides when it goes.
+	ownerItem
 )
 
 // ofWorkspace is the SQL set of the owner ids that belong to the workspace
@@ -90,6 +93,10 @@ func (kind ownerKind) ofWorkspace() string {
 		return `SELECT id FROM agent_sessions WHERE workspace_id = ?1`
 	case ownerWork:
 		return `SELECT id FROM session_work WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?1)`
+	case ownerItem:
+		return `SELECT id FROM pending_items WHERE workspace_id = ?1
+			OR session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?1)
+			OR issue_id IN (SELECT id FROM issues WHERE workspace_id = ?1 UNION ALL SELECT short_id FROM issues WHERE workspace_id = ?1)`
 	default:
 		return `SELECT ?1`
 	}
@@ -110,6 +117,10 @@ func (kind ownerKind) ofDevice() string {
 			UNION SELECT thread_id FROM session_work WHERE thread_id <> '' AND device_id = ?1`
 	case ownerWork:
 		return `SELECT id FROM session_work WHERE device_id = ?1 OR session_id IN (` + deviceSessions + `)`
+	case ownerItem:
+		return `SELECT id FROM pending_items WHERE workspace_id IN (` + deviceWorkspaces + `)
+			OR session_id IN (` + deviceSessions + `)
+			OR issue_id IN (` + issues + ` UNION ALL SELECT short_id FROM issues WHERE workspace_id IN (` + deviceWorkspaces + `))`
 	default:
 		return deviceWorkspaces
 	}
@@ -126,6 +137,8 @@ func (kind ownerKind) existing() string {
 		return `SELECT id FROM agent_sessions`
 	case ownerWork:
 		return `SELECT id FROM session_work`
+	case ownerItem:
+		return `SELECT id FROM pending_items`
 	default:
 		return `SELECT id FROM workspaces`
 	}
@@ -180,6 +193,9 @@ var workspaceOwnedRows = []ownedRows{
 	{"session_retries", "session_id", ownerSession},
 	{"session_member_switches", "session_id", ownerSession},
 	{"session_report_optouts", "session_id", ownerSession},
+	// A person's notice about an item goes with the item, before the item
+	// (and so before its owner) goes.
+	{"person_notices", "item_id", ownerItem},
 	{"pending_items", "session_id", ownerSession},
 	{"native_account_dispatches", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},

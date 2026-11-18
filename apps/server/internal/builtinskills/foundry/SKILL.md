@@ -144,10 +144,9 @@ the work owns the files.
 
 ## Issues and questions
 
-- `list_issues` is read-only; the person accepts or abandons Issues.
-- Only an Issue's execution has `ask_person`: one question per turn about a
-  choice the confirmed contract leaves open, or approval of a side effect
-  outside the candidate. The person's answer resumes the same candidate.
+- Issues are turned off on this Foundry server: the `issues`, `list_issues`
+  and `get_issue` tools and `ask_person` are not offered. Do not try to create
+  an Issue or ask the person through one; ask in your own answer instead.
 
 ## The person's assistant
 

@@ -64,7 +64,8 @@ import { keepSessionTimers } from "./session/tasks/session-timers.js";
 import { startTimerRevival } from "./session/tasks/timer-revival.js";
 import { configureSessionTokens } from "./session/session-token.js";
 import { startSessionWork } from "./daemon/session-work-runtime.js";
-import { ownPackage } from "./install/worker-identity.js";
+import { installFoundryCommand } from "./install/foundry-command.js";
+import { ownPackage, runningWorker } from "./install/worker-identity.js";
 import { noteDaemonHealth } from "./daemon/daemon-health.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
@@ -195,6 +196,21 @@ async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
   }
 }
 
+/**
+ * Keeps `foundry` on this machine current at every start. The update that
+ * delivered this build ran the older worker, which writes no foundry command,
+ * so the command appears when the restarted worker starts. A worker run from a
+ * source checkout has no installed runtime to point at, and is skipped.
+ */
+function refreshFoundryCommand(): void {
+  if (runningWorker().command === undefined) return;
+  try {
+    installFoundryCommand(ownPackage().name);
+  } catch (error) {
+    console.warn(`foundry command not refreshed: ${errorMessage(error)}`);
+  }
+}
+
 export async function connect(args: string[]): Promise<void> {
   // Automatic service starts must never resurrect a removed device or
   // reconnect-loop against the tombstone. Only an explicit pair/setup clears
@@ -212,6 +228,7 @@ export async function connect(args: string[]): Promise<void> {
   }
   registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
+  refreshFoundryCommand();
   // Startup grace begins before native/service discovery can take time,
   // and the heartbeat goes on while anything at startup waits.
   startDaemonHeartbeat();

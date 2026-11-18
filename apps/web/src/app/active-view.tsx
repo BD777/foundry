@@ -24,7 +24,11 @@ import {
   type IssueDraftRequest,
   type IssuesFeatureEvent,
 } from "../features/issues";
-import { PendingFeature, type PendingItems } from "../features/pending";
+import {
+  openPendingItem,
+  PendingFeature,
+  type PendingItems,
+} from "../features/pending";
 import { ProfilesFeature } from "../features/profiles";
 import { ResourcesFeature } from "../features/resources";
 import { SkillLibraryFeature } from "../features/skill-library";
@@ -139,6 +143,14 @@ export function ActiveView({
       case "pending.open":
         location.setActiveView("pending");
         return;
+      case "pending.item": {
+        const item = pending.list?.items.find(
+          (candidate) => candidate.id === event.itemId,
+        );
+        if (item) openPendingItem(item);
+        else location.setActiveView("pending");
+        return;
+      }
       case "devices.open":
         location.openDevices(
           event.deviceId,

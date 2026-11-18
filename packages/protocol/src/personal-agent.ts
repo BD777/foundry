@@ -172,6 +172,10 @@ export interface PersonalAgentSettings {
   /** Things that need the person's decision are sent at any hour. */
   urgentAnytime: boolean;
   limits: PersonalAgentLimits;
+  /** Where the person's notices go (DEV-294). */
+  notify: PersonalAgentNotifySettings;
+  /** Counts the saves of these settings; a save's own value is ignored (DEV-298). */
+  revision: number;
 }
 
 /** The default and alternatives a coordinator may choose for this assistant's helpers. */
@@ -199,6 +203,49 @@ export interface PersonalAgentDeviceSettings {
 export interface PersonalAgentLimits {
   /** A task nobody asked about for this long is reported as possibly stuck. */
   stuckAfterMinutes: number;
+}
+
+/** The connector instance that receives the person's notices, and which kinds. */
+export interface PersonalAgentNotifySettings {
+  sinks: PersonalAgentNotifySink[];
+}
+
+export interface PersonalAgentNotifySink {
+  connectorInstanceId: string;
+  kinds: string[];
+}
+
+/** A conversation the person can receive notices in. */
+export interface PersonalAgentNotifyChat {
+  feedId: string;
+  name: string;
+}
+
+/** Discovery answer: the chat that was filled in, or why it was not. */
+export interface PersonalAgentNotifyChatResult {
+  connectorInstanceId: string;
+  chat?: PersonalAgentNotifyChat;
+  reason?: string;
+}
+
+export interface PersonalAgentNotifyTestResult {
+  status: "sent" | "failed";
+  messageId?: string;
+  reason?: string;
+}
+
+/** An extension instance the person has, and whether it can carry notices now. */
+export interface PersonalAgentNotifyInstance {
+  connectorInstanceId: string;
+  label: string;
+  /** Empty when the instance can carry notices; otherwise why it cannot yet. */
+  reason?: string;
+  /** The sink the person is best served by: the built-in bot once paired. */
+  recommended?: boolean;
+}
+
+export interface PersonalAgentNotifyInstancesResult {
+  instances: PersonalAgentNotifyInstance[];
 }
 
 /** GET /api/personal-agent: the caller's assistant, or how to set one up. */
@@ -335,11 +382,11 @@ export interface PersonalAgentMemoryInput {
 }
 
 /**
- * A proposal's kind: a managed action, loosening the rules, or one risk
- * write through a connector.
+ * A proposal's kind: a managed action, loosening the rules, one risk write
+ * through a connector, or a message channel the assistant creates or widens.
  */
 export type PersonalAgentProposalKind =
-  PersonalAgentAction | "relax_rules" | "connector_write";
+  PersonalAgentAction | "relax_rules" | "connector_write" | "channel_change";
 
 export type PersonalAgentProposalStatus =
   "pending" | "accepted" | "declined" | "expired" | "applied" | "failed";

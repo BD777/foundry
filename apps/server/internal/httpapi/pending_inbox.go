@@ -290,7 +290,7 @@ func (s *Server) handleRetryPendingItem(w http.ResponseWriter, r *http.Request) 
 	}
 	// The retry cancelled the old attempt; its item is settled by the
 	// person's action. The new attempt gets its own item if it fails.
-	resolved, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomePersonAnswered)
+	resolved, err := s.store.ResolvePendingItem(ctx, user, item.ID, store.PendingDone, store.PendingOutcomePersonAnswered, store.PendingAnswer{})
 	if err != nil {
 		log.Printf("pending retry %s: resolve item: %v", item.ID, err)
 	}

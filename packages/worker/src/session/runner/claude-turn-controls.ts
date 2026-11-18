@@ -1,6 +1,7 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
 import { randomUUID } from "node:crypto";
 import {
+  parseAgentQuestionReply,
   processLabels,
   type AgentSession,
   type ChatAttachment,
@@ -152,9 +153,14 @@ async function steerClaudeTurn(
   // answer, not a message of its own (only the person's: an agent's
   // message, or one with files, goes to Claude as it is).
   runtime.questions?.observe(text);
+  // An agent's answer envelope (its creator's answer to a child's question)
+  // settles the open prompt as the person's answer would; any other agent's
+  // message goes to Claude as it is.
+  const answersQuestion =
+    attachments.length === 0 && parseAgentQuestionReply(text) !== undefined;
   const answered =
     attachments.length === 0 &&
-    !sentBySessionId &&
+    (!sentBySessionId || answersQuestion) &&
     runtime.questions?.take(text) === true;
   if (!answered) {
     const content = userMessageText(

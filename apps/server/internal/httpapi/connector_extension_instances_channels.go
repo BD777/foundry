@@ -63,6 +63,13 @@ func (s *Server) openMessageChannelSource(ctx context.Context, channel store.Mes
 	return channels.LongPoll{Spec: *spec, Upstream: messageChannelUpstream{s: s, app: app, deviceID: deviceID}}, nil
 }
 
+// extensionReadAllowed says the instance's route directory lists GET path as
+// a read the instance's access level allows.
+func extensionReadAllowed(data store.ExtensionInstanceData, path string) bool {
+	route, ok := externalaccounts.ExtensionRouteFor(data.Routes, http.MethodGet, path)
+	return ok && strings.EqualFold(route.Access, "read") && externalaccounts.ExtensionAccessAllowsRoute(data.Descriptor.ServerHeld.Access, data.ProbeValues, route)
+}
+
 type messageChannelUpstream struct {
 	s        *Server
 	app      store.ExternalProviderApp

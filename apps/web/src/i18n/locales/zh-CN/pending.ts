@@ -45,6 +45,7 @@ export const pending: Translation<typeof en> = {
     project_upkeep: "项目维护",
     memory_upkeep: "记忆整理",
     notice: "助理留言",
+    assistant_question: "助理的提问",
   },
   upkeep: {
     title_one: "{{project}}：{{count}} 条修改建议待确认",
@@ -66,6 +67,9 @@ export const pending: Translation<typeof en> = {
     done: "已完成",
     dismissed: "已忽略",
   },
+  outcome: {
+    withdrawn: "已撤回",
+  },
   item: {
     origin: {
       assistant: "助理 · {{name}}",
@@ -74,6 +78,11 @@ export const pending: Translation<typeof en> = {
       personal: "来源 · {{name}}",
     },
     fromAssistant: "助理：",
+    handedByAssistant: "把这件事交给了你。",
+    assistantDecided: "助理替你决定",
+    assistantClosed: "助理已关闭",
+    assistantClosedReason: "助理已关闭：{{reason}}",
+    openAssistantAnswer: "打开对话，查看或回复",
     handed: {
       assistant_stopped: "它已停下，这件事交给你了。在这里回答，或让它继续。",
       assistant_offline:
@@ -91,7 +100,6 @@ export const pending: Translation<typeof en> = {
     showLess: "收起",
     options: "选项",
     recommended: "推荐",
-    useOption: "用“{{option}}”回复",
     reply: "回复",
     replyLabel: "回复“{{title}}”",
     replyHint: "作为你的消息发到该对话，并引用这条内容。Ctrl+Enter 发送。",
@@ -117,7 +125,6 @@ export const pending: Translation<typeof en> = {
     dismiss: "忽略",
     notNeeded: "不需要我",
     gotIt: "知道了",
-    useRecommended: "用“{{option}}”回复（推荐）",
     fixInChat: "去对话中处理",
     jumpToMessage: "跳到这条消息",
     showError: "查看原始错误",

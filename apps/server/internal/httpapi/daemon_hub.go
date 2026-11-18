@@ -25,6 +25,9 @@ type DaemonHub struct {
 	// assistant (assistant.Service.RunFor); ok is false for any other
 	// session.
 	assistantRun func(ctx context.Context, session store.AgentSession) (run assistant.Run, ok bool, err error)
+	// responsibleFor is who answers a session's questions and items
+	// (assistant.Service.ResponsibleFor).
+	responsibleFor func(ctx context.Context, session store.AgentSession) assistant.Responsibility
 	// settleIssueSession hands what an Issue's session produced, once it
 	// ended, to the Issue (issues.Service.Settle).
 	settleIssueSession func(ctx context.Context, session store.AgentSession, execution *store.CompleteIssueInput, clarification *store.ClarificationResponse)

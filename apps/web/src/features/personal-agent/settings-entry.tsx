@@ -23,6 +23,7 @@ import {
   type ChangeSettings,
 } from "./settings-field";
 import { ButtonRow } from "../../components/ui/button-row";
+import { NotifySection } from "./settings-notify";
 
 const interfaceModes: InterfaceMode[] = ["full", "simple"];
 
@@ -175,6 +176,7 @@ export function EntrySection({
           />
         </SettingsField>
       </SettingsGroup>
+      <NotifySection assistantId={assistantId} change={change} draft={draft} />
       <SettingsGroup title={t("settings.entry.digestTitle")}>
         <SettingsCheck
           checked={draft.dailyDigest}

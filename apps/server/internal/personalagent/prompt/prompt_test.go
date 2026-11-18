@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-17.2": "07d41b39a1b2e9d9fa5226fa4dbe7502a90d7ac5162372cec7db72ee5269fc58", // DEV-293: a helper's question or approval is answered or approved by the assistant, what it cannot settle goes to the person with needs_you; the person's answer to needs_you ask is a decision
 	"2026-11-17.1": "d1002a710d9e69e059a117bdaa2ee7f0292302cdaa449ca9e36d78ac065df190", // DEV-282: scope clarifications for helpers' claims, outreach, and say-when-you-decided-for-the-person
 	"2026-11-16.7": "e696ec172492143dd102dd305f4650dca53693db875f7ce8f1907b628e191ffa", // DEV-258: items keep a summary, owner and archive; a helper is tied to its item with itemId; read_list by period
 	"2026-11-16.6": "a6d61c3bda9858a6856648e3c105c1ad98071d06a209114b7608a228250f4ed7", // DEV-251 + DEV-253 merged: a channel's rules stay with the channel and the home names each folder; read a helper's progress; the foundry-orchestration skill says when
@@ -369,8 +370,10 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 // markers and who owns which part (about 250 bytes); DEV-251 adds the
 // message channels' facts (about 200 bytes); DEV-252 adds the pointer to the
 // upkeep facts file (about 160 bytes); DEV-282 adds the scope clarifications
-// in system.md (about 430 bytes).
-const agentsFileBudget = 9000
+// in system.md (about 430 bytes); DEV-293 adds the assistant's own questions
+// (needs_you ask) and the routing of helpers' questions and approvals in
+// system.md (about 420 bytes).
+const agentsFileBudget = 9500
 
 func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	size := len(prompt.AgentsFile(fullInput()))

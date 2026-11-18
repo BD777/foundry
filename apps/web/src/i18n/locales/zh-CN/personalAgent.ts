@@ -420,6 +420,15 @@ export const personalAgent: Translation<typeof en> = {
     openSettings: "设置",
     stopAll: "停止助理工作",
     stopping: "正在停下…",
+    stopConfirm: {
+      title: "停止助理工作？",
+      body: "助理会暂停接收和派发新工作，并取消它正在运行的帮手。之后随时点「继续」即可恢复。",
+      bodyWithCount_one:
+        "助理会暂停接收和派发新工作，并取消它正在运行的 {{count}} 个帮手。之后随时点「继续」即可恢复。",
+      bodyWithCount_other:
+        "助理会暂停接收和派发新工作，并取消它正在运行的 {{count}} 个帮手。之后随时点「继续」即可恢复。",
+      confirm: "停止",
+    },
     resume: "继续",
     resuming: "正在恢复…",
     stopped: {
@@ -466,6 +475,8 @@ export const personalAgent: Translation<typeof en> = {
   proposal: {
     kicker: "需要你点头",
     account: "账号",
+    kind: "类别",
+    kinds: { channel_change: "消息通道" },
     accept: "好的",
     decline: "不用了",
     expires: "{{when}}失效",
@@ -1163,6 +1174,54 @@ export const personalAgent: Translation<typeof en> = {
       feishuAppUsedBy: "已用于 {{assistant}}",
       feishuHint: "应用和配对在连接器里设置。",
       openConnectors: "打开连接器",
+      notifyTitle: "通知你",
+      notifyChannel: "通知渠道",
+      notifyHint:
+        "需要你答复的事项（提问、审批、交接、请示）发到所选连接器里你与自己的会话。",
+      notifyNone: "不通知",
+      notifyRecommended: "（推荐）",
+      notifyNoConnectors:
+        "还没有可接收通知的连接器。添加并校验 OpenLark 连接器后，这里会出现它。",
+      notifyListFailed: "无法列出连接器，请刷新页面重试。",
+      notifyInstanceUnavailable: "{{name}}暂时不能接收通知。{{reason}}",
+      notifyInstanceReasons: {
+        waiting_device:
+          "没有在线的设备能连接它。通知会自动重试，多次失败后标记为未送达。",
+        connector_not_notifiable:
+          "它安装的扩展版本还不接收通知。更新后的扩展安装到设备后，刷新本页即可生效。",
+        feishu_not_paired: "需要在飞书私聊机器人发一次配对码。",
+        feishu_not_reachable:
+          "Foundry 机器人无法在飞书里给你发消息：你不在该应用的可用范围内。",
+        instance_unavailable:
+          "Foundry 暂时无法读取这个连接器。请刷新页面重试。",
+      },
+      notifyKinds: "通知的类型",
+      notifyFinding: "正在找你与自己的会话…",
+      notifyFound: "已找到你与自己的会话：{{name}}。",
+      notifyMissing: "没有自动找到会话",
+      notifyChatId: "会话 ID",
+      notifyUseChat: "使用这个会话",
+      notifyTest: "发一条测试通知",
+      notifyTesting: "正在发送…",
+      notifyTestSent: "测试通知已发出，请到你与自己的会话里查看。",
+      notifyTestFailed: "测试通知发送失败。",
+      notifyTestFailedWith: "测试通知发送失败：{{reason}}",
+      notifyKindLabels: {
+        question: "提问",
+        approval: "审批",
+        hand_over: "交接",
+        ask: "请示",
+      },
+      notifyReasons: {
+        self_chat_not_found: "在该连接器上没有找到你与自己的会话。",
+        chat_not_found: "没有找到这个会话 ID。",
+        chat_not_self: "这个会话不是你与自己的会话。",
+        connector_unreachable: "连接器暂时无法访问，稍后再试。",
+        waiting_device: "没有在线的设备能连接该连接器。",
+        connector_not_notifiable: "该连接器不接收通知。",
+        instance_unavailable: "无法读取这个连接器。",
+        default: "无法找到你与自己的会话。",
+      },
       digestTitle: "每日摘要",
       dailyDigest: "每天给我发一份摘要",
       dailyDigestTime: "时间",

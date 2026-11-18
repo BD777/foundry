@@ -205,17 +205,26 @@ func (m *WSManager) PersonalAgentProposalChanged(proposal store.PersonalAgentPro
 	}()
 }
 
-// assistantDirectChat is a running app and direct chat of the person's
-// that their assistant takes; nil when there is none.
-func (m *WSManager) assistantDirectChat(ctx context.Context, userID, assistantID string) (*botApp, string) {
+// pairedDirectChat is one of the person's direct chats with the Foundry bot,
+// by the client id of its app.
+type pairedDirectChat struct {
+	clientID string
+	chatID   string
+}
+
+// pairedDirectChats lists the person's direct chats with the Foundry bot that
+// their assistant takes, whether or not their apps run now. Every card, notice
+// and the notify settings resolve the person's chat here.
+func (m *WSManager) pairedDirectChats(ctx context.Context, userID, assistantID string) []pairedDirectChat {
 	if userID == "" || assistantID == "" {
-		return nil, ""
+		return nil
 	}
 	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
 	if err != nil {
 		log.Printf("[feishu] read the routes: %v", err)
-		return nil, ""
+		return nil
 	}
+	var chats []pairedDirectChat
 	for _, route := range routes {
 		if route.Kind != store.FeishuRouteP2P || route.BoundUserID != userID {
 			continue
@@ -224,12 +233,22 @@ func (m *WSManager) assistantDirectChat(ctx context.Context, userID, assistantID
 		if err != nil {
 			continue
 		}
-		app := m.app(providerApp.ClientID)
 		assistant := m.assistantFor(ctx, route)
-		if app == nil || assistant == nil || assistant.route.AssistantID != assistantID {
+		if assistant == nil || assistant.route.AssistantID != assistantID {
 			continue
 		}
-		return app, route.ChatID
+		chats = append(chats, pairedDirectChat{clientID: providerApp.ClientID, chatID: route.ChatID})
+	}
+	return chats
+}
+
+// assistantDirectChat is a running app and direct chat of the person's that
+// their assistant takes; nil when there is none.
+func (m *WSManager) assistantDirectChat(ctx context.Context, userID, assistantID string) (*botApp, string) {
+	for _, chat := range m.pairedDirectChats(ctx, userID, assistantID) {
+		if app := m.app(chat.clientID); app != nil {
+			return app, chat.chatID
+		}
 	}
 	return nil, ""
 }
@@ -291,6 +310,9 @@ func (m *WSManager) handleCardAction(ctx context.Context, event feishuevents.Eve
 	}
 	op, _ := data.Action.Value["op"].(string)
 	proposalID, _ := data.Action.Value["proposalId"].(string)
+	noticeID, _ := data.Action.Value["noticeId"].(string)
+	option, _ := data.Action.Value["option"].(string)
+	noticeText, _ := data.Action.FormValue[noticeFormField].(string)
 	chatID, cardMessageID := data.Context.OpenChatID, data.Context.OpenMessageID
 	chat, err := m.chatRoute(ctx, app, chatID)
 	if err != nil || chat.assistant == nil {
@@ -313,6 +335,15 @@ func (m *WSManager) handleCardAction(ctx context.Context, event feishuevents.Eve
 			return
 		}
 		m.decideProposal(ctx, app.client, chat.assistant.route.AssistantID, userID, proposalID, op == cardActionAccept, store.PersonalAgentViaFeishu, "", cardMessageID, language)
+	case cardActionNotice:
+		if noticeID == "" {
+			return
+		}
+		press := NoticePress{
+			UserID: userID, AssistantID: chat.assistant.route.AssistantID, NoticeID: noticeID,
+			CardMessageID: cardMessageID, Option: option, Text: noticeText, PressID: event.ID,
+		}
+		m.settleNoticeCardInBackground(app.client, press, language)
 	case cardActionResume:
 		card := BuildAssistantCard(assistantText(language, "runningTitle"), assistantText(language, "running"), "grey")
 		if chat.assistant.route.Stopped {

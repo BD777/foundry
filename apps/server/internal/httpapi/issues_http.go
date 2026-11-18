@@ -102,19 +102,22 @@ func (s *Server) handleAnswerIssueQuestion(w http.ResponseWriter, r *http.Reques
 	writeResult(w, issue, err)
 }
 
+// issueMessageRequest is a message in an Issue's conversation: the text, and
+// the draft the person saw (for a clarification, and why it may change) or the
+// execution they saw (for feedback). The MCP issues tool decodes the same type.
+type issueMessageRequest struct {
+	Text                  string `json:"text"`
+	ExpectedRevision      int    `json:"expectedRevision,omitempty"`
+	ExpectedContentDigest string `json:"expectedContentDigest,omitempty"`
+	ChangeReason          string `json:"changeReason,omitempty"`
+	ExpectedRunID         string `json:"expectedRunId,omitempty"`
+}
+
 // handleIssueMessage hands a person's message in the Issue's conversation
 // to the Issue, wherever it is due (issues.Service.Message): its status, the
 // answer to its question, its clarification or its next execution.
 func (s *Server) handleIssueMessage(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Text string `json:"text"`
-		// The draft the person saw, for a clarification, and why it may
-		// change; the execution they saw, for feedback.
-		ExpectedRevision      int    `json:"expectedRevision,omitempty"`
-		ExpectedContentDigest string `json:"expectedContentDigest,omitempty"`
-		ChangeReason          string `json:"changeReason,omitempty"`
-		ExpectedRunID         string `json:"expectedRunId,omitempty"`
-	}
+	var input issueMessageRequest
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}

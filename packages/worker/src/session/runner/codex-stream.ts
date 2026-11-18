@@ -214,7 +214,18 @@ export async function runCodexStreamedTurn(
             return;
           }
           const from = answersQuestion ? undefined : sentBySessionId;
-          if (options?.delivery !== "boundary")
+          // No open prompt took this answer (Codex's async questions wait for
+          // none): it is the person's message now. A boundary would hold it
+          // for a tool that may never run, and the turn's end would drop it.
+          if (answersQuestion)
+            void state
+              .emit(
+                processLabels.notice,
+                "An answer to a question no open prompt holds was delivered as a message.",
+                "info",
+              )
+              .catch(() => {});
+          if (options?.delivery !== "boundary" || answersQuestion)
             return applySteer(
               message,
               attachments,
@@ -335,7 +346,14 @@ export async function runCodexStreamedTurn(
       liveness.close();
       unregisterCancel();
       unregisterSteer();
-      boundary.close();
+      for (const held of boundary.close())
+        void state
+          .emit(
+            processLabels.notice,
+            `A message held for a tool boundary (${held.steerId ?? "no id"}) did not enter the turn before it ended, so it was not delivered.`,
+            "warning",
+          )
+          .catch(() => {});
     }
   }
 }

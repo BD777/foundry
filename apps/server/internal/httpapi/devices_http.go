@@ -56,17 +56,23 @@ func (s *Server) handleRenameDevice(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	name := strings.TrimSpace(input.Name)
+	item, err := s.renameDevice(r.Context(), r.PathValue("deviceId"), input.Name)
+	writeResult(w, item, err)
+}
+
+// renameDevice names a device for the person (the device route and
+// foundry_settings). The name is trimmed and checked before it is stored.
+func (s *Server) renameDevice(ctx context.Context, deviceID, name string) (store.DeviceProjection, error) {
+	name = strings.TrimSpace(name)
 	if !store.ValidDisplayName(name) {
-		writeError(w, http.StatusBadRequest, "display name must be 1–120 characters on one line")
-		return
+		return store.DeviceProjection{}, &statusError{http.StatusBadRequest, errors.New("display name must be 1–120 characters on one line")}
 	}
-	item, err := s.store.RenameDevice(r.Context(), r.PathValue("deviceId"), name)
+	item, err := s.store.RenameDevice(ctx, deviceID, name)
 	if err == nil {
 		// Workspaces, connections and skills show the device's name too.
 		s.projectionsChanged("", append([]string{fieldDevices, fieldWorkspaces, fieldPromotedSkills}, connectionFields...)...)
 	}
-	writeResult(w, item, err)
+	return item, err
 }
 
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {

@@ -165,6 +165,7 @@ func (s *Store) SavePersonalAgentSettings(ctx context.Context, assistantID strin
 		if err != nil {
 			return err
 		}
+		settings.Revision = previous.Settings.Revision + 1
 		raw, err := json.Marshal(settings)
 		if err != nil {
 			return err
@@ -720,6 +721,21 @@ func (s *Store) ListPersonalAgentActions(ctx context.Context, assistantID string
 		records = append(records, record)
 	}
 	return records, rows.Err()
+}
+
+func (s *Store) GetPersonalAgentAction(ctx context.Context, assistantID, actionID string) (store.PersonalAgentActionRecord, json.RawMessage, error) {
+	var record store.PersonalAgentActionRecord
+	var args string
+	err := s.reader().QueryRowContext(ctx, `SELECT `+actionColumns+`, args_json FROM pa_actions WHERE assistant_id = ? AND id = ?`,
+		assistantID, actionID).Scan(&record.ID, &record.UserID, &record.AssistantID, &record.SessionID, &record.Tool, &record.ArgsSummary, &record.WorkspaceID,
+		&record.Decision, &record.Outcome, &record.Refusal, &record.ProposalID, &record.ConfirmedVia, &record.Error, &record.CreatedAt, &args)
+	if errors.Is(err, sql.ErrNoRows) {
+		return record, nil, store.ErrNotFound
+	}
+	if err != nil {
+		return record, nil, fmt.Errorf("get personal agent action: %w", err)
+	}
+	return record, json.RawMessage(args), nil
 }
 
 func (s *Store) PersonalAgentCreatedWorkspace(ctx context.Context, assistantID, workspaceID string) (bool, error) {
