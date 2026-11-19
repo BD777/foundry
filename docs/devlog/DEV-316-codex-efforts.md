@@ -145,3 +145,4 @@ Foundry 对 Codex 推理强度的“可选值”有四处各自写死的集合�
 ## 部署后检查
 
 - 2026-11-19，部署后由 conductor（sess_1794766761859841092）在 dev 上检查，编排者转述：Codex 模型 `gpt-6-astra`（6.2 Astra）的推理强度显示 low 至 ultra，与其官方目录一致。原始截图未记入本文件。「Ultra / 终极」文案仍待本人确认。
+- 2026-11-19，train 104（Web，build `caff13207bbf0551`，替换 `57615cbd783cb4cb`）：修复 DEV-316 的回归。API 端点的模型目录不列推理强度，自 train 97 起不显示任何档位；`codexEffortOptions` 对无目录条目或目录未列档位的模型回退为部署前的 minimal…xhigh，有目录的模型不变。已在 dev 部署，检查见 PR #284 的提交记录。
