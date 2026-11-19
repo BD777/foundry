@@ -21,7 +21,7 @@ import { foundryToolsRoot } from "../platform/state-root.js";
 import { isolatedAgentEnvironment } from "./isolated-environment.js";
 
 /** A verifier's directory unused this long is removed with its caches. */
-const verifierRetentionMs = 7 * 24 * 60 * 60 * 1000;
+export const verifierRetentionMs = 7 * 24 * 60 * 60 * 1000;
 
 function verificationsRoot(
   workspaceId: string,

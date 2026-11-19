@@ -92,7 +92,7 @@ export const workerModules = {
   },
   composition: {
     dependsOn: "*",
-    folders: ["daemon", "execution-host", "install"],
+    folders: ["daemon", "execution-host", "install", "maintenance"],
     entries: ["cli", "daemon-connection"],
   },
 };

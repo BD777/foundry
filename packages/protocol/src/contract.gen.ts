@@ -808,6 +808,8 @@ interface components {
       envelope: components["schemas"]["ConnectorEventsEnvelope"];
       context?: components["schemas"]["ConnectorEventsContext"];
       reply?: components["schemas"]["ConnectorEventsReply"];
+      /** @description How an agent reacts to a message with an emoji through the connector's own tool, one command template; the reaction key is part of the template, and the template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice. The reaction must not be the key of `ack`, which the channel takes away when the turn ends. */
+      react?: string;
       ack?: components["schemas"]["ConnectorEventsAck"];
       /** @description Named reads of the source, each a catalogued read route whose answer supplies facts the feed's items do not carry (a conversation's readable name, a message's text and card title, a thread's replies). path names that route; args fill each of its parameters from a fact (conversation.id, message.id or thread.id); fields name values in the answer, and items points at a list of answers to read the same fields from. */
       reads?: {
@@ -3669,8 +3671,8 @@ interface components {
     CodexSpeed: "standard" | "fast";
     /** @enum {string} */
     ClaudeEffort: "low" | "medium" | "high" | "xhigh" | "max";
-    /** @enum {string} */
-    CodexReasoningEffort: "minimal" | "low" | "medium" | "high" | "xhigh";
+    /** @description A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema. */
+    CodexReasoningEffort: string;
     /** @description NativeAccountHold is Foundry's durable block, not an online health claim. */
     NativeAccountHold: {
       id: string;
@@ -4159,6 +4161,12 @@ interface components {
        * @description `contextWindow` is the window the endpoint's own catalog reports.
        */
       contextWindow?: number;
+      /** @description `reasoningEfforts` are the reasoning efforts the runtime's catalog lists for this model, in the catalog's order. Absent when the catalog says nothing about the model. */
+      reasoningEfforts?: string[];
+      /** @description `defaultReasoningEffort` is the effort the runtime's catalog makes this model's default. */
+      defaultReasoningEffort?: string;
+      /** @description `isDefault` marks the model the runtime's catalog makes the account's default, the one a blank model choice means. */
+      isDefault?: boolean;
     };
     /** @description ProfileConnector is the connector a device model provider comes from. */
     ProfileConnector: {

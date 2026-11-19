@@ -29,6 +29,8 @@ export interface NativeChatScanInput {
   profiles: AgentProfileProjection[];
   limit?: number;
   includeIds?: string[];
+  /** Chats wanted for their archive state alone (see summaryCandidate). */
+  summaryOnlyIds?: string[];
   listingRevision?: number;
   environment?: Record<string, string | undefined>;
 }
@@ -145,6 +147,8 @@ async function runWorkerRequest(
       request.input.profiles,
       request.input.limit,
       new Set(request.input.includeIds ?? []),
+      undefined,
+      new Set(request.input.summaryOnlyIds ?? []),
     );
     const scanId = `native_scan_${process.pid}_${++nextScanId}`;
     workerSnapshots.delete(scanId);
@@ -164,6 +168,8 @@ async function runWorkerRequest(
         request.input.profiles,
         request.input.limit,
         new Set(request.input.includeIds ?? []),
+        undefined,
+        new Set(request.input.summaryOnlyIds ?? []),
       )
     ).chats;
   }
@@ -395,6 +401,8 @@ export async function scanNativeChatsForDaemon(
       input.profiles,
       input.limit,
       new Set(input.includeIds ?? []),
+      undefined,
+      new Set(input.summaryOnlyIds ?? []),
     );
     return scanResult("", snapshot);
   }

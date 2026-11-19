@@ -11,7 +11,8 @@
 #             commit and vcs.modified as a local build does)
 #   --web     vite build with VITE_API_BASE_URL= (same-origin) → <out>/web
 #   --worker  scripts/pack-worker-release.mjs → <out>/worker-packages (release.json + tarballs)
-#   --fetch-only  only fetch what the device's last build left (after a failed transfer)
+#   --fetch-only  only fetch what the device's last build left (after a failed transfer;
+#                 a verified fetch removes the device's job, a kept one goes after a day)
 #   --tree/--base and <lease|device> as in scripts/remote-check.sh. Type checks are not part
 #   of a build: run scripts/remote-check.sh … --web typecheck (or check-changed) for them.
 # <out> gets SHA256SUMS (computed on the device, checked here), SOURCE_MANIFEST and
@@ -174,6 +175,9 @@ if [ -f "$rc_work/SOURCE_MANIFEST" ]; then
   cp "$rc_work/SOURCE_MANIFEST" "$out/SOURCE_MANIFEST"
 fi
 (cd "$out" && sha256sum --quiet -c SHA256SUMS) || die "a file in $out does not match SHA256SUMS"
+# Verified here: the device's job (checkout, dependencies, outputs) goes when this
+# script ends; only a failed transfer keeps it for --fetch-only.
+rc_keep_job=0
 fetched=$(date +%s)
 if [ -f "$out/foundry-server" ]; then
   go version -m "$out/foundry-server" 2>/dev/null | grep -q 'GOOS=linux' ||

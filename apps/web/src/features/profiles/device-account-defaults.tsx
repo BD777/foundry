@@ -7,6 +7,7 @@ import { FieldHint, TextInput } from "../../components/ui/field";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  AgentModelOption,
   AgentProfileProjection,
   DeviceProjection,
 } from "@bd777/foundry-protocol";
@@ -70,7 +71,8 @@ export function DeviceAccountDefaults({
   const invalidWindow = Object.values(windows).some(
     (value) => value.trim() && parseContextWindow(value) === undefined,
   );
-  const [models, setModels] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<AgentModelOption[]>([]);
+  const models = catalog.map((row) => row.id);
   const [loading, setLoading] = useState(false);
   const [catalogHint, setCatalogHint] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -87,7 +89,7 @@ export function DeviceAccountDefaults({
     setLoadError("");
     try {
       const result = await listAgentModels(draft, { reuse: !refresh });
-      setModels(result.map((row) => row.id));
+      setCatalog(result);
       setCatalogHint(
         external
           ? t("accountDefaults.external.catalog", provider)
@@ -224,6 +226,8 @@ export function DeviceAccountDefaults({
         </AccountField>
       ) : null}
       <RuntimeDefaultFields
+        catalog={catalog}
+        model={draft.model}
         runtime={profile.runtime}
         value={draft}
         inherit

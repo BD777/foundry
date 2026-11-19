@@ -37,6 +37,9 @@ import type {
 import type { FileHandle } from "node:fs/promises";
 import { isInside, samePath } from "../../platform/paths.js";
 import { chatFingerprint } from "./chat-fingerprint.js";
+import { foundryStatePath } from "../../platform/state-root.js";
+import { writePrivateJSONAtomic } from "../../platform/storage.js";
+import { errorMessage } from "../../platform/utils.js";
 
 interface CodexSessionIndexEntry {
   id: string;
@@ -85,11 +88,65 @@ interface LogFolderEntry {
   /** Its header is complete, so the folder no longer changes as it grows. */
   settled: boolean;
   folder: string;
+  /** The session id its header names, as a full parse reads it. */
+  id: string;
 }
 const logFolders = new Map<string, LogFolderEntry>();
 const logFolderEntryLimit = 50_000;
+/**
+ * Settled headers outlive the process (state root), so a restarted worker
+ * does not read the start of every log on the device again. Only logs looked
+ * at since it started are written back: a removed log leaves the file.
+ */
+const logHeadersFile = () => foundryStatePath("native-log-headers.json");
+const looked = new Set<string>();
+let logHeadersLoadedFrom: string | undefined;
+let logHeadersChanged = false;
+
+function loadLogHeaders(): void {
+  const path = logHeadersFile();
+  if (logHeadersLoadedFrom === path) return;
+  logHeadersLoadedFrom = path;
+  try {
+    const value = JSON.parse(readFileSync(path, "utf8")) as {
+      version?: number;
+      headers?: unknown;
+    };
+    if (value.version !== 1 || !Array.isArray(value.headers)) return;
+    for (const item of value.headers) {
+      if (!Array.isArray(item)) continue;
+      const [log, folder, id] = item as unknown[];
+      if (
+        typeof log !== "string" ||
+        typeof folder !== "string" ||
+        typeof id !== "string" ||
+        logFolders.has(log)
+      )
+        continue;
+      logFolders.set(log, { mtimeMs: 0, size: 0, settled: true, folder, id });
+    }
+  } catch {
+    // None yet, or unreadable: headers are read from the logs again.
+  }
+}
+
+function saveLogHeaders(): void {
+  if (!logHeadersChanged) return;
+  logHeadersChanged = false;
+  const headers: [string, string, string][] = [];
+  for (const [log, entry] of logFolders)
+    if (entry.settled && looked.has(log))
+      headers.push([log, entry.folder, entry.id]);
+  try {
+    writePrivateJSONAtomic(logHeadersFile(), { version: 1, headers });
+  } catch (error) {
+    console.warn(`Could not keep native log headers: ${errorMessage(error)}`);
+  }
+}
+/** Keyed by a parsed transcript: the file cache keeps that one object while
+ * its log is unchanged, while a chat's candidate is rebuilt every round. */
 const nativeChatFingerprints = new WeakMap<
-  NativeChatCandidate,
+  object,
   { key: string; value: string }
 >();
 const nativeChatCacheBytes = new WeakMap<
@@ -114,6 +171,8 @@ const nativeLogReachLimit = 8 * 1024 * 1024;
 export interface NativeChatScanStats {
   parsedFiles: number;
   reusedFiles: number;
+  /** Logs of summary-only chats, answered from their header alone. */
+  summarizedFiles?: number;
 }
 
 export interface NativeChatSnapshot {
@@ -139,7 +198,9 @@ export async function nativeChatSnapshotForWorkspace(
   limit = 60,
   includeIds: ReadonlySet<string> = new Set(),
   stats: NativeChatScanStats = { parsedFiles: 0, reusedFiles: 0 },
+  summaryOnlyIds: ReadonlySet<string> = new Set(),
 ): Promise<NativeChatSnapshot> {
+  loadLogHeaders();
   const nativeProfiles = new Map<
     Exclude<WorkerRuntimeId, "mock">,
     AgentProfileProjection | undefined
@@ -148,8 +209,8 @@ export async function nativeChatSnapshotForWorkspace(
     ["claude", nativeProfileForRuntime(profiles, "claude")],
   ]);
   const [codexChats, claudeChats] = await Promise.all([
-    codexNativeChatThreadsForWorkspace(workspace, stats),
-    claudeNativeChatThreadsForWorkspace(workspace, stats),
+    codexNativeChatThreadsForWorkspace(workspace, stats, summaryOnlyIds),
+    claudeNativeChatThreadsForWorkspace(workspace, stats, summaryOnlyIds),
   ]);
   const candidates = [...codexChats, ...claudeChats]
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
@@ -187,12 +248,9 @@ export async function nativeChatSnapshotForWorkspace(
     } satisfies ChatThread;
   });
   const fingerprints = new Map<string, string>();
-  for (const [index, chat] of chats.entries()) {
-    const candidate = candidates[index];
-    if (candidate) {
-      fingerprints.set(chat.id, fingerprintForCandidate(candidate, chat));
-    }
-  }
+  for (const chat of chats) fingerprints.set(chat.id, cachedFingerprint(chat));
+  // Every log on the device was looked at by now.
+  saveLogHeaders();
   return { chats, fingerprints, stats };
 }
 
@@ -289,6 +347,7 @@ export async function nativeChatLogPath(
           claudeNativeChatCache,
           parseClaudeSessionCandidate,
         ] as const);
+  loadLogHeaders();
   for (const home of homes) {
     // Both runtimes name a log after its session id.
     const paths = (
@@ -308,7 +367,8 @@ export async function nativeChatLogPath(
       .flat()
       .filter((path) => basename(path).includes(id));
     for (const path of paths) {
-      if (!samePath(await logFolder(path, provider), workspacePath)) continue;
+      if (!samePath((await logHeader(path, provider)).folder, workspacePath))
+        continue;
       const candidate = await cachedNativeChatCandidate(cache, path, parse);
       if (
         candidate?.id === id &&
@@ -332,26 +392,26 @@ function nativeProfileForRuntime(
   );
 }
 
-function fingerprintForCandidate(
-  candidate: NativeChatCandidate,
-  chat: ChatThread,
-): string {
+function cachedFingerprint(chat: ChatThread): string {
   // The file cache skips parsing unchanged logs. Reuse the digest too unless
   // session-index titles, profiles, archive state, or another visible field
   // changed after the transcript was parsed.
+  if (!chat.transcript) return chatFingerprint(chat);
   const key = JSON.stringify({ ...chat, transcript: undefined });
-  const cached = nativeChatFingerprints.get(candidate);
+  const cached = nativeChatFingerprints.get(chat.transcript);
   if (cached?.key === key) return cached.value;
   const value = chatFingerprint(chat);
-  nativeChatFingerprints.set(candidate, { key, value });
+  nativeChatFingerprints.set(chat.transcript, { key, value });
   return value;
 }
 
 async function codexNativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
   stats: NativeChatScanStats,
+  summaryOnlyIds: ReadonlySet<string>,
 ): Promise<NativeChatCandidate[]> {
   const workspacePath = resolve(workspace.localPath);
+  const inWorkspace = sameFolderAs(workspacePath);
   const byID = new Map<string, NativeChatCandidate>();
 
   for (const codexHome of codexHomeCandidates()) {
@@ -369,20 +429,23 @@ async function codexNativeChatThreadsForWorkspace(
       if (!sessionPath) {
         continue;
       }
-      if (!samePath(await logFolder(sessionPath, "codex"), workspacePath)) {
+      const header = await logHeader(sessionPath, "codex");
+      if (!inWorkspace(header.folder)) {
         if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
-      const parsed = await cachedNativeChatCandidate(
-        codexNativeChatCache,
-        sessionPath,
-        parseCodexSessionCandidate,
-        stats,
-      );
+      const parsed = summaryOnlyIds.has(`native_codex_${header.id}`)
+        ? summaryCandidate(sessionPath, "codex", header, stats)
+        : await cachedNativeChatCandidate(
+            codexNativeChatCache,
+            sessionPath,
+            parseCodexSessionCandidate,
+            stats,
+          );
       if (index % 4 === 3) {
         await yieldToEventLoop();
       }
-      if (!parsed || !samePath(parsed.workspacePath, workspacePath)) {
+      if (!parsed || !inWorkspace(parsed.workspacePath)) {
         continue;
       }
       const indexed = titleIndex.get(parsed.id);
@@ -405,8 +468,10 @@ async function codexNativeChatThreadsForWorkspace(
 async function claudeNativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
   stats: NativeChatScanStats,
+  summaryOnlyIds: ReadonlySet<string>,
 ): Promise<NativeChatCandidate[]> {
   const workspacePath = resolve(workspace.localPath);
+  const inWorkspace = sameFolderAs(workspacePath);
   const byID = new Map<string, NativeChatCandidate>();
 
   const externalProfiles = new Map(
@@ -435,20 +500,23 @@ async function claudeNativeChatThreadsForWorkspace(
       if (!sessionPath) {
         continue;
       }
-      if (!samePath(await logFolder(sessionPath, "claude"), workspacePath)) {
+      const header = await logHeader(sessionPath, "claude");
+      if (!inWorkspace(header.folder)) {
         if (index % 16 === 15) await yieldToEventLoop();
         continue;
       }
-      const candidate = await cachedNativeChatCandidate(
-        claudeNativeChatCache,
-        sessionPath,
-        parseClaudeSessionCandidate,
-        stats,
-      );
+      const candidate = summaryOnlyIds.has(`native_claude_${header.id}`)
+        ? summaryCandidate(sessionPath, "claude", header, stats)
+        : await cachedNativeChatCandidate(
+            claudeNativeChatCache,
+            sessionPath,
+            parseClaudeSessionCandidate,
+            stats,
+          );
       if (index % 4 === 3) {
         await yieldToEventLoop();
       }
-      if (!candidate || !samePath(candidate.workspacePath, workspacePath)) {
+      if (!candidate || !inWorkspace(candidate.workspacePath)) {
         continue;
       }
       const current = byID.get(candidate.id);
@@ -469,6 +537,23 @@ async function claudeNativeChatThreadsForWorkspace(
   }
 
   return [...byID.values()];
+}
+
+/**
+ * samePath against one folder, answered once per distinct path: a scan
+ * compares thousands of logs that name a handful of folders, and each fresh
+ * answer resolves both paths on disk (network round trips on a share).
+ */
+function sameFolderAs(folder: string): (path: string) => boolean {
+  const answers = new Map<string, boolean>();
+  return (path) => {
+    let answer = answers.get(path);
+    if (answer === undefined) {
+      answer = samePath(path, folder);
+      answers.set(path, answer);
+    }
+    return answer;
+  };
 }
 
 function yieldToEventLoop(): Promise<void> {
@@ -567,7 +652,7 @@ async function walkJsonlFiles(
   if (!existsSync(root)) {
     return [];
   }
-  const files: { path: string; mtimeMs: number }[] = [];
+  const paths: string[] = [];
   const stack: { dir: string; level: number }[] = [{ dir: root, level: 0 }];
   while (stack.length > 0) {
     const { dir, level } = stack.pop()!;
@@ -582,17 +667,21 @@ async function walkJsonlFiles(
       if (entry.isDirectory()) {
         if (level + 1 < depth) stack.push({ dir: entryPath, level: level + 1 });
       } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        try {
-          files.push({
-            path: entryPath,
-            mtimeMs: (await stat(entryPath)).mtimeMs,
-          });
-        } catch {
-          continue;
-        }
+        paths.push(entryPath);
       }
     }
     await yieldToEventLoop();
+  }
+  // Callers order chats by their own activity; only a cut needs the newest.
+  if (paths.length <= limit) return paths;
+  const files: { path: string; mtimeMs: number }[] = [];
+  for (const [index, path] of paths.entries()) {
+    try {
+      files.push({ path, mtimeMs: (await stat(path)).mtimeMs });
+    } catch {
+      continue;
+    }
+    if (index % 256 === 255) await yieldToEventLoop();
   }
   return files
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
@@ -841,25 +930,48 @@ function claudeHeaderFolder(lines: readonly string[]): string {
   return folder;
 }
 
-/** The folder a log belongs to ("" when its header names none yet). */
-async function logFolder(
+interface LogHeader {
+  folder: string;
+  id: string;
+}
+
+/** Header reads under way: the workspaces a round scans side by side share
+ * one read of each log instead of one each. */
+const headerReads = new Map<string, Promise<LogHeader>>();
+
+/** The folder a log belongs to ("" when its header names none yet) and the
+ * session id it names. */
+function logHeader(
   sessionPath: string,
   provider: Exclude<WorkerRuntimeId, "mock">,
-): Promise<string> {
+): Promise<LogHeader> | LogHeader {
+  looked.add(sessionPath);
+  // A complete header never changes: no stat for it (most logs every round).
+  const known = logFolders.get(sessionPath);
+  if (known?.settled) return known;
+  const pending = headerReads.get(sessionPath);
+  if (pending) return pending;
+  const read = readLogHeader(sessionPath, provider, known).finally(() =>
+    headerReads.delete(sessionPath),
+  );
+  headerReads.set(sessionPath, read);
+  return read;
+}
+
+async function readLogHeader(
+  sessionPath: string,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  known: LogFolderEntry | undefined,
+): Promise<LogHeader> {
   let stat: Stats;
   try {
     stat = statSync(sessionPath);
   } catch {
     logFolders.delete(sessionPath);
-    return "";
+    return { folder: "", id: "" };
   }
-  const known = logFolders.get(sessionPath);
-  if (
-    known &&
-    (known.settled ||
-      (known.mtimeMs === stat.mtimeMs && known.size === stat.size))
-  ) {
-    return known.folder;
+  if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) {
+    return known;
   }
   const lines = await readSessionPrefixLines(
     sessionPath,
@@ -873,19 +985,80 @@ async function logFolder(
       ? Boolean(folder)
       : lines.length >= claudeHeaderLineLimit ||
         stat.size >= nativeSessionHeaderByteLimit;
-  logFolders.delete(sessionPath);
-  logFolders.set(sessionPath, {
+  const entry = {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
     settled,
     folder,
-  });
+    id: headerSessionId(lines, provider, sessionPath),
+  };
+  logFolders.delete(sessionPath);
+  logFolders.set(sessionPath, entry);
+  if (settled) logHeadersChanged = true;
   while (logFolders.size > logFolderEntryLimit) {
     const oldest = logFolders.keys().next().value;
     if (oldest === undefined) break;
     logFolders.delete(oldest);
   }
-  return folder;
+  return entry;
+}
+
+/** The session id a log's header names, the same for every reader. */
+function headerSessionId(
+  lines: readonly string[],
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  sessionPath: string,
+): string {
+  if (provider === "codex") {
+    const payload = lines[0] ? parseJSONRecord(lines[0])?.payload : undefined;
+    if (!payload || typeof payload !== "object") return "";
+    const record = payload as Record<string, unknown>;
+    return typeof record.session_id === "string"
+      ? record.session_id
+      : typeof record.id === "string"
+        ? record.id
+        : "";
+  }
+  let id = "";
+  for (const line of lines.slice(0, claudeHeaderLineLimit)) {
+    const sessionID = parseJSONRecord(line)?.sessionId;
+    if (typeof sessionID === "string" && sessionID) id = sessionID;
+  }
+  if (id) return id;
+  const filename = basename(sessionPath);
+  return filename.endsWith(".jsonl")
+    ? filename.slice(0, -".jsonl".length)
+    : filename;
+}
+
+/**
+ * A chat only its archive state is wanted of (the server never keeps it: a
+ * Foundry session owns it, or it was deleted): its header and the log's time,
+ * without reading or redacting its transcript. Its log's time orders it among
+ * the others, standing in for its last activity.
+ */
+function summaryCandidate(
+  sessionPath: string,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  header: LogHeader,
+  stats: NativeChatScanStats,
+): NativeChatCandidate | undefined {
+  if (!header.id) return undefined;
+  let mtime: Date;
+  try {
+    mtime = statSync(sessionPath).mtime;
+  } catch {
+    return undefined;
+  }
+  stats.summarizedFiles = (stats.summarizedFiles ?? 0) + 1;
+  return {
+    id: header.id,
+    provider,
+    title: "",
+    preview: "",
+    updatedAt: mtime,
+    workspacePath: header.folder,
+  };
 }
 
 async function parseCodexSessionCandidate(
@@ -905,17 +1078,7 @@ async function parseCodexSessionCandidate(
   if (!cwd) {
     return undefined;
   }
-  const payload = parseJSONRecord(lines[0]!)?.payload as Record<
-    string,
-    unknown
-  >;
-
-  const id =
-    typeof payload.session_id === "string"
-      ? payload.session_id
-      : typeof payload.id === "string"
-        ? payload.id
-        : "";
+  const id = headerSessionId(lines, "codex", sessionPath);
   if (!id) {
     return undefined;
   }
@@ -957,22 +1120,8 @@ async function parseClaudeSessionCandidate(
     stat.size,
     nativeSessionHeaderByteLimit,
   );
-  let id = "";
   const workspacePath = claudeHeaderFolder(headerLines);
-
-  for (const line of headerLines.slice(0, claudeHeaderLineLimit)) {
-    const sessionID = parseJSONRecord(line)?.sessionId;
-    if (typeof sessionID === "string" && sessionID) {
-      id = sessionID;
-    }
-  }
-
-  if (!id) {
-    const filename = basename(sessionPath);
-    id = filename.endsWith(".jsonl")
-      ? filename.slice(0, -".jsonl".length)
-      : filename;
-  }
+  const id = headerSessionId(headerLines, "claude", sessionPath);
   if (!id || !workspacePath) {
     return undefined;
   }

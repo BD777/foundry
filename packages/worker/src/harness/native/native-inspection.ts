@@ -204,10 +204,7 @@ async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
                 (row: { hidden?: boolean; model?: string }) =>
                   !row.hidden && row.model,
               )
-              .map((row: { model: string; displayName?: string }) => ({
-                id: row.model,
-                label: row.displayName,
-              })),
+              .map(codexModelListOption),
           );
           cursor = page.nextCursor ?? null;
         } while (cursor);
@@ -244,20 +241,77 @@ async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
       },
     );
     const body = JSON.parse(result.stdout) as {
-      models?: Array<{
-        slug: string;
-        display_name?: string;
-        visibility?: string;
-      }>;
+      models?: BundledCatalogRow[];
     };
     return (body.models ?? [])
       .filter(
         (row) => row.slug && (!row.visibility || row.visibility === "list"),
       )
-      .map((row) => ({ id: row.slug, label: row.display_name }));
+      .map(codexBundledCatalogOption);
   } finally {
     operation.dispose();
   }
+}
+
+type CodexModelListRow = {
+  model: string;
+  displayName?: string;
+  isDefault?: boolean;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string }>;
+};
+
+type BundledCatalogRow = {
+  slug: string;
+  display_name?: string;
+  visibility?: string;
+  default_reasoning_level?: string | null;
+  supported_reasoning_levels?: Array<{ effort: string }>;
+};
+
+/**
+ * A `model/list` row. Its efforts are the values this model advertises, in
+ * Codex's order; the model's own default is kept beside them.
+ */
+export function codexModelListOption(row: CodexModelListRow): AgentModelOption {
+  return {
+    ...codexCatalogOption(
+      row.model,
+      row.displayName,
+      row.supportedReasoningEfforts?.map((level) => level.reasoningEffort),
+      row.defaultReasoningEffort,
+    ),
+    ...(row.isDefault ? { isDefault: true } : {}),
+  };
+}
+
+/** A bundled-catalog row, read as `model/list` reads its rows. */
+export function codexBundledCatalogOption(
+  row: BundledCatalogRow,
+): AgentModelOption {
+  return codexCatalogOption(
+    row.slug,
+    row.display_name,
+    row.supported_reasoning_levels?.map((level) => level.effort),
+    row.default_reasoning_level ?? undefined,
+  );
+}
+
+function codexCatalogOption(
+  id: string,
+  label: string | undefined,
+  efforts: string[] | undefined,
+  defaultEffort: string | undefined,
+): AgentModelOption {
+  const reasoningEfforts = efforts?.filter(
+    (effort) => typeof effort === "string" && effort.length > 0,
+  );
+  return {
+    id,
+    label,
+    ...(reasoningEfforts?.length ? { reasoningEfforts } : {}),
+    ...(defaultEffort ? { defaultReasoningEffort: defaultEffort } : {}),
+  };
 }
 
 export async function inspectNativeAccount(

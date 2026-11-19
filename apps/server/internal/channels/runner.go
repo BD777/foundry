@@ -117,6 +117,10 @@ type Ports struct {
 	// conversation kind, a template over {message.id}, {conversation.id}
 	// and {thread.id}; "" without one.
 	ReplyCommand func(ctx context.Context, channel store.MessageChannelRecord, kind string) string
+	// ReactCommand is the source's command for reacting to a message with an
+	// emoji, a template over {message.id}, {conversation.id} and {thread.id};
+	// "" without one.
+	ReactCommand func(ctx context.Context, channel store.MessageChannelRecord) string
 	// OwnWrites is the set of message ids the channel's source account
 	// created through Foundry's gateway (the assistant's own writes), which
 	// never start or continue a session. An error means the check could not

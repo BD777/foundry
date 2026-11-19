@@ -1167,10 +1167,13 @@ export function parseCliInvocation(args: string[]): ParsedCliInvocation {
     }
 
     const value = inlineValue ?? commandArgs[index + 1];
-    // A value that begins with "-" can still be given inline (--arg=--port).
+    // A separate value is taken even when it begins with "-" (pairing tokens
+    // are base64url). Only `--` or a flag this command accepts is refused, so
+    // `--token --no-service` reports the forgotten value. `--flag=<value>`
+    // always carries its value.
     if (
       value === undefined ||
-      (inlineValue === undefined && value.startsWith("-"))
+      (inlineValue === undefined && isFlagToken(value, optionMap))
     ) {
       throw argumentError({
         code: "E1002",
@@ -1231,6 +1234,13 @@ function splitOption(token: string): [string, string | undefined] {
     return [token, undefined];
   }
   return [token.slice(0, index), token.slice(index + 1)];
+}
+
+function isFlagToken(
+  token: string,
+  optionMap: ReadonlyMap<string, CliOptionContract>,
+): boolean {
+  return token === "--" || optionMap.has(splitOption(token)[0]);
 }
 
 function validateOptionValue(

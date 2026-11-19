@@ -14,6 +14,7 @@ import type {
 import { i18n } from "../../i18n";
 import { useProfileModels } from "../../components/workspace/agent-default-fields";
 import {
+  catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
 } from "../../lib/agent-effort";
@@ -546,7 +547,11 @@ function ChoiceFields({
     (followsDefault && value.runtime
       ? sources.find((source) => source.runtime === value.runtime)
       : undefined);
-  const { models, loading } = useProfileModels(catalog?.catalog);
+  const {
+    catalog: modelCatalog,
+    models,
+    loading,
+  } = useProfileModels(catalog?.catalog);
   const options: SelectMenuOption[] = [
     ...(defaultLabel ? [{ value: "device_default", label: defaultLabel }] : []),
     ...sources.map((source) => ({
@@ -573,7 +578,7 @@ function ChoiceFields({
   const runtime = catalog?.runtime ?? value.runtime;
   const efforts =
     runtime === "codex"
-      ? codexEffortOptions()
+      ? codexEffortOptions(catalogModel(modelCatalog, value.model ?? ""))
       : runtime === "claude"
         ? claudeEffortOptions()
         : [];

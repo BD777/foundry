@@ -4,11 +4,14 @@
 
 import { strict as assert } from "node:assert";
 import {
+  blockingAsksOf,
+  cardAsksIn,
   classifyOutcome,
   mentionedProjects,
   parseJudgeAnswer,
   parseToolEvent,
   projectByComputer,
+  questionsIn,
 } from "./pa-eval-score.mjs";
 
 const assistant = "ws_assistant";
@@ -85,7 +88,7 @@ const outcomeCases = [
     "offline project named in reply",
     [],
     "我在你的 cottoncpp 项目里没找到，电脑离线",
-    { decision: "project", workspaceId: "ws_cotton", byMention: true },
+    { decision: "answer", mentionedProject: "ws_cotton" },
   ],
   [
     "two offline projects named: not decided",
@@ -103,7 +106,7 @@ const judgedCases = [
     [],
     "简化版我先列在下面。cottoncpp 那台电脑开机后我再去找完整版，好吗？",
     { asks: false },
-    { decision: "project", workspaceId: "ws_cotton", byMention: true },
+    { decision: "answer", mentionedProject: "ws_cotton" },
   ],
   [
     "judge: asks without a question mark (numbered options)",
@@ -134,6 +137,48 @@ const judgedCases = [
     { decision: "project", workspaceId: "ws_proj" },
   ],
   ["no judge: a question mark asks", [], "要我做吗？", {}, { decision: "ask" }],
+  [
+    "judge: an offer after a finished answer is not an ask",
+    [],
+    "报告整理好了，要点都列在上面。要我顺便再查一下别的群吗？",
+    { asks: false },
+    { decision: "answer" },
+  ],
+  [
+    "judge: a saved change with an optional yes/no is not an ask",
+    [tool("remember", { op: "add" })],
+    "好的，已记下：周末不给您发工作上的事。您要关掉吗？",
+    { asks: false },
+    { decision: "answer" },
+  ],
+  [
+    "judge: a side-term question after a full answer is not an ask",
+    [],
+    "abase 是「贬低」的意思。RU 我不确定你指什么，是俄罗斯吗？",
+    { asks: false },
+    { decision: "answer" },
+  ],
+  [
+    "judge: a Feishu permission card (needs_you op list) is not an ask",
+    [tool("needs_you", { op: "list" })],
+    "我还不能读飞书对话：系统要你先确认，确认卡同意后我再去看。",
+    { asks: false },
+    { decision: "answer" },
+  ],
+  [
+    "judge: a blocking choice with a question card is an ask",
+    [tool("needs_you", { op: "ask" })],
+    "两个都可以，你选哪个？",
+    { asks: true },
+    { decision: "ask" },
+  ],
+  [
+    "judge: a missing name is an ask",
+    [],
+    "“某人”是哪位？告诉我名字，我就去对。",
+    { asks: true },
+    { decision: "ask" },
+  ],
 ];
 
 // A reply naming only a computer names the one project the assistant looked
@@ -240,7 +285,8 @@ for (const [name, tools, reply, want] of outcomeCases)
     const got = classifyOutcome(tools, reply, assistant, offline);
     assert.equal(got.decision, want.decision);
     if (want.workspaceId) assert.equal(got.workspaceId, want.workspaceId);
-    if (want.byMention) assert.equal(got.byMention, true);
+    if (want.mentionedProject !== undefined)
+      assert.equal(got.mentionedProject, want.mentionedProject);
   });
 
 for (const [name, tools, reply, judged, want] of judgedCases)
@@ -248,7 +294,8 @@ for (const [name, tools, reply, judged, want] of judgedCases)
     const got = classifyOutcome(tools, reply, assistant, offline, judged);
     assert.equal(got.decision, want.decision);
     if (want.workspaceId) assert.equal(got.workspaceId, want.workspaceId);
-    if (want.byMention) assert.equal(got.byMention, true);
+    if (want.mentionedProject !== undefined)
+      assert.equal(got.mentionedProject, want.mentionedProject);
   });
 
 for (const [name, tools, reply, want] of computerCases)
@@ -257,7 +304,7 @@ for (const [name, tools, reply, want] of computerCases)
   });
 
 run(
-  "outcome: computer named, one project looked into: project by mention",
+  "outcome: computer named, one project looked into: diagnostic, still an answer",
   () => {
     const got = classifyOutcome(
       [tool("get_workspace", { workspaceId: "ws_jobs" })],
@@ -266,9 +313,8 @@ run(
       offline,
     );
     assert.deepEqual(got, {
-      decision: "project",
-      workspaceId: "ws_jobs",
-      byMention: true,
+      decision: "answer",
+      mentionedProject: "ws_jobs",
     });
   },
 );
@@ -281,6 +327,59 @@ for (const [name, event, want] of parseCases)
     if ("op" in want) assert.equal(got.args.op, want.op);
     if (want.workspaceId) assert.equal(got.args.workspaceId, want.workspaceId);
   });
+
+// Blocking asks per request: question cards plus the reply's ask when no work
+// was started; an offer after started work does not block.
+const blockingCases = [
+  [
+    "offer after dispatched work is not blocking",
+    [tool("dispatch_item", { workspaceId: "ws_proj" })],
+    "开始了。要我顺便看看别的吗？",
+    { asks: true },
+    0,
+  ],
+  [
+    "blocking choice with no work started is one",
+    [],
+    "两个都在，要哪个？",
+    { asks: true },
+    1,
+  ],
+  [
+    "question card (op ask) is one blocking ask",
+    [tool("needs_you", { op: "ask" })],
+    "好的",
+    { asks: false },
+    1,
+  ],
+  [
+    "permission card (op list) is not blocking",
+    [tool("needs_you", { op: "list" })],
+    "请确认飞书卡片",
+    { asks: false },
+    0,
+  ],
+  ["no judge: a question mark is one", [], "要我做吗？", {}, 1],
+];
+
+for (const [name, tools, reply, judged, want] of blockingCases)
+  run(`blocking asks: ${name}`, () => {
+    assert.equal(blockingAsksOf(tools, reply, assistant, judged), want);
+  });
+
+run("question cards: op list is not a question card", () => {
+  assert.equal(
+    cardAsksIn([
+      tool("needs_you", { op: "list" }),
+      tool("needs_you", { op: "ask" }),
+    ]),
+    1,
+  );
+});
+
+run("questions per request: raw question marks are still counted", () => {
+  assert.equal(questionsIn("要我顺便看看别的吗？这个呢？"), 2);
+});
 
 run("judge answer: well-formed array", () => {
   const got = parseJudgeAnswer(

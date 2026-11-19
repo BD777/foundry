@@ -311,6 +311,8 @@ async function fullChatsForUpload(
       input.profiles,
       input.limit,
       new Set(input.includeIds),
+      undefined,
+      new Set(input.summaryOnlyIds),
     )
   ).chats.filter((chat) => wanted.has(chat.id));
 }
@@ -337,6 +339,9 @@ export async function syncNativeChats(
     includeIds: [...uploads.nativeArchiveStates]
       .filter(([, archived]) => archived)
       .map(([id]) => id),
+    // The server never keeps these: only their archive state is sent, so
+    // their transcripts are not read.
+    summaryOnlyIds: [...uploads.refused],
   };
   const scan = await scanNativeChatsForDaemon(scanInput);
   const candidates = scan.chats;

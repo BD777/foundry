@@ -29,12 +29,37 @@
 // "devices": {"<label>": "<alias>"}}). A leak check fails the build when any
 // of those, an account name or a raw secret shape survives.
 //
+// Names quoted in requests (a person in 跟/和/与/给/同 “…” or @…, a chat in a
+// Feishu message) become stable pseudonyms, 人N and 群N, kept in a private map
+// (~/.foundry/pa-eval/pseudonyms.json, mode 0600, never renumbered). A case
+// whose gold is a project must have each of its pseudonyms bound in the dev
+// database (a Feishu bot route named that chat, in that project); otherwise
+// the build fails and lists them. The seed writes those bindings under the
+// pseudonyms only.
+//
+// overrides.json (in --out) maps a case id to its gold edits: target,
+// acceptable, options, intent, class, note, and "policy": true for a case kept
+// in the set but excluded from routing metrics. An explicit acceptable list
+// replaces the derived one. The same overrides apply to handwritten cases.
+// "unanswerable-as-redacted": true keeps a case's quoted names generic (no
+// pseudonym, no binding check) and is exposed on the case the same way.
+//
+// --pin <dir>: keep an earlier set as measured: its cases (ids, requests, times,
+// sources) and its index. Only the gold edits of overrides.json apply on top.
+// The database keeps growing, so an unpinned rebuild samples a different set.
+//
 // usage: node scripts/pa-eval-build.mjs [--db <path>] [--user <username>]
 //          [--redact <file>] [--out <dir>] [--per-project N] [--max-real N]
-//          [--list-candidates]
+//          [--pseudonyms <file>] [--pin <dir>] [--list-candidates]
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
@@ -57,6 +82,8 @@ function parseArgs(argv) {
     user: "",
     redact: resolve(homedir(), ".foundry/pa-eval/redact.json"),
     out: resolve(homedir(), ".foundry/pa-eval/set"),
+    pseudonyms: resolve(homedir(), ".foundry/pa-eval/pseudonyms.json"),
+    pin: "",
     perProject: 14,
     maxReal: 100,
     listCandidates: false,
@@ -72,6 +99,8 @@ function parseArgs(argv) {
     else if (flag === "--user") args.user = value();
     else if (flag === "--redact") args.redact = resolve(value());
     else if (flag === "--out") args.out = resolve(value());
+    else if (flag === "--pseudonyms") args.pseudonyms = resolve(value());
+    else if (flag === "--pin") args.pin = resolve(value());
     else if (flag === "--per-project") args.perProject = Number(value());
     else if (flag === "--max-real") args.maxReal = Number(value());
     else if (flag === "--list-candidates") args.listCandidates = true;
@@ -345,7 +374,7 @@ function linkLabel(url) {
   return "<内部链接>";
 }
 
-function makeRedactor(privateRules, accountNames) {
+function makeRedactor(privateRules, accountNames, label) {
   // Shapes first (links, ids, paths), then the private patterns, then people
   // and chats, then account names.
   const shapes = [
@@ -375,11 +404,6 @@ function makeRedactor(privateRules, accountNames) {
     [/\b(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{24,}\b/g, "<id>"],
     [/(\/data\d*)?\/(home|Users)\/[^/\s]+/g, "~"],
   ];
-  // People and chats named in quotes: who the person talked to, which group.
-  const people = [
-    [/(跟|和|与|给|同)\s*[“”"「]\**([^“”"「」\n]{1,12})[“”"」]/g, "$1“某人”"],
-    [/@[^\s@,，。<]{1,20}/g, "@某人"],
-  ];
   const extra = (privateRules || []).map(([pattern, text]) => [
     new RegExp(pattern, "gi"),
     text,
@@ -390,19 +414,83 @@ function makeRedactor(privateRules, accountNames) {
       new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
       "<用户>",
     ]);
-  return (text) => {
+  // `label(kind, name)` gives the pseudonym; `used` collects the ones a text
+  // carries, so the binding check can find them per case.
+  return (text, used = []) => {
+    const tag = (kind, raw) => {
+      const name = raw.replace(/\*+/g, "");
+      const pseudonym = label(kind, name);
+      used.push(pseudonym);
+      return pseudonym;
+    };
     let out = text;
-    for (const [re, to] of [...shapes, ...extra, ...people, ...names])
+    for (const [re, to] of [...shapes, ...extra, ...names])
       out = out.replace(re, to);
+    // People and chats named in quotes: who the person talked to, which group.
+    out = out
+      .replace(
+        /(跟|和|与|给|同)\s*[“”"「]\**([^“”"「」\n]{1,12})[“”"」]/g,
+        (m, lead, name) => `${lead}“${tag("person", name)}”`,
+      )
+      .replace(/@[^\s@,，。<]{1,20}/g, (m) => `@${tag("person", m.slice(1))}`);
     // In a message about Feishu chats, every quoted span names a chat or
-    // quotes one: neither is the person's to publish.
+    // quotes one: neither is the person's to publish. A person pseudonym
+    // from the rule above stays.
     if (/飞书|群|对话|消息/.test(out))
       out = out.replace(
         /[“”"「]\**([^“”"「」\n]{1,80})\**[“”"」]/g,
-        (m, inner) => (inner === "某人" ? m : "“某群”"),
+        (m, inner) =>
+          /^人\d+$/.test(inner.replace(/\*+/g, ""))
+            ? m
+            : `“${tag("group", inner)}”`,
       );
     return out.replace(/\n{3,}/g, "\n\n").trim();
   };
+}
+
+// --- pseudonyms ---------------------------------------------------------------
+
+// The private map, read strictly: a corrupt file must not renumber names.
+function loadPseudonyms(path) {
+  if (!existsSync(path)) return { person: {}, group: {} };
+  const map = JSON.parse(readFileSync(path, "utf8"));
+  return { person: map.person || {}, group: map.group || {} };
+}
+
+function pseudonymLabel(store, kind, name) {
+  const table = store[kind === "person" ? "person" : "group"];
+  if (!table[name]) {
+    const next = Object.keys(table).length + 1;
+    table[name] = `${kind === "person" ? "人" : "群"}${next}`;
+  }
+  return table[name];
+}
+
+// The request as the generic redaction words it, for a case whose quoted
+// names are not bound in the database (tag unanswerable-as-redacted).
+function genericWording(text) {
+  return text
+    .replace(/“人\d+”/g, "“某人”")
+    .replace(/“群\d+”/g, "“某群”")
+    .replace(/@人\d+/g, "@某人");
+}
+
+function savePseudonyms(path, store) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+// The dev database's binding for a group pseudonym: a Feishu bot route in the
+// project that carries that chat name. A person has no name binding in the
+// database, so a person pseudonym under a project gold has none.
+function feishuBindingCount(db, kind, name, workspaceId) {
+  if (kind !== "group") return 0;
+  return db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM feishu_bot_routes WHERE chat_name = ? AND workspace_id = ?",
+    )
+    .get(name, workspaceId).n;
 }
 
 function leakCheck(texts, privateRules, accountNames, deviceLabels) {
@@ -503,6 +591,22 @@ const normalize = (s) =>
 
 // --- main --------------------------------------------------------------------
 
+// An earlier set's cases and projects, for --pin.
+function readPin(dir) {
+  const index = JSON.parse(readFileSync(resolve(dir, "index.json"), "utf8"));
+  const cases = readFileSync(resolve(dir, "cases.jsonl"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  return { index, cases };
+}
+
+// The pinned projects the database still owns.
+function pinProjects(owned, pinned) {
+  const ids = new Set(pinned.index.projects.map((p) => p.workspaceId));
+  return owned.filter((p) => ids.has(p.id));
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const db = await openReadOnly(args.db);
@@ -519,7 +623,9 @@ async function main() {
   const deviceAliases = privateFile.devices || {};
 
   const { person, users } = readPerson(db, args.user);
-  const { projects } = readProjects(db, person.id);
+  const pinned = args.pin ? readPin(args.pin) : null;
+  const { projects: owned } = readProjects(db, person.id);
+  const projects = pinned ? pinProjects(owned, pinned) : owned;
   const projectIds = new Set(projects.map((p) => p.id));
   const homeNames = [
     ...new Set(
@@ -534,7 +640,10 @@ async function main() {
       ...homeNames,
     ]),
   ];
-  const redact = makeRedactor(privateRules, accountNames);
+  const pseudonyms = loadPseudonyms(args.pseudonyms);
+  const redact = makeRedactor(privateRules, accountNames, (kind, name) =>
+    pseudonymLabel(pseudonyms, kind, name),
+  );
 
   // Computer aliases: the private map first, then the label itself when it
   // carries nothing personal.
@@ -569,8 +678,13 @@ async function main() {
     if (seen.has(key) || seen.has(keyAny)) continue;
     seen.add(key);
     seen.add(keyAny);
-    const request = redact(text).slice(0, 400);
-    candidates.push({ ...item, request });
+    const used = [];
+    const request = redact(text, used).slice(0, 400);
+    // Only pseudonyms the stored request still carries (the cut is at 400).
+    const carried = [...new Set(used)].filter((label) =>
+      new RegExp(`${label}(?!\\d)`).test(request),
+    );
+    candidates.push({ ...item, request, pseudonyms: carried });
   }
 
   const overridesPath = resolve(args.out, "overrides.json");
@@ -594,19 +708,41 @@ async function main() {
     perProject.set(c.workspaceId, list);
   }
   let selected = [];
-  for (const list of perProject.values()) {
-    const forced = list.filter((c) => overrides[c.caseId]?.include);
-    const rest = list.filter((c) => !overrides[c.caseId]?.include);
-    const room = Math.max(0, args.perProject - forced.length);
-    const step = rest.length / Math.max(room, 1);
-    const picked =
-      rest.length <= room
-        ? rest
-        : Array.from({ length: room }, (_, i) => rest[Math.floor(i * step)]);
-    selected.push(...forced, ...picked);
+  if (pinned) {
+    // The frozen record is the case: its request, time and source. A chat's
+    // stored transcript is a window that moves, so the database's current
+    // opening message can be a different message (or none). The database still
+    // supplies the projects and the chat titles of the snapshots.
+    selected = pinned.cases
+      .filter((c) => c.origin === "real")
+      .map((c) => ({
+        caseId: c.id,
+        kind: c.source.kind,
+        id: c.source.id,
+        workspaceId: c.observed.workspaceId,
+        at: c.at,
+        request: c.request,
+        pseudonyms: [],
+        frozen: true,
+      }));
+    console.log(
+      `pa-eval-build: ${selected.length} real cases taken from the frozen record`,
+    );
+  } else {
+    for (const list of perProject.values()) {
+      const forced = list.filter((c) => overrides[c.caseId]?.include);
+      const rest = list.filter((c) => !overrides[c.caseId]?.include);
+      const room = Math.max(0, args.perProject - forced.length);
+      const step = rest.length / Math.max(room, 1);
+      const picked =
+        rest.length <= room
+          ? rest
+          : Array.from({ length: room }, (_, i) => rest[Math.floor(i * step)]);
+      selected.push(...forced, ...picked);
+    }
+    selected.sort((a, b) => a.caseId.localeCompare(b.caseId));
+    selected = selected.slice(0, args.maxReal);
   }
-  selected.sort((a, b) => a.caseId.localeCompare(b.caseId));
-  selected = selected.slice(0, args.maxReal);
 
   if (args.listCandidates) {
     for (const c of selected) {
@@ -634,6 +770,26 @@ async function main() {
     return p.id;
   };
 
+  // The acceptable projects when an override gives none: a same-named
+  // project when the gold is where the person typed; the equivalent projects
+  // of the intent; and where the person typed, when the gold is elsewhere.
+  const deriveAcceptable = (target, observedId, project, intent) => {
+    const acceptable = target === observedId ? sameName(project) : [];
+    const equivalent = (overrideFile.equivalent?.[intent] || []).map((r) =>
+      resolveRef(r, `equivalent.${intent}`),
+    );
+    if (equivalent.includes(target))
+      for (const id of equivalent)
+        if (id !== target && !acceptable.includes(id)) acceptable.push(id);
+    if (
+      !specialTargets.has(target) &&
+      target !== observedId &&
+      !acceptable.includes(observedId)
+    )
+      acceptable.push(observedId);
+    return acceptable;
+  };
+  const bindingChecks = [];
   const cases = [];
   for (const c of selected) {
     const o = overrides[c.caseId] || {};
@@ -644,29 +800,20 @@ async function main() {
     const gold = { class: klass, target };
     const acceptable = o.acceptable
       ? o.acceptable.map((r) => resolveRef(r, c.caseId))
-      : target === c.workspaceId
-        ? sameName(project)
-        : [];
-    // Work the person spreads over several projects (Feishu chat digests):
-    // any of them is right.
-    const equivalent = (overrideFile.equivalent?.[intent] || []).map((r) =>
-      resolveRef(r, `equivalent.${intent}`),
-    );
-    if (equivalent.includes(target))
-      for (const id of equivalent)
-        if (id !== target && !acceptable.includes(id)) acceptable.push(id);
-    if (
-      !specialTargets.has(target) &&
-      target !== c.workspaceId &&
-      !acceptable.includes(c.workspaceId)
-    )
-      acceptable.push(c.workspaceId);
+      : deriveAcceptable(target, c.workspaceId, project, intent);
     if (acceptable.length) gold.acceptable = acceptable;
     if (o.options) gold.options = o.options.map((r) => resolveRef(r, c.caseId));
+    const unanswerable = Boolean(o["unanswerable-as-redacted"]);
+    bindingChecks.push({
+      id: c.caseId,
+      target,
+      pseudonyms: unanswerable ? [] : c.pseudonyms,
+    });
     cases.push({
       id: c.caseId,
       origin: "real",
-      request: o.request || c.request,
+      request:
+        o.request || (unanswerable ? genericWording(c.request) : c.request),
       class: klass,
       intent,
       at: c.at,
@@ -678,6 +825,8 @@ async function main() {
         ? { explicitRef: true }
         : {}),
       ...(o.note ? { note: o.note } : {}),
+      ...(o.policy ? { policy: true } : {}),
+      ...(unanswerable ? { "unanswerable-as-redacted": true } : {}),
     });
   }
   // Handwritten cases are asked "now": the latest week the data reaches.
@@ -691,14 +840,16 @@ async function main() {
       throw new Error(
         `handwritten case without id, request or gold: ${JSON.stringify(h).slice(0, 80)}`,
       );
+    const o = overrides[h.id] || {};
     const gold = {
       class: h.gold.class,
-      target: resolveRef(h.gold.target, h.id),
+      target: resolveRef(o.target || h.gold.target, h.id),
     };
-    if (h.gold.acceptable)
-      gold.acceptable = h.gold.acceptable.map((r) => resolveRef(r, h.id));
-    if (h.gold.options)
-      gold.options = h.gold.options.map((r) => resolveRef(r, h.id));
+    const acceptable = o.acceptable || h.gold.acceptable;
+    if (acceptable)
+      gold.acceptable = acceptable.map((r) => resolveRef(r, h.id));
+    const options = o.options || h.gold.options;
+    if (options) gold.options = options.map((r) => resolveRef(r, h.id));
     cases.push({
       id: h.id,
       origin: "handwritten",
@@ -708,7 +859,8 @@ async function main() {
       snapshot: latestWeek,
       gold,
       ...(h.scenario ? { scenario: h.scenario } : {}),
-      ...(h.note ? { note: h.note } : {}),
+      ...(h.note || o.note ? { note: o.note || h.note } : {}),
+      ...(o.policy ? { policy: true } : {}),
     });
   }
   cases.sort((a, b) => a.id.localeCompare(b.id));
@@ -742,7 +894,7 @@ async function main() {
     }));
   }
 
-  const index = {
+  let index = {
     version: 1,
     builtFrom:
       "dev database (read-only), de-identified; see scripts/pa-eval-build.mjs",
@@ -758,6 +910,10 @@ async function main() {
       .sort((a, b) => a.ref.localeCompare(b.ref)),
     snapshots,
   };
+
+  // The index is the frozen one: the database has moved on since the set was
+  // measured (project files, chat titles), and the assistant reads this index.
+  if (pinned) index = pinned.index;
 
   const texts = [
     ...cases.map((c) => ({
@@ -784,6 +940,41 @@ async function main() {
     );
     process.exit(1);
   }
+
+  // Each pseudonym of a case whose gold is a project must be bound to that
+  // project in the dev database. Nothing is invented: a miss fails the build.
+  const nameOf = new Map([
+    ...Object.entries(pseudonyms.person).map(([name, label]) => [
+      label,
+      { kind: "person", name },
+    ]),
+    ...Object.entries(pseudonyms.group).map(([name, label]) => [
+      label,
+      { kind: "group", name },
+    ]),
+  ]);
+  // Numbering is stable whatever the check says, so it is kept now.
+  savePseudonyms(args.pseudonyms, pseudonyms);
+  const unbound = [];
+  let checked = 0;
+  for (const check of bindingChecks) {
+    if (specialTargets.has(check.target)) continue;
+    for (const label of check.pseudonyms) {
+      const { kind, name } = nameOf.get(label);
+      checked++;
+      if (feishuBindingCount(db, kind, name, check.target) === 0)
+        unbound.push(`${check.id} ${label}`);
+    }
+  }
+  if (unbound.length) {
+    console.error(
+      `pa-eval-build: ${unbound.length} pseudonyms without a binding to their project (case id, pseudonym); nothing written:\n  ${unbound.join("\n  ")}`,
+    );
+    process.exit(1);
+  }
+  console.log(
+    `pa-eval-build: ${checked} pseudonym bindings checked, all bound`,
+  );
 
   mkdirSync(args.out, { recursive: true });
   writeFileSync(

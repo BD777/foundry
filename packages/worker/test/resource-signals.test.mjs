@@ -70,3 +70,35 @@ test("missing signals stay undefined", () => {
   assert.equal(sample.memoryPressurePercent, undefined);
   assert.equal(sample.cpuPressurePercent, 0);
 });
+
+test("a macOS sample reads vm_stat and swap through the system tools", () => {
+  const calls = [];
+  const outputs = new Map([
+    [
+      "/usr/bin/vm_stat",
+      "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 65536.\n",
+    ],
+    [
+      "/usr/sbin/sysctl -n vm.swapusage",
+      "total = 7168.00M  used = 5875.06M  free = 1292.94M  (encrypted)\n",
+    ],
+  ]);
+  const sample = readResourceSignals({
+    platform: "darwin",
+    cpuCount: 4,
+    totalMemoryBytes: 16 * 1024 ** 3,
+    loadAverage: () => [1, 1, 1],
+    now: () => 1,
+    run: (command, args) => {
+      const key = [command, ...args].join(" ");
+      calls.push(key);
+      return outputs.get(key);
+    },
+  });
+  assert.deepEqual(calls, [
+    "/usr/bin/vm_stat",
+    "/usr/sbin/sysctl -n vm.swapusage",
+  ]);
+  assert.equal(sample.memoryAvailableBytes, 65536 * 16384);
+  assert.equal(sample.swapFreeBytes, Math.round(1292.94 * 1024 ** 2));
+});

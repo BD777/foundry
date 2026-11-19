@@ -3,6 +3,7 @@ import type { HTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import {
   normalizeProviderBaseUrl,
+  type AgentModelOption,
   type ProfileDefinition,
 } from "@bd777/foundry-protocol";
 import { cn } from "../../lib/cn";
@@ -46,6 +47,8 @@ function ProfileField({
 
 export interface ProfileEditorProps {
   busy: boolean;
+  /** The models the last catalog read reported, with what each offers. */
+  catalog: AgentModelOption[];
   /** Windows the endpoint's catalog reported, by model; undefined until read. */
   catalogWindows?: Record<string, number>;
   draft: ProfileDraft;
@@ -67,6 +70,7 @@ export interface ProfileEditorProps {
 
 export function ProfileEditor({
   busy,
+  catalog,
   catalogWindows,
   draft,
   isNew,
@@ -314,6 +318,8 @@ export function ProfileEditor({
           {t("editor.runtimeDefaults")}
         </summary>
         <RuntimeDefaultFields
+          catalog={catalog}
+          model={draft.model}
           runtime={draft.runtime}
           value={draft}
           onChange={onChange}

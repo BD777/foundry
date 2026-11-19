@@ -28,11 +28,25 @@ func (input CreateIssueInput) ValidateRuntimeOptions() error {
 		if input.Runtime != "codex" {
 			return fmt.Errorf("Codex effort requires Codex runtime")
 		}
-		switch input.CodexReasoningEffort {
-		case "minimal", "low", "medium", "high", "xhigh":
-		default:
+		if !ValidCodexEffort(input.CodexReasoningEffort) {
 			return fmt.Errorf("invalid Codex effort")
 		}
 	}
 	return nil
+}
+
+// ValidCodexEffort reports whether effort has the shape of a Codex reasoning
+// effort. Codex types the value as an open string that each model advertises
+// in its own catalog, so the server keeps no list of values: the model decides
+// which ones it accepts.
+func ValidCodexEffort(effort string) bool {
+	if effort == "" || len(effort) > 64 {
+		return false
+	}
+	for _, character := range effort {
+		if !(character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '-' || character == '_') {
+			return false
+		}
+	}
+	return true
 }

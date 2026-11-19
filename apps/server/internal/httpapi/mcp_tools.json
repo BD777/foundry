@@ -467,7 +467,7 @@
     "_meta": {
       "anthropic/searchHint": "devices & resources: operate a leased resource, screenshot, click, type, keys"
     },
-    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource you lease. A Mac's screen: select_window binds a window (pid + window_id) to the lease; the other operations are cua-driver's (screenshot, get_ui_tree, find_elements, list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size, wait). Prefer element_token from get_ui_tree to pixels; pixels refer to the window's latest screenshot through this lease (frame_id). Input goes in the background by default, best effort; foreground input and activate_window need delivery_mode: foreground, which needs the person's permission. A device's compute: run, put_files, get_file, git_sync, cleanup, as the worker's user in a scratch folder that persists across leases (this session's own unless you name one; a named one is shared with every session that names it), or in a workspace with workspaceId; a run answers exitCode, timedOut, durationMs and the tails of stdout and stderr. Each result says ok or an errorCode (stale_lease, stale_frame, backend_error).",
+    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource you lease. A Mac's screen: select_window binds a window (pid + window_id) to the lease; the other operations are cua-driver's (screenshot, get_ui_tree, find_elements, list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size, wait). Prefer element_token from get_ui_tree to pixels; pixels refer to the window's latest screenshot through this lease (frame_id). Input goes in the background by default, best effort; foreground input and activate_window need delivery_mode: foreground, which needs the person's permission. A device's compute: run, put_files, get_file, git_sync, cleanup, as the worker's user in a scratch folder that persists across leases (this session's own unless you name one; a named one is shared with every session that names it; a session's own goes after 3 days unused, a named one after 14), or in a workspace with workspaceId; a run answers exitCode, timedOut, durationMs and the tails of stdout and stderr. Each result says ok or an errorCode (stale_lease, stale_frame, backend_error).",
     "summary": "Operates a leased resource step by step: screenshots, accessibility tree, clicks, typing, keys, scrolling and dragging on a Mac's screen through cua-driver.",
     "limits": [
       "Only with a live lease this session holds; refused once it ended or was taken.",
@@ -829,8 +829,7 @@
         },
         "effort": {
           "type": "string",
-          "enum": ["", "minimal", "low", "medium", "high", "xhigh", "max"],
-          "description": "Default effort: claude low…max, codex minimal…xhigh; \"\" for the runtime's default."
+          "description": "Default effort: claude low…max; codex a reasoning effort the chosen model lists (list_models shows reasoningEfforts); \"\" for the runtime's default."
         },
         "deviceIds": {
           "type": "array",
@@ -921,8 +920,7 @@
         },
         "effort": {
           "type": "string",
-          "enum": ["", "minimal", "low", "medium", "high", "xhigh", "max"],
-          "description": "Default effort: claude low…max, codex minimal…xhigh."
+          "description": "Default effort: claude low…max; codex a reasoning effort the default model lists (list_models shows reasoningEfforts)."
         }
       },
       "required": ["providerId", "deviceId"]
@@ -1152,7 +1150,7 @@
               },
               "effort": {
                 "type": "string",
-                "description": "claude low…max, codex minimal…xhigh; omit for the runtime's default."
+                "description": "claude low…max; codex a reasoning effort the model lists (list_models shows reasoningEfforts); omit for the runtime's default."
               },
               "tokensPerMinute": {
                 "type": "integer",

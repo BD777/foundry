@@ -18,10 +18,11 @@
 //                      and recall, wrong creations, banned words, latency and
 //                      cost. Helpers it starts are cancelled at once, and
 //                      projects it created and what it remembered are undone
-//                      after each case. The copy's projects sit on the
-//                      person's computers, offline here: a refused dispatch,
-//                      or a reply naming exactly one such project in quotes,
-//                      is its decision. The worker runs in bubblewrap (home
+//                      after each case. The copy's projects sit on
+//                      fixture computers, online with a stand-in runtime (the
+//                      fake Claude CLI, one Worker each): a dispatch is a real
+//                      session. The decision is a dispatch tool call or an ask;
+//                      a reply naming a project is a diagnostic only. The worker runs in bubblewrap (home
 //                      read-only, keys hidden): the assistant is a real agent
 //                      on this computer. --judge
 //                      adds one read-only Foundry session that rates whether
@@ -59,9 +60,11 @@
 //          [--out FILE] [--scenario a1a2|plans] [--scenario-timeout-s N]
 // Exit: 0 every gate passed, 1 a gate failed, 2 the run itself failed.
 
-import { spawn, spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -75,6 +78,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
+  blockingAsksOf,
   classifyOutcome,
   DISPATCH_TOOLS,
   cardAsksIn,
@@ -82,6 +86,7 @@ import {
   parseToolEvent,
   questionsIn,
 } from "./pa-eval-score.mjs";
+import { appendRow, journalKey, readJournal } from "./pa-eval-journal.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -164,6 +169,10 @@ function parseArgs(argv) {
     out: "",
     scenario: "",
     scenarioTimeoutS: 1800,
+    repeat: 1,
+    resume: "",
+    resumed: new Map(),
+    journal: "",
   };
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i];
@@ -227,6 +236,15 @@ function parseArgs(argv) {
       case "--case-timeout-s":
         args.caseTimeoutS = Number(value());
         break;
+      case "--resume":
+        args.resume = value();
+        break;
+      case "--repeat": {
+        args.repeat = Number(value());
+        if (!Number.isInteger(args.repeat) || args.repeat < 1)
+          throw new Error("--repeat needs a whole number of at least 1");
+        break;
+      }
       case "--eval":
         args.evalDir = resolve(value());
         break;
@@ -596,6 +614,8 @@ class Worker {
     );
     this.pidFile = resolve(stack.evalDir, `${name}.pid`);
     this.logPath = resolve(stack.evalDir, `${name}.log`);
+    // Run the runtime under the sandbox even without the person's logins.
+    this.sandboxed = false;
   }
 
   // Only what the harness sets reaches the worker: the caller's session
@@ -611,8 +631,18 @@ class Worker {
           k.startsWith("LC_"),
       ),
     );
+    // Tools and the npm cache are one shared folder per stack: a Worker's home
+    // would otherwise take about 0.6 GB of its own (the runtime itself is
+    // read-only in the sandbox and never copied).
+    const shared = resolve(this.stack.evalDir, "shared");
+    for (const folder of ["tools", "npm-cache", "xdg-cache", "go-build"])
+      mkdirSync(resolve(shared, folder), { recursive: true, mode: 0o700 });
     const env = {
       ...inherited,
+      FOUNDRY_TOOLS_ROOT: resolve(shared, "tools"),
+      NPM_CONFIG_CACHE: resolve(shared, "npm-cache"),
+      XDG_CACHE_HOME: resolve(shared, "xdg-cache"),
+      GOCACHE: resolve(shared, "go-build"),
       FOUNDRY_STATE_ROOT: this.stateRoot,
       FOUNDRY_STACK: `scratch-${this.stack.name}`,
       // Each case is one turn: an idle runtime kept for the default 15
@@ -653,8 +683,7 @@ class Worker {
         "setup",
         "--server",
         this.stack.url,
-        "--token",
-        token,
+        `--token=${token}`,
         "--no-service",
       ],
       { encoding: "utf8", env: this.env({ logins: false }) },
@@ -680,14 +709,15 @@ class Worker {
     this.logins = logins;
     const logFile = openSync(this.logPath, "a");
     const command = ["node", this.cli, "connect"];
-    const [file, ...argv] = logins
-      ? [
-          ...sandbox(this.provider, this.cli, this.realLogins, [
-            this.stack.evalDir,
-          ]),
-          ...command,
-        ]
-      : command;
+    const [file, ...argv] =
+      logins || this.sandboxed
+        ? [
+            ...sandbox(this.provider, this.cli, this.realLogins, [
+              this.stack.evalDir,
+            ]),
+            ...command,
+          ]
+        : command;
     const child = spawn(file, argv, {
       env: this.env({ logins }),
       stdio: ["ignore", logFile, logFile],
@@ -728,6 +758,162 @@ class Worker {
       `the worker did not ${connected ? "connect" : "disconnect"} within ${timeoutMs / 1000}s (log: ${this.logPath})`,
     );
   }
+}
+
+// --- fixture computers, online with a stand-in runtime ---------------------------
+
+const fakeClaudeSource = resolve(root, "scripts/fixtures/fake-claude-code.cjs");
+
+// One Worker per fixture computer, paired under the sandbox. Only the model is
+// faked: the Worker's Claude runtime is the fake CLI (FOUNDRY_CLAUDE_BIN, as in
+// scripts/ci-worker-restart.mjs), so a project on the computer is online and a
+// dispatch to it is a real session.
+class FixtureWorker extends Worker {
+  constructor(stack, computer, deviceId, name) {
+    super(stack, "scratch", name, "claude");
+    this.computer = computer;
+    this.deviceId = deviceId;
+    this.realLogins = false;
+    this.sandboxed = true;
+    this.fakeClaude = resolve(stack.evalDir, "fixtures/claude");
+  }
+
+  env({ logins }) {
+    return { ...super.env({ logins }), FOUNDRY_CLAUDE_BIN: this.fakeClaude };
+  }
+
+  // The seed left the computer's device id free (no identity row), so a
+  // pairing that asks for it keeps the id and the projects stay on it.
+  async pair(client) {
+    mkdirSync(this.stateRoot, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      resolve(this.stateRoot, "device.json"),
+      JSON.stringify({
+        id: this.deviceId,
+        label: this.computer,
+        status: "connected",
+        lastSeenLabel: "online",
+      }),
+      { mode: 0o600 },
+    );
+    const id = await super.pair(client);
+    if (id !== this.deviceId)
+      throw new SetupError(
+        `${this.computer} paired as ${id}, not ${this.deviceId}`,
+      );
+    return id;
+  }
+}
+
+// Pairs and starts every computer of the fixture, then waits until each shows
+// as connected. The fake CLI is copied into the stack, never run from the repo.
+async function startFixtureWorkers(client, stack, index) {
+  const fixtureDir = resolve(stack.evalDir, "fixtures");
+  mkdirSync(fixtureDir, { recursive: true, mode: 0o700 });
+  copyFileSync(fakeClaudeSource, resolve(fixtureDir, "claude"));
+  chmodSync(resolve(fixtureDir, "claude"), 0o755);
+  const ids = new Map(
+    (await client.get("/api/devices")).map((d) => [d.label, d.id]),
+  );
+  const computers = [...new Set(index.projects.map((p) => p.computer))];
+  const fixtures = [];
+  for (const [i, computer] of computers.entries()) {
+    const deviceId = ids.get(computer);
+    if (!deviceId)
+      throw new SetupError(`no seeded device for the computer ${computer}`);
+    const fixture = new FixtureWorker(
+      stack,
+      computer,
+      deviceId,
+      `fixture-${i + 1}`,
+    );
+    await fixture.pair(client);
+    await fixture.start({ logins: false });
+    activeWorkers.add(fixture);
+    fixtures.push(fixture);
+  }
+  for (const fixture of fixtures)
+    await fixture.waitConnected(client, fixture.deviceId, true);
+  fixtureWorkers.splice(0, fixtureWorkers.length, ...fixtures);
+  sampleFixtureMemory();
+  log(
+    `fixture computers online: ${fixtures.length} (RSS ${fixtureMemory.firstTotalMb?.rss} MB, PSS ${fixtureMemory.firstTotalMb?.pss} MB)`,
+  );
+  return fixtures;
+}
+
+// Resident memory of the fixture: each Worker's process tree (its sandbox and
+// the runtime it starts), sampled before each case. Kept: the first total and
+// the largest seen, per computer and in all.
+const fixtureWorkers = [];
+const fixtureMemory = {
+  computers: 0,
+  samples: 0,
+  firstTotalMb: null,
+  maxTotalMb: {},
+  maxPerComputerMb: [],
+};
+
+// Memory of a process tree: RSS (what ps reports; shared pages count in every
+// process that maps them) and PSS (each process's share of them, the honest
+// total), in MB.
+function treeMemoryMb(rootPid) {
+  const table = execFileSync("ps", ["-e", "-o", "pid=,ppid=,rss="], {
+    encoding: "utf8",
+  });
+  const rss = new Map();
+  const children = new Map();
+  for (const line of table.trim().split("\n")) {
+    const [pid, ppid, kb] = line.trim().split(/\s+/).map(Number);
+    rss.set(pid, kb);
+    children.set(ppid, [...(children.get(ppid) || []), pid]);
+  }
+  let rssKb = 0;
+  let pssKb = 0;
+  const pending = [rootPid];
+  for (let pid = pending.pop(); pid !== undefined; pid = pending.pop()) {
+    rssKb += rss.get(pid) || 0;
+    pssKb += pssOfKb(pid);
+    pending.push(...(children.get(pid) || []));
+  }
+  return { rssMb: rssKb / 1024, pssMb: pssKb / 1024 };
+}
+
+function pssOfKb(pid) {
+  try {
+    const rollup = readFileSync(`/proc/${pid}/smaps_rollup`, "utf8");
+    return Number(/^Pss:\s+(\d+)/m.exec(rollup)?.[1] || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function sampleFixtureMemory() {
+  const perComputer = fixtureWorkers.map((w) =>
+    w.pid ? treeMemoryMb(w.pid) : { rssMb: 0, pssMb: 0 },
+  );
+  const rssTotal = perComputer.reduce((sum, m) => sum + m.rssMb, 0);
+  const pssTotal = perComputer.reduce((sum, m) => sum + m.pssMb, 0);
+  fixtureMemory.computers = fixtureWorkers.length;
+  fixtureMemory.samples++;
+  fixtureMemory.firstTotalMb ??= {
+    rss: round(rssTotal, 1),
+    pss: round(pssTotal, 1),
+  };
+  fixtureMemory.maxTotalMb = {
+    rss: round(Math.max(fixtureMemory.maxTotalMb.rss ?? 0, rssTotal), 1),
+    pss: round(Math.max(fixtureMemory.maxTotalMb.pss ?? 0, pssTotal), 1),
+  };
+  fixtureMemory.maxPerComputerMb = perComputer.map((m, i) => ({
+    rss: round(
+      Math.max(fixtureMemory.maxPerComputerMb[i]?.rss ?? 0, m.rssMb),
+      1,
+    ),
+    pss: round(
+      Math.max(fixtureMemory.maxPerComputerMb[i]?.pss ?? 0, m.pssMb),
+      1,
+    ),
+  }));
 }
 
 // With a model, the assistant is a full agent on this computer, which is
@@ -861,9 +1047,14 @@ function sandboxCheck() {
   }
 }
 
+// Whether a recorded pid still runs what the harness started: an exact argument
+// of its command line, never a name match (another session may run the same
+// program, and only pids this run wrote to its pid files are ever signalled).
 function isOurs(pid, needle) {
   try {
-    return readFileSync(`/proc/${pid}/cmdline`, "utf8").includes(needle);
+    return readFileSync(`/proc/${pid}/cmdline`, "utf8")
+      .split("\0")
+      .includes(needle);
   } catch {
     return false;
   }
@@ -932,6 +1123,88 @@ async function startAssistantSession(client, agent, provider, model, prompt) {
     );
   return data;
 }
+
+// The web home sends a message as the assistant's own inbox entry
+// (use-assistant-conversation.ts send -> capturePersonalAgentInbox -> POST
+// /api/personal-agent/inbox, origin web). The server delivers the entry to the
+// assistant's conversation and records the session on it (entry.sessionId);
+// the per-turn context (the Now line and the receipt) is added on that path
+// (instructions.go). The model is the assistant's run default (--profile).
+async function captureInboxTurn(client, text, timeoutMs) {
+  const messageId = randomUUID();
+  let entry = await client.post("/api/personal-agent/inbox", {
+    text,
+    messageId,
+  });
+  const until = Date.now() + timeoutMs;
+  while (!entry.sessionId) {
+    if (["failed", "cancelled", "canceled"].includes(entry.status)) {
+      await dismissInboxEntry(client, entry);
+      throw new Error(
+        `inbox entry ${entry.status}: ${entry.resultError || entry.waitingReason || ""}`.trim(),
+      );
+    }
+    if (Date.now() >= until) {
+      // Left pending, it would be delivered into the next case.
+      await dismissInboxEntry(client, entry);
+      throw new Error(
+        `inbox entry not delivered in time (status ${entry.status}, waiting: ${entry.waitingReason || "none"})`,
+      );
+    }
+    await sleep(2000);
+    entry = (await client.get("/api/personal-agent/inbox")).find(
+      (e) => e.id === entry.id,
+    );
+    if (!entry) throw new Error("inbox entry disappeared");
+  }
+  return entry;
+}
+
+// The person's "不再处理" on an entry that never got a session: it is
+// cancelled, nothing new is dispatched (inbox.go DismissInbox).
+async function dismissInboxEntry(client, entry) {
+  await client
+    .post(`/api/personal-agent/inbox/${encodeURIComponent(entry.id)}/action`, {
+      action: "dismiss",
+      revision: entry.revision,
+      requestId: randomUUID(),
+    })
+    .catch((e) => log(`could not dismiss inbox ${entry.id}: ${e.message}`));
+}
+
+// A fresh conversation for the next case: the server continues the newest web
+// conversation unless it is archived (deliverInbox skips archived sessions:
+// ListAgentSessionSummaries excludes them). Archiving is the person's own
+// chat-archive action, on the copy.
+async function archiveConversation(client, workspaceId, sessionId) {
+  if (!sessionId) return;
+  const result = await client.post("/api/chats/archive", {
+    workspaceId,
+    chatIds: [sessionId],
+  });
+  if (!result?.archived?.includes(sessionId))
+    throw new Error(
+      `archive of ${sessionId} did not archive it: ${JSON.stringify(result).slice(0, 200)}`,
+    );
+}
+
+async function itemIds(client) {
+  const page = await client.get("/api/personal-agent/items");
+  return new Set(
+    (Array.isArray(page) ? page : page?.items || []).map((i) => i.id),
+  );
+}
+
+// The policy tag (docs/personal-agent.md §13, the set's overrides): run and
+// reported, not part of the routing metrics.
+const isPolicyCase = (c) =>
+  c.policy === true || (Array.isArray(c.tags) && c.tags.includes("policy"));
+
+// Redacted requests the request alone cannot support (tag
+// unanswerable-as-redacted): run, reported apart, not in routing metrics.
+const isUnanswerableCase = (c) =>
+  c["unanswerable-as-redacted"] === true ||
+  (Array.isArray(c.tags) && c.tags.includes("unanswerable-as-redacted"));
 
 // --profile ID[,model[,effort]]: the seeded server profile the run uses.
 const runProfile = { id: "", runtime: "claude", model: "", effort: "high" };
@@ -1046,7 +1319,16 @@ function bannedIn(reply, request) {
     .map(([term]) => term);
 }
 
-async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
+async function e2eRun(
+  client,
+  worker,
+  agent,
+  deviceId,
+  sample,
+  args,
+  names,
+  repeat = 1,
+) {
   // A restart would orphan the project summaries the setup just started.
   if (!worker.pid || !worker.logins) await worker.start({ logins: true });
   await worker.waitConnected(client, deviceId, true);
@@ -1057,12 +1339,10 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
   const devices = new Map(
     (await client.get("/api/devices")).map((d) => [d.id, d]),
   );
-  const offline = (await client.get("/api/workspaces"))
-    .filter(
-      (w) =>
-        w.id !== agent.workspaceId &&
-        devices.get(w.deviceId)?.status !== "connected",
-    )
+  // Every project the assistant can route to, as a reply may name it. The
+  // mention diagnostic reads these; the decision never does.
+  const projects = (await client.get("/api/workspaces"))
+    .filter((w) => w.id !== agent.workspaceId)
     .map((w) => {
       const device = w.deviceLabel || devices.get(w.deviceId)?.label || "";
       return {
@@ -1075,9 +1355,29 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
   summaries.push(...(await waitForSummaries(client, agent, worker.stack)));
   const summaryCost = summaries.reduce((t, x) => t + x.costUsd, 0);
   log(`project summaries: ${summaries.length}, $${summaryCost.toFixed(2)}`);
+  if (!runProfile.id && args.model)
+    throw new SetupError(
+      "the inbox path takes the model from the assistant's run default: pass --profile ID[,model[,effort]]",
+    );
   const rows = [];
+  // Each finished case is journaled as it ends (see pa-eval-journal.mjs).
+  const record = (row) => {
+    rows.push(row);
+    appendRow(args.journal, repeat, row);
+  };
+  // The previous case's conversation: a case that lands in it carries over.
+  let previousSessionId = "";
+  const baselineItems = await itemIds(client);
   for (const [i, c] of sample.entries()) {
+    const done = args.resumed.get(journalKey(repeat, c.id));
+    if (done) {
+      log(`${c.id} done in the resumed journal: skipped`);
+      rows.push(done);
+      continue;
+    }
+    await waitForDisk();
     await waitForMemory();
+    sampleFixtureMemory();
     const spent = rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
     if (rows.length >= 3) {
       const projected =
@@ -1090,23 +1390,37 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
       }
     }
     log(`e2e ${i + 1}/${sample.length} ${c.id}`);
-    let session;
+    let entry;
     let error = null;
     try {
-      session = await startAssistantSession(
+      entry = await captureInboxTurn(
         client,
-        agent,
-        args.provider,
-        args.model,
         c.request,
+        args.caseTimeoutS * 1000,
       );
     } catch (e) {
       error = e;
     }
     if (error) {
-      rows.push({ id: c.id, error: error.message });
+      record({
+        id: c.id,
+        error: error.message,
+        policy: isPolicyCase(c),
+        unanswerable: isUnanswerableCase(c),
+      });
+      await resetAfterCase(client, [], knownWorkspaces, baseline, {
+        sessionId: "",
+        workspaceId: agent.workspaceId,
+        items: baselineItems,
+      });
       continue;
     }
+    const session = { id: entry.sessionId };
+    // The conversation the previous case used, if the server continued it.
+    const carryOver =
+      Boolean(previousSessionId) && session.id === previousSessionId;
+    if (carryOver)
+      log(`${c.id} continued the previous case's conversation (carry-over)`);
     const caseStarted = Date.now();
     const until = caseStarted + args.caseTimeoutS * 1000;
     let detail = session;
@@ -1144,7 +1458,12 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
     );
     const events = detail.events || [];
     const tools = events.map(parseToolEvent).filter(Boolean);
-    await resetAfterCase(client, tools, knownWorkspaces, baseline);
+    await resetAfterCase(client, tools, knownWorkspaces, baseline, {
+      sessionId: session.id,
+      workspaceId: agent.workspaceId,
+      items: baselineItems,
+    });
+    previousSessionId = session.id;
     // Continuing a helper names its session: the project is the session's.
     for (const t of tools) {
       if (t.args.workspaceId || !t.args.sessionId) continue;
@@ -1156,10 +1475,22 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
       if (helper?.workspaceId) t.args.workspaceId = helper.workspaceId;
     }
     const reply = typeof detail.response === "string" ? detail.response : "";
-    const outcome = classifyOutcome(tools, reply, agent.workspaceId, offline);
-    rows.push({
+    const outcome = classifyOutcome(tools, reply, agent.workspaceId, projects);
+    const finalEntry = (await client.get("/api/personal-agent/inbox")).find(
+      (e) => e.id === entry.id,
+    );
+    record({
       id: c.id,
       sessionId: session.id,
+      inbox: {
+        id: entry.id,
+        status: finalEntry?.status || "",
+        resultStatus: finalEntry?.resultStatus || "",
+        resultError: finalEntry?.resultError || "",
+      },
+      carryOver,
+      policy: isPolicyCase(c),
+      unanswerable: isUnanswerableCase(c),
       status: detail.status,
       timedOut,
       wallMs: Date.now() - caseStarted,
@@ -1177,17 +1508,19 @@ async function e2eRun(client, worker, agent, deviceId, sample, args, names) {
       helpersCancelled: cancelled.size,
       reply,
       questions: questionsIn(reply) + cardAsksIn(tools),
+      questionsInReply: questionsIn(reply),
+      blockingAsks: blockingAsksOf(tools, reply, agent.workspaceId).length,
       banned: bannedIn(reply, c.request),
       ...outcome,
     });
   }
   await worker.stop();
-  e2eOffline.splice(0, e2eOffline.length, ...offline);
+  e2eProjects.splice(0, e2eProjects.length, ...projects);
   return rows;
 }
 
-// The offline projects of the run, for scoring rows again after the judge.
-const e2eOffline = [];
+// The projects of the run (mention diagnostic), for scoring rows again after the judge.
+const e2eProjects = [];
 
 // A row scored again from what it stored, with the judge's reading of whether
 // the reply asks (classifyOutcome). The first decision stays as
@@ -1206,15 +1539,18 @@ function rescoreRows(rows, assistantWorkspace, verdicts) {
       tools,
       r.reply,
       assistantWorkspace,
-      e2eOffline,
+      e2eProjects,
       { asks },
     );
     const before = r.decisionByMark || r.decision;
     delete r.workspaceId;
-    delete r.byMention;
+    delete r.mentionedProject;
     delete r.judgedAsks;
     delete r.decisionByMark;
     Object.assign(r, outcome, asks === undefined ? {} : { judgedAsks: asks });
+    r.blockingAsks = blockingAsksOf(tools, r.reply, assistantWorkspace, {
+      asks,
+    });
     if (before !== r.decision) r.decisionByMark = before;
   }
 }
@@ -1269,6 +1605,28 @@ async function waitForSummaries(client, agent, stack, timeoutMs = 40 * 60_000) {
 }
 
 // A case starts only while the computer has memory to spare.
+// Free space on the disk the stacks live on, in GB (df's available blocks).
+function freeDiskGb() {
+  const line = execFileSync("df", ["-Pk", root], { encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .at(-1);
+  return Number(line.split(/\s+/)[3]) / 1024 / 1024;
+}
+
+// Pauses before the next case while the disk is below the floor, and says so:
+// a case started on a full disk fails in ways that look like the model's.
+async function waitForDisk(minGb = 4.5) {
+  for (;;) {
+    const free = freeDiskGb();
+    if (free >= minGb) return;
+    log(
+      `free disk ${free.toFixed(2)} GB < ${minGb} GB: pausing before the next case`,
+    );
+    await sleep(60_000);
+  }
+}
+
 async function waitForMemory(minMB = 800) {
   for (;;) {
     const info = readFileSync("/proc/meminfo", "utf8");
@@ -1282,9 +1640,18 @@ async function waitForMemory(minMB = 800) {
 const summaries = [];
 
 // Each case starts from the same state: projects it created are removed
-// from the copy (their folders stay under the worker's scratch HOME), and
-// what it remembered or changed in the rules is undone.
-async function resetAfterCase(client, tools, knownWorkspaces, baseline) {
+// from the copy (their folders stay under the worker's scratch HOME), what it
+// remembered or changed in the rules is undone, its list items are removed,
+// and its conversation is archived so the next inbox message starts a new one.
+// Not reset: the assistant's own files (no delete endpoint; see the report's
+// carry-over list).
+async function resetAfterCase(
+  client,
+  tools,
+  knownWorkspaces,
+  baseline,
+  { sessionId, workspaceId, items },
+) {
   for (const w of await client.get("/api/workspaces").catch(() => [])) {
     if (knownWorkspaces.has(w.id)) continue;
     for (let attempt = 0; attempt < 10; attempt++) {
@@ -1297,14 +1664,25 @@ async function resetAfterCase(client, tools, knownWorkspaces, baseline) {
       await sleep(3000);
     }
   }
-  if (tools.some((t) => t.name === "remember"))
-    await client
-      .request("DELETE", "/api/personal-agent/memory")
-      .catch((e) => log(`could not reset memory: ${e.message}`));
-  if (baseline && tools.some((t) => t.name === "update_rules"))
+  await client
+    .request("DELETE", "/api/personal-agent/memory")
+    .catch((e) => log(`could not reset memory: ${e.message}`));
+  if (baseline)
     await client
       .request("PUT", "/api/personal-agent/settings", { body: baseline })
       .catch((e) => log(`could not reset rules: ${e.message}`));
+  await archiveConversation(client, workspaceId, sessionId).catch((e) =>
+    log(`could not archive ${sessionId}: ${e.message}`),
+  );
+  if (items)
+    for (const id of await itemIds(client).catch(() => new Set()))
+      if (!items.has(id))
+        await client
+          .request(
+            "DELETE",
+            `/api/personal-agent/items/${encodeURIComponent(id)}`,
+          )
+          .catch((e) => log(`could not delete item ${id}: ${e.message}`));
 }
 
 // Helpers the assistant starts are cancelled at once: the eval measures where
@@ -1346,16 +1724,50 @@ async function cancelHelpers(
   }
 }
 
-function scoreE2E(rows, cases, names) {
+function scoreE2E(allRows, cases, names) {
   const byId = new Map(cases.map((c) => [c.id, c]));
+  // Policy cases run and are reported on their own; no routing metric counts
+  // them. Unanswerable-as-redacted cases count in every metric except clear
+  // top-1 and routing accuracy (below).
+  const rows = allRows.filter((r) => !r.policy);
+  const policyRows = allRows.filter((r) => r.policy);
+  const unanswerableRows = allRows.filter((r) => r.unanswerable && !r.policy);
   const ok = rows.filter((r) => !r.error && r.status !== "failed");
+  // Asked, routed right, routed wrong: a project right when it is the gold or
+  // an acceptable one.
+  const unanswerableOk = unanswerableRows.filter(
+    (r) => !r.error && r.status !== "failed",
+  );
+  const unanswerableAsked = unanswerableOk.filter((r) => r.decision === "ask");
+  const unanswerableRight = unanswerableOk.filter(
+    (r) =>
+      r.decision === "project" && accepted(byId.get(r.id)).has(r.workspaceId),
+  );
+  const unanswerableWrong = unanswerableOk.filter(
+    (r) =>
+      r.decision === "project" && !accepted(byId.get(r.id)).has(r.workspaceId),
+  );
+  const unanswerable = {
+    cases: unanswerableRows.length,
+    failed: unanswerableRows.length - unanswerableOk.length,
+    asked: unanswerableAsked.length,
+    routedRight: unanswerableRight.length,
+    routedWrong: unanswerableWrong.length,
+    other:
+      unanswerableOk.length -
+      unanswerableAsked.length -
+      unanswerableRight.length -
+      unanswerableWrong.length,
+  };
   const right = (r) => {
     const c = byId.get(r.id);
     const allowed = accepted(c);
     if (r.decision === "project") return allowed.has(r.workspaceId);
     return allowed.has(r.decision);
   };
-  const clear = ok.filter((r) => goldKind(byId.get(r.id)) === "project");
+  // The headline excludes unanswerable-as-redacted cases; the rest keeps them.
+  const headline = ok.filter((r) => !r.unanswerable);
+  const clear = headline.filter((r) => goldKind(byId.get(r.id)) === "project");
   const wentAhead = ok.filter(
     (r) => r.decision === "project" || r.decision === "new",
   );
@@ -1383,9 +1795,12 @@ function scoreE2E(rows, cases, names) {
   const banned = ok.filter((r) => r.banned.length);
   const metrics = {
     cases: rows.length,
+    policyCases: policyRows.length,
+    // A case that continued the previous case's conversation: state leaked.
+    carryOverCases: allRows.filter((r) => r.carryOver).length,
     failed: rows.length - ok.length,
     timedOut: rows.filter((r) => r.timedOut).length,
-    routingAccuracy: ratio(ok.filter(right).length, ok.length),
+    routingAccuracy: ratio(headline.filter(right).length, headline.length),
     clearTop1: ratio(clear.filter(right).length, clear.length),
     wrongDispatchRate: ratio(wrongDispatch.length, wentAhead.length),
     askOnAmbiguous: ratio(
@@ -1403,7 +1818,11 @@ function scoreE2E(rows, cases, names) {
     wrongCreations: wrongCreations.length,
     needlessQuestionRate: ratio(needless.length, ok.length),
     questionsPerRequest: ok.length
-      ? ok.reduce((s, r) => s + r.questions, 0) / ok.length
+      ? ok.reduce((s, r) => s + (r.questionsInReply ?? r.questions), 0) /
+        ok.length
+      : null,
+    blockingAsksPerRequest: ok.length
+      ? ok.reduce((s, r) => s + (r.blockingAsks ?? 0), 0) / ok.length
       : null,
     bannedTermReplies: banned.length,
     bannedTerms: [...new Set(banned.flatMap((r) => r.banned))],
@@ -1423,7 +1842,7 @@ function scoreE2E(rows, cases, names) {
       ? Math.round(ok.reduce((s, r) => s + r.usage.outputTokens, 0) / ok.length)
       : null,
     helpersCancelled: rows.reduce((s, r) => s + (r.helpersCancelled || 0), 0),
-    decidedByMention: ok.filter((r) => r.byMention).length,
+    mentionedProjectRows: ok.filter((r) => r.mentionedProject).length,
   };
   const checks = [
     gate("e2e: clear top-1", metrics.clearTop1, ">=", gates.clearTop1),
@@ -1471,7 +1890,17 @@ function scoreE2E(rows, cases, names) {
         sessionId: r.sessionId,
       };
     });
-  return { metrics, checks, misses };
+  // Reported, not scored: the reply and the decision, for the policy reading.
+  const policy = policyRows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    decision: r.decision,
+    workspaceId: r.workspaceId || "",
+    timedOut: Boolean(r.timedOut),
+    error: r.error || "",
+    sessionId: r.sessionId || "",
+  }));
+  return { metrics, checks, misses, policy, unanswerable };
 }
 
 // Read-only Foundry sessions rate the replies, a batch at a time; no direct
@@ -1517,7 +1946,7 @@ async function judgeReplies(client, worker, deviceId, rows, cases, args) {
         "For each item decide:",
         "- plain: the reply is plain, human language a non-technical person understands at once (no software jargon they did not use themselves, no ids, no file paths).",
         "- multipleQuestions: it asked more than one question.",
-        "- asks: the reply leaves the next step to the person by asking them to choose, confirm or supply something (which one of several things, a missing link, name, file or text, a yes/no) before the assistant goes on, with or without a question mark, including a numbered list of options to pick from. false when it answers, reports, or says it will do the work, and any question is only an optional offer on top. Saying a computer is offline and the work starts once it is back is not asking.",
+        '- asks: the work cannot go on without input from the person: a choice among real options (which one of several things, including a numbered list to pick from), or missing information (a link, name, file or text). With or without a question mark. Not asking: an offer to do optional extra work after the work is done or blocked ("要我…吗？"); a yes/no on an optional adjacent setting after the requested change is saved; a question about a side term after the main answer is given; a system permission or Feishu confirmation the work waits on (a gate, not a question). false when it answers, reports, or says it will do the work. Saying a computer is offline and the work starts once it is back is not asking.',
         'Answer with only a JSON array, one object per item: {"id": "...", "plain": true|false, "multipleQuestions": true|false, "asks": true|false, "reason": "<= 15 words"}.',
         "",
         JSON.stringify(items, null, 1),
@@ -1580,6 +2009,164 @@ async function judgeReplies(client, worker, deviceId, rows, cases, args) {
 
 // --- report ----------------------------------------------------------------------
 
+// --repeat: the same cases run N times in one stack. Agreement is how often
+// the runs gave the same decision (each case, and each pair of runs); the
+// majority is per case. Intervals are pooled over cases: a case is one unit
+// however many runs it had, so a 95% percentile bootstrap resamples cases
+// (seeded, so the interval reproduces).
+const routedRight = (r, c) =>
+  accepted(c).has(r.decision === "project" ? r.workspaceId : r.decision);
+const REPEAT_METRICS = {
+  routingAccuracy: [(r) => !r.unanswerable, (r, c) => routedRight(r, c)],
+  clearTop1: [
+    (r, c) => !r.unanswerable && goldKind(c) === "project",
+    (r, c) => routedRight(r, c),
+  ],
+  wrongDispatchRate: [
+    (r) => r.decision === "project" || r.decision === "new",
+    (r, c) =>
+      !routedRight(r, c) &&
+      !(
+        c.gold.target === "ask" &&
+        r.decision === "project" &&
+        (c.gold.options || []).includes(r.workspaceId)
+      ),
+  ],
+  askOnAmbiguous: [
+    (r, c) => c.gold.target === "ask",
+    (r) => r.decision === "ask",
+  ],
+  newPrecision: [(r) => r.decision === "new", (r, c) => accepted(c).has("new")],
+  newRecall: [(r, c) => c.gold.target === "new", (r) => r.decision === "new"],
+};
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// hits/trials per case, pooled: the point estimate and a 95% percentile
+// bootstrap over cases.
+function bootstrapRatio(trials, hits, draws = 2000) {
+  const total = trials.reduce((s, x) => s + x, 0);
+  if (!total) return { point: null, low: null, high: null, trials: 0 };
+  const random = mulberry32(20261119);
+  const n = trials.length;
+  const ratios = [];
+  for (let d = 0; d < draws; d++) {
+    let t = 0;
+    let h = 0;
+    for (let i = 0; i < n; i++) {
+      const k = Math.floor(random() * n);
+      t += trials[k];
+      h += hits[k];
+    }
+    if (t) ratios.push(h / t);
+  }
+  ratios.sort((a, b) => a - b);
+  const at = (p) =>
+    ratios[Math.min(ratios.length - 1, Math.floor(p * ratios.length))];
+  return {
+    point: round(hits.reduce((s, x) => s + x, 0) / total, 4),
+    low: round(at(0.025), 4),
+    high: round(at(0.975), 4),
+    trials: total,
+  };
+}
+
+function repeatSummary(runs, cases, names) {
+  const byId = new Map(cases.map((c) => [c.id, c]));
+  const usable = (r) => !r.policy && !r.error && r.status !== "failed";
+  const label = (r) =>
+    r.decision === "project" || r.decision === "new"
+      ? `${r.decision}:${r.workspaceId}`
+      : r.decision;
+  const perCase = new Map();
+  for (const rows of runs)
+    for (const r of rows.filter(usable)) {
+      if (!perCase.has(r.id)) perCase.set(r.id, []);
+      perCase.get(r.id).push(r);
+    }
+  let pairs = 0;
+  let agreeing = 0;
+  let unanimous = 0;
+  let multiRunCases = 0;
+  const majorityTrials = [];
+  const majorityHits = [];
+  for (const [id, list] of perCase) {
+    if (list.length < 2) continue;
+    multiRunCases++;
+    const counts = new Map();
+    for (const r of list) counts.set(label(r), (counts.get(label(r)) || 0) + 1);
+    for (let i = 0; i < list.length; i++)
+      for (let j = i + 1; j < list.length; j++) {
+        pairs++;
+        if (label(list[i]) === label(list[j])) agreeing++;
+      }
+    if (counts.size === 1) unanimous++;
+    const ranked = [...counts].sort((a, b) => b[1] - a[1]);
+    const c = byId.get(id);
+    if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+    if (c.unanswerable) continue;
+    const top = list.find((r) => label(r) === ranked[0][0]);
+    majorityTrials.push(1);
+    majorityHits.push(routedRight(top, c) ? 1 : 0);
+  }
+  const intervals = {};
+  for (const [name, [eligible, success]] of Object.entries(REPEAT_METRICS)) {
+    const trials = [];
+    const hits = [];
+    for (const list of perCase.values()) {
+      let t = 0;
+      let h = 0;
+      for (const r of list) {
+        const c = byId.get(r.id);
+        if (!eligible(r, c)) continue;
+        t++;
+        if (success(r, c)) h++;
+      }
+      trials.push(t);
+      hits.push(h);
+    }
+    intervals[name] = bootstrapRatio(trials, hits);
+  }
+  intervals.routingAccuracyMajority = {
+    ...bootstrapRatio(majorityTrials, majorityHits),
+    note: "one majority per case, unanswerable and tied cases left out",
+  };
+  return {
+    runs: runs.length,
+    rowsPerRun: runs.map((rows) => rows.length),
+    agreement: {
+      cases: multiRunCases,
+      pairwise: pairs ? round(agreeing / pairs, 4) : null,
+      unanimousCases: unanimous,
+      unanimous: multiRunCases ? round(unanimous / multiRunCases, 4) : null,
+    },
+    perRun: runs.map((rows) => {
+      const m = scoreE2E(rows, cases, names).metrics;
+      return {
+        routingAccuracy: m.routingAccuracy,
+        clearTop1: m.clearTop1,
+        wrongDispatchRate: m.wrongDispatchRate,
+        askOnAmbiguous: m.askOnAmbiguous,
+        newPrecision: m.newPrecision,
+        newRecall: m.newRecall,
+        bannedTermReplies: m.bannedTermReplies,
+      };
+    }),
+    intervals,
+    intervalNote:
+      "pooled over all runs; 95% percentile bootstrap over cases (2000 draws, seed 20261119)",
+  };
+}
+
 function ratio(a, b) {
   return b ? round(a / b, 4) : null;
 }
@@ -1636,12 +2223,37 @@ function printReport(report) {
       lines.push(
         `  ${k.padEnd(24)} ${typeof v === "object" && v !== null ? JSON.stringify(v) : fmt(v, ratioMetrics.has(k))}`,
       );
+    if (r.repeats) {
+      const { agreement: a, intervals: iv } = r.repeats;
+      lines.push(
+        `  repeats: ${r.repeats.runs} runs; agreement pairwise ${fmt(a.pairwise, true)}, unanimous cases ${a.unanimousCases}/${a.cases} (${fmt(a.unanimous, true)})`,
+      );
+      for (const [k, v] of Object.entries(iv))
+        lines.push(
+          `  ${`${k} (over cases)`.padEnd(24)} ${fmt(v.point, true)} [${fmt(v.low, true)}, ${fmt(v.high, true)}] n=${v.trials}`,
+        );
+    }
     if (r.misses?.length) {
       lines.push(`  misses (${r.misses.length}):`);
       for (const m of r.misses.slice(0, 25))
         lines.push(
           `    ${m.id}  gold ${m.gold}  got ${Array.isArray(m.got) ? m.got.join(" | ") : m.got}  «${m.request.replace(/\n/g, " ")}»`,
         );
+    }
+    if (r.policy?.length) {
+      lines.push(
+        `  policy (run, not in routing metrics): ${r.policy.length} case(s)`,
+      );
+      for (const p of r.policy)
+        lines.push(
+          `    ${p.id}  decision ${p.decision || "-"}  status ${p.status || "-"}${p.error ? `  error ${p.error}` : ""}`,
+        );
+    }
+    if (r.unanswerable) {
+      const u = r.unanswerable;
+      lines.push(
+        `  unanswerable-as-redacted (run, not in routing metrics): ${u.cases} case(s): asked ${u.asked}, routed right ${u.routedRight}, routed wrong ${u.routedWrong}, other ${u.other}, failed ${u.failed}`,
+      );
     }
     if (r.errors?.length)
       lines.push(
@@ -1685,21 +2297,43 @@ async function runRoutingAndE2E(
 ) {
   if (args.e2e) {
     const sample = sampleCases(cases, args.sample, args.only);
-    const rows = await e2eRun(
-      client,
-      worker,
-      agent,
-      deviceId,
-      sample,
-      args,
-      names,
-    );
+    // Repetitions share the stack; each is the whole sample. The cost cap
+    // covers all of them: a repetition starts only if the last one's cost
+    // still fits under it.
+    const runs = [];
+    let spent = 0;
+    for (let k = 1; k <= args.repeat; k++) {
+      const lastCost = runs.length
+        ? runs.at(-1).reduce((t, r) => t + (r.usage?.costUsd || 0), 0)
+        : 0;
+      if (k > 1 && spent + lastCost > args.maxCostUsd) {
+        log(
+          `stopping before repetition ${k}: $${(spent + lastCost).toFixed(2)} would pass $${args.maxCostUsd}`,
+        );
+        break;
+      }
+      log(`repetition ${k} of ${args.repeat}`);
+      const rows = await e2eRun(
+        client,
+        worker,
+        agent,
+        deviceId,
+        sample,
+        args,
+        names,
+        k,
+      );
+      for (const r of rows) r.repeat = k;
+      runs.push(rows);
+      spent += rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
+    }
+    const rows = runs.flat();
     report.e2e = {
       ...scoreE2E(rows, cases, names),
       rows,
       summaries,
       assistantWorkspace: agent.workspaceId,
-      offline: e2eOffline,
+      projects: e2eProjects,
     };
     report.checks.push(...report.e2e.checks);
     // The rows are the run's result: a judge that fails must not lose them.
@@ -1732,6 +2366,7 @@ async function runRoutingAndE2E(
         report.checks.push(...scored.checks);
       }
     }
+    if (runs.length > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
   }
 }
 
@@ -2066,7 +2701,7 @@ const activeWorkers = new Set();
 
 // --rescore FILE: a stored report scored again, in place, with the current
 // scorer and the judge verdicts it holds (report.judge.verdicts). The
-// offline projects come from the report or, for older reports, from the eval
+// projects come from the report or, for older reports (offline ones only), from the eval
 // set's index (the fixture's computers are the index's).
 function rescoreReport(file) {
   const path = resolve(file);
@@ -2074,7 +2709,8 @@ function rescoreReport(file) {
   const { cases, index, names } = loadEvalSet(
     resolve(homedir(), ".foundry/pa-eval/set"),
   );
-  const offline =
+  const projects =
+    report.e2e.projects ||
     report.e2e.offline ||
     index.projects.map((p) => ({
       id: p.workspaceId,
@@ -2082,11 +2718,14 @@ function rescoreReport(file) {
       device: p.computer,
       ref: p.ref,
     }));
-  e2eOffline.splice(0, e2eOffline.length, ...offline);
+  e2eProjects.splice(0, e2eProjects.length, ...projects);
   const assistant = report.e2e.assistantWorkspace || "";
   rescoreRows(report.e2e.rows, assistant, report.judge?.verdicts || []);
   const scored = scoreE2E(report.e2e.rows, cases, names);
-  Object.assign(report.e2e, scored, { offline, assistantWorkspace: assistant });
+  Object.assign(report.e2e, scored, {
+    projects,
+    assistantWorkspace: assistant,
+  });
   report.checks = [
     ...report.checks.filter((c) => !c.name.startsWith("e2e: ")),
     ...scored.checks,
@@ -2104,7 +2743,7 @@ async function main() {
   const rescoreAt = process.argv.indexOf("--rescore");
   if (rescoreAt > 0) process.exit(rescoreReport(process.argv[rescoreAt + 1]));
   const args = parseArgs(process.argv);
-  const { cases, names } = loadEvalSet(args.evalDir);
+  const { cases, index, names } = loadEvalSet(args.evalDir);
   const stack = new Stack(args.instance, args.stackDir);
   const worker = new Worker(stack, args.workerHome, "worker", args.provider);
   const report = {
@@ -2113,6 +2752,24 @@ async function main() {
     cases: cases.length,
     checks: [],
   };
+  args.journal =
+    args.resume ||
+    (args.out
+      ? `${args.out}.rows.jsonl`
+      : resolve(
+          tmpdir(),
+          "pa-eval-reports",
+          `rows-${report.startedAt.replace(/[:.]/g, "-")}.jsonl`,
+        ));
+  mkdirSync(resolve(args.journal, ".."), { recursive: true, mode: 0o700 });
+  if (args.resume) {
+    if (!existsSync(args.resume))
+      throw new SetupError(`--resume: no journal at ${args.resume}`);
+    args.resumed = readJournal(args.resume);
+    log(
+      `resuming from ${args.resume}: ${args.resumed.size} case(s) already done`,
+    );
+  }
   let failed = false;
   try {
     // A fresh seeded database holds no eval chats to hide, and the run signs
@@ -2127,6 +2784,7 @@ async function main() {
     if (args.e2e) {
       // The assistant reads the project summary files natively; the eval
       // scores the workspace it dispatched to.
+      await startFixtureWorkers(client, stack, index);
       const { deviceId, agent } = await workerAndAssistant(
         client,
         worker,
@@ -2164,6 +2822,12 @@ async function main() {
     process.exit(2);
   }
   await worker.stop();
+  for (const fixture of fixtureWorkers) await fixture.stop();
+  if (fixtureWorkers.length)
+    report.fixtures = {
+      computers: fixtureWorkers.length,
+      memory: fixtureMemory,
+    };
   report.finishedAt = new Date().toISOString();
   const out =
     args.out ||

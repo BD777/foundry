@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import type { AgentModelOption } from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { SelectMenu } from "../ui/select-menu";
 import { profileFieldClass } from "./profile-field";
@@ -10,6 +11,7 @@ import {
   codexSandboxOptions,
   codexSpeedOptions,
 } from "../../lib/runtime-options";
+import { catalogModel } from "../../lib/agent-effort";
 
 type Values = Pick<
   CreateAgentProfileInput,
@@ -21,19 +23,27 @@ type Values = Pick<
   | "codexSpeed"
 >;
 
-/** Shared by device accounts and model provider editors. */
+/**
+ * Shared by device accounts and model provider editors. Codex offers the
+ * efforts of the model's own catalog entry: `catalog` is what the device read,
+ * `model` the chosen model (blank: the account's default).
+ */
 export function RuntimeDefaultFields({
   runtime,
   value,
   onChange,
   insideDialog = false,
   inherit = false,
+  catalog = [],
+  model = "",
 }: {
   runtime: "claude" | "codex";
   value: Values;
   onChange: (patch: Values) => void;
   insideDialog?: boolean;
   inherit?: boolean;
+  catalog?: AgentModelOption[];
+  model?: string;
 }) {
   const { t } = useTranslation("agents");
   const fields =
@@ -54,7 +64,7 @@ export function RuntimeDefaultFields({
           {
             field: "codexReasoningEffort" as const,
             label: t("defaults.codexEffort"),
-            options: codexEffortOptions(),
+            options: codexEffortOptions(catalogModel(catalog, model)),
           },
           {
             field: "codexSandboxMode" as const,

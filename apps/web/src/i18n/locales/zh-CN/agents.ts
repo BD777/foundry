@@ -9,6 +9,7 @@ export const agents: Translation<typeof en> = {
     high: "高",
     xhigh: "极高",
     max: "最高",
+    ultra: "终极",
   },
   claudePermission: {
     acceptEdits: "接受编辑",
@@ -73,6 +74,8 @@ export const agents: Translation<typeof en> = {
     codexPermissions: "Codex 权限",
     sandbox: "沙箱",
     approval: "审批",
+    effortRuntimeDefault: "默认",
+    effortNone: "该模型的目录未列出推理强度。",
     modelAndEffort: "模型与推理强度",
     modelAndEffortTrigger: "模型与推理强度：{{model}} · {{effort}}",
     model: "模型",

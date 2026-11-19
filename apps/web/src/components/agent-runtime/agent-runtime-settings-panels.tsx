@@ -130,6 +130,11 @@ export function AgentSettingsPanels({
         {panel === "effort" ? (
           <>
             <SubmenuTitle>{t("controls.effort")}</SubmenuTitle>
+            {view.effortOptions.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-ink-faint">
+                {t("controls.effortNone")}
+              </p>
+            ) : null}
             {view.effortOptions.map((option) => (
               <SubmenuOption
                 checkIcon={submenuCheck}

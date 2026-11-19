@@ -96,6 +96,8 @@ func (d *Dispatcher) sink(id string) (Sink, bool) {
 // says. An empty Title, Text or Options takes the item's own; Link is the
 // Web address the notice opens.
 type Route struct {
+	// AssistantID is the assistant the notice speaks through; empty takes the item's.
+	AssistantID   string
 	SinkID        string
 	Target        string
 	Kind          string
@@ -124,7 +126,7 @@ func (d *Dispatcher) EnqueueNotice(ctx context.Context, item store.PendingItem, 
 	return d.notices.CreatePersonNotice(ctx, store.PersonNotice{
 		ID:            d.newID(),
 		UserID:        item.UserID,
-		AssistantID:   item.AssistantID,
+		AssistantID:   cmp.Or(route.AssistantID, item.AssistantID),
 		ItemID:        item.ID,
 		Kind:          route.Kind,
 		Title:         cmp.Or(route.Title, item.Title),

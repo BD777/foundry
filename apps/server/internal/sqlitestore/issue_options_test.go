@@ -34,7 +34,7 @@ func TestIssueRuntimeOptionsPersistThroughFeedback(t *testing.T) {
 	}
 	for _, input := range []store.CreateIssueInput{
 		{Runtime: "claude", ClaudeEffort: "bogus"},
-		{Runtime: "codex", CodexReasoningEffort: "max"},
+		{Runtime: "codex", CodexReasoningEffort: "Extra High"},
 		{Runtime: "codex", ClaudeEffort: "high"},
 		{Runtime: "codex", CodexSpeed: "invalid"},
 		{Model: "invalid\nmodel"},

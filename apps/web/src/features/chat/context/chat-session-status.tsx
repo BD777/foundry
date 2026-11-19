@@ -125,7 +125,9 @@ export function statusRows(status: ChatSessionStatus): StatusRow[] {
       value: status.effort
         ? t("chat:contextCard.status.modelValue", {
             model,
-            effort: t(`agents:effort.${status.effort}`),
+            effort: t(`agents:effort.${status.effort}`, {
+              defaultValue: status.effort,
+            }),
           })
         : model,
     },

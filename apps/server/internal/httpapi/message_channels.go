@@ -56,7 +56,7 @@ func newMessageChannelRunner(s *Server) *channels.Runner {
 	return channels.NewRunner(channels.Ports{
 		Store: st, Open: s.openMessageChannelSource, Inbox: messageChannelInbox{s},
 		Tell: s.tellAboutMessageChannel, SourceLabel: s.messageChannelSourceLabel,
-		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand,
+		ContextHint: s.messageChannelContextHint, ReplyCommand: s.messageChannelReplyCommand, ReactCommand: s.messageChannelReactCommand,
 		OwnWrites: s.messageChannelOwnWrites, NoticeEchoes: s.messageChannelNoticeEchoes,
 		Session: s.messageChannelSessionState,
 		Ack:     s.messageChannelAck, Working: s.messageChannelWorking, HandOver: s.messageChannelHandOver,

@@ -32,6 +32,11 @@ export interface ModelCatalog {
    * of the provider as it is now; undefined until one was read.
    */
   windows?: Record<string, number>;
+  /**
+   * The models the last read reported, each with what it offers (Codex's
+   * efforts and default); empty until one was read.
+   */
+  catalog: AgentModelOption[];
   /** Reads the catalog for its windows only, leaving the model list alone. */
   readWindows: () => Promise<void>;
 }
@@ -52,6 +57,7 @@ export function useModelCatalog({
   const [windowsRead, setWindowsRead] = useState<{
     source: string;
     windows: Record<string, number>;
+    catalog: AgentModelOption[];
   }>();
   const latest = useRef({ draft, deviceId, updateDraft });
   latest.current = { draft, deviceId, updateDraft };
@@ -89,7 +95,11 @@ export function useModelCatalog({
     for (const option of result as AgentModelOption[])
       if (option?.id && option.contextWindow)
         windows[option.id] = option.contextWindow;
-    setWindowsRead({ source: requestSource, windows });
+    setWindowsRead({
+      source: requestSource,
+      windows,
+      catalog: (result as AgentModelOption[]).filter((option) => option?.id),
+    });
   }
 
   async function load(reuse = false): Promise<void> {
@@ -147,6 +157,10 @@ export function useModelCatalog({
       setNote("");
       setWindowsRead(undefined);
     },
+    catalog:
+      windowsRead && windowsRead.source === source(draft, deviceId)
+        ? windowsRead.catalog
+        : [],
     windows:
       windowsRead && windowsRead.source === source(draft, deviceId)
         ? windowsRead.windows

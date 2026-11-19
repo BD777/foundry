@@ -120,7 +120,7 @@ func TestWorkspaceDefaultAgent(t *testing.T) {
 	}
 	f.call(f.bob, http.MethodGet, path, "", http.StatusOK, "a member reads", nil)
 	f.call(f.bob, http.MethodPut, path, `{"scope":"workspace","profileId":"codex_local"}`, http.StatusForbidden, "a member sets", nil)
-	f.call(f.alice, http.MethodPut, path, `{"scope":"workspace","profileId":"codex_local","effort":"max"}`, http.StatusBadRequest, "Claude's effort for Codex", nil)
+	f.call(f.alice, http.MethodPut, path, `{"scope":"workspace","profileId":"codex_local","effort":"Extra High"}`, http.StatusBadRequest, "is not one of the codex runtime's", nil)
 	f.call(f.alice, http.MethodPut, path, `{"scope":"workspace","profileId":"someone_else"}`, http.StatusBadRequest, "an account not on the device", nil)
 	f.call(f.alice, http.MethodPut, path, `{"scope":"feishu_chat","routeId":"nope","model":"x","runtime":"codex"}`, http.StatusNotFound, "an unknown chat", nil)
 	f.call(f.alice, http.MethodPut, path, `{"scope":"workspace","profileId":"codex_local","model":"gpt-6","effort":"high"}`, http.StatusOK, "set the workspace default", &answer)

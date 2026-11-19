@@ -7,6 +7,7 @@ export const agents = {
     high: "High",
     xhigh: "Extra high",
     max: "Max",
+    ultra: "Ultra",
   },
   claudePermission: {
     acceptEdits: "Accept edits",
@@ -72,6 +73,8 @@ export const agents = {
     codexPermissions: "Codex permissions",
     sandbox: "Sandbox",
     approval: "Approval",
+    effortRuntimeDefault: "Default",
+    effortNone: "This model's catalog lists no effort levels.",
     modelAndEffort: "Model and effort",
     modelAndEffortTrigger: "Model and effort: {{model}} · {{effort}}",
     model: "Model",

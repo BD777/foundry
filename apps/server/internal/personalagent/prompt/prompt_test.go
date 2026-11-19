@@ -266,8 +266,13 @@ func TestRunFilesIncludeTheAssistantSkills(t *testing.T) {
 // enter the home's instructions (DEV-251).
 func TestChannelInstructionFilesStayWithTheChannel(t *testing.T) {
 	file := prompt.ChannelClaudeFile()
-	if file.Path != prompt.ChannelClaudePath || file.Content != "@AGENTS.md\n" {
+	if file.Path != prompt.ChannelClaudePath || !strings.HasPrefix(file.Content, "@AGENTS.md\n\n") {
 		t.Fatalf("the channel's CLAUDE.md: %+v", file)
+	}
+	for _, want := range []string{"## 有别人在场时的回复\n", "`react`", "`needs_you`", "`reply`"} {
+		if !strings.Contains(file.Content, want) {
+			t.Errorf("the channel's CLAUDE.md lacks %q:\n%s", want, file.Content)
+		}
 	}
 	for _, files := range [][]personalagent.WorkspaceFile{prompt.RunFiles(fullInput()), prompt.ProjectFilesAndIndex(fullInput())} {
 		for _, file := range files {

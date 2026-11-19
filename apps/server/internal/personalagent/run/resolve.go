@@ -704,11 +704,11 @@ func (s *Resolver) settle(ctx context.Context, workspace store.WorkspaceProjecti
 			effort = profile.ClaudeEffort
 		}
 	}
-	allowed := []string{"", "low", "medium", "high", "xhigh", "max"}
+	valid := slices.Contains([]string{"", "low", "medium", "high", "xhigh", "max"}, effort)
 	if chosen.Runtime == "codex" {
-		allowed = []string{"", "minimal", "low", "medium", "high", "xhigh"}
+		valid = effort == "" || store.ValidCodexEffort(effort)
 	}
-	if !slices.Contains(allowed, effort) {
+	if !valid {
 		return settled{}, invalid("effort is not supported by this runtime")
 	}
 	return settled{profile: profile, providerConfigHash: providerConfigHash, model: model, effort: effort}, nil

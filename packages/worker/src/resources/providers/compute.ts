@@ -17,7 +17,9 @@
 // temporary folder (TMPDIR), removed when the lease ends, so leases running
 // side by side do not share one. The server names a session's own scratch
 // folder after the session (sess_…) when the caller names none; those are
-// removed once unused for the session scratch idle time (three days).
+// removed once unused for the session scratch idle time (three days), a
+// named one once unused for two weeks. A lease's temporary folder or upload
+// that outlived it (the worker stopped mid-lease) goes after a day.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
@@ -123,7 +125,18 @@ export function createComputeProvider(
       [...sessions].flatMap((session) => session.scratches()),
     );
     const idleMs = options.sessionScratchIdleMs ?? sessionScratchIdleMs();
-    await removeIdleSessionScratches(root, idleMs, now(), used);
+    await removeIdleSessionScratches(
+      root,
+      idleMs,
+      now(),
+      used,
+      namedScratchIdleMs,
+    );
+    await removeLeaseLeftovers(
+      root,
+      new Set([...sessions].map((session) => session.leaseId)),
+      now(),
+    );
   };
   return {
     id: computeBackend,
@@ -163,29 +176,66 @@ function remoteCommandsOff(): ProviderError {
 
 /** How often idle session scratch folders are looked for at most. */
 const sweepIntervalMs = 60 * 60_000;
+/** A named scratch folder (a shared checkout, a cache) unused this long goes. */
+const namedScratchIdleMs = 14 * 24 * 60 * 60_000;
+/** A lease's leftover temporary folder or upload goes after this. */
+const leaseLeftoverMs = 24 * 60 * 60_000;
 /** The scratch folder the server names after a session. */
 const sessionScratchName = /^sess_[A-Za-z0-9_-]+$/;
 
 /**
- * Removes session scratch folders (sess_…) not used for idleMs, except
- * those a live lease used.
+ * Removes session scratch folders (sess_…) not used for idleMs and, with
+ * namedIdleMs, named ones not used for that long, except those a live lease
+ * used. Every operation stamps its folder's time (see ComputeSession.folder).
  */
 export async function removeIdleSessionScratches(
   root: string,
   idleMs: number,
   now: number,
   used: Set<string>,
+  namedIdleMs?: number,
 ): Promise<string[]> {
   const removed: string[] = [];
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    if (!entry.isDirectory() || !sessionScratchName.test(entry.name)) continue;
-    if (used.has(entry.name)) continue;
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const limit = sessionScratchName.test(entry.name) ? idleMs : namedIdleMs;
+    if (limit === undefined || used.has(entry.name)) continue;
     const path = join(root, entry.name);
     const info = await stat(path).catch(() => undefined);
-    if (!info || now - info.mtimeMs < idleMs) continue;
+    if (!info || now - info.mtimeMs < limit) continue;
     await rm(path, { recursive: true, force: true });
     removed.push(entry.name);
+  }
+  return removed;
+}
+
+/**
+ * Removes temporary folders (.tmp/<lease>) and unfinished uploads
+ * (.uploads/<lease>-…) of leases that are not live and are older than a day:
+ * a lease removes its own when it ends, unless the worker stopped first.
+ */
+export async function removeLeaseLeftovers(
+  root: string,
+  liveLeases: ReadonlySet<string>,
+  now: number,
+  minAgeMs = leaseLeftoverMs,
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const folder of [".tmp", ".uploads"]) {
+    const base = join(root, folder);
+    const entries = await readdir(base).catch(() => [] as string[]);
+    for (const name of entries) {
+      // Lease ids hold no "-"; an upload is named after its lease first.
+      const lease =
+        folder === ".tmp" ? name : (/^([^-]+)-/.exec(name)?.[1] ?? name);
+      if (liveLeases.has(lease)) continue;
+      const path = join(base, name);
+      const info = await stat(path).catch(() => undefined);
+      if (!info || now - info.mtimeMs < minAgeMs) continue;
+      await rm(path, { recursive: true, force: true });
+      removed.push(`${folder}/${name}`);
+    }
   }
   return removed;
 }
@@ -199,6 +249,10 @@ class ComputeSession implements ProviderSession {
   private readonly used = new Set<string>();
   /** This lease's temporary folder, once a command needed it. */
   private tmp?: string;
+
+  get leaseId(): string {
+    return this.lease.id;
+  }
 
   constructor(
     private readonly context: ComputeContext,

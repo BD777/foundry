@@ -223,9 +223,11 @@ func (s *Server) listModelsForMCP(call mcpCall) (string, error) {
 }
 
 type mcpModelItem struct {
-	ID            string `json:"id"`
-	Label         string `json:"label,omitempty"`
-	ContextWindow int64  `json:"contextWindow,omitempty"`
+	ID                     string   `json:"id"`
+	Label                  string   `json:"label,omitempty"`
+	ContextWindow          int64    `json:"contextWindow,omitempty"`
+	ReasoningEfforts       []string `json:"reasoningEfforts,omitempty"`
+	DefaultReasoningEffort string   `json:"defaultReasoningEffort,omitempty"`
 }
 
 type mcpModelPage struct {
@@ -269,7 +271,7 @@ func pageAgentModelsForMCP(profile store.AgentProfileProjection, models []store.
 		if configured := profile.ContextWindows[model.ID]; configured > 0 {
 			window = configured
 		}
-		filtered = append(filtered, mcpModelItem{ID: model.ID, Label: model.Label, ContextWindow: window})
+		filtered = append(filtered, mcpModelItem{ID: model.ID, Label: model.Label, ContextWindow: window, ReasoningEfforts: model.ReasoningEfforts, DefaultReasoningEffort: model.DefaultReasoningEffort})
 	}
 	total := len(filtered)
 	if offset > total {

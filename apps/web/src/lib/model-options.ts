@@ -9,17 +9,23 @@ export function mergeModelOptionLists(
   configured: string[],
   discovered: AgentModelOption[],
 ): AgentModelOption[] {
+  // A discovered entry describes its model (label, efforts), so it stays
+  // whole even when the curated list names the same model.
+  const discoveredById = new Map<string, AgentModelOption>();
+  for (const option of discovered) {
+    const id = option.id.trim();
+    if (id && !discoveredById.has(id)) discoveredById.set(id, option);
+  }
   const options: AgentModelOption[] = [];
   const seen = new Set<string>();
   for (const model of configured) {
     const id = model.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    options.push({ id });
+    options.push(discoveredById.get(id) ?? { id });
   }
-  for (const option of discovered) {
-    const id = option.id.trim();
-    if (!id || seen.has(id)) continue;
+  for (const [id, option] of discoveredById) {
+    if (seen.has(id)) continue;
     seen.add(id);
     options.push(option);
   }

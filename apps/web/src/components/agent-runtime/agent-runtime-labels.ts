@@ -7,6 +7,7 @@ import type {
   CodexSpeed,
 } from "@bd777/foundry-protocol";
 import {
+  catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
   effortLabel,
@@ -142,10 +143,12 @@ export function describeModelAndEffort(input: {
   const selectedModel =
     modelOptions.find((model) => model.id === modelValue) ??
     (modelValue ? { id: modelValue, label: modelValue } : undefined);
-  const effortValue: ClaudeEffort | CodexReasoningEffort =
+  const codexModel = catalogModel(modelOptions, modelValue);
+  // Until an effort is chosen, Codex runs the model at the model's own default.
+  const effortValue =
     input.runtime === "claude"
       ? input.claudeEffort || "high"
-      : input.codexReasoningEffort || "high";
+      : input.codexReasoningEffort || codexModel?.defaultReasoningEffort || "";
   const modelPanel = resolveModelPanelState({
     loading: input.modelLoading,
     failed: input.modelLoadFailed,
@@ -153,15 +156,20 @@ export function describeModelAndEffort(input: {
   });
   const modelLabel =
     modelPanel.triggerLabel ?? compactModelLabel(selectedModel, modelValue);
-  const currentEffortLabel = effortLabel(effortValue);
+  const currentEffortLabel = effortValue
+    ? effortLabel(effortValue)
+    : i18n.t("agents:controls.effortRuntimeDefault");
   return {
     modelPanel,
     /** The selected model, or the panel's state while none is selectable. */
     modelLabel,
     effortValue,
     effortLabel: currentEffortLabel,
+    /** Codex offers the efforts of the selected model's own catalog entry. */
     effortOptions:
-      input.runtime === "claude" ? claudeEffortOptions() : codexEffortOptions(),
+      input.runtime === "claude"
+        ? claudeEffortOptions()
+        : codexEffortOptions(codexModel),
     triggerDescription: i18n.t("agents:controls.modelAndEffortTrigger", {
       model: modelLabel,
       effort: currentEffortLabel,

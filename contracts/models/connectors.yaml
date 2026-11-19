@@ -1211,6 +1211,15 @@ components:
           $ref: "#/components/schemas/ConnectorEventsContext"
         reply:
           $ref: "#/components/schemas/ConnectorEventsReply"
+        react:
+          description:
+            How an agent reacts to a message with an emoji through the connector's own tool, one
+            command template; the reaction key is part of the template, and the template may use
+            `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled
+            command as a fact, not as advice. The reaction must not be the key of `ack`, which the
+            channel takes away when the turn ends.
+          type: string
+          x-go-type: string
         ack:
           $ref: "#/components/schemas/ConnectorEventsAck"
           x-go-type-skip-optional-pointer: false

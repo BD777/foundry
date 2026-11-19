@@ -307,7 +307,7 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 			batch[i].Envelope.Conversation.Name = facts.ConversationName
 		}
 	}
-	label, hint, reply := "", "", ""
+	label, hint, reply, react := "", "", "", ""
 	if r.ports.SourceLabel != nil {
 		label = r.ports.SourceLabel(ctx, channel)
 	}
@@ -316,6 +316,9 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	}
 	if r.ports.ReplyCommand != nil {
 		reply = r.ports.ReplyCommand(ctx, channel, batch[len(batch)-1].Envelope.Conversation.Kind)
+	}
+	if r.ports.ReactCommand != nil {
+		react = r.ports.ReactCommand(ctx, channel)
 	}
 	ids := make([]string, 0, len(batch))
 	raw := make([]json.RawMessage, 0, len(batch))
@@ -337,7 +340,7 @@ func (r *Runner) handOver(ctx context.Context, channel store.MessageChannelRecor
 	}
 	sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
 	turn := Turn{InboxChannel: inboxChannel, SessionKey: key, Segment: decision.Segment,
-		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: NoticeWithFacts(channel.MessageChannel, label, hint, reply, decision, batch, facts)}
+		MessageID: "batch_" + hex.EncodeToString(sum[:12]), Text: NoticeWithFacts(channel.MessageChannel, label, hint, reply, react, decision, batch, facts)}
 	if len(raw) > 0 {
 		turn.Raw, _ = json.MarshalIndent(raw, "", "  ")
 	}

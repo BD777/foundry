@@ -476,19 +476,36 @@ func (s *Server) messageChannelContextHint(ctx context.Context, channel store.Me
 // messageChannelReplyCommand is the source's reply command for a
 // conversation kind.
 func (s *Server) messageChannelReplyCommand(ctx context.Context, channel store.MessageChannelRecord, kind string) string {
-	account, err := s.messageChannelAccount(ctx, channel.UserID, channel.Source.AccountID)
-	if err != nil {
-		return ""
-	}
-	app, data, err := s.messageChannelInstance(ctx, channel.UserID, account)
-	if err != nil {
-		return ""
-	}
-	spec, _ := s.messageChannelFeed(ctx, channel.UserID, app, data)
+	spec := s.messageChannelFeedSpec(ctx, channel)
 	if spec == nil {
 		return ""
 	}
 	return channels.LongPoll{Spec: *spec}.Reply(kind)
+}
+
+// messageChannelReactCommand is the source's reaction command, "" when the
+// connector declares none.
+func (s *Server) messageChannelReactCommand(ctx context.Context, channel store.MessageChannelRecord) string {
+	spec := s.messageChannelFeedSpec(ctx, channel)
+	if spec == nil {
+		return ""
+	}
+	return channels.LongPoll{Spec: *spec}.React()
+}
+
+// messageChannelFeedSpec is the event feed the connector declares for a
+// channel's source, or nil when it cannot be reached or declares none.
+func (s *Server) messageChannelFeedSpec(ctx context.Context, channel store.MessageChannelRecord) *store.ConnectorEventsSpec {
+	account, err := s.messageChannelAccount(ctx, channel.UserID, channel.Source.AccountID)
+	if err != nil {
+		return nil
+	}
+	app, data, err := s.messageChannelInstance(ctx, channel.UserID, account)
+	if err != nil {
+		return nil
+	}
+	spec, _ := s.messageChannelFeed(ctx, channel.UserID, app, data)
+	return spec
 }
 
 // messageChannelOwnWrites is the set of messages the channel's source
