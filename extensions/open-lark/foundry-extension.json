@@ -332,6 +332,7 @@
               "other": "olk im reply {message.id}"
             }
           },
+          "react": "olk im react {message.id} OneSecond --yes",
           "ack": {
             "reaction": "OnIt",
             "add": {

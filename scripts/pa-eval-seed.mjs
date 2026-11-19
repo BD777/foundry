@@ -25,9 +25,9 @@
 // - --execution-default: the user's global execution default row.
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const argv = process.argv.slice(2);
 const flag = (name) => {
@@ -37,6 +37,8 @@ const flag = (name) => {
   return value || "";
 };
 const profileId = flag("--profile");
+// The stack's folder for the fixture computers (next to its data folder).
+const fixtureRoot = resolve(dirname(argv[0]), "..", "fixtures");
 const executionDefault = flag("--execution-default");
 const [dbPath, username, evalDir] = argv;
 if (!dbPath || !username || !evalDir)
@@ -86,21 +88,17 @@ try {
     db.prepare(
       "INSERT INTO devices (id, label, status, last_seen_label, payload_json, updated_at) VALUES (?, ?, 'disconnected', 'offline', ?, ?)",
     ).run(id, computer, JSON.stringify(payload), now);
-    db.prepare(
-      "INSERT INTO device_identities (device_id, owner_user_id, machine_fingerprint, credential_hash, paired_at) VALUES (?, ?, ?, ?, ?)",
-    ).run(
-      id,
-      user.id,
-      `pa1-fixture-${slug(computer)}`,
-      createHash("sha256").update(randomBytes(32)).digest("hex"),
-      now,
-    );
+    // No identity row: the fixture computer's Worker pairs with this id (its
+    // device.json asks for it), and the server records the identity then.
     counts.devices++;
   }
 
   for (const p of index.projects) {
     const deviceId = devices.get(p.computer);
-    const localPath = `${mac(p.computer) ? "/Users/me" : "/home/me"}/workspace/${p.name}`;
+    // Each computer's project folder is real but empty, under the stack (the
+    // fixture's computers are this host): a dispatch finds a folder to work in.
+    const localPath = resolve(fixtureRoot, p.computer, "workspace", p.name);
+    mkdirSync(localPath, { recursive: true, mode: 0o700 });
     const payload = {
       id: p.workspaceId,
       name: p.name,

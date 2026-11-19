@@ -100,6 +100,11 @@ func (p LongPoll) Reply(kind string) string {
 	return strings.TrimSpace(p.Spec.Reply.Kinds["other"])
 }
 
+// React is the source's reaction command, or "" when the connector declares none.
+func (p LongPoll) React() string {
+	return strings.TrimSpace(p.Spec.React)
+}
+
 // Read runs one of the source's declared reads.
 func (p LongPoll) Read(ctx context.Context, name string, facts map[string]string) (ReadAnswer, error) {
 	spec, ok := p.Spec.Reads[name]

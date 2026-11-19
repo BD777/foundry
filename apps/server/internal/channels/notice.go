@@ -68,12 +68,13 @@ func StripCommand(text string, triggers, commands []string) (string, bool) {
 // each message, which are other people's words. It says nothing about what
 // to do; that is the channel workspace's AGENTS.md.
 func Notice(channel store.MessageChannel, sourceLabel, contextHint, replyCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord) string {
-	return NoticeWithFacts(channel, sourceLabel, contextHint, replyCommand, decision, records, Facts{})
+	return NoticeWithFacts(channel, sourceLabel, contextHint, replyCommand, "", decision, records, Facts{})
 }
 
 // NoticeWithFacts is Notice with what the source's reads said about the
-// conversation and the thread.
-func NoticeWithFacts(channel store.MessageChannel, sourceLabel, contextHint, replyCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord, facts Facts) string {
+// conversation and the thread, and the source's reaction command when it has
+// one (a `react:` fact, filled for the last message, like `reply:`).
+func NoticeWithFacts(channel store.MessageChannel, sourceLabel, contextHint, replyCommand, reactCommand string, decision Rollover, records []store.MessageChannelDeliveryRecord, facts Facts) string {
 	var out strings.Builder
 	line := func(key, format string, args ...any) {
 		fmt.Fprintf(&out, "%s: %s\n", key, fmt.Sprintf(format, args...))
@@ -106,6 +107,9 @@ func NoticeWithFacts(channel store.MessageChannel, sourceLabel, contextHint, rep
 	}
 	if replyCommand != "" {
 		line("reply", "%s", fillHint(replyCommand, records[len(records)-1].Envelope))
+	}
+	if reactCommand != "" {
+		line("react", "%s", fillHint(reactCommand, records[len(records)-1].Envelope))
 	}
 	writeMessages(&out, channel, records)
 	writeThreadFacts(&out, facts.Thread)

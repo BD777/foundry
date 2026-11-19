@@ -6,8 +6,7 @@ register("./bundler-resolve.mjs", import.meta.url);
 
 const { mergeDiscoveredModels } =
   await import("../src/components/agent-runtime/model-combobox.tsx");
-const { mergeModelOptionLists } =
-  await import("../src/features/chat/session/model-options.ts");
+const { mergeModelOptionLists } = await import("../src/lib/model-options.ts");
 
 test("discovery adds models without disturbing curated entries", () => {
   assert.deepEqual(

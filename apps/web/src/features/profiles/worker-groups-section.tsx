@@ -45,14 +45,54 @@ import {
   type ExecutionSource,
 } from "../../components/workspace/execution-sources";
 import {
+  catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
 } from "../../lib/agent-effort";
+import { useProfileModels } from "../../components/workspace/agent-default-fields";
 import {
   domainForMember,
   domainStatus,
   memberTier,
 } from "./worker-group-domain";
+
+/**
+ * A member's effort. Codex offers the efforts its model's own catalog lists,
+ * so the member's provider catalog is read here.
+ */
+function MemberEffortSelect({
+  ariaLabel,
+  defaultLabel,
+  disabled,
+  member,
+  onChange,
+  profile,
+}: {
+  ariaLabel: string;
+  defaultLabel: string;
+  disabled: boolean;
+  member: MemberDraft;
+  onChange: (effort: string) => void;
+  profile: AgentProfileProjection | undefined;
+}) {
+  const { catalog } = useProfileModels(profile);
+  const efforts =
+    member.runtime === "claude"
+      ? claudeEffortOptions()
+      : member.runtime === "codex"
+        ? codexEffortOptions(catalogModel(catalog, member.model))
+        : [];
+  return (
+    <SelectMenu
+      ariaLabel={ariaLabel}
+      className="w-full max-w-full"
+      disabled={disabled}
+      options={[{ value: "", label: defaultLabel }, ...efforts]}
+      value={member.effort}
+      onChange={onChange}
+    />
+  );
+}
 
 interface MemberDraft {
   providerKind: string;
@@ -318,14 +358,6 @@ export function WorkerGroupsSection({
       .filter(Boolean)
       .map((model) => ({ value: model, label: model }));
   };
-  const effortOptions = (member: MemberDraft): SelectMenuOption[] => [
-    { value: "", label: t("workerGroups.runtimeDefault") },
-    ...(member.runtime === "claude"
-      ? claudeEffortOptions()
-      : member.runtime === "codex"
-        ? codexEffortOptions()
-        : []),
-  ];
 
   return (
     <SectionPanel aria-label={t("workerGroups.title")} id="worker-groups">
@@ -443,15 +475,18 @@ export function WorkerGroupsSection({
                     <span className="text-2xs text-ink-muted">
                       {t("workerGroups.effort")}
                     </span>
-                    <SelectMenu
+                    <MemberEffortSelect
                       ariaLabel={t("workerGroups.effortLabel", {
                         index: index + 1,
                       })}
-                      className="w-full max-w-full"
+                      defaultLabel={t("workerGroups.runtimeDefault")}
                       disabled={!member.providerId}
-                      options={effortOptions(member)}
-                      value={member.effort}
+                      member={member}
                       onChange={(effort) => updateMember(index, { effort })}
+                      profile={
+                        sources.find((item) => item.key === sourceKey(member))
+                          ?.profile
+                      }
                     />
                   </label>
                   <label className="grid min-w-0 gap-1 @[480px]/members:col-span-2 @[900px]/members:col-span-1">

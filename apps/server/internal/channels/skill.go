@@ -59,6 +59,7 @@ func SeedInstructions(channel store.MessageChannel, sourceLabel, contextHint str
 		out.WriteString("- `thread root` 和 `thread earlier replies` 是 Foundry 预先读好的话题上下文（发起人、时间、正文或卡片标题）；`context` 命令（例如 `" + contextHint + "`）仍可用，需要更多前文时自己去读。\n")
 	}
 	out.WriteString("- 有 `reply` 时，它是回复这条消息的命令，id 已经填好。\n")
+	out.WriteString("- 有 `react` 时，它是给触发消息加一个表情的命令，id 已经填好；只在本通道 CLAUDE.md 的「有别人在场时的回复」所说的情况下用。\n")
 	out.WriteString("\n## 回复位置\n\n")
 	out.WriteString("- 群聊：在触发消息所在的话题里回复（用事实块 `reply` 里带 `--thread` 的命令），不要 @ 人。\n")
 	out.WriteString("- 私聊和自聊：引用回复触发消息，不新开话题；已经存在话题时才在话题里回复。\n")

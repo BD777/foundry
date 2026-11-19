@@ -12,7 +12,7 @@ import {
   type ResolvedAgentDefault,
 } from "../../../api";
 import type { CreateAgentProfileInput } from "../../../api-types";
-import { mergeModelOptionLists } from "./model-options";
+import { mergeModelOptionLists } from "../../../lib/model-options";
 import {
   buildPickerAgentOptions,
   modelControlProfile,

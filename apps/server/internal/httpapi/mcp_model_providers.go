@@ -508,10 +508,13 @@ func (s *Server) saveModelProviderForMCP(call mcpCall) (string, error) {
 }
 
 func checkEffort(runtime, effort string) error {
-	allowed := []string{"low", "medium", "high", "xhigh", "max"}
 	if runtime == "codex" {
-		allowed = []string{"minimal", "low", "medium", "high", "xhigh"}
+		if effort == "" || store.ValidCodexEffort(effort) {
+			return nil
+		}
+		return &statusError{http.StatusBadRequest, fmt.Errorf("effort for codex is one of the reasoning efforts its model lists (list_models shows them), or \"\" for the runtime's default")}
 	}
+	allowed := []string{"low", "medium", "high", "xhigh", "max"}
 	if effort == "" || slices.Contains(allowed, effort) {
 		return nil
 	}

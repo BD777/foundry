@@ -34,12 +34,16 @@ function refuseRealFolderInTests(variable: string): void {
  * also has src and tsconfig.json.
  */
 function checkoutPackageRoot(): string | undefined {
+  // Asked on every state path: where this module runs from never changes.
+  if (checkoutRoot !== null) return checkoutRoot;
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  return existsSync(join(root, "src")) &&
-    existsSync(join(root, "tsconfig.json"))
-    ? root
-    : undefined;
+  checkoutRoot =
+    existsSync(join(root, "src")) && existsSync(join(root, "tsconfig.json"))
+      ? root
+      : undefined;
+  return checkoutRoot;
 }
+let checkoutRoot: string | undefined | null = null;
 
 /**
  * Worker code run from a checkout (a script, a repro, a test run without

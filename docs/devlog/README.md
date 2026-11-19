@@ -4,6 +4,14 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-19 脚本：[DEV-321 PA 路由评测：在线夹具设备（假运行时）、工具级派发评分、`--repeat` 与 `--resume` 运行日志、每个 stack 共享缓存、磁盘暂停；3× 基线不完整](DEV-321-pa-eval-online-fixtures.md)（不涉及部署）。
+2026-11-19 Worker + Server：[DEV-320 worker 原生对话扫描不再每轮重算指纹、不读服务端不收的对话的 transcript、重启不再重读所有日志开头；按规则清理旧会话 SDK 日志、闲置 verifier、闲置 compute scratch](DEV-320-worker-scan-cost-and-retention.md)（train 102）。
+2026-11-19 Worker：[DEV-319 Worker 每轮巡检的文件系统开销；remote-build 不再在设备上留作业](DEV-319-worker-io-and-build-disk.md)（train 101）。
+2026-11-19 Server + Worker：[DEV-318 有别人在场的通道对话卡在本人或失败时不发文字，只加表情（描述文件声明 react），细节经通知卡片发给本人](DEV-318-channel-react.md)（train 100）。
+2026-11-19 Server + Web + Worker：[DEV-316 Codex 思考强度按每个模型的官方目录列出全部档位（不再写死 minimal…xhigh）](DEV-316-codex-efforts.md)（train 97）。
+2026-11-19 Worker：[DEV-314 `foundry-worker` 的值选项可以取以 `-` 开头的值（配对令牌 `--token -abc` 不再报 E1002）](DEV-314-worker-cli-dash-values.md)（train 96）。
+2026-11-19 Server：[DEV-317 转交给本人、未附提问卡片的问题会发通知；助理未配通知时用默认助理的通知设置；跳过通知时记日志](DEV-317-person-notice-enqueue.md)（train 99）。
+2026-11-19 Web：[DEV-315 运行中连续发批注，后一条不再显示成原始提示文本（发件箱带上批注并按批注匹配插入的消息）](DEV-315-adjacent-annotations.md)（train 98）。
 2026-11-19 脚本：[DEV-311 PA 路由评测：沙箱只读、空库合成用户、评分修正](DEV-311-pa-eval-harness.md)（不涉及部署）。
 2026-11-19 脚本：[DEV-310 实机回归 C10、C19、C20 自动化（隔离栈、只杀自己起的进程），三例实机通过；C19 进 CI，用桩 Claude CLI 跑 Linux 死亡路径](DEV-310-live-regression-recovery.md)。
 2026-11-19 Server + Web：[DEV-309 时间文本定宽（九位小数）；取最早或最新时间改按解析后的时间比较，Web 频道会话按时间排序](DEV-309-time-text-width.md)（train 95）。

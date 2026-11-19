@@ -68,7 +68,7 @@ func validEffort(runtime, effort string) bool {
 	case "claude":
 		return slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort)
 	case "codex":
-		return slices.Contains([]string{"minimal", "low", "medium", "high", "xhigh"}, effort)
+		return store.ValidCodexEffort(effort)
 	}
 	return false
 }

@@ -83,6 +83,7 @@ import {
 import type { DaemonDispatch } from "./dispatch.js";
 import { ExecutionCore } from "./execution-core.js";
 import { stopServingResources } from "./handlers/resources.js";
+import { runDiskRetention } from "../maintenance/disk-retention.js";
 import { outOfBandEventSink } from "./session-execution.js";
 import {
   noteMissingFolder,
@@ -93,6 +94,10 @@ import {
 const nativeChatSyncIntervalMs = 10000;
 
 const providerCheckIntervalMs = 10 * 60 * 1000;
+// Leftovers nothing reads any more (maintenance/disk-retention.ts): first
+// soon after connecting, so a worker restarted often still gets to it.
+const diskRetentionFirstMs = 10 * 60 * 1000;
+const diskRetentionIntervalMs = 60 * 60 * 1000;
 
 /** How often the worker tells the server it is there (see the heartbeat). */
 const heartbeatIntervalMs = Number(
@@ -260,6 +265,7 @@ class ControlConnection {
   private sendSampleTimer: NodeJS.Timeout | undefined;
   private workspaceRoundTimer: NodeJS.Timeout | undefined;
   private providerCheckTimer: NodeJS.Timeout | undefined;
+  private diskRetentionTimer: NodeJS.Timeout | undefined;
   private announcedProfileRevision = "";
   private nativeChatSyncPromise: Promise<void> | undefined;
   // Once per connection and workspace (see recheckRunningNativeChats).
@@ -511,6 +517,7 @@ class ControlConnection {
       () => this.checkProvidersAndReport(),
       providerCheckIntervalMs,
     );
+    this.scheduleDiskRetention(diskRetentionFirstMs);
   }
 
   // Every round: folders gone or back, then the native chats of those there.
@@ -553,6 +560,28 @@ class ControlConnection {
       .finally(() => {
         this.nativeChatSyncPromise = undefined;
       });
+  }
+
+  private scheduleDiskRetention(delayMs: number): void {
+    if (this.finished) return;
+    this.diskRetentionTimer = setTimeout(() => {
+      const executions = this.options.sessionExecutions;
+      void runDiskRetention({
+        workspaceFolders: this.roster.folders(),
+        activeSessionIds: new Set([
+          ...executions.activeSessionIds(),
+          ...executions.nativeWorkSessionIds(),
+        ]),
+      })
+        .then((report) => {
+          if (report.files)
+            console.log(
+              `${logTime()} Removed ${report.files} SDK log(s) (${Math.round(report.bytes / 1048576)} MB) of ${report.sessions} session(s) without input for two weeks.`,
+            );
+        })
+        .finally(() => this.scheduleDiskRetention(diskRetentionIntervalMs));
+    }, delayMs);
+    this.diskRetentionTimer.unref();
   }
 
   private checkProvidersAndReport(): void {
@@ -675,6 +704,7 @@ class ControlConnection {
       clearInterval(this.workspaceRoundTimer);
     }
     if (this.providerCheckTimer) clearInterval(this.providerCheckTimer);
+    if (this.diskRetentionTimer) clearTimeout(this.diskRetentionTimer);
     clearOutOfBandSessionEventSink(this.outOfBandSink);
     // A session's last messages may still wait in the outbox (--once
     // ends right after them): the server takes them before the socket

@@ -349,11 +349,21 @@ func ExamplesFile(in Input) string {
 // this file imports the channel's own AGENTS.md (DEV-251).
 const ChannelClaudePath = "CLAUDE.md"
 
-// ChannelClaudeFile is the one-line CLAUDE.md a channel workspace runs
-// with: the channel's rules stay in AGENTS.md, the file the person edits.
+// ChannelClaudeFile is the CLAUDE.md a channel workspace runs with: the
+// channel's rules stay in AGENTS.md, the file the person edits, and Foundry
+// rewrites this file before every run, so its own guidance goes here (DEV-318).
+// Only Claude Code reads it; a Codex run reads AGENTS.md alone.
 func ChannelClaudeFile() personalagent.WorkspaceFile {
-	return personalagent.WorkspaceFile{Path: ChannelClaudePath, Content: "@AGENTS.md\n"}
+	return personalagent.WorkspaceFile{Path: ChannelClaudePath, Content: "@AGENTS.md\n\n" + channelRepliesSection}
 }
+
+// channelRepliesSection is the guidance for a turn in a conversation that
+// has other people in it (DEV-318): what the reply in that chat contains.
+const channelRepliesSection = "## 有别人在场时的回复\n\n" +
+	"- 「有别人在场」指会话里除了本人还有其他人：群聊，或与别人的私聊。本人自聊没有别人在场。\n" +
+	"- 本人用触发词发出的请求，在有别人在场的会话里卡住（要本人决定、确认或补充信息）或失败时，会话里不发任何文字，不说原因、选项或进展。有 `react` 时，只用它给触发消息加一个表情，表示在等本人；没有时也不发文字。具体内容（发现了什么、有哪些选项、为什么失败）用 `needs_you` 直接交给本人。\n" +
+	"- 完成的工作结果，以及本人在这个会话里提出的问题的答案，照常用 `reply` 在会话里回复。\n" +
+	"- 一条消息是结果、是问题的答案，还是卡住或失败，由你判断；拿不准时按卡住处理。\n"
 
 // ProjectFilesAndIndex are the facts Foundry writes into every workspace the
 // assistant runs in, its home and each message channel's workspace: the

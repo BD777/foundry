@@ -136,7 +136,9 @@ export function useIssueModels(
   const controls: AgentRuntimeControlsProps = {
     selectedRuntime: runtime === "codex" ? "codex" : "claude",
     modelValue: model,
+    // Each option keeps what the device reported for its model (efforts, default).
     modelOptions: options.map((option) => ({
+      ...discoveredModels.find((item) => item.id === option.value),
       id: option.value,
       label: option.label,
     })),

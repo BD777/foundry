@@ -43,33 +43,23 @@ export function parseToolEvent(event) {
   return { name, rawName, args, failed: event.label === "Tool failed" };
 }
 
-// A question the assistant put on the person's list (needs_you op ask) is a
-// question the person sees, as much as one in the reply.
+// needs_you operations that put a question on the person's list. Other
+// operations are not questions: op list shows a system permission gate or a
+// Feishu card the person clicks, which blocks the work but is not a choice the
+// assistant asks for (PA-1 gold review, decided item 5: the route stands).
+export const QUESTION_CARD_OPS = ["ask"];
+
+// A question the assistant put on the person's list is a question the person
+// sees, as much as one in the reply.
 export function cardAsksIn(tools) {
-  return tools.filter((t) => t.name === "needs_you" && t.args.op === "ask")
-    .length;
+  return tools.filter(
+    (t) => t.name === "needs_you" && QUESTION_CARD_OPS.includes(t.args.op),
+  ).length;
 }
 
-export function questionsIn(reply) {
-  const text = reply
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/https?:\/\/\S+/g, "");
-  return (text.match(/？|\?(?=\s|$|["”』」)])/g) || []).length;
-}
-
-// What the assistant did with a request, from its tool calls and reply.
-// Whether a reply asks the person (to choose, confirm or supply something
-// before the work goes on) is a reading of free text: with a judge verdict
-// (`asks`, from --judge) that verdict decides; without one, a question mark
-// does. A question card (needs_you ask) always asks.
-export function classifyOutcome(
-  tools,
-  reply,
-  assistantWorkspace,
-  offline = [],
-  { asks } = {},
-) {
+// Work the request started: a new project, or a dispatch to a project other
+// than the assistant's own workspace.
+function startedWork(tools, assistantWorkspace) {
   const created = tools.filter((t) => t.name === "create_workspace");
   const dispatched = tools
     .filter((t) => DISPATCH_TOOLS.includes(t.name))
@@ -80,25 +70,65 @@ export function classifyOutcome(
     )
     .filter(Boolean);
   const external = dispatched.filter((w) => w !== assistantWorkspace);
+  return { created, external };
+}
+
+// The asks a request leaves the person to answer before the work goes on:
+// each question card, plus the reply's ask when no work was started (an offer
+// or a side question after started work is not blocking). The raw question
+// mark count stays questionsIn.
+export function blockingAsksOf(
+  tools,
+  reply,
+  assistantWorkspace,
+  { asks } = {},
+) {
+  const { created, external } = startedWork(tools, assistantWorkspace);
+  const textAsks = typeof asks === "boolean" ? asks : questionsIn(reply) > 0;
+  const textBlocking = textAsks && !created.length && !external.length;
+  return cardAsksIn(tools) + (textBlocking ? 1 : 0);
+}
+
+export function questionsIn(reply) {
+  const text = reply
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/https?:\/\/\S+/g, "");
+  return (text.match(/？|\?(?=\s|$|["”』」)])/g) || []).length;
+}
+
+// What the assistant did with a request, from its tool calls and reply: a
+// project or a creation is a dispatch tool call, an ask is a judged reading
+// of the reply (`asks`, from --judge; without one, a question mark) or a
+// question card. Anything else is an answer. A reply that names a project
+// without a dispatch is still an answer: `mentionedProject` records it as a
+// diagnostic only, never as the decision.
+export function classifyOutcome(
+  tools,
+  reply,
+  assistantWorkspace,
+  projects = [],
+  { asks } = {},
+) {
+  const { created, external } = startedWork(tools, assistantWorkspace);
   if (created.length)
     return { decision: "new", workspaceId: external[0] || "" };
   if (external.length) return { decision: "project", workspaceId: external[0] };
   const textAsks = typeof asks === "boolean" ? asks : questionsIn(reply) > 0;
   if (textAsks || cardAsksIn(tools) > 0) return { decision: "ask" };
-  // Work for a project whose computer is offline cannot start (the scratch
-  // copy's computers all are): the assistant says where it belongs and that
-  // it starts once the computer is back. That is its decision when it names
-  // exactly one such project, by name or by the computer of the one project
-  // it looked into.
-  const named = mentionedProjects(reply, offline);
-  if (named.length === 1)
-    return { decision: "project", workspaceId: named[0], byMention: true };
-  if (!named.length) {
-    const viaComputer = projectByComputer(reply, tools, offline);
-    if (viaComputer)
-      return { decision: "project", workspaceId: viaComputer, byMention: true };
-  }
-  return { decision: "answer" };
+  return {
+    decision: "answer",
+    mentionedProject: mentionedProjectOf(reply, tools, projects),
+  };
+}
+
+// The one project a reply names: by name or ref, or by the computer of the
+// one project its tool calls opened when it names no project.
+export function mentionedProjectOf(reply, tools, projects) {
+  const named = mentionedProjects(reply, projects);
+  if (named.length === 1) return named[0];
+  if (named.length) return "";
+  return projectByComputer(reply, tools, projects);
 }
 
 // The offline projects a reply names, by the index's own names and refs

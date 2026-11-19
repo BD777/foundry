@@ -20,6 +20,7 @@ import { Button } from "../ui/button";
 import { FieldHint } from "../ui/field";
 import { SelectMenu, type SelectMenuOption } from "../ui/select-menu";
 import {
+  catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
   effortLabel,
@@ -177,7 +178,7 @@ function ExecutionChoiceFields({
       source.runtime === value.runtime,
   );
   const missing = Boolean(value.providerId && !selected);
-  const { models, loading } = useProfileModels(selected?.profile);
+  const { catalog, models, loading } = useProfileModels(selected?.profile);
   const providers: SelectMenuOption[] = sources.map((source) => ({
     value: source.key,
     label: source.label,
@@ -246,7 +247,7 @@ function ExecutionChoiceFields({
     ...(value.runtime === "claude"
       ? claudeEffortOptions()
       : value.runtime === "codex"
-        ? codexEffortOptions()
+        ? codexEffortOptions(catalogModel(catalog, value.model ?? ""))
         : []),
   ];
   const field = "grid min-w-0 gap-1.5";

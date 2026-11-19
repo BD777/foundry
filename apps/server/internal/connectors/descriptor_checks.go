@@ -56,6 +56,23 @@ func checkText(what, value string, limit int, required bool) error {
 	return nil
 }
 
+// checkCommandTemplate checks a command an agent runs with the connector's
+// own tool: plain text that may use only the message, conversation and thread
+// placeholders.
+func checkCommandTemplate(what, command string) error {
+	if err := checkText(what, command, 300, true); err != nil {
+		return err
+	}
+	rest := command
+	for _, placeholder := range []string{"{message.id}", "{conversation.id}", "{thread.id}"} {
+		rest = strings.ReplaceAll(rest, placeholder, "")
+	}
+	if strings.Contains(rest, "{") || strings.Contains(rest, "}") {
+		return fmt.Errorf("%s may only use {message.id}, {conversation.id} and {thread.id}", what)
+	}
+	return nil
+}
+
 func checkLocalized(what string, values map[string]string, limit int) error {
 	if len(values) > maxLocales {
 		return fmt.Errorf("%s has too many languages", what)
@@ -629,15 +646,13 @@ func checkServerHeldEvents(events store.ConnectorEventsSpec, prefix string) erro
 		default:
 			return fmt.Errorf("serverHeld.events.reply.kinds names an unknown conversation kind %q", kind)
 		}
-		if err := checkText("serverHeld.events.reply.kinds."+kind, command, 300, true); err != nil {
+		if err := checkCommandTemplate("serverHeld.events.reply.kinds."+kind, command); err != nil {
 			return err
 		}
-		rest := command
-		for _, placeholder := range []string{"{message.id}", "{conversation.id}", "{thread.id}"} {
-			rest = strings.ReplaceAll(rest, placeholder, "")
-		}
-		if strings.Contains(rest, "{") || strings.Contains(rest, "}") {
-			return fmt.Errorf("serverHeld.events.reply.kinds.%s may only use {message.id}, {conversation.id} and {thread.id}", kind)
+	}
+	if events.React != "" {
+		if err := checkCommandTemplate("serverHeld.events.react", events.React); err != nil {
+			return err
 		}
 	}
 	if ack := events.Ack; ack != nil {

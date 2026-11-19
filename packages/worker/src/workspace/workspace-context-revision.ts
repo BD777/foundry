@@ -6,6 +6,7 @@ import {
   lstatSync,
   openSync,
   readSync,
+  readdirSync,
   readlinkSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -18,16 +19,22 @@ export const instructionFileNames = new Set([
   "README.markdown",
   "README.txt",
 ]);
-const cache = new Map<string, { stamp: string; revision: string }>();
+const cache = new Map<
+  string,
+  { stamp: string; revision: string; settled: boolean }
+>();
+// A file changed this recently may change again without a new stamp (coarse
+// timestamps), so its cached revision is not trusted yet (git's "racy" rule).
+const settleMs = 2000;
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 
 /** Content identity only; no instruction text leaves this device. Links are
- * identified without following them, and reads are bounded to 256 KiB. */
+ * identified without following them, and reads are bounded to 256 KiB. An
+ * unchanged stamp reuses the last revision once the file has settled. */
 export function instructionFileRevision(
   root: string,
   name: string,
-  refresh = false,
 ): string | undefined {
   if (!instructionFileNames.has(name)) return undefined;
   const path = join(root, name);
@@ -42,7 +49,11 @@ export function instructionFileRevision(
       stat.mode,
     ].join(":");
     const known = cache.get(path);
-    if (!refresh && known?.stamp === stamp) return known.revision;
+    if (known?.settled && known.stamp === stamp) return known.revision;
+    const changedMs = Number(
+      (stat.ctimeNs > stat.mtimeNs ? stat.ctimeNs : stat.mtimeNs) / 1_000_000n,
+    );
+    const settled = Date.now() - changedMs > settleMs;
     let revision: string;
     if (stat.isSymbolicLink()) revision = `link:${hash(readlinkSync(path))}`;
     else if (!stat.isFile()) revision = `nonfile:${stamp}`;
@@ -82,7 +93,7 @@ export function instructionFileRevision(
         closeSync(fd);
       }
     }
-    cache.set(path, { stamp, revision });
+    cache.set(path, { stamp, revision, settled });
     if (cache.size > 4096) cache.delete(cache.keys().next().value!);
     return revision;
   } catch (error) {
@@ -102,11 +113,19 @@ export function instructionEntriesRevision(
     .join("\n");
 }
 
+/** The names a workspace listing shows, as its registration reads them; one
+ * listing instead of a lookup per absent name (a round trip on a share). */
 export function workspaceInstructionRevision(root: string): string {
+  let names: string[];
+  try {
+    names = readdirSync(root).filter((name) => instructionFileNames.has(name));
+  } catch {
+    names = [...instructionFileNames];
+  }
   return instructionEntriesRevision(
-    [...instructionFileNames].map((path) => ({
+    names.map((path) => ({
       path,
-      revision: instructionFileRevision(root, path, true),
+      revision: instructionFileRevision(root, path),
     })),
   );
 }

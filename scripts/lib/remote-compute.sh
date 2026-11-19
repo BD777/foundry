@@ -370,6 +370,11 @@ pnpm --version'
 rc_slot_acquire() {
   local line='set -eu
 mkdir -p .slots
+# A job left behind (a failed build kept for --fetch-only, a killed run) goes
+# after a day unless a live slot still names it.
+find jobs -mindepth 1 -maxdepth 1 -type d -mmin +1440 2>/dev/null | while read -r old; do
+  grep -qsxF "$old" .slots/*/job || rm -rf "$old"
+done
 cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 if [ -r /proc/meminfo ]; then
   mem_gib="$(awk '"'"'/MemTotal/{print int($2/1048576)}'"'"' /proc/meminfo)"

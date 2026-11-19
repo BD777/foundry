@@ -903,3 +903,127 @@ test("a Claude steer with annotations records them on its transcript message", a
   assert.deepEqual(steered.message.annotations, annotations);
   assert.equal(steered.message.attachments, undefined);
 });
+test("two annotation-only Claude steers in one tool round each keep their annotations on their own message", async () => {
+  const { session, events, finished } = await openTurn();
+  const wrap = (comment) => ({
+    annotations: [
+      {
+        id: `a-${comment}`,
+        selectedText: comment,
+        comment,
+        sourceEventId: "evt_answer",
+      },
+    ],
+  });
+  const wrapped = (comment) =>
+    `\n# Response annotations:\n${comment}\n\n## My request:\n`;
+  await Promise.all([
+    steerActiveSessionOnce(
+      session.id,
+      randomUUID(),
+      wrapped("one"),
+      [],
+      undefined,
+      wrap("one"),
+    ),
+    steerActiveSessionOnce(
+      session.id,
+      randomUUID(),
+      wrapped("two"),
+      [],
+      undefined,
+      wrap("two"),
+    ),
+  ]);
+  await finished;
+  const steered = events.filter(
+    (event) => event.label === "Steered into active turn",
+  );
+  assert.equal(steered.length, 2);
+  for (const [index, comment] of ["one", "two"].entries()) {
+    assert.equal(steered[index].message?.text, wrapped(comment).trim());
+    assert.equal(steered[index].message?.annotations?.[0]?.comment, comment);
+  }
+});
+
+test("two annotation-only Codex steers, immediate or held for a boundary, each keep their annotations on their own message", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/session/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const received = [];
+  const events = [];
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    steer: async (input) => {
+      received.push(input);
+    },
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async (...args) => events.push(args) },
+    thread,
+    "initial",
+    id,
+  );
+  const annotate = (comment) => ({
+    annotations: [
+      {
+        id: `a-${comment}`,
+        selectedText: comment,
+        comment,
+        sourceEventId: "evt_answer",
+      },
+    ],
+  });
+  const wrapped = (comment) =>
+    `\n# Response annotations:\n${comment}\n\n## My request:\n`;
+  try {
+    await steerActiveSessionOnce(
+      id,
+      randomUUID(),
+      wrapped("immediate"),
+      [],
+      undefined,
+      annotate("immediate"),
+    );
+    await steerActiveSessionOnce(
+      id,
+      randomUUID(),
+      wrapped("held"),
+      [],
+      undefined,
+      {
+        ...annotate("held"),
+        delivery: "boundary",
+        boundaryLimitMs: 0,
+      },
+    );
+    for (
+      let waited = 0;
+      events.filter((args) => args[0] === "Steered into active turn").length <
+      2;
+      waited += 10
+    ) {
+      if (waited > 5000)
+        throw new Error("the held steer never reached the turn");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const steered = events.filter(
+      (args) => args[0] === "Steered into active turn",
+    );
+    for (const [index, comment] of ["immediate", "held"].entries()) {
+      assert.equal(steered[index][4].text, wrapped(comment));
+      assert.equal(steered[index][4].annotations?.[0]?.comment, comment);
+    }
+  } finally {
+    finish();
+    await running;
+  }
+});

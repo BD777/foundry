@@ -245,6 +245,7 @@ export function ProfilesFeature({
           <div className="grid content-start gap-5">
             <ProfileEditor
               busy={busy || saving}
+              catalog={models.catalog}
               catalogWindows={models.windows}
               draft={state.draft}
               isNew={state.isNew}

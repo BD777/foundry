@@ -42,7 +42,31 @@ function typedText(entry: OutboxEntry): string {
     : entry.text;
 }
 
+/**
+ * The annotations a message names, by id. A queued message steered into a
+ * running turn is recorded under its turn's input id, not its own, so the
+ * annotations are what tells the two copies apart.
+ */
+function annotationKey(
+  annotations: readonly { id: string }[] | undefined,
+): string | undefined {
+  if (!annotations?.length) return undefined;
+  return annotations
+    .map((annotation) => annotation.id)
+    .sort()
+    .join("\n");
+}
+
 function matches(entry: OutboxEntry, message: ChatViewMessage): boolean {
+  const sent = annotationKey(entry.annotations);
+  if (sent !== undefined) {
+    if (
+      entry.sessionId &&
+      !message.id?.startsWith(`agent-session:${entry.sessionId}:`)
+    )
+      return false;
+    return annotationKey(message.annotations) === sent;
+  }
   const id = transcriptId(entry);
   if (id) return message.id === id;
   if (

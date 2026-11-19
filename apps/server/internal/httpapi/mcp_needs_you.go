@@ -122,16 +122,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	var changed []needsYouLine
 	if len(items) == 0 {
 		// A helper that asked in its answer, without a question card.
-		now := formatPendingTime(time.Now())
-		item, _, err := s.store.RecordPendingItem(ctx, store.PendingItem{
-			UserID: user, AssistantID: scope.Agent.ID, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
-			Source: store.PendingSourceQuestion, Rule: store.PendingRuleHandedOver,
-			Key:   "handover:" + helper.ID + ":" + helper.Input.ID,
-			Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
-			Context: pendingAnswerContext(helper.Response),
-			Handler: store.PendingHandlerPerson, Note: note, HandedReason: store.PendingHandedByAssistant, HandedAt: now,
-			HandedInputID: scope.Turn.ID, Outcome: store.PendingOutcomeHandedOver,
-		})
+		item, err := s.handOverWithoutCard(ctx, scope.Agent, helper, scope.Turn.ID, note, s.noticeChatOf)
 		if err != nil {
 			return "", err
 		}
@@ -145,6 +136,27 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		changed = append(changed, s.needsYouLineOf(ctx, handed))
 	}
 	return encodeJSON(map[string]any{"handedOver": changed})
+}
+
+// handOverWithoutCard puts a helper's question, which it asked in its answer
+// with no question card, in needs-you as handed to the person. It notifies the
+// person as any hand-over does: the item is recorded through the notice queue,
+// not around it, so a sink that takes hand-overs hears of it.
+func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAgent, helper store.AgentSession, turnID, note string, chatOf noticeChatLookup) (store.PendingItem, error) {
+	now := formatPendingTime(time.Now())
+	item, changed, err := s.store.RecordPendingItem(ctx, store.PendingItem{
+		UserID: agent.UserID, AssistantID: agent.ID, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
+		Source: store.PendingSourceQuestion, Rule: store.PendingRuleHandedOver,
+		Key:   "handover:" + helper.ID + ":" + helper.Input.ID,
+		Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
+		Context: pendingAnswerContext(helper.Response),
+		Handler: store.PendingHandlerPerson, Note: note, HandedReason: store.PendingHandedByAssistant, HandedAt: now,
+		HandedInputID: turnID, Outcome: store.PendingOutcomeHandedOver,
+	})
+	if err == nil && changed {
+		s.queueItemNotice(ctx, item, chatOf)
+	}
+	return item, err
 }
 
 // resolveNeedsYou closes the items of one of the assistant's helpers. A helper

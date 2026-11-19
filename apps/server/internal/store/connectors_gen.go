@@ -369,6 +369,9 @@ type ConnectorEventsSpec struct {
 	// Reply How an agent replies to a message with the connector's own tool, one command template per conversation kind (direct, self, group, channel, feed, other); a template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice.
 	Reply ConnectorEventsReply `json:"reply,omitempty"`
 
+	// React How an agent reacts to a message with an emoji through the connector's own tool, one command template; the reaction key is part of the template, and the template may use `{message.id}`, `{conversation.id}` and `{thread.id}`. A notice states the filled command as a fact, not as advice. The reaction must not be the key of `ack`, which the channel takes away when the turn ends.
+	React string `json:"react,omitempty"`
+
 	// Ack How a channel marks a message while the assistant works on it — a reaction added when a batch is handed to its session and taken away when the turn ends. Both calls are catalogued write routes sent through the instance's gateway, so extension code never runs on the server.
 	Ack *ConnectorEventsAck `json:"ack,omitempty"`
 

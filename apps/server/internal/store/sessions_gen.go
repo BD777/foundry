@@ -200,6 +200,8 @@ type AgentSession struct {
 	Model                string               `json:"model,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
+
+	// CodexReasoningEffort A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema.
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
 

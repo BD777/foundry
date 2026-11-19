@@ -85,3 +85,12 @@ test("the existing workspace timer reports context changes once without a model 
   roster.checkContextFiles();
   assert.equal(sent.length, 1);
 });
+test("the context revision covers the instruction files the folder lists, by their listed names", (t) => {
+  const root = folder(t);
+  assert.equal(workspaceInstructionRevision(root), "");
+  writeFileSync(join(root, "CLAUDE.md"), "Synthetic rules.");
+  writeFileSync(join(root, "notes.md"), "Not an instruction file.");
+  const revision = workspaceInstructionRevision(root);
+  assert.match(revision, /^CLAUDE\.md=sha256:/);
+  assert.equal(revision.split("\n").length, 1);
+});

@@ -169,6 +169,15 @@ type AgentModelOption struct {
 
 	// ContextWindow `contextWindow` is the window the endpoint's own catalog reports.
 	ContextWindow int64 `json:"contextWindow,omitempty"`
+
+	// ReasoningEfforts `reasoningEfforts` are the reasoning efforts the runtime's catalog lists for this model, in the catalog's order. Absent when the catalog says nothing about the model.
+	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
+
+	// DefaultReasoningEffort `defaultReasoningEffort` is the effort the runtime's catalog makes this model's default.
+	DefaultReasoningEffort string `json:"defaultReasoningEffort,omitempty"`
+
+	// IsDefault `isDefault` marks the model the runtime's catalog makes the account's default, the one a blank model choice means.
+	IsDefault bool `json:"isDefault,omitempty"`
 }
 
 // AgentProfileCheck defines model for AgentProfileCheck.
@@ -233,6 +242,8 @@ type AgentProfileProjection struct {
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
+
+	// CodexReasoningEffort A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema.
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
 
@@ -301,7 +312,7 @@ type ClaudePermissionMode = string
 // CodexApprovalPolicy Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
 type CodexApprovalPolicy = string
 
-// CodexReasoningEffort defines model for CodexReasoningEffort.
+// CodexReasoningEffort A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema.
 type CodexReasoningEffort = string
 
 // CodexSandboxMode defines model for CodexSandboxMode.
@@ -593,6 +604,8 @@ type ProfileDefinition struct {
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
+
+	// CodexReasoningEffort A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema.
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
 

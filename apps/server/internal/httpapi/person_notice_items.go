@@ -22,10 +22,10 @@ import (
 // A pending item that waits for the person is also a notice to them through
 // the sinks the assistant's settings name (DEV-294, slice 4). The notice is
 // how the person hears of it; the item stays the record. An item earns a
-// notice only when the person can answer it from the notice: a question in a
-// conversation, the assistant's own question, or a connector write to allow
-// or refuse. Other items (failures, reminders, account sign-ins) stay on the
-// Web page.
+// notice when the person must decide or answer it: a question in a
+// conversation, a question the assistant handed over, the assistant's own
+// question, or a connector write to allow or refuse. Other items (failures,
+// reminders, account sign-ins) stay on the Web page.
 
 // approvalNoticeOptions are the choices an approval notice offers, by index:
 // index 0 approves and index 1 refuses. The reply aliases are in personnotice.
@@ -38,7 +38,7 @@ func personNoticeKind(item store.PendingItem) (string, bool) {
 	case item.Source == store.PendingSourceAssistantQuestion:
 		return "ask", true
 	case item.Source == store.PendingSourceConnectorWrite && item.ConnectorWrite != nil:
-	case item.Source == store.PendingSourceQuestion && item.MessageID != "" && item.Title != "":
+	case item.Source == store.PendingSourceQuestion && item.Title != "" && (item.MessageID != "" || item.HandedAt != ""):
 	default:
 		return "", false
 	}
@@ -49,6 +49,15 @@ func personNoticeKind(item store.PendingItem) (string, bool) {
 		return "approval", true
 	}
 	return "question", true
+}
+
+// canAnswerFromNotice reports whether the person's reply to an item's notice
+// can answer the item. A question answers through its message in its chat. A
+// question with no message (a helper's question the assistant handed over
+// from its answer) is answered by the assistant, so its notice takes no reply
+// and the reply goes to the assistant's inbox.
+func canAnswerFromNotice(item store.PendingItem) bool {
+	return item.Source != store.PendingSourceQuestion || item.MessageID != ""
 }
 
 // itemIsApproval reports whether the person's answer decides the item only
@@ -104,18 +113,18 @@ func (s *Server) noticeAboutItem(ctx context.Context, item store.PendingItem) {
 // noticeChatLookup reads the notice chat of a connector instance of a person.
 type noticeChatLookup func(ctx context.Context, userID, instanceID string) (string, error)
 
-// queueItemNotice is noticeAboutItem with the notice chat lookup given.
+// queueItemNotice is noticeAboutItem with the notice chat lookup given. The
+// notice goes through the item's assistant's own sinks or, when it has none,
+// the person's default assistant's: a notice goes to the same person whichever
+// assistant raised the item. A skipped notice is logged with its reason only.
 func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, chatOf noticeChatLookup) {
 	kind, ok := personNoticeKind(item)
-	if !ok || item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerPerson || item.AssistantID == "" {
+	if !ok || item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerPerson {
 		return
 	}
-	agent, err := s.store.GetAssistant(ctx, item.AssistantID)
-	if err != nil || agent.UserID != item.UserID {
-		return
-	}
-	sinks := agent.Settings.Notify.Sinks
-	if len(sinks) == 0 {
+	ownerID, sinks, reason := s.noticeSinksOf(ctx, item)
+	if reason != "" {
+		log.Printf("person notice for item %s skipped: %s", item.ID, reason)
 		return
 	}
 	earlier, err := s.store.PersonNoticesOfItem(ctx, item.ID)
@@ -133,17 +142,19 @@ func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, ch
 	}
 	title, text := noticeWords(item, kind)
 	route := personnotice.Route{
-		Kind: kind, AllowFreeText: true, Title: title, Text: text,
+		AssistantID: ownerID, Kind: kind, AllowFreeText: canAnswerFromNotice(item), Title: title, Text: text,
 		Link: origin + "/pending?item=" + url.QueryEscape(item.ID),
 	}
 	if itemIsApproval(item) {
 		route.Options = approvalNoticeOptions
 	}
+	takesKind := false
 	for _, sink := range sinks {
 		if !slices.Contains(sink.Kinds, kind) {
 			continue
 		}
-		target, ok := s.noticeTargetOf(ctx, item, sink.ConnectorInstanceID, chatOf)
+		takesKind = true
+		target, ok := s.noticeTargetOf(ctx, item, ownerID, sink.ConnectorInstanceID, chatOf)
 		if !ok {
 			continue
 		}
@@ -153,14 +164,49 @@ func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, ch
 		}
 		return
 	}
+	if !takesKind {
+		log.Printf("person notice for item %s skipped: no notify sink takes kind %s", item.ID, kind)
+	}
+}
+
+// noticeSinksOf is the sink list a notice of the item goes through, and the
+// assistant whose settings name them: the item's own assistant when it has
+// sinks, else the person's default assistant. reason says why there are none;
+// it never carries the item's content.
+func (s *Server) noticeSinksOf(ctx context.Context, item store.PendingItem) (ownerID string, sinks []store.PersonalAgentNotifySink, reason string) {
+	if item.AssistantID == "" {
+		return "", nil, "the item has no assistant"
+	}
+	agent, err := s.store.GetAssistant(ctx, item.AssistantID)
+	if err != nil {
+		return "", nil, fmt.Sprintf("its assistant cannot be read: %v", err)
+	}
+	if agent.UserID != item.UserID {
+		return "", nil, "its assistant belongs to another person"
+	}
+	if len(agent.Settings.Notify.Sinks) > 0 {
+		return agent.ID, agent.Settings.Notify.Sinks, ""
+	}
+	fallback, err := s.store.DefaultAssistant(ctx, item.UserID)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil, "its assistant has no notify sinks and the person has no default assistant"
+	}
+	if err != nil {
+		return "", nil, fmt.Sprintf("the person's default assistant cannot be read: %v", err)
+	}
+	if len(fallback.Settings.Notify.Sinks) == 0 {
+		return "", nil, "neither its assistant nor the default assistant has notify sinks"
+	}
+	return fallback.ID, fallback.Settings.Notify.Sinks, ""
 }
 
 // noticeTargetOf is where a sink sends the notice: the chat of a connector
-// instance, or nothing for the built-in bot, which posts to the person's direct
-// chat when it sends. ok is false when the sink cannot carry the notice now.
-func (s *Server) noticeTargetOf(ctx context.Context, item store.PendingItem, instanceID string, chatOf noticeChatLookup) (string, bool) {
+// instance, or nothing for the built-in bot, which posts to the direct chat of
+// the assistant whose sink it is (ownerID). ok is false when the sink cannot
+// carry the notice now.
+func (s *Server) noticeTargetOf(ctx context.Context, item store.PendingItem, ownerID, instanceID string, chatOf noticeChatLookup) (string, bool) {
 	if instanceID == feishu.NoticeSinkID {
-		if !s.feishu.HasNoticeChat(ctx, item.UserID, item.AssistantID) {
+		if !s.feishu.HasNoticeChat(ctx, item.UserID, ownerID) {
 			log.Printf("person notice for item %s: the Foundry bot has no direct chat with the assistant", item.ID)
 			return "", false
 		}

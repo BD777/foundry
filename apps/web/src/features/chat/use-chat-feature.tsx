@@ -77,6 +77,7 @@ import { useExternalConnectionSetups } from "../../components/external-connectio
 import { useRuntimeReadinessActions } from "./session/use-runtime-readiness-actions";
 import { useChatQueue } from "./composer/use-chat-queue";
 import { useChatListItems } from "./list/use-chat-list-items";
+import { receivedAnnotations } from "../../components/conversation/received-annotations";
 import { useChatAttachments } from "../../components/conversation/use-chat-attachments";
 import { useChatSend } from "./composer/use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
@@ -348,6 +349,9 @@ export function useChatFeature({
     onSent: (chatId, items) =>
       items.forEach((item) =>
         outbox.add({
+          // The annotations the text's wrapper stands for: the transcript
+          // shows them as chips, and matches the message by them.
+          annotations: receivedAnnotations(item.annotations),
           at: item.updatedAt || new Date().toISOString(),
           attachments: item.attachments,
           id: item.id,

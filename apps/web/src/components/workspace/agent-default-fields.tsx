@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type {
+  AgentModelOption,
   AgentProfileProjection,
   ClaudeEffort,
   CodexReasoningEffort,
@@ -16,10 +17,12 @@ import {
   type SetAgentDefaultInput,
 } from "../../api";
 import {
+  catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
   effortLabel,
 } from "../../lib/agent-effort";
+import { mergeModelOptionLists } from "../../lib/model-options";
 import { Alert } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Panel, PanelHeader } from "../ui/panel";
@@ -170,7 +173,7 @@ export function AgentDefaultFields({
     ...(runtime === "claude"
       ? claudeEffortOptions()
       : runtime === "codex"
-        ? codexEffortOptions()
+        ? codexEffortOptions(catalogModel(models.catalog, value?.model ?? ""))
         : []),
   ];
 
@@ -307,7 +310,10 @@ export function describeAgentDefault(
 
 /** The models a profile offers: its own list, then what its device reports. */
 export function useProfileModels(profile: AgentProfileProjection | undefined) {
-  const [read, setRead] = useState<{ id: string; models: string[] }>();
+  const [read, setRead] = useState<{
+    id: string;
+    catalog: AgentModelOption[];
+  }>();
   const id = profile
     ? JSON.stringify([
         profile.deviceId,
@@ -337,24 +343,25 @@ export function useProfileModels(profile: AgentProfileProjection | undefined) {
       { reuse: true, catalogIdentity: id },
     ).then(
       (models) => {
-        if (current) setRead({ id, models: models.map((model) => model.id) });
+        if (current) setRead({ id, catalog: models });
       },
       () => {
-        if (current) setRead({ id, models: [] });
+        if (current) setRead({ id, catalog: [] });
       },
     );
     return () => {
       current = false;
     };
   }, [id]);
+  // The profile's own list leads; the device's catalog describes each model
+  // (its efforts and default) and is kept whole.
+  const catalog = mergeModelOptionLists(
+    [...(profile?.model ? [profile.model] : []), ...(profile?.models ?? [])],
+    read?.id === id ? read.catalog : [],
+  );
   return {
-    models: [
-      ...new Set([
-        ...(profile?.model ? [profile.model] : []),
-        ...(profile?.models ?? []),
-        ...(read?.id === id ? read.models : []),
-      ]),
-    ],
+    catalog,
+    models: catalog.map((model) => model.id),
     loading: Boolean(profile) && read?.id !== id,
   };
 }

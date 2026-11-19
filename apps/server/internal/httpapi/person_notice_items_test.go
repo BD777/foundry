@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +108,7 @@ func TestPersonNoticeKindFollowsWhatTheItemAsks(t *testing.T) {
 		{"approval question", store.PendingItem{Source: store.PendingSourceQuestion, MessageID: "m", Title: "Q", Approval: true}, "approval"},
 		{"handed-over question", store.PendingItem{Source: store.PendingSourceQuestion, MessageID: "m", Title: "Q", HandedAt: "2026-11-18T09:00:00Z"}, "hand_over"},
 		{"assistant question", store.PendingItem{Source: store.PendingSourceAssistantQuestion, Title: "Q"}, "ask"},
+		{"handed-over question without its message", store.PendingItem{Source: store.PendingSourceQuestion, Title: "Q", HandedAt: "2026-11-19T05:19:42Z"}, "hand_over"},
 		{"connector write", store.PendingItem{Source: store.PendingSourceConnectorWrite, ConnectorWrite: &store.PendingConnectorWriteDetail{ProposalID: "p"}}, "approval"},
 	}
 	for _, c := range cases {
@@ -344,6 +347,236 @@ func TestUnsettledAnswerReopensTheNotice(t *testing.T) {
 	}
 	if reopened := f.reloadNotice(t, notice); reopened.State != store.NoticeSent || reopened.AnswerText != "" {
 		t.Fatalf("notice after the failed answer = %+v, want sent again", reopened)
+	}
+}
+
+// setSinks saves the notify sinks of one of the channel fixture person's
+// assistants and returns the assistant.
+func (f channelSessionFixture) setSinks(t *testing.T, assistantID string, sinks []store.PersonalAgentNotifySink) store.PersonalAgent {
+	t.Helper()
+	ctx := context.Background()
+	agent, err := f.server.store.GetAssistant(ctx, assistantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := agent.Settings
+	settings.Notify = store.PersonalAgentNotifySettings{Sinks: sinks}
+	agent, err = f.server.store.SavePersonalAgentSettings(ctx, assistantID, settings)
+	if err != nil {
+		t.Fatalf("save the notify settings: %v", err)
+	}
+	return agent
+}
+
+// notifyKinds gives the channel fixture's default assistant a sink to the
+// app_notify connector that takes kinds, and returns the assistant.
+func (f channelSessionFixture) notifyKinds(t *testing.T, kinds ...string) store.PersonalAgent {
+	t.Helper()
+	return f.setSinks(t, f.agent.ID, []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_notify", Kinds: kinds}})
+}
+
+// secondAssistant creates an assistant of the channel fixture's person that is
+// not the default, with the sinks given.
+func (f channelSessionFixture) secondAssistant(t *testing.T, workspaceID string, sinks []store.PersonalAgentNotifySink) store.PersonalAgent {
+	t.Helper()
+	agent, err := f.server.store.CreatePersonalAgent(context.Background(), store.PersonalAgent{
+		UserID: f.aliceID, WorkspaceID: workspaceID,
+		Settings: store.PersonalAgentSettings{Notify: store.PersonalAgentNotifySettings{Sinks: sinks}},
+	})
+	if err != nil {
+		t.Fatalf("create the second assistant: %v", err)
+	}
+	return agent
+}
+
+// noticeTestItem is an open question the person holds, asked in session by
+// assistantID; handed marks it handed over from its answer.
+func noticeTestItem(session store.AgentSession, assistantID, source, id string, handed bool) store.PendingItem {
+	item := store.PendingItem{
+		UserID: session.CreatedByUserID, AssistantID: assistantID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
+		Source: source, Key: source + ":" + id, EventID: "evt_" + id, MessageID: "in_" + id + "/call",
+		Title: "Which way " + id + "?", Excerpt: "Which way " + id + "?", Handler: store.PendingHandlerPerson,
+	}
+	if handed {
+		item.HandedAt = formatPendingTime(time.Now())
+	}
+	return item
+}
+
+// queueTestNotice records the item and queues its notice through the test's
+// chat lookup, and returns the notices the item has.
+func queueTestNotice(t *testing.T, s *Server, item store.PendingItem) []store.PersonNotice {
+	t.Helper()
+	ctx := context.Background()
+	stored, _, err := s.store.RecordPendingItem(ctx, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.queueItemNotice(ctx, stored, noticeItemsChat)
+	notices, err := s.store.PersonNoticesOfItem(ctx, stored.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return notices
+}
+
+// captureLog returns what run logs.
+func captureLog(run func()) string {
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(previous)
+	run()
+	return buf.String()
+}
+
+// A notice goes through the item's own assistant's sinks when it has some,
+// and names that assistant.
+func TestNoticeUsesTheItemsAssistantsOwnSinks(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	f.server.options.AllowedOrigin = noticeItemsOrigin
+	f.setSinks(t, f.agent.ID, []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_default", Kinds: []string{"question"}}})
+	own := f.secondAssistant(t, "ws_notice_own", []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_own", Kinds: []string{"question"}}})
+	notices := queueTestNotice(t, f.server, noticeTestItem(f.conversation, own.ID, store.PendingSourceQuestion, "own_q", false))
+	if len(notices) != 1 || notices[0].SinkID != noticeSinkID("app_own") || notices[0].AssistantID != own.ID {
+		t.Fatalf("notices = %+v, want one through the item's own sink", notices)
+	}
+}
+
+// With no sinks of its own, an item's notice goes through the person's default
+// assistant's sinks, and that assistant is the one the notice speaks through.
+func TestNoticeFallsBackToTheDefaultAssistantsSinks(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	f.server.options.AllowedOrigin = noticeItemsOrigin
+	f.setSinks(t, f.agent.ID, []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_default", Kinds: []string{"question"}}})
+	bare := f.secondAssistant(t, "ws_notice_fallback", nil)
+	notices := queueTestNotice(t, f.server, noticeTestItem(f.conversation, bare.ID, store.PendingSourceQuestion, "fallback_q", false))
+	if len(notices) != 1 || notices[0].SinkID != noticeSinkID("app_default") || notices[0].AssistantID != f.agent.ID {
+		t.Fatalf("notices = %+v, want one through the default assistant's sink", notices)
+	}
+}
+
+// A notice that is skipped says why in the log: the item's id and the reason,
+// never the item's content, and nothing is queued.
+func TestNoticeSkippedForAReasonIsLoggedWithoutContent(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	f.server.options.AllowedOrigin = noticeItemsOrigin
+	ctx := context.Background()
+	f.setSinks(t, f.agent.ID, []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_default", Kinds: []string{"question"}}})
+	bare := f.secondAssistant(t, "ws_notice_bare", nil)
+	approvalOnly := f.secondAssistant(t, "ws_notice_approval", []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_own", Kinds: []string{"approval"}}})
+	cases := []struct {
+		name   string
+		item   store.PendingItem
+		reason string
+	}{
+		{"no assistant", noticeTestItem(f.conversation, "", store.PendingSourceQuestion, "none_q", false), "the item has no assistant"},
+		{"own sinks absent and the default's absent too", noticeTestItem(f.conversation, bare.ID, store.PendingSourceQuestion, "nosink_q", false), ""},
+		{"own sinks do not take the kind", noticeTestItem(f.conversation, approvalOnly.ID, store.PendingSourceQuestion, "kind_q", false), "no notify sink takes kind question"},
+	}
+	// With the default's sinks cleared, the bare assistant has no sinks anywhere.
+	f.setSinks(t, f.agent.ID, nil)
+	cases[1].reason = "neither its assistant nor the default assistant has notify sinks"
+	for _, c := range cases {
+		stored, _, err := f.server.store.RecordPendingItem(ctx, c.item)
+		if err != nil {
+			t.Fatalf("%s: record: %v", c.name, err)
+		}
+		logged := captureLog(func() { f.server.queueItemNotice(ctx, stored, noticeItemsChat) })
+		if want := "person notice for item " + stored.ID + " skipped: " + c.reason; !strings.Contains(logged, want) {
+			t.Fatalf("%s: log = %q, want a line containing %q", c.name, logged, want)
+		}
+		if strings.Contains(logged, "Which way") {
+			t.Fatalf("%s: the log carries the item's content: %q", c.name, logged)
+		}
+		if notices, err := f.server.store.PersonNoticesOfItem(ctx, stored.ID); err != nil || len(notices) != 0 {
+			t.Fatalf("%s: notices = %+v (%v), want none", c.name, notices, err)
+		}
+	}
+}
+
+// A helper's question that the assistant hands over from its answer, with no
+// question card, is noticed as a hand-over that takes no reply: its answer goes
+// through the assistant, so a reply in the notice's chat is not consumed. The
+// helper is the channel's and the home conversation's alike.
+func TestHandOverWithoutCardIsNoticedAndTakesNoReply(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	f.server.options.AllowedOrigin = noticeItemsOrigin
+	ctx := context.Background()
+	agent := f.notifyKinds(t, "hand_over")
+	for _, helper := range []store.AgentSession{f.helper, f.conversation} {
+		item, err := f.server.handOverWithoutCard(ctx, agent, helper, "turn_"+helper.ID, "Pick a colour: blue or green?", noticeItemsChat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		notices, err := f.server.store.PersonNoticesOfItem(ctx, item.ID)
+		if err != nil || len(notices) != 1 {
+			t.Fatalf("notices of %s = %+v (%v), want one", item.ID, notices, err)
+		}
+		notice := notices[0]
+		if notice.Kind != "hand_over" || notice.AllowFreeText || notice.Target != "oc_self" || notice.Title != item.Title {
+			t.Fatalf("notice of a helper's question = %+v", notice)
+		}
+		if _, claimed, err := f.server.store.ClaimPersonNotice(ctx, notice.ID, time.Now().UTC()); err != nil || !claimed {
+			t.Fatalf("claim the notice: claimed=%v err=%v", claimed, err)
+		}
+		if _, err := f.server.store.SettlePersonNotice(ctx, notice.ID, store.PersonNoticeSettlement{
+			State: store.NoticeSent, ProviderMessageID: "om_" + notice.ID, At: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if settledByReply(f.server, ctx, notice, replyFrom(notice, "blue")) {
+			t.Fatal("a reply to a hand-over notice of a question without a card was consumed")
+		}
+		if open, err := f.server.store.GetPendingItem(ctx, item.UserID, item.ID); err != nil || open.State != store.PendingOpen {
+			t.Fatalf("item after the reply = %+v (%v), want open", open, err)
+		}
+	}
+}
+
+// Questions, asks and hand-overs from the home conversation and from a channel
+// conversation each get a notice of their kind, and a reply can answer them.
+func TestAskingItemsOfHomeAndChannelChatsAreNoticed(t *testing.T) {
+	f := newChannelSessionFixture(t)
+	f.server.options.AllowedOrigin = noticeItemsOrigin
+	ctx := context.Background()
+	agent := f.notifyKinds(t, "question", "ask", "hand_over")
+	asked := func(session store.AgentSession, source, id string, handed bool) store.PendingItem {
+		item := store.PendingItem{
+			UserID: f.aliceID, AssistantID: agent.ID, WorkspaceID: session.WorkspaceID, SessionID: session.ID,
+			Source: source, Key: source + ":" + id, EventID: "evt_" + id, MessageID: "in_" + id + "/call",
+			Title: "Which way " + id + "?", Excerpt: "Which way " + id + "?", Handler: store.PendingHandlerPerson,
+		}
+		if handed {
+			item.HandedAt = formatPendingTime(time.Now())
+		}
+		return item
+	}
+	cases := []struct {
+		name string
+		item store.PendingItem
+		kind string
+	}{
+		{"question at home", asked(f.conversation, store.PendingSourceQuestion, "home_q", false), "question"},
+		{"question in a channel conversation", asked(f.session, store.PendingSourceQuestion, "chan_q", false), "question"},
+		{"ask from home", asked(f.conversation, store.PendingSourceAssistantQuestion, "home_ask", false), "ask"},
+		{"ask from a channel conversation", asked(f.session, store.PendingSourceAssistantQuestion, "chan_ask", false), "ask"},
+		{"hand-over at home", asked(f.conversation, store.PendingSourceQuestion, "home_hand", true), "hand_over"},
+		{"hand-over from a channel conversation", asked(f.session, store.PendingSourceQuestion, "chan_hand", true), "hand_over"},
+	}
+	for _, c := range cases {
+		stored, _, err := f.server.store.RecordPendingItem(ctx, c.item)
+		if err != nil {
+			t.Fatalf("%s: record: %v", c.name, err)
+		}
+		f.server.queueItemNotice(ctx, stored, noticeItemsChat)
+		notices, err := f.server.store.PersonNoticesOfItem(ctx, stored.ID)
+		if err != nil || len(notices) != 1 {
+			t.Fatalf("%s: notices = %+v (%v), want one", c.name, notices, err)
+		}
+		if notices[0].Kind != c.kind || !notices[0].AllowFreeText {
+			t.Fatalf("%s: notice = %+v, want a %s notice with a reply", c.name, notices[0], c.kind)
+		}
 	}
 }
 

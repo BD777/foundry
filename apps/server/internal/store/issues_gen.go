@@ -42,20 +42,22 @@ type Issue struct {
 	CreatedByUserID string `json:"createdByUserId,omitempty"`
 
 	// ExecutionContract Dispatch-only confirmed content; never authored by the execution Agent.
-	ExecutionContract          *IssueContract             `json:"executionContract,omitempty"`
-	ContractState              string                     `json:"contractState,omitempty"`
-	CurrentContractRevision    *int                       `json:"currentContractRevision,omitempty"`
-	DraftContractRevision      *int                       `json:"draftContractRevision,omitempty"`
-	CurrentCandidateSnapshotID *string                    `json:"currentCandidateSnapshotId,omitempty"`
-	CurrentReviewSnapshotID    *string                    `json:"currentReviewSnapshotId,omitempty"`
-	VerificationSummary        *VerificationSummary       `json:"verificationSummary,omitempty"`
-	BlockedReason              *IssueBlockedReason        `json:"blockedReason,omitempty"`
-	CodexSpeed                 CodexSpeed                 `json:"codexSpeed,omitempty"`
-	Model                      string                     `json:"model,omitempty"`
-	ProfileID                  string                     `json:"profileId,omitempty"`
-	ClaudeEffort               ClaudeEffort               `json:"claudeEffort,omitempty"`
-	CodexReasoningEffort       CodexReasoningEffort       `json:"codexReasoningEffort,omitempty"`
-	Messages                   []IssueConversationMessage `json:"messages,omitempty"`
+	ExecutionContract          *IssueContract       `json:"executionContract,omitempty"`
+	ContractState              string               `json:"contractState,omitempty"`
+	CurrentContractRevision    *int                 `json:"currentContractRevision,omitempty"`
+	DraftContractRevision      *int                 `json:"draftContractRevision,omitempty"`
+	CurrentCandidateSnapshotID *string              `json:"currentCandidateSnapshotId,omitempty"`
+	CurrentReviewSnapshotID    *string              `json:"currentReviewSnapshotId,omitempty"`
+	VerificationSummary        *VerificationSummary `json:"verificationSummary,omitempty"`
+	BlockedReason              *IssueBlockedReason  `json:"blockedReason,omitempty"`
+	CodexSpeed                 CodexSpeed           `json:"codexSpeed,omitempty"`
+	Model                      string               `json:"model,omitempty"`
+	ProfileID                  string               `json:"profileId,omitempty"`
+	ClaudeEffort               ClaudeEffort         `json:"claudeEffort,omitempty"`
+
+	// CodexReasoningEffort A reasoning effort the Codex model advertises. Codex types it as an open, non-empty string, so the values a model accepts come from its catalog (reasoningEfforts of AgentModelOption), not from this schema.
+	CodexReasoningEffort CodexReasoningEffort       `json:"codexReasoningEffort,omitempty"`
+	Messages             []IssueConversationMessage `json:"messages,omitempty"`
 
 	// Clarification IssueClarification is the Issue's clarification session and the state of the person's latest message to it.
 	Clarification *IssueClarification `json:"clarification,omitempty"`

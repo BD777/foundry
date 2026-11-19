@@ -175,7 +175,9 @@ export function readResourceSignals(
       memoryPressurePercent = parsed.fullAvg10 ?? parsed.someAvg10;
     }
   } else if (platform === "darwin") {
-    const vmStat = run("vm_stat", []);
+    // macOS's own tools by path: a PATH lookup walks every PATH folder
+    // (some may be on a network share) on each sample.
+    const vmStat = run("/usr/bin/vm_stat", []);
     if (vmStat) {
       const parsed = parseVmStatAvailable(vmStat);
       memoryAvailableBytes = parsed.availableBytes;
@@ -184,7 +186,7 @@ export function readResourceSignals(
           100 - (parsed.availableBytes / memoryTotalBytes) * 100,
         );
     }
-    const swapUsage = run("vm.swapusage", []);
+    const swapUsage = run("/usr/sbin/sysctl", ["-n", "vm.swapusage"]);
     if (swapUsage) swapFreeBytes = parseVmSwapFree(swapUsage);
   }
 
