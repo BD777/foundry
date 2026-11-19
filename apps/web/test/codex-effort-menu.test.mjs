@@ -47,9 +47,14 @@ test("a Codex model offers exactly the efforts its catalog lists, in order", () 
   ]);
 });
 
-test("a model whose catalog names no efforts offers none", () => {
-  assert.deepEqual(codexEffortOptions(endpointModel), []);
-  assert.deepEqual(codexEffortOptions(undefined), []);
+test("an API-endpoint model with no catalog efforts gets the pre-catalog list", () => {
+  const endpointEfforts = ["minimal", "low", "medium", "high", "xhigh"];
+  assert.deepEqual(values(codexEffortOptions(endpointModel)), endpointEfforts);
+  assert.deepEqual(
+    values(codexEffortOptions({ id: "relay/empty", reasoningEfforts: [] })),
+    endpointEfforts,
+  );
+  assert.deepEqual(values(codexEffortOptions(undefined)), endpointEfforts);
 });
 
 test("every offered effort has a label that is not a missing key", () => {

@@ -11,6 +11,13 @@ export interface EffortOption<T> {
 }
 
 const claudeEfforts: ClaudeEffort[] = ["low", "medium", "high", "xhigh", "max"];
+const endpointCodexEfforts: CodexReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
 
 /**
  * A value with no label of its own shows as its own name, so a value a newer
@@ -24,15 +31,16 @@ export function effortLabel(
 
 /**
  * The efforts Codex accepts for one model: exactly those its own catalog lists,
- * in the catalog's order. A model whose catalog names none offers none.
+ * in the catalog's order. A model with no catalog entry, or whose catalog names
+ * none (an API endpoint), offers the pre-catalog list, and the endpoint decides
+ * what it accepts.
  */
 export function codexEffortOptions(
   model: AgentModelOption | undefined,
 ): EffortOption<CodexReasoningEffort>[] {
-  return (model?.reasoningEfforts ?? []).map((value) => ({
-    label: effortLabel(value),
-    value,
-  }));
+  const listed = model?.reasoningEfforts ?? [];
+  const values = listed.length > 0 ? listed : endpointCodexEfforts;
+  return values.map((value) => ({ label: effortLabel(value), value }));
 }
 
 /**
