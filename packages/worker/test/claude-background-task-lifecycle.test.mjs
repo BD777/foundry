@@ -15,7 +15,10 @@ import {
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
 } from "../dist/session/runner/claude-messages.js";
-import { cleanupActiveClaudeRuntimes } from "../dist/session/runner/active-runtimes.js";
+import {
+  cleanupActiveClaudeRuntimes,
+  closeActiveClaudeRuntime,
+} from "../dist/session/runner/active-runtimes.js";
 import { waitsForBackgroundWork } from "../dist/session/runner/claude-turn.js";
 import { executionSessionsRoot } from "../dist/session/session-artifacts.js";
 import { flushLines } from "../dist/platform/line-log.js";
@@ -361,8 +364,14 @@ test("a chat's turn ends with Claude's answer while its background command keeps
       assistant("The sleep finished: done."),
       continuationResult("The sleep finished: done."),
     );
-    const continued = outOfBand.find(
+    const [started, continued, ...more] = outOfBand.filter(
       (event) => event.label === "Background task continued",
+    );
+    assert.equal(more.length, 0);
+    assert.equal(started.metadata.timerFire.completedAt, "");
+    assert.equal(
+      started.metadata.timerFire.startedAt,
+      continued.metadata.timerFire.startedAt,
     );
     assert.equal(continued.sessionId, "sess_chat");
     assert.equal(continued.metadata.timerFire.origin, "background");
@@ -493,10 +502,15 @@ test("a message Claude takes into its own follow-up is answered by that follow-u
       continuationResult("second"),
     );
     assert.equal(turn.resolved.response, "second");
+    const continued = turn.events.filter(
+      (event) => event.label === "Background task continued",
+    );
+    assert.equal(continued.length, 1);
+    assert.ok(continued[0].metadata.timerFire.completedAt);
     assert.equal(
-      turn.events.some((event) => event.label === "Background task continued"),
-      false,
-      "a follow-up without text before the input publishes nothing",
+      continued[0].metadata.timerFire.response,
+      undefined,
+      "a follow-up without text before the input ends without an answer",
     );
   } finally {
     rmSync(directory, { force: true, recursive: true });
@@ -539,7 +553,7 @@ test("Claude's follow-up after background work records its writes and links the 
     const answer = "`notes.txt` and `docs/plan.md` are both done.";
     await feed(runtime, assistant(answer), continuationResult(answer));
 
-    const continued = outOfBand.find(
+    const continued = outOfBand.findLast(
       (event) => event.label === "Background task continued",
     );
     assert.equal(continued.metadata.timerFire.response, answer);
@@ -603,6 +617,200 @@ test("without command lifecycle reports, a turn sent during a follow-up starts a
       "Checked.",
     );
   } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+/**
+ * The messages Claude Code sent when a background subagent ended after the
+ * person's turn (sess_1795189068394754005, trimmed): it starts a model turn
+ * of its own at once, and runs it for over a minute before its result.
+ */
+const subagentFollowUp = [
+  {
+    type: "system",
+    subtype: "task_updated",
+    task_id: "a1876aba07cc4ff05",
+    patch: { status: "completed", end_time: Date.now() },
+  },
+  {
+    type: "system",
+    subtype: "task_notification",
+    task_id: "a1876aba07cc4ff05",
+    tool_use_id: "toolu_01DMXD5cX5pX6TrYBUoPvkL6",
+    status: "completed",
+    summary: 'Agent "Research item vs workspace" completed',
+    output_file: "",
+  },
+  { type: "system", subtype: "background_tasks_changed", tasks: [] },
+  { type: "system", subtype: "init", session_id: "native_chat" },
+  { type: "system", subtype: "status", status: "requesting" },
+  {
+    type: "stream_event",
+    event: { type: "message_start", message: { model: "claude-opus-5-5" } },
+  },
+  {
+    type: "stream_event",
+    event: {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "thinking", thinking: "", signature: "" },
+    },
+  },
+  { type: "system", subtype: "thinking_tokens", estimated_tokens: 50 },
+  {
+    type: "assistant",
+    message: {
+      model: "claude-opus-5-5",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_015nQmoHDiinNPW1QU2kp68c",
+          name: "Write",
+          input: { file_path: "/tmp/report.md", content: "# Report" },
+        },
+      ],
+    },
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_015nQmoHDiinNPW1QU2kp68c",
+          type: "tool_result",
+          content: "File created successfully at: /tmp/report.md",
+        },
+      ],
+    },
+  },
+  { type: "system", subtype: "status", status: "requesting" },
+  {
+    type: "stream_event",
+    event: { type: "message_start", message: { model: "claude-opus-5-5" } },
+  },
+  {
+    type: "stream_event",
+    event: {
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "text_delta", text: "Keep the item; drop the workspace." },
+    },
+  },
+  {
+    type: "assistant",
+    message: {
+      model: "claude-opus-5-5",
+      content: [{ type: "text", text: "Keep the item; drop the workspace." }],
+    },
+  },
+];
+
+test("Claude's follow-up after a background subagent is published as running from its first model output to its answer", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-chat-bg-"));
+  const outOfBand = [];
+  const sink = (sessionId, event) => outOfBand.push({ sessionId, ...event });
+  setOutOfBandSessionEventSink(sink);
+  const continued = () =>
+    outOfBand.filter((event) => event.label === "Background task continued");
+  try {
+    const { runtime } = chatFixture(directory);
+    // The notification alone, and the system messages before the model
+    // answers, publish nothing: a replayed notification gets a result
+    // without a model turn.
+    await feed(runtime, ...subagentFollowUp.slice(0, 5));
+    assert.equal(continued().length, 0);
+    await feed(runtime, continuationResult("", { num_turns: 0 }));
+    assert.equal(continued().length, 0, "bookkeeping is no turn");
+
+    await feed(runtime, ...subagentFollowUp.slice(0, 6));
+    const [started] = continued();
+    assert.ok(started, "published at the model's first output");
+    assert.equal(started.sessionId, "sess_chat");
+    assert.equal(started.level, "info");
+    assert.deepEqual(
+      { ...started.metadata.timerFire, startedAt: undefined },
+      {
+        origin: "background",
+        prompt: 'Agent "Research item vs workspace" completed',
+        startedAt: undefined,
+        completedAt: "",
+      },
+    );
+    assert.equal(
+      started.detail,
+      'Agent "Research item vs workspace" completed',
+    );
+
+    // Over a minute of work publishes no second start.
+    await feed(runtime, ...subagentFollowUp.slice(6));
+    assert.equal(continued().length, 1);
+    await feed(
+      runtime,
+      continuationResult("Keep the item; drop the workspace."),
+    );
+    const [, ended, ...more] = continued();
+    assert.equal(more.length, 0);
+    assert.equal(
+      ended.metadata.timerFire.startedAt,
+      started.metadata.timerFire.startedAt,
+      "its end names the run its start did",
+    );
+    assert.ok(ended.metadata.timerFire.completedAt);
+    assert.equal(
+      ended.metadata.timerFire.response,
+      "Keep the item; drop the workspace.",
+    );
+    assert.equal(runtime.continuation, undefined);
+  } finally {
+    clearOutOfBandSessionEventSink(sink);
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+test("a follow-up published as running ends when its process does, or when it fails", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-chat-bg-"));
+  const outOfBand = [];
+  const sink = (sessionId, event) => outOfBand.push({ sessionId, ...event });
+  setOutOfBandSessionEventSink(sink);
+  const continued = () =>
+    outOfBand.filter((event) => event.label === "Background task continued");
+  try {
+    const failing = chatFixture(directory).runtime;
+    await feed(failing, ...subagentFollowUp.slice(0, 6));
+    await feed(
+      failing,
+      continuationResult("", {
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["overloaded"],
+      }),
+    );
+    const [started, failed] = continued();
+    assert.equal(failed.level, "error");
+    assert.ok(failed.metadata.timerFire.completedAt);
+    assert.equal(
+      failed.metadata.timerFire.startedAt,
+      started.metadata.timerFire.startedAt,
+    );
+
+    outOfBand.length = 0;
+    const { runtime } = chatFixture(directory);
+    runtime.query = { close: () => undefined };
+    await feed(runtime, ...subagentFollowUp.slice(0, 8));
+    closeActiveClaudeRuntime(runtime, new Error("process exited"));
+    const [opened, closed, ...more] = continued();
+    assert.equal(more.length, 0);
+    assert.equal(opened.metadata.timerFire.completedAt, "");
+    assert.ok(closed.metadata.timerFire.completedAt);
+    assert.equal(closed.metadata.timerFire.response, undefined);
+    assert.equal(
+      closed.metadata.timerFire.startedAt,
+      opened.metadata.timerFire.startedAt,
+    );
+  } finally {
+    clearOutOfBandSessionEventSink(sink);
     rmSync(directory, { force: true, recursive: true });
   }
 });

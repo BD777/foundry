@@ -225,6 +225,8 @@ export function runningBackgroundWork(
           },
         }
       : {}),
+    // So does its follow-up after background work ended.
+    ...(card?.continuation ? { continuation: card.continuation } : {}),
   };
 }
 
@@ -247,7 +249,23 @@ export function backgroundWorkNote(
         })
       : i18n.t("chat:contextCard.timerRunningNote");
   const tasksNote = backgroundTasksNote(work);
-  return [timerNote, tasksNote].filter(Boolean).join(" · ");
+  return [continuationNote(work, now), timerNote, tasksNote]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function continuationNote(work: ChatRunningBackgroundWork, now: Date): string {
+  if (!work.continuation) return "";
+  const { agent } = work.continuation;
+  const startedAt = work.continuation.startedAt
+    ? new Date(work.continuation.startedAt)
+    : undefined;
+  return startedAt && !Number.isNaN(startedAt.getTime())
+    ? i18n.t("chat:contextCard.continuingSinceNote", {
+        agent,
+        time: noteTime(startedAt, now),
+      })
+    : i18n.t("chat:contextCard.continuingNote", { agent });
 }
 
 function backgroundTasksNote(work: ChatRunningBackgroundWork): string {
@@ -434,6 +452,9 @@ export function chatContextCardForSessions(
   const screen = latestScreen(sessions);
   const openSession = sessions.at(-1);
   const goal = openSession ? sessionPanel(openSession)?.goal : undefined;
+  const backgroundRun = openSession
+    ? sessionPanel(openSession)?.backgroundRun
+    : undefined;
   const data = {
     ...(openSession
       ? { status: chatSessionStatus(openSession, activeWorkspace) }
@@ -460,6 +481,16 @@ export function chatContextCardForSessions(
     subagents,
     timers,
     background,
+    ...(openSession && backgroundRun
+      ? {
+          continuation: {
+            agent: openSession.provider === "codex" ? "Codex" : "Claude",
+            ...(backgroundRun.startedAt
+              ? { startedAt: backgroundRun.startedAt }
+              : {}),
+          },
+        }
+      : {}),
   };
   return data.status ||
     data.goal ||

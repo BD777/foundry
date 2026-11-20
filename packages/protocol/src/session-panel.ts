@@ -35,6 +35,11 @@ export interface AgentSessionPanel {
   timerWakes: AgentSessionPanelTimerWake[];
   /** The newest ended run of a timer the session holds, when it failed. */
   failedTimerRun?: AgentSessionPanelTimerRun;
+  /**
+   * The turn the agent runs on its own after background work ended, from
+   * its start until its end.
+   */
+  backgroundRun?: AgentSessionPanelTimerRun;
   /** A turn, a timer's run or background work runs. */
   busy: boolean;
   /** One per path, by path. */

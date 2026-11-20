@@ -341,3 +341,50 @@ func TestPanelCatchUpRunIsMarked(t *testing.T) {
 		t.Fatalf("timers = %+v; want its catch-up run", panel.Timers)
 	}
 }
+
+func TestPanelBackgroundRunRunsFromItsStartToItsEnd(t *testing.T) {
+	timers := []AgentScheduledTask{{ID: "t1", Kind: "cron", Schedule: "*/30 * * * *", Recurring: true, Prompt: "patrol"}}
+	background := func(id, at, completedAt, response string) AgentSessionEvent {
+		event := panelEvent(id, at, ProcessLabelBackgroundTurn, &AgentSessionEventMetadata{TimerFire: &AgentSessionTimerFire{
+			Origin: "background", Prompt: `Agent "Research" completed`, StartedAt: "2026-11-20T15:41:13Z", CompletedAt: completedAt, Response: response}})
+		if completedAt != "" {
+			event.Metadata.TurnUsage = &AgentTurnUsage{DurationMs: 76000}
+		}
+		return event
+	}
+	start := background("evt_bg_start", "2026-11-20T15:41:13Z", "", "")
+	end := background("evt_bg_end", "2026-11-20T15:42:29Z", "2026-11-20T15:42:29Z", "Keep the item.")
+	for _, event := range []AgentSessionEvent{start, end} {
+		if key := SessionStateKey(event); key != sessionStateFire+event.ID && key != SessionStateTurn+event.ID {
+			t.Fatalf("state key of %s = %q; the panel must read it", event.ID, key)
+		}
+	}
+	base := []AgentSessionEvent{
+		panelEvent("evt_timers", "2026-11-20T15:00:00Z", ProcessLabelTimerSync, &AgentSessionEventMetadata{TimerSnapshot: &timers}),
+		{ID: "evt_in", SessionID: "sess_1", At: "2026-11-20T15:38:00Z", Label: EventLabelUserMessage, Level: "info"},
+		panelEvent("evt_turn", "2026-11-20T15:39:57Z", EventLabelClaudeTurnEnd, &AgentSessionEventMetadata{TurnUsage: &AgentTurnUsage{DurationMs: 1000}}),
+	}
+	session := AgentSession{ID: "sess_1", Provider: "claude", Status: "completed", Input: SessionInput{ID: "in_1"}}
+
+	running := DeriveSessionPanel(session, append(slices.Clone(base), start))
+	if running.BackgroundRun == nil || running.BackgroundRun.StartedAt != "2026-11-20T15:41:13Z" || running.BackgroundRun.CompletedAt != "" || !running.Busy {
+		t.Fatalf("started: background run %+v, busy %v; want it running", running.BackgroundRun, running.Busy)
+	}
+	if running.Timers[0].Running != nil {
+		t.Fatalf("a background run is no timer's run: %+v", running.Timers[0].Running)
+	}
+
+	ended := DeriveSessionPanel(session, append(slices.Clone(base), start, end))
+	if ended.BackgroundRun != nil || ended.Busy {
+		t.Fatalf("ended: background run %+v, busy %v; want neither", ended.BackgroundRun, ended.Busy)
+	}
+
+	// A new input, or a process start, ends a run whose end never came.
+	for _, label := range []string{EventLabelUserMessage, EventLabelClaudeProcessStarted} {
+		next := AgentSessionEvent{ID: "evt_next", SessionID: "sess_1", At: "2026-11-20T15:45:00Z", Label: label, Level: "info"}
+		panel := DeriveSessionPanel(session, append(slices.Clone(base), start, next))
+		if panel.BackgroundRun != nil || panel.Busy {
+			t.Fatalf("after %q: background run %+v, busy %v", label, panel.BackgroundRun, panel.Busy)
+		}
+	}
+}

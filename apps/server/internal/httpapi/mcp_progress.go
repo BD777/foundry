@@ -27,14 +27,23 @@ const (
 // sessionProgress is the compact progress object on get_session and
 // read_context scope=progress.
 type sessionProgress struct {
-	Status          string                 `json:"status"`
-	LastEventAt     string                 `json:"lastEventAt,omitempty"`
-	LastEvent       string                 `json:"lastEvent,omitempty"`
-	LastError       string                 `json:"lastError,omitempty"`
-	PlanStep        string                 `json:"planStep,omitempty"`
-	Question        string                 `json:"question,omitempty"`
-	BackgroundTasks []inspectTask          `json:"backgroundTasks,omitempty"`
-	Flags           *sessionprogress.Flags `json:"flags,omitempty"`
+	Status          string        `json:"status"`
+	LastEventAt     string        `json:"lastEventAt,omitempty"`
+	LastEvent       string        `json:"lastEvent,omitempty"`
+	LastError       string        `json:"lastError,omitempty"`
+	PlanStep        string        `json:"planStep,omitempty"`
+	Question        string        `json:"question,omitempty"`
+	BackgroundTasks []inspectTask `json:"backgroundTasks,omitempty"`
+	// OwnTurn is a turn the agent runs on its own now, though the session's
+	// status has ended: a timer's run or its follow-up after background work.
+	OwnTurn *ownTurnProgress       `json:"ownTurn,omitempty"`
+	Flags   *sessionprogress.Flags `json:"flags,omitempty"`
+}
+
+type ownTurnProgress struct {
+	Origin    string `json:"origin"`
+	StartedAt string `json:"startedAt,omitempty"`
+	Prompt    string `json:"prompt,omitempty"`
 }
 
 // listSessionProgress is what a list_sessions row carries: the last event and
@@ -69,6 +78,9 @@ func (s *Server) progressFacts(ctx context.Context, target inspectTarget) *sessi
 		progress.Question = oneLine(message.Questions[0].Title, progressQuestionLimit)
 	}
 	progress.BackgroundTasks = openBackgroundTasks(session.Events)
+	if fire := sessionprogress.OwnTurn(session.Events); fire != nil {
+		progress.OwnTurn = &ownTurnProgress{Origin: fire.Origin, StartedAt: inspectTime(fire.StartedAt), Prompt: oneLine(fire.Prompt, progressQuestionLimit)}
+	}
 	flags := sessionprogress.Detect(session.Events, session.Status, time.Now().UTC())
 	if !flags.Empty() {
 		progress.Flags = &flags

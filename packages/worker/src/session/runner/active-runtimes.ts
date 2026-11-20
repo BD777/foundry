@@ -32,6 +32,7 @@ import {
 import {
   activeClaudeRuntimes,
   activeCodexThreads,
+  emitOutOfBandSessionEvent,
   reportClaudeOwnTurn,
   type ActiveClaudeRuntime,
   type ActiveCodexThread,
@@ -39,6 +40,7 @@ import {
   type ClaudeRuntimeLaunch,
 } from "../session-state.js";
 import { sessionTimers } from "../tasks/session-timers.js";
+import { backgroundTurnEvent } from "../tasks/agent-timers.js";
 import type { SessionGoalAction } from "../goals.js";
 import {
   addTurnUsage,
@@ -459,6 +461,15 @@ export function closeActiveClaudeRuntime(
   );
   runtime.background?.close();
   runtime.questions?.close();
+  // A follow-up published as it started ended with the process.
+  const announced = runtime.continuation?.announced;
+  if (announced)
+    emitOutOfBandSessionEvent(
+      runtime.foundrySessionId,
+      backgroundTurnEvent(announced, {
+        completedAt: new Date().toISOString(),
+      }),
+    );
   runtime.continuation = undefined;
   reportClaudeOwnTurn(runtime);
   if (turn) {

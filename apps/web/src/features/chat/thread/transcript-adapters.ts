@@ -250,13 +250,19 @@ export function sessionTranscriptEntries(
     // A timer's firing, or the agent continuing on its own after background
     // work: a divider, then the answer it gave (with its usage).
     const timerFire = event.metadata?.timerFire;
-    // A run Claude starts on its own for a timer is published as it fires
-    // (for the panel and the chat's status), then with its answer: the
-    // transcript shows it once it ended, where its answer lands.
+    // A run the agent starts on its own (a timer's, or its follow-up after
+    // background work) is published as it starts (for the panel and the
+    // chat's status), then with its answer: the transcript shows it once it
+    // ended, where its answer lands. A follow-up that ended without an
+    // answer or error (a message took it over, its process ended) only
+    // closes that run.
     if (
-      timerFire?.origin === "scheduled" &&
-      !timerFire.completedAt &&
-      event.label !== sessionEventLabels.userMessage
+      timerFire &&
+      event.label !== sessionEventLabels.userMessage &&
+      (!timerFire.completedAt ||
+        (timerFire.origin === "background" &&
+          !timerFire.response &&
+          event.level !== "error"))
     )
       continue;
     if (timerFire) {

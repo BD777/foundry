@@ -20,12 +20,15 @@ type AgentSessionPanel struct {
 	TimerSnapshotAt string                            `json:"timerSnapshotAt,omitempty"`
 	TimerWakes      []AgentSessionPanelTimerWake      `json:"timerWakes"`
 	FailedTimerRun  *AgentSessionPanelTimerRun        `json:"failedTimerRun,omitempty"`
-	Busy            bool                              `json:"busy"`
-	Files           []AgentSessionPanelFile           `json:"files"`
-	Previews        []AgentSessionPanelLink           `json:"previews"`
-	Sources         []AgentSessionPanelLink           `json:"sources"`
-	Screen          *SessionToolFrame                 `json:"screen,omitempty"`
-	Goal            *AgentSessionGoal                 `json:"goal,omitempty"`
+	// BackgroundRun is the turn the agent runs on its own after background
+	// work ended, from its start until its end.
+	BackgroundRun *AgentSessionPanelTimerRun `json:"backgroundRun,omitempty"`
+	Busy          bool                       `json:"busy"`
+	Files         []AgentSessionPanelFile    `json:"files"`
+	Previews      []AgentSessionPanelLink    `json:"previews"`
+	Sources       []AgentSessionPanelLink    `json:"sources"`
+	Screen        *SessionToolFrame          `json:"screen,omitempty"`
+	Goal          *AgentSessionGoal          `json:"goal,omitempty"`
 }
 
 // AgentSessionPanelUsage is how full the context is and what the
@@ -141,6 +144,9 @@ func DeriveSessionPanel(session AgentSession, events []AgentSessionEvent) AgentS
 		Previews:   derivePreviews(session, events),
 		Sources:    deriveSources(events),
 	}
+	if runs.running != nil && runs.running.Origin == "background" {
+		panel.BackgroundRun = runs.running
+	}
 	panel.Busy = IsActiveSessionStatus(session.Status) || runs.running != nil ||
 		slices.ContainsFunc(background, func(task AgentBackgroundTask) bool { return task.Status == "running" })
 	timers, snapshotAt := latestTimers(events)
@@ -153,7 +159,7 @@ func DeriveSessionPanel(session AgentSession, events []AgentSessionEvent) AgentS
 					timer.Runs = append(timer.Runs, run)
 				}
 			}
-			if runs.running != nil && (runs.running.ID == "" || runs.running.ID == task.ID) {
+			if runs.running != nil && runs.running.Origin == "scheduled" && (runs.running.ID == "" || runs.running.ID == task.ID) {
 				timer.Running = runs.running
 			}
 			panel.Timers = append(panel.Timers, timer)
@@ -393,9 +399,9 @@ type timerRuns struct {
 }
 
 // deriveTimerRuns reads the session's timer runs. A run Claude starts on
-// its own is published as it fires and again with its answer, both under
-// its start time; a run the device sent is a session input, answered by
-// that input's turn. A run still open when a new input or process comes
+// its own (a timer's, or its follow-up after background work) is published
+// as it starts and again with its answer, both under its start time; a run
+// the device sent is a session input, answered by that input's turn. A run still open when a new input or process comes
 // ended unanswered. Only the latest input's answer is the session's own; an
 // earlier one is in the transcript.
 func deriveTimerRuns(session AgentSession, events []AgentSessionEvent) timerRuns {
@@ -426,8 +432,8 @@ func deriveTimerRuns(session AgentSession, events []AgentSessionEvent) timerRuns
 			continue
 		}
 		key := ""
-		if fire.Origin == "scheduled" && fire.StartedAt != "" && !input {
-			key = fire.ID + "|" + fire.StartedAt
+		if (fire.Origin == "scheduled" || fire.Origin == "background") && fire.StartedAt != "" && !input {
+			key = fire.Origin + "|" + fire.ID + "|" + fire.StartedAt
 		}
 		record := byStart[key]
 		if record == nil || key == "" {

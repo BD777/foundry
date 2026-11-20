@@ -123,6 +123,10 @@ func SessionStateKey(event AgentSessionEvent) string {
 		// Only a scheduled task's fire names its timer and shows under it.
 		case metadata.TimerFire != nil && metadata.TimerFire.ID != "":
 			return sessionStateFire + event.ID
+		// A turn the agent started on its own and has not ended (a follow-up
+		// after background work) keeps the session busy until its end.
+		case metadata.TimerFire != nil && metadata.TimerFire.CompletedAt == "" && label != EventLabelUserMessage:
+			return sessionStateFire + event.ID
 		}
 		switch SubtaskEventPhase(event) {
 		case SubtaskStarted:

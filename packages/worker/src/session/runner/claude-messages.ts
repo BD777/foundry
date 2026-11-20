@@ -14,7 +14,11 @@ import {
   type SessionFileReference,
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
-import { timerFireEvent } from "../tasks/agent-timers.js";
+import {
+  backgroundTurnEvent,
+  timerFireEvent,
+  type BackgroundTurn,
+} from "../tasks/agent-timers.js";
 import { claudeGoalSnapshot, goalSyncEvent } from "../goals.js";
 import { observedSessionWork } from "../../session-work/supervisor.js";
 import {
@@ -195,15 +199,52 @@ export function claudeTurnOwnsMessage(
   return !runtime.continuation && !turn.behindContinuation;
 }
 
+/**
+ * The turn Claude runs on its own. Once the model answers (`modelOutput`; a
+ * task notification's result without a model turn is bookkeeping), a
+ * follow-up after background work is published as running: a timer's turn
+ * is published by its tracker, a steer's answer is the person's.
+ */
 function claudeContinuation(
   runtime: ActiveClaudeRuntime,
+  modelOutput: boolean,
 ): ActiveClaudeContinuation {
   runtime.continuation ??= {
     finalResult: "",
     partialResult: "",
     startedAt: Date.now(),
   };
-  return runtime.continuation;
+  const continuation = runtime.continuation;
+  if (
+    modelOutput &&
+    !continuation.announced &&
+    !runtime.timers?.promptedTurn()
+  ) {
+    continuation.announced = claudeBackgroundTurn(
+      runtime,
+      runtime.notifications ?? [],
+      continuation.startedAt,
+    );
+    emitForClaudeRuntime(runtime, backgroundTurnEvent(continuation.announced));
+  }
+  return continuation;
+}
+
+/** A follow-up after background work: the notifications it follows. */
+function claudeBackgroundTurn(
+  runtime: ActiveClaudeRuntime,
+  notifications: ClaudeTaskNotification[],
+  startedAt: number,
+  fallbackDetail = "Claude continued after background work.",
+): BackgroundTurn {
+  const summaries = notifications.map(({ summary }) => summary).filter(Boolean);
+  const tasks = backgroundTurnTasks(runtime, notifications);
+  return {
+    prompt: summaries.join("\n"),
+    detail: summaries[0] ?? fallbackDetail,
+    startedAt: new Date(startedAt).toISOString(),
+    ...(tasks.length > 0 ? { tasks } : {}),
+  };
 }
 
 /**
@@ -263,7 +304,8 @@ const taskLifecycleSubtypes = new Set([
  * A turn Claude ran on its own, published once it is complete: a divider
  * and the answer. Claude ran it for a timer when it submitted the timer's
  * prompt (ClaudeTimerTracker.takeFire), else as its follow-up after
- * background work ended.
+ * background work ended. A follow-up published as it started is published
+ * as ended, answered or not.
  */
 async function finishClaudeContinuation(
   runtime: ActiveClaudeRuntime,
@@ -284,7 +326,8 @@ async function finishClaudeContinuation(
     runtime,
     error ? "" : response,
   );
-  if (!fire && !response && !error) return;
+  const announced = continuation?.announced;
+  if (!fire && !response && !error && !announced) return;
   const startedAt = fire
     ? Date.parse(fire.startedAt)
     : (continuation?.startedAt ?? Date.now());
@@ -301,6 +344,13 @@ async function finishClaudeContinuation(
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   };
   const answer = error ? error.message : response;
+  // Taken for a follow-up after background work, the turn answered a timer
+  // or a steer: the follow-up ended without an answer.
+  if (announced && (fire || steered))
+    emitForClaudeRuntime(
+      runtime,
+      backgroundTurnEvent(announced, { completedAt }),
+    );
   if (fire) {
     const event = timerFireEvent(fire, {
       completedAt,
@@ -324,25 +374,18 @@ async function finishClaudeContinuation(
     });
     return;
   }
-  const summaries = notifications.map(({ summary }) => summary).filter(Boolean);
-  const tasks = backgroundTurnTasks(runtime, notifications);
+  const event = backgroundTurnEvent(
+    claudeBackgroundTurn(
+      runtime,
+      notifications,
+      startedAt,
+      error ? error.message : undefined,
+    ),
+    { completedAt, response: answer, failed: Boolean(error) },
+  );
   emitForClaudeRuntime(runtime, {
-    label: processLabels.backgroundTurn,
-    detail:
-      summaries[0] ??
-      (error ? error.message : "Claude continued after background work."),
-    level: error ? "error" : "info",
-    metadata: {
-      timerFire: {
-        origin: "background",
-        prompt: summaries.join("\n"),
-        response: answer,
-        startedAt: new Date(startedAt).toISOString(),
-        completedAt,
-        ...(tasks.length > 0 ? { tasks } : {}),
-      },
-      ...metadata,
-    },
+    ...event,
+    metadata: { ...event.metadata, ...metadata },
   });
 }
 
@@ -373,6 +416,12 @@ function backgroundTurnTasks(
     });
   }
   return result;
+}
+
+/** An assistant message the CLI wrote itself, not the model's output. */
+function claudeSyntheticMessage(message: unknown): boolean {
+  const inner = (message as { message?: { model?: unknown } }).message;
+  return inner?.model === "<synthetic>";
 }
 
 /** A message no Foundry turn answers: Claude working on its own. */
@@ -412,16 +461,20 @@ async function handleClaudeContinuationMessage(
   if (claudeApiErrorMessage(message)) return;
   const delta = claudePartialText(message);
   if (delta) {
-    const continuation = claudeContinuation(runtime);
+    const continuation = claudeContinuation(runtime, true);
     continuation.partialResult += delta;
     continuation.finalResult = continuation.partialResult.trim();
     return;
   }
   if (record.type === "stream_event") {
-    claudeContinuation(runtime);
+    claudeContinuation(runtime, true);
     return;
   }
   if (record.type === "assistant") {
+    const continuation = claudeContinuation(
+      runtime,
+      !claudeSyntheticMessage(message),
+    );
     for (const event of claudeProcessEvents(message)) {
       if (event.message?.kind === "commentary")
         emitForClaudeRuntime(runtime, event);
@@ -431,7 +484,6 @@ async function handleClaudeContinuationMessage(
           message: runtime.questions?.shown(event.message) ?? event.message,
         });
     }
-    const continuation = claudeContinuation(runtime);
     const text = claudeMessageText(message);
     if (text) {
       continuation.finalResult = text;

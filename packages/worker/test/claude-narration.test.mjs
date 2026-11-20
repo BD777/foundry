@@ -63,16 +63,19 @@ test("Claude background continuation keeps narration separate from its final res
       lastUsed: Date.now(),
     };
     await handleActiveClaudeMessage(runtime, progress);
-    assert.equal(events.length, 1);
-    assert.equal(events[0].message.kind, "commentary");
+    const commentary = () =>
+      events.filter((event) => event.message?.kind === "commentary");
+    assert.equal(commentary().length, 1);
     assert.equal(runtime.continuation.finalResult, "");
+    // The follow-up is published as running before what it says.
+    assert.equal(events[0].metadata.timerFire.completedAt, "");
     await handleActiveClaudeMessage(runtime, {
       ...progress,
       parent_tool_use_id: "subagent",
     });
     assert.equal(
       events.length,
-      1,
+      2,
       "forwarded subagents do not leak into the parent",
     );
   } finally {

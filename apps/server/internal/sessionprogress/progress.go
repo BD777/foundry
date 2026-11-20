@@ -120,6 +120,26 @@ func PlanStep(events []store.AgentSessionEvent) string {
 	return ""
 }
 
+// OwnTurn is the turn the agent started on its own (a timer's run, or its
+// follow-up after background work) and has not ended: published as it
+// started, its end not yet. A later input or process start ended it.
+func OwnTurn(events []store.AgentSessionEvent) *store.AgentSessionTimerFire {
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Label == store.EventLabelUserMessage || event.Label == store.EventLabelClaudeProcessStarted {
+			return nil
+		}
+		if event.Metadata == nil || event.Metadata.TimerFire == nil {
+			continue
+		}
+		if event.Metadata.TimerFire.CompletedAt != "" {
+			return nil
+		}
+		return event.Metadata.TimerFire
+	}
+	return nil
+}
+
 // ToolCalls pairs the tool calls in the log: the tool's name, a short
 // detail, whether it completed or failed, and how long it ran.
 func ToolCalls(events []store.AgentSessionEvent) []ToolCall {

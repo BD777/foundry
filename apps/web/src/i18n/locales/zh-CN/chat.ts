@@ -670,6 +670,8 @@ export const chat: Translation<typeof en> = {
     scheduledNoteContextFull: "{{note}} · 上次运行失败：上下文已满，压缩失败",
     timerRunningNote: "定时任务运行中",
     timerRunningSinceNote: "定时任务运行中 · {{time}} 起",
+    continuingNote: "后台任务结束后 {{agent}} 继续工作中",
+    continuingSinceNote: "后台任务结束后 {{agent}} 继续工作中 · {{time}} 起",
     backgroundTaskCount_one: "{{count}} 个任务",
     backgroundTaskCount_other: "{{count}} 个任务",
     backgroundSubagentCount_one: "{{count}} 个子智能体",

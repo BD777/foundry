@@ -371,6 +371,11 @@ export interface ChatContextCardData {
   /** Commands, monitors and workflows (not subagents), running first. */
   background: ChatBackgroundTaskItem[];
   /**
+   * The open session's agent continues on its own after background work
+   * ended, since `startedAt`: it works though its turn has ended.
+   */
+  continuation?: { agent: string; startedAt?: string };
+  /**
    * The session that started this chat, when another one did: named, and
    * opened by `onOpen` when the viewer may open it.
    */
@@ -385,6 +390,8 @@ export interface ChatRunningBackgroundWork {
   subagentIds: string[];
   /** A timer's run the agent started on its own, by its row. */
   timerRun?: { id: string; startedAt?: string };
+  /** The agent's follow-up after background work ended (no row of its own). */
+  continuation?: { agent: string; startedAt?: string };
 }
 
 /** A durable Chat thread assembled from one or more agent sessions. */
