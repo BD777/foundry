@@ -176,10 +176,20 @@ test("Claude's follow-up to a finished background command stays a background tur
     await replay(runtime, fixture.backgroundFollowUp);
     assert.equal(turn.resolved.response, "STARTED");
     const continued = outOfBand.filter((event) => event.metadata?.timerFire);
-    assert.equal(continued.length, 1);
-    assert.equal(continued[0].label, "Background task continued");
-    assert.equal(continued[0].metadata.timerFire.origin, "background");
-    assert.equal(continued[0].metadata.timerFire.response, "FINISHED");
+    // Published as it starts, then with its answer, under one start time.
+    assert.equal(continued.length, 2);
+    for (const event of continued) {
+      assert.equal(event.label, "Background task continued");
+      assert.equal(event.metadata.timerFire.origin, "background");
+    }
+    assert.equal(continued[0].metadata.timerFire.completedAt, "");
+    assert.equal(continued[0].metadata.timerFire.response, undefined);
+    assert.ok(continued[1].metadata.timerFire.completedAt);
+    assert.equal(continued[1].metadata.timerFire.response, "FINISHED");
+    assert.equal(
+      continued[0].metadata.timerFire.startedAt,
+      continued[1].metadata.timerFire.startedAt,
+    );
   });
 });
 
@@ -233,8 +243,8 @@ test("Claude's follow-up to background work is told to the server as a turn from
     ],
   );
   assert.equal(resolvedBefore, true, "it starts after the person's turn ended");
-  assert.deepEqual(told[0].after, [], "before its answer is published");
-  assert.deepEqual(told[1].after, ["end"], "it ends with its answer");
+  assert.deepEqual(told[0].after, ["start"], "published as it starts");
+  assert.deepEqual(told[1].after, ["start", "end"], "it ends with its answer");
 });
 
 test("each timer Claude fires while no turn runs is told as a turn of its own", async () => {

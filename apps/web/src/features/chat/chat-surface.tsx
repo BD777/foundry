@@ -115,6 +115,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
     [work.list],
   );
   const waitingChildCount = props.waitingChildCount ?? 0;
+  // The agent continues on its own after background work: its note shows
+  // even where the session's work list would stand alone.
+  const continuing = Boolean(
+    panel.backgroundNote && props.backgroundWork?.continuation,
+  );
   const workNotice =
     workCounts.timers || workCounts.agents ? (
       <ChatWorkCountNote
@@ -131,7 +136,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
     Boolean(
       props.backgroundWork?.taskIds.length ||
       props.backgroundWork?.subagentIds.length ||
-      props.backgroundWork?.timerRun,
+      props.backgroundWork?.timerRun ||
+      props.backgroundWork?.continuation,
     ),
     waitingChildCount,
   );
@@ -268,16 +274,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
                     />
                     {workNotice}
                   </>
-                ) : work.list ? (
+                ) : work.list && !continuing ? (
                   workNotice
                 ) : panel.backgroundNote || panel.schedule ? (
-                  <ChatWorkNote
-                    backgroundNote={panel.backgroundNote}
-                    onRevealBackgroundWork={panel.revealBackgroundWork}
-                    onRevealTimers={panel.revealTimers}
-                    schedule={panel.schedule}
-                    wakes={props.scheduleWakes}
-                  />
+                  <>
+                    <ChatWorkNote
+                      backgroundNote={panel.backgroundNote}
+                      onRevealBackgroundWork={panel.revealBackgroundWork}
+                      onRevealTimers={panel.revealTimers}
+                      schedule={panel.schedule}
+                      wakes={props.scheduleWakes}
+                    />
+                    {workNotice}
+                  </>
                 ) : undefined
               }
               readOnly={

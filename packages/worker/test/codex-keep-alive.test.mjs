@@ -195,7 +195,18 @@ test("an active goal keeps the app-server; its own turn is published, then it cl
   const commentary = events.find((e) => e.label === "Commentary");
   assert.equal(commentary?.detail, "Checking the build");
   assert.equal(commentary?.message?.kind, "commentary");
-  const own = events.find((e) => e.label === "Background task continued");
+  const [started, own, ...rest] = events.filter(
+    (e) => e.label === "Background task continued",
+  );
+  assert.equal(rest.length, 0);
+  // Published as it starts, then with its answer, under one start time.
+  assert.equal(started?.metadata?.timerFire?.completedAt, "");
+  assert.equal(started?.metadata?.timerFire?.response, undefined);
+  assert.equal(
+    started?.metadata?.timerFire?.startedAt,
+    own?.metadata?.timerFire?.startedAt,
+  );
+  assert.ok(own?.metadata?.timerFire?.completedAt);
   assert.equal(own?.sessionId, "sess_keep");
   assert.equal(own?.detail, "Codex continued toward its goal: Ship it");
   assert.equal(own?.metadata?.timerFire?.origin, "background");
@@ -283,10 +294,17 @@ test("a Foundry turn sent while Codex runs its own turn continues that turn", as
   assert.equal(pids().length, 1);
   assert.ok(seen.some((e) => e.item?.text === "Took your message in"));
   assert.equal(seen.at(-1).type, "turn.completed");
-  // The handed-over turn had no answer of its own yet: nothing is published.
+  // The handed-over turn had no answer of its own yet: published as it
+  // started, it ends without one (the Foundry turn answers it).
+  const own = events.filter((e) => e.label === "Background task continued");
+  assert.equal(own.length, 2);
+  assert.equal(own[0].metadata.timerFire.completedAt, "");
+  assert.ok(own[1].metadata.timerFire.completedAt);
+  assert.equal(own[1].metadata.timerFire.response, undefined);
+  assert.equal(own[1].level, "info");
   assert.equal(
-    events.some((e) => e.label === "Background task continued"),
-    false,
+    own[0].metadata.timerFire.startedAt,
+    own[1].metadata.timerFire.startedAt,
   );
   assert.deepEqual(turns, [
     ["sess_keep", true],

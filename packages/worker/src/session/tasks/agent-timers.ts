@@ -25,6 +25,7 @@ import {
   humanizeCron,
   localTimeZone,
   type AgentSessionEvent,
+  type AgentSessionTimerFireTask,
   type AgentScheduledTask,
 } from "@bd777/foundry-protocol";
 
@@ -122,6 +123,41 @@ export function timerFireEvent(
         ...(end?.response ? { response: end.response } : {}),
         startedAt: fire.startedAt,
         completedAt: end?.completedAt ?? "",
+      },
+    },
+  };
+}
+
+/**
+ * A turn Claude runs on its own after background work ended, published as
+ * it starts and again when it ends, both under its start time (as a timer's
+ * turn is): readers see it running in between.
+ */
+export interface BackgroundTurn {
+  /** The ended tasks' notification summaries, one per line. */
+  prompt: string;
+  detail: string;
+  startedAt: string;
+  tasks?: AgentSessionTimerFireTask[];
+}
+
+/** A background turn as events carry it: unfinished, or with its end. */
+export function backgroundTurnEvent(
+  turn: BackgroundTurn,
+  end?: { completedAt: string; response?: string; failed?: boolean },
+): TimerSinkEvent {
+  return {
+    label: backgroundTurnLabel,
+    detail: turn.detail,
+    level: end?.failed ? "error" : "info",
+    metadata: {
+      timerFire: {
+        origin: "background",
+        prompt: turn.prompt,
+        ...(end?.response ? { response: end.response } : {}),
+        startedAt: turn.startedAt,
+        completedAt: end?.completedAt ?? "",
+        ...(turn.tasks?.length ? { tasks: turn.tasks } : {}),
       },
     },
   };
@@ -355,6 +391,14 @@ export class ClaudeTimerTracker {
 
   announcedFire(): boolean {
     return Boolean(this.firing?.announced);
+  }
+
+  /**
+   * Claude submitted a timer's prompt, or a steer while no turn ran: the
+   * turn it runs on its own answers that, not background work that ended.
+   */
+  promptedTurn(): boolean {
+    return Boolean(this.firing) || this.steerTurn;
   }
 
   /**

@@ -154,3 +154,32 @@ func TestPlanStepIsTheFirstUncheckedItem(t *testing.T) {
 		t.Fatalf("no plan = %q", got)
 	}
 }
+
+func TestOwnTurnIsTheOpenRunTheAgentStartedOnItsOwn(t *testing.T) {
+	base := time.Date(2026, 11, 20, 15, 38, 0, 0, time.UTC)
+	fire := func(offset time.Duration, completedAt string) store.AgentSessionEvent {
+		item := event(at(base, offset), store.ProcessLabelBackgroundTurn, "Agent completed")
+		item.Metadata = &store.AgentSessionEventMetadata{TimerFire: &store.AgentSessionTimerFire{
+			Origin: "background", Prompt: "Agent completed", StartedAt: at(base, 3*time.Minute), CompletedAt: completedAt}}
+		return item
+	}
+	turn := []store.AgentSessionEvent{
+		event(at(base, 0), store.EventLabelUserMessage, "Research this."),
+		event(at(base, 2*time.Minute), store.EventLabelClaudeTurnEnd, "result.md"),
+	}
+	if got := OwnTurn(turn); got != nil {
+		t.Fatalf("own turn after the person's turn ended = %+v", got)
+	}
+	open := append(append([]store.AgentSessionEvent{}, turn...), fire(3*time.Minute, ""))
+	if got := OwnTurn(open); got == nil || got.Origin != "background" || got.StartedAt != at(base, 3*time.Minute) {
+		t.Fatalf("open own turn = %+v", got)
+	}
+	ended := append(append([]store.AgentSessionEvent{}, open...), fire(4*time.Minute, at(base, 4*time.Minute)))
+	if got := OwnTurn(ended); got != nil {
+		t.Fatalf("own turn after its end = %+v", got)
+	}
+	next := append(append([]store.AgentSessionEvent{}, open...), event(at(base, 5*time.Minute), store.EventLabelUserMessage, "And?"))
+	if got := OwnTurn(next); got != nil {
+		t.Fatalf("own turn after a new input = %+v", got)
+	}
+}

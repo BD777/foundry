@@ -276,3 +276,95 @@ test("a Codex turn it ran on its own (a goal's continuation) names Codex in its 
   assert.match(entries[0].text, /^Codex continued after background work · /);
   assert.equal(entries[1].text, "Created b.txt.");
 });
+
+test("Claude's follow-up after background work shows as working from its start, and in the transcript once it ends", async () => {
+  await i18n.changeLanguage("en");
+  const startedAt = "2026-11-20T15:41:13.000Z";
+  const fire = (completedAt, response, level = "info") =>
+    event(
+      `evt_follow_${completedAt ? "end" : "start"}`,
+      "Background task continued",
+      'Agent "Research" completed',
+      {
+        timerFire: {
+          origin: "background",
+          prompt: 'Agent "Research" completed',
+          startedAt,
+          completedAt,
+          ...(response ? { response } : {}),
+        },
+      },
+      level,
+    );
+  const started = fire("");
+  // Running: no divider yet; the chat says the agent works.
+  assert.deepEqual(sessionTranscriptEntries(session([started])), []);
+  const backgroundRun = {
+    origin: "background",
+    prompt: 'Agent "Research" completed',
+    startedAt,
+    completedAt: "",
+  };
+  const work = runningBackgroundWork(
+    chatContextCardForSessions([
+      withPanel(session([started]), { busy: true, backgroundRun }),
+    ]),
+  );
+  assert.deepEqual(work, {
+    taskIds: [],
+    subagentIds: [],
+    continuation: { agent: "Claude", startedAt },
+  });
+  const now = new Date("2026-11-20T15:42:00.000Z");
+  assert.match(
+    backgroundWorkNote(work, now),
+    /^Claude is continuing after background work since /,
+  );
+  await i18n.changeLanguage("zh-CN");
+  assert.match(
+    backgroundWorkNote(work, now),
+    /^后台任务结束后 Claude 继续工作中 · .+ 起$/,
+  );
+  assert.equal(
+    backgroundWorkNote({
+      taskIds: [],
+      subagentIds: [],
+      continuation: { agent: "Codex" },
+    }),
+    "后台任务结束后 Codex 继续工作中",
+  );
+  await i18n.changeLanguage("en");
+  // Its end with the answer is the divider and the answer, once.
+  const entries = sessionTranscriptEntries(
+    session([started, fire("2026-11-20T15:42:29.000Z", "Keep the item.")]),
+  );
+  assert.deepEqual(
+    entries.map(({ kind }) => kind),
+    ["boundary", "assistant"],
+  );
+  assert.equal(entries[1].text, "Keep the item.");
+  // Ended without an answer (a message took it over, its process ended): it
+  // only closes the run. A failed one still shows.
+  assert.deepEqual(
+    sessionTranscriptEntries(
+      session([started, fire("2026-11-20T15:42:29.000Z")]),
+    ),
+    [],
+  );
+  assert.equal(
+    sessionTranscriptEntries(
+      session([
+        started,
+        fire("2026-11-20T15:42:29.000Z", "overloaded", "error"),
+      ]),
+    )[0].kind,
+    "boundary",
+  );
+  // Ended, the panel names no run: no note.
+  assert.equal(
+    runningBackgroundWork(
+      chatContextCardForSessions([withPanel(session([]), {})]),
+    ).continuation,
+    undefined,
+  );
+});

@@ -27,6 +27,10 @@ import {
   type CodexSDKThread,
 } from "../session-state.js";
 import {
+  backgroundTurnEvent,
+  type BackgroundTurn,
+} from "../tasks/agent-timers.js";
+import {
   processLabels,
   sessionEventLabels,
   type TranscriptMessage,
@@ -343,6 +347,8 @@ export function codexNativeActivityBusy(
 interface CodexOwnTurn {
   turnId: string;
   startedAt: number;
+  /** Published as it started; its end reuses it. */
+  announced: BackgroundTurn;
   response: string;
   usage?: Record<string, number>;
   usageBaseline?: CodexTokenUsage;
@@ -1441,9 +1447,26 @@ export class CodexAppServerThread implements CodexSDKThread {
     if (!sessionId || !this.persistent()) return;
     if (method === "turn/started") {
       if (connection.own) return;
+      const startedAt = Date.now();
+      const objective = connection.goal?.objective?.trim();
+      // A later protocol field (timerFire origin "goal", or the goal itself)
+      // would let the transcript tell a goal's turn from a background one.
+      const prompt = redactSecrets(
+        objective
+          ? `Codex continued toward its goal: ${objective}`
+          : "Codex continued on its own.",
+      ).slice(0, 2000);
+      const announced: BackgroundTurn = {
+        prompt,
+        detail: prompt,
+        startedAt: new Date(startedAt).toISOString(),
+      };
+      // Published as it starts, so readers see it running until it ends.
+      emitOutOfBandSessionEvent(sessionId, backgroundTurnEvent(announced));
       connection.own = {
         turnId: String(params.turn?.id ?? ""),
-        startedAt: Date.now(),
+        startedAt,
+        announced,
         response: "",
         usageBaseline: connection.tokenUsageTotal,
         usageSummed: { ...emptyCodexTokenUsage },
@@ -1525,40 +1548,36 @@ export class CodexAppServerThread implements CodexSDKThread {
       "own turn ended",
       `${own.turnId} ${handedOver ? "continued as a Foundry turn" : (turn?.status ?? "-")}`,
     );
-    if (handedOver) return;
-    const failed = turn?.status !== "completed";
-    if (failed || own.response) {
-      const objective = connection.goal?.objective?.trim();
-      // A later protocol field (timerFire origin "goal", or the goal itself)
-      // would let the transcript tell a goal's turn from a background one.
-      const prompt = redactSecrets(
-        objective
-          ? `Codex continued toward its goal: ${objective}`
-          : "Codex continued on its own.",
-      ).slice(0, 2000);
-      const answer = failed
-        ? (turn?.error?.message ?? `Codex turn ${turn?.status ?? "ended"}`)
-        : own.response;
-      emitOutOfBandSessionEvent(sessionId, {
-        label: processLabels.backgroundTurn,
-        detail: prompt,
-        level: failed ? "error" : "info",
-        metadata: {
-          timerFire: {
-            origin: "background",
-            prompt,
-            response: answer,
-            startedAt: new Date(own.startedAt).toISOString(),
-            completedAt: new Date().toISOString(),
-          },
-          ...turnUsageMetadata(
-            codexTurnUsage({ usage: own.usage }),
-            own.startedAt,
-            failed ? "failed" : "completed",
-          ),
-        },
-      });
+    const completedAt = new Date().toISOString();
+    const failed = !handedOver && turn?.status !== "completed";
+    if (handedOver || (!failed && !own.response)) {
+      // It ended unanswered, or continues as a Foundry turn that answers it.
+      emitOutOfBandSessionEvent(
+        sessionId,
+        backgroundTurnEvent(own.announced, { completedAt }),
+      );
+      if (!handedOver) this.reconsider(connection);
+      return;
     }
+    const answer = failed
+      ? (turn?.error?.message ?? `Codex turn ${turn?.status ?? "ended"}`)
+      : own.response;
+    const event = backgroundTurnEvent(own.announced, {
+      completedAt,
+      response: answer,
+      failed,
+    });
+    emitOutOfBandSessionEvent(sessionId, {
+      ...event,
+      metadata: {
+        ...event.metadata,
+        ...turnUsageMetadata(
+          codexTurnUsage({ usage: own.usage }),
+          own.startedAt,
+          failed ? "failed" : "completed",
+        ),
+      },
+    });
     this.reconsider(connection);
   }
 

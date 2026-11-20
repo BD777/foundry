@@ -15,7 +15,10 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { ClaudeTurnLiveness } from "./runner/watchdog.js";
 import type { SessionTurnFiles } from "./files/session-files.js";
-import type { ClaudeTimerTracker } from "./tasks/agent-timers.js";
+import type {
+  BackgroundTurn,
+  ClaudeTimerTracker,
+} from "./tasks/agent-timers.js";
 import type { ClaudeBackgroundTaskTracker } from "./tasks/agent-background-tasks.js";
 import type { ClaudeContextTracker } from "./usage/context-usage.js";
 import type {
@@ -163,6 +166,11 @@ export interface ActiveClaudeContinuation {
   startedAt: number;
   finalResult: string;
   partialResult: string;
+  /**
+   * A follow-up after background work, published as it started: its end is
+   * published too, with its answer or without.
+   */
+  announced?: BackgroundTurn;
 }
 
 /** A background task that ended, as its Claude Code notification stated. */

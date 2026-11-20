@@ -391,8 +391,16 @@ function chatMessagesForSession(
         kind: "process",
         role: "bot",
         streaming: turnLive && isLastSegment,
-        // The group's own start, which its final duration also counts from.
-        ...(turnLive && isLastSegment && !segment.startedAt && turnStartedAt
+        // The group's own start, which its final duration also counts from:
+        // never before its turn began (a run the agent started on its own
+        // shows no divider until it ends).
+        ...(turnLive &&
+        isLastSegment &&
+        turnStartedAt &&
+        !(
+          segment.startedAt &&
+          Date.parse(segment.startedAt) >= Date.parse(turnStartedAt)
+        )
           ? { startedAt: turnStartedAt }
           : {}),
         ...(turnLive && isLastSegment && liveActivity ? { liveActivity } : {}),

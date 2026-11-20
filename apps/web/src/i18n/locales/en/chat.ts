@@ -712,6 +712,9 @@ export const chat = {
       "{{note}} · last run failed: context full, compaction failed",
     timerRunningNote: "Scheduled task running",
     timerRunningSinceNote: "Scheduled task running since {{time}}",
+    continuingNote: "{{agent}} is continuing after background work",
+    continuingSinceNote:
+      "{{agent}} is continuing after background work since {{time}}",
     backgroundTaskCount_one: "{{count}} task",
     backgroundTaskCount_other: "{{count}} tasks",
     backgroundSubagentCount_one: "{{count}} subagent",
