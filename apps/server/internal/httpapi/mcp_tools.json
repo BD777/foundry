@@ -121,7 +121,7 @@
     "_meta": {
       "anthropic/searchHint": "connectors & accounts: configure connector instances and server-held secrets"
     },
-    "description": "Manage server-held connector extension instances such as OpenLark: list, probe, create, update, check, revoke, delete, bind_workspace or unbind_workspace. Use kind for the extension. For network=device, probe and create first install the connector's published extension on the selected online device owned by the person, wait for the device to report it, then probe through that device. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
+    "description": "Manage server-held connector extension instances such as OpenLark, and App Store Connect team keys (kind appstoreconnect: fields issuerId and keyId, secretFiles.privateKey for the .p8; create and check answer the Apps the key sees; bind_workspace takes resourceIds and access): list, probe, create, update, check, revoke, delete, bind_workspace or unbind_workspace. Use kind for the extension. For network=device, probe and create first install the connector's published extension on the selected online device owned by the person, wait for the device to report it, then probe through that device. Secret fields must be supplied as secretFiles: {fieldId:{path,key?}}. path names a file on this session's device, relative to the session workspace, absolute, or starting with ~; key selects a dotenv variable. The Worker reads the value, so never put a secret value in fields or any other argument. list returns concise instance summaries and the field definitions needed to configure one.",
     "summary": "Configures server-held connector instances, reading secret values from device files named by secretFiles.",
     "limits": [
       "Only the person who started the session, on a device that person owns; not from Issue, clarification, verifier or utility sessions.",
@@ -149,7 +149,7 @@
         },
         "kind": {
           "type": "string",
-          "description": "The server-held extension connector kind, such as open-lark."
+          "description": "The server-held extension connector kind, such as open-lark, or appstoreconnect."
         },
         "instanceId": {
           "type": "string",
@@ -158,6 +158,17 @@
         "workspaceId": {
           "type": "string",
           "description": "The workspace to bind or unbind."
+        },
+        "resourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "appstoreconnect bind_workspace: the App ids (from create or check) the workspace may manage."
+        },
+        "access": {
+          "type": "string",
+          "description": "appstoreconnect bind_workspace: the access level list names (read when omitted on a new binding)."
         },
         "label": {
           "type": "string",

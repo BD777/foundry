@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-20 Server：[DEV-313 助理定位为编排者：调研等实际工作交给项目，助理只调度、判断、跟进](DEV-313-assistant-as-orchestrator.md)（train 105）。
+2026-11-19 Server：[DEV-323 会话可经 MCP（`connector_instances`）录入和绑定 App Store Connect 团队密钥](DEV-323-appstoreconnect-mcp-instances.md)（asc-mcp-train，train 105/106 沿用）。
 2026-11-19 脚本：[DEV-321 PA 路由评测：在线夹具设备（假运行时）、工具级派发评分、`--repeat` 与 `--resume` 运行日志、每个 stack 共享缓存、磁盘暂停；3× 基线不完整](DEV-321-pa-eval-online-fixtures.md)（不涉及部署）。
 2026-11-19 Worker + Server：[DEV-320 worker 原生对话扫描不再每轮重算指纹、不读服务端不收的对话的 transcript、重启不再重读所有日志开头；按规则清理旧会话 SDK 日志、闲置 verifier、闲置 compute scratch](DEV-320-worker-scan-cost-and-retention.md)（train 102）。
 2026-11-19 Worker：[DEV-319 Worker 每轮巡检的文件系统开销；remote-build 不再在设备上留作业](DEV-319-worker-io-and-build-disk.md)（train 101）。

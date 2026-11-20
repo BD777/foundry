@@ -146,21 +146,31 @@ func (s *Server) handleAppStoreConnectGateway(w http.ResponseWriter, r *http.Req
 }
 
 func writeAppStoreConnectConnectorError(w http.ResponseWriter, err error) {
+	refusal := appStoreConnectConnectorError(err)
+	writeError(w, refusal.status, refusal.err.Error())
+}
+
+// appStoreConnectConnectorError is the refusal an App Store Connect key
+// error answers with, for the Web routes and connector_instances alike.
+func appStoreConnectConnectorError(err error) *statusError {
 	var keyError *externalaccounts.AppStoreConnectKeyError
+	refuse := func(status int, message string) *statusError {
+		return &statusError{status, errors.New(message)}
+	}
 	switch {
 	case errors.Is(err, externalaccounts.ErrSecretsNotConfigured):
-		writeError(w, http.StatusPreconditionFailed, err.Error())
+		return refuse(http.StatusPreconditionFailed, err.Error())
 	case errors.Is(err, integrations.ErrOff):
-		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return refuse(http.StatusServiceUnavailable, err.Error())
 	case errors.As(err, &keyError):
-		writeError(w, http.StatusBadRequest, keyError.Error())
+		return refuse(http.StatusBadRequest, keyError.Error())
 	case errors.Is(err, externalaccounts.ErrAppStoreConnectKeyRejected):
-		writeError(w, http.StatusBadRequest, "App Store Connect rejected this API key; check the Issuer ID, Key ID and .p8 file")
+		return refuse(http.StatusBadRequest, "App Store Connect rejected this API key; check the Issuer ID, Key ID and .p8 file")
 	case errors.Is(err, externalaccounts.ErrInvalidAppStoreConnectKey):
-		writeError(w, http.StatusBadRequest, err.Error())
+		return refuse(http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrExternalAppNotFound), errors.Is(err, store.ErrNotFound):
-		writeError(w, http.StatusNotFound, "App Store Connect key not found")
+		return refuse(http.StatusNotFound, "App Store Connect key not found")
 	default:
-		writeError(w, http.StatusBadGateway, "App Store Connect request failed; check the key and its access")
+		return refuse(http.StatusBadGateway, "App Store Connect request failed; check the key and its access")
 	}
 }
