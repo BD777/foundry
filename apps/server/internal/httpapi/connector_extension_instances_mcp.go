@@ -297,6 +297,9 @@ func (s *Server) connectorInstancesForMCP(call mcpCall) (text string, resultErr 
 	if err != nil {
 		return "", err
 	}
+	if kind == appStoreConnectKind {
+		return s.appStoreConnectInstancesForMCP(call, caller, action, instanceID)
+	}
 	if !serverHeldExtensionKind.MatchString(kind) {
 		return "", &statusError{http.StatusBadRequest, errors.New("kind must name an installed server-held connector extension")}
 	}

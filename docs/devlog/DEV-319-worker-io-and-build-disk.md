@@ -37,6 +37,7 @@
 - `.cache`（go-build 等，11.6 GB）是共享构建缓存，这次没有动。Go 会自动清理 5 天没用过的缓存条目。
 - 早期的命名 scratch 目录（`foundry` 0.9 GB、`isolation-drafts` 0.6 GB、`foundry-adaptive-concurrency` 0.4 GB、`dsh-ab` 1.6 GB）里有当时共享树未提交改动的副本或评测结果，没有核实能否删除，所以保留。
 - NAS 上的游戏包导致的 syspolicyd 读盘不属于 Foundry，按原会话的建议处理。
+- 未解决（待跟进，尚未调查）：2026-11-19 ASC MCP Server 补丁的门禁中，CanWendeMac-mini 上 Foundry CLI 上传 11.7 MB 的 base archive（`7df58eb4`，runner 上尚无缓存）到 `https://dev.foundryapp.app` 连续三次失败，报错 `foundry: cannot reach Foundry server at https://dev.foundryapp.app: socket hang up`，随后 `put_files: the foundry CLI failed or timed out`。三次结束时间（UTC）：16:18:33Z、16:22:14Z、16:28:58Z。失败期间 dev 站 `version.json` 返回 200，本机 `/healthz` 返回 200，Server 未重启。命令为 `scripts/remote-check.sh <lease> --tree <tree> --go ./internal/httpapi -timeout 40m`。之后门禁改由 byte-dev 执行。是否与本项的 remote-build 改动有关未核实；记录与时间线见 `/tmp/asc-train/train-notes.md`。
 
 ## 部署与验证（train 101）
 
