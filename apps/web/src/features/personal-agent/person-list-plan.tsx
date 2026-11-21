@@ -256,7 +256,7 @@ export function ItemPlan({
           </div>
         ) : null}
         {(plan?.acceptance?.length ?? 0) > 0 ? (
-          <div className="grid gap-1">
+          <div className="mt-2 grid gap-1">
             <Subheading as="h4" size="caption">
               {t("planning.acceptance")}
             </Subheading>
@@ -270,7 +270,7 @@ export function ItemPlan({
           </div>
         ) : null}
         {(plan?.evidence?.length ?? 0) > 0 ? (
-          <div className="grid gap-1">
+          <div className="mt-2 grid gap-1">
             <Subheading as="h4" size="caption">
               {t("planning.evidence")}
             </Subheading>
