@@ -23,8 +23,6 @@ import { usePersonalItems } from "./use-personal-items";
 const workspaceItemsLimit = 200;
 
 export interface WorkspaceItemsProps {
-  /** The assistant whose list is read. */
-  assistantId: string;
   workspaceId: string;
   /** For the home of an item that only touches this workspace. */
   workspaces: WorkspaceProjection[];
@@ -38,14 +36,14 @@ export interface WorkspaceItemsProps {
  * detail on the items page.
  */
 export function WorkspaceItems({
-  assistantId,
   workspaceId,
   workspaces,
   onOpenItem,
   onOpenAll,
 }: WorkspaceItemsProps) {
   const { t } = useTranslation("personalAgent");
-  const list = usePersonalItems(assistantId, {
+  // The person's ledger, across their assistants (DEV-324).
+  const list = usePersonalItems(undefined, {
     view: "open",
     workspace: workspaceId,
     limit: workspaceItemsLimit,

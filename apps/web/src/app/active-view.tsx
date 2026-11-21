@@ -207,7 +207,6 @@ export function ActiveView({
     case "assistantItems":
       return (
         <AssistantItemsPage
-          assistantId={location.selectedAssistantId}
           onOpenAssistant={() => location.setActiveView("assistant")}
           onSelectItem={(itemId) => location.setSelectedItemId(itemId ?? "")}
           selectedItemId={location.selectedItemId || undefined}
@@ -273,32 +272,18 @@ export function ActiveView({
     case "workspaceConnectors":
     case "sharing":
       return <WorkspaceHubView {...context} section={activeView} />;
-    case "workspace": {
-      // The items page's own choice of assistant, else the default one.
-      const itemsAssistantId =
-        location.selectedAssistantId ??
-        (
-          assistants.assistants.find((assistant) => assistant.isDefault) ??
-          assistants.assistants[0]
-        )?.id;
+    case "workspace":
       return (
         <WorkspaceHubView
           {...context}
-          items={
-            itemsAssistantId
-              ? {
-                  assistantId: itemsAssistantId,
-                  onOpen: (itemId) => {
-                    location.setSelectedAssistantId(itemsAssistantId);
-                    location.setSelectedItemId(itemId ?? "");
-                    location.setActiveView("assistantItems");
-                  },
-                }
-              : undefined
-          }
+          items={{
+            onOpen: (itemId) => {
+              location.setSelectedItemId(itemId ?? "");
+              location.setActiveView("assistantItems");
+            },
+          }}
         />
       );
-    }
     case "foundrySkill":
       return <FoundrySkillPage />;
     case "devices":
