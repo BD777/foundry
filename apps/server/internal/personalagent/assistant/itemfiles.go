@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -154,6 +155,7 @@ func (s *Service) writeItemFiles(ctx context.Context, workspaceID string, change
 	}
 	listed := err == nil
 	home := map[string]bool{}
+	locations := map[string]*time.Location{}
 	var firstErr error
 	for _, item := range items {
 		if !itemFileID.MatchString(item.ID) {
@@ -167,7 +169,16 @@ func (s *Service) writeItemFiles(ctx context.Context, workspaceID string, change
 		if err != nil {
 			return err
 		}
-		content := ItemFile(item, helpers[item.ID], events)
+		location, ok := locations[item.AssistantID]
+		if !ok {
+			agent, err := s.store.GetAssistant(ctx, item.AssistantID)
+			if err != nil {
+				return err
+			}
+			location = s.PersonLocation(ctx, agent)
+			locations[item.AssistantID] = location
+		}
+		content := ItemFile(item, helpers[item.ID], events, location)
 		name := item.ID + ".md"
 		key := workspaceID + "/" + item.ID
 		sum := sha256.Sum256([]byte(content))
@@ -209,8 +220,9 @@ func (s *Service) writeItemFiles(ctx context.Context, workspaceID string, change
 }
 
 // ItemFile is an item as its home's agents read it: front matter with its
-// facts, then its goal, progress, evidence, helpers and latest events.
-func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTask, events []store.PersonalAgentItemEvent) string {
+// facts, then its goal, progress, evidence, helpers and latest events. The
+// front matter keeps RFC 3339; the times people read are in location.
+func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTask, events []store.PersonalAgentItemEvent, location *time.Location) string {
 	var out strings.Builder
 	out.WriteString("---\n")
 	out.WriteString(ItemFileNotice + "\n")
@@ -250,7 +262,7 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 	}
 
 	section("决定")
-	decisions := itemDecisions(events)
+	decisions := itemDecisions(events, location)
 	for _, decision := range decisions {
 		out.WriteString(decision + "\n")
 	}
@@ -293,7 +305,7 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 			line += " (" + itemFileLine(evidence.Ref) + ")"
 		}
 		if evidence.ObservedAt != "" {
-			line += "，" + itemFileTime(evidence.ObservedAt)
+			line += "，" + zonedTime(evidence.ObservedAt, location)
 		}
 		out.WriteString(strings.TrimRight(line, " ") + "\n")
 	}
@@ -324,7 +336,7 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 		events = events[len(events)-itemFileTimeline:]
 	}
 	for i := len(events) - 1; i >= 0; i-- {
-		out.WriteString(itemEventLine(events[i]) + "\n")
+		out.WriteString(itemEventLine(events[i], location) + "\n")
 	}
 	if len(events) == 0 {
 		none()
@@ -335,7 +347,7 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 // itemDecisions are the item's decided events, oldest first, each with its id
 // (what a later decision supersedes), the person's words, and whether a later
 // one replaced it.
-func itemDecisions(events []store.PersonalAgentItemEvent) []string {
+func itemDecisions(events []store.PersonalAgentItemEvent, location *time.Location) []string {
 	replacedBy := map[string]string{}
 	for _, event := range events {
 		if event.Kind == store.PersonalAgentItemEventDecided && event.Detail != nil && event.Detail.Supersedes != "" {
@@ -347,7 +359,7 @@ func itemDecisions(events []store.PersonalAgentItemEvent) []string {
 		if event.Kind != store.PersonalAgentItemEventDecided || event.Detail == nil {
 			continue
 		}
-		line := "- " + itemFileTime(event.At) + " · `" + event.ID + "` · " + itemFileLine(event.Detail.Decision)
+		line := "- " + zonedTime(event.At, location) + " · `" + event.ID + "` · " + itemFileLine(event.Detail.Decision)
 		if by := replacedBy[event.ID]; by != "" {
 			line = "- ~~" + strings.TrimPrefix(line, "- ") + "~~（已被 `" + by + "` 取代）"
 		}
@@ -357,8 +369,8 @@ func itemDecisions(events []store.PersonalAgentItemEvent) []string {
 }
 
 // itemEventLine is one timeline event: when, who, what, and its detail.
-func itemEventLine(event store.PersonalAgentItemEvent) string {
-	line := "- " + itemFileTime(event.At) + " · " + event.Actor + " · " + event.Kind
+func itemEventLine(event store.PersonalAgentItemEvent, location *time.Location) string {
+	line := "- " + zonedTime(event.At, location) + " · " + event.Actor + " · " + event.Kind
 	detail := event.Detail
 	if detail == nil {
 		return line
@@ -402,12 +414,31 @@ func itemEventLine(event store.PersonalAgentItemEvent) string {
 // itemFileLine is text on one line.
 func itemFileLine(text string) string { return strings.Join(strings.Fields(text), " ") }
 
-// itemFileTime is a stored instant in UTC to the minute, or as stored.
-func itemFileTime(value string) string {
-	if at, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return at.UTC().Format("2006-01-02 15:04") + " UTC"
+// zonedTime is a stored RFC 3339 instant to the minute in location (UTC when
+// nil), labelled with its UTC offset ("2026-11-21 11:09 UTC+8"), or the
+// value on one line when it does not parse. The offset, unlike a zone
+// abbreviation such as CST, reads one way only.
+func zonedTime(value string, location *time.Location) string {
+	at, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return itemFileLine(value)
 	}
-	return itemFileLine(value)
+	if location == nil {
+		location = time.UTC
+	}
+	at = at.In(location)
+	_, offset := at.Zone()
+	label, sign := "UTC", "+"
+	if offset < 0 {
+		sign, offset = "-", -offset
+	}
+	if offset != 0 {
+		label += sign + strconv.Itoa(offset/3600)
+		if minutes := offset % 3600 / 60; minutes != 0 {
+			label += fmt.Sprintf(":%02d", minutes)
+		}
+	}
+	return at.Format("2006-01-02 15:04") + " " + label
 }
 
 // yamlValue is a value as YAML: JSON is YAML, and quotes every string.

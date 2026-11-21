@@ -327,14 +327,9 @@ func (s *Service) noticeOperation(ctx context.Context, agent store.PersonalAgent
 	})
 }
 
-// personTime is an RFC 3339 time in the person's zone, as given when it
-// does not parse.
+// personTime is an RFC 3339 time in the person's zone.
 func (s *Service) personTime(ctx context.Context, agent store.PersonalAgent, at string) string {
-	t, err := time.Parse(time.RFC3339Nano, at)
-	if err != nil {
-		return at
-	}
-	return t.In(s.PersonLocation(ctx, agent)).Format("2006-01-02 15:04 MST")
+	return zonedTime(at, s.PersonLocation(ctx, agent))
 }
 
 func (s *Service) linkOperation(ctx context.Context, op store.PersonalAgentOperation, sessionID string) {
