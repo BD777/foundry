@@ -274,7 +274,7 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 		if authority {
 			return fmt.Errorf("%w: move the selected knowledge authority before removing its workspace", store.ErrWorkspaceBusy)
 		}
-		if err := tx.detachItemsFromDeletedWorkspace(ctx, id); err != nil {
+		if _, err := tx.detachItemsFromDeleted(ctx, id, `SELECT ?1`, `SELECT id FROM agent_sessions WHERE workspace_id = ?1`); err != nil {
 			return err
 		}
 		if err := deleteWorkspaceRows(ctx, tx.conn(), id); err != nil {

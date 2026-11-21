@@ -176,15 +176,39 @@ func TestPersonalAgentItemPageByWorkspace(t *testing.T) {
 	}
 }
 
-// Deleting a workspace returns the items homed there to the assistant's inbox
-// and releases those its sessions hold, each recorded by Foundry, and tells
-// the observer so the item files follow. Items elsewhere are left alone.
+// Deleting a workspace, or purging the removed device it is on, returns the
+// items homed there to the inbox and releases those its sessions hold, each
+// recorded by Foundry, and tells the observer so the item files follow: both
+// deletions let items go the same way. Items elsewhere are left alone.
 func TestDeletedWorkspaceRehomesItsItems(t *testing.T) {
+	for name, deleteHome := range map[string]func(context.Context, *Store) error{
+		"workspace deleted": func(ctx context.Context, db *Store) error {
+			_, err := db.DeleteWorkspace(ctx, "ws_home")
+			return err
+		},
+		"device removed": func(ctx context.Context, db *Store) error {
+			if _, err := db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_home"}); err != nil {
+				return err
+			}
+			_, err := db.PurgeRemovedDevice(ctx, "dev_home")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) { testDeletedHomeRehomesItsItems(t, deleteHome) })
+	}
+}
+
+func testDeletedHomeRehomesItsItems(t *testing.T, deleteHome func(context.Context, *Store) error) {
 	db, ctx := newTestStore(t), context.Background()
 	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
-	registerOtherWorkspace(t, db)
+	other := homeRegistration("dev_other", "other-dev")
+	other.Workspace = store.WorkspaceProjection{ID: "ws_other", Name: "Other", LocalPath: "/home/me/Other", Baseline: "main"}
+	other.Agents, other.Assets, other.Chats = nil, nil, nil
+	if err := db.RegisterDaemon(ctx, other); err != nil {
+		t.Fatal(err)
+	}
 	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_home", AgentID: "agent_home", Provider: "claude", Prompt: "hello"})
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +233,7 @@ func TestDeletedWorkspaceRehomesItsItems(t *testing.T) {
 	var changes []store.PersonalAgentItemChange
 	db.ObservePersonalAgentItemChanges(func(change store.PersonalAgentItemChange) { changes = append(changes, change) })
 
-	if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {
+	if err := deleteHome(ctx, db); err != nil {
 		t.Fatal(err)
 	}
 
