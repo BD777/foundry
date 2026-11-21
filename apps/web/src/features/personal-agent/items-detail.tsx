@@ -583,19 +583,22 @@ function ItemDecisions({
     decided.map((event) => event.detail?.supersedes).filter(Boolean),
   );
   return (
-    <ol className="grid gap-2 text-sm">
+    <ol className="grid gap-2.5 text-sm">
       {decided.map((event) => {
         const replaced = superseded.has(event.id);
         return (
-          <li className="grid min-w-0 gap-0.5" key={event.id}>
-            <div className="flex min-w-0 items-baseline gap-2">
-              <time
-                className="flex-none text-xs text-ink-faint tabular-nums"
-                dateTime={event.at}
-                title={fullWhen(event.at)}
-              >
-                {shortWhen(event.at, language)}
-              </time>
+          <li
+            className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2"
+            key={event.id}
+          >
+            <time
+              className="pt-0.5 text-xs text-ink-faint tabular-nums"
+              dateTime={event.at}
+              title={fullWhen(event.at)}
+            >
+              {shortWhen(event.at, language)}
+            </time>
+            <div className="grid min-w-0 gap-0.5">
               <ClampedText
                 className={
                   replaced ? "text-ink-faint line-through" : "text-ink"
@@ -605,16 +608,18 @@ function ItemDecisions({
                 {event.detail?.decision ?? ""}
               </ClampedText>
               {replaced ? (
-                <span className="flex-none text-xs text-ink-faint">
+                <span className="text-xs text-ink-faint">
                   {t("items.detail.decisionSuperseded")}
                 </span>
               ) : null}
+              {event.detail?.quote ? (
+                <ClampedText className="text-xs text-ink-muted" clamp={2}>
+                  {t("items.detail.decisionQuote", {
+                    quote: event.detail.quote,
+                  })}
+                </ClampedText>
+              ) : null}
             </div>
-            {event.detail?.quote ? (
-              <ClampedText className="ps-3 text-xs text-ink-muted" clamp={2}>
-                {t("items.detail.decisionQuote", { quote: event.detail.quote })}
-              </ClampedText>
-            ) : null}
           </li>
         );
       })}
@@ -721,7 +726,9 @@ function TimelineRow({
       <span className="flex-none text-xs text-ink-muted">
         {actor[event.actor]}
       </span>
-      <span className="min-w-0 truncate text-ink">{line}</span>
+      <span className="min-w-0 truncate text-ink" title={line}>
+        {line}
+      </span>
     </li>
   );
 }
