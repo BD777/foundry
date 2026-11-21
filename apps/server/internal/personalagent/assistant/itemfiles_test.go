@@ -64,3 +64,36 @@ func TestItemFileRendersFactsAndSections(t *testing.T) {
 		}
 	}
 }
+
+// The file lists every decision of the item with its id and the person's
+// words, oldest first, a superseded one struck through with the id that
+// replaced it, however long the timeline grows; then the acceptance criteria.
+func TestItemFileListsDecisionsAndAcceptance(t *testing.T) {
+	item := store.PersonalAgentListItem{ID: "pai_1", Text: "Channel replies", Status: store.PersonalAgentItemOpen, Owner: "assistant",
+		Plan: &store.PersonalAgentItemPlan{Progress: "working", Acceptance: []string{"No text in a chat with others when blocked", "The person gets a Feishu card"}}}
+	events := []store.PersonalAgentItemEvent{
+		{ID: "pie_a", At: "2026-11-19T06:00:00Z", Actor: "assistant", Kind: store.PersonalAgentItemEventDecided,
+			Detail: &store.PersonalAgentItemEventDetail{Decision: "Post a short text line", Quote: "回一句"}},
+		{ID: "pie_b", At: "2026-11-19T07:00:00Z", Actor: "assistant", Kind: store.PersonalAgentItemEventDecided,
+			Detail: &store.PersonalAgentItemEventDetail{Decision: "React with an emoji only", Quote: "用表情", Supersedes: "pie_a"}},
+	}
+	for i := range 30 {
+		events = append(events, store.PersonalAgentItemEvent{At: fmt.Sprintf("2026-11-20T07:%02d:00Z", i), Actor: "assistant", Kind: "summary_updated"})
+	}
+	file := ItemFile(item, nil, events)
+	for _, want := range []string{
+		"## 决定\n\n- ~~2026-11-19 06:00 UTC · `pie_a` · Post a short text line~~（已被 `pie_b` 取代）\n  > 回一句\n" +
+			"- 2026-11-19 07:00 UTC · `pie_b` · React with an emoji only\n  > 用表情\n",
+		"## 完成标准\n\n- No text in a chat with others when blocked\n- The person gets a Feishu card\n",
+	} {
+		if !strings.Contains(file, want) {
+			t.Fatalf("missing %q in:\n%s", want, file)
+		}
+	}
+	bare := ItemFile(store.PersonalAgentListItem{ID: "pai_2", Text: "Call mum", Status: store.PersonalAgentItemOpen, Owner: "person"}, nil, nil)
+	for _, want := range []string{"## 决定\n\n（暂无）\n", "## 完成标准\n\n（暂无）\n"} {
+		if !strings.Contains(bare, want) {
+			t.Fatalf("missing %q in:\n%s", want, bare)
+		}
+	}
+}

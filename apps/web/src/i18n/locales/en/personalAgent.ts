@@ -413,6 +413,7 @@ export const personalAgent = {
       "Ask the assistant to inspect the saved item and current owner before continuing; this preserves the task identity.",
     inspectRun: "Inspect execution",
     evidence: "Completion evidence",
+    acceptance: "Done when",
     inspectEvidence: "Open evidence",
     evidenceNeeded:
       "Execution ended. Review its output and evidence before marking the item complete.",
@@ -635,6 +636,10 @@ export const personalAgent = {
       archived: "Archived",
       summary: "Summary",
       noSummary: "The assistant hasn't written a summary yet.",
+      decisions: "Decisions",
+      noDecisions: "No decisions of yours recorded yet.",
+      decisionSuperseded: "Superseded",
+      decisionQuote: "In your words: {{quote}}",
       work: "Work",
       noWork: "No work on this item yet.",
       timeline: "Timeline",
@@ -706,6 +711,7 @@ export const personalAgent = {
       claimedReplaced: "Another chat took it over",
       released: "The chat stopped following it",
       rehomed: "Workspace: {{from}} → {{to}}",
+      decided: "Decided: {{decision}}",
     },
     review: {
       open: "Review",

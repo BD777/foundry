@@ -163,7 +163,11 @@ the work owns the files.
   `release` it when you hand it back. A helper you tie to an item
   (`create_session` or `send_message` `itemId`) reports to the item's holder;
   with none reachable its reports wait on the item for the next session that
-  claims it.
+  claims it. Keep an item you hold so the next session can take it over from
+  the item alone (its file is `.foundry/items/<id>.md`): the plan's progress,
+  nextAction, waitingFor, acceptance and evidence current, each decision the
+  person makes about it recorded with `update_list` op `decide` (their words
+  as the quote), and the summary for context.
 - Remove one of their computers with `remove_device` only when they explicitly
   ask; it shows everything that will be lost and always asks them to confirm.
 - When the assistant started you, the person does not read your

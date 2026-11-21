@@ -356,7 +356,7 @@ type PersonalAgentItem struct {
 	// Origin Where the item started and the message it rests on. Foundry records this mechanically; the assistant never writes it. A channel item names the channel and the requester whose message asked for it.
 	Origin *PersonalAgentItemOrigin `json:"origin,omitempty"`
 
-	// Plan The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references and the completion evidence. Operational state, not the person's intent; absent on items with none.
+	// Plan The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references, what counts as done (acceptance) and the completion evidence. Operational state, not the person's intent (their decisions are decided events); absent on items with none.
 	Plan *PersonalAgentItemPlan `json:"plan,omitempty"`
 
 	// HomeWorkspaceID The workspace responsible for the item; absent when the assistant looks after it in its own home (the inbox).
@@ -411,15 +411,18 @@ type PersonalAgentItemEvent struct {
 	// Kind The mechanical fact an event records.
 	Kind PersonalAgentItemEventKind `json:"kind"`
 
-	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox).
+	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
 	Detail *PersonalAgentItemEventDetail `json:"detail,omitempty"`
 }
 
 // PersonalAgentItemEventActor Who caused the change an event records. session is a session the person started in a workspace, changing an item whose home is there.
 type PersonalAgentItemEventActor = string
 
-// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox).
+// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
 type PersonalAgentItemEventDetail struct {
+	Decision    string `json:"decision,omitempty"`
+	Quote       string `json:"quote,omitempty"`
+	Supersedes  string `json:"supersedes,omitempty"`
 	From        string `json:"from,omitempty"`
 	To          string `json:"to,omitempty"`
 	SessionID   string `json:"sessionId,omitempty"`

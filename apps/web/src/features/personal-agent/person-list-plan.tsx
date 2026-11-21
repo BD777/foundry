@@ -253,6 +253,16 @@ export function ItemPlan({
             ) : null}
           </div>
         ) : null}
+        {(plan?.acceptance?.length ?? 0) > 0 ? (
+          <div>
+            <p>{t("planning.acceptance")}</p>
+            <ul>
+              {plan!.acceptance!.map((criterion, i) => (
+                <li key={i}>{criterion}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {(plan?.evidence?.length ?? 0) > 0 ? (
           <div>
             <p>{t("planning.evidence")}</p>

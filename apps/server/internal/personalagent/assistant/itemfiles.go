@@ -29,7 +29,7 @@ const (
 	// ItemFilesDir is where a workspace's item files live.
 	ItemFilesDir = ".foundry/items"
 	// ItemFileNotice is the line every item file starts its front matter with.
-	ItemFileNotice = "# 由 Foundry 生成，只读，改动会被覆盖；改事项用 update_list"
+	ItemFileNotice = "# 由 Foundry 生成，只读，改动会被覆盖；改事项用 update_list（op claim 接手并替换当前 holder，op decide 记本人的决定）"
 	// itemFileTimeline is how many of the latest events an item file shows.
 	itemFileTimeline = 20
 	// itemFileDelay gathers a burst of changes into one write per workspace.
@@ -249,10 +249,27 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 		out.WriteString("\n摘要：\n\n" + summary + "\n")
 	}
 
+	section("决定")
+	decisions := itemDecisions(events)
+	for _, decision := range decisions {
+		out.WriteString(decision + "\n")
+	}
+	if len(decisions) == 0 {
+		none()
+	}
+
 	plan := item.Plan
 	if plan == nil {
 		plan = &store.PersonalAgentItemPlan{}
 	}
+	section("完成标准")
+	for _, criterion := range plan.Acceptance {
+		out.WriteString("- " + itemFileLine(criterion) + "\n")
+	}
+	if len(plan.Acceptance) == 0 {
+		none()
+	}
+
 	section("进展")
 	progress := 0
 	for _, entry := range [][2]string{{"进展", plan.Progress}, {"下一步", plan.NextAction}, {"等待", plan.WaitingFor}} {
@@ -315,6 +332,30 @@ func ItemFile(item store.PersonalAgentListItem, helpers []store.PersonalAgentTas
 	return out.String()
 }
 
+// itemDecisions are the item's decided events, oldest first, each with its id
+// (what a later decision supersedes), the person's words, and whether a later
+// one replaced it.
+func itemDecisions(events []store.PersonalAgentItemEvent) []string {
+	replacedBy := map[string]string{}
+	for _, event := range events {
+		if event.Kind == store.PersonalAgentItemEventDecided && event.Detail != nil && event.Detail.Supersedes != "" {
+			replacedBy[event.Detail.Supersedes] = event.ID
+		}
+	}
+	var lines []string
+	for _, event := range events {
+		if event.Kind != store.PersonalAgentItemEventDecided || event.Detail == nil {
+			continue
+		}
+		line := "- " + itemFileTime(event.At) + " · `" + event.ID + "` · " + itemFileLine(event.Detail.Decision)
+		if by := replacedBy[event.ID]; by != "" {
+			line = "- ~~" + strings.TrimPrefix(line, "- ") + "~~（已被 `" + by + "` 取代）"
+		}
+		lines = append(lines, line, "  > "+itemFileLine(event.Detail.Quote))
+	}
+	return lines
+}
+
 // itemEventLine is one timeline event: when, who, what, and its detail.
 func itemEventLine(event store.PersonalAgentItemEvent) string {
 	line := "- " + itemFileTime(event.At) + " · " + event.Actor + " · " + event.Kind
@@ -348,6 +389,9 @@ func itemEventLine(event store.PersonalAgentItemEvent) string {
 	}
 	if reason := itemFileLine(detail.Reason); reason != "" {
 		parts = append(parts, reason)
+	}
+	if decision := itemFileLine(detail.Decision); decision != "" {
+		parts = append(parts, decision)
 	}
 	if len(parts) > 0 {
 		line += "：" + strings.Join(parts, "，")
