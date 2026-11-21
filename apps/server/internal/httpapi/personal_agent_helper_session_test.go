@@ -115,7 +115,7 @@ func TestLegacyInFlightOperationDrainsThroughTheGenericPath(t *testing.T) {
 	items := f.server.store.(store.PersonalAgentListStore)
 	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
 		AssistantID: agent.ID, UserID: f.aliceID, Text: "tidy the synthetic photos",
-		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
+		HomeWorkspaceID: "ws_alice", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"},
 	})
 	if err != nil {
 		t.Fatal(err)

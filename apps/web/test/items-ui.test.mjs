@@ -54,6 +54,40 @@ const { ItemsList } =
   await import("../src/features/personal-agent/items-list.tsx");
 const { ItemDetail } =
   await import("../src/features/personal-agent/items-detail.tsx");
+const { WorkspaceItems } =
+  await import("../src/features/personal-agent/workspace-items.tsx");
+
+// The live reads subscribe to the stream; nothing streams here.
+globalThis.EventSource = class {
+  addEventListener() {}
+  close() {}
+};
+
+// Each test that reads the server sets `answer`; the calls are kept.
+const calls = [];
+let answer = () => undefined;
+globalThis.fetch = async (input, init = {}) => {
+  const url = new URL(String(input), "https://foundry.example");
+  const method = (init.method ?? "GET").toUpperCase();
+  calls.push({
+    method,
+    path: url.pathname,
+    query: url.searchParams,
+    body: init.body ? JSON.parse(init.body) : undefined,
+  });
+  const value = answer(method, url);
+  return value === undefined
+    ? new Response(JSON.stringify({ error: "not found" }), { status: 404 })
+    : new Response(JSON.stringify(value), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+};
+
+const workspaces = [
+  { id: "ws_home", name: "Foundry", kind: "project" },
+  { id: "ws_docs", name: "Docs", kind: "project" },
+];
 
 // Thursday 2026-10-15 09:00 in Shanghai; "now" for the rows' relative times.
 const nowIso = new Date().toISOString();
@@ -274,6 +308,7 @@ test("open items read To do; In progress only where a helper is running", async 
 test("the list groups by day and marks the selected row", async () => {
   const page = await mount(ItemsList, {
     items: [item("a", { text: "today item" })],
+    workspaces,
     selectedItemId: "a",
     busyId: "",
     onOpen: () => {},
@@ -367,5 +402,184 @@ test("a detail that failed to load says so", async () => {
   });
   assert.match(page.container.textContent, /Couldn't load this item/);
   assert.match(page.container.textContent, /not found/);
+  await page.unmount();
+});
+
+test("a row names the workspace an item lives in; the inbox goes unsaid", async () => {
+  const page = await mount(ItemsList, {
+    items: [
+      item("home", { text: "lives in foundry", homeWorkspaceId: "ws_home" }),
+      item("inbox", { text: "lives in the inbox" }),
+    ],
+    workspaces,
+    busyId: "",
+    onOpen: () => {},
+    onTick: () => {},
+  });
+  const rows = [...page.container.querySelectorAll("[data-selected]")];
+  const home = rows.find((row) => /lives in foundry/.test(row.textContent));
+  const inbox = rows.find((row) => /lives in the inbox/.test(row.textContent));
+  assert.match(home.textContent, /Foundry/);
+  assert.doesNotMatch(inbox.textContent, /Assistant's inbox/);
+  await page.unmount();
+});
+
+function detailProps(detail) {
+  return {
+    assistantId: "asst_1",
+    detail,
+    error: "",
+    onBack: () => {},
+    onOpenAssistant: () => {},
+    items: [],
+    operations: [],
+    workspaces,
+    onChanged: noop,
+    onDeleted: () => {},
+  };
+}
+
+test("the detail shows where the item lives, what it touches and the chat that follows it", async () => {
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/agent-sessions/sess_holder/link"
+      ? { id: "sess_holder", workspaceId: "ws_home", title: "Ledger web" }
+      : undefined;
+  const at = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
+  const detail = {
+    item: item("lives", {
+      text: "item ledger",
+      homeWorkspaceId: "ws_home",
+      touches: ["ws_docs", "ws_gone"],
+      holderSessionId: "sess_holder",
+    }),
+    events: [
+      {
+        id: "e1",
+        itemId: "lives",
+        at: at(4),
+        actor: "person",
+        kind: "rehomed",
+        detail: { to: "ws_home" },
+      },
+      {
+        id: "e2",
+        itemId: "lives",
+        at: at(3),
+        actor: "session",
+        kind: "claimed",
+        detail: { sessionId: "sess_holder" },
+      },
+      {
+        id: "e3",
+        itemId: "lives",
+        at: at(2),
+        actor: "session",
+        kind: "claimed",
+        detail: { sessionId: "sess_holder", from: "sess_old" },
+      },
+      {
+        id: "e4",
+        itemId: "lives",
+        at: at(1),
+        actor: "session",
+        kind: "released",
+        detail: { sessionId: "sess_old" },
+      },
+    ],
+  };
+  const page = await mount(ItemDetail, detailProps(detail));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const text = page.container.textContent;
+  const home = page.container.querySelector(
+    'a[href="/workspace?workspace=ws_home"]',
+  );
+  assert.ok(home, "the home links to its workspace");
+  assert.equal(home.textContent, "Foundry");
+  assert.ok(
+    page.container.querySelector('a[href="/workspace?workspace=ws_docs"]'),
+  );
+  assert.match(text, /A workspace you can't see/);
+  assert.doesNotMatch(text, /ws_gone|sess_holder|sess_old/);
+  const holder = page.container.querySelector(
+    'a[href="/chats/sess_holder?workspace=ws_home"]',
+  );
+  assert.ok(holder, "the holder links to its chat");
+  assert.equal(holder.textContent, "Ledger web");
+  assert.match(text, /Workspace: Assistant's inbox → Foundry/);
+  assert.match(text, /A chat started following it/);
+  assert.match(text, /Another chat took it over/);
+  assert.match(text, /The chat stopped following it/);
+  assert.match(text, /A chat/);
+  const change = [...page.container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Change",
+  );
+  assert.ok(change, "an open item's home can be changed");
+  await act(async () => change.click());
+  assert.ok(
+    page.container.querySelector('[aria-label^="Choose the workspace"]'),
+    "changing shows the workspace choice",
+  );
+  await page.unmount();
+});
+
+test("an item without a home lives in the assistant's inbox; a closed one keeps it", async () => {
+  const page = await mount(
+    ItemDetail,
+    detailProps({
+      item: item("closed", { status: "done", closedAt: nowIso }),
+      events: [],
+    }),
+  );
+  assert.match(page.container.textContent, /Assistant's inbox/);
+  assert.ok(
+    ![...page.container.querySelectorAll("button")].some(
+      (button) => button.textContent === "Change",
+    ),
+    "a closed item's home is not changed",
+  );
+  await page.unmount();
+});
+
+test("a workspace lists its open items: those living here apart from those touching it", async () => {
+  calls.length = 0;
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/assistants/asst_1/items"
+      ? {
+          items: [
+            item("mine", { text: "lives here", homeWorkspaceId: "ws_home" }),
+            item("theirs", {
+              text: "helper ran here",
+              homeWorkspaceId: "ws_docs",
+              touches: ["ws_home"],
+            }),
+            item("inbox", { text: "from the inbox", touches: ["ws_home"] }),
+          ],
+          total: 3,
+          offset: 0,
+        }
+      : undefined;
+  const opened = [];
+  const page = await mount(WorkspaceItems, {
+    assistantId: "asst_1",
+    workspaceId: "ws_home",
+    workspaces,
+    onOpenItem: (itemId) => opened.push(itemId),
+    onOpenAll: () => opened.push("all"),
+  });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const read = calls.find(
+    (call) => call.path === "/api/assistants/asst_1/items",
+  );
+  assert.equal(read.query.get("workspace"), "ws_home");
+  assert.equal(read.query.get("view"), "open");
+  const [here, touching] = page.container.querySelectorAll("section");
+  assert.equal(here.getAttribute("aria-label"), "Belongs here");
+  assert.match(here.textContent, /lives here/);
+  assert.doesNotMatch(here.textContent, /helper ran here/);
+  assert.equal(touching.getAttribute("aria-label"), "Touches here");
+  assert.match(touching.textContent, /helper ran here.*Docs/);
+  assert.match(touching.textContent, /from the inbox.*Assistant's inbox/);
+  await act(async () => here.querySelector("button").click());
+  assert.deepEqual(opened, ["mine"]);
   await page.unmount();
 });

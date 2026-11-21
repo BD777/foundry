@@ -9,6 +9,7 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { EmptyState } from "../../components/ui/empty-state";
+import { SelectMenu } from "../../components/ui/select-menu";
 import { Skeleton } from "../../components/ui/loading";
 import {
   SegmentedControl,
@@ -24,6 +25,7 @@ import {
   type RangePreset,
 } from "./items-model";
 import { ItemDetail } from "./items-detail";
+import { homeChoices } from "./items-home";
 import { ItemsList } from "./items-list";
 import { ItemsReview } from "./items-review";
 import {
@@ -45,7 +47,7 @@ export interface AssistantItemsPageProps {
   onSelectItem: (itemId: string | undefined) => void;
   /** Back to the assistant's conversation, e.g. after asking for a summary. */
   onOpenAssistant: () => void;
-  /** For a plan's project names. */
+  /** For the names of the workspaces items live in, and the filter. */
   workspaces: WorkspaceProjection[];
 }
 
@@ -67,6 +69,7 @@ export function AssistantItemsPage({
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
+  const [workspaceFilter, setWorkspaceFilter] = useState("");
   const query = useDebounced(search.trim(), 250);
   const [reviewing, setReviewing] = useState(false);
   const [busyId, setBusyId] = useState("");
@@ -87,6 +90,7 @@ export function AssistantItemsPage({
           view: tab,
           from: bounds.from,
           to: bounds.to,
+          workspace: workspaceFilter || undefined,
           q: query || undefined,
         },
   );
@@ -194,6 +198,20 @@ export function AssistantItemsPage({
                 size="sm"
                 value={tab}
               />
+              <SelectMenu
+                ariaLabel={t("items.filter.workspace")}
+                className="w-48 max-w-full"
+                onChange={setWorkspaceFilter}
+                options={[
+                  { value: "", label: t("items.filter.allWorkspaces") },
+                  ...homeChoices(workspaces).map((workspace) => ({
+                    value: workspace.id,
+                    label: workspace.name,
+                  })),
+                ]}
+                tone="pill"
+                value={workspaceFilter}
+              />
               <TextInput
                 aria-label={t("items.search.label")}
                 className="ms-auto w-56 max-w-full"
@@ -253,6 +271,7 @@ export function AssistantItemsPage({
                 <ItemsList
                   busyId={busyId}
                   items={list.items}
+                  workspaces={workspaces}
                   onOpen={(itemId) => onSelectItem(itemId)}
                   onTick={(item) => void tick(item)}
                   selectedItemId={selectedItemId}

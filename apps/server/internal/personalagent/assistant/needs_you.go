@@ -135,13 +135,6 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 	if err != nil {
 		return false
 	}
-	conversationID := session.ParentSessionID
-	if _, task, ok := s.TaskOf(ctx, session); ok && task.ConversationSessionID != "" {
-		conversationID = task.ConversationSessionID
-	}
-	if conversationID == "" {
-		return false
-	}
 	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
 	helper := firstLineOf(session.Title)
 	if helper == "" {
@@ -150,6 +143,14 @@ func (s *Service) NotifyPendingItem(ctx context.Context, agent store.PersonalAge
 	question := textcut.Excerpt(strings.TrimSpace(item.Title), 240)
 	line := fmt.Sprintf(pendingNoticeTexts[languageIndex(language)],
 		helper, session.ID, question, item.ID)
+	target := s.SignalTarget(ctx, session, session.ParentSessionID)
+	if target.Queued() {
+		return s.queueNotice(ctx, target, session.ID, store.NoticeKindHelperQuestion, line, "needs_you:"+item.ID)
+	}
+	conversationID := target.SessionID
+	if conversationID == "" {
+		return false
+	}
 	s.notices.addLine(conversationID, language, noticeLine{key: item.ID, text: line, due: s.stillOpen(agent.UserID, item.ID)}, time.Now(), func(text string) {
 		current, err := s.store.GetAssistant(context.Background(), agent.ID)
 		if err != nil || current.State != store.PersonalAgentActive {

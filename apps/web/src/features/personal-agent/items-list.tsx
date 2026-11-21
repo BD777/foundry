@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next";
-import type { PersonalAgentItem } from "@bd777/foundry-protocol";
+import type {
+  PersonalAgentItem,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import {
   ContextEmpty,
@@ -10,10 +13,18 @@ import {
 import { Subheading } from "../../components/ui/subheading";
 import { relativeWhen } from "../../lib/time-format";
 import { groupByDay, type ItemDayGroup } from "./items-model";
-import { ItemLead, originLabel, ownerLabel, stateLabel } from "./items-marks";
+import {
+  ItemLead,
+  originLabel,
+  ownerLabel,
+  stateLabel,
+  workspaceLabel,
+} from "./items-marks";
 
 export interface ItemsListProps {
   items: PersonalAgentItem[];
+  /** For the name of the workspace an item lives in. */
+  workspaces: WorkspaceProjection[];
   selectedItemId?: string;
   /** The item whose tick is being saved. */
   busyId: string;
@@ -24,6 +35,7 @@ export interface ItemsListProps {
 /** The list: one group per day of last update, newest day first, flat rows. */
 export function ItemsList({
   items,
+  workspaces,
   selectedItemId,
   busyId,
   onOpen,
@@ -49,6 +61,7 @@ export function ItemsList({
                   onOpen={onOpen}
                   onTick={onTick}
                   selected={item.id === selectedItemId}
+                  workspaces={workspaces}
                 />
               ))}
             </ContextList>
@@ -79,12 +92,14 @@ function ItemListRow({
   onOpen,
   onTick,
   selected,
+  workspaces,
 }: {
   busy: boolean;
   item: PersonalAgentItem;
   onOpen: (itemId: string) => void;
   onTick: (item: PersonalAgentItem) => void;
   selected: boolean;
+  workspaces: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("personalAgent");
   // Only a channel names someone else; the person's own web and self-chat items need no chip.
@@ -99,7 +114,16 @@ function ItemListRow({
         title={item.text}
       >
         <ContextRowCopy
-          detail={`${ownerLabel(item.owner, t)} · ${stateLabel(item, t)}`}
+          detail={[
+            ownerLabel(item.owner, t),
+            stateLabel(item, t),
+            // The inbox is where an item lives by default; only a workspace is named.
+            item.homeWorkspaceId
+              ? workspaceLabel(item.homeWorkspaceId, workspaces, t)
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           title={item.text}
         />
         <span className="flex flex-none flex-col items-end gap-1">

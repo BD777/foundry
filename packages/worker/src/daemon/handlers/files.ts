@@ -76,7 +76,7 @@ import {
 } from "../../session/files/workspace-files.js";
 import {
   WorkspaceFileWriteError,
-  writeWorkspaceFile,
+  writeWorkspaceFileKeptOutOfGit,
   manageWorkspaceFile,
 } from "../../session/files/workspace-file-write.js";
 import type { DaemonContext } from "../context.js";
@@ -258,14 +258,17 @@ function onWriteFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     envelope,
     daemonMessageTypes.fileWritten,
     () =>
-      writeWorkspaceFile(ctx.roster.folderFor(payload.workspaceId ?? ""), {
-        workspaceId: payload.workspaceId ?? "",
-        path: payload.path ?? "",
-        content: payload.content as string,
-        ...(payload.expectedSha256 !== undefined
-          ? { expectedSha256: payload.expectedSha256 }
-          : {}),
-      }),
+      writeWorkspaceFileKeptOutOfGit(
+        ctx.roster.folderFor(payload.workspaceId ?? ""),
+        {
+          workspaceId: payload.workspaceId ?? "",
+          path: payload.path ?? "",
+          content: payload.content as string,
+          ...(payload.expectedSha256 !== undefined
+            ? { expectedSha256: payload.expectedSha256 }
+            : {}),
+        },
+      ),
     (message, error) => ({
       workspaceId: payload.workspaceId ?? "",
       path: payload.path ?? "",

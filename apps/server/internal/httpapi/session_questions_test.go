@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -77,7 +78,7 @@ func TestChildQuestionIsRelayedAndAnsweredInPlainText(t *testing.T) {
 // An approval tells the parent how to approve or deny, with the plan.
 func TestRelayedApprovalCarriesThePlan(t *testing.T) {
 	s := NewServer(newTestStore(t))
-	text := s.relayedQuestionText(store.AgentSession{ID: "sess_child", Title: "Refactor"}, store.TranscriptMessage{
+	text := s.relayedQuestionText(store.AgentSession{ID: "sess_child", Title: "Refactor"}, assistant.SignalTarget{}, store.TranscriptMessage{
 		ID: "approval_toolu_p", Questions: []store.AgentQuestion{{Title: "Approve this plan?", Options: []string{"Approve", "Deny"}, Approval: true, Detail: "1. Split the module"}},
 	})
 	for _, want := range []string{"asks for approval", "1. Split the module", `"Approve" approves`} {

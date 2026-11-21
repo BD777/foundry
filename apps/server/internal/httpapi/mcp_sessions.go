@@ -257,14 +257,15 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}
 	if itemID := mcpArgString(args, "itemId"); itemID != "" {
-		scope, err := s.paScope(ctx, actor)
+		scope, err := s.itemScope(ctx, actor)
 		if err != nil {
 			return "", err
 		}
-		if err := s.assistant.HelperItem(ctx, scope, itemID); err != nil {
+		item, err := s.assistant.HelperItem(ctx, scope, itemID)
+		if err != nil {
 			return "", err
 		}
-		input.AssistantItemID = itemID
+		input.AssistantItemID, input.ItemAssistantID = item.ID, item.AssistantID
 	}
 	if _, given := args["reportBack"]; given {
 		reportBack := mcpArgBool(args, "reportBack")
@@ -324,7 +325,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		return "", store.ErrSessionArchived
 	}
 	if itemID := mcpArgString(args, "itemId"); itemID != "" {
-		scope, err := s.paScope(ctx, call.actor)
+		scope, err := s.itemScope(ctx, call.actor)
 		if err != nil {
 			return "", err
 		}

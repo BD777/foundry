@@ -332,6 +332,8 @@ export interface PersonalAgentItemsQuery {
   /** RFC 3339 instants: the range is [from, to) on the time an item last changed. */
   from?: string;
   to?: string;
+  /** A workspace id: the items whose home is it or that touch it. */
+  workspace?: string;
   /** Case-insensitive search in the item's words and summary. */
   q?: string;
   /** Default 50, at most 200. */

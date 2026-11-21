@@ -127,7 +127,9 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 		}
 		return nil, err
 	}
-	if scope.Agent.State == store.PersonalAgentStopped {
+	// The stop switch stops the assistant, not the person's own sessions
+	// keeping their items.
+	if scope.Agent.State == store.PersonalAgentStopped && scope.Workspace == "" {
 		record.ArgsSummary = tool
 		return refused(errStopped)
 	}

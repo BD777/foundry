@@ -1,7 +1,10 @@
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Check, CircleHelp, LoaderCircle, Minus } from "lucide-react";
-import type { PersonalAgentItem } from "@bd777/foundry-protocol";
+import type {
+  PersonalAgentItem,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { ContextRowIcon } from "../../components/ui/context-card";
 import { Checkbox } from "../../components/ui/field";
 import { itemMark } from "./items-model";
@@ -32,6 +35,22 @@ export function originLabel(
         });
   if (origin.kind === "self_chat") return t("items.origin.selfChat");
   return t("items.origin.web");
+}
+
+/**
+ * A workspace an item names, by its name: no id is the assistant's inbox,
+ * one the person cannot see (removed, or not shared) says so, never the id.
+ */
+export function workspaceLabel(
+  workspaceId: string | undefined,
+  workspaces: WorkspaceProjection[],
+  t: TFunction<"personalAgent">,
+): string {
+  if (!workspaceId) return t("items.home.inbox");
+  return (
+    workspaces.find((workspace) => workspace.id === workspaceId)?.name ||
+    t("items.home.removed")
+  );
 }
 
 /** A helper's status in words; a status the Web does not know is shown as the server names it. */

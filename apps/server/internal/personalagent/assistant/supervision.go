@@ -3,6 +3,7 @@ package assistant
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -74,6 +75,7 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 	}
 	agent, task, ok := s.TaskOf(ctx, session)
 	if !ok {
+		s.followLinkedHelper(ctx, change, session)
 		return
 	}
 	switch change {
@@ -91,6 +93,25 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
 			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
 		}
+	}
+}
+
+// followLinkedHelper keeps the status of a helper a workspace session tied to
+// an item (pa_item_helpers) in step with its session, so the item shows it
+// and records when it ends.
+func (s *Service) followLinkedHelper(ctx context.Context, change sessions.Change, session store.AgentSession) {
+	if _, err := s.store.PersonalAgentItemOfHelper(ctx, session.ID); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Printf("session %s: read its item: %v", session.ID, err)
+		}
+		return
+	}
+	status, endedAt := store.PersonalAgentTaskRunning, ""
+	if change == sessions.Completed {
+		status, endedAt = taskStatusOf(session.Status), sessionEndedAt(session)
+	}
+	if err := s.store.SetPersonalAgentItemHelperStatus(ctx, session.ID, status, endedAt); err != nil {
+		log.Printf("session %s: follow it on its item: %v", session.ID, err)
 	}
 }
 
@@ -121,21 +142,30 @@ func (s *Service) AdoptTask(ctx context.Context, callerSessionID string, helper 
 	}
 }
 
-// noticeTask tells the task's conversation of one event, unless
-// the assistant is stopped.
+// noticeTask tells whoever follows the task (SignalTarget) of one event,
+// unless the assistant is stopped; with no one reachable it waits on the
+// task's item.
 func (s *Service) noticeTask(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, kind string, now time.Time) {
 	if agent.State != store.PersonalAgentActive || task.ConversationSessionID == "" {
 		return
 	}
 	line := s.taskLine(ctx, agent, task, session, kind, now)
+	target := s.SignalTarget(ctx, session, task.ConversationSessionID)
+	if target.Queued() {
+		s.queueNotice(ctx, target, session.ID, store.NoticeKindSupervision, line, "supervision:"+session.ID)
+		return
+	}
+	if target.SessionID == "" {
+		return
+	}
 	language := personalagent.LanguageOf(agent.Settings, s.AccountLocale(ctx, agent.UserID))
-	s.notices.add(task.ConversationSessionID, language, line, now, func(text string) {
+	s.notices.add(target.SessionID, language, line, now, func(text string) {
 		// The person may have pressed stop meanwhile.
 		current, err := s.store.GetAssistant(context.Background(), agent.ID)
 		if err != nil || current.State != store.PersonalAgentActive {
 			return
 		}
-		s.tell(context.Background(), task.ConversationSessionID, store.NoticeKindSupervision, text)
+		s.tell(context.Background(), target.SessionID, store.NoticeKindSupervision, text)
 	})
 }
 

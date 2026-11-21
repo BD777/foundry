@@ -125,7 +125,7 @@ func TestAssistantPackageGatesDispatchReadsAndCreatedWorkspaces(t *testing.T) {
 	})
 	item, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
 		UserID: f.aliceID, AssistantID: agent.ID, Text: "Work outside the package",
-		Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"},
+		HomeWorkspaceID: "ws_alice", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"},
 	})
 	if err != nil {
 		t.Fatal(err)

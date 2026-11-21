@@ -27,10 +27,11 @@ const (
 )
 
 // personalAgentItemFilter reads the items page's query: view, owner, from,
-// to, q, limit and offset. Out-of-range values answer 400.
+// to, workspace, q, limit and offset. Out-of-range values answer 400.
 func personalAgentItemFilter(w http.ResponseWriter, r *http.Request) (store.PersonalAgentItemFilter, bool) {
 	query := r.URL.Query()
-	filter := store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewOpen, Query: strings.TrimSpace(query.Get("q")), Limit: personalAgentItemDefaultLimit}
+	filter := store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewOpen, Query: strings.TrimSpace(query.Get("q")), Limit: personalAgentItemDefaultLimit,
+		WorkspaceID: strings.TrimSpace(query.Get("workspace"))}
 	if value := strings.TrimSpace(query.Get("view")); value != "" {
 		filter.View = value
 	}
@@ -117,6 +118,14 @@ func personalAgentItemError(err error) error {
 
 // handleListPersonalAgentItems answers one page of the items page
 // (GET /api/personal-agent/items).
+// observeItemChanges writes every item change into the item files of the
+// homes it concerns (assistant/itemfiles.go).
+func (s *Server) observeItemChanges() {
+	if source, ok := s.store.(store.PersonalAgentItemChangeSource); ok {
+		source.ObservePersonalAgentItemChanges(s.assistant.ItemChanged)
+	}
+}
+
 func (s *Server) handleListPersonalAgentItems(w http.ResponseWriter, r *http.Request) {
 	agent, ok := s.personalAgentOf(w, r)
 	if !ok {
@@ -440,15 +449,9 @@ func (s *Server) personActorOf(ctx context.Context, assistantID string) (Actor, 
 
 // personalAgentItemWithHelpers is one item with the helpers that work on it.
 func (s *Server) personalAgentItemWithHelpers(ctx context.Context, assistantID string, item store.PersonalAgentListItem) (store.PersonalAgentItem, error) {
-	tasks, err := s.store.ListPersonalAgentTasks(ctx, assistantID, nil)
+	helpers, err := s.store.ListPersonalAgentItemHelpers(ctx, assistantID, item.ID)
 	if err != nil {
 		return store.PersonalAgentItem{}, err
-	}
-	var helpers []store.PersonalAgentTask
-	for _, task := range tasks {
-		if task.ItemID == item.ID {
-			helpers = append(helpers, task)
-		}
 	}
 	return s.personalAgentItemView(ctx, item, helpers)
 }
@@ -465,25 +468,28 @@ func (s *Server) personalAgentItemView(ctx context.Context, item store.PersonalA
 		helpers = append(helpers, helper)
 	}
 	return store.PersonalAgentItem{
-		ID:             item.ID,
-		IntentRevision: int(item.IntentRevision),
-		Revision:       int(item.Revision),
-		Owner:          item.Owner,
-		Text:           item.Text,
-		When:           item.When,
-		At:             item.At,
-		Remind:         item.Remind,
-		Status:         item.Status,
-		Summary:        item.Summary,
-		Quote:          item.Quote,
-		Origin:         item.Origin,
-		Plan:           item.Plan,
-		ArchivedAt:     item.ArchivedAt,
-		RemindedAt:     item.RemindedAt,
-		CreatedAt:      item.CreatedAt,
-		UpdatedAt:      item.UpdatedAt,
-		ClosedAt:       item.ClosedAt,
-		Helpers:        helpers,
+		ID:              item.ID,
+		IntentRevision:  int(item.IntentRevision),
+		Revision:        int(item.Revision),
+		Owner:           item.Owner,
+		Text:            item.Text,
+		When:            item.When,
+		At:              item.At,
+		Remind:          item.Remind,
+		Status:          item.Status,
+		Summary:         item.Summary,
+		Quote:           item.Quote,
+		Origin:          item.Origin,
+		Plan:            item.Plan,
+		HomeWorkspaceID: item.HomeWorkspaceID,
+		Touches:         store.ItemTouches(item.HomeWorkspaceID, tasks),
+		HolderSessionID: item.HolderSessionID,
+		ArchivedAt:      item.ArchivedAt,
+		RemindedAt:      item.RemindedAt,
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
+		ClosedAt:        item.ClosedAt,
+		Helpers:         helpers,
 	}, nil
 }
 

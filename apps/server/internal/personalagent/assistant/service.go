@@ -54,6 +54,7 @@ type Store interface {
 	store.WorkspaceLifecycleStore
 	store.ExternalAccountStore
 	store.DeviceSharingStore
+	store.DeviceCredentialStore
 	store.DeviceRemovalStore
 	store.DeviceSessionStore
 	store.ActiveAgentSessionStore
@@ -117,8 +118,8 @@ type Devices interface {
 	ManagedRootFolders(ctx context.Context, deviceID string) []string
 	ReadWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) (store.WorkspaceFileRead, error)
 	// WriteWorkspaceFile replaces one text file on the workspace's device;
-	// DeleteWorkspaceFile removes one. They write Foundry's own files in the
-	// assistant's home, never a project.
+	// DeleteWorkspaceFile removes one. They write Foundry's own files: the
+	// assistant's in its home, and in a project only its .foundry/items.
 	WriteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path, content string) error
 	DeleteWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) error
 	ListWorkspaceTree(ctx context.Context, workspace store.WorkspaceProjection, path string) ([]store.WorkspaceTreeEntry, error)
@@ -219,6 +220,9 @@ type Ports struct {
 	// archive took (cascaded: its archived events, oldest first), recording
 	// each for recordAs; a session the person archived since stays archived.
 	RestoreItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, cascaded []store.PersonalAgentItemEvent) error
+	// ItemClaimed hears that a session claimed an item, so the signals
+	// waiting on it go out (signals.go). Optional.
+	ItemClaimed func(assistantID, itemID string)
 }
 
 // ChannelTarget is where a message channel's turn runs (DEV-203): the
@@ -272,6 +276,7 @@ type Service struct {
 	// archiveItemSessions and restoreItemSessions are the item ports (Ports).
 	archiveItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, sessionIDs []string) error
 	restoreItemSessions func(ctx context.Context, recordAs, assistantID, itemID string, cascaded []store.PersonalAgentItemEvent) error
+	itemClaimed         func(assistantID, itemID string)
 
 	// notices gathers the events of the assistant's tasks for its
 	// conversations (supervision.go).
@@ -282,6 +287,8 @@ type Service struct {
 	// projectFileWrites serializes each assistant's foundry files (the index
 	// and project summaries) so a stale snapshot cannot prune a newer write.
 	projectFileWrites keyedMutex
+	// itemFiles writes items into their homes' .foundry/items (itemfiles.go).
+	itemFiles itemFileProjector
 	// Upkeep sweeps and announcements are cheap but not per-drain; these
 	// throttle them (maintenance.go).
 	lastUpkeepSweep  time.Time
@@ -297,6 +304,7 @@ func New(st Store, events sessions.ChangeNotifier, ports Ports) *Service {
 		origin: ports.Origin, fileTimeout: ports.FileTimeout,
 		messageChannels: ports.MessageChannels, channelTarget: ports.ChannelTarget, channelOf: ports.ChannelOf,
 		archiveItemSessions: ports.ArchiveItemSessions, restoreItemSessions: ports.RestoreItemSessions,
+		itemClaimed: ports.ItemClaimed,
 	}
 }
 

@@ -1339,7 +1339,7 @@
         },
         "itemId": {
           "type": "string",
-          "description": "The item of the person's list this helper works on: one of yours, open and not archived (update_list, read_list). The helper is listed on the item."
+          "description": "The item of the person's list this helper works on, open and not archived (update_list, read_list): for the assistant one of its own, for a session the person started in a workspace one homed there. The assistant's helper is listed on the item. A helper on an item sends its turn reports, questions and alerts to the item's holder (update_list claim); while no session following the item is reachable they wait on the item for the next one."
         },
         "reportBack": {
           "type": "boolean",
@@ -1775,7 +1775,7 @@
         },
         "itemId": {
           "type": "string",
-          "description": "Your helper (one create_session started) moves to this item of the person's list: one of yours, open and not archived. Without it the helper stays on its item."
+          "description": "Your helper (one create_session started) moves to this item of the person's list, open and not archived: for the assistant one of its own, for a session the person started in a workspace one homed there. Its reports then reach that item's holder. Without it the helper stays on its item."
         }
       },
       "required": ["sessionId", "prompt"]
@@ -2015,6 +2015,10 @@
         "deviceId": {
           "type": "string",
           "description": "The device (dev_…) the person named; omit to let Foundry choose by needs."
+        },
+        "fromItemId": {
+          "type": "string",
+          "description": "An item of the person's list this project grows from: once created, the item's home moves to it (answer homeOf)."
         }
       },
       "required": ["name", "purpose", "source"]
@@ -2439,22 +2443,22 @@
     "_meta": {
       "anthropic/searchHint": "person list & memory: add or update the person's items, plans, done things"
     },
-    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId is your task (list_tasks) that helps with this item; it moves here from the item it was on. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs.",
-    "summary": "Adds to or updates the person's list of items (plans and done things) from their own words; keeps each item's owner, summary and archive; can set a reminder.",
+    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId is your task (list_tasks) that helps with this item; it moves here from the item it was on. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs. item.home is the workspace responsible for the item (\"\" hands it to the assistant's inbox); plan.workspaceId is the same field. op claim makes this session the item's holder, the session following it (a new claim replaces the one before); release lets it go. A session the person started in a workspace keeps the items whose home is that workspace: its new items get that home, and it changes, claims and releases only those.",
+    "summary": "Adds to or updates the person's list of items (plans and done things) from their own words; keeps each item's owner, summary, home, holder and archive; can set a reminder.",
     "limits": [
       "One item per call; text at most 200 characters, when at most 60, summary at most 1500.",
       "Only from the person's own words in this conversation: anything else is refused.",
       "A reminder needs a time still to come and goes out once, unless the assistant is stopped.",
       "The person ticks, edits and deletes items on the assistant's home page.",
-      "Only the person's assistant (a personal_agent session) has it."
+      "The person's assistant keeps its whole list, and moves a home only to a project its permissions include; a session the person started in a workspace keeps only the items homed there and needs no assistant permissions, and taskId is the assistant's alone. An Issue's sessions, verifiers and the assistant's helpers do not have it."
     ],
     "inputSchema": {
       "type": "object",
       "properties": {
         "op": {
           "type": "string",
-          "enum": ["add", "update", "archive", "restore"],
-          "description": "add or update an item; archive or restore it (item.id only)."
+          "enum": ["add", "update", "archive", "restore", "claim", "release"],
+          "description": "add or update an item; archive, restore, claim or release it (item.id only)."
         },
         "item": {
           "type": "object",
@@ -2502,7 +2506,11 @@
             },
             "quote": {
               "type": "string",
-              "description": "The person's own words this rests on, from this conversation (… for words left out); not needed to change only taskId."
+              "description": "The person's own words this rests on, from this conversation (… for words left out); not needed to change only owner, summary, home or taskId."
+            },
+            "home": {
+              "type": "string",
+              "description": "The workspace (ws_…) responsible for the item; \"\" for the assistant's inbox. Moving it records a rehomed event."
             },
             "revision": {
               "type": "integer",
@@ -2568,7 +2576,8 @@
                   "maxLength": 1000
                 },
                 "workspaceId": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The item's home, as item.home."
                 },
                 "dependencies": {
                   "type": "array",
@@ -2638,12 +2647,12 @@
     "_meta": {
       "anthropic/searchHint": "person list & memory: read the person's items, status, summary, helpers"
     },
-    "description": "Read the person's items one page at a time, newest updated first. Each item shows its text, when, owner, status, summary, quote (when short), times and helpers; events and plans are not returned. status and owner narrow the page. from and to bound updatedAt as RFC 3339 instants, [from, to). closedSince instead gives the open items and those closed since a date or time, as before. Archived items come back only with includeArchived. limit is 1 to 50 (default 20); offset takes nextOffset from the last page. The answer also gives now in the person's zone, total and the pending operations.",
-    "summary": "Reads the person's items a page at a time: their words, times, status, summary and helpers.",
+    "description": "Read the person's items one page at a time, newest updated first. Each item shows its revision (pass it to update_list), text, when, owner, status, summary, quote (when short), times and helpers; events and plans are not returned. status and owner narrow the page. from and to bound updatedAt as RFC 3339 instants, [from, to). closedSince instead gives the open items and those closed since a date or time, as before. Archived items come back only with includeArchived. limit is 1 to 50 (default 20); offset takes nextOffset from the last page. Each item also shows its homeWorkspaceId (absent: the assistant's inbox), touches (other workspaces its helpers run in) and holderSessionId (the session following it); workspaceId keeps the items homed in or touching a workspace. The answer also gives now in the person's zone, total and the pending operations.",
+    "summary": "Reads the person's items a page at a time: their words, times, status, summary, home, holder and helpers.",
     "limits": [
       "Only the list of the assistant's own person.",
       "At most 50 items a call.",
-      "Only the person's assistant (a personal_agent session) has it."
+      "The person's assistant reads its whole list; a session the person started in a workspace reads only the items homed in or touching that workspace, without pending operations. An Issue's sessions, verifiers and the assistant's helpers do not have it."
     ],
     "inputSchema": {
       "type": "object",
@@ -2673,6 +2682,10 @@
         "includeArchived": {
           "type": "boolean",
           "description": "Also archived items; false by default."
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Only items whose home is this workspace or that touch it."
         },
         "limit": {
           "type": "integer",

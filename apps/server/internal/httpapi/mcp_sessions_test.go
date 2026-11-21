@@ -79,8 +79,9 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	}
 
 	chatToken := mint(chat.ID)
-	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames(append(personalAgentToolNames(), "ask_person", "issues", "list_issues", "get_issue")...)) {
-		t.Fatalf("a chat sees %v, want role tools without assistant tools or an unbound credential tool", names)
+	assistantOnly := slices.DeleteFunc(personalAgentToolNames(), func(name string) bool { return workspaceItemMCPTools[name] })
+	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames(append(assistantOnly, "ask_person", "issues", "list_issues", "get_issue")...)) {
+		t.Fatalf("a chat sees %v, want role tools without assistant tools (but the item tools) or an unbound credential tool", names)
 	}
 	call := mcpToolCaller(t, handler, chatToken)
 	if text, isError := call("cloudflare", map[string]any{"action": "accounts"}); !isError || text != "unknown tool: cloudflare" {
@@ -89,8 +90,11 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if text, isError := call("ask_person", map[string]any{"question": "Deploy?"}); !isError || !strings.Contains(text, "Issues are turned off") {
 		t.Fatalf("a chat calling ask_person = %q", text)
 	}
-	if text, isError := call("read_list", map[string]any{}); !isError || !strings.Contains(text, "only available to the person's assistant") {
-		t.Fatalf("a chat calling read_list = %q", text)
+	if text, isError := call("read_list", map[string]any{}); !isError || !strings.Contains(text, "sessions the person started in a workspace") {
+		t.Fatalf("a chat without a person behind it calling read_list = %q", text)
+	}
+	if text, isError := call("remember", map[string]any{}); !isError || !strings.Contains(text, "only available to the person's assistant") {
+		t.Fatalf("a chat calling remember = %q", text)
 	}
 	if text, isError := call("delete_everything", map[string]any{}); !isError || text != "unknown tool: delete_everything" {
 		t.Fatalf("an unknown tool = %q", text)

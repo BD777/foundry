@@ -155,6 +155,15 @@ the work owns the files.
   sessions, and reports to the person in plain words. Only it has the
   workspace and planning tools, and Foundry checks its changes against the
   person's rules.
+- The person's items (what they want done, kept on the assistant's list) are
+  shared with the sessions they start in a workspace. For continuing work
+  there, `read_list` shows the items homed in or touching your workspace;
+  `update_list` adds one (homed here, quoting the person's own words), keeps
+  its summary, and `claim`s it so you hold it as the session following it;
+  `release` it when you hand it back. A helper you tie to an item
+  (`create_session` or `send_message` `itemId`) reports to the item's holder;
+  with none reachable its reports wait on the item for the next session that
+  claims it.
 - Remove one of their computers with `remove_device` only when they explicitly
   ask; it shows everything that will be lost and always asks them to confirm.
 - When the assistant started you, the person does not read your

@@ -39,14 +39,23 @@ var WaitAlertAfter = 10 * time.Minute
 // incident should be closed instead of retried forever.
 var ErrDeliveryDropped = errors.New("session alert delivery dropped")
 
+// ErrDeliveryQueued says Recipient kept the alert for a recipient to come
+// (the child's item has no follower now): it counts as told.
+var ErrDeliveryQueued = errors.New("session alert kept for a later recipient")
+
 // Options are the session-domain facts the alert module reads and the one
 // delivery operation it performs. RetryPending is the integration point for
 // a future automatic retry policy: a failed observation it holds back is
 // reported only after retries are exhausted.
 type Options struct {
-	Alerts        store.SessionAlertStore
-	LoadSession   func(context.Context, string) (store.AgentSession, error)
-	Initiator     func(context.Context, store.AgentSession) (string, error)
+	Alerts      store.SessionAlertStore
+	LoadSession func(context.Context, string) (store.AgentSession, error)
+	Initiator   func(context.Context, store.AgentSession) (string, error)
+	// Recipient, when set, is the session an alert goes to when it is
+	// delivered (its recorded recipient is the child's initiator then), or
+	// ErrDeliveryQueued once it kept the alert for later. Without it the
+	// recorded recipient takes it.
+	Recipient     func(context.Context, store.SessionAlert, store.AgentSession) (store.AgentSession, error)
 	FailureCode   func(context.Context, store.AgentSession) string
 	CanceledBy    func(context.Context, store.AgentSession) (string, bool)
 	DeviceOffline func(context.Context, store.AgentSession) bool
@@ -246,7 +255,13 @@ func (s *Service) deliver(ctx context.Context, alert store.SessionAlert) {
 		s.resolve(ctx, alert.ChildSessionID, alert.Code, s.options.Now().UTC())
 		return
 	}
-	recipient, err := s.options.LoadSession(ctx, alert.RecipientSessionID)
+	recipient, err := s.recipient(ctx, alert, child)
+	if errors.Is(err, ErrDeliveryQueued) {
+		if _, err := s.options.Alerts.MarkSessionAlertNotified(ctx, alert.ID, alert.ID, s.options.Now().UTC()); err != nil {
+			log.Printf("session alert: mark %s kept: %v", alert.ID, err)
+		}
+		return
+	}
 	if err != nil || recipient.ID == "" || recipient.ID == child.ID || recipient.ArchivedAt != "" ||
 		recipient.Status == "canceled" || recipient.Role != "" {
 		s.resolve(ctx, alert.ChildSessionID, alert.Code, s.options.Now().UTC())
@@ -267,6 +282,13 @@ func (s *Service) deliver(ctx context.Context, alert store.SessionAlert) {
 	if _, err := s.options.Alerts.MarkSessionAlertNotified(ctx, alert.ID, alert.ID, s.options.Now().UTC()); err != nil {
 		log.Printf("session alert: mark %s notified: %v", alert.ID, err)
 	}
+}
+
+func (s *Service) recipient(ctx context.Context, alert store.SessionAlert, child store.AgentSession) (store.AgentSession, error) {
+	if s.options.Recipient != nil {
+		return s.options.Recipient(ctx, alert, child)
+	}
+	return s.options.LoadSession(ctx, alert.RecipientSessionID)
 }
 
 func stillCurrent(code, status string) bool {

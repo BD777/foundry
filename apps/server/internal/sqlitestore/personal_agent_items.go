@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +31,63 @@ func (s *Store) recordItemEvent(ctx context.Context, item store.PersonalAgentLis
 		paID("pie"), item.UserID, item.AssistantID, item.ID, at, actor, kind, string(raw)); err != nil {
 		return fmt.Errorf("record personal agent item event: %w", err)
 	}
+	homes := []string{item.HomeWorkspaceID}
+	if kind == store.PersonalAgentItemEventRehomed {
+		homes = append(homes, detail.From, detail.To)
+	}
+	s.itemChanged(item, homes...)
 	return nil
+}
+
+// ObservePersonalAgentItemChanges sets the one observer of item changes.
+func (s *Store) ObservePersonalAgentItemChanges(observer func(store.PersonalAgentItemChange)) {
+	s.itemChanges = observer
+}
+
+// itemChanged tells the observer that the item changed in the given homes.
+func (s *Store) itemChanged(item store.PersonalAgentListItem, homes ...string) {
+	if s.itemChanges == nil {
+		return
+	}
+	change := store.PersonalAgentItemChange{AssistantID: item.AssistantID, ItemID: item.ID}
+	for _, home := range homes {
+		if home != "" && !slices.Contains(change.Workspaces, home) {
+			change.Workspaces = append(change.Workspaces, home)
+		}
+	}
+	if len(change.Workspaces) > 0 {
+		s.itemChanges(change)
+	}
+}
+
+// ListPersonalAgentItemsAtHome lists the person's live items whose home is
+// the workspace, with their helpers.
+func (s *Store) ListPersonalAgentItemsAtHome(ctx context.Context, userID, workspaceID string) ([]store.PersonalAgentListItem, map[string][]store.PersonalAgentTask, error) {
+	if userID == "" || workspaceID == "" {
+		return []store.PersonalAgentListItem{}, map[string][]store.PersonalAgentTask{}, nil
+	}
+	items, err := s.queryItems(ctx, `user_id = ? AND home_workspace_id = ? AND archived_at = '' AND text != '' ORDER BY id`, userID, workspaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	helpers, err := s.itemHelpers(ctx, "", items)
+	if err != nil {
+		return nil, nil, err
+	}
+	return items, helpers, nil
+}
+
+func (s *Store) PersonalAgentItemsWereHomedIn(ctx context.Context, workspaceID string) (bool, error) {
+	if workspaceID == "" {
+		return false, nil
+	}
+	var homed bool
+	if err := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_items WHERE home_workspace_id = ?)
+		OR EXISTS(SELECT 1 FROM pa_item_events WHERE kind = ? AND json_extract(detail_json, '$.from') = ?)`,
+		workspaceID, store.PersonalAgentItemEventRehomed, workspaceID).Scan(&homed); err != nil {
+		return false, fmt.Errorf("check items homed in workspace: %w", err)
+	}
+	return homed, nil
 }
 
 // ListPersonalAgentItemEvents lists an item's timeline, oldest first.
@@ -224,6 +281,110 @@ func (s *Store) SweepArchiveFinishedItems(ctx context.Context, now time.Time, af
 	return archived, err
 }
 
+func (s *Store) ClaimPersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (store.PersonalAgentListItem, string, error) {
+	if sessionID == "" {
+		return store.PersonalAgentListItem{}, "", fmt.Errorf("%w: a claim names the session that holds the item", store.ErrPersonalAgentItemInvalid)
+	}
+	var saved store.PersonalAgentListItem
+	var replaced string
+	err := s.withTx(ctx, func(tx *Store) error {
+		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
+		if err != nil {
+			return err
+		}
+		if item.Text == "" {
+			return store.ErrNotFound
+		}
+		if item.HolderSessionID == sessionID {
+			saved = item
+			return nil
+		}
+		replaced = item.HolderSessionID
+		if err := tx.setItemHolder(ctx, actor, item, sessionID, store.PersonalAgentItemEventClaimed,
+			store.PersonalAgentItemEventDetail{SessionID: sessionID, From: replaced}); err != nil {
+			return err
+		}
+		saved, err = tx.GetPersonalAgentItem(ctx, assistantID, id)
+		return err
+	})
+	return saved, replaced, err
+}
+
+func (s *Store) ReleasePersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (store.PersonalAgentListItem, bool, error) {
+	var saved store.PersonalAgentListItem
+	released := false
+	err := s.withTx(ctx, func(tx *Store) error {
+		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
+		if err != nil {
+			return err
+		}
+		if item.Text == "" {
+			return store.ErrNotFound
+		}
+		saved = item
+		if sessionID == "" || item.HolderSessionID != sessionID {
+			return nil
+		}
+		if err := tx.setItemHolder(ctx, actor, item, "", store.PersonalAgentItemEventReleased,
+			store.PersonalAgentItemEventDetail{SessionID: sessionID}); err != nil {
+			return err
+		}
+		released = true
+		saved, err = tx.GetPersonalAgentItem(ctx, assistantID, id)
+		return err
+	})
+	return saved, released, err
+}
+
+// setItemHolder stores the item's holder and records the claim or release. A
+// holder change is not an edit of the item: it bumps updated_at, not revision.
+func (s *Store) setItemHolder(ctx context.Context, actor string, item store.PersonalAgentListItem, holder, kind string, detail store.PersonalAgentItemEventDetail) error {
+	if err := checkActor(actor); err != nil {
+		return err
+	}
+	now := paNow()
+	if _, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET holder_session_id = ?, updated_at = ? WHERE assistant_id = ? AND id = ?`,
+		holder, now, item.AssistantID, item.ID); err != nil {
+		return fmt.Errorf("set personal agent item holder: %w", err)
+	}
+	return s.recordItemEvent(ctx, item, now, actor, kind, detail)
+}
+
+// detachItemsFromDeletedWorkspace returns the items whose home is the
+// workspace being deleted to the assistant's inbox, each recorded as rehomed
+// by Foundry, and releases the items its sessions hold. The home is a field a
+// save writes back, so the revision moves: a save read before the deletion
+// cannot restore the deleted home.
+func (s *Store) detachItemsFromDeletedWorkspace(ctx context.Context, workspaceID string) error {
+	items, err := s.queryItems(ctx, `home_workspace_id = ? ORDER BY rowid`, workspaceID)
+	if err != nil {
+		return fmt.Errorf("find items homed in deleted workspace: %w", err)
+	}
+	now := paNow()
+	for _, item := range items {
+		if _, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET home_workspace_id = '', revision = revision + 1, intent_revision = intent_revision + 1, updated_at = ? WHERE assistant_id = ? AND id = ?`,
+			now, item.AssistantID, item.ID); err != nil {
+			return fmt.Errorf("rehome personal agent item: %w", err)
+		}
+		item.HomeWorkspaceID = ""
+		if err := s.recordItemEvent(ctx, item, now, store.PersonalAgentActorFoundry, store.PersonalAgentItemEventRehomed,
+			store.PersonalAgentItemEventDetail{From: workspaceID}); err != nil {
+			return err
+		}
+	}
+	held, err := s.queryItems(ctx, `holder_session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?) ORDER BY rowid`, workspaceID)
+	if err != nil {
+		return fmt.Errorf("find items held in deleted workspace: %w", err)
+	}
+	for _, item := range held {
+		if err := s.setItemHolder(ctx, store.PersonalAgentActorFoundry, item, "", store.PersonalAgentItemEventReleased,
+			store.PersonalAgentItemEventDetail{SessionID: item.HolderSessionID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // recordHelperEvents writes the helper events of a task change on its item:
 // started when the task joins one, ended when it reaches a final status. A
 // helper event bumps the item's updated_at, not its revision.
@@ -275,6 +436,19 @@ var itemSearchEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 func (s *Store) ListPersonalAgentItemPage(ctx context.Context, assistantID string, filter store.PersonalAgentItemFilter) (store.PersonalAgentItemPage, error) {
 	where := []string{"assistant_id = ?", "text <> ''"}
 	args := []any{assistantID}
+	if assistantID == "" {
+		if filter.UserID == "" {
+			return store.PersonalAgentItemPage{}, fmt.Errorf("%w: a page of items needs an assistant or a person", store.ErrPersonalAgentItemInvalid)
+		}
+		where[0], args[0] = "user_id = ?", filter.UserID
+	}
+	if filter.WorkspaceID != "" {
+		// Home, or touched: a helper of either kind runs there.
+		where = append(where, `(home_workspace_id = ? OR EXISTS (SELECT 1 FROM pa_tasks WHERE pa_tasks.assistant_id = pa_items.assistant_id
+			AND pa_tasks.item_id = pa_items.id AND pa_tasks.workspace_id = ?) OR EXISTS (SELECT 1 FROM pa_item_helpers h
+			JOIN agent_sessions a ON a.id = h.session_id WHERE h.assistant_id = pa_items.assistant_id AND h.item_id = pa_items.id AND a.workspace_id = ?))`)
+		args = append(args, filter.WorkspaceID, filter.WorkspaceID, filter.WorkspaceID)
+	}
 	archivedView := false
 	if filter.ClosedSince != "" {
 		if _, err := parseInstant("closedSince", filter.ClosedSince); err != nil {
@@ -370,11 +544,15 @@ func (s *Store) itemHelpers(ctx context.Context, assistantID string, items []sto
 	if len(items) == 0 {
 		return helpers, nil
 	}
-	args := []any{assistantID}
+	condition, args := "assistant_id = ? AND ", []any{assistantID}
+	if assistantID == "" {
+		// The person's ledger: item ids are unique across their assistants.
+		condition, args = "", nil
+	}
 	for _, item := range items {
 		args = append(args, item.ID)
 	}
-	rows, err := s.reader().QueryContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE assistant_id = ? AND item_id IN (`+sqlPlaceholders(len(items))+`)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE `+condition+`item_id IN (`+sqlPlaceholders(len(items))+`)
 		ORDER BY created_at, rowid`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list personal agent item helpers: %w", err)
@@ -387,7 +565,54 @@ func (s *Store) itemHelpers(ctx context.Context, assistantID string, items []sto
 		}
 		helpers[task.ItemID] = append(helpers[task.ItemID], task)
 	}
-	return helpers, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.addLinkedHelpers(ctx, assistantID, items, helpers); err != nil {
+		return nil, err
+	}
+	return helpers, nil
+}
+
+// addLinkedHelpers adds the helpers linked to the items (pa_item_helpers) to
+// their tasks: a session already there as a task is not listed again. Each
+// item's helpers stay oldest first. An empty assistantID reads the person's
+// ledger, as itemHelpers does.
+func (s *Store) addLinkedHelpers(ctx context.Context, assistantID string, items []store.PersonalAgentListItem, helpers map[string][]store.PersonalAgentTask) error {
+	condition, args := "h.assistant_id = ? AND ", []any{assistantID}
+	if assistantID == "" {
+		condition, args = "", nil
+	}
+	for _, item := range items {
+		args = append(args, item.ID)
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+linkedHelperColumns+` FROM `+linkedHelperFrom+` WHERE `+condition+
+		`h.item_id IN (`+sqlPlaceholders(len(items))+`) ORDER BY h.created_at, h.rowid`, args...)
+	if err != nil {
+		return fmt.Errorf("list personal agent linked item helpers: %w", err)
+	}
+	defer rows.Close()
+	linked := map[string]bool{}
+	for rows.Next() {
+		helper, err := scanLinkedHelper(rows)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(helpers[helper.ItemID], func(task store.PersonalAgentTask) bool { return task.SessionID == helper.SessionID }) {
+			continue
+		}
+		helpers[helper.ItemID] = append(helpers[helper.ItemID], helper)
+		linked[helper.ItemID] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for itemID := range linked {
+		slices.SortStableFunc(helpers[itemID], func(a, b store.PersonalAgentTask) int {
+			return parseStoredTime(a.CreatedAt).Compare(parseStoredTime(b.CreatedAt))
+		})
+	}
+	return nil
 }
 
 // ReportPersonalAgentItems reviews [from, to), two RFC 3339 instants. Archived

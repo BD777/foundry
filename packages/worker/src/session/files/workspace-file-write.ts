@@ -23,8 +23,10 @@ import type {
   ManageFilePayload,
   WriteFilePayload,
 } from "@bd777/foundry-protocol";
+import { excludeFoundryRuntimeFromGit } from "../../candidate-store/execution-git.js";
 import { within } from "../../platform/paths.js";
 import { writeFileAtomic } from "../../platform/storage.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /** The most write_file writes. */
 export const maxWorkspaceFileWriteBytes = 512 * 1024;
@@ -183,6 +185,28 @@ export function writeWorkspaceFile(
     sha256: sha256(data),
     bytes: data.byteLength,
   };
+}
+
+/**
+ * write_file as the daemon answers it: a file Foundry writes under the
+ * workspace's `.foundry/` (the item files of the items whose home it is) is
+ * kept out of Git through the same local excludes as its other runtime data.
+ */
+export async function writeWorkspaceFileKeptOutOfGit(
+  workspacePath: string,
+  payload: WriteFilePayload,
+): Promise<FileWrittenPayload> {
+  const written = writeWorkspaceFile(workspacePath, payload);
+  if (payload.path.split("/")[0] === ".foundry") {
+    try {
+      await excludeFoundryRuntimeFromGit(workspacePath);
+    } catch (error) {
+      console.error(
+        `Could not exclude Foundry's files from Git in ${workspacePath}: ${errorMessage(error)}`,
+      );
+    }
+  }
+  return written;
 }
 
 /** The regular file at `path` (never a link), refused unless there. */

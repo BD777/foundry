@@ -47,6 +47,7 @@ export function WorkspaceOverview({
   acceptedCount,
   devices = [],
   workspaces = [],
+  items,
 }: {
   workspace: WorkspaceProjection;
   deviceConnection: DeviceConnection;
@@ -57,6 +58,8 @@ export function WorkspaceOverview({
   devices?: DeviceProjection[];
   /** For the move dialog: the folders beside which to suggest one. */
   workspaces?: WorkspaceProjection[];
+  /** The person's items here, after the status (the shell composes them). */
+  items?: ReactNode;
 }) {
   const { t } = useTranslation("workspaces");
   const online = deviceConnection === "online";
@@ -265,6 +268,7 @@ export function WorkspaceOverview({
         ) : null}
         {error ? <Alert tone="error" size="compact" title={error} /> : null}
       </Panel>
+      {items}
       <WorkspaceUpkeep workspace={workspace} />
       <WorkspaceServices
         workspaceId={workspace.id}

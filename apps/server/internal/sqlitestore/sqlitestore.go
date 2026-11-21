@@ -27,6 +27,8 @@ type Store struct {
 	read *sql.DB
 	exec dbExecutor
 	kek  secretstore.KEK
+	// itemChanges is told of every item change (ObservePersonalAgentItemChanges).
+	itemChanges func(store.PersonalAgentItemChange)
 }
 
 // readerConnections bounds the read pool. The server runs on small
@@ -252,42 +254,39 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 	if err != nil {
 		return store.WorkspaceProjection{}, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return store.WorkspaceProjection{}, err
-	}
-	defer tx.Rollback()
-
-	var active int
-	if err := tx.QueryRowContext(ctx, `SELECT
+	err = s.withTx(ctx, func(tx *Store) error {
+		var active int
+		if err := tx.conn().QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM agent_sessions WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled')) +
         (SELECT count(*) FROM pa_context_patches WHERE workspace_id=? AND status='applying') +
         (SELECT count(*) FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`,
-		id, id, id).Scan(&active); err != nil {
-		return store.WorkspaceProjection{}, err
-	}
-	if active > 0 {
-		return store.WorkspaceProjection{}, store.ErrWorkspaceBusy
-	}
+			id, id, id).Scan(&active); err != nil {
+			return err
+		}
+		if active > 0 {
+			return store.ErrWorkspaceBusy
+		}
 
-	var authority bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM knowledge_vaults WHERE workspace_id=?)`, id).Scan(&authority); err != nil {
+		var authority bool
+		if err := tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM knowledge_vaults WHERE workspace_id=?)`, id).Scan(&authority); err != nil {
+			return err
+		}
+		if authority {
+			return fmt.Errorf("%w: move the selected knowledge authority before removing its workspace", store.ErrWorkspaceBusy)
+		}
+		if err := tx.detachItemsFromDeletedWorkspace(ctx, id); err != nil {
+			return err
+		}
+		if err := deleteWorkspaceRows(ctx, tx.conn(), id); err != nil {
+			return err
+		}
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("delete workspace row: %w", err)
+		}
+		return recordWorkspaceDeletion(ctx, tx.conn(), workspace, time.Now().UTC())
+	})
+	if err != nil {
 		return store.WorkspaceProjection{}, err
-	}
-	if authority {
-		return store.WorkspaceProjection{}, fmt.Errorf("%w: move the selected knowledge authority before removing its workspace", store.ErrWorkspaceBusy)
-	}
-	if err := deleteWorkspaceRows(ctx, tx, id); err != nil {
-		return store.WorkspaceProjection{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, id); err != nil {
-		return store.WorkspaceProjection{}, fmt.Errorf("delete workspace row: %w", err)
-	}
-	if err := recordWorkspaceDeletion(ctx, tx, workspace, time.Now().UTC()); err != nil {
-		return store.WorkspaceProjection{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return store.WorkspaceProjection{}, fmt.Errorf("delete workspace: %w", err)
 	}
 	return workspace, nil
 }

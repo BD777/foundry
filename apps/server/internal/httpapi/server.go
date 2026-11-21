@@ -306,6 +306,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.runs = run.New(store, runAccounts{server})
 	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
 	server.assistant = newAssistant(server, sessionEvents)
+	server.observeItemChanges()
 	server.messageChannels = newMessageChannelRunner(server)
 	server.personNotices = personnotice.New(store)
 	server.personNotices.SetSinkResolver(server.resolveNoticeSink)
@@ -375,6 +376,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.resourceLeasesDeviceConnected(ctx, deviceID)
 		// The assistant hears what waited for the computer.
 		server.assistant.DeviceBack(ctx, deviceID)
+		// Item files that changed while the device was away are written.
+		server.hub.work.Go(func() { server.assistant.ProjectDeviceItemFiles(ctx, deviceID) })
 		// A workspace move waiting for this device goes on.
 		server.hub.migrations.kick()
 	}

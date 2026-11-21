@@ -5,7 +5,6 @@ import type {
   PersonalAgentItemPlan,
   PersonalAgentListItem,
   PersonalAgentOperation,
-  WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { cancelPendingPersonalAgentOperation } from "../../api";
 import { Button } from "../../components/ui/button";
@@ -23,7 +22,6 @@ export function ItemPlan({
   item,
   items,
   operations,
-  workspaces,
   onSave,
   onRefresh,
   meta,
@@ -42,7 +40,6 @@ export function ItemPlan({
   item: PersonalAgentListItem;
   items: PersonalAgentListItem[];
   operations: PersonalAgentOperation[];
-  workspaces: WorkspaceProjection[];
   onSave?: (
     item: PersonalAgentListItem,
     plan: PersonalAgentItemPlan,
@@ -147,15 +144,6 @@ export function ItemPlan({
         ) : null}
         {plan?.waitingFor ? (
           <p>{t("planning.waitingFor", { reason: plan.waitingFor })}</p>
-        ) : null}
-        {plan?.workspaceId ? (
-          <FieldHint>
-            {t("planning.location", {
-              workspace:
-                workspaces.find((w) => w.id === plan.workspaceId)?.name ??
-                plan.workspaceId,
-            })}
-          </FieldHint>
         ) : null}
         {dependencies.length ? (
           <ul>
@@ -332,30 +320,6 @@ export function ItemPlan({
               onChange={(mode) => setDraft({ ...draft, mode })}
             />
             <FieldHint>{t("planning.modeHint")}</FieldHint>
-            <SelectMenu
-              ariaLabel={t("planning.workspace")}
-              disabled={busy}
-              value={draft.workspaceId ?? ""}
-              options={[
-                { value: "", label: t("planning.unassigned") },
-                ...workspaces
-                  .filter((w) => !w.archivedAt && w.kind !== "personal_agent")
-                  .map((w) => ({ value: w.id, label: w.name })),
-              ]}
-              onChange={(workspaceId) =>
-                setDraft({
-                  ...draft,
-                  workspaceId,
-                  route: workspaceId
-                    ? {
-                        kind: "existing",
-                        reason: t("planning.personSelected"),
-                        needsClarification: false,
-                      }
-                    : undefined,
-                })
-              }
-            />
             <label>
               <FieldLabel as="span">{t("planning.nextLabel")}</FieldLabel>
               <Textarea
