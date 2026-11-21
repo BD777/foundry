@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -127,15 +128,52 @@ func (s *Server) observeItemChanges() {
 }
 
 func (s *Server) handleListPersonalAgentItems(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
-	if !ok {
-		return
-	}
 	filter, ok := personalAgentItemFilter(w, r)
 	if !ok {
 		return
 	}
+	// The person's ledger (DEV-324: one per person) unless the path names one
+	// of their assistants.
+	if r.PathValue("assistant") == "" {
+		person := s.personFrom(r)
+		if person == nil {
+			writeResult(w, nil, assistant.ErrNoAssistant)
+			return
+		}
+		filter.UserID = person.ID
+		s.writePersonalAgentItemPage(w, r, store.PersonalAgent{}, filter)
+		return
+	}
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
 	s.writePersonalAgentItemPage(w, r, agent, filter)
+}
+
+// personalAgentOfItem is the assistant whose list holds the path's item: the
+// path's assistant, or on the person's ledger routes the assistant the item
+// was found under among the person's.
+func (s *Server) personalAgentOfItem(w http.ResponseWriter, r *http.Request) (store.PersonalAgent, bool) {
+	if r.PathValue("assistant") != "" {
+		return s.personalAgentOf(w, r)
+	}
+	person := s.personFrom(r)
+	if person == nil {
+		writeResult(w, nil, assistant.ErrNoAssistant)
+		return store.PersonalAgent{}, false
+	}
+	item, err := s.store.GetPersonalAgentItemOfUser(r.Context(), person.ID, r.PathValue("id"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return store.PersonalAgent{}, false
+	}
+	agent, err := s.store.GetAssistant(r.Context(), item.AssistantID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return store.PersonalAgent{}, false
+	}
+	return agent, true
 }
 
 // handleLegacyListPersonalAgentItems is the older GET /api/personal-agent/list:
@@ -188,7 +226,7 @@ func (s *Server) writePersonalAgentItemPage(w http.ResponseWriter, r *http.Reque
 // handleGetPersonalAgentItem answers one item with its helpers and its
 // timeline, oldest first (GET /api/personal-agent/items/{id}).
 func (s *Server) handleGetPersonalAgentItem(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
+	agent, ok := s.personalAgentOfItem(w, r)
 	if !ok {
 		return
 	}
@@ -265,7 +303,7 @@ func (s *Server) handleReportPersonalAgentItems(w http.ResponseWriter, r *http.R
 // store refuses writes nothing: an archive of an open item is 409, a stale
 // revision 409, a dependency cycle 400.
 func (s *Server) handleEditPersonalAgentItem(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
+	agent, ok := s.personalAgentOfItem(w, r)
 	if !ok {
 		return
 	}
@@ -295,7 +333,7 @@ func (s *Server) handleEditPersonalAgentItem(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleDeletePersonalAgentItem(w http.ResponseWriter, r *http.Request) {
-	agent, ok := s.personalAgentOf(w, r)
+	agent, ok := s.personalAgentOfItem(w, r)
 	if !ok {
 		return
 	}

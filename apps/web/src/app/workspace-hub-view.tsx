@@ -25,9 +25,8 @@ import { assetsViewFields, skillsViewFields } from "./view-fields";
 
 export interface WorkspaceHubViewProps extends AppViewContext {
   section?: WorkspaceSection;
-  /** The assistant whose items the overview shows; absent, it shows none. */
+  /** The person's items homed in or touching the workspace (their ledger, DEV-324); absent, the overview shows none. */
   items?: {
-    assistantId: string;
     /** Opens the items page, at one item when given. */
     onOpen: (itemId?: string) => void;
   };
@@ -61,7 +60,6 @@ export function WorkspaceHubView({
           items={
             items && data.workspace.id ? (
               <WorkspaceItems
-                assistantId={items.assistantId}
                 onOpenAll={() => items.onOpen()}
                 onOpenItem={items.onOpen}
                 workspaceId={data.workspace.id}

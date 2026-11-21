@@ -543,7 +543,7 @@ test("an item without a home lives in the assistant's inbox; a closed one keeps 
 test("a workspace lists its open items: those living here apart from those touching it", async () => {
   calls.length = 0;
   answer = (method, url) =>
-    method === "GET" && url.pathname === "/api/assistants/asst_1/items"
+    method === "GET" && url.pathname === "/api/personal-agent/items"
       ? {
           items: [
             item("mine", { text: "lives here", homeWorkspaceId: "ws_home" }),
@@ -560,16 +560,13 @@ test("a workspace lists its open items: those living here apart from those touch
       : undefined;
   const opened = [];
   const page = await mount(WorkspaceItems, {
-    assistantId: "asst_1",
     workspaceId: "ws_home",
     workspaces,
     onOpenItem: (itemId) => opened.push(itemId),
     onOpenAll: () => opened.push("all"),
   });
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-  const read = calls.find(
-    (call) => call.path === "/api/assistants/asst_1/items",
-  );
+  const read = calls.find((call) => call.path === "/api/personal-agent/items");
   assert.equal(read.query.get("workspace"), "ws_home");
   assert.equal(read.query.get("view"), "open");
   const [here, touching] = page.container.querySelectorAll("section");
