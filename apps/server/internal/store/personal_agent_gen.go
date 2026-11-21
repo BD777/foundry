@@ -357,13 +357,22 @@ type PersonalAgentItem struct {
 	Origin *PersonalAgentItemOrigin `json:"origin,omitempty"`
 
 	// Plan The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references and the completion evidence. Operational state, not the person's intent; absent on items with none.
-	Plan       *PersonalAgentItemPlan                  `json:"plan,omitempty"`
-	ArchivedAt string                                  `json:"archivedAt,omitempty"`
-	RemindedAt string                                  `json:"remindedAt,omitempty"`
-	CreatedAt  string                                  `json:"createdAt"`
-	UpdatedAt  string                                  `json:"updatedAt"`
-	ClosedAt   string                                  `json:"closedAt,omitempty"`
-	Helpers    jsonempty.List[PersonalAgentItemHelper] `json:"helpers"`
+	Plan *PersonalAgentItemPlan `json:"plan,omitempty"`
+
+	// HomeWorkspaceID The workspace responsible for the item; absent when the assistant looks after it in its own home (the inbox).
+	HomeWorkspaceID string `json:"homeWorkspaceId,omitempty"`
+
+	// Touches The other workspaces the item touches: where its helpers run, each once, without the home. Derived when read, never stored.
+	Touches []string `json:"touches,omitempty"`
+
+	// HolderSessionID The session that claimed the item and follows it now; absent when none has. A new claim replaces the holder.
+	HolderSessionID string                                  `json:"holderSessionId,omitempty"`
+	ArchivedAt      string                                  `json:"archivedAt,omitempty"`
+	RemindedAt      string                                  `json:"remindedAt,omitempty"`
+	CreatedAt       string                                  `json:"createdAt"`
+	UpdatedAt       string                                  `json:"updatedAt"`
+	ClosedAt        string                                  `json:"closedAt,omitempty"`
+	Helpers         jsonempty.List[PersonalAgentItemHelper] `json:"helpers"`
 }
 
 // PersonalAgentItemDetail GET /api/personal-agent/items/{id}: the item, its timeline and its helpers.
@@ -396,20 +405,20 @@ type PersonalAgentItemEvent struct {
 	ItemID string `json:"itemId"`
 	At     string `json:"at"`
 
-	// Actor Who caused the change an event records.
+	// Actor Who caused the change an event records. session is a session the person started in a workspace, changing an item whose home is there.
 	Actor PersonalAgentItemEventActor `json:"actor"`
 
 	// Kind The mechanical fact an event records.
 	Kind PersonalAgentItemEventKind `json:"kind"`
 
-	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item.
+	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox).
 	Detail *PersonalAgentItemEventDetail `json:"detail,omitempty"`
 }
 
-// PersonalAgentItemEventActor Who caused the change an event records.
+// PersonalAgentItemEventActor Who caused the change an event records. session is a session the person started in a workspace, changing an item whose home is there.
 type PersonalAgentItemEventActor = string
 
-// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item.
+// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox).
 type PersonalAgentItemEventDetail struct {
 	From        string `json:"from,omitempty"`
 	To          string `json:"to,omitempty"`
@@ -423,7 +432,7 @@ type PersonalAgentItemEventDetail struct {
 // PersonalAgentItemEventKind The mechanical fact an event records.
 type PersonalAgentItemEventKind = string
 
-// PersonalAgentItemHelper One helper session that works or worked on the item (pa_tasks.item_id). A helper started without an item is not here; it stays its own task.
+// PersonalAgentItemHelper One helper session that works or worked on the item: one of the assistant's tasks on it (pa_tasks.item_id), or a helper a workspace session tied to it (pa_item_helpers), each session once. A helper started without an item is not here; it stays its own task.
 type PersonalAgentItemHelper struct {
 	SessionID string `json:"sessionId"`
 	Title     string `json:"title,omitempty"`
@@ -442,7 +451,7 @@ type PersonalAgentItemHelper struct {
 	Archived bool `json:"archived,omitempty"`
 }
 
-// PersonalAgentItemList GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report.
+// PersonalAgentItemList GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); workspace (a workspace id: the items whose home is it or that touch it); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report.
 type PersonalAgentItemList struct {
 	Items jsonempty.List[PersonalAgentItem] `json:"items"`
 
@@ -485,8 +494,8 @@ type PersonalAgentItemPlanChoice struct {
 	// Route The route the person picked; Foundry records it as given.
 	Route PersonalAgentItemPlanChoiceRoute `json:"route,omitempty"`
 
-	// WorkspaceID The project the item runs in.
-	WorkspaceID  string   `json:"workspaceId,omitempty"`
+	// WorkspaceID The project the item runs in, its new home (homeWorkspaceId); empty moves the item back to the assistant's inbox.
+	WorkspaceID  *string  `json:"workspaceId,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 

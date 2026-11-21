@@ -177,6 +177,11 @@ export function chatHref(sessionId: string, workspaceId?: string): string {
     : path;
 }
 
+/** A real link to a workspace's overview page. */
+export function workspaceHref(workspaceId: string): string {
+  return `${pathForAppRoute({ view: "workspace" })}${searchWithWorkspace(workspaceId)}`;
+}
+
 /** A real link to the Needs-you page, for opening it in a new tab. */
 export function pendingHref(): string {
   return pathForAppRoute({ view: "pending" });

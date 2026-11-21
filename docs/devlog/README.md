@@ -4,7 +4,7 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
-2026-11-21 Server + Web + Worker：[DEV-324 事项账本：事项有归属（home）、Workspace 里的会话可认领事项、帮手信号按事项投递](DEV-324-item-ledger.md)（进行中，A1 实现中）。
+2026-11-21 Server + Web + Worker：[DEV-324 事项账本：事项有归属（home）、Workspace 里的会话可认领事项、帮手信号按事项投递；告警风暴根因修复](DEV-324-item-ledger.md)。已部署 dev（2026-11-21 04:48，Server 0f58d47a2881 / Web b1913055daad7c68 / Worker .1795207038）；Agent 实测通过；待本人验收；试点已开始。
 2026-11-20 Server + Web + Worker：[DEV-322 后台任务结束后 Claude 自己接着跑的那一轮，从开始就显示为运行中（原来要等它跑完才有事件，期间面板看起来空闲）](DEV-322-background-continuation-running.md)（train 106）。
 2026-11-20 Server：[DEV-313 助理定位为编排者：调研等实际工作交给项目，助理只调度、判断、跟进](DEV-313-assistant-as-orchestrator.md)（train 105）。
 2026-11-19 Server：[DEV-323 会话可经 MCP（`connector_instances`）录入和绑定 App Store Connect 团队密钥](DEV-323-appstoreconnect-mcp-instances.md)（asc-mcp-train，train 105/106 沿用）。

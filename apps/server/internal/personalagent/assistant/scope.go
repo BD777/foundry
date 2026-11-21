@@ -22,6 +22,12 @@ type Scope struct {
 	// SessionID is the assistant conversation the tool call came from.
 	SessionID string
 	Turn      store.SessionInput
+	// Workspace, when set, makes this the scope of a session the person
+	// started in that workspace, not of their assistant (WorkspaceScopeFor):
+	// its item tools reach only the items whose home is that workspace, and
+	// for reading also those that touch it. Agent is then the person's
+	// default assistant, whose list a new item joins.
+	Workspace string
 	owned     map[string]bool
 	// role holds every workspace the person can read and the assistant's
 	// permission package allows, with the person's role there.
@@ -62,6 +68,36 @@ func (s *Service) ScopeFor(ctx context.Context, agent store.PersonalAgent, sessi
 		scope.owned[deviceID] = true
 	}
 	return scope, nil
+}
+
+// ErrNoItemLedger refuses the item tools to a workspace session of a
+// person who has no assistant yet: the ledger is kept on its list.
+var ErrNoItemLedger = &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("the person has no assistant yet, so there is no list of items to keep; they set one up on Foundry's assistant page")}
+
+// WorkspaceScopeFor is the scope of a session the person started in
+// workspaceID (Scope.Workspace): it keeps the items there on the person's
+// ledger, which lives on their default assistant's list. It reaches what the
+// person reaches, without the assistant's permission package, which governs
+// only the assistant.
+func (s *Service) WorkspaceScopeFor(ctx context.Context, userID, sessionID, workspaceID string, turn store.SessionInput) (Scope, error) {
+	if user, err := s.store.GetUser(ctx, userID); err != nil || !user.Active() {
+		return Scope{}, ErrNotAssistant
+	}
+	agent, err := s.store.DefaultAssistant(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return Scope{}, ErrNoItemLedger
+	}
+	if err != nil {
+		return Scope{}, err
+	}
+	roles, err := s.store.WorkspaceRolesForUser(ctx, userID)
+	if err != nil {
+		return Scope{}, err
+	}
+	if roles[workspaceID] == "" {
+		return Scope{}, ErrNotAssistant
+	}
+	return Scope{Agent: agent, SessionID: sessionID, Turn: turn, Workspace: workspaceID, owned: map[string]bool{}, role: roles}, nil
 }
 
 // Role is the person's role in a workspace the assistant reaches: "" for

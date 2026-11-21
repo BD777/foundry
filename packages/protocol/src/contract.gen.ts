@@ -3486,10 +3486,10 @@ interface components {
       messageId?: string;
     };
     /**
-     * @description Who caused the change an event records.
+     * @description Who caused the change an event records. session is a session the person started in a workspace, changing an item whose home is there.
      * @enum {string}
      */
-    PersonalAgentItemEventActor: "person" | "assistant" | "foundry";
+    PersonalAgentItemEventActor: "person" | "assistant" | "foundry" | "session";
     /**
      * @description The mechanical fact an event records.
      * @enum {string}
@@ -3505,8 +3505,11 @@ interface components {
       | "needs_you_opened"
       | "needs_you_answered"
       | "archived"
-      | "restored";
-    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. */
+      | "restored"
+      | "claimed"
+      | "released"
+      | "rehomed";
+    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox). */
     PersonalAgentItemEventDetail: {
       from?: string;
       to?: string;
@@ -3525,7 +3528,7 @@ interface components {
       kind: components["schemas"]["PersonalAgentItemEventKind"];
       detail?: components["schemas"]["PersonalAgentItemEventDetail"];
     };
-    /** @description One helper session that works or worked on the item (pa_tasks.item_id). A helper started without an item is not here; it stays its own task. */
+    /** @description One helper session that works or worked on the item: one of the assistant's tasks on it (pa_tasks.item_id), or a helper a workspace session tied to it (pa_item_helpers), each session once. A helper started without an item is not here; it stays its own task. */
     PersonalAgentItemHelper: {
       sessionId: string;
       title?: string;
@@ -3549,6 +3552,7 @@ interface components {
       progress: "inbox" | "ready" | "waiting" | "working" | "review";
       nextAction?: string;
       waitingFor?: string;
+      /** @description The item's homeWorkspaceId, repeated for older readers. Not stored in the plan; a write of it moves the item's home. */
       workspaceId?: string;
       dependencies?: string[];
       workRefs?: components["schemas"]["PersonalAgentWorkReference"][];
@@ -3596,6 +3600,12 @@ interface components {
       quote?: string;
       origin?: components["schemas"]["PersonalAgentItemOrigin"];
       plan?: components["schemas"]["PersonalAgentItemPlan"];
+      /** @description The workspace responsible for the item; absent when the assistant looks after it in its own home (the inbox). */
+      homeWorkspaceId?: string;
+      /** @description The other workspaces the item touches: where its helpers run, each once, without the home. Derived when read, never stored. */
+      touches?: string[];
+      /** @description The session that claimed the item and follows it now; absent when none has. A new claim replaces the holder. */
+      holderSessionId?: string;
       archivedAt?: string;
       remindedAt?: string;
       createdAt: string;
@@ -3608,7 +3618,7 @@ interface components {
       item: components["schemas"]["PersonalAgentItem"];
       events: components["schemas"]["PersonalAgentItemEvent"][];
     };
-    /** @description GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report. */
+    /** @description GET /api/personal-agent/items. Query: view (open | finished | archived; default open: open = status open and not archived, finished = done or dropped and not archived, archived = archivedAt set); owner (person | assistant); from and to (RFC 3339 instants, the range is [from, to), filtering updatedAt; the row shows when it last changed); workspace (a workspace id: the items whose home is it or that touch it); q (case-insensitive substring of text and summary); limit (default 50, max 200) and offset. Newest-updated first. createdAt, closedAt and archivedAt come back on every item so the Web can show them. Items are the person's list only; the report is GET .../items/report. */
     PersonalAgentItemList: {
       items: components["schemas"]["PersonalAgentItem"][];
       /** @description How many items match the filters. */
@@ -3625,7 +3635,7 @@ interface components {
        */
       route?:
         "record" | "continue" | "existing" | "create" | "multiple" | "clarify";
-      /** @description The project the item runs in. */
+      /** @description The project the item runs in, its new home (homeWorkspaceId); empty moves the item back to the assistant's inbox. */
       workspaceId?: string;
       dependencies?: string[];
     };

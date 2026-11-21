@@ -48,6 +48,9 @@ const (
 	PersonalAgentActorPerson    = "person"
 	PersonalAgentActorAssistant = "assistant"
 	PersonalAgentActorFoundry   = "foundry"
+	// PersonalAgentActorSession is a session the person started in a
+	// workspace (not their assistant), writing an item whose home is there.
+	PersonalAgentActorSession = "session"
 )
 
 // Kinds of an item's timeline events (pa_item_events.kind).
@@ -61,6 +64,13 @@ const (
 	PersonalAgentItemEventHelperEnded    = "helper_ended"
 	PersonalAgentItemEventArchived       = "archived"
 	PersonalAgentItemEventRestored       = "restored"
+	// Claimed: a session became the item's holder (detail sessionId; from
+	// names the holder it replaced). Released: the holder let it go.
+	PersonalAgentItemEventClaimed  = "claimed"
+	PersonalAgentItemEventReleased = "released"
+	// Rehomed: the item's home workspace changed (detail from and to; empty
+	// is the assistant's inbox).
+	PersonalAgentItemEventRehomed = "rehomed"
 )
 
 // Views of the items page: open, finished (done or dropped) and archived; all
@@ -95,14 +105,23 @@ type PersonalAgentListItem struct {
 	ID     string `json:"id"`
 	UserID string `json:"-"`
 	// AssistantID is the assistant the record belongs to (DEV-191).
-	AssistantID    string                 `json:"-"`
-	IntentRevision int64                  `json:"intentRevision,omitempty"`
-	Revision       int64                  `json:"revision,omitempty"`
-	SourceInputID  string                 `json:"sourceInputId,omitempty"`
-	SourceInboxID  string                 `json:"sourceInboxId,omitempty"`
-	CaptureKey     string                 `json:"-"`
-	CaptureHash    string                 `json:"-"`
-	Plan           *PersonalAgentItemPlan `json:"plan,omitempty"`
+	AssistantID    string `json:"-"`
+	IntentRevision int64  `json:"intentRevision,omitempty"`
+	Revision       int64  `json:"revision,omitempty"`
+	SourceInputID  string `json:"sourceInputId,omitempty"`
+	SourceInboxID  string `json:"sourceInboxId,omitempty"`
+	CaptureKey     string `json:"-"`
+	CaptureHash    string `json:"-"`
+	// Plan.WorkspaceID is HomeWorkspaceID as read; the store never keeps it
+	// in the plan, so home has one source.
+	Plan *PersonalAgentItemPlan `json:"plan,omitempty"`
+	// HomeWorkspaceID is the workspace responsible for the item; empty means
+	// the assistant looks after it in its own home (the inbox).
+	HomeWorkspaceID string `json:"homeWorkspaceId,omitempty"`
+	// HolderSessionID is the session that claimed the item and follows it
+	// now; empty when none has. SavePersonalAgentItem never changes it:
+	// ClaimPersonalAgentItem and ReleasePersonalAgentItem do.
+	HolderSessionID string `json:"holderSessionId,omitempty"`
 	// Owner is PersonalAgentItemOwnerPerson or PersonalAgentItemOwnerAssistant.
 	Owner string `json:"owner"`
 	// Text is the thing, short, in the person's language.
@@ -190,8 +209,14 @@ type PersonalAgentItemFilter struct {
 	Query string
 	// IncludeArchived keeps archived items in every view but the archived one.
 	IncludeArchived bool
-	Limit           int
-	Offset          int
+	// UserID, with an empty assistantID, lists the items of all the person's
+	// assistants (the person's ledger).
+	UserID string
+	// WorkspaceID keeps the items whose home is the workspace or that touch it
+	// (a helper of the item runs there).
+	WorkspaceID string
+	Limit       int
+	Offset      int
 	// ClosedSince, when set, replaces View: the open items and those closed at
 	// or after it, the list the older /list route answered (closed_at, not
 	// updatedAt). Status and Owner still narrow it; archived items are left out
@@ -239,10 +264,22 @@ type PersonalAgentArchivedItem struct {
 // PersonalAgentListStore keeps the person's list and the daily digest's
 // mark. Every call is scoped to one assistant (assistantID) but the due scans.
 type PersonalAgentListStore interface {
+	PersonalAgentItemSignalStore
 	// ListPersonalAgentItems lists the person's open items and those
 	// closed since closedSince ("" for none), oldest first.
 	ListPersonalAgentItems(ctx context.Context, assistantID, closedSince string) ([]PersonalAgentListItem, error)
 	GetPersonalAgentItem(ctx context.Context, assistantID, id string) (PersonalAgentListItem, error)
+	// GetPersonalAgentItemOfUser finds an item on any of the person's
+	// assistants' lists.
+	GetPersonalAgentItemOfUser(ctx context.Context, userID, id string) (PersonalAgentListItem, error)
+	// ClaimPersonalAgentItem makes sessionID the item's holder, replacing the
+	// one before, and records claimed for actor. It returns the saved item and
+	// the holder it replaced ("" for none). Claiming an item already held by
+	// sessionID changes nothing.
+	ClaimPersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (PersonalAgentListItem, string, error)
+	// ReleasePersonalAgentItem clears the holder when it is sessionID and
+	// records released for actor; false when sessionID did not hold it.
+	ReleasePersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (PersonalAgentListItem, bool, error)
 	// AddPersonalAgentItem adds an item and records its created event for actor.
 	AddPersonalAgentItem(ctx context.Context, actor string, item PersonalAgentListItem) (PersonalAgentListItem, error)
 	// SavePersonalAgentItem stores an item's fields as given and records
@@ -281,6 +318,44 @@ type PersonalAgentListStore interface {
 	// ClaimPersonalAgentDigest marks the person's daily digest of day
 	// (YYYY-MM-DD) sent; false when it already was.
 	ClaimPersonalAgentDigest(ctx context.Context, assistantID, day string) (bool, error)
+	// ListPersonalAgentItemsAtHome lists the person's items whose home is the
+	// workspace, archived and deleted ones left out, by id, with their helpers.
+	ListPersonalAgentItemsAtHome(ctx context.Context, userID, workspaceID string) ([]PersonalAgentListItem, map[string][]PersonalAgentTask, error)
+	// PersonalAgentItemsWereHomedIn reports whether any item, of any person,
+	// has or had the workspace as its home: one is there now (archived ones
+	// too), or one was rehomed away from it.
+	PersonalAgentItemsWereHomedIn(ctx context.Context, workspaceID string) (bool, error)
+}
+
+// PersonalAgentItemChange says an item's timeline grew or the item was
+// deleted. Workspaces are the homes it concerns: its home when the change
+// was recorded and, for a rehome, the home before and after.
+type PersonalAgentItemChange struct {
+	AssistantID string
+	ItemID      string
+	Workspaces  []string
+}
+
+// PersonalAgentItemChangeSource tells one observer of every item change, set
+// once before the store is used. The observer runs inside the change's
+// transaction: it must not touch the store, only note the change.
+type PersonalAgentItemChangeSource interface {
+	ObservePersonalAgentItemChanges(observer func(PersonalAgentItemChange))
+}
+
+// ItemTouches are the workspaces an item touches besides its home: where its
+// helpers run, each once, in the order the helpers started. It is derived
+// when read, never stored.
+func ItemTouches(home string, helpers []PersonalAgentTask) []string {
+	var touches []string
+	seen := map[string]bool{home: true, "": true}
+	for _, helper := range helpers {
+		if !seen[helper.WorkspaceID] {
+			seen[helper.WorkspaceID] = true
+			touches = append(touches, helper.WorkspaceID)
+		}
+	}
+	return touches
 }
 
 // Routing is an explainable decision for this intent, not an access grant.

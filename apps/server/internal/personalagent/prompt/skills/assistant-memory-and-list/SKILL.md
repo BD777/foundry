@@ -45,6 +45,15 @@ page; read_list shows it.
   something: a few lines of what was asked, what is done and what is open. Close it (done or
   dropped) when it is done. Archive a closed item (op archive) only when they no longer need
   it; Foundry also archives closed items by itself after a week.
+- An item's home (update_list item.home) is the workspace responsible for it; without one you
+  look after it here, in your inbox. touches are the other workspaces its helpers ran in. A
+  session the person runs in a workspace keeps the items homed there and may claim one: the
+  holder is the session following it now. Do not claim an item another session holds unless
+  you take it over.
+- Offer to grow a project from an item (create_workspace with fromItemId, which moves its
+  home there) when the work needs files kept across sessions; its own rules, skills or
+  connectors; keeps gathering items on one subject; needs a particular computer; or needs a git
+  baseline to accept results.
 - To say what got done in a period ("这周做了什么"), read_list with from and to; do not answer
   from memory.
 - Relative times ("tomorrow", "下班后") count from the input receipt's receivedAt when there is

@@ -51,15 +51,20 @@ type listItemArgs struct {
 	Summary   *string                      `json:"summary,omitempty"`
 	TaskID    *string                      `json:"taskId,omitempty"`
 	Quote     string                       `json:"quote,omitempty"`
+	// Home is the workspace responsible for the item; "" hands it to the
+	// assistant's inbox.
+	Home *string `json:"home,omitempty"`
 }
 
 const listNoteUngrounded = "not added: the quote is not in anything the person wrote in this conversation (a document, web page, file, helper's output or Foundry's own notice is not their words). The list holds only what the person told you; quote their exact words."
 
-// planUpdateList adds or changes one item of the person's list, or archives or
-// restores it. What it says of the person (text, when, time, reminder, status)
-// must rest on their words in this conversation; the owner, the summary, the
-// linked task and the archive are the assistant's own bookkeeping and need no
-// quote. Its audit keeps the op and the item id only.
+// planUpdateList adds or changes one item of the person's list, archives or
+// restores it, or claims or releases it for the calling session. What it says
+// of the person (text, when, time, reminder, status) must rest on their words
+// in this conversation; the owner, the summary, the home, the linked task, the
+// archive and the claim are bookkeeping and need no quote. A workspace
+// session (scope.Workspace) adds items with their home there and changes only
+// items whose home is there. Its audit keeps the op and the item id only.
 func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[string]json.RawMessage) (Write, error) {
 	var spec listSpec
 	if err := DecodeArgs(args, &spec); err != nil {
@@ -68,7 +73,9 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	id := strings.TrimSpace(spec.Item.ID)
 	write := Write{ArgsSummary: strings.TrimSpace(spec.Op + " " + id),
 		Spec: map[string]any{"op": spec.Op, "item": map[string]string{"id": id}}}
-	assistantID := scope.Agent.ID
+	// agent is the assistant whose list holds the item.
+	agent := scope.Agent
+	recordAs := itemActorOf(scope)
 	var item store.PersonalAgentListItem
 	switch spec.Op {
 	case "add":
@@ -78,43 +85,49 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		if spec.Item.Text == nil {
 			return write, invalid("item.text is required to add")
 		}
-		item = store.PersonalAgentListItem{UserID: scope.Agent.UserID, AssistantID: assistantID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID,
-			Status: store.PersonalAgentItemOpen, Owner: store.PersonalAgentItemOwnerPerson, Origin: itemOriginOf(scope)}
-		if source, err := s.store.PersonalAgentInboxByInput(ctx, assistantID, scope.Turn.ID); err == nil {
+		item = store.PersonalAgentListItem{UserID: agent.UserID, AssistantID: agent.ID, SourceSessionID: scope.SessionID, SourceInputID: scope.Turn.ID,
+			Status: store.PersonalAgentItemOpen, Owner: store.PersonalAgentItemOwnerPerson, Origin: itemOriginOf(scope), HomeWorkspaceID: scope.Workspace}
+		if source, err := s.store.PersonalAgentInboxByInput(ctx, agent.ID, scope.Turn.ID); err == nil && scope.Workspace == "" {
 			item.SourceInboxID = source.RootID
 		}
-	case "update", "archive", "restore":
+	case "update", "archive", "restore", "claim", "release":
 		if spec.Op != "update" && listItemChangesFields(spec.Item) {
 			return write, invalid("%s takes only item.id and revision; change the fields with update", spec.Op)
 		}
-		existing, err := s.store.GetPersonalAgentItem(ctx, assistantID, id)
-		if errors.Is(err, store.ErrNotFound) {
-			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", id)
-		}
+		existing, owner, err := s.scopeItem(ctx, scope, id)
 		if err != nil {
 			return write, err
 		}
-		item = existing
+		item, agent = existing, owner
 		if spec.Item.Revision != nil && *spec.Item.Revision != item.Revision {
 			return write, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentRevision}
 		}
 	default:
-		return write, invalid("op must be add, update, archive or restore")
+		return write, invalid("op must be add, update, archive, restore, claim or release")
 	}
+	if spec.Op == "claim" || spec.Op == "release" {
+		return s.planItemClaim(scope, spec.Op, item, recordAs, write)
+	}
+	homeChanged, err := s.resolveItemHome(scope, spec, &item)
+	if err != nil {
+		return write, err
+	}
+	write.WorkspaceID = item.HomeWorkspaceID
 	location := s.PersonLocation(ctx, scope.Agent)
 	personal := false
 	if spec.Item.Plan != nil {
-		if err := s.validateItemPlan(ctx, scope.Agent, item.ID, spec.Item.Plan); err != nil {
+		if err := s.validateItemPlan(ctx, agent, item.ID, spec.Item.Plan, item.HomeWorkspaceID); err != nil {
 			return write, err
 		}
 		var previous []store.PersonalAgentWorkReference
 		if item.Plan != nil {
 			previous = item.Plan.WorkRefs
 		}
-		plan, err := s.withHelperRefs(ctx, scope.Agent.ID, item.ID, *spec.Item.Plan, previous)
+		plan, err := s.withHelperRefs(ctx, agent.ID, item.ID, *spec.Item.Plan, previous)
 		if err != nil {
 			return write, err
 		}
+		plan.WorkspaceID = item.HomeWorkspaceID
 		item.Plan, personal = &plan, true
 	}
 	if spec.Item.Text != nil {
@@ -164,11 +177,14 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 	}
 	taskID := ""
 	if spec.Item.TaskID != nil {
+		if scope.Workspace != "" {
+			return write, invalid("item.taskId ties one of the assistant's tasks to an item; only the person's assistant sets it")
+		}
 		taskID = strings.TrimSpace(*spec.Item.TaskID)
 		if taskID == "" {
 			return write, invalid("item.taskId names one of your tasks; it is not empty")
 		}
-		_, found, err := s.findTask(ctx, assistantID, taskID)
+		_, found, err := s.findTask(ctx, agent.ID, taskID)
 		if err != nil {
 			return write, err
 		}
@@ -176,7 +192,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			return write, invalid("no task %q of yours: item.taskId is the id list_tasks or the turn's context shows", taskID)
 		}
 	}
-	if spec.Op == "update" && !personal && taskID == "" && spec.Item.Owner == nil && spec.Item.Summary == nil {
+	if spec.Op == "update" && !personal && taskID == "" && spec.Item.Owner == nil && spec.Item.Summary == nil && !homeChanged && spec.Item.Home == nil {
 		return write, invalid("nothing to change: give the fields to set")
 	}
 	if item.Remind && item.At == "" {
@@ -222,7 +238,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if (item.ArchivedAt != "") == archived {
 				return map[string]any{"status": "unchanged", "item": item, "note": listStateNote(archived)}, nil
 			}
-			saved, err := s.saveItem(ctx, scope.Agent, item, false, &archived, store.PersonalAgentActorAssistant)
+			saved, err := s.saveItem(ctx, agent, item, false, &archived, recordAs)
 			if err != nil {
 				return nil, err
 			}
@@ -242,7 +258,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if item.SourceInboxID != "" {
 				sourceID = item.SourceInboxID
 			}
-			item.CaptureKey = flow.Key("item", scope.Agent.UserID, sourceID, intentKey)
+			item.CaptureKey = flow.Key("item", agent.UserID, sourceID, intentKey)
 			item.CaptureHash, err = flow.Fingerprint(struct {
 				Text, When, At, Status, Quote string
 				Remind                        bool
@@ -251,12 +267,12 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			if err != nil {
 				return nil, err
 			}
-			saved, err = s.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, item)
+			saved, err = s.store.AddPersonalAgentItem(ctx, recordAs, item)
 			if err != nil {
 				return nil, itemRefusal(err)
 			}
 		} else {
-			saved, err = s.saveItem(ctx, scope.Agent, item, true, nil, store.PersonalAgentActorAssistant)
+			saved, err = s.saveItem(ctx, agent, item, true, nil, recordAs)
 			if err != nil {
 				return nil, err
 			}
@@ -265,7 +281,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			return map[string]string{"status": "already_removed", "id": saved.ID, "note": "The person removed this item. Replaying its original input does not add it again."}, nil
 		}
 		if taskID != "" {
-			task, found, err := s.findTask(ctx, assistantID, taskID)
+			task, found, err := s.findTask(ctx, agent.ID, taskID)
 			if err != nil {
 				return nil, err
 			}
@@ -276,7 +292,7 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 				return nil, err
 			}
 			// The tie saved the item again: answer with its current revision.
-			if saved, err = s.store.GetPersonalAgentItem(ctx, assistantID, saved.ID); err != nil {
+			if saved, err = s.store.GetPersonalAgentItem(ctx, agent.ID, saved.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -293,7 +309,125 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 // archive and restore do not take.
 func listItemChangesFields(item listItemArgs) bool {
 	return item.Plan != nil || item.Text != nil || item.When != nil || item.At != nil || item.Remind != nil ||
-		item.Status != nil || item.Owner != nil || item.Summary != nil || item.TaskID != nil
+		item.Status != nil || item.Owner != nil || item.Summary != nil || item.TaskID != nil || item.Home != nil
+}
+
+// itemActorOf is who an item's timeline says made a change through scope:
+// the assistant, or a session in a workspace.
+func itemActorOf(scope Scope) string {
+	if scope.Workspace != "" {
+		return store.PersonalAgentActorSession
+	}
+	return store.PersonalAgentActorAssistant
+}
+
+// scopeItem finds an item scope may change, and the assistant whose list
+// holds it: one on the assistant's own list, or for a workspace session one
+// on the person's ledger whose home is that workspace.
+func (s *Service) scopeItem(ctx context.Context, scope Scope, id string) (store.PersonalAgentListItem, store.PersonalAgent, error) {
+	notFound := refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", id)
+	if scope.Workspace == "" {
+		item, err := s.store.GetPersonalAgentItem(ctx, scope.Agent.ID, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return item, scope.Agent, notFound
+		}
+		return item, scope.Agent, err
+	}
+	item, err := s.store.GetPersonalAgentItemOfUser(ctx, scope.Agent.UserID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return item, scope.Agent, notFound
+	}
+	if err != nil {
+		return item, scope.Agent, err
+	}
+	if item.HomeWorkspaceID != scope.Workspace {
+		return item, scope.Agent, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden,
+			"not allowed: item %q has its home in %s, not in this session's workspace %s; only a session there or the person's assistant changes it",
+			id, cmp.Or(item.HomeWorkspaceID, "the assistant's inbox"), scope.Workspace)
+	}
+	if item.AssistantID == scope.Agent.ID {
+		return item, scope.Agent, nil
+	}
+	agent, err := s.store.GetAssistant(ctx, item.AssistantID)
+	return item, agent, err
+}
+
+// resolveItemHome applies update_list's home to item: item.home, or the
+// older plan.workspaceId, which names the same thing. A new home must be a
+// workspace scope reaches (for the assistant, its permission package allows
+// it), or "" for the assistant's inbox. A workspace session's new item has
+// its home there. It reports whether the home changed.
+func (s *Service) resolveItemHome(scope Scope, spec listSpec, item *store.PersonalAgentListItem) (bool, error) {
+	home, given := item.HomeWorkspaceID, false
+	if spec.Item.Plan != nil && spec.Item.Plan.WorkspaceID != "" {
+		home, given = spec.Item.Plan.WorkspaceID, true
+	}
+	if spec.Item.Home != nil {
+		named := strings.TrimSpace(*spec.Item.Home)
+		if given && named != home {
+			return false, invalid("item.home and plan.workspaceId name different workspaces; give item.home only")
+		}
+		home = named
+	}
+	if home == item.HomeWorkspaceID {
+		return false, nil
+	}
+	if spec.Op == "add" && scope.Workspace != "" {
+		return false, invalid("a new item from this session has its home in this session's workspace %s; leave item.home out, and move it later with update", scope.Workspace)
+	}
+	if home != "" && !scope.Reaches(home) {
+		if scope.Workspace != "" {
+			return false, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no workspace %s the person can reach: item.home is one of their workspaces, or empty for the assistant's inbox", home)
+		}
+		return false, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden,
+			"not allowed: this assistant's permissions do not include project %s; the person adds it in the assistant's settings → Permissions.", home)
+	}
+	item.HomeWorkspaceID = home
+	return true, nil
+}
+
+// planItemClaim makes the calling session the item's holder (claim), or lets
+// it go (release). A claim replaces the holder before it; only the holder
+// releases. Only an open item that is not archived is claimed.
+func (s *Service) planItemClaim(scope Scope, op string, item store.PersonalAgentListItem, recordAs string, write Write) (Write, error) {
+	write.WorkspaceID = item.HomeWorkspaceID
+	if op == "claim" {
+		switch {
+		case item.ArchivedAt != "":
+			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is archived: restore it (op restore) before claiming it", item.ID)
+		case item.Status != store.PersonalAgentItemOpen:
+			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is %s: reopen it (status open) before claiming it", item.ID, item.Status)
+		}
+	}
+	write.Apply = func(ctx context.Context) (any, error) {
+		if op == "release" {
+			saved, released, err := s.store.ReleasePersonalAgentItem(ctx, recordAs, item.AssistantID, item.ID, scope.SessionID)
+			if err != nil {
+				return nil, itemRefusal(err)
+			}
+			if !released {
+				return map[string]any{"status": "unchanged", "item": saved, "note": "this session does not hold the item"}, nil
+			}
+			return map[string]any{"status": "applied", "item": saved}, nil
+		}
+		saved, replaced, err := s.store.ClaimPersonalAgentItem(ctx, recordAs, item.AssistantID, item.ID, scope.SessionID)
+		if err != nil {
+			return nil, itemRefusal(err)
+		}
+		// The signals that waited on the item for a session to follow it
+		// go to this one.
+		if s.itemClaimed != nil {
+			s.itemClaimed(item.AssistantID, item.ID)
+		}
+		switch {
+		case item.HolderSessionID == scope.SessionID:
+			return map[string]any{"status": "unchanged", "item": saved, "note": "this session already holds the item"}, nil
+		case replaced != "":
+			return map[string]any{"status": "applied", "item": saved, "replaced": replaced}, nil
+		}
+		return map[string]any{"status": "applied", "item": saved}, nil
+	}
+	return write, nil
 }
 
 // listStateNote says an archive or restore that changes nothing.
@@ -452,6 +586,7 @@ type listQuery struct {
 	To              string `json:"to"`
 	ClosedSince     string `json:"closedSince"`
 	IncludeArchived bool   `json:"includeArchived"`
+	WorkspaceID     string `json:"workspaceId"`
 	Limit           int    `json:"limit"`
 	Offset          int    `json:"offset"`
 }
@@ -471,14 +606,19 @@ type listHelperView struct {
 }
 
 // listItemView is an item as read_list shows it: its words, times, status,
-// summary and helpers. Events and the plan are left out.
+// summary, home, the workspaces it touches, its holder and helpers. Events and
+// the plan are left out.
 type listItemView struct {
 	ID         string           `json:"id"`
+	Revision   int64            `json:"revision"`
 	Text       string           `json:"text"`
 	When       string           `json:"when,omitempty"`
 	At         string           `json:"at,omitempty"`
 	Owner      string           `json:"owner"`
 	Status     string           `json:"status"`
+	Home       string           `json:"homeWorkspaceId,omitempty"`
+	Touches    []string         `json:"touches,omitempty"`
+	Holder     string           `json:"holderSessionId,omitempty"`
 	Summary    string           `json:"summary,omitempty"`
 	Quote      string           `json:"quote,omitempty"`
 	CreatedAt  string           `json:"createdAt"`
@@ -519,7 +659,17 @@ func (s *Service) ReadList(ctx context.Context, scope Scope, args map[string]jso
 	}
 	location := s.PersonLocation(ctx, scope.Agent)
 	filter := store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewAll, Status: query.Status, Owner: query.Owner,
-		From: query.From, To: query.To, IncludeArchived: query.IncludeArchived, Limit: limit, Offset: query.Offset}
+		From: query.From, To: query.To, IncludeArchived: query.IncludeArchived, Limit: limit, Offset: query.Offset,
+		WorkspaceID: strings.TrimSpace(query.WorkspaceID)}
+	assistantID := scope.Agent.ID
+	if scope.Workspace != "" {
+		// A workspace session reads the person's ledger, only what is
+		// homed in or touches its workspace.
+		if filter.WorkspaceID != "" && filter.WorkspaceID != scope.Workspace {
+			return listPage{}, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden, "not allowed: this session reads only the items of its workspace %s", scope.Workspace)
+		}
+		assistantID, filter.UserID, filter.WorkspaceID = "", scope.Agent.UserID, scope.Workspace
+	}
 	if value := strings.TrimSpace(query.ClosedSince); value != "" {
 		since, err := closedSinceOf(value, location)
 		if err != nil {
@@ -527,13 +677,15 @@ func (s *Service) ReadList(ctx context.Context, scope Scope, args map[string]jso
 		}
 		filter.ClosedSince = formatPATime(since)
 	}
-	page, err := s.store.ListPersonalAgentItemPage(ctx, scope.Agent.ID, filter)
+	page, err := s.store.ListPersonalAgentItemPage(ctx, assistantID, filter)
 	if err != nil {
 		return listPage{}, itemRefusal(err)
 	}
-	operations, err := s.store.ListPersonalAgentOperations(ctx, scope.Agent.ID)
-	if err != nil {
-		return listPage{}, err
+	operations := []store.PersonalAgentOperation{}
+	if scope.Workspace == "" {
+		if operations, err = s.store.ListPersonalAgentOperations(ctx, scope.Agent.ID); err != nil {
+			return listPage{}, err
+		}
 	}
 	items := make([]listItemView, 0, len(page.Items))
 	for _, item := range page.Items {
@@ -557,7 +709,8 @@ func closedSinceOf(value string, location *time.Location) (time.Time, error) {
 
 // listItemViewOf is an item as read_list shows it, with its helpers.
 func listItemViewOf(item store.PersonalAgentListItem, helpers []store.PersonalAgentTask) listItemView {
-	view := listItemView{ID: item.ID, Text: item.Text, When: item.When, At: item.At, Owner: item.Owner, Status: item.Status,
+	view := listItemView{ID: item.ID, Revision: item.Revision, Text: item.Text, When: item.When, At: item.At, Owner: item.Owner, Status: item.Status,
+		Home: item.HomeWorkspaceID, Touches: store.ItemTouches(item.HomeWorkspaceID, helpers), Holder: item.HolderSessionID,
 		Summary: item.Summary, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, ClosedAt: item.ClosedAt, ArchivedAt: item.ArchivedAt}
 	if utf8.RuneCountInString(item.Quote) <= listQuoteLimit {
 		view.Quote = item.Quote
@@ -667,23 +820,22 @@ func itemRefusal(err error) error {
 	return err
 }
 
-// HelperItem checks the item of the person's list that a helper the assistant
-// starts works on (create_session itemId): one of its own, open and not archived.
-func (s *Service) HelperItem(ctx context.Context, scope Scope, itemID string) error {
-	item, err := s.store.GetPersonalAgentItem(ctx, scope.Agent.ID, itemID)
-	if errors.Is(err, store.ErrNotFound) {
-		return refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", itemID)
-	}
+// HelperItem is the item of the person's list that a helper scope starts
+// works on (create_session itemId): one scope may change (scopeItem: the
+// assistant's own, or for a workspace session one whose home is there), open
+// and not archived.
+func (s *Service) HelperItem(ctx context.Context, scope Scope, itemID string) (store.PersonalAgentListItem, error) {
+	item, _, err := s.scopeItem(ctx, scope, itemID)
 	if err != nil {
-		return err
+		return item, err
 	}
 	switch {
 	case item.ArchivedAt != "":
-		return refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is archived: restore it with update_list (op restore) before a helper works on it", itemID)
+		return item, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is archived: restore it with update_list (op restore) before a helper works on it", itemID)
 	case item.Status != store.PersonalAgentItemOpen:
-		return refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is %s: reopen it (update_list status open) before a helper works on it", itemID, item.Status)
+		return item, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is %s: reopen it (update_list status open) before a helper works on it", itemID, item.Status)
 	}
-	return nil
+	return item, nil
 }
 
 // mergeItemEdit checks the person's edit of an item and returns the item as
@@ -700,7 +852,13 @@ func (s *Service) mergeItemEdit(ctx context.Context, agent store.PersonalAgent, 
 		return store.PersonalAgentListItem{}, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentRevision}
 	}
 	if input.Plan != nil {
-		if err := s.validateItemPlan(ctx, agent, item.ID, input.Plan); err != nil {
+		if input.Plan.WorkspaceID != "" && input.Plan.WorkspaceID != item.HomeWorkspaceID {
+			if err := s.personReaches(ctx, agent, input.Plan.WorkspaceID); err != nil {
+				return store.PersonalAgentListItem{}, err
+			}
+			item.HomeWorkspaceID = input.Plan.WorkspaceID
+		}
+		if err := s.validateItemPlan(ctx, agent, item.ID, input.Plan, item.HomeWorkspaceID); err != nil {
 			return store.PersonalAgentListItem{}, err
 		}
 		item.Plan = input.Plan
@@ -751,10 +909,11 @@ func (s *Service) mergeItemEdit(ctx context.Context, agent store.PersonalAgent, 
 }
 
 // applyPlanChoice merges the person's choice of how an open item runs over
-// its plan: the route, the project and the items it depends on. Progress,
-// next action, waiting, work refs, evidence and mode stay as the assistant
-// set them; an item without a plan starts one in record mode at inbox. The
-// store refuses a dependency cycle when the item is saved.
+// its plan: the route, the project (the item's home) and the items it depends
+// on; an empty project moves the item back to the inbox. Progress, next
+// action, waiting, work refs, evidence and mode stay as the
+// assistant set them; an item without a plan starts one in record mode at
+// inbox. The store refuses a dependency cycle when the item is saved.
 func (s *Service) applyPlanChoice(ctx context.Context, agent store.PersonalAgent, item *store.PersonalAgentListItem, choice store.PersonalAgentItemPlanChoice) error {
 	if item.Status != store.PersonalAgentItemOpen {
 		return &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("the plan of an item is chosen only while it is open")}
@@ -769,21 +928,47 @@ func (s *Service) applyPlanChoice(ctx context.Context, agent store.PersonalAgent
 		}
 		plan.Route = &store.PersonalAgentRouteDecision{Kind: string(choice.Route), NeedsClarification: choice.Route == store.PersonalAgentItemPlanChoiceRouteClarify}
 	}
-	if choice.WorkspaceID != "" {
-		roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
-		if err != nil {
-			return err
+	if home := choice.WorkspaceID; home != nil && *home != item.HomeWorkspaceID {
+		if *home != "" {
+			if err := s.personReaches(ctx, agent, *home); err != nil {
+				return err
+			}
 		}
-		if roles[choice.WorkspaceID] == "" {
-			return &personalagent.Refusal{Status: http.StatusNotFound, Err: store.ErrNotFound}
-		}
-		plan.WorkspaceID = choice.WorkspaceID
+		item.HomeWorkspaceID = *home
 	}
+	plan.WorkspaceID = item.HomeWorkspaceID
 	if choice.Dependencies != nil {
 		plan.Dependencies = choice.Dependencies
 	}
 	item.Plan = &plan
 	return nil
+}
+
+// personReaches refuses a workspace the person cannot read (404).
+func (s *Service) personReaches(ctx context.Context, agent store.PersonalAgent, workspaceID string) error {
+	roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
+	if err != nil {
+		return err
+	}
+	if roles[workspaceID] == "" {
+		return &personalagent.Refusal{Status: http.StatusNotFound, Err: store.ErrNotFound}
+	}
+	return nil
+}
+
+// rehomeItem moves an item of the assistant's list to a new home (create_workspace
+// fromItemId), recorded as rehomed for actor.
+func (s *Service) rehomeItem(ctx context.Context, agent store.PersonalAgent, itemID, workspaceID, actor string) error {
+	item, err := s.store.GetPersonalAgentItem(ctx, agent.ID, itemID)
+	if err != nil {
+		return err
+	}
+	if item.HomeWorkspaceID == workspaceID {
+		return nil
+	}
+	item.HomeWorkspaceID = workspaceID
+	_, err = s.store.SavePersonalAgentItem(ctx, actor, item)
+	return itemRefusal(err)
 }
 
 // latestConversation is the assistant conversation the person
@@ -1006,6 +1191,10 @@ func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, no
 // digestItems are the person's items open or closed since closedSince, as the
 // items page's query finds them (archived ones left out), read page by page.
 func (s *Service) digestItems(ctx context.Context, assistantID, closedSince string) ([]store.PersonalAgentListItem, error) {
+	// No assistant yet: no list to summarise.
+	if assistantID == "" {
+		return nil, nil
+	}
 	var items []store.PersonalAgentListItem
 	for offset := 0; ; {
 		page, err := s.store.ListPersonalAgentItemPage(ctx, assistantID, store.PersonalAgentItemFilter{ClosedSince: closedSince, Limit: store.PersonalAgentItemPageMax, Offset: offset})
@@ -1020,12 +1209,21 @@ func (s *Service) digestItems(ctx context.Context, assistantID, closedSince stri
 	}
 }
 
-// MoveHelper ties one of the assistant's helpers to an open item of the
-// person's list (send_message itemId). The item it leaves and the item it
-// joins follow.
+// MoveHelper ties one of scope's helpers to an open item of the person's
+// list (send_message itemId). The assistant's helpers are its tasks: the item
+// it leaves and the item it joins follow. A workspace session's helpers (the
+// sessions it created) are tied by a link of their own, which does not make
+// them the assistant's work.
 func (s *Service) MoveHelper(ctx context.Context, scope Scope, sessionID, itemID string) error {
-	if err := s.HelperItem(ctx, scope, itemID); err != nil {
+	item, err := s.HelperItem(ctx, scope, itemID)
+	if err != nil {
 		return err
+	}
+	if scope.Workspace != "" {
+		if helper, err := s.store.GetAgentSessionSummary(ctx, sessionID); err != nil || helper.ParentSessionID != scope.SessionID {
+			return invalid("session %s is not one of your helpers: only a session this session created can be tied to an item", sessionID)
+		}
+		return s.store.LinkPersonalAgentItemHelper(ctx, store.PersonalAgentActorSession, item.AssistantID, item.ID, sessionID)
 	}
 	tasks, err := s.store.ListPersonalAgentTasks(ctx, scope.Agent.ID, nil)
 	if err != nil {

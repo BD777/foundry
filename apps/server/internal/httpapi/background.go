@@ -54,6 +54,9 @@ func (s *Server) backgroundJobs() []backgroundJob {
 				s.sessionAlerts.Pump(ctx, time.Now().UTC())
 			})
 		}},
+		{"item-signals", func(ctx context.Context) {
+			everyAfter(ctx, itemSignalPumpInterval, nil, s.pumpItemSignals)
+		}},
 		{"session-retries", func(ctx context.Context) {
 			everyAfter(ctx, sessionRetryPumpInterval, nil, func(ctx context.Context) {
 				s.sessionRetries.Pump(ctx, time.Now().UTC())

@@ -273,8 +273,32 @@ export function ActiveView({
     case "workspaceConnectors":
     case "sharing":
       return <WorkspaceHubView {...context} section={activeView} />;
-    case "workspace":
-      return <WorkspaceHubView {...context} />;
+    case "workspace": {
+      // The items page's own choice of assistant, else the default one.
+      const itemsAssistantId =
+        location.selectedAssistantId ??
+        (
+          assistants.assistants.find((assistant) => assistant.isDefault) ??
+          assistants.assistants[0]
+        )?.id;
+      return (
+        <WorkspaceHubView
+          {...context}
+          items={
+            itemsAssistantId
+              ? {
+                  assistantId: itemsAssistantId,
+                  onOpen: (itemId) => {
+                    location.setSelectedAssistantId(itemsAssistantId);
+                    location.setSelectedItemId(itemId ?? "");
+                    location.setActiveView("assistantItems");
+                  },
+                }
+              : undefined
+          }
+        />
+      );
+    }
     case "foundrySkill":
       return <FoundrySkillPage />;
     case "devices":

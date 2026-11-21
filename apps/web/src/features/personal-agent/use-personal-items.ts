@@ -298,7 +298,7 @@ export const personalItemActions = {
       text,
     });
   },
-  /** The person's choice of route, project and dependencies; the server merges it. */
+  /** The person's choice of route and dependencies; the server merges it. */
   setPlan(
     assistantId: string | undefined,
     item: PersonalAgentItem,
@@ -307,6 +307,17 @@ export const personalItemActions = {
     return updatePersonalAgentItem(assistantId, item.id, {
       revision: item.revision,
       plan,
+    });
+  },
+  /** Moves an open item to another workspace; "" moves it to the assistant's inbox. */
+  setHome(
+    assistantId: string | undefined,
+    item: PersonalAgentItem,
+    workspaceId: string,
+  ): Promise<PersonalAgentItem> {
+    return updatePersonalAgentItem(assistantId, item.id, {
+      revision: item.revision,
+      plan: { workspaceId },
     });
   },
   /** Archives a closed item, or brings it back; the server refuses an open one. */

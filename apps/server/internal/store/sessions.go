@@ -212,9 +212,12 @@ type CreateAgentSessionInput struct {
 	// ReportBack false keeps an agent's child from reporting its ended
 	// turns to its parent's inbox; unset reports them (DEV-090).
 	ReportBack *bool `json:"reportBack,omitempty"`
-	// AssistantItemID is the item of the person's list the helper the
-	// assistant starts works on (create_session itemId); set by the server.
+	// AssistantItemID is the item of the person's list the helper works on
+	// (create_session itemId), and ItemAssistantID the assistant whose list
+	// holds it; set by the server. The assistant's helper is its task on the
+	// item; a workspace session's helper is linked to it.
 	AssistantItemID string `json:"-"`
+	ItemAssistantID string `json:"-"`
 	// FeishuRouteID is the Feishu chat route a topic's session starts
 	// from: its chat's and bot's default agents apply.
 	FeishuRouteID string `json:"-"`

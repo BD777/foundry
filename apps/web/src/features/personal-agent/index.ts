@@ -6,4 +6,5 @@ export {
   type AssistantSettingsProps,
 } from "./assistant-settings";
 export { AssistantItemsPage, type AssistantItemsPageProps } from "./items-page";
+export { WorkspaceItems, type WorkspaceItemsProps } from "./workspace-items";
 export type { AssistantFeatureEvent } from "./assistant-events";

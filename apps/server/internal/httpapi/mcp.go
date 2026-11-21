@@ -128,6 +128,9 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 		if issueMCPTools[name] && !issuesEnabled {
 			return &statusError{http.StatusForbidden, errors.New("Issues are turned off on this Foundry server: " + name + " is not available")}
 		}
+		if (inIssue || verifier) && workspaceItemMCPTools[name] && role != store.AgentSessionRolePersonalAgent {
+			return errNoItemTools
+		}
 		if inIssue && issuesMCPTools[name] {
 			return &statusError{http.StatusForbidden, errors.New(name + " is not available to an Issue's own sessions: the person creates and changes Issues in Foundry")}
 		}
@@ -170,7 +173,7 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	if name == "ask_person" && role != store.AgentSessionRoleIssueExecution {
 		return &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person")}
 	}
-	if personalAgentMCPTools[name] && role != store.AgentSessionRolePersonalAgent {
+	if personalAgentMCPTools[name] && role != store.AgentSessionRolePersonalAgent && !(workspaceItemMCPTools[name] && role == "") {
 		return &statusError{http.StatusForbidden, errors.New(name + " is only available to the person's assistant")}
 	}
 	if assistantWithheldMCPTools[name] && role == store.AgentSessionRolePersonalAgent {

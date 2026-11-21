@@ -45,6 +45,8 @@ type workspaceResult struct {
 	Connectors *store.WorkspaceExternalAccounts `json:"connectors,omitempty"`
 	// Place is where a new project went and why.
 	Place *store.PersonalAgentPlacement `json:"place,omitempty"`
+	// HomeOf is the item whose home moved to the new project (fromItemId).
+	HomeOf string `json:"homeOf,omitempty"`
 }
 
 // createSpec is create_workspace's arguments, resolved.
@@ -62,6 +64,9 @@ type createSpec struct {
 	// ("network:corp", "toolchain:go").
 	Needs    []string `json:"needs,omitempty"`
 	DeviceID string   `json:"deviceId,omitempty"`
+	// FromItemID is an item of the list that grew this project: its home
+	// moves to it once it is created.
+	FromItemID string `json:"fromItemId,omitempty"`
 }
 
 func oneLineName(name string) (string, error) {
@@ -110,6 +115,18 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 	if err != nil {
 		return write, invalid("needs: %v", err)
 	}
+	if spec.FromItemID = strings.TrimSpace(spec.FromItemID); spec.FromItemID != "" {
+		item, err := s.store.GetPersonalAgentItem(ctx, scope.Agent.ID, spec.FromItemID)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && item.Text == "") {
+			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusNotFound, "no item %q on the person's list (read_list shows them)", spec.FromItemID)
+		}
+		if err != nil {
+			return write, err
+		}
+		if item.ArchivedAt != "" {
+			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict, "item %q is archived: restore it (update_list op restore) before a project grows from it", spec.FromItemID)
+		}
+	}
 	spec.Needs = nil
 	for _, need := range needs {
 		spec.Needs = append(spec.Needs, personalagent.LabelText(need))
@@ -154,6 +171,12 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 			if result.Skills, err = lifecycle.ChangeWorkspaceSkills(ctx, actor, workspace.ID, skills, nil); err != nil {
 				return result, fmt.Errorf("the project %s was created, but adding its skills failed: %w", workspace.ID, err)
 			}
+		}
+		if spec.FromItemID != "" {
+			if err := s.rehomeItem(ctx, scope.Agent, spec.FromItemID, workspace.ID, store.PersonalAgentActorAssistant); err != nil {
+				return result, fmt.Errorf("the project %s was created, but moving item %s's home to it failed: %w", workspace.ID, spec.FromItemID, err)
+			}
+			result.HomeOf = spec.FromItemID
 		}
 		return result, nil
 	}

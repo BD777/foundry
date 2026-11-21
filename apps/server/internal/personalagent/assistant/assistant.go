@@ -187,16 +187,7 @@ func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, con
 
 // taskStatusOf is a task's status from its session's.
 func taskStatusOf(sessionStatus string) string {
-	switch sessionStatus {
-	case "completed":
-		return store.PersonalAgentTaskDone
-	case "failed":
-		return store.PersonalAgentTaskFailed
-	case "canceled":
-		return store.PersonalAgentTaskCancelled
-	default:
-		return store.PersonalAgentTaskRunning
-	}
+	return store.PersonalAgentTaskStatusOf(sessionStatus)
 }
 
 // sessionEndedAt is when a session that ended did, as best known.

@@ -110,7 +110,7 @@ func (s *Store) checkPAOperationIntent(ctx context.Context, op store.PersonalAge
 	if item.Plan != nil && item.Plan.Route != nil && (item.Plan.Route.NeedsClarification || item.Plan.Route.Kind == "clarify") {
 		return fmt.Errorf("routing_needs_clarification")
 	}
-	if item.Text == "" || item.Status != store.PersonalAgentItemOpen || item.Plan == nil || item.Plan.Mode != "execute" || item.Plan.WorkspaceID != op.WorkspaceID {
+	if item.Text == "" || item.Status != store.PersonalAgentItemOpen || item.Plan == nil || item.Plan.Mode != "execute" || item.HomeWorkspaceID != op.WorkspaceID {
 		return fmt.Errorf("item does not authorize execution in this workspace")
 	}
 	if !checkDependencies {

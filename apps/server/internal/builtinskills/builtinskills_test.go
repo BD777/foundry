@@ -12,6 +12,8 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		44: "ee12de48b281a7431b1ab52ee79713aed98dd66434e9998ee5ecaa70c879b74b", // DEV-324: a helper tied to an item reports to the item's holder
+		43: "bc0b5fc76a30f8d5fdd5ab969ef4225e45db7c23a51763d90bf3c8dc1d6c0048", // DEV-324: sessions the person starts in a workspace keep and claim its items
 		42: "22644750fa4b580961471d9ce6f7b07ab1952258902ed36b0097a59c3e4a990b", // DEV-298h: Issue tools hidden; the foundry skill's Issue text changed
 		41: "55d11772433f7815ae2018713604adec9692c0fcec552760895184a556f1e3c2", // DEV-240: one orchestration guidance: briefs, executor default, turn_end, evidence, heartbeat, one writer
 		40: "fa338753e16dd2eec829646a744160e795fa66b16bffc0659c86840bf91f7292", // Cloudflare: name the level a refusal needs; Zero Trust reads Tunnel connections

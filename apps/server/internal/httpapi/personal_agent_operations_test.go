@@ -20,7 +20,7 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Compare formats", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+	item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Compare formats", HomeWorkspaceID: "ws_budget", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 		t.Fatal(e)
 	}
 	_, _ = f.db.CompleteAgentSession(ctx, owner.ID, "Ready for another step", "")
-	item, e := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Continue comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+	item, e := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Continue comparison", HomeWorkspaceID: "ws_budget", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -133,7 +133,7 @@ func TestAssistantContinuedSessionKeepsItsOwnModel(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, _ = f.db.CompleteAgentSession(ctx, owner.ID, "Ready for another step", "")
-	item, e := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Continue comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+	item, e := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Continue comparison", HomeWorkspaceID: "ws_budget", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -205,7 +205,7 @@ func TestAssistantOperationWaitsForTheWriterAndSaysSo(t *testing.T) {
 	}
 	capture := func(id string, readOnly bool) store.PersonalAgentOperation {
 		t.Helper()
-		item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Check " + id, Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+		item, err := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{AssistantID: agent.ID, UserID: f.aliceID, Text: "Check " + id, HomeWorkspaceID: "ws_budget", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready"}})
 		if err != nil {
 			t.Fatal(err)
 		}

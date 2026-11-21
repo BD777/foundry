@@ -15,7 +15,9 @@ import (
 
 // Links provide context; they never grant the caller control of a session,
 // ownership of a service, or permission to copy another workspace's content.
-func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgent, itemID string, plan *store.PersonalAgentItemPlan) error {
+// home is the item's home as it will be saved: the plan's workspaceId is that
+// home, never a second record of it.
+func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgent, itemID string, plan *store.PersonalAgentItemPlan, home string) error {
 	userID := agent.UserID
 	if !slices.Contains([]string{"record", "execute"}, plan.Mode) ||
 		!slices.Contains([]string{"inbox", "ready", "waiting", "working", "review"}, plan.Progress) {
@@ -28,9 +30,6 @@ func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgen
 	roles, err := s.store.WorkspaceRolesForUser(ctx, userID)
 	if err != nil {
 		return err
-	}
-	if plan.WorkspaceID != "" && roles[plan.WorkspaceID] == "" {
-		return &personalagent.Refusal{Status: http.StatusNotFound, Err: store.ErrNotFound}
 	}
 	if route := plan.Route; route != nil {
 		if !slices.Contains([]string{"record", "continue", "existing", "create", "multiple", "clarify"}, route.Kind) || strings.TrimSpace(route.Reason) == "" || len(route.Reason) > 2000 || len(route.Alternatives) > 8 {
@@ -112,7 +111,7 @@ func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgen
 				return invalid("evidence link must be an HTTP(S) URL without credentials")
 			}
 		case "file":
-			if plan.WorkspaceID == "" || strings.HasPrefix(evidence.Ref, "/") || strings.Contains(evidence.Ref, "\\") {
+			if home == "" || strings.HasPrefix(evidence.Ref, "/") || strings.Contains(evidence.Ref, "\\") {
 				return invalid("file evidence needs a relative path in the selected workspace")
 			}
 			for _, part := range strings.Split(evidence.Ref, "/") {

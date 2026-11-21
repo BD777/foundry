@@ -208,6 +208,10 @@ var workspaceOwnedRows = []ownedRows{
 	// to the conversation that made them.
 	{"pa_tasks", "session_id", ownerSession},
 	{"pa_proposals", "session_id", ownerSession},
+	// A workspace session's helper is tied to its item, and its signals wait
+	// on the item, only while it exists.
+	{"pa_item_helpers", "session_id", ownerSession},
+	{"pa_item_signals", "sender_session_id", ownerSession},
 	{"pending_items", "issue_id", ownerIssue},
 	{"evidence_records", "issue_id", ownerIssue},
 	{"feishu_chat_threads", "issue_id", ownerIssue},

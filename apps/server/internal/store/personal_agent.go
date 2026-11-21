@@ -405,6 +405,20 @@ const (
 	PersonalAgentTaskCancelled = "cancelled"
 )
 
+// PersonalAgentTaskStatusOf is a helper's status from its session's.
+func PersonalAgentTaskStatusOf(sessionStatus string) string {
+	switch sessionStatus {
+	case "completed":
+		return PersonalAgentTaskDone
+	case "failed":
+		return PersonalAgentTaskFailed
+	case "canceled":
+		return PersonalAgentTaskCancelled
+	default:
+		return PersonalAgentTaskRunning
+	}
+}
+
 // PersonalAgentTask is work the assistant handed off and follows up (table
 // pa_tasks).
 type PersonalAgentTask struct {

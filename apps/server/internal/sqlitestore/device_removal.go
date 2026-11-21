@@ -365,12 +365,18 @@ var deviceReferences = []deviceReference{
 	// A digest whose summary session is gone is due again.
 	{"workspace_digests", `summary_session_id = ''`, `summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"pa_items", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
+	// An item outlives the session holding it and its home: it is held by no
+	// one, and kept in the assistant's inbox.
+	{"pa_items", `holder_session_id = ''`, `holder_session_id IN (` + deviceSessions + `)`},
+	{"pa_items", `home_workspace_id = ''`, `home_workspace_id IN (` + deviceWorkspaces + `)`},
 	{"pa_memory", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
 	{"model_observations", `author_session_id = ''`, `author_session_id IN (` + deviceSessions + `)`},
 	{"model_guides", `updated_by_session_id = ''`, `updated_by_session_id IN (` + deviceSessions + `)`},
 	// A task followed up for a conversation that is gone has no one to
 	// report to.
 	{"pa_tasks", "", `conversation_session_id IN (` + deviceSessions + `)`},
+	{"pa_item_helpers", "", `session_id IN (` + deviceSessions + `)`},
+	{"pa_item_signals", "", `sender_session_id IN (` + deviceSessions + `)`},
 	// Leases its sessions hold on other devices' resources end with them.
 	{"resource_leases", "", `holder_device_id = ?1 OR holder_session_id IN (` + deviceSessions + `)`},
 	// A tunnel in another workspace that reached a service on the device.

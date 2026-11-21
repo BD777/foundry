@@ -35,12 +35,14 @@ import { serverErrorText } from "../../lib/errors";
 import { chatHref } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { ItemPlan } from "./person-list-plan";
+import { ItemHome } from "./items-home";
 import {
   helperStatusLabel,
   itemStatusLabel,
   originLabel,
   ownerLabel,
   stateLabel,
+  workspaceLabel,
 } from "./items-marks";
 import { shortWhen } from "./items-model";
 import { personalItemActions } from "./use-personal-items";
@@ -63,8 +65,9 @@ export interface ItemDetailProps {
 }
 
 /**
- * One item in full: its words, who has it, where it came from, the status
- * actions, its summary, the work on it, its plan (editable while open) and
+ * One item in full: its words, who has it, the status actions, where it
+ * lives (its home, the workspaces it touches, the chat following it), where
+ * it came from, its summary, the work on it, its plan (editable while open) and
  * its timeline, one line per event.
  */
 export function ItemDetail({
@@ -121,6 +124,8 @@ export function ItemDetail({
     run(() => personalItemActions.setStatus(assistantId, item, status));
   const setArchived = (archived: boolean) =>
     run(() => personalItemActions.setArchived(assistantId, item, archived));
+  const changeHome = (workspaceId: string) =>
+    run(() => personalItemActions.setHome(assistantId, item, workspaceId));
   const changeOwner = () =>
     run(() =>
       personalItemActions.setOwner(
@@ -294,6 +299,14 @@ export function ItemDetail({
           pending={pending}
         />
       </div>
+      <DetailSection title={t("items.home.title")}>
+        <ItemHome
+          item={item}
+          onChangeHome={changeHome}
+          pending={pending}
+          workspaces={workspaces}
+        />
+      </DetailSection>
       {item.origin || item.quote ? (
         <DetailSection title={t("items.detail.origin")}>
           {origin ? <p className="text-sm text-ink-muted">{origin}</p> : null}
@@ -352,7 +365,6 @@ export function ItemDetail({
             onRefresh={onChanged}
             onSave={open ? savePlan : undefined}
             operations={operations}
-            workspaces={workspaces}
           />
         </DetailSection>
       ) : null}
@@ -400,6 +412,7 @@ export function ItemDetail({
                 key={event.id}
                 language={language}
                 t={t}
+                workspaces={workspaces}
               />
             ))}
         </ol>
@@ -408,11 +421,13 @@ export function ItemDetail({
   );
 }
 
-/** The plan's draft as the person's choice: route, project and dependencies. */
+/**
+ * The plan's draft as the person's choice: route and dependencies. The home
+ * has its own control, so a plan save never moves the item.
+ */
 function choiceOf(plan: PersonalAgentItemPlan): PersonalAgentItemPlanChoice {
   return {
     route: plan.route?.kind,
-    workspaceId: plan.workspaceId,
     dependencies: plan.dependencies,
   };
 }
@@ -543,16 +558,19 @@ function TimelineRow({
   event,
   language,
   t,
+  workspaces,
 }: {
   event: PersonalAgentItemEvent;
   language: string;
   t: TFunction<"personalAgent">;
+  workspaces: WorkspaceProjection[];
 }) {
   const detail = event.detail ?? {};
   const actor: Record<PersonalAgentItemEvent["actor"], string> = {
     person: t("items.actor.person"),
     assistant: t("items.actor.assistant"),
     foundry: t("items.actor.foundry"),
+    session: t("items.actor.session"),
   };
   const owner = (value?: string) =>
     value === "person"
@@ -604,6 +622,20 @@ function TimelineRow({
       break;
     case "restored":
       line = t("items.event.restored");
+      break;
+    case "claimed":
+      line = detail.from
+        ? t("items.event.claimedReplaced")
+        : t("items.event.claimed");
+      break;
+    case "released":
+      line = t("items.event.released");
+      break;
+    case "rehomed":
+      line = t("items.event.rehomed", {
+        from: workspaceLabel(detail.from, workspaces, t),
+        to: workspaceLabel(detail.to, workspaces, t),
+      });
       break;
   }
   return (

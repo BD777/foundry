@@ -101,6 +101,9 @@ type Policy interface {
 	// (RecordAssistantTask).
 	AdmitAssistantSession(ctx context.Context, input store.CreateAgentSessionInput) (agent store.PersonalAgent, delegating bool, err error)
 	RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string)
+	// LinkItemHelper ties a helper that a session other than the
+	// assistant's created to the item its input names (AssistantItemID).
+	LinkItemHelper(ctx context.Context, assistantID, itemID string, session store.AgentSession)
 	// ChooseSessionAccount pins the account a new session naming no
 	// profile runs under: one that works on its device.
 	ChooseSessionAccount(ctx context.Context, input *store.CreateAgentSessionInput) error

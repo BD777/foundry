@@ -9,7 +9,7 @@ import (
 
 func TestPersonalAgentOperationFences(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Prepare a comparison", Plan: &store.PersonalAgentItemPlan{Mode: "record", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Prepare a comparison", HomeWorkspaceID: "ws", Plan: &store.PersonalAgentItemPlan{Mode: "record"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Use inputs", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws", Dependencies: []string{dependency.ID}}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Use inputs", HomeWorkspaceID: "ws", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Dependencies: []string{dependency.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestPersonalAgentOperationRechecksIntentAndDependencies(t *testing.T) {
 
 func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
-	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	item, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Synthetic comparison", HomeWorkspaceID: "ws", Plan: &store.PersonalAgentItemPlan{Mode: "execute"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestPendingDispatchCancellationDoesNotClaimAnAcceptedInputStopped(t *testin
 	op.ID = "other-pending-op"
 	op.StepKey = "later"
 	op.ItemID = ""
-	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Other synthetic comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", WorkspaceID: "ws"}})
+	other, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "p", AssistantID: "asst_p", Text: "Other synthetic comparison", HomeWorkspaceID: "ws", Plan: &store.PersonalAgentItemPlan{Mode: "execute"}})
 	if err != nil {
 		t.Fatal(err)
 	}

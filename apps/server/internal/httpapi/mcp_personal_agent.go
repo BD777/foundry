@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
@@ -33,6 +36,46 @@ var personalAgentMCPTools = map[string]bool{
 	"needs_you":            true,
 	"assistant_settings":   true,
 	"assistant_channels":   true,
+}
+
+// workspaceItemMCPTools are the assistant's item tools that a session the
+// person started in a workspace also has, limited to the items of that
+// workspace (itemScope): the assistant and such a session keep the same
+// ledger, at different reach.
+var workspaceItemMCPTools = map[string]bool{"read_list": true, "update_list": true}
+
+// errNoItemTools refuses the item tools to a session that keeps no items.
+var errNoItemTools = &statusError{http.StatusForbidden, errors.New("read_list and update_list are for the person's assistant and the sessions the person started in a workspace; an Issue's sessions, verifiers and the assistant's helpers do not keep the person's items")}
+
+// itemScope is the scope of the item tools (read_list, update_list): the
+// assistant's in its own conversation (paScope), else that of a session the
+// person started in a workspace (assistant.WorkspaceScopeFor), which reaches
+// only that workspace's items. A session another session started counts,
+// as it acts for the same person (agentScope); a session in an Issue, a
+// verifier and the assistant's helpers with what they start do not.
+func (s *Server) itemScope(ctx context.Context, actor Actor) (assistant.Scope, error) {
+	scope, err := s.paScope(ctx, actor)
+	if !errors.Is(err, assistant.ErrNotAssistant) {
+		return scope, err
+	}
+	if !actor.Agent() {
+		return assistant.Scope{}, err
+	}
+	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
+	if err != nil {
+		return assistant.Scope{}, errNoItemTools
+	}
+	if session.CreatedByUserID == "" || session.Role != "" || session.IssueID != "" || session.Source == store.SessionSourceVerification {
+		return assistant.Scope{}, errNoItemTools
+	}
+	access, err := permission.Resolve(ctx, s.store, session)
+	if err != nil {
+		return assistant.Scope{}, err
+	}
+	if access.Applicable {
+		return assistant.Scope{}, errNoItemTools
+	}
+	return s.assistant.WorkspaceScopeFor(ctx, session.CreatedByUserID, session.ID, session.WorkspaceID, session.Input)
 }
 
 // assistantWithheldMCPTools are tools the assistant does not get (§5): work
@@ -104,8 +147,19 @@ func (s *Server) updateRulesForMCP(call mcpCall) (string, error) {
 	return s.assistantTool(call, "update_rules")
 }
 
+// updateListForMCP is update_list, for the assistant or a workspace session
+// (itemScope).
 func (s *Server) updateListForMCP(call mcpCall) (string, error) {
-	return s.assistantTool(call, "update_list")
+	ctx := call.r.Context()
+	scope, err := s.itemScope(ctx, call.actor)
+	if err != nil {
+		return "", err
+	}
+	answer, err := s.assistant.RunTool(ctx, scope, "update_list", call.args)
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(answer)
 }
 
 func (s *Server) listTasksForMCP(call mcpCall) (string, error) {
@@ -134,10 +188,11 @@ func (s *Server) getWorkspaceForMCP(call mcpCall) (string, error) {
 	return encodeJSON(answer)
 }
 
-// readListForMCP is read_list (assistant.ReadList).
+// readListForMCP is read_list (assistant.ReadList), for the assistant or a
+// workspace session (itemScope).
 func (s *Server) readListForMCP(call mcpCall) (string, error) {
 	ctx := call.r.Context()
-	scope, err := s.paScope(ctx, call.actor)
+	scope, err := s.itemScope(ctx, call.actor)
 	if err != nil {
 		return "", err
 	}

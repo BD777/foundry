@@ -395,7 +395,8 @@ func TestReadListPagesFiltersAndStaysConcise(t *testing.T) {
 	if page.Total != 2 || len(page.Items) != 2 {
 		t.Fatalf("default page = %s", text)
 	}
-	for _, key := range []string{`"events"`, `"plan"`, `"revision"`} {
+	// The revision stays: update_list needs it (DEV-324).
+	for _, key := range []string{`"events"`, `"plan"`} {
 		if strings.Contains(text, key) {
 			t.Fatalf("read_list shows %s: %s", key, text)
 		}

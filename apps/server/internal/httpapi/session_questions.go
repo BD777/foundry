@@ -56,8 +56,10 @@ func questionRouting(responsible assistant.Responsibility) (string, string) {
 
 // relayChildQuestion puts a question a child raised in its responsible
 // party's inbox at once, whatever its delivery: a question the person holds
-// in their own chat is not relayed. A stopped assistant keeps the question
-// until it resumes (relayHelperQuestionsOnResume).
+// in their own chat is not relayed. A child on an item asks whoever follows
+// the item (assistant.SignalTarget), and its question waits on the item while
+// no one does. A stopped assistant keeps the question until it resumes
+// (relayHelperQuestionsOnResume).
 func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessionEvent) {
 	message := event.Message
 	if message == nil || len(message.Questions) == 0 {
@@ -72,11 +74,12 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 	if to != questionsToParent {
 		return
 	}
-	if parentID == "" {
+	target := s.assistant.SignalTarget(ctx, child, parentID)
+	if target.SessionID == "" && !target.Queued() {
 		log.Printf("session question kept in its chat: session=%s message=%s reason=%q", child.ID, message.ID, "no live parent answers it")
 		return
 	}
-	if responsible.Party == assistant.ResponsibleAssistant && responsible.Assistant.State != store.PersonalAgentActive {
+	if responsible.Party == assistant.ResponsibleAssistant && responsible.Assistant.State != store.PersonalAgentActive && target.Via != assistant.SignalViaHolder {
 		log.Printf("session question kept for the stopped assistant: session=%s message=%s", child.ID, message.ID)
 		return
 	}
@@ -84,17 +87,21 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 		log.Printf("session question not relayed: session=%s message=%s reason=%q", child.ID, message.ID, "already answered")
 		return
 	}
-	prompt := s.relayedQuestionText(child, *message)
+	prompt := s.relayedQuestionText(child, target, *message)
 	// A helper of the person's assistant (§h): a running assistant may hand it
 	// to the person when only they can decide.
 	if responsible.Party == assistant.ResponsibleAssistant {
 		prompt += fmt.Sprintf("If only the person can decide, do not guess: hand it to them with needs_you (op hand_over, sessionId %s, note: one plain sentence for the person); they answer it in their list and it reaches the helper.\n", child.ID)
 	}
 	item := store.SessionInboxItem{
-		SessionID: parentID, InputID: uuid.NewSHA1(relayedQuestionSpace, []byte(child.ID+"\x00"+message.ID)).String(),
+		SessionID: target.SessionID, InputID: uuid.NewSHA1(relayedQuestionSpace, []byte(child.ID+"\x00"+message.ID)).String(),
 		SenderSessionID: child.ID, Prompt: prompt, RequestedDelivery: store.DeliveryBoundary,
 	}
-	s.admitChildReport(ctx, child, item)
+	if target.Queued() {
+		s.queueItemSignal(ctx, target, item, "")
+		return
+	}
+	s.admitChildSignal(ctx, child, target, item)
 }
 
 // relayHelperQuestionsOnResume relays to a resumed assistant the questions
@@ -138,16 +145,17 @@ func (s *Server) questionEvent(ctx context.Context, child store.AgentSession, me
 
 // relayedQuestionText is what the parent reads: who asks, what, and how
 // to answer.
-func (s *Server) relayedQuestionText(child store.AgentSession, message store.TranscriptMessage) string {
+func (s *Server) relayedQuestionText(child store.AgentSession, target assistant.SignalTarget, message store.TranscriptMessage) string {
 	var builder strings.Builder
 	approval := len(message.Questions) == 1 && message.Questions[0].Approval
+	relation := signalRelation(child, target)
 	switch {
 	case approval:
-		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks for approval and waits; its turn ended.\n", child.ID, child.Title)
+		fmt.Fprintf(&builder, "%s session %s (%q), %s, asks for approval and waits; its turn ended.\n", sessions.QuestionRelayPrefix, child.ID, child.Title, relation)
 	case message.Delivery == questionDeliveryAsync:
-		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks and keeps working; it reads the answer at its next step.\n", child.ID, child.Title)
+		fmt.Fprintf(&builder, "%s session %s (%q), %s, asks and keeps working; it reads the answer at its next step.\n", sessions.QuestionRelayPrefix, child.ID, child.Title, relation)
 	default:
-		fmt.Fprintf(&builder, "Foundry question: session %s (%q), which this session created, asks and waits for the answer; its turn ended.\n", child.ID, child.Title)
+		fmt.Fprintf(&builder, "%s session %s (%q), %s, asks and waits for the answer; its turn ended.\n", sessions.QuestionRelayPrefix, child.ID, child.Title, relation)
 	}
 	if link := s.assistant.SessionURL(child); link != "" {
 		fmt.Fprintf(&builder, "Link: %s\n", link)
@@ -237,14 +245,19 @@ func nativeQuestionID(messageID string) string {
 	return messageID
 }
 
-// answerWaitingQuestion turns a parent's plain message to a child waiting
+// answerWaitingQuestion turns a parent's (or follower's) plain message to a child waiting
 // on a question into the answer to it (the envelope a person's answer
 // card sends), so the child's runtime and chat read it as the answer. A
 // message already in that envelope, or to a child that waits on nothing,
 // stays as it is. With several questions the whole text answers the first.
 func (s *Server) answerWaitingQuestion(ctx context.Context, sender string, child store.AgentSession, prompt string) string {
 	text := strings.TrimSpace(prompt)
-	if sender == "" || sender != child.ParentSessionID || text == "" || strings.Contains(text, agentQuestionReplyOpen) {
+	if sender == "" || text == "" || strings.Contains(text, agentQuestionReplyOpen) {
+		return prompt
+	}
+	// Its creator answers, or the session its questions reach (a holder of
+	// its item, the assistant's conversation).
+	if sender != child.ParentSessionID && sender != s.assistant.SignalTarget(ctx, child, child.ParentSessionID).SessionID {
 		return prompt
 	}
 	message, waiting := s.waitingQuestion(ctx, child)

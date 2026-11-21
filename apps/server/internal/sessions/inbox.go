@@ -606,6 +606,17 @@ const ChildReportPrefix = "Foundry report:"
 // treated as a child's own handoff.
 const SessionAlertPrefix = "Foundry alert:"
 
+// QuestionRelayPrefix opens every question Foundry relays from a child
+// (httpapi's session_questions.go).
+const QuestionRelayPrefix = "Foundry question:"
+
+// FoundrySignal reports whether a message is one of Foundry's own: a
+// child's report, an alert or a relayed question.
+func FoundrySignal(prompt string) bool {
+	return strings.HasPrefix(prompt, ChildReportPrefix) || strings.HasPrefix(prompt, SessionAlertPrefix) ||
+		strings.HasPrefix(prompt, QuestionRelayPrefix)
+}
+
 // ChildReportGather: a report to a parent between turns waits this long
 // for its siblings, so children that end together start one parent turn.
 var ChildReportGather = 10 * time.Second

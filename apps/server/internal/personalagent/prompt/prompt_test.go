@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-21.1": "40e02b82e762e5726cd38d5b67c9d1f782171328ba3c63679a265e4879880d6c", // DEV-324: an item has a home and touches, a workspace session may hold it; grow a project from an item with create_workspace fromItemId
 	"2026-11-19.1": "5e8cdd3b4dabe46812f6272b195b9e33ffe17ccca5ca9a10d1c3ebd60e380db1", // DEV-313 (person 2026-11-19): the assistant is the orchestrator; research and investigation go to a project through a helper, questions about their own world are answered directly
 	"2026-11-17.2": "07d41b39a1b2e9d9fa5226fa4dbe7502a90d7ac5162372cec7db72ee5269fc58", // DEV-293: a helper's question or approval is answered or approved by the assistant, what it cannot settle goes to the person with needs_you; the person's answer to needs_you ask is a decision
 	"2026-11-17.1": "d1002a710d9e69e059a117bdaa2ee7f0292302cdaa449ca9e36d78ac065df190", // DEV-282: scope clarifications for helpers' claims, outreach, and say-when-you-decided-for-the-person

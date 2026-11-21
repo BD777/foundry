@@ -6,6 +6,7 @@ import {
   WorkspaceExecutionDefaultFeature,
 } from "../features/agent-defaults";
 import { AssetsFeature } from "../features/assets";
+import { WorkspaceItems } from "../features/personal-agent";
 import { ChannelsFeature } from "../features/channels";
 import { WorkspaceConnectorsFeature } from "../features/external-accounts";
 import { SharingFeature } from "../features/sharing";
@@ -24,11 +25,18 @@ import { assetsViewFields, skillsViewFields } from "./view-fields";
 
 export interface WorkspaceHubViewProps extends AppViewContext {
   section?: WorkspaceSection;
+  /** The assistant whose items the overview shows; absent, it shows none. */
+  items?: {
+    assistantId: string;
+    /** Opens the items page, at one item when given. */
+    onOpen: (itemId?: string) => void;
+  };
 }
 
 /** The shown workspace's pages: overview, settings, assets, skills, sharing… */
 export function WorkspaceHubView({
   section = "workspace",
+  items,
   ...context
 }: WorkspaceHubViewProps) {
   const { current, location, setNotice, workspaceData } = context;
@@ -50,6 +58,17 @@ export function WorkspaceHubView({
           deviceLabel={device?.label}
           devices={data.devices}
           workspaces={data.workspaces}
+          items={
+            items && data.workspace.id ? (
+              <WorkspaceItems
+                assistantId={items.assistantId}
+                onOpenAll={() => items.onOpen()}
+                onOpenItem={items.onOpen}
+                workspaceId={data.workspace.id}
+                workspaces={data.workspaces}
+              />
+            ) : null
+          }
           acceptedCount={
             issuesEnabled
               ? current.sortedIssues.filter(

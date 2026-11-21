@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -91,6 +92,12 @@ func (p sessionPolicy) AdmitAssistantSession(ctx context.Context, input store.Cr
 
 func (p sessionPolicy) RecordAssistantTask(ctx context.Context, agent store.PersonalAgent, conversationID string, session store.AgentSession, itemID string) {
 	p.s.assistant.RecordTask(ctx, agent, conversationID, session, itemID)
+}
+
+func (p sessionPolicy) LinkItemHelper(ctx context.Context, assistantID, itemID string, session store.AgentSession) {
+	if err := p.s.store.LinkPersonalAgentItemHelper(ctx, store.PersonalAgentActorSession, assistantID, itemID, session.ID); err != nil {
+		log.Printf("session %s: tie to item %s: %v", session.ID, itemID, err)
+	}
 }
 
 func (p sessionPolicy) ChooseSessionAccount(ctx context.Context, input *store.CreateAgentSessionInput) error {

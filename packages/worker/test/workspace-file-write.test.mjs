@@ -12,11 +12,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
 
-const { writeWorkspaceFile, maxWorkspaceFileWriteBytes } =
-  await import("../dist/session/files/workspace-file-write.js");
+const {
+  writeWorkspaceFile,
+  writeWorkspaceFileKeptOutOfGit,
+  maxWorkspaceFileWriteBytes,
+} = await import("../dist/session/files/workspace-file-write.js");
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "foundry-write-file-")));
 test.after(() => rmSync(root, { recursive: true, force: true }));
@@ -144,4 +148,25 @@ test("a failed write leaves the old file and no temporary file behind", () => {
   assert.equal(readFileSync(join(ws, "AGENTS.md"), "utf8"), "keep");
   assert.deepEqual(readdirSync(ws).sort(), ["AGENTS.md", "dir.md"]);
   assert.deepEqual(readdirSync(join(ws, "dir.md")), []);
+});
+
+test("a file Foundry writes under .foundry/ is kept out of the workspace's Git", async () => {
+  const ws = workspace();
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: ws, encoding: "utf8" });
+  git("init", "-q");
+  const written = await writeWorkspaceFileKeptOutOfGit(ws, {
+    workspaceId: "ws_1",
+    path: ".foundry/items/pai_1.md",
+    content: '---\nid: "pai_1"\n---\n',
+  });
+  assert.equal(written.path, ".foundry/items/pai_1.md");
+  assert.equal(
+    readFileSync(join(ws, ".foundry/items/pai_1.md"), "utf8"),
+    '---\nid: "pai_1"\n---\n',
+  );
+  assert.equal(git("status", "--porcelain", "--untracked-files=all"), "");
+  assert.ok(
+    readFileSync(join(ws, ".git/info/exclude"), "utf8").includes("/.foundry/*"),
+  );
 });

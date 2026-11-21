@@ -518,6 +518,14 @@ func TestPersonalAgentItemPlanChoiceMergesAndRefuses(t *testing.T) {
 		t.Fatalf("second merge = %v", plan)
 	}
 
+	inbox := put(planned.ID, `{"plan":{"workspaceId":""}}`)
+	expectStatus(t, inbox, http.StatusOK, "move the item back to the inbox")
+	moved := decodeItemBody(t, inbox)
+	plan, _ = moved["plan"].(map[string]any)
+	if _, ok := moved["homeWorkspaceId"]; ok || plan["workspaceId"] != nil || plan["progress"] != "working" {
+		t.Fatalf("the inbox move = home %v, plan %v", moved["homeWorkspaceId"], plan)
+	}
+
 	fresh := addItem(t, f, agent, "Book the room", store.PersonalAgentItemOwnerPerson)
 	record := put(fresh.ID, `{"plan":{"route":"record"}}`)
 	expectStatus(t, record, http.StatusOK, "a plan for an item without one")

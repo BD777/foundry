@@ -96,7 +96,7 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *Store) error) error {
 	defer logSlowTransaction(time.Now())
 	defer tx.Rollback()
 
-	if err := fn(&Store{db: s.db, read: s.read, exec: tx, kek: s.kek}); err != nil {
+	if err := fn(&Store{db: s.db, read: s.read, exec: tx, kek: s.kek, itemChanges: s.itemChanges}); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
