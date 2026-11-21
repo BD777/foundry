@@ -73,6 +73,7 @@ Foundry 的核心是**基础能力**；**工作流**是基础能力的组合（C
 | CHAT-3 | 实机回归补齐：Worker 重启用例 C10、C20 自动化，C19 进 CI | 已完成   | —                       | 三个用例无需手工步骤即可运行并有最近一次通过记录                                          | [实机回归 §3](live-regression.md#3-覆盖缺口待补)、[DEV-310](devlog/DEV-310-live-regression-recovery.md) |
 | CHAT-4 | Issue 对话的排队消息移到 Server（与 Chat 一致）          | 下一步   | —                       | 关闭所有标签页后 Issue 的排队消息仍恰好发送一次                                           | [chat-experience · 实现边界](chat-experience.md#实现边界)                                               |
 | CHAT-5 | 隔离模式的 Chat：在候选中工作，接受后经合入队列          | 探索     | [WF-3](#候选与-sandbox) | 普通 Chat 行为不变；隔离模式的改动未经接受不进入 Workspace                                | [工作流与基础能力](workflow-platform.md)                                                                |
+| CHAT-6 | 原生会话换掉后，它观察到的后台任务条目永远停在 unknown   | 已完成   | —                       | 旧原生会话的 unknown 任务在读工作列表时收尾为 stopped，不再算 open                        | [DEV-324](devlog/DEV-324-item-ledger.md)（E5 试点事项 `pai_8739…`）                                     |
 
 ### Issues
 
