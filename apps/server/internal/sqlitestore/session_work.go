@@ -98,20 +98,41 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 	// task IDs disappeared from the latest native snapshot. Repair from the
 	// retained evidence as well; rereading the transcript cannot rediscover them.
 	// Save rechecks the current generation/observation inside its transaction.
+	currentNative := map[string]string{}
 	for index, item := range result.Items {
 		candidate := item
-		if !confirmNativeWorkHistory(&candidate, item) {
+		if confirmNativeWorkHistory(&candidate, item) {
+			if !persistRepairs {
+				result.Items[index] = candidate
+				continue
+			}
+			saved, saveErr := s.SaveSessionWork(ctx, item)
+			if saveErr != nil {
+				return result, saveErr
+			}
+			result.Items[index] = saved
 			continue
 		}
-		if !persistRepairs {
-			result.Items[index] = candidate
+		if !supersededNativeWorkCandidate(item) {
 			continue
 		}
-		saved, saveErr := s.SaveSessionWork(ctx, item)
-		if saveErr != nil {
-			return result, saveErr
+		native, known := currentNative[item.SessionID]
+		if !known {
+			native, err = sessionNativeID(ctx, s.reader(), item.SessionID)
+			if err != nil {
+				return result, err
+			}
+			currentNative[item.SessionID] = native
 		}
-		result.Items[index] = saved
+		if !endSupersededNativeWork(&candidate, native, time.Now().UTC()) {
+			continue
+		}
+		if persistRepairs {
+			if candidate, err = s.endSupersededSessionWork(ctx, item.ID); err != nil {
+				return result, err
+			}
+		}
+		result.Items[index] = candidate
 	}
 	coverageDevice := deviceID
 	if coverageDevice == "" && threadID != "" {
@@ -428,6 +449,65 @@ func confirmNativeWorkHistory(item *store.SessionWork, evidence store.SessionWor
 	item.Observation = evidence.Observation
 	item.Observation.ConfirmedRevision = item.Revision
 	return true
+}
+
+// A Claude process's background commands and subagents end with it, and a
+// session starts another native session only once none of its processes runs
+// such work (acquireClaudeRuntime, closeOtherClaudeWriters in the Worker).
+// So a task of an earlier native session that its device can no longer see
+// (unknown) has ended, and no later observation will say so (CHAT-6).
+func supersededNativeWorkCandidate(item store.SessionWork) bool {
+	return item.Source == "claude" && (item.Kind == "process" || item.Kind == "agent") &&
+		item.Management == "observed" && item.DesiredState != "removed" &&
+		item.Observation.Status == "unknown" && item.Observation.Error == "" &&
+		nativeWorkSessionID(item) != ""
+}
+
+func nativeWorkSessionID(item store.SessionWork) string {
+	if item.Native != nil && item.Native.SessionID != "" {
+		return item.Native.SessionID
+	}
+	return item.Spec.NativeSessionID
+}
+
+// endSupersededNativeWork records such a task as stopped when it was found
+// ended: the moment of its end is not known.
+func endSupersededNativeWork(item *store.SessionWork, currentNativeSessionID string, now time.Time) bool {
+	if !supersededNativeWorkCandidate(*item) || currentNativeSessionID == "" || nativeWorkSessionID(*item) == currentNativeSessionID {
+		return false
+	}
+	at := formatTime(now)
+	item.Observation = store.WorkObservation{Status: "stopped", At: at, StartedAt: item.Observation.StartedAt, EndedAt: at, ConfirmedRevision: item.Revision}
+	return true
+}
+
+func sessionNativeID(ctx context.Context, q dbExecutor, sessionID string) (string, error) {
+	var native string
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.nativeSessionId'),'') FROM agent_sessions WHERE id=?`, sessionID).Scan(&native)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return native, err
+}
+
+// endSupersededSessionWork decides again on the current row and session.
+func (s *Store) endSupersededSessionWork(ctx context.Context, id string) (store.SessionWork, error) {
+	var item store.SessionWork
+	err := s.withTx(ctx, func(tx *Store) error {
+		var raw string
+		if err := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, id).Scan(&raw); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(raw), &item); err != nil {
+			return err
+		}
+		native, err := sessionNativeID(ctx, tx.conn(), item.SessionID)
+		if err != nil || !endSupersededNativeWork(&item, native, time.Now().UTC()) {
+			return err
+		}
+		return tx.writeWork(ctx, item)
+	})
+	return item, err
 }
 
 func confirmedWorkEnded(item store.SessionWork) bool {

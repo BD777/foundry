@@ -396,39 +396,43 @@ func (s *Store) setItemHolder(ctx context.Context, actor string, item store.Pers
 	return s.recordItemEvent(ctx, item, now, actor, kind, detail)
 }
 
-// detachItemsFromDeletedWorkspace returns the items whose home is the
-// workspace being deleted to the assistant's inbox, each recorded as rehomed
-// by Foundry, and releases the items its sessions hold. The home is a field a
-// save writes back, so the revision moves: a save read before the deletion
-// cannot restore the deleted home.
-func (s *Store) detachItemsFromDeletedWorkspace(ctx context.Context, workspaceID string) error {
-	items, err := s.queryItems(ctx, `home_workspace_id = ? ORDER BY rowid`, workspaceID)
+// detachItemsFromDeleted returns the items homed in workspaces being deleted
+// to the assistant's inbox, each recorded as rehomed by Foundry, and releases
+// the items held by sessions being deleted. workspaces and sessions are SQL
+// sets binding the deleted owner's id to ?1: one workspace when it is
+// deleted, a device's workspaces and sessions when the device is purged. The
+// home is a field a save writes back, so the revision moves: a save read
+// before the deletion cannot restore the deleted home. It answers how many
+// items it changed.
+func (s *Store) detachItemsFromDeleted(ctx context.Context, owner, workspaces, sessions string) (int64, error) {
+	items, err := s.queryItems(ctx, `home_workspace_id IN (`+workspaces+`) ORDER BY rowid`, owner)
 	if err != nil {
-		return fmt.Errorf("find items homed in deleted workspace: %w", err)
+		return 0, fmt.Errorf("find items homed in deleted workspaces: %w", err)
 	}
 	now := paNow()
 	for _, item := range items {
 		if _, err := s.conn().ExecContext(ctx, `UPDATE pa_items SET home_workspace_id = '', revision = revision + 1, intent_revision = intent_revision + 1, updated_at = ? WHERE assistant_id = ? AND id = ?`,
 			now, item.AssistantID, item.ID); err != nil {
-			return fmt.Errorf("rehome personal agent item: %w", err)
+			return 0, fmt.Errorf("rehome personal agent item: %w", err)
 		}
+		from := item.HomeWorkspaceID
 		item.HomeWorkspaceID = ""
 		if err := s.recordItemEvent(ctx, item, now, store.PersonalAgentActorFoundry, store.PersonalAgentItemEventRehomed,
-			store.PersonalAgentItemEventDetail{From: workspaceID}); err != nil {
-			return err
+			store.PersonalAgentItemEventDetail{From: from}); err != nil {
+			return 0, err
 		}
 	}
-	held, err := s.queryItems(ctx, `holder_session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?) ORDER BY rowid`, workspaceID)
+	held, err := s.queryItems(ctx, `holder_session_id IN (`+sessions+`) ORDER BY rowid`, owner)
 	if err != nil {
-		return fmt.Errorf("find items held in deleted workspace: %w", err)
+		return 0, fmt.Errorf("find items held by deleted sessions: %w", err)
 	}
 	for _, item := range held {
 		if err := s.setItemHolder(ctx, store.PersonalAgentActorFoundry, item, "", store.PersonalAgentItemEventReleased,
 			store.PersonalAgentItemEventDetail{SessionID: item.HolderSessionID}); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return int64(len(items) + len(held)), nil
 }
 
 // recordHelperEvents writes the helper events of a task change on its item:

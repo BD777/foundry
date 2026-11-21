@@ -315,6 +315,16 @@ func (s *Store) PurgeRemovedDevice(ctx context.Context, id string) (map[string]i
 		if err := tx.invalidateRemovedDeviceReferences(ctx, id); err != nil {
 			return err
 		}
+		// An item outlives its home and the session holding it: it goes back
+		// to the assistant's inbox, held by no one, as when a workspace is
+		// deleted.
+		items, err := tx.detachItemsFromDeleted(ctx, id, deviceWorkspaces, deviceSessions)
+		if err != nil {
+			return err
+		}
+		if items > 0 {
+			deleted["pa_items (let go)"] += items
+		}
 		for _, step := range deviceRemovalPlan {
 			if step.batch > 0 {
 				continue
@@ -365,10 +375,6 @@ var deviceReferences = []deviceReference{
 	// A digest whose summary session is gone is due again.
 	{"workspace_digests", `summary_session_id = ''`, `summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	{"pa_items", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
-	// An item outlives the session holding it and its home: it is held by no
-	// one, and kept in the assistant's inbox.
-	{"pa_items", `holder_session_id = ''`, `holder_session_id IN (` + deviceSessions + `)`},
-	{"pa_items", `home_workspace_id = ''`, `home_workspace_id IN (` + deviceWorkspaces + `)`},
 	{"pa_memory", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
 	{"model_observations", `author_session_id = ''`, `author_session_id IN (` + deviceSessions + `)`},
 	{"model_guides", `updated_by_session_id = ''`, `updated_by_session_id IN (` + deviceSessions + `)`},

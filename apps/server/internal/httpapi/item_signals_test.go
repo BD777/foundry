@@ -302,7 +302,7 @@ func TestWorkspaceHelperShowsOnItsItem(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items at home = %+v (%v)", items, err)
 	}
-	if file := assistant.ItemFile(items[0], helpers[item.ID], events); !strings.Contains(file, "- "+created.ID) {
+	if file := assistant.ItemFile(items[0], helpers[item.ID], events, time.UTC); !strings.Contains(file, "- "+created.ID) {
 		t.Fatalf("the item file lists no helper:\n%s", file)
 	}
 	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, agent.ID, nil); len(tasks) != 0 {
