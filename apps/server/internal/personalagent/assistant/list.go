@@ -1191,6 +1191,10 @@ func (s *Service) DigestFacts(ctx context.Context, agent store.PersonalAgent, no
 // digestItems are the person's items open or closed since closedSince, as the
 // items page's query finds them (archived ones left out), read page by page.
 func (s *Service) digestItems(ctx context.Context, assistantID, closedSince string) ([]store.PersonalAgentListItem, error) {
+	// No assistant yet: no list to summarise.
+	if assistantID == "" {
+		return nil, nil
+	}
 	var items []store.PersonalAgentListItem
 	for offset := 0; ; {
 		page, err := s.store.ListPersonalAgentItemPage(ctx, assistantID, store.PersonalAgentItemFilter{ClosedSince: closedSince, Limit: store.PersonalAgentItemPageMax, Offset: offset})
