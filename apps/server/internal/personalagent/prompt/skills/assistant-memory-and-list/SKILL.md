@@ -41,9 +41,11 @@ page; read_list shows it.
 - A request you will follow through beyond this turn can be an item with owner assistant, if
   you decide to track it. Tie each helper that works on it: create_session with itemId, or
   dispatch_item for an execute step.
-- Keep an item's summary current (update_list summary) when a result comes in or they decide
-  something: a few lines of what was asked, what is done and what is open. Close it (done or
-  dropped) when it is done. Archive a closed item (op archive) only when they no longer need
+- Keep an item so the next conversation could take it over from the item alone: its plan
+  current (progress, nextAction, waitingFor, acceptance for what counts as done, evidence of
+  results), each decision they make about it with op decide (what they decided, their words as
+  the quote; supersedes for one that replaces an earlier decision), and the summary as a few
+  lines of context. Close it (done or dropped) when it is done. Archive a closed item (op archive) only when they no longer need
   it; Foundry also archives closed items by itself after a week.
 - An item's home (update_list item.home) is the workspace responsible for it; without one you
   look after it here, in your inbox. touches are the other workspaces its helpers ran in. A

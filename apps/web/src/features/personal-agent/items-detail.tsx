@@ -22,6 +22,7 @@ import type {
 import { capturePersonalAgentInbox } from "../../api";
 import { MarkdownContent } from "../../components/conversation/markdown-content";
 import { Alert } from "../../components/ui/alert";
+import { ClampedText } from "../../components/ui/clamped-text";
 import { Button } from "../../components/ui/button";
 import {
   ContextLinkRow,
@@ -354,6 +355,9 @@ export function ItemDetail({
           </p>
         )}
       </DetailSection>
+      <DetailSection title={t("items.detail.decisions")}>
+        <ItemDecisions events={events} language={language} t={t} />
+      </DetailSection>
       {item.plan ? (
         <DetailSection title={t("items.plan.title")}>
           <ItemPlan
@@ -554,6 +558,75 @@ function TimeRow({
 }
 
 /** One event on one line: when · who · what. */
+/**
+ * The person's decisions on the item, oldest first, each with their own words;
+ * one a later decision superseded is struck through.
+ */
+function ItemDecisions({
+  events,
+  language,
+  t,
+}: {
+  events: PersonalAgentItemEvent[];
+  language: string;
+  t: TFunction<"personalAgent">;
+}) {
+  const decided = events
+    .filter((event) => event.kind === "decided" && event.detail?.decision)
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (!decided.length) {
+    return (
+      <p className="text-sm text-ink-faint">{t("items.detail.noDecisions")}</p>
+    );
+  }
+  const superseded = new Set(
+    decided.map((event) => event.detail?.supersedes).filter(Boolean),
+  );
+  return (
+    <ol className="grid gap-2.5 text-sm">
+      {decided.map((event) => {
+        const replaced = superseded.has(event.id);
+        return (
+          <li
+            className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2"
+            key={event.id}
+          >
+            <time
+              className="pt-0.5 text-xs text-ink-faint tabular-nums"
+              dateTime={event.at}
+              title={fullWhen(event.at)}
+            >
+              {shortWhen(event.at, language)}
+            </time>
+            <div className="grid min-w-0 gap-0.5">
+              <ClampedText
+                className={
+                  replaced ? "text-ink-faint line-through" : "text-ink"
+                }
+                clamp={3}
+              >
+                {event.detail?.decision ?? ""}
+              </ClampedText>
+              {replaced ? (
+                <span className="text-xs text-ink-faint">
+                  {t("items.detail.decisionSuperseded")}
+                </span>
+              ) : null}
+              {event.detail?.quote ? (
+                <ClampedText className="text-xs text-ink-muted" clamp={2}>
+                  {t("items.detail.decisionQuote", {
+                    quote: event.detail.quote,
+                  })}
+                </ClampedText>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function TimelineRow({
   event,
   language,
@@ -631,6 +704,9 @@ function TimelineRow({
     case "released":
       line = t("items.event.released");
       break;
+    case "decided":
+      line = t("items.event.decided", { decision: detail.decision ?? "" });
+      break;
     case "rehomed":
       line = t("items.event.rehomed", {
         from: workspaceLabel(detail.from, workspaces, t),
@@ -650,7 +726,9 @@ function TimelineRow({
       <span className="flex-none text-xs text-ink-muted">
         {actor[event.actor]}
       </span>
-      <span className="min-w-0 truncate text-ink">{line}</span>
+      <span className="min-w-0 truncate text-ink" title={line}>
+        {line}
+      </span>
     </li>
   );
 }

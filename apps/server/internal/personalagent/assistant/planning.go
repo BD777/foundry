@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
@@ -26,6 +27,16 @@ func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgen
 	if len(plan.NextAction) > 2000 || len(plan.WaitingFor) > 1000 ||
 		len(plan.WorkRefs) > 32 || len(plan.Evidence) > 32 {
 		return invalid("plan exceeds its size limits")
+	}
+	if len(plan.Acceptance) > store.PersonalAgentItemAcceptanceMax {
+		return invalid("plan.acceptance holds at most %d criteria", store.PersonalAgentItemAcceptanceMax)
+	}
+	for i, criterion := range plan.Acceptance {
+		criterion = strings.TrimSpace(criterion)
+		if criterion == "" || utf8.RuneCountInString(criterion) > store.PersonalAgentItemCriterionMaxLength {
+			return invalid("each plan.acceptance criterion is one checkable line of at most %d characters", store.PersonalAgentItemCriterionMaxLength)
+		}
+		plan.Acceptance[i] = criterion
 	}
 	roles, err := s.store.WorkspaceRolesForUser(ctx, userID)
 	if err != nil {

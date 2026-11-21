@@ -2443,7 +2443,7 @@
     "_meta": {
       "anthropic/searchHint": "person list & memory: add or update the person's items, plans, done things"
     },
-    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId is your task (list_tasks) that helps with this item; it moves here from the item it was on. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records a next action, waiting reason and dependencies; an execute plan is what dispatch_item runs. item.home is the workspace responsible for the item (\"\" hands it to the assistant's inbox); plan.workspaceId is the same field. op claim makes this session the item's holder, the session following it (a new claim replaces the one before); release lets it go. A session the person started in a workspace keeps the items whose home is that workspace: its new items get that home, and it changes, claims and releases only those.",
+    "description": "Keep the person's list of items: what they plan, are doing or did, in their words. They see and edit it on their home page; your handed-off work is list_tasks. op add makes an item (status open by default); update changes the given fields of item.id (include revision); archive and restore take only item.id: archive needs a closed item with no helper running, restore gives back the helper sessions the archive took. owner is person (they do it) or assistant (you do it through helpers). summary replaces the item's running context in Markdown, at most 1500 characters. when is their words for the time; at a clock time (RFC 3339 or \"2026-10-15 18:30\" in their zone); remind with at makes Foundry send you one reminder notice at that time. taskId is your task (list_tasks) that helps with this item; it moves here from the item it was on. Items about the person need item.quote, their own words from this conversation. The same intentKey answers the same item (safe to retry). plan records progress, a next action, waiting reason, dependencies, acceptance (what counts as done; a plan without it keeps the criteria) and evidence; keep them current rather than packing status into the summary; an execute plan is what dispatch_item runs. op decide records one decision the person made about the item: item.decision (what they decided), item.quote (their own words from this conversation) and item.supersedes (the id of the earlier decision it replaces); decisions are appended, never edited. item.home is the workspace responsible for the item (\"\" hands it to the assistant's inbox); plan.workspaceId is the same field. op claim makes this session the item's holder, the session following it (a new claim replaces the one before); release lets it go. A session the person started in a workspace keeps the items whose home is that workspace: its new items get that home, and it changes, claims and releases only those.",
     "summary": "Adds to or updates the person's list of items (plans and done things) from their own words; keeps each item's owner, summary, home, holder and archive; can set a reminder.",
     "limits": [
       "One item per call; text at most 200 characters, when at most 60, summary at most 1500.",
@@ -2457,8 +2457,16 @@
       "properties": {
         "op": {
           "type": "string",
-          "enum": ["add", "update", "archive", "restore", "claim", "release"],
-          "description": "add or update an item; archive, restore, claim or release it (item.id only)."
+          "enum": [
+            "add",
+            "update",
+            "archive",
+            "restore",
+            "claim",
+            "release",
+            "decide"
+          ],
+          "description": "add or update an item; archive, restore, claim or release it (item.id only); decide records the person's decision on item.id."
         },
         "item": {
           "type": "object",
@@ -2511,6 +2519,15 @@
             "home": {
               "type": "string",
               "description": "The workspace (ws_…) responsible for the item; \"\" for the assistant's inbox. Moving it records a rehomed event."
+            },
+            "decision": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "op decide: what the person decided about the item, in one or two sentences (\"not doing X\" is a decision too)."
+            },
+            "supersedes": {
+              "type": "string",
+              "description": "op decide: the id of the item's earlier decision this one replaces (the item file lists decisions with their ids)."
             },
             "revision": {
               "type": "integer",
@@ -2585,6 +2602,15 @@
                     "type": "string"
                   },
                   "maxItems": 32
+                },
+                "acceptance": {
+                  "type": "array",
+                  "description": "What counts as done, one checkable criterion each. Omitted, the item keeps its criteria; [] clears them.",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "maxItems": 12
                 },
                 "workRefs": {
                   "type": "array",

@@ -8,6 +8,8 @@ import type {
 } from "@bd777/foundry-protocol";
 import { cancelPendingPersonalAgentOperation } from "../../api";
 import { Button } from "../../components/ui/button";
+import { ClampedText } from "../../components/ui/clamped-text";
+import { Subheading } from "../../components/ui/subheading";
 import { FieldHint, Checkbox, Textarea } from "../../components/ui/field";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { issuesEnabled } from "../../lib/feature-flags";
@@ -253,13 +255,29 @@ export function ItemPlan({
             ) : null}
           </div>
         ) : null}
+        {(plan?.acceptance?.length ?? 0) > 0 ? (
+          <div className="mt-2 grid gap-1">
+            <Subheading as="h4" size="caption">
+              {t("planning.acceptance")}
+            </Subheading>
+            <ul className="grid list-disc gap-1 ps-4.5">
+              {plan!.acceptance!.map((criterion, i) => (
+                <li key={i}>
+                  <ClampedText clamp={3}>{criterion}</ClampedText>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {(plan?.evidence?.length ?? 0) > 0 ? (
-          <div>
-            <p>{t("planning.evidence")}</p>
-            <ul>
+          <div className="mt-2 grid gap-1">
+            <Subheading as="h4" size="caption">
+              {t("planning.evidence")}
+            </Subheading>
+            <ul className="grid list-disc gap-1.5 ps-4.5">
               {plan!.evidence!.map((e, i) => (
                 <li key={i}>
-                  <p>{e.summary}</p>
+                  <ClampedText clamp={3}>{e.summary}</ClampedText>
                   {e.kind === "session" ? (
                     <Button
                       size="sm"

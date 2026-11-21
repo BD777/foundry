@@ -20,23 +20,30 @@ import (
 // recordItemEvent appends one fact to an item's timeline, in the transaction
 // of the change it records.
 func (s *Store) recordItemEvent(ctx context.Context, item store.PersonalAgentListItem, at, actor, kind string, detail store.PersonalAgentItemEventDetail) error {
+	_, err := s.recordItemEventID(ctx, item, at, actor, kind, detail)
+	return err
+}
+
+// recordItemEventID is recordItemEvent answering the new event's id.
+func (s *Store) recordItemEventID(ctx context.Context, item store.PersonalAgentListItem, at, actor, kind string, detail store.PersonalAgentItemEventDetail) (string, error) {
 	if err := checkActor(actor); err != nil {
-		return err
+		return "", err
 	}
 	raw, err := json.Marshal(detail)
 	if err != nil {
-		return fmt.Errorf("encode personal agent item event: %w", err)
+		return "", fmt.Errorf("encode personal agent item event: %w", err)
 	}
+	id := paID("pie")
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO pa_item_events (id, user_id, assistant_id, item_id, at, actor, kind, detail_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		paID("pie"), item.UserID, item.AssistantID, item.ID, at, actor, kind, string(raw)); err != nil {
-		return fmt.Errorf("record personal agent item event: %w", err)
+		id, item.UserID, item.AssistantID, item.ID, at, actor, kind, string(raw)); err != nil {
+		return "", fmt.Errorf("record personal agent item event: %w", err)
 	}
 	homes := []string{item.HomeWorkspaceID}
 	if kind == store.PersonalAgentItemEventRehomed {
 		homes = append(homes, detail.From, detail.To)
 	}
 	s.itemChanged(item, homes...)
-	return nil
+	return id, nil
 }
 
 // ObservePersonalAgentItemChanges sets the one observer of item changes.
@@ -308,6 +315,45 @@ func (s *Store) ClaimPersonalAgentItem(ctx context.Context, actor, assistantID, 
 		return err
 	})
 	return saved, replaced, err
+}
+
+func (s *Store) DecidePersonalAgentItem(ctx context.Context, actor, assistantID, id string, decision store.PersonalAgentItemEventDetail) (store.PersonalAgentListItem, string, error) {
+	if strings.TrimSpace(decision.Decision) == "" || strings.TrimSpace(decision.Quote) == "" {
+		return store.PersonalAgentListItem{}, "", fmt.Errorf("%w: a decision names what was decided and the person's words it rests on", store.ErrPersonalAgentItemInvalid)
+	}
+	detail := store.PersonalAgentItemEventDetail{Decision: decision.Decision, Quote: decision.Quote, Supersedes: decision.Supersedes}
+	var saved store.PersonalAgentListItem
+	var eventID string
+	err := s.withTx(ctx, func(tx *Store) error {
+		item, err := tx.GetPersonalAgentItem(ctx, assistantID, id)
+		if err != nil {
+			return err
+		}
+		if item.Text == "" {
+			return store.ErrNotFound
+		}
+		if detail.Supersedes != "" {
+			var found int
+			if err := tx.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM pa_item_events WHERE assistant_id = ? AND item_id = ? AND id = ? AND kind = ?`,
+				assistantID, id, detail.Supersedes, store.PersonalAgentItemEventDecided).Scan(&found); err != nil {
+				return fmt.Errorf("find superseded decision: %w", err)
+			}
+			if found == 0 {
+				return fmt.Errorf("%w: supersedes %q is not a decision of this item", store.ErrPersonalAgentItemInvalid, detail.Supersedes)
+			}
+		}
+		now := paNow()
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_items SET revision = revision + 1, intent_revision = intent_revision + 1, updated_at = ? WHERE assistant_id = ? AND id = ?`,
+			now, assistantID, id); err != nil {
+			return fmt.Errorf("record personal agent item decision: %w", err)
+		}
+		if eventID, err = tx.recordItemEventID(ctx, item, now, actor, store.PersonalAgentItemEventDecided, detail); err != nil {
+			return err
+		}
+		saved, err = tx.GetPersonalAgentItem(ctx, assistantID, id)
+		return err
+	})
+	return saved, eventID, err
 }
 
 func (s *Store) ReleasePersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (store.PersonalAgentListItem, bool, error) {

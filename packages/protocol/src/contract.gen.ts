@@ -3508,9 +3508,13 @@ interface components {
       | "restored"
       | "claimed"
       | "released"
-      | "rehomed";
-    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox). */
+      | "rehomed"
+      | "decided";
+    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes). */
     PersonalAgentItemEventDetail: {
+      decision?: string;
+      quote?: string;
+      supersedes?: string;
       from?: string;
       to?: string;
       sessionId?: string;
@@ -3543,7 +3547,7 @@ interface components {
       /** @description The helper's session is archived. */
       archived?: boolean;
     };
-    /** @description The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references and the completion evidence. Operational state, not the person's intent; absent on items with none. */
+    /** @description The assistant's plan for executing the item (plan_json), as it is today: how it routes, its progress, the next action and what it waits for, the project it runs in, items it depends on, the work it references, what counts as done (acceptance) and the completion evidence. Operational state, not the person's intent (their decisions are decided events); absent on items with none. */
     PersonalAgentItemPlan: {
       route?: components["schemas"]["PersonalAgentItemRouteDecision"];
       /** @description record unless the person asked the assistant to execute. */
@@ -3555,6 +3559,8 @@ interface components {
       /** @description The item's homeWorkspaceId, repeated for older readers. Not stored in the plan; a write of it moves the item's home. */
       workspaceId?: string;
       dependencies?: string[];
+      /** @description What counts as done, one checkable criterion each, at most 12 of at most 300 characters. A plan written without it keeps the criteria it had; an empty list clears them. */
+      acceptance?: string[];
       workRefs?: components["schemas"]["PersonalAgentWorkReference"][];
       evidence?: components["schemas"]["PersonalAgentCompletionEvidence"][];
     };

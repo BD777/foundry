@@ -71,6 +71,10 @@ const (
 	// Rehomed: the item's home workspace changed (detail from and to; empty
 	// is the assistant's inbox).
 	PersonalAgentItemEventRehomed = "rehomed"
+	// Decided: the person decided something about the item (detail decision
+	// and quote, their own words; supersedes names the decided event it
+	// replaces). Decisions are only appended; a later one supersedes.
+	PersonalAgentItemEventDecided = "decided"
 )
 
 // Views of the items page: open, finished (done or dropped) and archived; all
@@ -86,6 +90,13 @@ const (
 	// PersonalAgentItemSummaryMaxLength is the most characters an item's
 	// summary holds.
 	PersonalAgentItemSummaryMaxLength = 1500
+	// PersonalAgentItemDecisionMaxLength is the most characters a decision
+	// holds; its quote is bounded the same way.
+	PersonalAgentItemDecisionMaxLength = 500
+	// PersonalAgentItemAcceptanceMax and PersonalAgentItemCriterionMaxLength
+	// bound a plan's acceptance criteria.
+	PersonalAgentItemAcceptanceMax      = 12
+	PersonalAgentItemCriterionMaxLength = 300
 	// PersonalAgentItemPageDefault and PersonalAgentItemPageMax bound the
 	// limit of ListPersonalAgentItemPage.
 	PersonalAgentItemPageDefault = 50
@@ -168,15 +179,17 @@ type PersonalAgentListItemInput struct {
 // PersonalAgentItemPlan supplements the person's short task without
 // duplicating execution state or changing what their original words meant.
 type PersonalAgentItemPlan struct {
-	Route        *PersonalAgentRouteDecision       `json:"route,omitempty"`
-	Mode         string                            `json:"mode"`
-	Progress     string                            `json:"progress"`
-	NextAction   string                            `json:"nextAction,omitempty"`
-	WaitingFor   string                            `json:"waitingFor,omitempty"`
-	WorkspaceID  string                            `json:"workspaceId,omitempty"`
-	Dependencies []string                          `json:"dependencies,omitempty"`
-	WorkRefs     []PersonalAgentWorkReference      `json:"workRefs,omitempty"`
-	Evidence     []PersonalAgentCompletionEvidence `json:"evidence,omitempty"`
+	Route        *PersonalAgentRouteDecision `json:"route,omitempty"`
+	Mode         string                      `json:"mode"`
+	Progress     string                      `json:"progress"`
+	NextAction   string                      `json:"nextAction,omitempty"`
+	WaitingFor   string                      `json:"waitingFor,omitempty"`
+	WorkspaceID  string                      `json:"workspaceId,omitempty"`
+	Dependencies []string                    `json:"dependencies,omitempty"`
+	// Acceptance is what counts as done, one checkable criterion each.
+	Acceptance []string                          `json:"acceptance,omitempty"`
+	WorkRefs   []PersonalAgentWorkReference      `json:"workRefs,omitempty"`
+	Evidence   []PersonalAgentCompletionEvidence `json:"evidence,omitempty"`
 }
 
 type PersonalAgentWorkReference struct {
@@ -277,6 +290,12 @@ type PersonalAgentListStore interface {
 	// the holder it replaced ("" for none). Claiming an item already held by
 	// sessionID changes nothing.
 	ClaimPersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (PersonalAgentListItem, string, error)
+	// DecidePersonalAgentItem appends the person's decision to the item's
+	// timeline for actor (detail decision, quote, supersedes) and moves its
+	// revision: a decision changes what the item is. It returns the saved
+	// item and the decided event's id. supersedes, when set, must name a
+	// decided event of the same item.
+	DecidePersonalAgentItem(ctx context.Context, actor, assistantID, id string, decision PersonalAgentItemEventDetail) (PersonalAgentListItem, string, error)
 	// ReleasePersonalAgentItem clears the holder when it is sessionID and
 	// records released for actor; false when sessionID did not hold it.
 	ReleasePersonalAgentItem(ctx context.Context, actor, assistantID, id, sessionID string) (PersonalAgentListItem, bool, error)

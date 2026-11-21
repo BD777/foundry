@@ -54,9 +54,15 @@ type listItemArgs struct {
 	// Home is the workspace responsible for the item; "" hands it to the
 	// assistant's inbox.
 	Home *string `json:"home,omitempty"`
+	// Decision and Supersedes are op decide's: what the person decided, and
+	// the earlier decision of the item it replaces.
+	Decision   string `json:"decision,omitempty"`
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 const listNoteUngrounded = "not added: the quote is not in anything the person wrote in this conversation (a document, web page, file, helper's output or Foundry's own notice is not their words). The list holds only what the person told you; quote their exact words."
+
+const listNoteUngroundedDecision = "not recorded: the quote is not in anything the person wrote in this conversation. A decision rests on their own words; quote them exactly."
 
 // planUpdateList adds or changes one item of the person's list, archives or
 // restores it, or claims or releases it for the calling session. What it says
@@ -90,7 +96,10 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		if source, err := s.store.PersonalAgentInboxByInput(ctx, agent.ID, scope.Turn.ID); err == nil && scope.Workspace == "" {
 			item.SourceInboxID = source.RootID
 		}
-	case "update", "archive", "restore", "claim", "release":
+	case "update", "archive", "restore", "claim", "release", "decide":
+		if spec.Op != "decide" && (spec.Item.Decision != "" || spec.Item.Supersedes != "") {
+			return write, invalid("item.decision and item.supersedes belong to op decide")
+		}
 		if spec.Op != "update" && listItemChangesFields(spec.Item) {
 			return write, invalid("%s takes only item.id and revision; change the fields with update", spec.Op)
 		}
@@ -103,10 +112,13 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			return write, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrPersonalAgentRevision}
 		}
 	default:
-		return write, invalid("op must be add, update, archive, restore, claim or release")
+		return write, invalid("op must be add, update, archive, restore, claim, release or decide")
 	}
-	if spec.Op == "claim" || spec.Op == "release" {
+	switch spec.Op {
+	case "claim", "release":
 		return s.planItemClaim(scope, spec.Op, item, recordAs, write)
+	case "decide":
+		return s.planItemDecision(ctx, scope, item, spec.Item, recordAs, write)
 	}
 	homeChanged, err := s.resolveItemHome(scope, spec, &item)
 	if err != nil {
@@ -126,6 +138,11 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 		plan, err := s.withHelperRefs(ctx, agent.ID, item.ID, *spec.Item.Plan, previous)
 		if err != nil {
 			return write, err
+		}
+		// A plan written without acceptance keeps the criteria it had; an
+		// empty list clears them.
+		if plan.Acceptance == nil && item.Plan != nil {
+			plan.Acceptance = item.Plan.Acceptance
 		}
 		plan.WorkspaceID = item.HomeWorkspaceID
 		item.Plan, personal = &plan, true
@@ -426,6 +443,40 @@ func (s *Service) planItemClaim(scope Scope, op string, item store.PersonalAgent
 			return map[string]any{"status": "applied", "item": saved, "replaced": replaced}, nil
 		}
 		return map[string]any{"status": "applied", "item": saved}, nil
+	}
+	return write, nil
+}
+
+// planItemDecision records the person's decision about the item: what they
+// decided, in their own words from this conversation (the quote, checked as
+// update_list checks every word about the person), and the earlier decision
+// of the item it supersedes. Decisions are appended, never edited.
+func (s *Service) planItemDecision(ctx context.Context, scope Scope, item store.PersonalAgentListItem, args listItemArgs, recordAs string, write Write) (Write, error) {
+	write.WorkspaceID = item.HomeWorkspaceID
+	decision := strings.TrimSpace(args.Decision)
+	quote := strings.TrimSpace(args.Quote)
+	switch {
+	case decision == "":
+		return write, invalid("item.decision is required: what the person decided, in one or two sentences")
+	case quote == "":
+		return write, invalid("item.quote is required: copy the person's own words the decision rests on from their messages in this conversation")
+	case utf8.RuneCountInString(decision) > store.PersonalAgentItemDecisionMaxLength || utf8.RuneCountInString(quote) > store.PersonalAgentItemDecisionMaxLength:
+		return write, invalid("item.decision and item.quote are at most %d characters each", store.PersonalAgentItemDecisionMaxLength)
+	}
+	said, err := s.personSaid(ctx, scope.SessionID, scope.Turn)
+	if err != nil {
+		return write, err
+	}
+	if !personalagent.QuoteGrounded(quote, said) {
+		return write, invalid("%s", listNoteUngroundedDecision)
+	}
+	detail := store.PersonalAgentItemEventDetail{Decision: decision, Quote: quote, Supersedes: strings.TrimSpace(args.Supersedes)}
+	write.Apply = func(ctx context.Context) (any, error) {
+		saved, eventID, err := s.store.DecidePersonalAgentItem(ctx, recordAs, item.AssistantID, item.ID, detail)
+		if err != nil {
+			return nil, itemRefusal(err)
+		}
+		return map[string]any{"status": "applied", "item": saved, "decisionId": eventID}, nil
 	}
 	return write, nil
 }
