@@ -474,6 +474,48 @@ func TestWorkReadRepairsRetainedNativeHistoryWithoutLatestSnapshot(t *testing.T)
 	}
 }
 
+func TestWorkReadEndsUnseenTasksOfAnEarlierNativeSession(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO agent_sessions (id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+		VALUES ('s', 'w', 'a', 'd', 'claude', 'completed', '{"id":"s","nativeSessionId":"current"}', '', '')`); err != nil {
+		t.Fatal(err)
+	}
+	task := func(id, native, status string) store.SessionWork {
+		return store.SessionWork{ID: id, SessionID: "s", ThreadID: "s", DeviceID: "d", Source: "claude", SourceID: id, Kind: "process", Management: "observed", DesiredState: "enabled", Revision: 1, Generation: 1, AllowedActions: []string{},
+			Native:      &store.NativeWorkInfo{Runtime: "claude", SessionID: native, TaskID: id, Discovery: "transcript task lifecycle", Observation: "available", Controls: map[string]string{}},
+			Spec:        store.WorkSpec{NativeSessionID: native},
+			Observation: store.WorkObservation{Status: status, At: "2026-11-20T16:46:29.44Z", StartedAt: "2026-11-17T11:43:53.608Z"}}
+	}
+	for _, item := range []store.SessionWork{task("earlier", "old", "unknown"), task("live", "current", "unknown"), task("running", "old", "running")} {
+		if err := s.writeWork(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for n := 0; n < 2; n++ {
+		list, err := s.ListSessionWork(ctx, "s", "")
+		if err != nil || len(list.Items) != 3 {
+			t.Fatalf("list: %+v %v", list, err)
+		}
+		for _, item := range list.Items {
+			ended := item.Observation.Status == "stopped" && item.Observation.EndedAt != "" && item.Observation.ConfirmedRevision == 1 &&
+				item.Observation.StartedAt == "2026-11-17T11:43:53.608Z"
+			if ended != (item.ID == "earlier") {
+				t.Fatalf("read %d: %s: %+v", n, item.ID, item.Observation)
+			}
+		}
+	}
+	stored, err := s.ListSessionWork(ctx, "", "d")
+	if err != nil || len(stored.Items) != 3 {
+		t.Fatalf("device list: %+v %v", stored, err)
+	}
+	for _, item := range stored.Items {
+		if (item.ID == "earlier") != confirmedWorkEnded(item) {
+			t.Fatalf("persisted end: %s %+v", item.ID, item.Observation)
+		}
+	}
+}
+
 func TestWorkRunIdentityAndTerminalOutcomeSurvivePartialAndLateUpdates(t *testing.T) {
 	s, w := workFixture(t)
 	ctx := context.Background()
