@@ -171,7 +171,8 @@ function WorkRow({
       <div
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-sm hover:bg-control-ghost-hover",
-          selected && "bg-control-ghost-hover",
+          // The selection fill, as ContextRow's: a revealed row stays apart from a hovered one.
+          selected && "bg-selection hover:bg-selection",
         )}
         data-selected={selected ? "true" : undefined}
       >

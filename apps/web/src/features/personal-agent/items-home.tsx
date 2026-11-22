@@ -8,7 +8,10 @@ import type {
 import { getSessionLink, isNotFoundForCaller } from "../../api";
 import { AppLink } from "../../components/ui/app-link";
 import { Button } from "../../components/ui/button";
-import { SelectMenu } from "../../components/ui/select-menu";
+import {
+  SelectMenu,
+  type SelectMenuOption,
+} from "../../components/ui/select-menu";
 import { chatHref, workspaceHref } from "../../lib/in-app-navigation";
 import { workspaceLabel } from "./items-marks";
 
@@ -20,6 +23,17 @@ export function homeChoices(workspaces: WorkspaceProjection[]) {
   return workspaces.filter(
     (workspace) => !workspace.archivedAt && workspace.kind !== "personal_agent",
   );
+}
+
+/** `homeChoices` as menu options; the folder tells same-named workspaces apart. */
+export function homeOptions(
+  workspaces: WorkspaceProjection[],
+): SelectMenuOption[] {
+  return homeChoices(workspaces).map((workspace) => ({
+    value: workspace.id,
+    label: workspace.name,
+    meta: workspace.localPath,
+  }));
 }
 
 /**
@@ -62,10 +76,7 @@ export function ItemHome({
               onChange={(workspaceId) => void choose(workspaceId)}
               options={[
                 { value: "", label: t("items.home.inbox") },
-                ...homeChoices(workspaces).map((workspace) => ({
-                  value: workspace.id,
-                  label: workspace.name,
-                })),
+                ...homeOptions(workspaces),
               ]}
               value={home}
             />
@@ -85,7 +96,7 @@ export function ItemHome({
               <Button
                 onClick={() => setChoosing(true)}
                 size="sm"
-                variant="ghost"
+                variant="secondary"
               >
                 {t("items.home.change")}
               </Button>

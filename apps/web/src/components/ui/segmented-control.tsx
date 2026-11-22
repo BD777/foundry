@@ -21,6 +21,14 @@ export const segmentedControlVariants = cva(
         navigation:
           "fdy-segmented-navigation flex-wrap self-start justify-self-start",
       },
+      /**
+       * Wrap onto another row when the segments do not fit (a narrow page);
+       * the corners round less, so two rows still read as one track.
+       */
+      wrap: {
+        true: "flex-wrap rounded-xl",
+        false: null,
+      },
       /** Spread the segments over the full width, wrapping when they must. */
       fill: {
         true: "fdy-segmented-fill w-full flex-wrap [&>*]:min-w-0 [&>*]:flex-1",
@@ -88,11 +96,15 @@ export function SegmentedControl<T extends string>({
   size,
   tone,
   value,
+  wrap,
 }: SegmentedControlProps<T>) {
   return (
     <ToggleGroup.Root
       aria-label={ariaLabel}
-      className={cn(segmentedControlVariants({ fill, size, tone }), className)}
+      className={cn(
+        segmentedControlVariants({ fill, size, tone, wrap }),
+        className,
+      )}
       onValueChange={(nextValue) => {
         if (nextValue) {
           onValueChange(nextValue as T);

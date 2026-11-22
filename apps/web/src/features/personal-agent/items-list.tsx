@@ -3,13 +3,12 @@ import type {
   PersonalAgentItem,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { Badge } from "../../components/ui/badge";
 import {
-  ContextEmpty,
   ContextList,
   ContextRow,
   ContextRowCopy,
 } from "../../components/ui/context-card";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Subheading } from "../../components/ui/subheading";
 import { relativeWhen } from "../../lib/time-format";
 import { groupByDay, type ItemDayGroup } from "./items-model";
@@ -29,6 +28,8 @@ export interface ItemsListProps {
   /** Whether `workspaces` is read; until then an unknown one goes unnamed. */
   workspacesLoaded?: boolean;
   selectedItemId?: string;
+  /** A tab, filter or search narrows the list: an empty one says so. */
+  narrowed?: boolean;
   /** The item whose tick is being saved. */
   busyId: string;
   onOpen: (itemId: string) => void;
@@ -41,6 +42,7 @@ export function ItemsList({
   workspaces,
   workspacesLoaded = true,
   selectedItemId,
+  narrowed = false,
   busyId,
   onOpen,
   onTick,
@@ -48,7 +50,14 @@ export function ItemsList({
   const { t, i18n } = useTranslation("personalAgent");
   const groups = groupByDay(items);
   if (groups.length === 0)
-    return <ContextEmpty>{t("items.list.empty")}</ContextEmpty>;
+    return (
+      <EmptyState
+        body={t(narrowed ? "items.list.noMatchesBody" : "items.list.emptyBody")}
+        role="status"
+        size="pane"
+        title={t("items.list.empty")}
+      />
+    );
   return (
     <div className="grid gap-4">
       {groups.map((group) => {
@@ -109,7 +118,7 @@ function ItemListRow({
   workspacesLoaded: boolean;
 }) {
   const { t } = useTranslation("personalAgent");
-  // Only a channel names someone else; the person's own web and self-chat items need no chip.
+  // Only a channel names someone else; the person's own web and self-chat items need no origin.
   const origin = item.origin?.kind === "channel" ? originLabel(item, t) : "";
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -133,6 +142,7 @@ function ItemListRow({
                   workspacesLoaded,
                 )
               : "",
+            origin,
           ]
             .filter(Boolean)
             .join(" · ")}
@@ -146,7 +156,6 @@ function ItemListRow({
             {relativeWhen(item.updatedAt)}
           </time>
           <ItemNeedsYouBadge item={item} />
-          {origin ? <Badge tone="neutral">{origin}</Badge> : null}
         </span>
       </ContextRow>
     </div>

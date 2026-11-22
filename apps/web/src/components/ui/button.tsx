@@ -3,6 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cn } from "../../lib/cn";
 import { Spinner } from "./loading";
+import { Tooltip } from "./tooltip";
 
 /*
  * Adapted from Beautiful UI's Button (MIT, (c) 2026 Shane Levine): a pill with
@@ -78,6 +79,12 @@ export interface ButtonProps
    * further clicks. Give it the label of the work under way ("Saving…").
    */
   busy?: boolean;
+  /**
+   * Why the button is disabled, shown on hover and focus while it is. A
+   * disabled button takes no pointer events, so a focusable wrapper holds
+   * the tooltip.
+   */
+  disabledReason?: string;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -88,6 +95,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       children,
       className,
       disabled,
+      disabledReason,
       size,
       type = "button",
       variant,
@@ -97,7 +105,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) {
     const Comp = asChild ? Slot : "button";
 
-    return (
+    const button = (
       <Comp
         className={cn(buttonVariants({ size, variant }), className)}
         ref={ref}
@@ -121,6 +129,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           children
         )}
       </Comp>
+    );
+    if (!disabled || !disabledReason) return button;
+    return (
+      <Tooltip content={disabledReason} variant="hint">
+        <span className="inline-flex max-w-full" tabIndex={0}>
+          {button}
+        </span>
+      </Tooltip>
     );
   },
 );

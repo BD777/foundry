@@ -5,6 +5,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { ChevronRight } from "lucide-react";
 import { Button, type ButtonProps } from "./button";
 import { IconBox, type IconBoxProps } from "./icon-box";
 import { cn } from "../../lib/cn";
@@ -121,6 +122,50 @@ export function ContextHeading({
   );
 }
 
+/**
+ * A heading's way to the whole list (「全部 ›」): a link opening `href` in a
+ * new tab, or a button calling `onClick`.
+ */
+export function ContextHeadingAction({
+  children,
+  href,
+  label,
+  onClick,
+}: {
+  children: ReactNode;
+  href?: string;
+  /** The accessible name, when the visible word alone is too short. */
+  label?: string;
+  onClick?: () => void;
+}) {
+  const className = "-mr-1.5 h-6 gap-0.5 px-1.5 text-xs text-ink-muted";
+  const content = (
+    <>
+      {children}
+      <ChevronRight aria-hidden="true" size={13} />
+    </>
+  );
+  if (href)
+    return (
+      <Button asChild className={className} size="sm" variant="ghost">
+        <a aria-label={label} href={href} rel="noopener" target="_blank">
+          {content}
+        </a>
+      </Button>
+    );
+  return (
+    <Button
+      aria-label={label}
+      className={className}
+      onClick={onClick}
+      size="sm"
+      variant="ghost"
+    >
+      {content}
+    </Button>
+  );
+}
+
 export function ContextList({
   className,
   ...props
@@ -144,7 +189,11 @@ export function ContextEmpty({
 const rowLayout =
   "fdy-chat-context-row flex min-h-[30px] w-full min-w-0 items-center justify-start gap-2.5 rounded-lg px-1.5 py-1 text-left active:scale-100";
 
-/** A row that opens its item; `selected` marks the item the panel shows. */
+/**
+ * A row that opens its item; `selected` marks the item the panel shows with
+ * the selection fill (as NavList's on-surface tone), so it stays apart from a
+ * hovered row.
+ */
 export const ContextRow = forwardRef<
   HTMLButtonElement,
   Omit<ButtonProps, "variant" | "size"> & { selected?: boolean }
@@ -153,7 +202,7 @@ export const ContextRow = forwardRef<
     <Button
       className={cn(
         rowLayout,
-        "hover:bg-control-ghost-hover focus-visible:outline-accent-line focus-visible:outline-offset-1 data-[selected=true]:bg-control-ghost-hover",
+        "hover:bg-control-ghost-hover focus-visible:outline-accent-line focus-visible:outline-offset-1 data-[selected=true]:bg-selection data-[selected=true]:hover:bg-selection",
         className,
       )}
       data-selected={selected === undefined ? undefined : String(selected)}

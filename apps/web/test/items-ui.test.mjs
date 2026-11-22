@@ -58,6 +58,8 @@ const { WorkspaceItems } =
   await import("../src/features/personal-agent/workspace-items.tsx");
 const { AssistantItemsPage } =
   await import("../src/features/personal-agent/items-page.tsx");
+const { ItemsReview } =
+  await import("../src/features/personal-agent/items-review.tsx");
 
 // The live reads subscribe to the stream; nothing streams here.
 globalThis.EventSource = class {
@@ -321,6 +323,77 @@ test("the list groups by day and marks the selected row", async () => {
   const row = page.container.querySelector('[data-selected="true"]');
   assert.ok(row, "the selected item is marked");
   assert.match(row.textContent, /today item/);
+  await page.unmount();
+});
+
+test("an empty list says so, and says when a filter is why", async () => {
+  for (const [narrowed, body] of [
+    [false, /What you or the assistant decide to follow up on/],
+    [true, /Nothing matches this tab, workspace or search/],
+  ]) {
+    const page = await mount(ItemsList, {
+      items: [],
+      narrowed,
+      workspaces,
+      busyId: "",
+      onOpen: () => {},
+      onTick: () => {},
+    });
+    const empty = page.container.querySelector('[role="status"]');
+    assert.ok(empty, "the empty list is announced");
+    assert.match(empty.textContent, /No items here/);
+    assert.match(empty.textContent, body);
+    await page.unmount();
+  }
+});
+
+test("a channel item names who asked on its detail line, not in a chip", async () => {
+  const page = await mount(ItemsList, {
+    items: [
+      item("chan", {
+        text: "reply to Alex",
+        origin: { kind: "channel", name: "Feishu", requester: "Alex" },
+      }),
+    ],
+    workspaces,
+    busyId: "",
+    onOpen: () => {},
+    onTick: () => {},
+  });
+  const row = page.container.querySelector("[data-selected]");
+  assert.match(row.textContent, /You · To do · .*Alex/);
+  assert.equal(page.container.querySelector(".fdy-badge"), null);
+  await page.unmount();
+});
+
+test("an empty review says so and its actions are disabled with the reason", async () => {
+  const page = await mount(ItemsReview, {
+    report: {
+      from: "2026-11-01T00:00:00Z",
+      to: "2026-11-02T00:00:00Z",
+      counts: { created: 0, done: 0, dropped: 0, open: 0 },
+      groups: [],
+    },
+    error: "",
+    rangeLabel: "Today",
+    askText: "Summarise",
+    onBack: () => {},
+    onAsked: () => {},
+  });
+  const empty = page.container.querySelector('[role="status"]');
+  assert.ok(empty, "the empty range is announced");
+  assert.match(empty.textContent, /No items in this range/);
+  for (const name of ["Copy as Markdown", "Ask the assistant to write it up"]) {
+    const button = [...page.container.querySelectorAll("button")].find(
+      (entry) => entry.textContent.trim() === name,
+    );
+    assert.ok(button?.disabled, `${name} is disabled`);
+    assert.equal(
+      button.parentElement.getAttribute("tabindex"),
+      "0",
+      `${name}'s reason is reachable by hover and focus`,
+    );
+  }
   await page.unmount();
 });
 

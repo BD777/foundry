@@ -599,7 +599,10 @@ export const personalAgent = {
     list: {
       today: "Today",
       yesterday: "Yesterday",
-      empty: "No items here.",
+      empty: "No items here",
+      emptyBody:
+        "What you or the assistant decide to follow up on shows up here.",
+      noMatchesBody: "Nothing matches this tab, workspace or search.",
       loadFailed: "Couldn't load items",
       loadMore: "Load more",
       shown: "Showing {{shown}} of {{total}}",
@@ -730,6 +733,11 @@ export const personalAgent = {
       updated: "Updated",
       closed: "Finished",
       empty: "No items in this range.",
+      emptyTitle: "No items in this range",
+      emptyBody:
+        "Choose a longer range to see what was added, finished or dropped.",
+      nothingToSummarise:
+        "There is nothing in this range to copy or summarise.",
       copy: "Copy as Markdown",
       copied: "Copied",
       ask: "Ask the assistant to write it up",

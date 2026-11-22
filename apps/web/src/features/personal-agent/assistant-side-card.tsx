@@ -1,13 +1,12 @@
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Inbox } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { PersonalAgentNeedsYouItem } from "@bd777/foundry-protocol";
-import { Badge } from "../../components/ui/badge";
 import {
-  ContextLinkRow,
+  ContextHeading,
+  ContextHeadingAction,
   ContextList,
   ContextRow,
   ContextRowCopy,
-  ContextRowIcon,
   ContextSection,
 } from "../../components/ui/context-card";
 import { pendingHref } from "../../lib/in-app-navigation";
@@ -16,9 +15,9 @@ import { pendingHref } from "../../lib/in-app-navigation";
 const LISTED_TITLES = 3;
 
 /**
- * 「等你处理」: the count the Needs you page shows, as a link to it in a new
- * tab so the assistant's conversation stays (DEV-254), then the newest
- * titles; each opens its item where it was found. Nothing at zero: the
+ * 「等你处理」: the count the Needs you page shows, headed as the items
+ * section is, its 「全部」 opening that page in a new tab so the assistant's
+ * conversation stays (DEV-254), then the newest titles; each opens its item where it was found. Nothing at zero: the
  * sidebar entry already says it.
  */
 export function NeedsYouSection({
@@ -34,27 +33,21 @@ export function NeedsYouSection({
   if (count <= 0) return null;
   return (
     <ContextSection aria-label={t("home.needsYou.label")}>
-      <ContextLinkRow
-        href={pendingHref()}
-        rel="noopener"
-        target="_blank"
-        title={t("home.needsYou.open")}
+      <ContextHeading
+        action={
+          <ContextHeadingAction
+            href={pendingHref()}
+            label={t("home.needsYou.open")}
+          >
+            {t("items.card.all")}
+          </ContextHeadingAction>
+        }
+        count={count}
       >
-        <ContextRowIcon tone="brass">
-          <Inbox aria-hidden="true" size={15} />
-        </ContextRowIcon>
-        <ContextRowCopy title={t("home.needsYou.title")} />
-        <Badge dot={false} size="xs" tone="neutral">
-          {count}
-        </Badge>
-        <ChevronRight
-          aria-hidden="true"
-          className="flex-none text-ink-faint"
-          size={14}
-        />
-      </ContextLinkRow>
+        {t("home.needsYou.title")}
+      </ContextHeading>
       {items.length ? (
-        <ContextList className="mt-2 gap-0.5">
+        <ContextList className="gap-0.5">
           {items.slice(0, LISTED_TITLES).map((item) => (
             <ContextRow
               key={item.id}

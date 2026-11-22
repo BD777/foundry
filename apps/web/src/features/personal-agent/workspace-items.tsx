@@ -19,8 +19,8 @@ import { Subheading } from "../../components/ui/subheading";
 import { ownerLabel, stateLabel, workspaceLabel } from "./items-marks";
 import { usePersonalItems } from "./use-personal-items";
 
-/** The most one read asks for; the rest are on the items page. */
-const workspaceItemsLimit = 200;
+/** The newest the overview shows; the count of the rest links to the items page. */
+const workspaceItemsLimit = 10;
 
 export interface WorkspaceItemsProps {
   workspaceId: string;

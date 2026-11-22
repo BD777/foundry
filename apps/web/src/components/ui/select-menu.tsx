@@ -86,8 +86,10 @@ export interface SelectMenuProps {
    * "icon": a borderless square holding only the trigger prefix, for toolbars.
    * Its public --fdy-select-icon-size CSS variable defaults to 26px; a
    * containing toolbar may set it to match its other controls.
+   * "boxed": a toolbar filter beside a boxed TextInput, with its edge and
+   * height, as wide as the chosen label (cap it with `className`).
    */
-  tone?: "field" | "pill" | "icon";
+  tone?: "field" | "pill" | "icon" | "boxed";
   value: string;
 }
 
@@ -104,6 +106,8 @@ const triggerVariants = cva(
       tone: {
         field:
           "h-9 rounded-md border border-line bg-panel px-[11px] py-0 text-xs font-[650] text-ink hover:border-brand hover:bg-panel aria-expanded:border-brand aria-expanded:bg-panel focus-visible:shadow-[0_0_0_2px_var(--fdy-control-focus-soft)]",
+        boxed:
+          "h-8 w-auto max-w-full justify-start rounded-md bg-control px-[11px] py-0 text-xs font-[560] text-ink shadow-field hover:bg-control hover:shadow-field-hover aria-expanded:bg-control aria-expanded:shadow-field-focus focus-visible:shadow-field-focus",
         pill: "h-8 rounded-md bg-transparent px-2 py-0 text-xs font-[560] text-ink hover:bg-control-ghost-hover aria-expanded:bg-control-ghost-hover",
         icon: "size-[var(--fdy-select-icon-size,26px)] justify-center rounded-sm bg-transparent p-0 text-ink-muted hover:bg-control-ghost-hover hover:text-ink aria-expanded:bg-control-ghost-hover aria-expanded:text-ink",
       },
