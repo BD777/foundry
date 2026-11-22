@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -35,6 +36,69 @@ func TestAssistantSendMessageStaysInItsScope(t *testing.T) {
 	if text, failed := f.tool(t, f.token, "send_message", map[string]any{"sessionId": outScope.ID, "prompt": "carry on"}); !failed ||
 		!strings.Contains(text, "that you can read") {
 		t.Fatalf("out-of-scope send_message = %q (failed %v)", text, failed)
+	}
+}
+
+// The person's assistants hand things over by message (D1): one's home
+// conversation reaches another's, outside its own package; a helper and a
+// session that is not a home conversation stay refused. Each one's
+// instructions name the others, what they are in charge of and that
+// conversation.
+func TestAssistantsMessageEachOthersConversation(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	settings := personalagent.DefaultSettings()
+	settings.Responsibility = "公司的事：公司身份和公司电脑。"
+	work, err := f.server.store.CreatePersonalAgent(ctx, store.PersonalAgent{
+		UserID: f.aliceID, Name: "ByteWork", WorkspaceID: "ws_alice", HomeDeviceID: "dev_alice", Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The default assistant's package reaches only ws_bob, not ByteWork's home.
+	f.editPackage(t, func(pkg *store.PermissionPackage) {
+		pkg.Workspaces = store.PermissionListRule{Scope: store.PermissionListScopeListed, Include: []string{"ws_bob"}}
+	})
+	workConversation := f.startSession(t, "ws_alice", "", "公司的周报")
+	if _, err := f.server.store.CompleteAgentSession(ctx, workConversation.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	if text, failed := f.tool(t, f.token, "send_message", map[string]any{"sessionId": workConversation.ID, "prompt": "这件是公司的事，交给你"}); failed {
+		t.Fatalf("default → ByteWork conversation refused: %s", text)
+	}
+	if _, err := f.server.store.CompleteAgentSession(ctx, f.conversation.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	if text, failed := f.tool(t, f.mint(t, workConversation.ID), "send_message", map[string]any{"sessionId": f.conversation.ID, "prompt": "这件是家里的事"}); failed {
+		t.Fatalf("ByteWork → default conversation refused: %s", text)
+	}
+
+	helper := f.startSession(t, "ws_bob", f.conversation.ID, "a helper")
+	if text, failed := f.tool(t, f.mint(t, helper.ID), "send_message", map[string]any{"sessionId": workConversation.ID, "prompt": "hello"}); !failed {
+		t.Fatalf("a helper reached the other assistant's conversation: %s", text)
+	}
+	workHelper := f.startSession(t, "ws_alice", workConversation.ID, "ByteWork's helper")
+	if _, err := f.server.store.CompleteAgentSession(ctx, workHelper.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	if text, failed := f.tool(t, f.token, "send_message", map[string]any{"sessionId": workHelper.ID, "prompt": "hello"}); !failed {
+		t.Fatalf("the default assistant reached ByteWork's helper: %s", text)
+	}
+
+	input, err := f.server.assistant.PromptInput(ctx, defaultAssistantOf(t, f.server, f.aliceID), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.OtherAssistants) != 1 || input.OtherAssistants[0].Name != "ByteWork" ||
+		input.OtherAssistants[0].Responsibility != settings.Responsibility || input.OtherAssistants[0].ConversationID != workConversation.ID {
+		t.Fatalf("the default assistant's other assistants = %+v", input.OtherAssistants)
+	}
+	input, err = f.server.assistant.PromptInput(ctx, work, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.OtherAssistants) != 1 || !input.OtherAssistants[0].Default || input.OtherAssistants[0].ConversationID != f.conversation.ID {
+		t.Fatalf("ByteWork's other assistants = %+v", input.OtherAssistants)
 	}
 }
 

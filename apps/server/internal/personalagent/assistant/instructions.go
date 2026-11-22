@@ -302,6 +302,10 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	others, err := s.otherAssistants(ctx, agent)
+	if err != nil {
+		return prompt.Input{}, err
+	}
 	return prompt.Input{
 		Now:                           now,
 		PersonName:                    cmp.Or(user.DisplayName, user.Username),
@@ -312,6 +316,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Workspaces:                    workspaces,
 		Devices:                       devices,
 		Channels:                      channels,
+		OtherAssistants:               others,
 		L0Index:                       l0Index,
 		ProjectFiles:                  workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), now),
 		Places:                        places,
@@ -319,6 +324,28 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		ConnectorsURL:                 s.WebURL("/connectors"),
 		SettingsURL:                   s.WebURL(personalagent.AssistantSettingsPath(agent.ID)),
 	}, nil
+}
+
+// otherAssistants are the person's other active assistants, default first:
+// what each is in charge of and the home conversation the person used last.
+func (s *Service) otherAssistants(ctx context.Context, agent store.PersonalAgent) ([]prompt.AssistantPlace, error) {
+	agents, err := s.store.ListAssistants(ctx, agent.UserID)
+	if err != nil {
+		return nil, err
+	}
+	places := []prompt.AssistantPlace{}
+	for _, other := range agents {
+		if other.ID == agent.ID || other.State != store.PersonalAgentActive {
+			continue
+		}
+		places = append(places, prompt.AssistantPlace{
+			Name:           cmp.Or(other.Name, other.Settings.AssistantName),
+			Default:        other.IsDefault,
+			Responsibility: other.Settings.Responsibility,
+			ConversationID: s.latestConversation(ctx, other),
+		})
+	}
+	return places, nil
 }
 
 // channelPlaces are the assistant's message channels whose workspace is on

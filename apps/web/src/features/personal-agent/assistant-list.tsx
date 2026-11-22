@@ -181,6 +181,11 @@ export function AssistantList({
                         <Badge tone="brass">{t("assistants.default")}</Badge>
                       ) : null}
                     </span>
+                    {assistant.responsibility ? (
+                      <span className="line-clamp-2 text-sm text-ink">
+                        {assistant.responsibility}
+                      </span>
+                    ) : null}
                     {assistant.isDefault ? (
                       <small>{t("assistants.defaultAccess")}</small>
                     ) : (

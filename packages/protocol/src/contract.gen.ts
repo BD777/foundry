@@ -3352,6 +3352,8 @@ interface components {
       permissionPackageId: string;
       /** @description The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner. */
       feishuAppId: string;
+      /** @description What the person put this assistant in charge of, in their words (settings.responsibility); empty when not set. */
+      responsibility: string;
       createdAt: string;
       updatedAt: string;
     };

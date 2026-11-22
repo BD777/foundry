@@ -17,6 +17,7 @@
 package prompt
 
 import (
+	"cmp"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -46,7 +47,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-21.2"
+const Version = "2026-11-23.1"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -143,6 +144,9 @@ type Input struct {
 	// assistant's settings. Empty: not shown.
 	ConnectorsURL string
 	SettingsURL   string
+	// OtherAssistants are the person's other active assistants (D1): what
+	// each is in charge of and how a message reaches it.
+	OtherAssistants []AssistantPlace
 	// DirectChatPreviousWorkspaceID is where the person's Feishu direct chat
 	// went before the assistant took it over (§14): the routing prior when
 	// nothing else points elsewhere. Empty: none.
@@ -155,6 +159,16 @@ type Input struct {
 type ChannelPlace struct {
 	Name string
 	Path string
+}
+
+// AssistantPlace is another of the person's assistants as this one's
+// instructions name it: its label, what the person put it in charge of
+// (settings) and the home conversation they used last, "" when none.
+type AssistantPlace struct {
+	Name           string
+	Default        bool
+	Responsibility string
+	ConversationID string
 }
 
 // System is system.md as embedded, placeholders unfilled.
@@ -233,6 +247,7 @@ func ManagedBlock(in Input) string {
 			fmt.Fprintf(&out, "- 「%s」: %s\n", channel.Name, channel.Path)
 		}
 	}
+	writeAssistants(&out, in)
 	writeRules(&out, in)
 	out.WriteString("\n# What the person confirmed (newest first)\n\n")
 	writeMemory(&out, in.Memory, timeLocation(in))
@@ -298,6 +313,37 @@ func JoinAgentsFile(block, instructions string) string {
 
 // managedBlockMarker starts every version of the block's start marker.
 const managedBlockMarker = "<!-- foundry:managed:start"
+
+// writeAssistants is what the person put each of their assistants in charge
+// of, and how a message reaches the others: facts from their settings.
+// Nothing when they have one assistant and set nothing.
+func writeAssistants(out *strings.Builder, in Input) {
+	own := oneLine(in.Settings.Responsibility)
+	if own == "" && len(in.OtherAssistants) == 0 {
+		return
+	}
+	out.WriteString("\n# What the person's assistants are in charge of (their settings)\n\n")
+	fmt.Fprintf(out, "- You: %s\n", cmp.Or(own, "not set"))
+	for _, other := range in.OtherAssistants {
+		name := oneLine(other.Name)
+		switch {
+		case name == "" && other.Default:
+			name = "the default assistant"
+		case name == "":
+			name = "an assistant without a name"
+		default:
+			name = "「" + name + "」"
+		}
+		conversation := "none yet"
+		if other.ConversationID != "" {
+			conversation = other.ConversationID
+		}
+		fmt.Fprintf(out, "- %s: %s (the conversation they used last: %s)\n", name, cmp.Or(oneLine(other.Responsibility), "not set"), conversation)
+	}
+	if len(in.OtherAssistants) > 0 {
+		out.WriteString("Each assistant works within its own permissions, projects and accounts; send_message to\nanother's conversation reaches it.\n")
+	}
+}
 
 // writeRules is the person's own requests from the settings and when
 // Foundry asks them first, grouped by decision.

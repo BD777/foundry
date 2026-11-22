@@ -147,32 +147,36 @@ type PersonalAgent struct {
 // PersonalAgentSettings is what the settings panel edits (settings_json).
 // An empty string means the default named in the protocol.
 type PersonalAgentSettings struct {
-	RunDefault         *PersonalAgentRunPreference           `json:"runDefault,omitempty"`
-	RoleOverrides      map[string]PersonalAgentRunPreference `json:"roleOverrides,omitempty"`
-	ExecutionModels    *PersonalAgentExecutionModels         `json:"executionModels,omitempty"`
-	AssistantName      string                                `json:"assistantName"`
-	Language           string                                `json:"language"`
-	Timezone           string                                `json:"timezone"`
-	SpeakingStyle      string                                `json:"speakingStyle"`
-	Verbosity          string                                `json:"verbosity"`
-	ExtraInstructions  string                                `json:"extraInstructions"`
-	Policy             PersonalAgentPolicy                   `json:"policy"`
-	Devices            []PersonalAgentDeviceSettings         `json:"devices"`
-	PreferredDeviceID  string                                `json:"preferredDeviceId"`
-	AssistantProfileID string                                `json:"assistantProfileId"`
-	AssistantModel     string                                `json:"assistantModel"`
-	DelegateModel      string                                `json:"delegateModel"`
-	HomePage           bool                                  `json:"homePage"`
-	SimpleInterface    bool                                  `json:"simpleInterface"`
-	FeishuDirectChat   bool                                  `json:"feishuDirectChat"`
-	FeishuAppID        string                                `json:"feishuAppId"`
-	DailyDigest        bool                                  `json:"dailyDigest"`
-	DailyDigestTime    string                                `json:"dailyDigestTime"`
-	ActiveHoursStart   string                                `json:"activeHoursStart"`
-	ActiveHoursEnd     string                                `json:"activeHoursEnd"`
-	UrgentAnytime      bool                                  `json:"urgentAnytime"`
-	Limits             PersonalAgentLimits                   `json:"limits"`
-	Notify             PersonalAgentNotifySettings           `json:"notify"`
+	RunDefault        *PersonalAgentRunPreference           `json:"runDefault,omitempty"`
+	RoleOverrides     map[string]PersonalAgentRunPreference `json:"roleOverrides,omitempty"`
+	ExecutionModels   *PersonalAgentExecutionModels         `json:"executionModels,omitempty"`
+	AssistantName     string                                `json:"assistantName"`
+	Language          string                                `json:"language"`
+	Timezone          string                                `json:"timezone"`
+	SpeakingStyle     string                                `json:"speakingStyle"`
+	Verbosity         string                                `json:"verbosity"`
+	ExtraInstructions string                                `json:"extraInstructions"`
+	// Responsibility is what the person put this assistant in charge of, in
+	// their words (D1, 2026-11-23): the assistants list shows it, and every
+	// assistant of the person reads each one's as a fact.
+	Responsibility     string                        `json:"responsibility"`
+	Policy             PersonalAgentPolicy           `json:"policy"`
+	Devices            []PersonalAgentDeviceSettings `json:"devices"`
+	PreferredDeviceID  string                        `json:"preferredDeviceId"`
+	AssistantProfileID string                        `json:"assistantProfileId"`
+	AssistantModel     string                        `json:"assistantModel"`
+	DelegateModel      string                        `json:"delegateModel"`
+	HomePage           bool                          `json:"homePage"`
+	SimpleInterface    bool                          `json:"simpleInterface"`
+	FeishuDirectChat   bool                          `json:"feishuDirectChat"`
+	FeishuAppID        string                        `json:"feishuAppId"`
+	DailyDigest        bool                          `json:"dailyDigest"`
+	DailyDigestTime    string                        `json:"dailyDigestTime"`
+	ActiveHoursStart   string                        `json:"activeHoursStart"`
+	ActiveHoursEnd     string                        `json:"activeHoursEnd"`
+	UrgentAnytime      bool                          `json:"urgentAnytime"`
+	Limits             PersonalAgentLimits           `json:"limits"`
+	Notify             PersonalAgentNotifySettings   `json:"notify"`
 	// Revision counts the saves of these settings (SavePersonalAgentSettings
 	// sets it; a caller's value is ignored). assistant_settings compares it
 	// with what the assistant read (DEV-298).

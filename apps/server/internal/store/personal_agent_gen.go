@@ -130,8 +130,11 @@ type AssistantSummary struct {
 
 	// FeishuAppID The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner.
 	FeishuAppID string `json:"feishuAppId"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+
+	// Responsibility What the person put this assistant in charge of, in their words (settings.responsibility); empty when not set.
+	Responsibility string `json:"responsibility"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 // ConnectorAccessLevel What one assistant may do through one connector account.

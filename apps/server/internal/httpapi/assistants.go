@@ -16,7 +16,7 @@ func assistantSummary(agent store.PersonalAgent) store.AssistantSummary {
 	return store.AssistantSummary{
 		ID: agent.ID, Name: agent.Name, IsDefault: agent.IsDefault, WorkspaceID: agent.WorkspaceID,
 		HomeDeviceID: agent.HomeDeviceID, State: agent.State, PermissionPackageID: agent.PermissionPackageID,
-		FeishuAppID: agent.Settings.FeishuAppID, CreatedAt: agent.CreatedAt, UpdatedAt: agent.UpdatedAt,
+		FeishuAppID: agent.Settings.FeishuAppID, Responsibility: agent.Settings.Responsibility, CreatedAt: agent.CreatedAt, UpdatedAt: agent.UpdatedAt,
 	}
 }
 

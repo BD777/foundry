@@ -107,6 +107,8 @@ function problemText(
 ): string {
   if (problem.kind === "extraInstructions")
     return t("settings.problems.extraInstructions");
+  if (problem.kind === "responsibility")
+    return t("settings.problems.responsibility");
   if (problem.kind === "executionModels")
     return t("settings.problems.executionModels");
   if (problem.kind === "time") return t(`settings.problems.${problem.field}`);

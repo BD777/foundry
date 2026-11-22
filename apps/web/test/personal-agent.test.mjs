@@ -70,6 +70,7 @@ const settings = {
   speakingStyle: "auto",
   verbosity: "concise",
   extraInstructions: "",
+  responsibility: "",
   policy: {
     create_workspace: "auto",
     register_folder: "ask",

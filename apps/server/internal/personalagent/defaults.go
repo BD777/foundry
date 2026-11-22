@@ -103,6 +103,7 @@ const (
 // Text limits.
 const (
 	ExtraInstructionsMaxChars = 2000
+	ResponsibilityMaxChars    = 300
 	MemoryItemMaxChars        = 300
 	// RoutingRequestMaxChars cuts the request a routing decision keeps.
 	RoutingRequestMaxChars = 500
