@@ -14,9 +14,9 @@ type AssetStatusWidth = 80 | 82 | 92;
  * sits in its own span: the row's end slot sets `min-w-0` on its children.
  */
 const assetStatusWidthClass: Record<AssetStatusWidth, string> = {
-  80: "min-w-[80px] max-[860px]:min-w-[70px]",
-  82: "min-w-[82px] max-[860px]:min-w-[72px]",
-  92: "min-w-[92px] max-[860px]:min-w-[78px]",
+  80: "min-w-[80px] max-sidebar:min-w-[70px]",
+  82: "min-w-[82px] max-sidebar:min-w-[72px]",
+  92: "min-w-[92px] max-sidebar:min-w-[78px]",
 };
 
 export interface AssetSectionRow {
@@ -56,21 +56,21 @@ export function AssetSection({
           const Icon = row.icon;
           return (
             <InfoRow
-              className="first:border-t first:border-line-soft max-[860px]:grid max-[860px]:grid-cols-[30px_minmax(0,1fr)_minmax(66px,auto)] max-[860px]:items-center max-[860px]:gap-[9px] max-[860px]:py-[11px]"
+              className="first:border-t first:border-line-soft max-sidebar:grid max-sidebar:grid-cols-[30px_minmax(0,1fr)_minmax(66px,auto)] max-sidebar:items-center max-sidebar:gap-[9px] max-sidebar:py-[11px]"
               icon={
                 <IconBox size="row" tone={row.iconTone ?? "muted"}>
                   <Icon size={15} />
                 </IconBox>
               }
               key={row.id}
-              endClassName="max-[860px]:max-w-full max-[860px]:flex-nowrap"
+              endClassName="max-sidebar:max-w-full max-sidebar:flex-nowrap"
               label={row.label}
               meta={row.meta}
             >
               <span className="flex">
                 <Badge
                   className={cn(
-                    "justify-start max-[860px]:max-w-[78px] max-[860px]:overflow-hidden max-[860px]:text-ellipsis max-[860px]:whitespace-nowrap",
+                    "justify-start max-sidebar:max-w-[78px] max-sidebar:overflow-hidden max-sidebar:text-ellipsis max-sidebar:whitespace-nowrap",
                     row.status.width && assetStatusWidthClass[row.status.width],
                   )}
                   tone={row.status.tone}

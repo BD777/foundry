@@ -216,7 +216,7 @@ export function AssistantItemsPage({
   const shown = list.items.length;
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
-      <header className="grid grid-cols-[minmax(0,1fr)] gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
+      <header className="grid grid-cols-[minmax(0,1fr)] gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-sidebar:px-4 max-sidebar:pt-3.5 max-sidebar:pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
           <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
             {t("items.title")}
@@ -253,7 +253,7 @@ export function AssistantItemsPage({
               />
               <TextInput
                 aria-label={t("items.search.label")}
-                className="ms-auto w-56 max-w-full max-[860px]:ms-0 max-[860px]:w-full"
+                className="ms-auto w-56 max-w-full max-sidebar:ms-0 max-sidebar:w-full"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={t("items.search.placeholder")}
                 tone="boxed"
@@ -278,9 +278,9 @@ export function AssistantItemsPage({
           />
         </div>
       ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)] min-[861px]:grid-cols-[minmax(300px,400px)_minmax(0,1fr)]">
+        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)] sidebar:grid-cols-[minmax(300px,400px)_minmax(0,1fr)]">
           <div
-            className={cn(paneClass, selectedItemId && "max-[860px]:hidden")}
+            className={cn(paneClass, selectedItemId && "max-sidebar:hidden")}
           >
             {listError ? (
               <Alert
@@ -341,8 +341,8 @@ export function AssistantItemsPage({
           <div
             className={cn(
               paneClass,
-              "min-[861px]:border-s min-[861px]:border-line",
-              !selectedItemId && "max-[860px]:hidden",
+              "sidebar:border-s sidebar:border-line",
+              !selectedItemId && "max-sidebar:hidden",
             )}
           >
             {selectedItemId ? (
@@ -378,7 +378,7 @@ export function AssistantItemsPage({
 }
 
 /** The list's and the detail's pane: the same insets, so their tops align. */
-const paneClass = "min-h-0 overflow-y-auto px-5.5 py-4 max-[860px]:px-4";
+const paneClass = "min-h-0 overflow-y-auto px-5.5 py-4 max-sidebar:px-4";
 
 /** The range as the reader sees it, and the short form the review's message names. */
 function describeRange(

@@ -33,11 +33,11 @@ export function TerminalBlock({
       direction="horizontal"
       viewportClassName={viewportClassName}
     >
-      <pre className="m-0 min-w-max max-[860px]:min-w-0">
-        <code className="block px-[15px] py-[13px] font-mono text-xs leading-[1.7] font-medium max-[860px]:grid max-[860px]:gap-0.5 max-[860px]:px-[13px] max-[860px]:py-3 max-[860px]:leading-[1.65] max-[860px]:whitespace-normal">
+      <pre className="m-0 min-w-max max-sidebar:min-w-0">
+        <code className="block px-[15px] py-[13px] font-mono text-xs leading-[1.7] font-medium max-sidebar:grid max-sidebar:gap-0.5 max-sidebar:px-[13px] max-sidebar:py-3 max-sidebar:leading-[1.65] max-sidebar:whitespace-normal">
           {lines.map((line) => (
             <span
-              className="block min-w-0 max-[860px]:grid max-[860px]:grid-cols-[auto_minmax(0,1fr)] max-[860px]:gap-x-1.5"
+              className="block min-w-0 max-sidebar:grid max-sidebar:grid-cols-[auto_minmax(0,1fr)] max-sidebar:gap-x-1.5"
               key={line.id}
             >
               {line.prompt ? (
@@ -47,7 +47,7 @@ export function TerminalBlock({
                   </span>{" "}
                 </>
               ) : null}
-              <span className="min-w-0 max-[860px]:[overflow-wrap:anywhere]">
+              <span className="min-w-0 max-sidebar:[overflow-wrap:anywhere]">
                 {line.value}
               </span>
             </span>

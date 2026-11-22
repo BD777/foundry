@@ -22,7 +22,7 @@ export function LimitsSection({
         {t("settings.limits.intro")}
       </PaMuted>
       <DividedList density="compact">
-        <li className="grid grid-cols-[minmax(0,24rem)_minmax(0,1fr)] items-start gap-x-5 gap-y-1.5 max-[860px]:grid-cols-[minmax(0,1fr)]">
+        <li className="grid grid-cols-[minmax(0,24rem)_minmax(0,1fr)] items-start gap-x-5 gap-y-1.5 max-sidebar:grid-cols-[minmax(0,1fr)]">
           <FormFieldGroup>
             <FieldLabel htmlFor={id}>
               {t("settings.limits.labels.stuckAfterMinutes")}

@@ -111,7 +111,7 @@ export function ActivitySection({
             const subject = concerning(record, projectName);
             return (
               <li
-                className="grid grid-cols-[110px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-2.25 text-sm max-[860px]:grid-cols-[minmax(0,1fr)]"
+                className="grid grid-cols-[110px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-2.25 text-sm max-sidebar:grid-cols-[minmax(0,1fr)]"
                 key={record.id}
               >
                 <PaMuted as="span" title={fullWhen(record.createdAt)}>

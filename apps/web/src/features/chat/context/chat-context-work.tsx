@@ -170,7 +170,7 @@ function WorkRow({
     <div className="min-w-0 py-0.5" data-work-id={item.id}>
       <div
         className={cn(
-          "flex min-w-0 items-center gap-2 rounded-sm hover:bg-control-ghost-hover",
+          "flex min-w-0 items-center gap-2 rounded-sm pe-2 hover:bg-control-ghost-hover",
           // The selection fill, as ContextRow's: a revealed row stays apart from a hovered one.
           selected && "bg-selection hover:bg-selection",
         )}

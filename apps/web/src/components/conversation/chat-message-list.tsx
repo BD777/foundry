@@ -491,7 +491,7 @@ export const ChatMessageRow = memo(
         className={cn(
           "fdy-chat-message-card group/card relative block min-w-0",
           user
-            ? "ml-auto w-fit max-w-[80%] rounded-xl rounded-br-xs bg-control-ghost-hover bg-clip-padding px-3.5 py-2.5 max-[860px]:max-w-full"
+            ? "ml-auto w-fit max-w-[80%] rounded-xl rounded-br-xs bg-control-ghost-hover bg-clip-padding px-3.5 py-2.5 max-sidebar:max-w-full"
             : "mb-1 max-w-full",
         )}
         data-role={message.role}

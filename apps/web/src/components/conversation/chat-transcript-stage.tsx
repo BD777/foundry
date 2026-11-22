@@ -67,14 +67,14 @@ function ChatListHeader({ context }: { context?: ChatListContext }) {
   ) : (
     <div
       aria-hidden="true"
-      className="h-5 max-[860px]:h-4"
+      className="h-5 max-sidebar:h-4"
       data-chat-header=""
     />
   );
 }
 
 function ChatListFooter() {
-  return <div aria-hidden="true" className="h-[18px] max-[860px]:h-4" />;
+  return <div aria-hidden="true" className="h-[18px] max-sidebar:h-4" />;
 }
 
 const CHAT_VIRTUOSO_COMPONENTS = {

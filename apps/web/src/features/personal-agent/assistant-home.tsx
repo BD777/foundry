@@ -546,7 +546,7 @@ function AssistantHomeReady({
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] max-[1100px]:grid-cols-[minmax(0,1fr)] max-[1100px]:grid-rows-[auto_auto_minmax(0,1fr)]">
-      <header className="col-span-full grid gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
+      <header className="col-span-full grid gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-sidebar:px-4 max-sidebar:pt-3.5 max-sidebar:pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
           <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
             <AssistantTitleMenu
@@ -565,7 +565,7 @@ function AssistantHomeReady({
             {stopped ? t("home.stopped.title") : t("settings.status.running")}
           </Badge>
         </div>
-        <p className="max-w-[680px] text-sm leading-[1.55] text-ink-muted max-[860px]:hidden">
+        <p className="max-w-[680px] text-sm leading-[1.55] text-ink-muted max-sidebar:hidden">
           {t("home.intro")}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -677,7 +677,7 @@ function AssistantHomeReady({
         <Button
           aria-haspopup="dialog"
           aria-label={`${t("home.summary.open")}: ${summary.map((part) => t(part.key, { count: part.count })).join(" · ") || t("home.summary.nothing")}`}
-          className="h-auto w-full justify-between gap-2 rounded-none px-5.5 py-2.5 text-left text-sm font-normal text-ink active:scale-100 max-[860px]:px-4"
+          className="h-auto w-full justify-between gap-2 rounded-none px-5.5 py-2.5 text-left text-sm font-normal text-ink active:scale-100 max-sidebar:px-4"
           onClick={() => setSheetOpen(true)}
           variant="ghost"
         >

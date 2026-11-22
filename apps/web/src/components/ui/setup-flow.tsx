@@ -36,7 +36,7 @@ export function SetupFlow({
   return (
     // Its own scroller inside a contained view; the reserved scrollbar space
     // keeps the centered steps still.
-    <section className="h-full animate-page-fade overflow-x-hidden overflow-y-auto px-[30px] pt-10 pb-[60px] [scrollbar-gutter:stable] max-[860px]:px-[22px] max-[860px]:pt-7 max-[860px]:pb-[46px]">
+    <section className="h-full animate-page-fade overflow-x-hidden overflow-y-auto px-[30px] pt-10 pb-[60px] [scrollbar-gutter:stable] max-sidebar:px-[22px] max-sidebar:pt-7 max-sidebar:pb-[46px]">
       <div className="mx-auto max-w-[720px]">
         <div className="mb-2 flex items-center gap-2.5 text-xs leading-none font-semibold text-ink-faint">
           <span className="size-[9px] flex-none rounded-full bg-line-strong" />
@@ -45,17 +45,17 @@ export function SetupFlow({
         <h1 className="mb-2 text-2xl leading-[1.15] font-bold text-ink">
           {title}
         </h1>
-        <p className="mb-[26px] max-w-[560px] text-md leading-[1.55] text-ink-muted max-[860px]:mb-[22px] [&_em]:[font:inherit] [&_em]:text-inherit [&_em]:italic">
+        <p className="mb-[26px] max-w-[560px] text-md leading-[1.55] text-ink-muted max-sidebar:mb-[22px] [&_em]:[font:inherit] [&_em]:text-inherit [&_em]:italic">
           {body}
         </p>
 
-        <div className="flex flex-col gap-3.5 max-[860px]:gap-3">
+        <div className="flex flex-col gap-3.5 max-sidebar:gap-3">
           {steps.map((step) => (
             <SetupStep key={String(step.number)} step={step} />
           ))}
         </div>
 
-        <div className="mt-6 flex min-w-0 items-center gap-3 max-[860px]:mt-[18px] max-[860px]:flex-col max-[860px]:items-start max-[860px]:gap-2">
+        <div className="mt-6 flex min-w-0 items-center gap-3 max-sidebar:mt-[18px] max-sidebar:flex-col max-sidebar:items-start max-sidebar:gap-2">
           <Button
             className="h-[38px] gap-2 rounded-md px-[18px] text-sm"
             onClick={onAction}
@@ -66,7 +66,7 @@ export function SetupFlow({
           </Button>
           <FieldHint
             as="span"
-            className="mt-0 max-w-[340px] font-medium max-[860px]:max-w-full"
+            className="mt-0 max-w-[340px] font-medium max-sidebar:max-w-full"
           >
             {status}
           </FieldHint>
@@ -89,8 +89,8 @@ function SetupStep({ step }: SetupStepProps) {
       className={cn(
         "overflow-hidden",
         muted
-          ? "p-[18px] opacity-[0.62] max-[860px]:px-3.5 max-[860px]:py-[15px]"
-          : "px-[18px] pt-[18px] pb-4 max-[860px]:px-3.5 max-[860px]:pt-[15px] max-[860px]:pb-3.5",
+          ? "p-[18px] opacity-[0.62] max-sidebar:px-3.5 max-sidebar:py-[15px]"
+          : "px-[18px] pt-[18px] pb-4 max-sidebar:px-3.5 max-sidebar:pt-[15px] max-sidebar:pb-3.5",
       )}
       data-state={state}
     >
@@ -115,7 +115,7 @@ function SetupStep({ step }: SetupStepProps) {
       {step.commands ? (
         <TerminalBlock
           className="mt-3"
-          viewportClassName="max-[860px]:overflow-hidden"
+          viewportClassName="max-sidebar:overflow-hidden"
           lines={step.commands.map((command, index) => ({
             id: `${String(step.number)}-${index}`,
             prompt: "$",

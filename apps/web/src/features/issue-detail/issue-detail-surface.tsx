@@ -19,20 +19,20 @@ export function IssueDetailScreen({
   const [header, ...body] = Children.toArray(children);
 
   return (
-    <section className="flex h-full min-h-0 animate-chat-screen-in max-[860px]:block max-[860px]:h-auto max-[860px]:overflow-visible">
+    <section className="flex h-full min-h-0 animate-chat-screen-in max-sidebar:block max-sidebar:h-auto max-sidebar:overflow-visible">
       <ScrollArea
         className="min-w-0 flex-1"
         data-foundry-scroll-reset-viewport="true"
       >
-        <div className="box-border w-[min(860px,100%)] max-w-[860px] min-w-0 px-6.5 pt-5.5 pb-12.5 max-[860px]:mx-6 max-[860px]:w-auto max-[860px]:max-w-none max-[860px]:px-0 max-[860px]:pb-10.5">
+        <div className="box-border w-[min(860px,100%)] max-w-[860px] min-w-0 px-6.5 pt-5.5 pb-12.5 max-sidebar:mx-6 max-sidebar:w-auto max-sidebar:max-w-none max-sidebar:px-0 max-sidebar:pb-10.5">
           {header}
           {body}
-          <div className="hidden max-[860px]:mt-4 max-[860px]:mb-6 max-[860px]:block">
+          <div className="hidden max-sidebar:mt-4 max-sidebar:mb-6 max-sidebar:block">
             {inspector}
           </div>
         </div>
       </ScrollArea>
-      <div className="contents max-[860px]:hidden">{inspector}</div>
+      <div className="contents max-sidebar:hidden">{inspector}</div>
     </section>
   );
 }

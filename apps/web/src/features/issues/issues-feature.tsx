@@ -268,7 +268,7 @@ export function IssuesFeature({
       />
 
       <AgentComposer
-        className="mx-6 box-border w-[calc(100%-48px)] max-w-[calc(100%-48px)] flex-none max-[860px]:mx-5.5 max-[860px]:w-[calc(100%-44px)] max-[860px]:max-w-[calc(100%-44px)]"
+        className="mx-6 box-border w-[calc(100%-48px)] max-w-[calc(100%-48px)] flex-none max-sidebar:mx-5.5 max-sidebar:w-[calc(100%-44px)] max-sidebar:max-w-[calc(100%-44px)]"
         showPermissions={false}
         side="bottom"
         controlsDisabled={submitting}

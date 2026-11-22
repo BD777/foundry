@@ -128,14 +128,14 @@ export function ReviewCompare({
       className={cn("mb-5.5 w-full max-w-[760px] min-w-0", className)}
       {...props}
     >
-      <div className="mb-3 flex min-w-0 items-center gap-2.5 max-[860px]:flex-wrap max-[860px]:items-start max-[860px]:gap-y-2">
-        <SectionLabel className="mr-auto mb-2 max-[860px]:mr-0 max-[860px]:w-full">
+      <div className="mb-3 flex min-w-0 items-center gap-2.5 max-sidebar:flex-wrap max-sidebar:items-start max-sidebar:gap-y-2">
+        <SectionLabel className="mr-auto mb-2 max-sidebar:mr-0 max-sidebar:w-full">
           {t("compare.title")}
         </SectionLabel>
         <CompareKey tone="baseline">{t("compare.baseline")}</CompareKey>
         <CompareKey tone="candidate">{t("compare.candidate")}</CompareKey>
       </div>
-      <div className="mb-5.5 grid w-full min-w-0 grid-cols-2 gap-3.5 max-[860px]:grid-cols-1">
+      <div className="mb-5.5 grid w-full min-w-0 grid-cols-2 gap-3.5 max-sidebar:grid-cols-1">
         <PreviewFrame
           label={t("compare.baseline")}
           meta={baselineLabel}
@@ -151,15 +151,15 @@ export function ReviewCompare({
         <>
           <SectionLabel className="mb-2.25">{t("compare.files")}</SectionLabel>
           <div
-            className="box-border max-w-full min-w-0 overflow-x-hidden rounded-lg bg-(--fdy-dark-surface) bg-clip-padding px-4 py-3.5 font-mono text-xs leading-[1.9] font-medium text-(--fdy-dark-text) max-[860px]:px-3.5 max-[860px]:py-3.25"
+            className="box-border max-w-full min-w-0 overflow-x-hidden rounded-lg bg-(--fdy-dark-surface) bg-clip-padding px-4 py-3.5 font-mono text-xs leading-[1.9] font-medium text-(--fdy-dark-text) max-sidebar:px-3.5 max-sidebar:py-3.25"
             aria-label={t("compare.changedFiles")}
           >
             {files.map((file) => (
               <div
-                className="flex min-h-[22px] w-full min-w-0 items-center gap-2.5 text-(--fdy-dark-text) max-[860px]:grid max-[860px]:grid-cols-[minmax(0,1fr)_38px_34px] max-[860px]:items-start max-[860px]:gap-x-2 max-[860px]:gap-y-1 max-[860px]:py-0.5"
+                className="flex min-h-[22px] w-full min-w-0 items-center gap-2.5 text-(--fdy-dark-text) max-sidebar:grid max-sidebar:grid-cols-[minmax(0,1fr)_38px_34px] max-sidebar:items-start max-sidebar:gap-x-2 max-sidebar:gap-y-1 max-sidebar:py-0.5"
                 key={file.path}
               >
-                <span className="min-w-0 flex-1 truncate max-[860px]:overflow-visible max-[860px]:text-clip max-[860px]:whitespace-normal max-[860px]:wrap-anywhere">
+                <span className="min-w-0 flex-1 truncate max-sidebar:overflow-visible max-sidebar:text-clip max-sidebar:whitespace-normal max-sidebar:wrap-anywhere">
                   {file.path}
                 </span>
                 <b className="min-w-[38px] flex-none text-right font-semibold text-(--fdy-diff-added) tabular-nums">

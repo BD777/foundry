@@ -74,7 +74,7 @@ export function AgentSettingsPanels({
   };
   return (
     <>
-      <div className="w-75 flex-none max-[860px]:w-[min(280px,calc(100vw-44px))]">
+      <div className="w-75 flex-none max-sidebar:w-[min(280px,calc(100vw-44px))]">
         <MainRow
           active={panel === "model"}
           label={t("controls.model")}
@@ -109,7 +109,7 @@ export function AgentSettingsPanels({
       <div
         className={cn(
           "ml-2.5 max-h-[min(470px,calc(100vh-180px))] w-90 flex-none overflow-y-auto border-l border-line px-3 py-4",
-          "max-[860px]:w-[min(300px,calc(100vw-44px))]",
+          "max-sidebar:w-[min(300px,calc(100vw-44px))]",
           "max-[680px]:ml-0 max-[680px]:w-full max-[680px]:max-w-[calc(100vw-48px)] max-[680px]:border-t max-[680px]:border-l-0",
           panel === "main" && "hidden",
         )}

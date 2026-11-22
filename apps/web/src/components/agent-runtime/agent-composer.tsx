@@ -26,13 +26,13 @@ import type { SlashSuggestion } from "../ui/slash-menu";
 import type { PanelProps } from "../ui/panel";
 
 /**
- * The agent pill's rules. Under 860px the pill clips to a fixed width, and
+ * The agent pill's rules. Below the sidebar breakpoint the pill clips to a fixed width, and
  * "flat" trades the border for a soft fill, like the chat composer's other
  * borderless controls.
  */
 function agentPillClass(pillStyle: "outlined" | "flat"): string {
   return cn(
-    "max-[860px]:max-w-39.5 max-[860px]:flex-[0_1_158px] max-[860px]:overflow-hidden max-[860px]:text-ellipsis max-[860px]:whitespace-nowrap",
+    "max-sidebar:max-w-39.5 max-sidebar:flex-[0_1_158px] max-sidebar:overflow-hidden max-sidebar:text-ellipsis max-sidebar:whitespace-nowrap",
     pillStyle === "flat" &&
       "h-6.5 min-w-0 border-0 bg-control-ghost-hover text-ink-faint",
   );

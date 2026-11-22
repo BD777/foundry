@@ -240,7 +240,7 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
             className={cn(
               popoverClass,
               "flex min-w-75 max-w-[calc(100vw-60px)] p-2.5",
-              "max-[860px]:max-w-[calc(100vw-24px)] max-[680px]:min-w-0 max-[680px]:flex-wrap",
+              "max-sidebar:max-w-[calc(100vw-24px)] max-[680px]:min-w-0 max-[680px]:flex-wrap",
             )}
             data-panel={panel}
           >
