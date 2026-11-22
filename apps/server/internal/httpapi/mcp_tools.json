@@ -1260,7 +1260,7 @@
     "_meta": {
       "anthropic/searchHint": "sessions & work: start a new session, helper, delegate separate conversation"
     },
-    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches your inbox as turn_end with title, status, up to 1500 answer characters and a link; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, itemId ties this helper to it. Returns the session id and status.",
+    "description": "Start a Foundry session with prompt as its first message. Without workspaceId it runs in your workspace on your device, like you; with workspaceId it runs on that workspace's device under its accounts. workerGroupId picks one available member (most remaining quota, then weighted round-robin) for the session's lifetime and cannot be combined with provider, profileId, agentId or model. A model rate limit retries the same model up to 5 times. An offline device queues the session (waitingForDevice) and it fails after 24 h offline. It runs in the workspace folder, not a copy. Server limits: at most 20 of your sessions queued, running or blocked; 4 nesting levels; at most 10 attachments of 25 MB each. No usable account returns no_usable_account; no usable group member returns no_usable_worker_group_member. With reportBack true (default), each finished turn reaches you as turn_end: title, status, link, files written, tool calls, up to 1500 answer characters; a turn started by its own schedule or wake-up is reported only if your message reached it. reportBack false disables turn reports. The person's assistant starts its helpers the same way: when it names no account, the helper runs on its executor role's configured default, and each finished turn reaches the assistant conversation as turn_end. When the work belongs to an item on the person's list, itemId ties this helper to it. Returns the session id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 20 sessions it started queued, running or blocked at once.",
@@ -1344,6 +1344,10 @@
         "reportBack": {
           "type": "boolean",
           "description": "Default true. false: no turn_end reports; read its results with get_session."
+        },
+        "personQuote": {
+          "type": "string",
+          "description": "The person's own words, from one of their messages in your conversation, that this message passes on (an approval or a decision of theirs). Foundry finds them there as update_list checks a quote and adds them to the message as a checked fact: whose words, when they were written and a link to your conversation. Words not found refuse the call. At most 500 characters; mark words left out with …."
         },
         "workspaceId": {
           "type": "string",
@@ -1776,6 +1780,10 @@
         "itemId": {
           "type": "string",
           "description": "Your helper (one create_session started) moves to this item of the person's list, open and not archived: for the assistant one of its own, for a session the person started in a workspace one homed there. Its reports then reach that item's holder. Without it the helper stays on its item."
+        },
+        "personQuote": {
+          "type": "string",
+          "description": "The person's own words, from one of their messages in your conversation, that this message passes on (an approval or a decision of theirs). Foundry finds them there as update_list checks a quote and adds them to the message as a checked fact: whose words, when they were written and a link to your conversation. Words not found refuse the call. Not with the answer to an approval the session waits on. At most 500 characters; mark words left out with …."
         }
       },
       "required": ["sessionId", "prompt"]
@@ -2418,6 +2426,10 @@
         "readOnly": {
           "type": "boolean",
           "description": "The step changes nothing in the workspace: it starts beside a session writing there. Otherwise it waits for that session; you are told after 5 minutes and when it starts."
+        },
+        "personQuote": {
+          "type": "string",
+          "description": "The person's own words, from one of their messages in your conversation, that this message passes on (an approval or a decision of theirs). Foundry finds them there as update_list checks a quote and adds them to the message as a checked fact: whose words, when they were written and a link to your conversation. Words not found refuse the call. At most 500 characters; mark words left out with …."
         }
       },
       "required": [

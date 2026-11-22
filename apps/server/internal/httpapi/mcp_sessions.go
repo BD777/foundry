@@ -256,6 +256,11 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}
+	fact, err := s.personQuoteFact(ctx, actor, args)
+	if err != nil {
+		return "", err
+	}
+	input.Prompt = withPersonQuoteFact(input.Prompt, fact)
 	if itemID := mcpArgString(args, "itemId"); itemID != "" {
 		scope, err := s.itemScope(ctx, actor)
 		if err != nil {
@@ -324,6 +329,13 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if target.ArchivedAt != "" {
 		return "", store.ErrSessionArchived
 	}
+	fact, err := s.personQuoteFact(ctx, call.actor, args)
+	if err != nil {
+		return "", err
+	}
+	if message, waiting := s.waitingQuestion(ctx, target); fact != "" && waiting && len(message.Questions) > 0 && message.Questions[0].Approval {
+		return "", invalid("%s waits on an approval: a message to it answers it, Approve approving and any other text denying, so personQuote cannot go with it", target.ID)
+	}
 	if itemID := mcpArgString(args, "itemId"); itemID != "" {
 		scope, err := s.itemScope(ctx, call.actor)
 		if err != nil {
@@ -340,7 +352,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	defer s.discardHandedOver(ctx, attachments)
 	// A parent's message to a child waiting on its question answers it.
 	if prompt := mcpArgString(args, "prompt"); prompt != "" {
-		if answer := s.answerWaitingQuestion(ctx, messageSender(call.actor), target, prompt); answer != prompt {
+		if answer := s.answerWaitingQuestion(ctx, messageSender(call.actor), target, withPersonQuoteFact(prompt, fact)); answer != prompt {
 			if raw, err := json.Marshal(answer); err == nil {
 				args["prompt"] = raw
 			}

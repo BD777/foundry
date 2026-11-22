@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -235,6 +236,18 @@ func (s *Server) dispatchItemForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	fact, err := s.personQuoteFact(ctx, call.actor, call.args)
+	if err != nil {
+		return "", err
+	}
+	if fact != "" {
+		raw, err := json.Marshal(withPersonQuoteFact(mcpArgString(call.args, "prompt"), fact))
+		if err != nil {
+			return "", err
+		}
+		call.args["prompt"] = raw
+	}
+	delete(call.args, "personQuote")
 	op, err := s.assistant.DispatchItem(ctx, scope, call.args, func(sessionID string) (store.AgentSession, error) {
 		return s.controlledSession(ctx, call.actor, sessionID, "continue")
 	})

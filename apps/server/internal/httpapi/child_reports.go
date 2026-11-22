@@ -144,7 +144,7 @@ func (s *Server) childReport(ctx context.Context, child store.AgentSession) (ite
 	}
 	return store.SessionInboxItem{
 		SessionID: target.SessionID, InputID: childReportInputID(child), SenderSessionID: child.ID,
-		Prompt: s.childReportText(child, target), RequestedDelivery: store.DeliveryTurnEnd,
+		Prompt: s.childReportText(ctx, child, target), RequestedDelivery: store.DeliveryTurnEnd,
 		// The report's structure travels with it (DEV-246): its row names the
 		// child and shows its final answer, without reading the report prose.
 		InputSource: childReportSource(child, true),
@@ -166,8 +166,9 @@ func childReportSource(child store.AgentSession, answer bool) *store.AgentSessio
 	return source
 }
 
-// childReportText is a compact handoff of the child's turn.
-func (s *Server) childReportText(child store.AgentSession, target assistant.SignalTarget) string {
+// childReportText is a compact handoff of the child's turn: its answer and
+// the facts Foundry logged of it (childTurnFacts).
+func (s *Server) childReportText(ctx context.Context, child store.AgentSession, target assistant.SignalTarget) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "%s session %s (%q), %s, finished a turn: %s.\n", sessions.ChildReportPrefix, child.ID, child.Title, signalRelation(child, target), child.Status)
 	if link := s.assistant.SessionURL(child); link != "" {
@@ -183,9 +184,10 @@ func (s *Server) childReportText(child store.AgentSession, target assistant.Sign
 	case length <= childReportAnswerLimit:
 		fmt.Fprintf(&builder, "\nFinal answer:\n%s\n", answer)
 	default:
-		fmt.Fprintf(&builder, "\nFinal answer (first %d of %d characters; get_session or read_context on %s has the rest):\n%s\n",
-			childReportAnswerLimit, length, child.ID, textcut.Excerpt(answer, childReportAnswerLimit))
+		fmt.Fprintf(&builder, "\nFinal answer (first %d of %d characters; read_context scope=thread limit=1 maxChars=%d on %s reads it whole):\n%s\n",
+			childReportAnswerLimit, length, length, child.ID, textcut.Excerpt(answer, childReportAnswerLimit))
 	}
+	builder.WriteString(s.childTurnFacts(ctx, child))
 	return builder.String()
 }
 
