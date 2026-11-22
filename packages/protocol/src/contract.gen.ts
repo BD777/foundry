@@ -3618,6 +3618,17 @@ interface components {
       updatedAt: string;
       closedAt?: string;
       helpers: components["schemas"]["PersonalAgentItemHelper"][];
+      /** @description What waits on the person for this open item (Needs you), newest first: the open entries the person handles whose session is one of the item's helpers, or the session that holds it and no other open item. Derived when the list or the item is read, never stored; absent when nothing waits or on other replies. */
+      needsYou?: components["schemas"]["PersonalAgentItemNeedsYou"][];
+    };
+    /** @description One Needs you entry stuck on an item: what it asks, in its source's words, and the session it came from. */
+    PersonalAgentItemNeedsYou: {
+      id: string;
+      /** @description The entry's source (question, turn_failed, ...). */
+      source: string;
+      title: string;
+      sessionId?: string;
+      createdAt: string;
     };
     /** @description GET /api/personal-agent/items/{id}: the item, its timeline and its helpers. */
     PersonalAgentItemDetail: {
@@ -5891,6 +5902,8 @@ export type PersonalAgentWorkReference =
 export type PersonalAgentCompletionEvidence =
   components["schemas"]["PersonalAgentCompletionEvidence"];
 export type PersonalAgentItem = components["schemas"]["PersonalAgentItem"];
+export type PersonalAgentItemNeedsYou =
+  components["schemas"]["PersonalAgentItemNeedsYou"];
 export type PersonalAgentItemDetail =
   components["schemas"]["PersonalAgentItemDetail"];
 export type PersonalAgentItemList =

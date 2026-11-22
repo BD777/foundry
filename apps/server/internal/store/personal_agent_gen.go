@@ -373,6 +373,9 @@ type PersonalAgentItem struct {
 	UpdatedAt       string                                  `json:"updatedAt"`
 	ClosedAt        string                                  `json:"closedAt,omitempty"`
 	Helpers         jsonempty.List[PersonalAgentItemHelper] `json:"helpers"`
+
+	// NeedsYou What waits on the person for this open item (Needs you), newest first: the open entries the person handles whose session is one of the item's helpers, or the session that holds it and no other open item. Derived when the list or the item is read, never stored; absent when nothing waits or on other replies.
+	NeedsYou []PersonalAgentItemNeedsYou `json:"needsYou,omitempty"`
 }
 
 // PersonalAgentItemDetail GET /api/personal-agent/items/{id}: the item, its timeline and its helpers.
@@ -464,6 +467,17 @@ type PersonalAgentItemList struct {
 
 	// NextOffset Pass as offset for the next page; absent on the last one.
 	NextOffset *int `json:"nextOffset,omitempty"`
+}
+
+// PersonalAgentItemNeedsYou One Needs you entry stuck on an item: what it asks, in its source's words, and the session it came from.
+type PersonalAgentItemNeedsYou struct {
+	ID string `json:"id"`
+
+	// Source The entry's source (question, turn_failed, ...).
+	Source    string `json:"source"`
+	Title     string `json:"title"`
+	SessionID string `json:"sessionId,omitempty"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // PersonalAgentItemOrigin Where the item started and the message it rests on. Foundry records this mechanically; the assistant never writes it. A channel item names the channel and the requester whose message asked for it.

@@ -218,6 +218,15 @@ func (s *Server) writePersonalAgentItemPage(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, personalAgentItemError(err))
 		return
 	}
+	userID := filter.UserID
+	if userID == "" {
+		userID = agent.UserID
+	}
+	needsYou, err := s.needsYouByItem(ctx, userID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
 	items := make([]store.PersonalAgentItem, 0, len(page.Items))
 	for _, item := range page.Items {
 		view, err := s.personalAgentItemView(ctx, item, page.Helpers[item.ID])
@@ -225,6 +234,7 @@ func (s *Server) writePersonalAgentItemPage(w http.ResponseWriter, r *http.Reque
 			writeResult(w, nil, err)
 			return
 		}
+		view.NeedsYou = needsYou[item.ID]
 		items = append(items, view)
 	}
 	list := store.PersonalAgentItemList{Items: items, Total: page.Total, Offset: page.Offset}
@@ -253,6 +263,12 @@ func (s *Server) handleGetPersonalAgentItem(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
+	needsYou, err := s.needsYouByItem(ctx, agent.UserID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	view.NeedsYou = needsYou[item.ID]
 	events, err := s.store.ListPersonalAgentItemEvents(ctx, agent.ID, item.ID)
 	if err != nil {
 		writeResult(w, nil, err)

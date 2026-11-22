@@ -21,7 +21,7 @@ func TestCodexAsyncQuestionItemNamesTheRuntimeCallID(t *testing.T) {
 			Questions: []store.AgentQuestion{{Title: "a.txt or b.txt?", Options: []string{"a.txt", "b.txt"}}},
 		},
 	}
-	items := pendingItemsFromEvent(event, "", false)
+	items := pendingItemsFromEvent(event, false)
 	if len(items) != 1 || items[0].MessageID != "input-1/call_7aa" {
 		t.Fatalf("items = %+v, want one held under input-1/call_7aa", items)
 	}

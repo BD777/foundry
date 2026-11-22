@@ -26,8 +26,6 @@ export type PendingSource =
    * rule is the waiting reason; a failed attempt names its category.
    */
   | "assistant_inbox"
-  | "project_upkeep"
-  | "memory_upkeep"
   /**
    * A connector write outside what the session was granted (DEV-265): the
    * person allows or refuses that exact request.
@@ -98,15 +96,20 @@ export interface PendingItem {
   workspaceName?: string;
   sessionId?: string;
   sessionTitle?: string;
-  /** The session's device (a github_scope item opens its GitHub permissions). */
-  deviceId?: string;
+  /**
+   * The open item the entry is stuck on, when its session works on one: a
+   * helper's item, or the one item its session holds.
+   */
+  itemId?: string;
+  itemAssistantId?: string;
+  itemText?: string;
   issueId?: string;
   /** The transcript event, and message, it was found in. */
   eventId?: string;
   messageId?: string;
   source: PendingSource;
   /**
-   * What a needs_hands item matched; an Issue question's kind; the
+   * "permission" on a needs_hands item; an Issue question's kind; the
    * connector kind of an account or connector item (its Connectors tab).
    */
   rule?: string;
@@ -117,8 +120,6 @@ export interface PendingItem {
   options?: string[];
   recommendation?: string;
   occurrences: number;
-  /** How many things wait for the person, for an item that counts them (DEV-256). */
-  count?: number;
   /** An unprocessed message's failed attempt: its category and reset time. */
   failureCategory?: PendingFailureCategory;
   failureResetAt?: string;

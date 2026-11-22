@@ -694,3 +694,54 @@ test("before the workspaces are read, a workspace not in the list is not yet cal
   container.remove();
   window.history.replaceState(null, "", "/items");
 });
+
+test("an item shows what waits on the person: a count on its row, the entries in its detail", async () => {
+  const waiting = item("waiting", {
+    text: "renew the passport",
+    needsYou: [
+      {
+        id: "pnd_1",
+        source: "question",
+        title: "Which photo should I use?",
+        sessionId: "sess_1",
+        createdAt: nowIso,
+      },
+      {
+        id: "pnd_2",
+        source: "turn_failed",
+        title: "Not logged in",
+        sessionId: "sess_2",
+        createdAt: nowIso,
+      },
+    ],
+  });
+  const list = await mount(ItemsList, {
+    items: [waiting, item("quiet", { text: "nothing waits" })],
+    workspaces,
+    busyId: "",
+    onOpen: () => {},
+    onTick: () => {},
+  });
+  const rows = [...list.container.querySelectorAll("button")].filter((row) =>
+    /Waiting on you/.test(row.textContent),
+  );
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].textContent, /renew the passport/);
+  assert.match(rows[0].textContent, /Waiting on you: 2/);
+  await list.unmount();
+
+  const page = await mount(
+    ItemDetail,
+    detailProps({ item: waiting, events: [] }),
+  );
+  assert.match(page.container.textContent, /Waiting on you: 2/);
+  const links = [...page.container.querySelectorAll("a")].filter((link) =>
+    /Which photo|Not logged in/.test(link.textContent),
+  );
+  assert.equal(links.length, 2);
+  for (const link of links) {
+    assert.equal(link.getAttribute("href"), "/pending");
+    assert.equal(link.getAttribute("target"), "_blank");
+  }
+  await page.unmount();
+});

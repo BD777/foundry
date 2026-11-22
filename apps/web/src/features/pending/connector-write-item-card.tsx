@@ -6,8 +6,10 @@ import { Button } from "../../components/ui/button";
 import { ClampedText } from "../../components/ui/clamped-text";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { IconBox } from "../../components/ui/icon-box";
+import { MetaLine } from "../../components/ui/meta-line";
 import { relativeWhen } from "../../lib/time-format";
 import { pendingOrigin, pendingResolved } from "./pending-model";
+import { PendingItemRef } from "./pending-item-ref";
 import type { PendingItems } from "./use-pending-items";
 
 /**
@@ -150,16 +152,13 @@ export function ConnectorWriteItemCard({
             </pre>
           </Disclosure>
         ) : null}
-        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+        <PendingItemRef item={item} />
+        <MetaLine className="text-2xs leading-[1.4] text-ink-faint">
           <span className="text-ink-muted">{from}</span>
-          <span aria-hidden="true">·</span>
           {showOrigin ? (
-            <>
-              <span className="text-ink">
-                {t(`item.origin.${origin.kind}`, { name: origin.name })}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="text-ink">
+              {t(`item.origin.${origin.kind}`, { name: origin.name })}
+            </span>
           ) : null}
           <time
             className="tabular-nums"
@@ -183,7 +182,7 @@ export function ConnectorWriteItemCard({
                     when: relativeWhen(item.createdAt),
                   })}
           </time>
-        </p>
+        </MetaLine>
         {!resolved ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <Button

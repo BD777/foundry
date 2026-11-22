@@ -4,7 +4,7 @@ import "context"
 
 // A pending item is something that waits for the person (DEV-079): in a
 // session, a question an Agent asked, an Issue's question, a turn that
-// failed, or a tool error only the person can clear; outside any session
+// failed, or a permission its runtime refused; outside any session
 // (DEV-125), a connected account to authorize again or a device's sign-in
 // that expired. Foundry finds them in what it already records; it never
 // asks an Agent for them.
@@ -32,14 +32,12 @@ const (
 	// on something only the person can fix (the computer offline, a paused
 	// assistant, an account to check). Its rule is the waiting reason.
 	PendingSourceAssistantInbox = "assistant_inbox"
-	// PendingSourceProjectUpkeep: a project's upkeep holds suggested file
-	// changes the person has not decided (DEV-256). One item per person and
-	// project; applying or dismissing every suggestion closes it.
+	// PendingSourceProjectUpkeep and PendingSourceMemoryUpkeep are retired
+	// (DEV-256 made them; they left Needs you): suggested file changes are
+	// decided on the project's page and memory reviews in the assistant's
+	// settings. Kept to read and close the rows written before.
 	PendingSourceProjectUpkeep = "project_upkeep"
-	// PendingSourceMemoryUpkeep: an assistant's memory reviews hold findings
-	// the person has not dismissed (DEV-256). One item per assistant; its
-	// review ends when the person dismisses it.
-	PendingSourceMemoryUpkeep = "memory_upkeep"
+	PendingSourceMemoryUpkeep  = "memory_upkeep"
 	// PendingSourceConnectorWrite: a connector write outside what the
 	// session was granted waits for the person's answer (DEV-265). One item
 	// per proposal; answering it allows or refuses that exact request.
@@ -82,6 +80,10 @@ const PendingRuleHandedOver = "handed_over"
 // PendingRuleHeld marks a question that held its turn while it waited (no
 // TranscriptMessage.delivery): once the turn ends it no longer waits.
 const PendingRuleHeld = "held"
+
+// PendingRetiredSources no longer wait for the person: they are left out of
+// every visible list and count, and their open rows were closed.
+var PendingRetiredSources = []string{PendingSourceProjectUpkeep, PendingSourceMemoryUpkeep}
 
 // PendingPersonal reports whether a source's items belong to the person
 // rather than a workspace: they have no workspace, session or Issue.
@@ -149,8 +151,9 @@ type PendingItem struct {
 	EventID   string `json:"eventId,omitempty"`
 	MessageID string `json:"messageId,omitempty"`
 	Source    string `json:"source"`
-	// Rule names what a needs_hands item matched (sudo, permission, ...);
-	// on a question, PendingRuleHeld when it held the turn.
+	// Rule is "permission" on a needs_hands item (rows from before the
+	// tool-output rules were removed may name sudo, login, ...); on a
+	// question, PendingRuleHeld when it held the turn.
 	Rule string `json:"rule,omitempty"`
 	// Key is the source's identity: a source that reports the same thing
 	// again (the same question, another failure with the same root cause)
@@ -171,8 +174,8 @@ type PendingItem struct {
 	// Detail is what an approval asks about, as the prompt showed it: the
 	// command, or the changes (Markdown, trimmed to pendingContextLimit).
 	Detail string `json:"detail,omitempty"`
-	// Count is how many things wait for the person, for an item that counts
-	// them (project upkeep: its undecided suggested changes).
+	// Count is how many things waited for the person, on the retired upkeep
+	// items (their undecided suggestions); kept to read those rows.
 	Count int `json:"count,omitempty"`
 	// FailureCategory, FailureProvider and FailureAccountID form a
 	// turn_failed item's root-cause key. FailureSessions are every session
@@ -305,7 +308,7 @@ type PendingItemStore interface {
 	// those resolved only if resolved since resolvedSince, newest first.
 	ListPendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]PendingItem, error)
 	// ListVisiblePendingItems is ListPendingItems without the items whose
-	// session was archived or deleted: the one rule for what the assistant's
+	// session was archived or deleted, and without retired sources: the one rule for what the assistant's
 	// card and the Needs-you page both call "needs the person".
 	ListVisiblePendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]PendingItem, error)
 	// ListOpenPendingItemsBySource returns every person's open items of one

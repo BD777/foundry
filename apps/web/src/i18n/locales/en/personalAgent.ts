@@ -620,6 +620,10 @@ export const personalAgent = {
       selectTitle: "No item open",
       selectBody: "Choose an item to see its summary, work and timeline.",
     },
+    needsYou: {
+      count: "Waiting on you: {{count}}",
+      open: "Open what needs you",
+    },
     detail: {
       back: "Back to items",
       title: "Title",
