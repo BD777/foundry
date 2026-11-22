@@ -431,8 +431,9 @@ export interface PersonalAgentRuleChange {
 }
 
 /**
- * "queued": waits for the project's writing session to finish; "asking":
- * its session ended with a question for the person.
+ * "queued": its session waits for its device (or for the project's writing
+ * session to finish); "asking": its turn ended on a question still waiting
+ * for an answer.
  */
 export type PersonalAgentTaskStatus =
   "queued" | "running" | "asking" | "done" | "failed" | "cancelled";

@@ -78,22 +78,46 @@ func (s *Service) followTask(ctx context.Context, change sessions.Change, sessio
 		s.followLinkedHelper(ctx, change, session)
 		return
 	}
-	switch change {
-	case sessions.Completed:
-		task.Status, task.EndedAt = taskStatusOf(session.Status), sessionEndedAt(session)
-		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
-			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
-		}
-		if session.Status == "failed" || session.Status == "canceled" {
-			s.noteHelperFailedOffline(ctx, agent, task, session)
-		}
-	default:
+	task.Status, task.EndedAt = s.helperStatus(ctx, change, session)
+	if change != sessions.Completed {
 		// It works again (the assistant passed the answer on).
-		task.Status, task.EndedAt, task.StuckSince = store.PersonalAgentTaskRunning, "", ""
-		if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
-			log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
-		}
+		task.StuckSince = ""
 	}
+	if err := s.store.UpdatePersonalAgentTask(ctx, store.PersonalAgentActorFoundry, task); err != nil {
+		log.Printf("personal agent %s: update task %s: %v", agent.UserID, task.ID, err)
+	}
+	if change == sessions.Completed && (session.Status == "failed" || session.Status == "canceled") {
+		s.noteHelperFailedOffline(ctx, agent, task, session)
+	}
+}
+
+// helperStatus is a helper's status, and when it ended, after its session
+// changed: queued while the session waits for its device, asking when its
+// turn ended on a question still waiting for an answer, otherwise its
+// session's (taskStatusOf). Both kinds of helper (the assistant's tasks and
+// the ones linked to an item) follow their session through it.
+func (s *Service) helperStatus(ctx context.Context, change sessions.Change, session store.AgentSession) (string, string) {
+	switch {
+	case change != sessions.Completed && session.Status == "queued":
+		return store.PersonalAgentTaskQueued, ""
+	case change != sessions.Completed:
+		return store.PersonalAgentTaskRunning, ""
+	case session.Status == "completed" && s.waitsOnQuestion(ctx, session):
+		return store.PersonalAgentTaskAsking, ""
+	}
+	return taskStatusOf(session.Status), sessionEndedAt(session)
+}
+
+// waitsOnQuestion reports whether the session asked a question since its
+// latest input that no answer has reached.
+func (s *Service) waitsOnQuestion(ctx context.Context, session store.AgentSession) bool {
+	events, _, err := s.store.AgentSessionEventWindow(ctx, session.ID, "", sessions.QuestionEventWindow)
+	if err != nil {
+		log.Printf("session %s: read its question: %v", session.ID, err)
+		return false
+	}
+	_, waiting := sessions.WaitingQuestion(events, session.Input)
+	return waiting
 }
 
 // followLinkedHelper keeps the status of a helper a workspace session tied to
@@ -106,10 +130,7 @@ func (s *Service) followLinkedHelper(ctx context.Context, change sessions.Change
 		}
 		return
 	}
-	status, endedAt := store.PersonalAgentTaskRunning, ""
-	if change == sessions.Completed {
-		status, endedAt = taskStatusOf(session.Status), sessionEndedAt(session)
-	}
+	status, endedAt := s.helperStatus(ctx, change, session)
 	if err := s.store.SetPersonalAgentItemHelperStatus(ctx, session.ID, status, endedAt); err != nil {
 		log.Printf("session %s: follow it on its item: %v", session.ID, err)
 	}

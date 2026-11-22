@@ -52,8 +52,9 @@ type PersonalAgentItemSignalStore interface {
 	// LinkPersonalAgentItemHelper; ErrNotFound for none.
 	PersonalAgentItemOfHelper(ctx context.Context, sessionID string) (PersonalAgentItemRef, error)
 	// SetPersonalAgentItemHelperStatus follows a linked helper's session: its
-	// status (PersonalAgentTaskStatusOf) and, once final, when it ended. Reaching
-	// a final status records helper_ended on its item, as Foundry. A session
+	// status (queued, running, asking or final, as the assistant's tasks) and,
+	// once final, when it ended. Reaching a final status records helper_ended
+	// on its item, as Foundry; any other change only tells its item. A session
 	// that is no linked helper changes nothing.
 	SetPersonalAgentItemHelperStatus(ctx context.Context, sessionID, status, endedAt string) error
 	// ListPersonalAgentItemHelpers lists the helpers of an item, oldest first:

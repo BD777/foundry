@@ -250,8 +250,8 @@ func TestQuotaFailuresDoNotStormAlerts(t *testing.T) {
 
 // A helper a workspace session ties to an item (pa_item_helpers) shows on the
 // item as the assistant's helpers do: in read_list, the REST item and the
-// item file, with helper_started when it joins and helper_ended when its
-// session ends. It still is no task of the assistant.
+// item file, queued while its session waits for its device, with
+// helper_started when it joins and helper_ended when its session ends. It still is no task of the assistant.
 func TestWorkspaceHelperShowsOnItsItem(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
@@ -287,7 +287,7 @@ func TestWorkspaceHelperShowsOnItsItem(t *testing.T) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(read), &page); failed || err != nil || len(page.Items) != 1 || len(page.Items[0].Helpers) != 1 ||
-		page.Items[0].Helpers[0].SessionID != created.ID || page.Items[0].Helpers[0].Status != store.PersonalAgentTaskRunning {
+		page.Items[0].Helpers[0].SessionID != created.ID || page.Items[0].Helpers[0].Status != store.PersonalAgentTaskQueued {
 		t.Fatalf("read_list = %s", read)
 	}
 	stored, err := f.server.store.GetPersonalAgentItem(ctx, agent.ID, item.ID)
