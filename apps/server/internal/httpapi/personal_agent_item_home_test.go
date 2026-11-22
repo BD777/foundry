@@ -36,9 +36,9 @@ func (f assistantFixture) itemEvents(t *testing.T, assistantID, itemID string) [
 }
 
 // A session the person started in a workspace keeps the items homed there:
-// it lists the item tools, adds items with that home, reads the items homed
-// in or touching it, and changes, claims and releases only the ones homed
-// there. A claim replaces the holder and records whom; a new home is recorded
+// it lists the item tools, adds items with that home, reads all the person's
+// items (narrowed to any workspace the person reaches), and changes, claims
+// and releases only the ones homed there. A claim replaces the holder and records whom; a new home is recorded
 // with its before and after.
 func TestWorkspaceSessionKeepsItsWorkspaceItems(t *testing.T) {
 	f := newAssistantFixture(t)
@@ -99,7 +99,7 @@ func TestWorkspaceSessionKeepsItsWorkspaceItems(t *testing.T) {
 		} `json:"items"`
 		Operations []json.RawMessage `json:"operations"`
 	}
-	if err := json.Unmarshal([]byte(read), &page); failed || err != nil || page.Total != 2 || len(page.Operations) != 0 {
+	if err := json.Unmarshal([]byte(read), &page); failed || err != nil || page.Total != 3 || len(page.Operations) != 0 {
 		t.Fatalf("a workspace session read %s", read)
 	}
 	for _, item := range page.Items {
@@ -115,12 +115,25 @@ func TestWorkspaceSessionKeepsItsWorkspaceItems(t *testing.T) {
 			if item.Home != "ws_bob" || !slices.Equal(item.Touches, []string{"ws_alice"}) {
 				t.Fatalf("the touched item reads %+v", item)
 			}
+		case inbox.Item.ID:
+			if item.Home != "" {
+				t.Fatalf("the inbox item reads %+v", item)
+			}
 		default:
-			t.Fatalf("a workspace session read item %s outside its workspace: %s", item.ID, read)
+			t.Fatalf("a workspace session read an item that is not the person's: %s", read)
 		}
 	}
-	if text, failed := f.tool(t, token, "read_list", map[string]any{"workspaceId": "ws_bob"}); !failed || !strings.Contains(text, "only the items of its workspace") {
-		t.Fatalf("a workspace session read another workspace: %s", text)
+	if text, failed := f.tool(t, token, "read_list", map[string]any{"workspaceId": "ws_alice"}); failed || strings.Count(text, `"id": "pai_`) != 2 || strings.Contains(text, inbox.Item.ID) {
+		t.Fatalf("a workspace session narrowed to its workspace: %s", text)
+	}
+	if text, failed := f.tool(t, token, "read_list", map[string]any{"workspaceId": "ws_bob"}); failed || strings.Count(text, `"id": "pai_`) != 1 || !strings.Contains(text, touched.Item.ID) {
+		t.Fatalf("a workspace session narrowed to another workspace the person reaches: %s", text)
+	}
+	registerDeviceForTest(t, f.server, registrationBody("dev_bob", "ws_bob_private"))
+	for _, workspaceID := range []string{"ws_bob_private", "ws_nowhere"} {
+		if text, failed := f.tool(t, token, "read_list", map[string]any{"workspaceId": workspaceID}); !failed || !strings.Contains(text, "not allowed") {
+			t.Fatalf("a workspace session read %s, which the person does not reach: %s", workspaceID, text)
+		}
 	}
 	if text, failed := f.tool(t, assistantToken, "read_list", map[string]any{"workspaceId": "ws_alice"}); failed || strings.Count(text, `"id": "pai_`) != 2 || strings.Contains(text, inbox.Item.ID) {
 		t.Fatalf("the assistant narrowed to ws_alice: %s", text)

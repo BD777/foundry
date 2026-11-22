@@ -39,9 +39,9 @@ var personalAgentMCPTools = map[string]bool{
 }
 
 // workspaceItemMCPTools are the assistant's item tools that a session the
-// person started in a workspace also has, limited to the items of that
-// workspace (itemScope): the assistant and such a session keep the same
-// ledger, at different reach.
+// person started in a workspace also has (itemScope): it reads the person's
+// whole ledger and changes only the items homed in its workspace, so the
+// assistant and such a session keep the same ledger, at different reach.
 var workspaceItemMCPTools = map[string]bool{"read_list": true, "update_list": true}
 
 // errNoItemTools refuses the item tools to a session that keeps no items.
@@ -49,7 +49,7 @@ var errNoItemTools = &statusError{http.StatusForbidden, errors.New("read_list an
 
 // itemScope is the scope of the item tools (read_list, update_list): the
 // assistant's in its own conversation (paScope), else that of a session the
-// person started in a workspace (assistant.WorkspaceScopeFor), which reaches
+// person started in a workspace (assistant.WorkspaceScopeFor), which changes
 // only that workspace's items. A session another session started counts,
 // as it acts for the same person (agentScope); a session in an Issue, a
 // verifier and the assistant's helpers with what they start do not.

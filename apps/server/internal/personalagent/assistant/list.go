@@ -717,12 +717,12 @@ func (s *Service) ReadList(ctx context.Context, scope Scope, args map[string]jso
 		WorkspaceID: strings.TrimSpace(query.WorkspaceID)}
 	assistantID := scope.Agent.ID
 	if scope.Workspace != "" {
-		// A workspace session reads the person's ledger, only what is
-		// homed in or touches its workspace.
-		if filter.WorkspaceID != "" && filter.WorkspaceID != scope.Workspace {
-			return listPage{}, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden, "not allowed: this session reads only the items of its workspace %s", scope.Workspace)
+		// A workspace session reads the person's whole ledger, narrowed to
+		// any workspace the person reaches.
+		if filter.WorkspaceID != "" && !scope.Reaches(filter.WorkspaceID) {
+			return listPage{}, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden, "not allowed: the person cannot reach workspace %s", filter.WorkspaceID)
 		}
-		assistantID, filter.UserID, filter.WorkspaceID = "", scope.Agent.UserID, scope.Workspace
+		assistantID, filter.UserID = "", scope.Agent.UserID
 	}
 	if value := strings.TrimSpace(query.ClosedSince); value != "" {
 		since, err := closedSinceOf(value, location)
