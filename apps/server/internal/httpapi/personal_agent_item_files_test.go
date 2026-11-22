@@ -76,12 +76,14 @@ func (w *workspaceFolders) answers() map[string]fakeAnswer {
 // a new home gets the file and the old one loses it; a finished item keeps
 // its file until it is archived. A device that connects again gets what
 // changed and loses files of items no longer at home there.
+// The assistant lives in its own workspace: an item homed there is its inbox,
+// which has no file.
 func TestItemFilesFollowTheirHome(t *testing.T) {
 	f := newIsolationFixture(t)
 	ctx := context.Background()
 	registerDeviceForTest(t, f.server, registrationBody("dev_alice", "ws_alice2"))
 	if _, err := f.server.store.CreatePersonalAgent(ctx, store.PersonalAgent{
-		UserID: f.aliceID, HomeDeviceID: "dev_alice", WorkspaceID: "ws_alice", Settings: personalagent.DefaultSettings(),
+		UserID: f.aliceID, HomeDeviceID: "dev_alice", WorkspaceID: "ws_alice_assistant", Settings: personalagent.DefaultSettings(),
 	}); err != nil {
 		t.Fatal(err)
 	}
