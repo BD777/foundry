@@ -21,6 +21,7 @@ import { FormFieldGroup } from "../../components/ui/form-field";
 import { CheckLabel } from "../../components/ui/check-label";
 import { CommandLine } from "../../components/ui/command-line";
 import { connectorStackClass } from "./connector-layout";
+import { MetaLine } from "../../components/ui/meta-line";
 
 /**
  * The first step of signing a device's tool in: which way (when there is
@@ -201,13 +202,14 @@ function SignInField({
   return (
     <FormFieldGroup className="fdy-xacc-field">
       <label htmlFor={id}>
-        {label}
-        {field.required ? null : (
-          <small className="font-normal text-ink-faint">
-            {" · "}
-            {t("signInChooser.optional")}
-          </small>
-        )}
+        <MetaLine as="span" separatorClassName="font-normal text-ink-faint">
+          {label}
+          {field.required ? null : (
+            <small className="font-normal text-ink-faint">
+              {t("signInChooser.optional")}
+            </small>
+          )}
+        </MetaLine>
       </label>
       {field.type === "select" ? (
         <SelectMenu

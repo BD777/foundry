@@ -19,6 +19,7 @@ import { HelpHint } from "../../components/ui/help-hint";
 import { SectionHeader } from "../../components/ui/page-header";
 import { deviceConnection } from "../../lib/device-connection";
 import { DeviceSection } from "./device-section";
+import { MetaLine } from "../../components/ui/meta-line";
 
 /**
  * One line on what the resource inventory lists for the device ("5
@@ -68,7 +69,7 @@ function DeviceResourceSummary({
         <ArrowRight aria-hidden="true" size={14} />
       </Button>
       {source ? (
-        <span className="fdy-device-resource-remote flex basis-full flex-wrap items-center gap-1">
+        <MetaLine as="span" className="fdy-device-resource-remote basis-full">
           <span>
             {t(
               source.allowRemoteCommands
@@ -76,7 +77,6 @@ function DeviceResourceSummary({
                 : "resources.summary.remoteOff",
             )}
           </span>
-          {device.owned ? <span aria-hidden="true">·</span> : null}
           {device.owned ? (
             <Button
               aria-label={t("resources.summary.manageRemoteLabel", {
@@ -90,7 +90,7 @@ function DeviceResourceSummary({
               <ArrowRight aria-hidden="true" size={14} />
             </Button>
           ) : null}
-        </span>
+        </MetaLine>
       ) : null}
     </div>
   );

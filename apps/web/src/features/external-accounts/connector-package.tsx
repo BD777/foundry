@@ -17,6 +17,7 @@ import { MutedText } from "../../components/ui/text";
 import { skillLibraryRepositoryHref } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
 import { connectorName } from "./connector-text";
+import { MetaLine } from "../../components/ui/meta-line";
 
 function selectedIds(view: ConnectorPackageView): Set<string> {
   return new Set(
@@ -318,10 +319,11 @@ export function ConnectorPackage({
         </div>
         <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
           {view.connector.package?.tools.map((tool) => (
-            <MutedText as="span" key={tool.command}>
-              <span className="font-mono text-ink">{tool.command}</span>
-              {" · "}
-              {version ?? t("connectorPackage.versionPending")}
+            <MutedText as="span" className="block" key={tool.command}>
+              <MetaLine as="span">
+                <span className="font-mono text-ink">{tool.command}</span>
+                {version ?? t("connectorPackage.versionPending")}
+              </MetaLine>
             </MutedText>
           ))}
         </div>

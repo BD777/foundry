@@ -26,6 +26,7 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { deviceConnection } from "../../lib/device-connection";
 import { serverErrorText } from "../../lib/errors";
 import type { AssistantFeatureEvent } from "./assistant-events";
+import { MetaLine } from "../../components/ui/meta-line";
 
 export interface AssistantListProps {
   assistants: AssistantSummary[];
@@ -186,15 +187,14 @@ export function AssistantList({
                       <AssistantProjectAccessHint assistantId={assistant.id} />
                     )}
                     <small>
-                      {device?.label ?? assistant.homeDeviceId}
-                      {device ? (
-                        <>
-                          {" · "}
-                          {online
+                      <MetaLine as="span">
+                        {device?.label ?? assistant.homeDeviceId}
+                        {device
+                          ? online
                             ? t("settings.status.online")
-                            : t("settings.status.offline")}
-                        </>
-                      ) : null}
+                            : t("settings.status.offline")
+                          : null}
+                      </MetaLine>
                     </small>
                   </span>
                   <Badge tone={stopped ? "warn" : "online"}>

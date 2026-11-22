@@ -21,6 +21,7 @@ import {
   scopesDisclosureClass,
   scopesSummaryClass,
 } from "./connector-layout";
+import { MetaLine } from "../../components/ui/meta-line";
 
 const activityLineClass = "min-w-0 text-xs text-ink-muted wrap-anywhere";
 
@@ -129,12 +130,10 @@ export function CloudflareActivity({
                   )}
                 </div>
                 <small className={activityLineClass}>
-                  <time dateTime={entry.at}>{when(entry.at)}</time>
-                  {" · "}
-                  {entry.workspaceName || entry.workspaceId}
-                  {entry.sessionId ? (
-                    <>
-                      {" · "}
+                  <MetaLine as="span">
+                    <time dateTime={entry.at}>{when(entry.at)}</time>
+                    {entry.workspaceName || entry.workspaceId}
+                    {entry.sessionId ? (
                       <Button
                         size="inline"
                         variant="link"
@@ -144,8 +143,8 @@ export function CloudflareActivity({
                       >
                         {entry.sessionTitle || t("cloudflare.activitySession")}
                       </Button>
-                    </>
-                  ) : null}
+                    ) : null}
+                  </MetaLine>
                 </small>
                 {entry.error ? (
                   <small className={activityLineClass}>{entry.error}</small>

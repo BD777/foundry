@@ -187,8 +187,15 @@ test("the screen follows the newest frame, moves through its gallery and says wh
   );
   try {
     const { container } = view;
-    const position = () =>
-      container.querySelector(".fdy-chat-screen-position").textContent;
+    // The words of the position line, without its separator dots.
+    const position = () => {
+      const line = container
+        .querySelector(".fdy-chat-screen-position")
+        .cloneNode(true);
+      for (const dot of line.querySelectorAll('[aria-hidden="true"]'))
+        dot.remove();
+      return line.textContent;
+    };
     assert.match(position(), /^3 of 3/);
     assert.match(container.textContent, /Showing the latest/);
     assert.match(container.textContent, /3 older screenshots were removed/);

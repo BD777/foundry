@@ -16,6 +16,7 @@ import { SkillCatalogRow } from "./skill-catalog-row";
 import type { NormalizedSkill } from "./skill-models";
 import type { MissingSkillDependency } from "./skill-selection-engine";
 import { Skeleton } from "../ui/loading";
+import { MetaLine } from "../ui/meta-line";
 
 export interface SkillCatalogListProps<
   T extends NormalizedSkill = NormalizedSkill,
@@ -323,30 +324,26 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <BundleTitle as="strong">{bundle.name}</BundleTitle>
                     <Badge tone="neutral">{t("library.bundle.badge")}</Badge>
-                    <span className="text-xs font-medium text-ink-faint">
+                    <MetaLine
+                      as="span"
+                      className="text-xs font-medium text-ink-faint"
+                    >
                       {t("workspace.bundleSkillsCount", { count: totalSkills })}
-                      {mode === "workspace" && (
-                        <>
-                          {" · "}
-                          {selectedCount === totalSkills
-                            ? t("workspace.bundleAllSelected", {
-                                count: totalSkills,
-                              })
-                            : t("workspace.bundleSelectedCount", {
-                                selected: selectedCount,
-                                total: totalSkills,
-                              })}
-                        </>
-                      )}
-                      {isSearching && item.skills.length !== totalSkills && (
-                        <>
-                          {" · "}
-                          {t("workspace.bundleMatches", {
-                            count: item.skills.length,
-                          })}
-                        </>
-                      )}
-                    </span>
+                      {mode === "workspace" &&
+                        (selectedCount === totalSkills
+                          ? t("workspace.bundleAllSelected", {
+                              count: totalSkills,
+                            })
+                          : t("workspace.bundleSelectedCount", {
+                              selected: selectedCount,
+                              total: totalSkills,
+                            }))}
+                      {isSearching &&
+                        item.skills.length !== totalSkills &&
+                        t("workspace.bundleMatches", {
+                          count: item.skills.length,
+                        })}
+                    </MetaLine>
                   </div>
                   <Button
                     variant="ghost"
