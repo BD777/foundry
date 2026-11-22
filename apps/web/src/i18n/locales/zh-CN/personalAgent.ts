@@ -558,6 +558,10 @@ export const personalAgent: Translation<typeof en> = {
       selectTitle: "没有打开的事项",
       selectBody: "选一项，查看它的摘要、执行和时间线。",
     },
+    needsYou: {
+      count: "等你：{{count}}",
+      open: "打开等你处理",
+    },
     detail: {
       back: "返回事项",
       title: "事项",

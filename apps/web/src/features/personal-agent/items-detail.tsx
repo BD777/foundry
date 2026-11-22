@@ -37,6 +37,7 @@ import { chatHref } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { ItemPlan } from "./person-list-plan";
 import { ItemHome } from "./items-home";
+import { ItemNeedsYou } from "./items-needs-you";
 import {
   helperStatusLabel,
   itemStatusLabel,
@@ -300,6 +301,7 @@ export function ItemDetail({
           pending={pending}
         />
       </div>
+      <ItemNeedsYou item={item} />
       <DetailSection title={t("items.home.title")}>
         <ItemHome
           item={item}

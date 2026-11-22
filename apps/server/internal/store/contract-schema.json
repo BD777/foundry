@@ -6938,7 +6938,28 @@
         "helpers": {
           "type": "array",
           "items": { "$ref": "#/$defs/PersonalAgentItemHelper" }
+        },
+        "needsYou": {
+          "description": "What waits on the person for this open item (Needs you), newest first: the open entries the person handles whose session is one of the item's helpers, or the session that holds it and no other open item. Derived when the list or the item is read, never stored; absent when nothing waits or on other replies.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/PersonalAgentItemNeedsYou" }
         }
+      }
+    },
+    "PersonalAgentItemNeedsYou": {
+      "description": "One Needs you entry stuck on an item: what it asks, in its source's words, and the session it came from.",
+      "type": "object",
+      "required": ["id", "source", "title", "createdAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "source": {
+          "description": "The entry's source (question, turn_failed, ...).",
+          "type": "string"
+        },
+        "title": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "createdAt": { "type": "string" }
       }
     },
     "PersonalAgentItemDetail": {

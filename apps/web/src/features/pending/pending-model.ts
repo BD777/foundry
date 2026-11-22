@@ -88,23 +88,12 @@ export function pendingOrigin(
   return { kind: "chat", name: untitled };
 }
 
-/**
- * Upkeep suggestions (DEV-256) belong to a project or to an assistant, never
- * to a chat: they group under that name, so no "untitled chat" header shows.
- */
-function upkeepOwner(item: PendingItem): "project" | "memory" | undefined {
-  if (item.source === "project_upkeep") return "project";
-  if (item.source === "memory_upkeep") return "memory";
-  return undefined;
-}
-
 export function groupPendingItems(
   items: readonly PendingItem[],
   filter: PendingFilter,
   untitled: string,
   personal = untitled,
   defaultAssistant = untitled,
-  projectFallback = untitled,
 ): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
@@ -118,18 +107,13 @@ export function groupPendingItems(
       item.source === "assistant_inbox" ||
       item.source === "connector_write" ||
       item.source === "notice";
-    const owner = upkeepOwner(item);
     const key = inbox
       ? `assistant-inbox:${item.assistantId || item.id}`
       : own
         ? "personal"
-        : owner === "project"
-          ? `project:${item.workspaceId}`
-          : owner === "memory"
-            ? `memory:${item.assistantId || item.id}`
-            : item.issueId
-              ? `issue:${item.issueId}`
-              : `session:${item.sessionId ?? item.id}`;
+        : item.issueId
+          ? `issue:${item.issueId}`
+          : `session:${item.sessionId ?? item.id}`;
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -138,14 +122,9 @@ export function groupPendingItems(
           ? item.assistantName || defaultAssistant
           : own
             ? personal
-            : owner === "project"
-              ? item.workspaceName || projectFallback
-              : owner === "memory"
-                ? item.assistantName || defaultAssistant
-                : (item.issueId ? item.title : item.sessionTitle) || untitled,
+            : (item.issueId ? item.title : item.sessionTitle) || untitled,
         workspaceId: item.workspaceId,
-        // An upkeep group's header is its name already; no second project name.
-        workspaceName: owner ? "" : (item.workspaceName ?? ""),
+        workspaceName: item.workspaceName ?? "",
         sessionId: inbox || item.issueId ? undefined : item.sessionId,
         issueId: item.issueId,
         items: [],
@@ -326,23 +305,17 @@ export function pendingOptionLabel(option: string): string {
  * The one thing an item asks for, shown as its first action: answering with
  * one of the Agent's options, replying, or going where it can be done (the
  * chat for a failed turn, the message for a step only the person can take,
- * Connectors for an account, the device's GitHub permissions for a missing
- * GitHub scope). A resolved item asks for nothing.
+ * Connectors for an account). A resolved item asks for nothing.
  */
-export type PendingPrimary = "options" | "reply" | "open" | "grant" | "none";
+export type PendingPrimary = "options" | "reply" | "open" | "none";
 
 export function pendingPrimary(item: PendingItem): PendingPrimary {
   if (pendingResolved(item)) return "none";
   // A saved message's actions are retry, not-process and its attempt.
   if (item.source === "assistant_inbox") return "none";
-  // A project's suggestions are decided on the project's page (DEV-256).
-  if (item.source === "project_upkeep") return "none";
-  if (item.source === "memory_upkeep") return "none";
   // A note needs no answer: the person reads it and dismisses it (DEV-278).
   if (item.source === "notice") return "none";
   if (pendingPersonal(item)) return "open";
-  // A GitHub scope the session's device lacks (DEV-136): its picker there.
-  if (item.rule === "github_scope" && item.deviceId) return "grant";
   const canReply = Boolean(item.sessionId || (item.issueId && item.eventId));
   if (item.options?.length && canReply) return "options";
   if (
@@ -352,21 +325,4 @@ export function pendingPrimary(item: PendingItem): PendingPrimary {
   )
     return "open";
   return canReply ? "reply" : "open";
-}
-
-/**
- * The GitHub scopes a github_scope item asks the person to add (DEV-136):
- * named in gh's "missing required scopes [a, b]" or git's "without
- * `workflow` scope"; empty when the output named none.
- */
-export function pendingGitHubScopes(item: PendingItem): string[] {
-  if (item.source !== "needs_hands" || item.rule !== "github_scope") return [];
-  const text = `${item.title}\n${item.excerpt}`;
-  const listed = /missing required scopes? \[([^\]]+)\]/i.exec(text)?.[1];
-  const scopes = listed
-    ? listed.split(/[\s,]+/)
-    : (/without `([a-z_:]+)` scope/i.exec(text)?.slice(1) ?? []);
-  return [
-    ...new Set(scopes.map((s) => s.trim()).filter((s) => /^[a-z_:]+$/.test(s))),
-  ];
 }

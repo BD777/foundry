@@ -8,6 +8,7 @@ import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { IconBox } from "../../components/ui/icon-box";
 import { relativeWhen } from "../../lib/time-format";
 import { pendingOrigin, pendingResolved } from "./pending-model";
+import { PendingItemRef } from "./pending-item-ref";
 import type { PendingItems } from "./use-pending-items";
 
 /**
@@ -161,6 +162,7 @@ export function ConnectorWriteItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
+          <PendingItemRef item={item} />
           <time
             className="tabular-nums"
             dateTime={

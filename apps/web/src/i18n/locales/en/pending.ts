@@ -21,12 +21,11 @@ export const pending = {
     retry: "Try again",
     emptyOpen: "Nothing waits for you",
     emptyOpenBody:
-      "Questions, failed turns and tool errors from your chats appear here as they happen.",
+      "Questions, failed turns and refused permissions from your chats appear here as they happen.",
     emptyResolved: "Nothing resolved this week",
     emptyResolvedBody:
       "Items you answered, marked done or dismissed stay here for 7 days.",
     untitled: "Untitled chat",
-    project: "Project",
     openChat: "Open chat",
     openIssue: "Open Issue",
     groupLabel: "{{title}} in {{workspace}}",
@@ -42,24 +41,8 @@ export const pending = {
     bundle_update: "Bundle update",
     message_channel: "Message channel",
     assistant_inbox: "Unprocessed message",
-    project_upkeep: "Project upkeep",
-    memory_upkeep: "Memory upkeep",
     notice: "A note from your assistant",
     assistant_question: "Your assistant asks",
-  },
-  upkeep: {
-    title_one: "{{project}}: {{count}} suggested change to confirm",
-    title_other: "{{project}}: {{count}} suggested changes to confirm",
-    reason:
-      "Review each suggested file change on the project page. Applying or dismissing them all closes this.",
-    open: "Open project",
-  },
-  memoryUpkeep: {
-    title_one: "{{assistant}}: {{count}} memory suggestion to confirm",
-    title_other: "{{assistant}}: {{count}} memory suggestions to confirm",
-    reason:
-      "Review each memory suggestion under this assistant's Memory upkeep. Dismissing the review closes this.",
-    open: "Open memory upkeep",
   },
   state: {
     open: "Open",
@@ -91,8 +74,7 @@ export const pending = {
         "its computer is offline, so this came to you. It stays here until you or your assistant settle it.",
       assistant_timeout: "The assistant didn't handle it within 10 minutes",
     },
-    grantGitHubScopes: "Add {{scopes}} in Connectors",
-    openGitHubPermissions: "Open GitHub permissions",
+    itemRef: "Item: {{text}}",
     occurrences: "Seen {{count}} times",
     resolved: "{{state}} {{when}}",
     context: "Context",

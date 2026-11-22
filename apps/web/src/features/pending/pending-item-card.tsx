@@ -31,7 +31,6 @@ import { IconBox } from "../../components/ui/icon-box";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
-import { navigateToConnectorGrant } from "../../lib/in-app-navigation";
 import {
   pendingApprovalDetail,
   pendingFailure,
@@ -40,7 +39,6 @@ import {
   pendingOptionLabel,
   pendingOrigin,
   pendingPersonal,
-  pendingGitHubScopes,
   pendingPrimary,
   pendingResolved,
   pendingStatusKey,
@@ -48,7 +46,7 @@ import {
   type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
-import { MemoryUpkeepItemCard, UpkeepItemCard } from "./upkeep-item-card";
+import { PendingItemRef } from "./pending-item-ref";
 import { ConnectorWriteItemCard } from "./connector-write-item-card";
 
 /** What kind of thing waits, by shape and tone: never by color alone. */
@@ -112,9 +110,6 @@ export function PendingItemCard({
   // A saved message reads and acts differently from every other item
   // (DEV-254): its words and why in one line, retry / not-process / attempt
   // in one row, the error behind a disclosure below them.
-  if (item.source === "project_upkeep") return <UpkeepItemCard item={item} />;
-  if (item.source === "memory_upkeep")
-    return <MemoryUpkeepItemCard item={item} />;
   if (item.source === "assistant_inbox")
     return (
       <InboxItemCard
@@ -146,7 +141,6 @@ export function PendingItemCard({
   const failure = pendingFailure(item);
   const known = failure && failure.kind !== "other";
   const primary = pendingPrimary(item);
-  const grantScopes = pendingGitHubScopes(item);
   const headline = own
     ? {
         text: item.title,
@@ -356,20 +350,6 @@ export function PendingItemCard({
         {t("item.reply")}
       </Button>
     );
-  else if (primary === "grant")
-    action = (
-      <Button
-        onClick={() =>
-          navigateToConnectorGrant("github", item.deviceId!, grantScopes)
-        }
-        size="sm"
-      >
-        {grantScopes.length
-          ? t("item.grantGitHubScopes", { scopes: grantScopes.join(", ") })
-          : t("item.openGitHubPermissions")}
-        <ArrowRight aria-hidden="true" size={14} />
-      </Button>
-    );
   else if (primary === "open")
     action = (
       <Button onClick={() => onOpenMessage(item)} size="sm">
@@ -449,6 +429,7 @@ export function PendingItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
+          <PendingItemRef item={item} />
           <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
           <span aria-hidden="true">·</span>
           <time
@@ -716,6 +697,7 @@ function NoticeItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
+          <PendingItemRef item={item} />
           <span className="text-ink-muted">{t("source.notice")}</span>
           <span aria-hidden="true">·</span>
           <time
@@ -849,6 +831,7 @@ function InboxItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
+          <PendingItemRef item={item} />
           <time
             className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : when}

@@ -61,14 +61,6 @@ type PersonalAgentMaintenanceStore interface {
 	ListWorkspaceMaintenance(context.Context, string, string) ([]PersonalAgentMaintenance, error)
 	// GetWorkspaceMaintenance is one of a project's governance reviews.
 	GetWorkspaceMaintenance(context.Context, string, string, string) (PersonalAgentMaintenance, error)
-	// ListReviewingWorkspaceMaintenance lists the person's governance reviews
-	// that hold suggested changes now, newest first, across their projects.
-	// Their undecided suggestions are the Needs you items.
-	ListReviewingWorkspaceMaintenance(context.Context, string) ([]PersonalAgentMaintenance, error)
-	// ListReviewingMemoryMaintenance lists the person's memory reviews (both
-	// layers) that hold findings now, newest first. Their findings are the
-	// Needs you items of their assistants (DEV-256).
-	ListReviewingMemoryMaintenance(context.Context, string) ([]PersonalAgentMaintenance, error)
 	// RebindPersonalAgentMaintenance gives a waiting governance review its
 	// next executor without changing what it is or when it is due. It
 	// reports ErrNotFound when the row, role or old executor differs.

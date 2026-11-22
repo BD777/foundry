@@ -91,6 +91,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupDataMigrations,
 		s.migrateRetiredUpkeepNotices,
 		s.migrateItemAssistantHomes,
+		// After the person notices, which closing an item supersedes.
+		s.migrateRetiredPendingSources,
 	}
 	for _, step := range steps {
 		started := time.Now()

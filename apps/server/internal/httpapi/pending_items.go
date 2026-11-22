@@ -6,8 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +18,7 @@ import (
 
 // Pending items (DEV-079) are what waits for the person in their sessions,
 // found in what the sessions already record: questions an Agent asked, an
-// Issue's question, a turn that failed, and tool errors only the person can
-// clear. Nothing here asks an Agent anything or changes what it is told; no
+// Issue's question, a turn that failed, and a permission its runtime refused. Nothing here asks an Agent anything or changes what it is told; no
 // model reads anything.
 
 // pendingReactions finds items as sessions and Issues record them, and
@@ -224,14 +221,10 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 	if !kept {
 		return
 	}
-	workspacePath := ""
-	if workspace, err := r.s.store.GetWorkspace(ctx, session.WorkspaceID); err == nil {
-		workspacePath = workspace.LocalPath
-	}
 	responsible := r.s.assistant.ResponsibleFor(ctx, session)
 	handler, assistantID := responsible.Handler()
 	holdsTurn := responsible.Party == assistant.ResponsiblePerson
-	for _, item := range pendingItemsFromEvent(event, workspacePath, holdsTurn) {
+	for _, item := range pendingItemsFromEvent(event, holdsTurn) {
 		item.UserID, item.WorkspaceID, item.SessionID = session.CreatedByUserID, session.WorkspaceID, session.ID
 		item.Handler, item.AssistantID = handler, assistantID
 		if _, _, err := r.s.recordPendingItem(ctx, item); err != nil {
@@ -347,24 +340,19 @@ func pendingIssueClosed(status string) bool {
 }
 
 // pendingCandidateEvent is a cheap test before anything is read: only
-// these events can hold an item.
+// these events can hold an item. A tool's output is never scanned for one.
 func pendingCandidateEvent(event store.AgentSessionEvent) bool {
 	if event.Message != nil && len(event.Message.Questions) > 0 {
 		return true
 	}
-	switch event.Label {
-	case store.ProcessLabelPermissionDenied:
-		return true
-	}
-	return event.Message != nil && event.Message.Kind == "tool" &&
-		(event.Level == "error" || event.Message.Status == "failed")
+	return event.Label == store.ProcessLabelPermissionDenied
 }
 
 // pendingItemsFromEvent is what an event holds for the person, without the
 // person and session it belongs to. holdsTurn says the question waits in the
 // person's own chat: only then is it held by its turn. A question a helper
 // raised waits for its responsible party's answer, not the turn.
-func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string, holdsTurn bool) []store.PendingItem {
+func pendingItemsFromEvent(event store.AgentSessionEvent, holdsTurn bool) []store.PendingItem {
 	message := event.Message
 	if message != nil && len(message.Questions) > 0 {
 		items := make([]store.PendingItem, 0, len(message.Questions))
@@ -388,8 +376,9 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string, 
 		}
 		return items
 	}
-	switch event.Label {
-	case store.ProcessLabelPermissionDenied:
+	// A permission its runtime refused is a structured fact (the native
+	// permission_denied event); a tool's output is never read for one.
+	if event.Label == store.ProcessLabelPermissionDenied {
 		detail := strings.TrimSpace(event.Detail)
 		if detail == "" {
 			return nil
@@ -399,24 +388,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string, 
 			Title: pendingTitle(firstLine(detail)), Excerpt: textcut.Excerpt(detail, pendingExcerptLimit),
 		}}
 	}
-	if message == nil || message.Kind != "tool" {
-		return nil
-	}
-	rule, line, excerpt := needsHands(toolOutput(message.Text), workspacePath)
-	if rule == "" {
-		return nil
-	}
-	// The command, without the output the excerpt already shows.
-	command, _, _ := strings.Cut(message.Text, "\n```\n")
-	command = strings.TrimSpace(command)
-	if command == "" {
-		command = strings.TrimSpace(event.Detail)
-	}
-	return []store.PendingItem{{
-		EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceNeedsHands, Rule: rule,
-		Key:   "hands:" + event.SessionID + ":" + rule,
-		Title: pendingTitle(line), Excerpt: textcut.Excerpt(excerpt, pendingExcerptLimit), Context: textcut.Excerpt(command, pendingContextLimit),
-	}}
+	return nil
 }
 
 // approvalDetail is what an approval asks about (its command, or the changes),
@@ -426,96 +398,6 @@ func approvalDetail(question store.AgentQuestion) string {
 		return ""
 	}
 	return textcut.Excerpt(strings.TrimSpace(question.Detail), pendingContextLimit)
-}
-
-// toolOutput is what a tool printed: a tool event's text is its command,
-// then its output in a fenced block. Only the output is matched, so a
-// command or a file that merely mentions an error matches nothing.
-func toolOutput(text string) string {
-	_, output, found := strings.Cut(text, "\n```\n")
-	if !found {
-		return ""
-	}
-	output = strings.TrimSuffix(strings.TrimSpace(output), "```")
-	// Errors that stop a command print last.
-	if len(output) > 4000 {
-		output = output[len(output)-4000:]
-	}
-	return output
-}
-
-// needsHandsRules are the tool errors only the person can clear, matched
-// line by line in a tool's output. They are deliberately narrow: an error
-// an Agent can work around itself (a 404, a failing test, a file in its own
-// workspace) is not the person's.
-var needsHandsRules = []struct {
-	rule    string
-	pattern *regexp.Regexp
-}{
-	{"sudo", regexp.MustCompile(`(?i)^sudo: (a password is required|a terminal is required|no tty present)`)},
-	// A GitHub scope the device's gh login lacks (DEV-136): Foundry's own
-	// session gh refusing a login change, gh's missing-scope error, and
-	// git refusing a workflow file. The person adds it in Connectors.
-	{"github_scope", regexp.MustCompile("(?i)(^gh auth \\S+ is not available in a Foundry session|missing required scopes? \\[[^\\]]+\\]|without `workflow` scope)")},
-	{"gateway", regexp.MustCompile(`Foundry gateway:`)},
-	{"docker", regexp.MustCompile(`(?i)permission denied while trying to connect to the docker daemon socket`)},
-	{"login", regexp.MustCompile(`(?i)("error"\s*:\s*"(token_expired|invalid_grant)"|refresh token (has )?expired|(login|session|authorization|credentials?) (has )?expired|re-?authori[sz]e (it )?in (foundry|connectors))`)},
-	{"http_auth", regexp.MustCompile(`(?i)^(HTTP/[0-9.]+ (401|403)\b|.*\b(HTTP Error|status(Code)?)[ :=]*(401|403)\b.*(unauthori[sz]ed|forbidden))`)},
-}
-
-// permissionDenied finds a path a process may not open: Node's EACCES,
-// Python's PermissionError and coreutils ("cat: /path: Permission denied")
-// name it.
-var permissionDenied = regexp.MustCompile(`(?:EACCES: permission denied, \w+ |\[Errno 13\] Permission denied: )'([^']+)'|^[\w.-]+: (?:cannot [a-z ]+? )?'?(/[^':]+)'?: Permission denied$`)
-
-// needsHands returns the rule a tool's output matched, the line that
-// matched and the lines around it, or "" when none did.
-func needsHands(output, workspacePath string) (string, string, string) {
-	if output == "" {
-		return "", "", ""
-	}
-	lines := strings.Split(output, "\n")
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		for _, candidate := range needsHandsRules {
-			if !candidate.pattern.MatchString(trimmed) {
-				continue
-			}
-			if candidate.rule == "http_auth" && pendingLocalRequest(output) {
-				continue
-			}
-			return candidate.rule, trimmed, surroundingLines(lines, index)
-		}
-		if match := permissionDenied.FindStringSubmatch(trimmed); match != nil && pendingOutsideWorkspace(match[1]+match[2], workspacePath) {
-			return "permission", trimmed, surroundingLines(lines, index)
-		}
-	}
-	return "", "", ""
-}
-
-// pendingLocalRequest is output of a request to this machine: a service the
-// Agent runs or tests answers 401 on purpose.
-func pendingLocalRequest(output string) bool {
-	lower := strings.ToLower(output)
-	return strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1") || strings.Contains(lower, "0.0.0.0")
-}
-
-// pendingOutsideWorkspace is a path outside the session's workspace: one
-// inside it, or a relative one, is the Agent's own to fix.
-func pendingOutsideWorkspace(path, workspacePath string) bool {
-	if !filepath.IsAbs(path) {
-		return false
-	}
-	if workspacePath == "" {
-		return true
-	}
-	relative, err := filepath.Rel(filepath.Clean(workspacePath), filepath.Clean(path))
-	return err != nil || relative == ".." || strings.HasPrefix(relative, "../")
-}
-
-func surroundingLines(lines []string, index int) string {
-	start, end := max(0, index-2), min(len(lines), index+3)
-	return strings.TrimSpace(strings.Join(lines[start:end], "\n"))
 }
 
 // pendingAnswerContext is the end of the answer that asked: the paragraphs
@@ -566,9 +448,11 @@ type pendingItemView struct {
 	// MessageAt is when an unprocessed assistant message was sent: its inbox
 	// entry's time, which the item (recorded later) does not carry (DEV-254).
 	MessageAt string `json:"messageAt,omitempty"`
-	// DeviceID is the session's device: a github_scope item links to that
-	// device's GitHub permissions (DEV-136).
-	DeviceID string `json:"deviceId,omitempty"`
+	// ItemID, ItemAssistantID and ItemText name the open item the entry is
+	// stuck on (openItemsBySession), when its session works on one.
+	ItemID          string `json:"itemId,omitempty"`
+	ItemAssistantID string `json:"itemAssistantId,omitempty"`
+	ItemText        string `json:"itemText,omitempty"`
 }
 
 type pendingAssistantView struct {
@@ -589,8 +473,8 @@ type pendingItemList struct {
 }
 
 // handleListPendingItems lists the person's open items and those resolved
-// in the last week. An item of a session since archived or deleted is left
-// out.
+// in the last week, each with the open item it is stuck on. An item of a
+// session since archived or deleted is left out.
 func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) {
 	user := accountID(r)
 	if user == "" {
@@ -623,12 +507,6 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	items, err := s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
 	if err == nil {
 		changed := s.reconcilePersonalPending(ctx, user, items)
-		if s.reconcileUpkeepPending(ctx, user, upkeepOpenKeys(items)) {
-			changed = true
-		}
-		if s.reconcileMemoryPending(ctx, user, pendingOpenKeysOf(items, store.PendingSourceMemoryUpkeep)) {
-			changed = true
-		}
 		if s.reconcileInboxPending(ctx, user, inboxOpenKeys(items)) {
 			changed = true
 		}
@@ -641,6 +519,11 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list pending items")
+		return
+	}
+	links, err := s.openItemsBySession(ctx, user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "read the items pending items are stuck on")
 		return
 	}
 	sessions := map[string]*store.AgentSession{}
@@ -665,7 +548,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			view.SessionTitle = session.Title
-			view.DeviceID = session.DeviceID
+			if link, linked := links[item.SessionID]; linked {
+				view.ItemID, view.ItemAssistantID, view.ItemText = link.ItemID, link.AssistantID, link.Text
+			}
 		}
 		name, seen := workspaces[item.WorkspaceID]
 		if !seen {

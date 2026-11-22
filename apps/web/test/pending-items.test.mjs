@@ -126,73 +126,6 @@ test("items group by chat or Issue, newest first, open apart from resolved", () 
   );
 });
 
-test("upkeep suggestions group under their project or assistant, never as an untitled chat", () => {
-  const upkeep = { sessionId: undefined, sessionTitle: undefined };
-  const items = [
-    item({
-      ...upkeep,
-      id: "pnd_project_a",
-      source: "project_upkeep",
-      workspaceId: "ws_dev148",
-      workspaceName: "dev148-synthetic-workspace",
-      updatedAt: "2026-10-29T08:00:00Z",
-    }),
-    item({
-      ...upkeep,
-      id: "pnd_project_b",
-      source: "project_upkeep",
-      workspaceId: "ws_dev148",
-      workspaceName: "dev148-synthetic-workspace",
-      updatedAt: "2026-10-29T09:00:00Z",
-    }),
-    item({
-      ...upkeep,
-      id: "pnd_memory",
-      source: "memory_upkeep",
-      assistantId: "asst_work",
-      assistantName: "Work assistant",
-      workspaceId: "ws_home",
-      workspaceName: "Home",
-      updatedAt: "2026-10-29T10:00:00Z",
-    }),
-    item({
-      ...upkeep,
-      id: "pnd_nameless",
-      source: "project_upkeep",
-      workspaceId: "ws_gone",
-      workspaceName: undefined,
-      updatedAt: "2026-10-29T07:00:00Z",
-    }),
-  ];
-  const groups = groupPendingItems(
-    items,
-    "open",
-    "Untitled chat",
-    "Your accounts and devices",
-    "Default assistant",
-    "Project",
-  );
-  assert.deepEqual(
-    groups.map((group) => [
-      group.key,
-      group.title,
-      group.workspaceName,
-      group.items.map((x) => x.id),
-    ]),
-    [
-      ["memory:asst_work", "Work assistant", "", ["pnd_memory"]],
-      [
-        "project:ws_dev148",
-        "dev148-synthetic-workspace",
-        "",
-        ["pnd_project_b", "pnd_project_a"],
-      ],
-      ["project:ws_gone", "Project", "", ["pnd_nameless"]],
-    ],
-  );
-  for (const group of groups) assert.notEqual(group.title, "Untitled chat");
-});
-
 test("an item names its assistant, chat or project and filters by that scope", () => {
   const work = item({
     id: "work",
@@ -1027,97 +960,37 @@ test("one list: what the assistant handles waits apart, what came to the person 
   host.remove();
 });
 
-test("a missing GitHub scope opens the session device's permission picker with it selected (DEV-136)", async () => {
-  const { pendingGitHubScopes, pendingPrimary } =
-    await import("../src/features/pending/pending-model.ts");
-  const base = {
-    id: "p1",
-    workspaceId: "ws",
-    sessionId: "sess_1",
-    source: "needs_hands",
-    rule: "github_scope",
-    state: "open",
-    occurrences: 1,
-    createdAt: "2026-11-06T00:00:00Z",
-    updatedAt: "2026-11-06T00:00:00Z",
-  };
-  const gh = {
-    ...base,
-    deviceId: "dev_1",
-    title:
-      "error: your authentication token is missing required scopes [read:packages, workflow]",
-    excerpt: "",
-  };
-  assert.equal(pendingPrimary(gh), "grant");
-  assert.deepEqual(pendingGitHubScopes(gh), ["read:packages", "workflow"]);
-  const git = {
-    ...gh,
-    title:
-      " ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)",
-  };
-  assert.deepEqual(pendingGitHubScopes(git), ["workflow"]);
-  // Without the session's device there is nowhere to grant it: the chat.
-  assert.equal(pendingPrimary({ ...gh, deviceId: undefined }), "open");
-  assert.equal(pendingPrimary({ ...gh, state: "done" }), "none");
-  assert.deepEqual(pendingGitHubScopes({ ...gh, rule: "login" }), []);
-});
-
-test("a project's suggested changes are one item in its own words that opens the project (DEV-256)", async () => {
+test("an entry names the item it is stuck on and links to it", async () => {
   const { host, root } = await render({
-    open: 1,
-    bySession: {},
+    open: 2,
+    bySession: { sess_1: 1, sess_2: 1 },
     items: [
       item({
-        id: "pnd_upkeep_budget",
-        source: "project_upkeep",
-        workspaceId: "ws_budget",
-        workspaceName: "Budget",
-        sessionId: undefined,
-        sessionTitle: undefined,
-        key: "upkeep:person:ws_budget",
-        title: "Budget",
-        excerpt: "Split the release notes",
-        count: 2,
+        id: "pnd_linked",
+        itemId: "pai_passport",
+        itemAssistantId: "asst_1",
+        itemText: "Renew the passport",
       }),
+      item({ id: "pnd_free", sessionId: "sess_2", title: "Which day?" }),
     ],
   });
-  const card = host.querySelector('[data-source="project_upkeep"]');
-  assert.ok(card, "the upkeep item has no card");
-  assert.match(card.textContent, /Budget: 2 suggested changes to confirm/);
-  assert.match(card.textContent, /Review each suggested file change/);
-  assert.equal(card.querySelectorAll("button").length, 1);
-  assert.ok(buttonNamed(host, "Open project"));
-  await act(async () => root.unmount());
-  host.remove();
-});
-
-test("an assistant's memory suggestions are one item that opens its memory upkeep (DEV-256)", async () => {
-  const { host, root } = await render({
-    open: 1,
-    bySession: {},
-    items: [
-      item({
-        id: "pnd_memory_ada",
-        source: "memory_upkeep",
-        workspaceId: "ws_home",
-        workspaceName: "Home",
-        assistantId: "asst_ada",
-        sessionId: undefined,
-        sessionTitle: undefined,
-        key: "memory_upkeep:person:asst_ada",
-        title: "Ada",
-        excerpt: "Merge the two travel notes",
-        count: 3,
+  try {
+    const links = [...host.querySelectorAll("a")].filter((link) =>
+      link.textContent.startsWith("Item: "),
+    );
+    assert.equal(links.length, 1);
+    assert.equal(links[0].textContent, "Item: Renew the passport");
+    assert.equal(
+      links[0].getAttribute("href"),
+      pathForAppRoute({
+        view: "items",
+        selectedItemId: "pai_passport",
       }),
-    ],
-  });
-  const card = host.querySelector('[data-source="memory_upkeep"]');
-  assert.ok(card, "the memory upkeep item has no card");
-  assert.match(card.textContent, /Ada: 3 memory suggestions to confirm/);
-  assert.match(card.textContent, /Review each memory suggestion/);
-  assert.ok(buttonNamed(host, "Open memory upkeep"));
-  await act(async () => root.unmount());
-  host.remove();
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });
 
 const inboxItem = (fields) =>

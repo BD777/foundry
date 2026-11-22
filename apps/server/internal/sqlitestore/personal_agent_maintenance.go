@@ -120,12 +120,6 @@ func (s *Store) GetWorkspaceMaintenance(ctx context.Context, userID, workspaceID
 	return scanPAMaintenance(s.reader().QueryRowContext(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND workspace_id=? AND role='governance' AND id=?`, userID, workspaceID, id))
 }
 
-// ListReviewingWorkspaceMaintenance is every governance review of the
-// person's projects that holds suggested changes now, newest first.
-func (s *Store) ListReviewingWorkspaceMaintenance(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
-	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND role='governance' AND status='review' ORDER BY rowid DESC LIMIT 200`, userID)
-}
-
 // RebindPersonalAgentMaintenance gives a governance review its next
 // executor. The assistant is only where the run happens: the review and its
 // proposed file changes belong to the project, so this moves nothing else.
@@ -145,12 +139,6 @@ func (s *Store) RebindPersonalAgentMaintenance(ctx context.Context, assistantID,
 
 func (s *Store) ListPersonalAgentMaintenanceForUser(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
 	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? ORDER BY rowid DESC LIMIT 500`, userID)
-}
-
-// ListReviewingMemoryMaintenance is the person's memory reviews still waiting
-// on a decision, newest first, whichever assistant ran them.
-func (s *Store) ListReviewingMemoryMaintenance(ctx context.Context, userID string) ([]store.PersonalAgentMaintenance, error) {
-	return s.listPAMaintenance(ctx, `SELECT user_id,assistant_id,payload_json FROM pa_maintenance WHERE user_id=? AND role='memory' AND status='review' ORDER BY rowid DESC LIMIT 200`, userID)
 }
 
 func (s *Store) UpkeepNoticeSignature(ctx context.Context, assistantID string) (string, error) {

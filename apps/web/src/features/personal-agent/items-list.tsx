@@ -13,6 +13,7 @@ import {
 import { Subheading } from "../../components/ui/subheading";
 import { relativeWhen } from "../../lib/time-format";
 import { groupByDay, type ItemDayGroup } from "./items-model";
+import { ItemNeedsYouBadge } from "./items-needs-you";
 import {
   ItemLead,
   originLabel,
@@ -144,6 +145,7 @@ function ItemListRow({
           >
             {relativeWhen(item.updatedAt)}
           </time>
+          <ItemNeedsYouBadge item={item} />
           {origin ? <Badge tone="neutral">{origin}</Badge> : null}
         </span>
       </ContextRow>

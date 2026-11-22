@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/url"
 	"regexp"
@@ -75,9 +76,77 @@ func (r pendingReactions) recordTurnFailure(ctx context.Context, session store.A
 	if classified.resetAt.IsZero() {
 		item.FailureResetAt = ""
 	}
-	if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
+	recorded, _, err := r.s.store.RecordPendingItem(ctx, item)
+	if err != nil {
 		log.Printf("record terminal failure pending item of %s: %v", session.ID, err)
+		return
 	}
+	// One open failure per session: the newest says what the session is stuck
+	// on now, so an older one of the session alone is superseded.
+	r.s.supersedeSessionFailures(ctx, session.CreatedByUserID, session.ID, recorded.Key)
+}
+
+// supersedeSessionFailures closes the open turn_failed items that belong to
+// sessionID alone, except the one with keepKey. An item that groups other
+// sessions' failures too stays: those sessions still wait on it.
+func (s *Server) supersedeSessionFailures(ctx context.Context, userID, sessionID, keepKey string) {
+	items, err := s.store.ListPendingItems(ctx, userID, []string{store.PendingOpen}, "", 500)
+	if err != nil {
+		log.Printf("pending failures: list for %s: %v", sessionID, err)
+		return
+	}
+	for _, item := range items {
+		if item.Source != store.PendingSourceTurnFailed || item.Key == keepKey || !failureOfSessionOnly(item, sessionID) {
+			continue
+		}
+		if _, err := s.store.ResolvePendingItems(ctx, store.PendingResolution{
+			Key: item.Key, Sources: []string{store.PendingSourceTurnFailed}, State: store.PendingSuperseded,
+			ResolutionReason: store.PendingResolutionAutoResolved, ResolutionDetail: "later_failure",
+		}); err != nil {
+			log.Printf("pending failures: supersede %s: %v", item.ID, err)
+		}
+	}
+}
+
+// failureOfSessionOnly reports whether a turn_failed item stands for
+// sessionID's failures and no other session's.
+func failureOfSessionOnly(item store.PendingItem, sessionID string) bool {
+	if item.SessionID != sessionID {
+		return false
+	}
+	for _, id := range item.FailureSessions {
+		if id != sessionID {
+			return false
+		}
+	}
+	return true
+}
+
+// failureSessionsGone is why a turn_failed item waits for no one: every
+// session it stands for was archived (session_archived) or deleted
+// (session_deleted); "" while one of them is still there or cannot be read.
+func failureSessionsGone(ctx context.Context, backend Backend, item store.PendingItem) string {
+	sessionIDs := item.FailureSessions
+	if len(sessionIDs) == 0 && item.SessionID != "" {
+		sessionIDs = []string{item.SessionID}
+	}
+	if len(sessionIDs) == 0 {
+		return ""
+	}
+	detail := "session_deleted"
+	for _, id := range sessionIDs {
+		session, err := backend.GetAgentSessionSummary(ctx, id)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return ""
+		case session.ArchivedAt != "":
+			detail = "session_archived"
+		default:
+			return ""
+		}
+	}
+	return detail
 }
 
 func terminalFailureEventID(ctx context.Context, server *Server, session store.AgentSession, failure string) string {
@@ -263,7 +332,9 @@ func (r pendingReactions) resolveTurnFailureSuccess(ctx context.Context, session
 }
 
 // maintainPendingTurnFailures migrates the pre-DEV-197 items on its first
-// pass, then closes failures that outcomes or configured windows made moot.
+// pass, then closes failures that outcomes, configured windows or their
+// sessions' archiving or deletion made moot, and keeps one open failure per
+// session.
 func (s *Server) maintainPendingTurnFailures(ctx context.Context) {
 	items, err := s.store.ListOpenPendingItemsBySource(ctx, store.PendingSourceTurnFailed)
 	if err != nil {
@@ -274,12 +345,18 @@ func (s *Server) maintainPendingTurnFailures(ctx context.Context) {
 	}
 	now := time.Now().UTC()
 	groups := map[string][]store.PendingItem{}
+	var kept []store.PendingItem
 	for _, item := range items {
 		session, sessionErr := s.store.GetAgentSessionSummary(ctx, item.SessionID)
 		// A turn_failed item recorded before DEV-254 for a saved assistant
 		// message is the same event its message item now carries.
 		if sessionErr == nil && s.assistantInboxTurn(ctx, session) {
 			s.resolveTurnFailure(ctx, item, "assistant_inbox")
+			continue
+		}
+		// A failure of sessions since archived or deleted waits for no one.
+		if detail := failureSessionsGone(ctx, s.store, item); detail != "" {
+			s.resolveTurnFailure(ctx, item, detail)
 			continue
 		}
 		if item.FailureCategory == "" {
@@ -337,7 +414,23 @@ func (s *Server) maintainPendingTurnFailures(ctx context.Context) {
 		}
 		if sessionOutcomeResolved(ctx, s.store, item, now) {
 			s.resolveTurnFailure(ctx, item, "turn_succeeded")
+			continue
 		}
+		kept = append(kept, item)
+	}
+	// One open failure per session, for items recorded before that held: the
+	// newest of a session's own items stays.
+	newest := map[string]store.PendingItem{}
+	for _, item := range kept {
+		if !failureOfSessionOnly(item, item.SessionID) {
+			continue
+		}
+		if current, seen := newest[item.SessionID]; !seen || parseStoredPendingTime(item.UpdatedAt).After(parseStoredPendingTime(current.UpdatedAt)) {
+			newest[item.SessionID] = item
+		}
+	}
+	for _, item := range newest {
+		s.supersedeSessionFailures(ctx, item.UserID, item.SessionID, item.Key)
 	}
 	for key, sources := range groups {
 		target := sources[len(sources)-1]

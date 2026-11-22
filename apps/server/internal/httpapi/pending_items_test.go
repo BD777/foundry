@@ -19,45 +19,25 @@ func toolEvent(id, sessionID, command, output string) store.AgentSessionEvent {
 	}
 }
 
-func TestNeedsHandsMatchesOnlyNarrowToolErrors(t *testing.T) {
-	workspace := "/home/person/project"
-	cases := []struct {
-		name, output, want string
-	}{
-		{"sudo password", "sudo: a password is required", "sudo"},
-		{"sudo terminal", "sudo: a terminal is required to read the password; either use the -S option", "sudo"},
-		{"gateway refusal", "Error: Foundry gateway: this profile lacks the im:message scope", "gateway"},
-		{"docker socket", "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock", "docker"},
-		{"expired token", `{"error": "token_expired", "missing": ["search:docs:read"]}`, "login"},
-		{"expired refresh", `"error_description": "The refresh token has expired."`, "login"},
-		{"remote 403", "urllib.error.HTTPError: HTTP Error 403: Forbidden", "http_auth"},
-		{"local 401", "curl -i http://127.0.0.1:8080/health\nHTTP/1.1 401 Unauthorized", ""},
-		{"outside EACCES", "Error: EACCES: permission denied, open '/etc/foundry/secret.json'", "permission"},
-		{"inside EACCES", "Error: EACCES: permission denied, open '/home/person/project/out/a.txt'", ""},
-		{"python outside", "PermissionError: [Errno 13] Permission denied: '/data/docker/volumes/x/_data/a.json'", "permission"},
-		{"relative path", "PermissionError: [Errno 13] Permission denied: 'logs/a.txt'", ""},
-		{"coreutils outside", "cat: /data/docker/volumes/x/_data/a.json: Permission denied", "permission"},
-		{"coreutils cannot open", "ls: cannot open directory '/root': Permission denied", "permission"},
-		{"coreutils inside", "cat: /home/person/project/a.txt: Permission denied", ""},
-		{"session gh guard", "gh auth refresh is not available in a Foundry session: the device's GitHub login is changed by the person in Foundry.", "github_scope"},
-		{"gh missing scope", "error: your authentication token is missing required scopes [read:packages]", "github_scope"},
-		{"git workflow scope", " ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)", "github_scope"},
-		{"failing test", "AssertionError: expected 2, got 3", ""},
-		{"404", "HTTP/1.1 404 Not Found", ""},
-	}
-	for _, c := range cases {
-		rule, line, excerpt := needsHands(c.output, workspace)
-		if rule != c.want {
-			t.Errorf("%s: rule = %q, want %q", c.name, rule, c.want)
-		}
-		if rule != "" && (excerpt == "" || !strings.Contains(c.output, line)) {
-			t.Errorf("%s: line %q, excerpt %q", c.name, line, excerpt)
+// A tool's output is never scanned for something the person must do: the
+// errors the old output rules matched make no item. Only the runtime's own
+// permission_denied event, a structured fact, does.
+func TestToolOutputMakesNoNeedsYouItem(t *testing.T) {
+	for _, output := range []string{
+		"sudo: a password is required",
+		"Error: Foundry gateway: this profile lacks the im:message scope",
+		`{"error": "token_expired", "missing": ["search:docs:read"]}`,
+		"Error: EACCES: permission denied, open '/etc/foundry/secret.json'",
+		"error: your authentication token is missing required scopes [read:packages]",
+	} {
+		if items := pendingItemsFromEvent(toolEvent("evt_tool", "sess", "run", output), true); len(items) != 0 {
+			t.Errorf("tool output %q made items %+v", output, items)
 		}
 	}
-	// A command that only mentions an error matches nothing: only the output is read.
-	event := toolEvent("evt_cmd", "sess", "grep -rn 'sudo: a password is required' src", "src/a.go:1: no match")
-	if items := pendingItemsFromEvent(event, workspace, true); len(items) != 0 {
-		t.Fatalf("a command mentioning an error made items %+v", items)
+	denied := store.AgentSessionEvent{ID: "evt_denied", SessionID: "sess", Label: store.ProcessLabelPermissionDenied, Detail: "Write to /etc/hosts was denied"}
+	items := pendingItemsFromEvent(denied, true)
+	if len(items) != 1 || items[0].Source != store.PendingSourceNeedsHands || items[0].Rule != "permission" || items[0].Title != "Write to /etc/hosts was denied" {
+		t.Fatalf("permission_denied items = %+v", items)
 	}
 }
 
@@ -148,9 +128,9 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 		t.Fatalf("question item = %+v", asked)
 	}
 
-	reactions.SessionEventRecorded(ctx, toolEvent("evt_sudo", sessionID, "sudo apt install jq", "sudo: a password is required"))
+	reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{ID: "evt_denied", SessionID: sessionID, Label: store.ProcessLabelPermissionDenied, Detail: "Write to /etc/hosts was denied"})
 	hands := f.item(store.PendingSourceNeedsHands)
-	if hands.Rule != "sudo" || hands.Context != "sudo apt install jq" || hands.Title != "sudo: a password is required" {
+	if hands.Rule != "permission" || hands.Title != "Write to /etc/hosts was denied" {
 		t.Fatalf("needs-hands item = %+v", hands)
 	}
 	list := f.list()
@@ -390,7 +370,7 @@ func TestApprovalKeepsWhatItAsksAbout(t *testing.T) {
 			{Title: "Which file?", Options: []string{"a.txt"}, Detail: "not kept"},
 		},
 	}}
-	items := pendingItemsFromEvent(event, "", false)
+	items := pendingItemsFromEvent(event, false)
 	if len(items) != 2 {
 		t.Fatalf("items = %+v, want the approval and the question", items)
 	}

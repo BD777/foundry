@@ -421,3 +421,77 @@ func hasFailureSession(values []string, want string) bool {
 	}
 	return false
 }
+
+// A session has one open failure: its newer failure supersedes the older
+// one, and the sweep brings rows recorded before that rule to one per session.
+func TestPendingTurnFailureOneOpenPerSession(t *testing.T) {
+	f := newPendingFixture(t)
+	ctx := context.Background()
+	failPendingTurn(f, "evt_once", "The requested model is unsupported", "other")
+	failPendingTurn(f, "evt_twice", "API Error: 503 no eligible upstream account", "provider_unavailable")
+	items := openFailureItems(t, f)
+	if len(items) != 1 || items[0].FailureCategory != store.PendingFailureProviderUnavailable {
+		t.Fatalf("open failures of one session = %+v, want only the newer", items)
+	}
+	superseded, err := pendingDB(f).ListPendingItems(ctx, f.session.CreatedByUserID, []string{store.PendingSuperseded}, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(superseded) != 1 || superseded[0].ResolutionDetail != "later_failure" {
+		t.Fatalf("superseded = %+v", superseded)
+	}
+
+	// Rows from before: two open items of the session under different keys.
+	older := store.PendingItem{
+		UserID: f.session.CreatedByUserID, WorkspaceID: f.session.WorkspaceID, SessionID: f.session.ID,
+		Source: store.PendingSourceTurnFailed, Key: "turn_failed:legacy:" + f.session.ID, Title: "Not logged in",
+		Excerpt: "Not logged in", FailureCategory: store.PendingFailureOther, FailureSessions: []string{f.session.ID},
+	}
+	if _, _, err := pendingDB(f).RecordPendingItem(ctx, older); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(openFailureItems(t, f)); got != 2 {
+		t.Fatalf("seeded open failures = %d, want 2", got)
+	}
+	f.server.maintainPendingTurnFailures(ctx)
+	if items := openFailureItems(t, f); len(items) != 1 || items[0].Key != older.Key {
+		t.Fatalf("after the sweep = %+v, want only the newest row", items)
+	}
+}
+
+// A failure waits for no one once its session is archived or deleted.
+func TestPendingTurnFailureClosesWhenSessionArchivedOrDeleted(t *testing.T) {
+	f := newPendingFixture(t)
+	ctx := context.Background()
+	failPendingTurn(f, "evt_archived", "The requested model is unsupported", "other")
+	gone := store.PendingItem{
+		UserID: f.session.CreatedByUserID, WorkspaceID: f.session.WorkspaceID, SessionID: "sess_deleted",
+		Source: store.PendingSourceTurnFailed, Key: "turn_failed:deleted", Title: "Not logged in", Excerpt: "Not logged in",
+		FailureCategory: store.PendingFailureOther, FailureSessions: []string{"sess_deleted"},
+	}
+	if _, _, err := pendingDB(f).RecordPendingItem(ctx, gone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pendingDB(f).FailAgentSession(ctx, f.session.ID, "The requested model is unsupported"); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := pendingDB(f).ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: f.session.WorkspaceID, ChatIDs: []string{f.session.ID}}, false)
+	if err != nil || len(archived.Archived) != 1 {
+		t.Fatalf("archive = %+v (%v)", archived, err)
+	}
+	f.server.maintainPendingTurnFailures(ctx)
+	if items := openFailureItems(t, f); len(items) != 0 {
+		t.Fatalf("failures of gone sessions stayed open: %+v", items)
+	}
+	done, err := pendingDB(f).ListPendingItems(ctx, f.session.CreatedByUserID, []string{store.PendingDone}, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := map[string]string{}
+	for _, item := range done {
+		details[item.SessionID] = item.ResolutionDetail
+	}
+	if details[f.session.ID] != "session_archived" || details["sess_deleted"] != "session_deleted" {
+		t.Fatalf("resolutions = %+v", details)
+	}
+}

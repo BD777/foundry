@@ -258,7 +258,7 @@ func TestPendingItemsHeldByTurnOnlyInThePersonsChat(t *testing.T) {
 		{"the person's chat", true, store.PendingRuleHeld},
 		{"a helper's question", false, ""},
 	} {
-		items := pendingItemsFromEvent(event, "", check.holdsTurn)
+		items := pendingItemsFromEvent(event, check.holdsTurn)
 		if len(items) != 1 || items[0].Rule != check.rule {
 			t.Errorf("%s: items %+v, want one item with rule %q", check.name, items, check.rule)
 		}

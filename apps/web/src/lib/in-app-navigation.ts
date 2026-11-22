@@ -197,6 +197,11 @@ export function navigateToItems(workspaceId: string, itemId?: string): void {
   );
 }
 
+/** A real link to one of the person's items, on the items page. */
+export function itemHref(itemId: string): string {
+  return pathForAppRoute({ view: "items", selectedItemId: itemId });
+}
+
 /** A real link to the Needs-you page, for opening it in a new tab. */
 export function pendingHref(): string {
   return pathForAppRoute({ view: "pending" });
