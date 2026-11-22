@@ -17,7 +17,7 @@ export const detailInset = "px-8 @max-[460px]/fdy-chat-detail:px-4";
 export const detailDocument = cn(
   "pt-7 pb-15 text-md leading-[1.65] text-ink",
   detailInset,
-  "max-[860px]:px-5",
+  "max-sidebar:px-5",
 );
 
 /** What stands in for a body that has nothing to show (a failure is an Alert). */

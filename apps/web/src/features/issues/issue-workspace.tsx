@@ -17,7 +17,7 @@ export function IssuesScreen({
   return (
     <section
       className={cn(
-        "flex h-full min-h-0 animate-page-fade flex-col overflow-hidden max-[860px]:h-auto max-[860px]:overflow-visible",
+        "flex h-full min-h-0 animate-page-fade flex-col overflow-hidden max-sidebar:h-auto max-sidebar:overflow-visible",
         className,
       )}
       {...props}
@@ -47,18 +47,18 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
   return (
     // Six columns rarely fit; a visible scrollbar shows there is more.
     <ScrollArea
-      className="box-border min-h-0 w-full flex-1 px-6 pt-4.5 pb-5.5 max-[860px]:max-w-full max-[860px]:overflow-visible max-[860px]:px-5.5 max-[860px]:pt-3.5 max-[860px]:pb-6"
+      className="box-border min-h-0 w-full flex-1 px-6 pt-4.5 pb-5.5 max-sidebar:max-w-full max-sidebar:overflow-visible max-sidebar:px-5.5 max-sidebar:pt-3.5 max-sidebar:pb-6"
       direction="both"
-      viewportClassName="max-[860px]:max-w-full"
+      viewportClassName="max-sidebar:max-w-full"
     >
-      <div className="flex h-full w-max min-w-full gap-3.5 max-[860px]:box-border max-[860px]:h-auto max-[860px]:w-full max-[860px]:max-w-full max-[860px]:min-w-0 max-[860px]:flex-col">
+      <div className="flex h-full w-max min-w-full gap-3.5 max-sidebar:box-border max-sidebar:h-auto max-sidebar:w-full max-sidebar:max-w-full max-sidebar:min-w-0 max-sidebar:flex-col">
         {columns.map((column) => {
           const cards = issues.filter(
             (issue) => issue.status === column.status,
           );
           return (
             <section
-              className="flex min-h-0 w-72 max-w-72 min-w-72 flex-none flex-col max-[860px]:w-full max-[860px]:max-w-full max-[860px]:min-w-0"
+              className="flex min-h-0 w-72 max-w-72 min-w-72 flex-none flex-col max-sidebar:w-full max-sidebar:max-w-full max-sidebar:min-w-0"
               key={column.status}
             >
               <header className="box-border flex min-w-0 flex-none items-center gap-2 px-1 pb-2.5">
@@ -83,11 +83,11 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
                   </Button>
                 </Tooltip>
               </header>
-              <ScrollArea className="min-h-0 flex-1 max-[860px]:flex-none">
+              <ScrollArea className="min-h-0 flex-1 max-sidebar:flex-none">
                 <div className="flex min-w-0 flex-col gap-2.25 px-1 pt-0.5 pb-2">
                   {cards.map((issue) => (
                     <div
-                      className="min-w-0 max-[860px]:box-border max-[860px]:max-w-full"
+                      className="min-w-0 max-sidebar:box-border max-sidebar:max-w-full"
                       key={issue.id}
                     >
                       {issue.content}
@@ -133,7 +133,7 @@ export function IssueListTable({ rows }: IssueListTableProps) {
   return (
     <div className="mx-auto mt-4.5 mb-10 w-[calc(100%-48px)] max-w-[1000px]">
       <Panel className="overflow-hidden">
-        <ScrollArea className="w-full max-[860px]:hidden">
+        <ScrollArea className="w-full max-sidebar:hidden">
           <div
             className={cn(
               listGrid,
@@ -175,7 +175,7 @@ export function IssueListTable({ rows }: IssueListTableProps) {
             </ActionRow>
           ))}
         </ScrollArea>
-        <div className="hidden w-full max-[860px]:block">
+        <div className="hidden w-full max-sidebar:block">
           {rows.map((row) => (
             <ActionRow
               className="relative box-border flex max-w-full flex-col items-stretch gap-2 border-line-soft bg-transparent px-3.5 py-3 first:border-t-0 hover:bg-surface"

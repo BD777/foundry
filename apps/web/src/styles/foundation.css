@@ -15,10 +15,17 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* The one layout breakpoint: from it up the shell has its sidebar (`sidebar:`),
+   below it the phone header (`max-sidebar:`). `static` keeps the variable in
+   the output, where lib/layout-breakpoint.ts reads it for matchMedia. */
+@theme static {
+  --breakpoint-sidebar: 861px;
+}
+
 /* Inside the collapsed sidebar rail (wide screens only; it sets
    `group/sidebar` and `data-collapsed`). */
 @custom-variant rail {
-  @media (width >= 861px) {
+  @media (width >= theme(--breakpoint-sidebar)) {
     &:is(:where(.group\/sidebar)[data-collapsed="true"] *) {
       @slot;
     }
@@ -451,7 +458,7 @@
     }
   }
 
-  @media (max-width: 860px) {
+  @media (width < theme(--breakpoint-sidebar)) {
     body {
       overflow: auto;
     }

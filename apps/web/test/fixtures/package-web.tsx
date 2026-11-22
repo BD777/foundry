@@ -209,7 +209,7 @@ function Fixture() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-canvas px-4 py-8 max-[860px]:px-0 max-[860px]:py-0">
+    <main className="min-h-screen bg-canvas px-4 py-8 max-sidebar:px-0 max-sidebar:py-0">
       {section === "library" ? (
         <SkillLibraryFeature
           canManage

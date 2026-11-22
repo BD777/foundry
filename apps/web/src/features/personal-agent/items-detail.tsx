@@ -449,7 +449,7 @@ function BackButton({
 }) {
   return (
     <Button
-      className="justify-self-start min-[861px]:hidden"
+      className="justify-self-start sidebar:hidden"
       onClick={onBack}
       size="sm"
       variant="ghost"

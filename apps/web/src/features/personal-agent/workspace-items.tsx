@@ -19,8 +19,14 @@ import { Subheading } from "../../components/ui/subheading";
 import { ownerLabel, stateLabel, workspaceLabel } from "./items-marks";
 import { usePersonalItems } from "./use-personal-items";
 
-/** The newest the overview shows; the count of the rest links to the items page. */
-const workspaceItemsLimit = 10;
+/** The rows the overview shows; the count of the rest links to the items page. */
+const shownRows = 10;
+/**
+ * The most one read asks for (the server's page limit). The overview picks
+ * its rows from these, so an item that lives here outranks newer ones that
+ * only touch it.
+ */
+const readLimit = 200;
 
 export interface WorkspaceItemsProps {
   workspaceId: string;
@@ -46,12 +52,16 @@ export function WorkspaceItems({
   const list = usePersonalItems(undefined, {
     view: "open",
     workspace: workspaceId,
-    limit: workspaceItemsLimit,
+    limit: readLimit,
   });
   const items = list.value?.items ?? [];
-  const home = items.filter((item) => item.homeWorkspaceId === workspaceId);
-  const touching = items.filter((item) => item.homeWorkspaceId !== workspaceId);
-  const more = (list.value?.total ?? 0) - items.length;
+  const home = items
+    .filter((item) => item.homeWorkspaceId === workspaceId)
+    .slice(0, shownRows);
+  const touching = items
+    .filter((item) => item.homeWorkspaceId !== workspaceId)
+    .slice(0, shownRows - home.length);
+  const more = (list.value?.total ?? 0) - home.length - touching.length;
   return (
     <Panel className="grid min-w-0 gap-4 p-5.5 max-[680px]:p-4">
       <PanelHeader>

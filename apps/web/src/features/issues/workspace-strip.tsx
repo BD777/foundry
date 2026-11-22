@@ -32,7 +32,7 @@ export function WorkspaceStrip({
   return (
     <div
       className={cn(
-        "box-border flex w-full min-w-0 flex-none flex-wrap items-center gap-2.5 px-6 pt-5 pb-3 max-[860px]:items-start max-[860px]:gap-y-2 max-[860px]:px-5.5 max-[860px]:pt-3.5 max-[860px]:pb-2.5",
+        "box-border flex w-full min-w-0 flex-none flex-wrap items-center gap-2.5 px-6 pt-5 pb-3 max-sidebar:items-start max-sidebar:gap-y-2 max-sidebar:px-5.5 max-sidebar:pt-3.5 max-sidebar:pb-2.5",
         className,
       )}
       {...props}
@@ -43,7 +43,7 @@ export function WorkspaceStrip({
         </IconBox>
         {workspaceName}
       </span>
-      <span className="inline-block max-w-[min(340px,100%)] truncate font-mono text-2xs leading-[1.3] font-medium text-ink-faint max-[860px]:max-w-full">
+      <span className="inline-block max-w-[min(340px,100%)] truncate font-mono text-2xs leading-[1.3] font-medium text-ink-faint max-sidebar:max-w-full">
         {localPath}
       </span>
       <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 truncate text-2xs leading-tight font-medium text-ink-muted">
@@ -78,7 +78,7 @@ export function WorkspaceStripControl<T extends string>({
   return (
     <SegmentedControl
       aria-label={ariaLabel ?? t("strip.viewLabel")}
-      className="ml-auto flex-none max-[860px]:ml-0 max-[860px]:max-w-full"
+      className="ml-auto flex-none max-sidebar:ml-0 max-sidebar:max-w-full"
       onValueChange={onValueChange}
       options={options}
       value={value}

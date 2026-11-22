@@ -19,7 +19,7 @@ export const factGridVariants = cva(
       /** "device": three columns and tighter cells on narrow screens. */
       layout: {
         auto: null,
-        device: "max-[860px]:mt-3 max-[860px]:grid-cols-3",
+        device: "max-sidebar:mt-3 max-sidebar:grid-cols-3",
       },
     },
     defaultVariants: {
@@ -37,7 +37,7 @@ const cellVariants = cva("min-w-0 bg-panel", {
     },
     layout: {
       auto: null,
-      device: "max-[860px]:px-[9px] max-[860px]:py-2",
+      device: "max-sidebar:px-[9px] max-sidebar:py-2",
     },
   },
   defaultVariants: { density: "md", layout: "auto" },
@@ -49,7 +49,7 @@ const labelVariants = cva(
     variants: {
       layout: {
         auto: null,
-        device: "max-[860px]:mb-1",
+        device: "max-sidebar:mb-1",
       },
     },
     defaultVariants: { layout: "auto" },
@@ -61,7 +61,7 @@ const valueVariants = cva("block min-w-0 font-semibold text-ink", {
     layout: {
       auto: "overflow-hidden text-sm leading-[1.3] text-ellipsis whitespace-nowrap",
       device:
-        "overflow-hidden text-sm leading-[1.3] text-ellipsis whitespace-nowrap max-[860px]:text-xs max-[860px]:leading-[1.2]",
+        "overflow-hidden text-sm leading-[1.3] text-ellipsis whitespace-nowrap max-sidebar:text-xs max-sidebar:leading-[1.2]",
     },
     mono: {
       false: null,
@@ -74,7 +74,7 @@ const valueVariants = cva("block min-w-0 font-semibold text-ink", {
       layout: "device",
       mono: true,
       className:
-        "[overflow-wrap:anywhere] whitespace-normal max-[860px]:text-2xs max-[860px]:leading-[1.2] max-[860px]:whitespace-nowrap max-[860px]:[overflow-wrap:normal]",
+        "[overflow-wrap:anywhere] whitespace-normal max-sidebar:text-2xs max-sidebar:leading-[1.2] max-sidebar:whitespace-nowrap max-sidebar:[overflow-wrap:normal]",
     },
   ],
 });

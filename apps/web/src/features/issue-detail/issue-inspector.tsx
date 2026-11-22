@@ -106,7 +106,7 @@ function PriorityStep({
 export function IssueInspector(props: IssueInspectorProps) {
   const { t } = useTranslation("issueDetail");
   return (
-    <aside className="box-border h-full w-79 min-w-0 flex-none overflow-y-auto border-l border-line bg-surface px-5 py-5.5 max-[860px]:h-auto max-[860px]:w-auto max-[860px]:max-w-full max-[860px]:overflow-visible max-[860px]:rounded-xl max-[860px]:border-t max-[860px]:border-l-0 max-[860px]:p-3.5 max-[860px]:shadow-card">
+    <aside className="box-border h-full w-79 min-w-0 flex-none overflow-y-auto border-l border-line bg-surface px-5 py-5.5 max-sidebar:h-auto max-sidebar:w-auto max-sidebar:max-w-full max-sidebar:overflow-visible max-sidebar:rounded-xl max-sidebar:border-t max-sidebar:border-l-0 max-sidebar:p-3.5 max-sidebar:shadow-card">
       <SectionLabel className="mb-2.75">{t("inspector.status")}</SectionLabel>
       <Badge
         className="max-w-full min-w-[150px] justify-start overflow-hidden text-ellipsis"

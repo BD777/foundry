@@ -9,8 +9,8 @@ const entryClass =
   "grid h-auto w-full grid-cols-[18px_minmax(0,1fr)_14px] items-center justify-start gap-2.5 rounded-sm px-3 py-1.5 text-left text-sm font-semibold text-ink hover:bg-control-ghost-hover focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-accent)]";
 /** The icon-only entry of a collapsed sidebar: a 40px square on wide screens. */
 const collapsedEntryClass =
-  "min-[861px]:mx-auto min-[861px]:min-h-10 min-[861px]:w-10 min-[861px]:grid-cols-[18px] min-[861px]:justify-center min-[861px]:p-0";
-const hiddenWhenCollapsed = "min-[861px]:hidden";
+  "sidebar:mx-auto sidebar:min-h-10 sidebar:w-10 sidebar:grid-cols-[18px] sidebar:justify-center sidebar:p-0";
+const hiddenWhenCollapsed = "sidebar:hidden";
 
 export interface SidebarContextEntryProps {
   /** The full text announced by assistive technology and the tooltip. */

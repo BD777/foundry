@@ -60,7 +60,7 @@ export const ChatListRow = memo(function ChatListRow({
               )}
               <span className="flex min-w-0 flex-1 flex-col gap-px">
                 <strong
-                  className="block truncate text-xs leading-[1.3] font-semibold text-ink max-[860px]:leading-tight"
+                  className="block truncate text-xs leading-[1.3] font-semibold text-ink max-sidebar:leading-tight"
                   title={chat.title}
                 >
                   {chat.title}

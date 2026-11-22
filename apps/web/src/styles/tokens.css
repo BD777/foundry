@@ -150,7 +150,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-@media (max-width: 860px) {
+@media (width < theme(--breakpoint-sidebar)) {
   :root {
     --fdy-chat-content-padding: 18px;
   }

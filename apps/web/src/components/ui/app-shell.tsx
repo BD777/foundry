@@ -25,6 +25,7 @@ import { StatusIndicator, type StatusItem } from "./status-indicator";
 import { ToastProvider, type ToastPlacement } from "./toast";
 import { Tooltip } from "./tooltip";
 import { FoundryThemeContext } from "./theme-context";
+import { narrowLayoutQuery } from "../../lib/layout-breakpoint";
 
 export type FoundryViewScrollMode = "contained" | "page";
 export type FoundryThemeMode = "light" | "dark";
@@ -44,13 +45,13 @@ export interface FoundryShellProps extends HTMLAttributes<HTMLElement> {
 /*
  * The shell's layout contract (audit-v3-layout-contract.mjs reads it from
  * here): the window never scrolls as a page; the shell fills the dynamic
- * viewport and each view decides how it scrolls. Under 861px the shell
+ * viewport and each view decides how it scrolls. Below the sidebar breakpoint the shell
  * stacks and the document scrolls a page view; a contained view (a chat), or
  * a page whose content is a full-height screen (viewFillClassName), holds
  * the viewport instead.
  */
 const shellClassName =
-  "fdy-foundry-shell group/shell flex h-dvh w-full overflow-hidden bg-paper max-[860px]:h-auto max-[860px]:min-h-dvh max-[860px]:flex-col max-[860px]:overflow-visible max-[860px]:data-[scroll-mode=contained]:h-dvh max-[860px]:data-[scroll-mode=contained]:min-h-0 max-[860px]:data-[scroll-mode=contained]:overflow-hidden max-[860px]:has-[.view-fill]:h-dvh max-[860px]:has-[.view-fill]:min-h-0 max-[860px]:has-[.view-fill]:overflow-hidden";
+  "fdy-foundry-shell group/shell flex h-dvh w-full overflow-hidden bg-paper max-sidebar:h-auto max-sidebar:min-h-dvh max-sidebar:flex-col max-sidebar:overflow-visible max-sidebar:data-[scroll-mode=contained]:h-dvh max-sidebar:data-[scroll-mode=contained]:min-h-0 max-sidebar:data-[scroll-mode=contained]:overflow-hidden max-sidebar:has-[.view-fill]:h-dvh max-sidebar:has-[.view-fill]:min-h-0 max-sidebar:has-[.view-fill]:overflow-hidden";
 
 export function FoundryShell({
   className,
@@ -81,7 +82,7 @@ export function FoundryMain({
   return (
     <section
       className={cn(
-        "fdy-main relative m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-sheet max-[860px]:m-0 max-[860px]:min-h-dvh max-[860px]:rounded-none max-[860px]:shadow-none max-[860px]:group-data-[scroll-mode=contained]/shell:min-h-0 max-[860px]:has-[.view-fill]:min-h-0",
+        "fdy-main relative m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-sheet max-sidebar:m-0 max-sidebar:min-h-dvh max-sidebar:rounded-none max-sidebar:shadow-none max-sidebar:group-data-[scroll-mode=contained]/shell:min-h-0 max-sidebar:has-[.view-fill]:min-h-0",
         className,
       )}
       {...props}
@@ -110,7 +111,7 @@ export function FoundryView({
   return (
     <div
       className={cn(
-        "fdy-view min-h-0 flex-1 overflow-hidden data-[scroll-mode=page]:overflow-x-hidden data-[scroll-mode=page]:overflow-y-auto data-[scroll-mode=page]:[scrollbar-gutter:stable] max-[860px]:data-[scroll-mode=page]:[scrollbar-gutter:auto] max-[860px]:has-[.view-fill]:flex max-[860px]:has-[.view-fill]:min-h-0",
+        "fdy-view min-h-0 flex-1 overflow-hidden data-[scroll-mode=page]:overflow-x-hidden data-[scroll-mode=page]:overflow-y-auto data-[scroll-mode=page]:[scrollbar-gutter:stable] max-sidebar:data-[scroll-mode=page]:[scrollbar-gutter:auto] max-sidebar:has-[.view-fill]:flex max-sidebar:has-[.view-fill]:min-h-0",
         className,
       )}
       data-foundry-scroll-reset="true"
@@ -206,7 +207,7 @@ export function FoundrySidebar<T extends string>({
   return (
     <>
       <aside
-        className="fdy-sidebar group/sidebar flex min-h-0 w-[262px] flex-none flex-col bg-canvas transition-[width] duration-150 ease-out-strong min-[861px]:data-[collapsed=true]:w-16 max-[860px]:hidden"
+        className="fdy-sidebar group/sidebar flex min-h-0 w-[262px] flex-none flex-col bg-canvas transition-[width] duration-150 ease-out-strong sidebar:data-[collapsed=true]:w-16 max-sidebar:hidden"
         data-collapsed={collapsed ? "true" : "false"}
       >
         <SidebarBrand
@@ -221,7 +222,7 @@ export function FoundrySidebar<T extends string>({
         {navigation(onNavSelect)}
       </aside>
 
-      <header className="fdy-mobile-bar sticky top-0 z-20 flex h-14 min-w-0 flex-none items-center gap-2 border-b border-line-strong bg-canvas px-3 min-[861px]:hidden">
+      <header className="fdy-mobile-bar sticky top-0 z-20 flex h-14 min-w-0 flex-none items-center gap-2 border-b border-line-strong bg-canvas px-3 sidebar:hidden">
         <Button
           aria-controls={narrowMenuId}
           aria-expanded={narrowMenuOpen}
@@ -357,7 +358,7 @@ function SidebarInterfaceControls({
       <Button
         aria-label={themeLabel}
         aria-pressed={theme === "dark"}
-        className={cn(brandButtonClass, "rail:size-8 max-[860px]:size-8")}
+        className={cn(brandButtonClass, "rail:size-8 max-sidebar:size-8")}
         onClick={onThemeToggle}
         size="icon"
         title={themeLabel}
@@ -407,7 +408,7 @@ export function SidebarNav<T extends string>({
     // Crossing the layout breakpoint reveals the current entry. A phone's
     // keyboard changes viewport height too; it must not pull the page back
     // to navigation while the person is editing its contents.
-    const layout = window.matchMedia("(max-width: 860px)");
+    const layout = window.matchMedia(narrowLayoutQuery());
     layout.addEventListener("change", revealActive);
     return () => layout.removeEventListener("change", revealActive);
   }, [activeItemId]);

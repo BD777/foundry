@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Toaster, toast as sonner } from "sonner";
 import { Button } from "./button";
 import { useFoundryTheme } from "./theme-context";
+import { narrowLayoutQuery } from "../../lib/layout-breakpoint";
 
 export type ToastTone = "success" | "info" | "warning" | "error";
 /**
@@ -100,13 +101,13 @@ export function useToast() {
   return toast;
 }
 
-const narrowQuery = "(max-width: 860px)";
 function subscribeNarrow(notify: () => void) {
-  const query = window.matchMedia?.(narrowQuery);
+  const query = window.matchMedia?.(narrowLayoutQuery());
   query?.addEventListener("change", notify);
   return () => query?.removeEventListener("change", notify);
 }
-const isNarrow = () => window.matchMedia?.(narrowQuery).matches ?? false;
+const isNarrow = () =>
+  window.matchMedia?.(narrowLayoutQuery()).matches ?? false;
 
 const safeTop = "max(8px, env(safe-area-inset-top))";
 const safeBottom = "max(16px, env(safe-area-inset-bottom))";

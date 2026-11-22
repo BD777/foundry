@@ -41,7 +41,7 @@ const lastSectionSpacing = "mb-5.5 last:mb-0";
 
 /** A square icon button of the device panel: a hairline outline, no fill. */
 const deviceActionButton =
-  "size-[30px] rounded-sm border border-line bg-panel text-ink-faint hover:border-line-strong hover:bg-panel-soft max-[860px]:size-7";
+  "size-[30px] rounded-sm border border-line bg-panel text-ink-faint hover:border-line-strong hover:bg-panel-soft max-sidebar:size-7";
 
 export type AssetsFeatureEvent =
   { type: "device.logs.requested" } | { type: "data.refresh.requested" };

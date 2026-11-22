@@ -15,7 +15,7 @@ export function ChatScreen({
   return (
     <section
       className={cn(
-        "fdy-chat-screen flex h-full animate-chat-screen-in flex-col data-[list-resizing=true]:cursor-col-resize data-[list-resizing=true]:select-none max-[860px]:min-h-0",
+        "fdy-chat-screen flex h-full animate-chat-screen-in flex-col data-[list-resizing=true]:cursor-col-resize data-[list-resizing=true]:select-none max-sidebar:min-h-0",
         className,
       )}
       {...props}
@@ -45,7 +45,7 @@ export function ConversationHeader({
   return (
     <header
       className={cn(
-        "fdy-chat-thread-header flex flex-none items-center gap-2.5 border-b border-line px-[22px] py-[13px] max-[860px]:px-[18px]",
+        "fdy-chat-thread-header flex flex-none items-center gap-2.5 border-b border-line px-[22px] py-[13px] max-sidebar:px-[18px]",
         className,
       )}
       {...props}
@@ -63,7 +63,7 @@ export function ChatThreadTitle({
 }) {
   return (
     <div className="fdy-chat-thread-title min-w-0 flex-1">
-      <strong className="block truncate text-md leading-[1.3] font-semibold text-ink max-[860px]:leading-tight">
+      <strong className="block truncate text-md leading-[1.3] font-semibold text-ink max-sidebar:leading-tight">
         {title}
       </strong>
       {caption ? (

@@ -13,13 +13,15 @@ import { Tooltip } from "./tooltip";
  * button's cursor and its icon and label children are part of its variants.
  */
 const filledShadow = "shadow-(--fdy-shadow-accent)";
+/** The button's focus ring; a disabled button's reason wrapper wears it too. */
+const focusRing =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(color:--fdy-accent)";
 
 export const buttonVariants = cva(
   `fdy-button relative inline-flex max-w-full shrink-0 items-center justify-center
    gap-2 select-none whitespace-nowrap rounded-full font-medium leading-none
    transition-[transform,background-color,color,opacity,box-shadow]
-   duration-150 ease-out-strong active:scale-[0.96] focus-visible:outline-2
-   focus-visible:outline-offset-2 focus-visible:outline-(color:--fdy-accent)
+   duration-150 ease-out-strong active:scale-[0.96] ${focusRing}
    disabled:pointer-events-none disabled:opacity-50
    aria-disabled:pointer-events-none aria-disabled:opacity-50
    data-[busy=true]:cursor-progress [&_svg]:shrink-0 [&>span]:min-w-0`,
@@ -133,7 +135,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     if (!disabled || !disabledReason) return button;
     return (
       <Tooltip content={disabledReason} variant="hint">
-        <span className="inline-flex max-w-full" tabIndex={0}>
+        <span
+          className={cn("inline-flex max-w-full rounded-full", focusRing)}
+          tabIndex={0}
+        >
           {button}
         </span>
       </Tooltip>

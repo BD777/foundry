@@ -149,7 +149,7 @@ function SubagentDetail({
     <div
       className={cn(
         "w-full min-w-0 pt-6 pb-[54px]",
-        "px-[clamp(20px,5cqi,34px)] @max-[460px]/fdy-chat-detail:px-4 max-[860px]:px-5",
+        "px-[clamp(20px,5cqi,34px)] @max-[460px]/fdy-chat-detail:px-4 max-sidebar:px-5",
       )}
     >
       {transcript.usage ? (

@@ -282,7 +282,7 @@ function IssueDetail({
   return (
     <ChatScreen
       className={cn(
-        "min-h-0 overflow-hidden max-[860px]:flex-1",
+        "min-h-0 overflow-hidden max-sidebar:flex-1",
         viewFillClassName,
       )}
     >

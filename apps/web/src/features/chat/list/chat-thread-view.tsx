@@ -275,7 +275,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   const { sidebarRef, resizerRef, resizeHandlers } = useChatListResize();
   return (
     <aside
-      className="relative flex min-h-0 w-[var(--fdy-chat-list-width,270px)] flex-none flex-col border-r border-line-strong bg-list-panel max-[860px]:min-h-0 max-[860px]:w-full max-[860px]:flex-1 max-[860px]:border-r-0 max-[860px]:group-data-[narrow-pane=thread]/chat:hidden"
+      className="relative flex min-h-0 w-[var(--fdy-chat-list-width,270px)] flex-none flex-col border-r border-line-strong bg-list-panel max-sidebar:min-h-0 max-sidebar:w-full max-sidebar:flex-1 max-sidebar:border-r-0 max-sidebar:group-data-[narrow-pane=thread]/chat:hidden"
       id={listId}
       ref={sidebarRef}
     >
@@ -575,7 +575,7 @@ export const ChatSidebar = memo(function ChatSidebar({
           aria-valuemin={CHAT_LIST_MIN_WIDTH}
           aria-valuemax={CHAT_LIST_MAX_WIDTH}
           aria-valuenow={CHAT_LIST_DEFAULT_WIDTH}
-          className="absolute top-0 -right-1 bottom-0 z-9 w-2 cursor-col-resize touch-none outline-none before:absolute before:top-0 before:bottom-0 before:left-[3px] before:w-0.5 before:bg-transparent before:content-[''] hover:before:bg-info-text focus-visible:before:bg-info-text data-[active=true]:before:bg-info-text max-[860px]:hidden"
+          className="absolute top-0 -right-1 bottom-0 z-9 w-2 cursor-col-resize touch-none outline-none before:absolute before:top-0 before:bottom-0 before:left-[3px] before:w-0.5 before:bg-transparent before:content-[''] hover:before:bg-info-text focus-visible:before:bg-info-text data-[active=true]:before:bg-info-text max-sidebar:hidden"
           ref={resizerRef}
           role="separator"
           tabIndex={0}

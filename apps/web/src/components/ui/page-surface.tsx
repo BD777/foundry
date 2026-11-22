@@ -41,7 +41,7 @@ export function PageSurface({
         embedded
           ? "fdy-page-embedded grid min-w-0 grid-cols-[minmax(0,1fr)] gap-(--fdy-page-gap)"
           : [
-              "fdy-page-surface mx-auto flex min-h-full w-full max-w-(--fdy-page-width) min-w-0 animate-page-fade flex-col gap-(--fdy-page-gap) overflow-visible px-8 pt-7 pb-14 max-[860px]:px-4 max-[860px]:pt-5 max-[860px]:pb-10 [&>*]:shrink-0",
+              "fdy-page-surface mx-auto flex min-h-full w-full max-w-(--fdy-page-width) min-w-0 animate-page-fade flex-col gap-(--fdy-page-gap) overflow-visible px-8 pt-7 pb-14 max-sidebar:px-4 max-sidebar:pt-5 max-sidebar:pb-10 [&>*]:shrink-0",
               `fdy-page-surface-${variant}`,
               variant === "accounts" && "max-w-(--fdy-page-width-narrow)",
             ],

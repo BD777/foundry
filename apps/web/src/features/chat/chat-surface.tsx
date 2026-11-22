@@ -172,7 +172,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   return (
     <ChatScreen className="group/chat" data-narrow-pane={narrowPane}>
       <ChatArchiveFeedback archiveToast={props.archiveToast} />
-      <div className="flex min-h-0 min-w-0 flex-1 data-[list-resizing=true]:cursor-col-resize data-[list-resizing=true]:select-none max-[860px]:flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 data-[list-resizing=true]:cursor-col-resize data-[list-resizing=true]:select-none max-sidebar:flex-col">
         <ChatSidebar
           onChatsDeleted={handleChatsDeleted}
           archiveCount={props.archiveCount}
@@ -191,7 +191,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           channelWorkspace={props.channelWorkspace}
         />
 
-        <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
+        <ChatThread className="max-sidebar:group-data-[narrow-pane=list]/chat:hidden">
           <ChatThreadHeader
             goal={contextCard?.goal}
             hiddenTurns={hiddenTurns}

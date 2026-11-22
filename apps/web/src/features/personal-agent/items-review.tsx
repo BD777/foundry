@@ -112,7 +112,7 @@ export function ItemsReview({
   return (
     <section
       aria-labelledby="fdy-items-review-title"
-      className="grid grid-cols-[minmax(0,1fr)] content-start gap-5 px-5.5 py-4.5 max-[860px]:px-4"
+      className="grid grid-cols-[minmax(0,1fr)] content-start gap-5 px-5.5 py-4.5 max-sidebar:px-4"
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button onClick={onBack} size="sm" variant="ghost">

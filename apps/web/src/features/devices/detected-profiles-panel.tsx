@@ -76,7 +76,7 @@ export function DetectedProfilesPanel({
 
             return (
               <div
-                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 rounded-lg bg-panel-soft p-3 max-[860px]:grid-cols-[minmax(0,1fr)] max-[860px]:items-start"
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 rounded-lg bg-panel-soft p-3 max-sidebar:grid-cols-[minmax(0,1fr)] max-sidebar:items-start"
                 key={profile.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -113,7 +113,7 @@ export function DetectedProfilesPanel({
                 ) : blockReason ? (
                   <p className={detectedReasonClass}>{blockReason}</p>
                 ) : (
-                  <div className="col-span-full flex items-start justify-between gap-3 border-t border-dashed border-line-soft pt-2.5 max-[860px]:flex-col">
+                  <div className="col-span-full flex items-start justify-between gap-3 border-t border-dashed border-line-soft pt-2.5 max-sidebar:flex-col">
                     <span className="min-w-0 text-2xs leading-[1.45] font-semibold text-ink-muted">
                       {profile.serverCredential
                         ? t("detected.serverHasCredential")

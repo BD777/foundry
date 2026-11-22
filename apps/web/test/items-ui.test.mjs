@@ -656,6 +656,43 @@ test("a workspace lists its open items: those living here apart from those touch
   await page.unmount();
 });
 
+test("the overview's ten rows go first to items living here, the rest to those touching it", async () => {
+  calls.length = 0;
+  // Newest first: twelve touching items, then four living here.
+  const touchingItems = Array.from({ length: 12 }, (_, index) =>
+    item(`touch${index}`, {
+      text: `touching ${index}`,
+      homeWorkspaceId: "ws_docs",
+      touches: ["ws_home"],
+    }),
+  );
+  const homeItems = Array.from({ length: 4 }, (_, index) =>
+    item(`home${index}`, { text: `home ${index}`, homeWorkspaceId: "ws_home" }),
+  );
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/personal-agent/items"
+      ? { items: [...touchingItems, ...homeItems], total: 16, offset: 0 }
+      : undefined;
+  const page = await mount(WorkspaceItems, {
+    workspaceId: "ws_home",
+    workspaces,
+    onOpenItem() {},
+    onOpenAll() {},
+  });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const [here, touching] = page.container.querySelectorAll("section");
+  assert.equal(here.querySelectorAll("button").length, 4, "every item here");
+  assert.equal(
+    touching.querySelectorAll("button").length,
+    6,
+    "the rest of ten",
+  );
+  assert.match(touching.textContent, /touching 0/);
+  assert.doesNotMatch(touching.textContent, /touching 6/);
+  assert.match(page.container.textContent, /6 more on the items page/);
+  await page.unmount();
+});
+
 test("the items page filters by workspace or the inbox: read from the URL once, written back on change", async () => {
   calls.length = 0;
   answer = (method, url) =>

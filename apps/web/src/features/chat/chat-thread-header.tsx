@@ -46,7 +46,7 @@ export function ChatThreadHeader({
   return (
     <ConversationHeader>
       <Button
-        className="hidden flex-none pl-1 max-[860px]:inline-flex"
+        className="hidden flex-none pl-1 max-sidebar:inline-flex"
         onClick={onBack}
         size="sm"
         variant="ghost"

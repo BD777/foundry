@@ -62,7 +62,7 @@ export function RulesSection({
       <DividedList density="cozy">
         {personalAgentActions.map((action) => (
           <li
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 max-[860px]:grid-cols-[minmax(0,1fr)]"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 max-sidebar:grid-cols-[minmax(0,1fr)]"
             key={action}
           >
             <span
