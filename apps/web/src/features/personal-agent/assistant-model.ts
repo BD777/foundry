@@ -138,6 +138,14 @@ export type LimitKey = "stuckAfterMinutes";
 
 export const extraInstructionsMaxChars = 2000;
 export const responsibilityMaxChars = 300;
+
+/**
+ * The length the Server checks against ResponsibilityMaxChars: trimmed, in
+ * characters (code points, Go runes), not UTF-16 units.
+ */
+export function responsibilityLength(text: string): number {
+  return [...text.trim()].length;
+}
 export const memoryItemMaxChars = 300;
 
 const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -176,7 +184,7 @@ export function settingsProblems(
     problems.push({ kind: "executionModels" });
   if (settings.extraInstructions.length > extraInstructionsMaxChars)
     problems.push({ kind: "extraInstructions" });
-  if (settings.responsibility.length > responsibilityMaxChars)
+  if (responsibilityLength(settings.responsibility) > responsibilityMaxChars)
     problems.push({ kind: "responsibility" });
   if (!clockPattern.test(settings.dailyDigestTime))
     problems.push({ kind: "time", field: "dailyDigestTime" });

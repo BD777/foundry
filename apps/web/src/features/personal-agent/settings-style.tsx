@@ -10,6 +10,7 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import {
   browserTimezone,
   extraInstructionsMaxChars,
+  responsibilityLength,
   responsibilityMaxChars,
 } from "./assistant-model";
 import {
@@ -62,13 +63,14 @@ export function StyleSection({
               <span
                 className="data-[over=true]:font-semibold data-[over=true]:text-error-text"
                 data-over={
-                  draft.responsibility.length > responsibilityMaxChars
+                  responsibilityLength(draft.responsibility) >
+                  responsibilityMaxChars
                     ? "true"
                     : undefined
                 }
               >
                 {t("settings.style.responsibilityCount", {
-                  count: draft.responsibility.length,
+                  count: responsibilityLength(draft.responsibility),
                 })}
               </span>
             </>

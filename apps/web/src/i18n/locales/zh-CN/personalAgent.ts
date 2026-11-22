@@ -736,7 +736,7 @@ export const personalAgent: Translation<typeof en> = {
     },
     hints: {
       status: "正在做什么，以及它住在哪里",
-      style: "称呼、说话方式与语言",
+      style: "称呼、它管什么、说话方式与语言",
       memory: "它了解你的哪些事情",
       rules: "哪些事情可以先做、哪些先问你",
       places: "可以使用哪些电脑和项目",

@@ -803,7 +803,7 @@ export const personalAgent = {
     },
     hints: {
       status: "What it is doing and where it lives",
-      style: "Its name, voice, and language",
+      style: "Its name, what it is in charge of, voice, and language",
       memory: "What it knows about you",
       rules: "What it can do without asking",
       places: "Which computers and projects it can use",

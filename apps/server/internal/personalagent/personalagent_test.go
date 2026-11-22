@@ -65,6 +65,12 @@ func TestNormalizeSettingsRefusesInvalidSettings(t *testing.T) {
 	if kept, err = NormalizeSettings(kept, owned, "dev_a"); err != nil || kept.Responsibility != "公司的事" {
 		t.Fatalf("responsibility = %q (%v), want it kept, trimmed", kept.Responsibility, err)
 	}
+	// Counted in characters like the settings page: an emoji is one.
+	atLimit := DefaultSettings()
+	atLimit.Responsibility = " " + strings.Repeat("家", ResponsibilityMaxChars-1) + "🏠 "
+	if _, err := NormalizeSettings(atLimit, owned, "dev_a"); err != nil {
+		t.Fatalf("a responsibility of %d characters with an emoji was refused: %v", ResponsibilityMaxChars, err)
+	}
 	if len(settings.Devices) != 2 || !settings.Devices[0].AllowCreate || settings.Devices[1].AllowCreate || !settings.Devices[1].AllowWork {
 		t.Fatalf("devices = %+v, want work everywhere and create only at home", settings.Devices)
 	}
