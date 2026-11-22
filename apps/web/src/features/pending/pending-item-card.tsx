@@ -420,6 +420,7 @@ export function PendingItemCard({
         >
           {title}
         </strong>
+        <PendingItemRef item={item} />
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
             <>
@@ -429,7 +430,6 @@ export function PendingItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
-          <PendingItemRef item={item} />
           <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
           <span aria-hidden="true">·</span>
           <time
@@ -688,6 +688,7 @@ function NoticeItemCard({
         >
           {note}
         </p>
+        <PendingItemRef item={item} />
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
             <>
@@ -697,7 +698,6 @@ function NoticeItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
-          <PendingItemRef item={item} />
           <span className="text-ink-muted">{t("source.notice")}</span>
           <span aria-hidden="true">·</span>
           <time
@@ -822,6 +822,7 @@ function InboxItemCard({
             {reason}
           </span>
         </p>
+        <PendingItemRef item={item} />
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
             <>
@@ -831,7 +832,6 @@ function InboxItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
-          <PendingItemRef item={item} />
           <time
             className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : when}

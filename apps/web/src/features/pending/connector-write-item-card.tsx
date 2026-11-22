@@ -151,6 +151,7 @@ export function ConnectorWriteItemCard({
             </pre>
           </Disclosure>
         ) : null}
+        <PendingItemRef item={item} />
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
           <span className="text-ink-muted">{from}</span>
           <span aria-hidden="true">·</span>
@@ -162,7 +163,6 @@ export function ConnectorWriteItemCard({
               <span aria-hidden="true">·</span>
             </>
           ) : null}
-          <PendingItemRef item={item} />
           <time
             className="tabular-nums"
             dateTime={
