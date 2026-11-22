@@ -278,7 +278,13 @@ type AgentSessionEventMetadata struct {
 	SubagentType   string                 `json:"subagentType,omitempty"`
 	TaskID         string                 `json:"taskId,omitempty"`
 	TaskType       string                 `json:"taskType,omitempty"`
-	ToolUseID      string                 `json:"toolUseId,omitempty"`
+
+	// TaskStatus `taskStatus` is how a Claude task ended, on its end: the status of the SDK's task_notification. Its label says failed for a stopped task too.
+	TaskStatus string `json:"taskStatus,omitempty"`
+
+	// ExitCode `exitCode` is how a Claude background command exited, on its end (the SDK's task_notification).
+	ExitCode  *int64 `json:"exitCode,omitempty"`
+	ToolUseID string `json:"toolUseId,omitempty"`
 
 	// TimerSnapshot Snapshots replace earlier ones, so an empty one is kept: it says the last timer or task is gone.
 	TimerSnapshot *[]AgentScheduledTask `json:"timerSnapshot,omitempty"`

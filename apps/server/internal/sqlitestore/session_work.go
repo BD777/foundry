@@ -364,7 +364,10 @@ func mergeSavedWork(raw string, evidence store.SessionWork) (store.SessionWork, 
 		return item, false, err
 	}
 	changed := confirmNativeWorkHistory(&item, evidence)
-	if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && (workObservationBefore(item.Observation.At, evidence.Observation.At) || (item.Observation.Status == "unknown" && sameWorkInstant(item.Observation.EndedAt, evidence.Observation.EndedAt))) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
+	// A one-shot native task ends once. The transcript's end replaces what
+	// was observed before it was known (running, or unknown once its device
+	// no longer saw it), whenever that was observed, and never an end.
+	if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && !terminalWorkStatus(item.Observation.Status) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
 		item.Observation = evidence.Observation
 		item.Observation.ConfirmedRevision = item.Revision
 		changed = true
@@ -643,12 +646,6 @@ func workObservationBefore(a, b string) bool {
 	x, xe := time.Parse(time.RFC3339Nano, a)
 	y, ye := time.Parse(time.RFC3339Nano, b)
 	return xe == nil && ye == nil && x.Before(y)
-}
-
-func sameWorkInstant(a, b string) bool {
-	x, xe := time.Parse(time.RFC3339Nano, a)
-	y, ye := time.Parse(time.RFC3339Nano, b)
-	return xe == nil && ye == nil && x.Equal(y)
 }
 
 func terminalWorkStatus(status string) bool {

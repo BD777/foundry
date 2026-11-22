@@ -40,10 +40,16 @@ func Timer(session store.AgentSession, timer store.SessionKeptTimer) store.Sessi
 	return w
 }
 
-// FromEvents normalizes the latest background inventory and native subagents;
-// callers insert only missing identities, never overwrite a control with it.
+// FromEvents normalizes the latest background inventory, native subagents
+// and the ends of tasks; callers insert only missing identities, never
+// overwrite a control with it. How a task ended is, first, what the inventory
+// says; then its lifecycle end, which also covers a task the inventory no
+// longer lists (it keeps only the most recent finished ones).
 func FromEvents(session store.AgentSession) []store.SessionWork {
 	items := map[string]store.SessionWork{}
+	// Tasks whose outcome the inventory names; their lifecycle end only adds
+	// what the inventory lacks.
+	inventoried := map[string]bool{}
 	now := time.Now().UTC()
 	for _, e := range session.Events {
 		m := e.Metadata
@@ -57,30 +63,32 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 					kind = "agent"
 				}
 				known, exists := items[task.ID]
+				knownEnd := exists && terminalWorkStatus(known.Observation.Status)
 				w := Base(session, kind, "claude", task.ID, task.Description)
 				w.CreatedAt = task.StartedAt
 				w.Native = NativeInfo(session, task.ID, "transcript task lifecycle")
 				w.Management = "observed"
 				w.AllowedActions = []string{}
 				w.Spec.NativeSessionID = session.NativeSessionID
-				status := task.Status
-				if status == "ended" {
-					// "ended" means the task's outcome was not reported. An
-					// ending task is history, not a live unknown, and a
-					// lifecycle completion that already named its outcome wins.
-					if exists && terminalWorkStatus(known.Observation.Status) {
-						status = known.Observation.Status
-					} else {
-						status = "stopped"
+				status, endedAt, exitCode, at := task.Status, task.EndedAt, task.ExitCode, e.At
+				switch {
+				// "ended" means the task's outcome was not reported: a
+				// lifecycle end that named it wins, with its time.
+				case status == "ended" && knownEnd:
+					status, endedAt, at = known.Observation.Status, firstNonEmpty(known.Observation.EndedAt, endedAt), known.Observation.At
+					if exitCode == nil {
+						exitCode = known.Observation.ExitCode
+					}
+				// An ending task is history, not a live unknown.
+				case status == "ended":
+					status = "stopped"
+				case knownEnd:
+					endedAt = firstNonEmpty(endedAt, known.Observation.EndedAt)
+					if exitCode == nil {
+						exitCode = known.Observation.ExitCode
 					}
 				}
-				endedAt := task.EndedAt
-				at := e.At
-				if exists && terminalWorkStatus(known.Observation.Status) {
-					status = known.Observation.Status
-					endedAt = firstNonEmpty(endedAt, known.Observation.EndedAt)
-					at = known.Observation.At
-				}
+				inventoried[task.ID] = terminalWorkStatus(task.Status)
 				if terminalWorkStatus(status) && endedAt != "" {
 					// The task's end is the observation time. A later
 					// inventory read does not move a finished task forward.
@@ -88,7 +96,7 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				}
 				w.Observation = store.WorkObservation{
 					Status: status, At: boundedObservationAt(at, now),
-					StartedAt: task.StartedAt, EndedAt: endedAt, ExitCode: task.ExitCode,
+					StartedAt: task.StartedAt, EndedAt: endedAt, ExitCode: exitCode,
 				}
 				items[task.ID] = w
 			}
@@ -106,21 +114,51 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				items[m.TaskID] = w
 			}
 		}
-		if w, ok := items[m.TaskID]; ok && (phase == store.SubtaskCompleted || phase == store.SubtaskFailed) {
-			w.Observation.Status = "completed"
-			if e.Level == "error" || phase == store.SubtaskFailed {
-				w.Observation.Status = "failed"
+		if phase != store.SubtaskCompleted && phase != store.SubtaskFailed {
+			continue
+		}
+		w, ok := items[m.TaskID]
+		if !ok {
+			kind := "process"
+			if m.TaskType == store.SubagentTaskType {
+				kind = "agent"
 			}
+			w = Base(session, kind, "claude", m.TaskID, e.Detail)
+			w.Native = NativeInfo(session, m.TaskID, "transcript task lifecycle")
+			w.Management = "observed"
+			w.AllowedActions = []string{}
+			w.Spec.NativeSessionID = session.NativeSessionID
+		}
+		if w.Observation.ExitCode == nil {
+			w.Observation.ExitCode = m.ExitCode
+		}
+		if inventoried[m.TaskID] {
+			w.Observation.EndedAt = firstNonEmpty(w.Observation.EndedAt, e.At)
+		} else {
+			w.Observation.Status = taskEndStatus(e, phase)
 			w.Observation.EndedAt = e.At
 			w.Observation.At = boundedObservationAt(e.At, now)
-			items[m.TaskID] = w
 		}
+		items[m.TaskID] = w
 	}
 	result := make([]store.SessionWork, 0, len(items))
 	for _, w := range items {
 		result = append(result, w)
 	}
 	return result
+}
+
+// taskEndStatus is how a task's lifecycle end says it ended: the native
+// status when the device reported it; before that, a stopped task's end came
+// as a failure.
+func taskEndStatus(e store.AgentSessionEvent, phase store.SubtaskPhase) string {
+	if terminalWorkStatus(e.Metadata.TaskStatus) {
+		return e.Metadata.TaskStatus
+	}
+	if e.Level == "error" || phase == store.SubtaskFailed {
+		return "failed"
+	}
+	return "completed"
 }
 
 func terminalWorkStatus(status string) bool {

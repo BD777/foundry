@@ -118,13 +118,6 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 		if strings.HasPrefix(key, store.SessionStateInput) {
 			inputs[row.rowID] = true
 		}
-		// Background commands report progress and ends as subagents do;
-		// a task counts only under its subagent's start.
-		if taskID, ok := strings.CutPrefix(key, store.SessionStateTask); ok {
-			if _, subagent := chosen[store.SessionStateSubagent+taskID]; !subagent {
-				continue
-			}
-		}
 		rowIDs = append(rowIDs, row.rowID)
 	}
 	type eventRow struct {

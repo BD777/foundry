@@ -16,9 +16,10 @@ type SessionStateStore interface {
 	// AgentSessionStateEvents returns, among the session's events before
 	// the cursor a window returned (every event without one), one event
 	// per state key (see SessionStateKey), oldest first: the newest where
-	// SessionStateLatest, else the first. A task's progress and end count
-	// only for a subagent whose start is among them. An input comes
-	// without its message (SessionStateInput). A cursor it cannot read is
+	// SessionStateLatest, else the first. A background command's end counts
+	// as a subagent's does: the inventory keeps only the most recent
+	// finished tasks, so it is how the command ended once the inventory
+	// dropped it. An input comes without its message (SessionStateInput). A cursor it cannot read is
 	// ErrInvalidEventsCursor.
 	AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]AgentSessionEvent, error)
 	SessionFrameStore

@@ -57,3 +57,39 @@ func TestRunningObservationTimeCannotBeInTheFuture(t *testing.T) {
 		t.Fatalf("future observation persisted: %q, %v", items[0].Observation.At, err)
 	}
 }
+
+// The inventory's outcome wins over the lifecycle end, which says failed for
+// a stopped task, in either order; the end still fills what it lacks.
+func TestInventoryOutcomeWinsOverTheLifecycleEnd(t *testing.T) {
+	stopped := []store.AgentBackgroundTask{{ID: "bstop", Kind: "command", Description: "Benchmark", Status: "stopped", StartedAt: "2026-11-20T00:00:00Z", EndedAt: "2026-11-20T00:01:00Z"}}
+	snapshot := store.AgentSessionEvent{Label: store.ProcessLabelBackgroundTasksSync, At: "2026-11-20T00:01:00Z", Metadata: &store.AgentSessionEventMetadata{BackgroundTaskSnapshot: &stopped}}
+	code := int64(143)
+	end := store.AgentSessionEvent{Label: store.ProcessLabelSubtaskFailed, Level: "error", At: "2026-11-20T00:01:00.003Z", Metadata: &store.AgentSessionEventMetadata{TaskID: "bstop", ExitCode: &code}}
+	for _, events := range [][]store.AgentSessionEvent{{snapshot, end}, {end, snapshot}} {
+		items := FromEvents(store.AgentSession{ID: "session", Provider: "claude", Events: events})
+		if len(items) != 1 || items[0].Observation.Status != "stopped" || items[0].Observation.EndedAt != "2026-11-20T00:01:00Z" || items[0].Observation.ExitCode == nil || *items[0].Observation.ExitCode != 143 {
+			t.Fatalf("%s first: %+v", events[0].Label, items)
+		}
+	}
+}
+
+// A background command the inventory no longer lists ends as its lifecycle
+// end reports: the native status, at its time, with its exit code.
+func TestLifecycleEndOfACommandTheInventoryDropped(t *testing.T) {
+	code := int64(0)
+	items := FromEvents(store.AgentSession{ID: "session", Provider: "claude", NativeSessionID: "native", Events: []store.AgentSessionEvent{
+		{Label: store.ProcessLabelSubtaskFailed, Level: "error", Detail: "Benchmark", At: "2026-11-20T00:01:00Z", Metadata: &store.AgentSessionEventMetadata{TaskID: "bstop", TaskStatus: "stopped"}},
+		{Label: store.ProcessLabelSubtaskCompleted, Detail: `Background command "Build" completed (exit code 0)`, At: "2026-11-20T00:02:00Z", Metadata: &store.AgentSessionEventMetadata{TaskID: "bdone", TaskStatus: "completed", ExitCode: &code}},
+		{Label: store.ProcessLabelBackgroundTasksSync, At: "2026-11-20T00:03:00Z", Metadata: &store.AgentSessionEventMetadata{BackgroundTaskSnapshot: &[]store.AgentBackgroundTask{}}},
+	}})
+	byID := map[string]store.SessionWork{}
+	for _, item := range items {
+		byID[item.SourceID] = item
+	}
+	if w := byID["bstop"]; len(items) != 2 || w.Kind != "process" || w.Observation.Status != "stopped" || w.Observation.EndedAt != "2026-11-20T00:01:00Z" || w.Native == nil || w.Spec.NativeSessionID != "native" {
+		t.Fatalf("stopped command: %+v", items)
+	}
+	if w := byID["bdone"]; w.Observation.Status != "completed" || w.Observation.ExitCode == nil || *w.Observation.ExitCode != 0 || w.Observation.At != "2026-11-20T00:02:00Z" {
+		t.Fatalf("completed command: %+v", w)
+	}
+}

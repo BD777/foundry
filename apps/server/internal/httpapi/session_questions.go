@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
@@ -199,25 +198,11 @@ func (s *Server) relayedQuestionText(child store.AgentSession, target assistant.
 // answer, if any: one recorded since the child's latest input (its turn may
 // still be ending when the parent answers).
 func (s *Server) waitingQuestion(ctx context.Context, child store.AgentSession) (store.TranscriptMessage, bool) {
-	events, _, err := s.store.AgentSessionEventWindow(ctx, child.ID, "", 200)
+	events, _, err := s.store.AgentSessionEventWindow(ctx, child.ID, "", sessions.QuestionEventWindow)
 	if err != nil {
 		return store.TranscriptMessage{}, false
 	}
-	started, _ := time.Parse(time.RFC3339Nano, child.Input.At)
-	for index := len(events) - 1; index >= 0; index-- {
-		event := events[index]
-		if at, err := time.Parse(time.RFC3339Nano, event.At); err == nil && !started.IsZero() && at.Before(started) {
-			break
-		}
-		// An answer steered in since: it waits no more.
-		if event.Label == store.EventLabelSteeredIntoTurn && strings.Contains(event.Detail, agentQuestionReplyOpen) {
-			break
-		}
-		if message := event.Message; message != nil && len(message.Questions) > 0 {
-			return *message, true
-		}
-	}
-	return store.TranscriptMessage{}, false
+	return sessions.WaitingQuestion(events, child.Input)
 }
 
 // questionAnswered reports whether an answer naming the question reached the
@@ -268,7 +253,7 @@ func (s *Server) answerWaitingQuestion(ctx context.Context, sender string, child
 }
 
 const (
-	agentQuestionReplyOpen  = "<send_user_message_question_reply>"
+	agentQuestionReplyOpen  = sessions.QuestionReplyOpen
 	agentQuestionReplyClose = "</send_user_message_question_reply>"
 )
 

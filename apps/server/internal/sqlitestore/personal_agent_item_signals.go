@@ -105,16 +105,7 @@ func (s *Store) SetPersonalAgentItemHelperStatus(ctx context.Context, sessionID,
 			next.Status, next.EndedAt, sessionID); err != nil {
 			return fmt.Errorf("set item helper status: %w", err)
 		}
-		if helperFinished(next.Status) {
-			return tx.recordHelperEvents(ctx, store.PersonalAgentActorFoundry, paNow(), previous, next)
-		}
-		// It works again: no event, but its item shows it running.
-		item, err := tx.GetPersonalAgentItem(ctx, next.AssistantID, next.ItemID)
-		if err != nil {
-			return fmt.Errorf("set item helper status: %w", err)
-		}
-		tx.itemChanged(item, item.HomeWorkspaceID)
-		return nil
+		return tx.recordHelperEvents(ctx, store.PersonalAgentActorFoundry, paNow(), previous, next)
 	})
 }
 

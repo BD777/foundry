@@ -43,6 +43,28 @@ func (s *Server) importSessionWork(ctx context.Context, session store.AgentSessi
 	return nil
 }
 
+// taskEndReactions record a task's end on its work as the device reports
+// it: the inventory keeps only the most recent finished tasks and the device
+// stops seeing a task that ended, so a later read of the work list could no
+// longer learn from either how it ended. The import is the one a read runs.
+type taskEndReactions struct{ s *Server }
+
+func (r taskEndReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
+	if phase := store.SubtaskEventPhase(event); phase != store.SubtaskCompleted && phase != store.SubtaskFailed {
+		return
+	}
+	session, err := r.s.store.GetAgentSessionSummary(ctx, event.SessionID)
+	if err == nil {
+		session.Events, err = r.s.store.AgentSessionStateEvents(ctx, session.ID, "")
+	}
+	if err == nil {
+		err = r.s.importSessionWork(ctx, session)
+	}
+	if err != nil {
+		log.Printf("session work: end of task %s in %s left to the next read: %v", event.Metadata.TaskID, event.SessionID, err)
+	}
+}
+
 // importThreadWork imports the work the thread's readable sessions record in
 // their events, schedules and child sessions.
 func (s *Server) importThreadWork(ctx context.Context, session store.AgentSession) error {

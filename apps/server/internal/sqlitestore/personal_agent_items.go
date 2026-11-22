@@ -437,19 +437,25 @@ func (s *Store) detachItemsFromDeleted(ctx context.Context, owner, workspaces, s
 
 // recordHelperEvents writes the helper events of a task change on its item:
 // started when the task joins one, ended when it reaches a final status. A
-// helper event bumps the item's updated_at, not its revision.
+// helper event bumps the item's updated_at, not its revision. Any other
+// status change (queued, running, asking) records nothing: its item is only
+// told, so the item's files show it.
 func (s *Store) recordHelperEvents(ctx context.Context, actor, now string, previous, next store.PersonalAgentTask) error {
 	if next.ItemID == "" {
 		return nil
 	}
 	started := next.ItemID != previous.ItemID
 	ended := helperFinished(next.Status) && (started || !helperFinished(previous.Status))
-	if !started && !ended {
+	if !started && !ended && next.Status == previous.Status {
 		return nil
 	}
 	item, err := s.GetPersonalAgentItem(ctx, next.AssistantID, next.ItemID)
 	if err != nil {
 		return fmt.Errorf("record helper event on item %s: %w", next.ItemID, err)
+	}
+	if !started && !ended {
+		s.itemChanged(item, item.HomeWorkspaceID)
+		return nil
 	}
 	detail := store.PersonalAgentItemEventDetail{SessionID: next.SessionID, WorkspaceID: next.WorkspaceID, Title: next.Title}
 	if started {
