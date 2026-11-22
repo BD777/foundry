@@ -92,7 +92,7 @@ export function ItemDetail({
 
   if (!detail) {
     return (
-      <div className="grid gap-3 px-5.5 py-4.5 max-[860px]:px-4">
+      <div className="grid gap-3">
         <BackButton onBack={onBack} t={t} />
         {error ? (
           <Alert title={t("items.detail.loadFailed")} tone="error">
@@ -200,7 +200,7 @@ export function ItemDetail({
   return (
     <article
       aria-labelledby="fdy-items-detail-title"
-      className="grid content-start gap-5 px-5.5 py-4.5 max-[860px]:px-4"
+      className="grid content-start gap-5"
     >
       <BackButton onBack={onBack} t={t} />
       <header className="grid gap-1.5">
@@ -350,7 +350,9 @@ export function ItemDetail({
       </DetailSection>
       <DetailSection title={t("items.detail.summary")}>
         {item.summary ? (
-          <MarkdownContent>{item.summary}</MarkdownContent>
+          <div className="text-sm text-ink">
+            <MarkdownContent>{item.summary}</MarkdownContent>
+          </div>
         ) : (
           <p className="text-sm text-ink-faint">
             {t("items.detail.noSummary")}
@@ -447,7 +449,7 @@ function BackButton({
 }) {
   return (
     <Button
-      className="justify-self-start min-[860px]:hidden"
+      className="justify-self-start min-[861px]:hidden"
       onClick={onBack}
       size="sm"
       variant="ghost"

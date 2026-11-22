@@ -324,6 +324,46 @@ test("the list groups by day and marks the selected row", async () => {
   await page.unmount();
 });
 
+test("an empty list says so, and says when a filter is why", async () => {
+  for (const [narrowed, body] of [
+    [false, /What you or the assistant decide to follow up on/],
+    [true, /Nothing matches this tab, workspace or search/],
+  ]) {
+    const page = await mount(ItemsList, {
+      items: [],
+      narrowed,
+      workspaces,
+      busyId: "",
+      onOpen: () => {},
+      onTick: () => {},
+    });
+    const empty = page.container.querySelector('[role="status"]');
+    assert.ok(empty, "the empty list is announced");
+    assert.match(empty.textContent, /No items here/);
+    assert.match(empty.textContent, body);
+    await page.unmount();
+  }
+});
+
+test("a channel item names who asked on its detail line, not in a chip", async () => {
+  const page = await mount(ItemsList, {
+    items: [
+      item("chan", {
+        text: "reply to Alex",
+        origin: { kind: "channel", name: "Feishu", requester: "Alex" },
+      }),
+    ],
+    workspaces,
+    busyId: "",
+    onOpen: () => {},
+    onTick: () => {},
+  });
+  const row = page.container.querySelector("[data-selected]");
+  assert.match(row.textContent, /You · To do · .*Alex/);
+  assert.equal(page.container.querySelector(".fdy-badge"), null);
+  await page.unmount();
+});
+
 test("the detail shows its plan and its helper opens in a new tab", async () => {
   const detail = {
     item: item("detail", {

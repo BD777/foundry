@@ -5,6 +5,7 @@ import type { PersonalAgentItemReport } from "@bd777/foundry-protocol";
 import { capturePersonalAgentInbox } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { ClampedText } from "../../components/ui/clamped-text";
 import { Subheading } from "../../components/ui/subheading";
 import { Skeleton } from "../../components/ui/loading";
 import { serverErrorText } from "../../lib/errors";
@@ -108,7 +109,7 @@ export function ItemsReview({
   return (
     <section
       aria-labelledby="fdy-items-review-title"
-      className="grid content-start gap-5 px-5.5 py-4.5 max-[860px]:px-4"
+      className="grid grid-cols-[minmax(0,1fr)] content-start gap-5 px-5.5 py-4.5 max-[860px]:px-4"
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button onClick={onBack} size="sm" variant="ghost">
@@ -180,7 +181,7 @@ export function ItemsReview({
                   const headline = summaryHeadline(item.summary);
                   return (
                     <li className="grid gap-0.5" key={item.id}>
-                      <strong className="text-sm font-semibold text-ink">
+                      <strong className="text-sm font-semibold wrap-anywhere text-ink">
                         {item.text}
                       </strong>
                       <span className="text-xs text-ink-faint">
@@ -196,7 +197,7 @@ export function ItemsReview({
                           .join(" · ")}
                       </span>
                       {headline ? (
-                        <p className="text-sm text-ink-muted">{headline}</p>
+                        <ClampedText clamp={2}>{headline}</ClampedText>
                       ) : null}
                     </li>
                   );

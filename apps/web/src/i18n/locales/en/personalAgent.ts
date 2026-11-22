@@ -599,7 +599,10 @@ export const personalAgent = {
     list: {
       today: "Today",
       yesterday: "Yesterday",
-      empty: "No items here.",
+      empty: "No items here",
+      emptyBody:
+        "What you or the assistant decide to follow up on shows up here.",
+      noMatchesBody: "Nothing matches this tab, workspace or search.",
       loadFailed: "Couldn't load items",
       loadMore: "Load more",
       shown: "Showing {{shown}} of {{total}}",

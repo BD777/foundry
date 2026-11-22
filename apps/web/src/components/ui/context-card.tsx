@@ -144,7 +144,11 @@ export function ContextEmpty({
 const rowLayout =
   "fdy-chat-context-row flex min-h-[30px] w-full min-w-0 items-center justify-start gap-2.5 rounded-lg px-1.5 py-1 text-left active:scale-100";
 
-/** A row that opens its item; `selected` marks the item the panel shows. */
+/**
+ * A row that opens its item; `selected` marks the item the panel shows with
+ * the selection fill (as NavList's on-surface tone), so it stays apart from a
+ * hovered row.
+ */
 export const ContextRow = forwardRef<
   HTMLButtonElement,
   Omit<ButtonProps, "variant" | "size"> & { selected?: boolean }
@@ -153,7 +157,7 @@ export const ContextRow = forwardRef<
     <Button
       className={cn(
         rowLayout,
-        "hover:bg-control-ghost-hover focus-visible:outline-accent-line focus-visible:outline-offset-1 data-[selected=true]:bg-control-ghost-hover",
+        "hover:bg-control-ghost-hover focus-visible:outline-accent-line focus-visible:outline-offset-1 data-[selected=true]:bg-selection data-[selected=true]:hover:bg-selection",
         className,
       )}
       data-selected={selected === undefined ? undefined : String(selected)}

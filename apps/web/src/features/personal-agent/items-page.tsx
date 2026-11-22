@@ -29,7 +29,7 @@ import {
   type RangePreset,
 } from "./items-model";
 import { ItemDetail } from "./items-detail";
-import { homeChoices } from "./items-home";
+import { homeOptions } from "./items-home";
 import { ItemsList } from "./items-list";
 import { workspaceLabel } from "./items-marks";
 import { ItemsReview } from "./items-review";
@@ -163,6 +163,7 @@ export function AssistantItemsPage({
         options={rangeOptions}
         size="sm"
         value={range}
+        wrap
       />
       {range === "custom" ? (
         <>
@@ -186,10 +187,7 @@ export function AssistantItemsPage({
     </div>
   );
 
-  const choices = homeChoices(workspaces).map((workspace) => ({
-    value: workspace.id,
-    label: workspace.name,
-  }));
+  const choices = homeOptions(workspaces);
   const workspaceFilterOptions = [
     { value: "", label: t("items.filter.all") },
     { value: inboxFilter, label: t("items.home.inbox") },
@@ -217,8 +215,8 @@ export function AssistantItemsPage({
   const listError = list.error || detail.error;
   const shown = list.items.length;
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-      <header className="grid gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
+      <header className="grid grid-cols-[minmax(0,1fr)] gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
           <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
             {t("items.title")}
@@ -247,15 +245,15 @@ export function AssistantItemsPage({
               />
               <SelectMenu
                 ariaLabel={t("items.filter.workspace")}
-                className="w-48 max-w-full"
+                className="max-w-56"
                 onChange={chooseWorkspace}
                 options={workspaceFilterOptions}
-                tone="pill"
+                tone="boxed"
                 value={workspaceFilter}
               />
               <TextInput
                 aria-label={t("items.search.label")}
-                className="ms-auto w-56 max-w-full"
+                className="ms-auto w-56 max-w-full max-[860px]:ms-0 max-[860px]:w-full"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={t("items.search.placeholder")}
                 tone="boxed"
@@ -282,10 +280,7 @@ export function AssistantItemsPage({
       ) : (
         <div className="grid min-h-0 grid-cols-[minmax(0,1fr)] min-[861px]:grid-cols-[minmax(300px,400px)_minmax(0,1fr)]">
           <div
-            className={cn(
-              "min-h-0 overflow-y-auto px-5.5 py-4 max-[860px]:px-4",
-              selectedItemId && "max-[860px]:hidden",
-            )}
+            className={cn(paneClass, selectedItemId && "max-[860px]:hidden")}
           >
             {listError ? (
               <Alert
@@ -312,6 +307,12 @@ export function AssistantItemsPage({
                 <ItemsList
                   busyId={busyId}
                   items={list.items}
+                  narrowed={
+                    tab !== "open" ||
+                    Boolean(workspaceFilter) ||
+                    Boolean(query) ||
+                    shownRange !== "all"
+                  }
                   workspaces={workspaces}
                   workspacesLoaded={workspacesLoaded}
                   onOpen={(itemId) => onSelectItem(itemId)}
@@ -339,7 +340,8 @@ export function AssistantItemsPage({
           </div>
           <div
             className={cn(
-              "min-h-0 overflow-y-auto min-[861px]:border-s min-[861px]:border-line",
+              paneClass,
+              "min-[861px]:border-s min-[861px]:border-line",
               !selectedItemId && "max-[860px]:hidden",
             )}
           >
@@ -360,18 +362,23 @@ export function AssistantItemsPage({
                 operations={operations.value ?? []}
                 workspaces={workspaces}
               />
-            ) : (
+            ) : list.items.length ? (
+              // With no item to choose, the list's own empty state says it all.
               <EmptyState
                 body={t("items.page.selectBody")}
+                size="pane"
                 title={t("items.page.selectTitle")}
               />
-            )}
+            ) : null}
           </div>
         </div>
       )}
     </div>
   );
 }
+
+/** The list's and the detail's pane: the same insets, so their tops align. */
+const paneClass = "min-h-0 overflow-y-auto px-5.5 py-4 max-[860px]:px-4";
 
 /** The range as the reader sees it, and the short form the review's message names. */
 function describeRange(
