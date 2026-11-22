@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-23.1": "dcb698b815d8235955633743b290ea9b8d12ba2b93940e12b5bcda69fc2f38a1", // D4/D1 (person 2026-11-23): a one-off personal request is the assistant's to do or hand off; the person's existing chat and their other assistants take send_message
 	"2026-11-21.2": "07b640fcc0e6f3ca041b38a0351538e5b61fa0df4d382e95705ce6ac07907697", // DEV-324: keep an item so the next conversation can take it over; op decide records the person's decisions
 	"2026-11-21.1": "40e02b82e762e5726cd38d5b67c9d1f782171328ba3c63679a265e4879880d6c", // DEV-324: an item has a home and touches, a workspace session may hold it; grow a project from an item with create_workspace fromItemId
 	"2026-11-19.1": "5e8cdd3b4dabe46812f6272b195b9e33ffe17ccca5ca9a10d1c3ebd60e380db1", // DEV-313 (person 2026-11-19): the assistant is the orchestrator; research and investigation go to a project through a helper, questions about their own world are answered directly
@@ -351,6 +352,9 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 		prompt.ProjectIndexPath, prompt.ExamplesPath,
 		"# Message channels", "- 「Lark /fd」: /home/me/Foundry/personal-agent/channels/lark-fd",
 		"separate from this file",
+		"# What the person's assistants are in charge of (their settings)", "- You: 个人和家里的事，家里的设备。",
+		"- 「ByteWork」: 公司的事：公司身份和公司电脑。 (the conversation they used last: sess_bytework)",
+		"- an assistant without a name: not set (the conversation they used last: none yet)",
 	} {
 		if !strings.Contains(file, shown) {
 			t.Errorf("AGENTS.md lacks %q", shown)
@@ -382,8 +386,23 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 // (needs_you ask) and the routing of helpers' questions and approvals in
 // system.md (about 420 bytes); DEV-313 makes the assistant the orchestrator:
 // the role, the research routing and the dispatch rule in system.md (about
-// 860 bytes).
-const agentsFileBudget = 10400
+// 860 bytes); D4 gives one-off personal requests back to the assistant's
+// judgement and names the person's chat and other assistants as places a
+// message reaches, and D1 adds what each assistant is in charge of (about
+// 800 bytes with fullInput's two other assistants).
+const agentsFileBudget = 11300
+
+// One assistant with nothing set gets no section about the others.
+func TestASingleAssistantHasNoAssistantsSection(t *testing.T) {
+	if file := prompt.AgentsFile(newPersonInput()); strings.Contains(file, "assistants are in charge of") {
+		t.Fatal("a single assistant with no responsibility set lists assistants")
+	}
+	in := newPersonInput()
+	in.OtherAssistants = []prompt.AssistantPlace{{Default: true, Responsibility: "个人的事"}}
+	if file := prompt.AgentsFile(in); !strings.Contains(file, "- You: not set\n- the default assistant: 个人的事 (the conversation they used last: none yet)\n") {
+		t.Fatalf("the default assistant is not named: %s", file)
+	}
+}
 
 func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	size := len(prompt.AgentsFile(fullInput()))
@@ -498,6 +517,7 @@ func fullInput() prompt.Input {
 	settings.Timezone = "Asia/Shanghai"
 	settings.SpeakingStyle = "plain"
 	settings.ExtraInstructions = "叫我小林。周末不要发通知。"
+	settings.Responsibility = "个人和家里的事，家里的设备。"
 	settings.Policy[store.PersonalAgentActionRenameWorkspace] = store.PersonalAgentAsk
 	settings.Devices = []store.PersonalAgentDeviceSettings{
 		{DeviceID: "dev_mac", AllowWork: true, AllowCreate: true},
@@ -537,6 +557,10 @@ func fullInput() prompt.Input {
 				Labels: []store.DeviceLabel{{Key: "network", Value: "corp"}, {Key: "files", Value: "work"}},
 				Facts:  []store.DeviceFact{{Key: "os", Value: "macos", Source: "system"}, {Key: "reaches", Value: "intranet.corp.example", Detail: "Corp network", Source: "connector"}, {Key: "toolchain", Value: "go", Detail: "Go 1.23", Source: "toolchain"}}},
 			"dev_nas": {DeviceID: "dev_nas", Facts: []store.DeviceFact{{Key: "always-on", Source: "presence"}}},
+		},
+		OtherAssistants: []prompt.AssistantPlace{
+			{Name: "ByteWork", Responsibility: "公司的事：公司身份和公司电脑。", ConversationID: "sess_bytework"},
+			{Name: "", Responsibility: ""},
 		},
 		DirectChatPreviousWorkspaceID: "ws_budget",
 		ConnectorsURL:                 "https://foundry.example/connectors",

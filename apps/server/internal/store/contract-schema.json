@@ -6444,6 +6444,7 @@
         "state",
         "permissionPackageId",
         "feishuAppId",
+        "responsibility",
         "createdAt",
         "updatedAt"
       ],
@@ -6464,6 +6465,10 @@
         "permissionPackageId": { "type": "string" },
         "feishuAppId": {
           "description": "The Feishu app this assistant answers direct chats for, or empty. One app binds at most one assistant per owner.",
+          "type": "string"
+        },
+        "responsibility": {
+          "description": "What the person put this assistant in charge of, in their words (settings.responsibility); empty when not set.",
           "type": "string"
         },
         "createdAt": { "type": "string" },

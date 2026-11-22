@@ -75,6 +75,10 @@ func NormalizeSettings(in store.PersonalAgentSettings, ownedDevices []string, ho
 	if utf8.RuneCountInString(out.ExtraInstructions) > ExtraInstructionsMaxChars {
 		return in, fmt.Errorf("the extra requests are at most %d characters", ExtraInstructionsMaxChars)
 	}
+	out.Responsibility = strings.TrimSpace(in.Responsibility)
+	if utf8.RuneCountInString(out.Responsibility) > ResponsibilityMaxChars {
+		return in, fmt.Errorf("what the assistant is in charge of is at most %d characters", ResponsibilityMaxChars)
+	}
 	policy, err := CompletePolicy(in.Policy)
 	if err != nil {
 		return in, err

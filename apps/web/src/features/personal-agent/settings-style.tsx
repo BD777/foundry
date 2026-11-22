@@ -7,7 +7,12 @@ import type {
 import { TextInput, Textarea } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { browserTimezone, extraInstructionsMaxChars } from "./assistant-model";
+import {
+  browserTimezone,
+  extraInstructionsMaxChars,
+  responsibilityLength,
+  responsibilityMaxChars,
+} from "./assistant-model";
 import {
   SettingsField,
   SettingsGroup,
@@ -21,7 +26,7 @@ const speakingStyles: PersonalAgentSpeakingStyle[] = [
 ];
 const verbosities: PersonalAgentVerbosity[] = ["concise", "detailed"];
 
-/** Its name, language, time zone, way of speaking and extra requests. */
+/** Its name, what it is in charge of, language, time zone, way of speaking and extra requests. */
 export function StyleSection({
   draft,
   change,
@@ -49,6 +54,39 @@ export function StyleSection({
             placeholder={t("defaultName")}
             tone="boxed"
             value={draft.assistantName}
+          />
+        </SettingsField>
+        <SettingsField
+          hint={
+            <>
+              {t("settings.style.responsibilityHint")}{" "}
+              <span
+                className="data-[over=true]:font-semibold data-[over=true]:text-error-text"
+                data-over={
+                  responsibilityLength(draft.responsibility) >
+                  responsibilityMaxChars
+                    ? "true"
+                    : undefined
+                }
+              >
+                {t("settings.style.responsibilityCount", {
+                  count: responsibilityLength(draft.responsibility),
+                })}
+              </span>
+            </>
+          }
+          htmlFor="fdy-pa-responsibility"
+          label={t("settings.style.responsibility")}
+        >
+          <Textarea
+            className="w-full"
+            id="fdy-pa-responsibility"
+            onChange={(event) => change({ responsibility: event.target.value })}
+            placeholder={t("settings.style.responsibilityPlaceholder")}
+            resize="vertical"
+            rows={2}
+            tone="boxed"
+            value={draft.responsibility}
           />
         </SettingsField>
         <SettingsField label={t("settings.style.language")}>

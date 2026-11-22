@@ -72,6 +72,7 @@ const assistants = [
     homeDeviceId: "dev_studio",
     state: "active",
     permissionPackageId: "perm_default",
+    responsibility: "Personal and family matters, the home computers.",
     createdAt: iso,
     updatedAt: iso,
   },
@@ -559,6 +560,23 @@ test("assistant rows create and confirm destructive deletion", async () => {
   assert.match(text, /2 projects selected/);
   assert.match(text, /Studio/);
   assert.match(text, /Paused/);
+  // What an assistant is in charge of is page text, clamped with its own
+  // toggle, and each row opens through a labelled action.
+  const responsibility = page.container.querySelector(".fdy-clamped-text p");
+  assert.equal(
+    responsibility?.textContent,
+    "Personal and family matters, the home computers.",
+  );
+  assert.equal(responsibility.closest("button"), null);
+  const open = page.container.querySelector(
+    'button[aria-label="Open Personal"]',
+  );
+  assert.equal(open?.textContent.trim(), "Open");
+  await act(async () => open.click());
+  assert.deepEqual(events.at(-1), {
+    type: "assistant.open",
+    assistantId: "asst_default",
+  });
   const current = page.container.querySelector('[aria-current="true"]');
   assert.ok(current);
   assert.match(current.textContent, /Work assistant/);

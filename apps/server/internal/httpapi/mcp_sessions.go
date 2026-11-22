@@ -315,8 +315,34 @@ func (s *Server) messageTarget(ctx context.Context, actor Actor, raw string) (st
 			}
 			return parent, nil
 		}
+		if err == nil {
+			if target, ok := s.otherAssistantConversation(ctx, caller, raw); ok {
+				return target, nil
+			}
+		}
 	}
 	return s.controlledSession(ctx, actor, raw, "message")
+}
+
+// otherAssistantConversation is the target when an assistant's home
+// conversation messages a home conversation of another of the same person's
+// assistants (D1): handing something over between them is a message, outside
+// either one's workspace scope. It grants nothing else; a message channel's
+// sessions neither send nor receive this way.
+func (s *Server) otherAssistantConversation(ctx context.Context, caller store.AgentSession, raw string) (store.AgentSession, bool) {
+	from, ok := s.assistant.Conversation(ctx, caller)
+	if !ok || caller.WorkspaceID != from.WorkspaceID {
+		return store.AgentSession{}, false
+	}
+	target, err := s.store.GetAgentSessionRecord(ctx, inspectedID(raw))
+	if err != nil {
+		return store.AgentSession{}, false
+	}
+	to, ok := s.assistant.Conversation(ctx, target)
+	if !ok || to.ID == from.ID || to.UserID != from.UserID || target.WorkspaceID != to.WorkspaceID {
+		return store.AgentSession{}, false
+	}
+	return target, true
 }
 
 func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {

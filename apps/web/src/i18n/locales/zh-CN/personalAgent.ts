@@ -736,7 +736,7 @@ export const personalAgent: Translation<typeof en> = {
     },
     hints: {
       status: "正在做什么，以及它住在哪里",
-      style: "称呼、说话方式与语言",
+      style: "称呼、它管什么、说话方式与语言",
       memory: "它了解你的哪些事情",
       rules: "哪些事情可以先做、哪些先问你",
       places: "可以使用哪些电脑和项目",
@@ -861,6 +861,7 @@ export const personalAgent: Translation<typeof en> = {
     },
     problems: {
       extraInstructions: "额外要求最多 2,000 字。",
+      responsibility: "“它管什么”最多 300 字。",
       executionModels:
         "请为助理覆盖和每个可选项选择 Worker 组，或者完整的模型来源、运行时和模型。",
       dailyDigestTime: "摘要时间请写成 HH:MM，比如 09:00。",
@@ -909,6 +910,11 @@ export const personalAgent: Translation<typeof en> = {
       extra: "给助理的额外要求",
       extraHint: "会附加在它的说明里，不能改变下面的安全规则。",
       extraCount: "{{count}} / 2,000",
+      responsibility: "它管什么",
+      responsibilityPlaceholder: "比如：个人和家里的事，家里的设备",
+      responsibilityHint:
+        "显示在助理列表里；你的其他助理也看得到，可以把归它管的事转过来。",
+      responsibilityCount: "{{count}} / 300",
     },
     memory: {
       layers: {

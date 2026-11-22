@@ -32,15 +32,34 @@ export function ManagementRow({
   );
 }
 
-/** The row's name and detail lines: the part that takes the free width. */
+const copyClass = "grid min-w-0 flex-1 gap-[5px] max-[700px]:basis-[65%]";
+
+/**
+ * The row's name and detail lines: the part that takes the free width. A
+ * `span` by default, so it fits inside a button; `as="div"` when its lines
+ * hold block content of their own (a ClampedText with its toggle).
+ */
 export function ManagementRowCopy({
+  as = "span",
   className,
   ...props
-}: ComponentPropsWithoutRef<"span">) {
+}: ComponentPropsWithoutRef<"span"> & { as?: "span" | "div" }) {
+  const Copy = as;
+  return <Copy className={cn(copyClass, className)} {...props} />;
+}
+
+/**
+ * The row's status and actions after the copy. On a narrow screen they take
+ * their own line under it, so the copy keeps the row's width.
+ */
+export function ManagementRowActions({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"div">) {
   return (
-    <span
+    <div
       className={cn(
-        "grid min-w-0 flex-1 gap-[5px] max-[700px]:basis-[65%]",
+        "flex flex-none items-center gap-2.5 max-[700px]:basis-full max-[700px]:justify-end",
         className,
       )}
       {...props}

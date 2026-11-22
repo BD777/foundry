@@ -142,6 +142,12 @@ export interface PersonalAgentSettings {
   verbosity: PersonalAgentVerbosity;
   /** Appended as "the person's requests"; at most 2,000 characters. */
   extraInstructions: string;
+  /**
+   * What the person put this assistant in charge of, in their words; at
+   * most 300 characters. The assistants list shows it and every assistant
+   * of the person reads each one's.
+   */
+  responsibility: string;
   policy: PersonalAgentPolicy;
   /** One entry per device the person owns; a missing one: work, no create. */
   devices: PersonalAgentDeviceSettings[];

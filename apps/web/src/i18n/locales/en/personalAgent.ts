@@ -803,7 +803,7 @@ export const personalAgent = {
     },
     hints: {
       status: "What it is doing and where it lives",
-      style: "Its name, voice, and language",
+      style: "Its name, what it is in charge of, voice, and language",
       memory: "What it knows about you",
       rules: "What it can do without asking",
       places: "Which computers and projects it can use",
@@ -936,6 +936,7 @@ export const personalAgent = {
     },
     problems: {
       extraInstructions: "Extra requests can be at most 2,000 characters.",
+      responsibility: "What it is in charge of can be at most 300 characters.",
       executionModels:
         "Choose a worker group, or a provider, runtime and model, for the assistant override and every alternative.",
       dailyDigestTime: "Write the summary time as HH:MM, for example 09:00.",
@@ -986,6 +987,12 @@ export const personalAgent = {
       extraHint:
         "Added to its instructions. It can't change the safety rules below.",
       extraCount: "{{count}} / 2,000",
+      responsibility: "What it is in charge of",
+      responsibilityPlaceholder:
+        "For example: personal and family matters, the home computers",
+      responsibilityHint:
+        "Shown in the assistants list. Your other assistants see it too and can pass it what belongs here.",
+      responsibilityCount: "{{count}} / 300",
     },
     memory: {
       layers: {

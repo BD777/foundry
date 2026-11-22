@@ -70,6 +70,7 @@ const settings = {
   speakingStyle: "auto",
   verbosity: "concise",
   extraInstructions: "",
+  responsibility: "",
   policy: {
     create_workspace: "auto",
     register_folder: "ask",
@@ -545,6 +546,23 @@ test("settings problems name the field", () => {
       },
     }),
     [{ kind: "executionModels" }],
+  );
+});
+
+test("what an assistant is in charge of counts as the Server checks it", () => {
+  const { responsibilityLength, responsibilityMaxChars } = model;
+  // Trimmed, and one count per character: Chinese and an emoji alike.
+  assert.equal(responsibilityLength("  家里的事  "), 4);
+  assert.equal(responsibilityLength("家里🏠"), 3);
+  const atLimit = "家".repeat(responsibilityMaxChars - 1) + "🏠";
+  assert.equal(atLimit.length, responsibilityMaxChars + 1);
+  assert.deepEqual(
+    model.settingsProblems({ ...settings, responsibility: ` ${atLimit} ` }),
+    [],
+  );
+  assert.deepEqual(
+    model.settingsProblems({ ...settings, responsibility: atLimit + "家" }),
+    [{ kind: "responsibility" }],
   );
 });
 
