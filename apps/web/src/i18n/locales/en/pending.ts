@@ -30,6 +30,7 @@ export const pending = {
     openIssue: "Open Issue",
     groupLabel: "{{title}} in {{workspace}}",
     notices: "For your information",
+    itemGroup: "Item: {{text}}",
   },
   source: {
     question: "Question",
@@ -44,6 +45,7 @@ export const pending = {
     assistant_inbox: "Unprocessed message",
     notice: "A note from your assistant",
     assistant_question: "Your assistant asks",
+    item_wait: "An item waits for you",
   },
   state: {
     open: "Open",
@@ -105,11 +107,16 @@ export const pending = {
     replyHint:
       "Sent to the chat as your message, quoting this item. Ctrl+Enter sends.",
     issueReplyHint: "Answers the Issue's question; the Issue continues.",
+    assistantReplyHint:
+      "Goes to the assistant conversation that asked, as your answer to this question. Ctrl+Enter sends.",
+    itemReplyHint:
+      "Goes to the session following this item (or the next one to take it up) as your answer, and is recorded on the item's timeline. Ctrl+Enter sends.",
     send: "Send",
     sending: "Sending…",
     cancel: "Cancel",
     sendFailed: "The reply was not sent: {{error}}",
     openMessage: "Open message",
+    openItem: "Open item",
     openConnectors: "Open Connectors",
     accountReauth: "Authorize {{title}} again",
     connectorExpired: "Sign in again: {{title}}",

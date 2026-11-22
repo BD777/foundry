@@ -29,6 +29,13 @@ func AnswerFrame(question, answer string) string {
 	return Notice(fmt.Sprintf("the person answered your question %q.", question)) + AnswerSeparator + strings.TrimSpace(answer)
 }
 
+// ItemAnswerFrame is the person's answer to what an item waits on them for, as
+// the session following the item reads it: a Foundry line naming the item and
+// what it waits for, then the person's own words (PersonWords takes them).
+func ItemAnswerFrame(itemID, waitingFor, answer string) string {
+	return Notice(fmt.Sprintf("the person answered what item %s waits on them for: %q.", itemID, strings.TrimSpace(waitingFor))) + AnswerSeparator + strings.TrimSpace(answer)
+}
+
 // IsNotice reports whether an input came from the server.
 func IsNotice(prompt string) bool {
 	return strings.HasPrefix(strings.TrimSpace(prompt), strings.TrimSpace(NoticePrefix))

@@ -59,6 +59,7 @@ const {
   pendingMatchesAssistant,
   pendingOrigin,
   pendingPrimary,
+  pendingReplyHintKey,
   pendingReplyRoute,
   pendingReplyText,
   pendingStatusKey,
@@ -542,6 +543,97 @@ test("the page shows an item in its own words and replies into its chat", async 
     call.path.includes("/api/pending-items/pnd_1/state"),
   );
   assert.deepEqual(state.body, { state: "done" });
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("each reply box says where its reply really goes", () => {
+  assert.equal(
+    pendingReplyHintKey({ source: "question", sessionId: "sess_1" }),
+    "item.replyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({
+      source: "issue_question",
+      issueId: "iss_1",
+      eventId: "evt_1",
+    }),
+    "item.issueReplyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({
+      source: "assistant_question",
+      sessionId: "sess_home",
+    }),
+    "item.assistantReplyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({ source: "item_wait" }),
+    "item.itemReplyHint",
+  );
+});
+
+test("an item waiting on the person is answered from its card through its own answer route", async () => {
+  const waiting = item({
+    id: "pnd_w",
+    source: "item_wait",
+    sessionId: undefined,
+    sessionTitle: undefined,
+    assistantId: "asst_1",
+    assistantName: "Ada",
+    itemId: "pai_1",
+    itemText: "Rerun the batch",
+    context: "Rerun the batch",
+    title: "Batch A (17) or batch B (9)?",
+    excerpt: "Batch A (17) or batch B (9)?",
+  });
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: {},
+    items: [waiting],
+  });
+  // It belongs to its item, not to an untitled chat.
+  assert.match(host.textContent, /Item: Rerun the batch/);
+  assert.doesNotMatch(host.textContent, /Untitled/);
+  // Reply is its action; nothing offers a message it does not have.
+  assert.equal(buttonNamed(host, "Open message"), undefined);
+  const reply = buttonNamed(host, "Reply");
+  assert.ok(reply, host.innerHTML);
+  await act(async () => reply.click());
+  const textarea = host.querySelector("textarea");
+  assert.ok(textarea, "the reply box");
+  // The box says where the answer really goes: not a chat it does not have.
+  const hint = host.ownerDocument.getElementById(
+    textarea.getAttribute("aria-describedby"),
+  );
+  assert.match(
+    hint?.textContent ?? host.textContent,
+    /session following this item .* recorded on the item's timeline/,
+  );
+  assert.doesNotMatch(host.textContent, /Sent to the chat as your message/);
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    ).set;
+    setter.call(textarea, "Batch A");
+    textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await act(async () => buttonNamed(host, "Send").click());
+  const answered = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_w/answer"),
+  );
+  assert.ok(answered, JSON.stringify(calls));
+  assert.equal(answered.method, "POST");
+  assert.equal(answered.body.text, "Batch A");
+  assert.equal(
+    calls.some((call) => call.path.includes("/queue")),
+    false,
+  );
+  // Its menu opens the item itself.
+  const menu = await openMenu(host, "More for “Batch A (17) or batch B (9)?”");
+  assert.ok(menu.includes("Open item"), JSON.stringify(menu));
+  assert.equal(menu.includes("Open message"), false);
   await act(async () => root.unmount());
   host.remove();
 });
@@ -1706,6 +1798,14 @@ test("other items keep the quoted reply, even with a message id", async () => {
   assert.equal(
     pendingReplyText(failed, "Retry later"),
     "> API Error: 503\n\nRetry later",
+  );
+});
+
+test("an item waiting on the person is answered through its entry, not a chat", () => {
+  assert.equal(pendingReplyRoute({ source: "item_wait" }), "answer");
+  assert.equal(
+    pendingReplyRoute({ source: "item_wait", sessionId: "sess_holder" }),
+    "answer",
   );
 });
 

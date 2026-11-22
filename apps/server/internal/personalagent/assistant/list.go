@@ -209,6 +209,16 @@ func (s *Service) planUpdateList(ctx context.Context, scope Scope, args map[stri
 			return write, invalid("no task %q of yours: item.taskId is the id list_tasks or the turn's context shows", taskID)
 		}
 	}
+	if spec.Op == "update" && (item.Status == store.PersonalAgentItemDone || item.Status == store.PersonalAgentItemDropped) {
+		unanswered, err := s.unansweredItemWaits(ctx, item)
+		if err != nil {
+			return write, err
+		}
+		if unanswered > 0 {
+			return write, refuse(store.PersonalAgentRefusalInvalid, http.StatusConflict,
+				"item %s has %d unanswered request waiting on the person (plan.waitingOn person): it closes once the person answered it, or after a plan without waitingOn person withdrew it", item.ID, unanswered)
+		}
+	}
 	if spec.Op == "update" && !personal && taskID == "" && spec.Item.Owner == nil && spec.Item.Summary == nil && !homeChanged && spec.Item.Home == nil {
 		return write, invalid("nothing to change: give the fields to set")
 	}
@@ -1289,4 +1299,34 @@ func (s *Service) MoveHelper(ctx context.Context, scope Scope, sessionID, itemID
 		}
 	}
 	return invalid("session %s is not one of your helpers: only helpers create_session started can be tied to an item", sessionID)
+}
+
+// unansweredItemWaits is how many requests on the person an item would leave
+// unanswered if it were saved as it is: its plan still waits on the person for
+// something they have not answered (no item_wait entry answered by them with
+// that key). A plan that no longer waits on them withdraws the request.
+func (s *Service) unansweredItemWaits(ctx context.Context, item store.PersonalAgentListItem) (int, error) {
+	asked := item
+	asked.Status, asked.ArchivedAt = store.PersonalAgentItemOpen, ""
+	if !store.ItemWaitsOnPerson(asked) {
+		return 0, nil
+	}
+	key := store.ItemWaitKey(item.ID, item.Plan.WaitingFor)
+	entries, err := s.store.ListPendingItems(ctx, item.UserID, []string{store.PendingOpen, store.PendingDone}, "", 500)
+	if err != nil {
+		return 0, err
+	}
+	open := 0
+	for _, entry := range entries {
+		if entry.Source != store.PendingSourceItemWait || entry.WaitItemID != item.ID {
+			continue
+		}
+		if entry.Key == key && entry.State == store.PendingDone && entry.Outcome == store.PendingOutcomePersonAnswered {
+			return 0, nil
+		}
+		if entry.State == store.PendingOpen {
+			open++
+		}
+	}
+	return max(open, 1), nil
 }

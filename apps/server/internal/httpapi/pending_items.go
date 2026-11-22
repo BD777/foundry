@@ -514,6 +514,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	// The same visible set the assistant's card counts: an item whose
 	// conversation was archived or deleted is not shown here either, so the
 	// card's count and "All" can never disagree.
+	s.reconcileItemWaits(ctx, user)
 	items, err := s.store.ListVisiblePendingItems(ctx, user, states, since, 300)
 	if err == nil {
 		changed := s.reconcilePersonalPending(ctx, user, items)
@@ -543,6 +544,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		view := pendingItemView{PendingItem: item, AssistantName: assistantNames[item.AssistantID]}
 		if item.Source == store.PendingSourceAssistantInbox {
 			view.MessageAt = s.inboxMessageAt(ctx, user, item)
+		}
+		if item.WaitItemID != "" {
+			view.ItemID, view.ItemAssistantID, view.ItemText = item.WaitItemID, item.AssistantID, item.Context
 		}
 		if item.SessionID != "" {
 			session, seen := sessions[item.SessionID]

@@ -11,7 +11,8 @@ import (
 // ledger), found only from what Foundry recorded: a helper is tied to its item
 // (the assistant's task on it, or a helper linked to it), and a session that
 // holds exactly one open item is that item's. A session that holds several
-// names none of them. Nothing reads the entry's words to decide.
+// names none of them. An item_wait entry names its own item. Nothing reads the
+// entry's words to decide.
 
 // pendingItemLink is the open item a session's entries are stuck on.
 type pendingItemLink struct {
@@ -66,6 +67,7 @@ func waitsOnPerson(item store.PendingItem) bool {
 // needsYouByItem is what waits on the person for each of their open items, by
 // item id, newest first: the visible entries Needs you lists and counts.
 func (s *Server) needsYouByItem(ctx context.Context, userID string) (map[string][]store.PersonalAgentItemNeedsYou, error) {
+	s.reconcileItemWaits(ctx, userID)
 	pending, err := s.store.ListVisiblePendingItems(ctx, userID, []string{store.PendingOpen}, "", 500)
 	if err != nil {
 		return nil, fmt.Errorf("list pending items: %w", err)
@@ -79,11 +81,17 @@ func (s *Server) needsYouByItem(ctx context.Context, userID string) (map[string]
 		return nil, err
 	}
 	for _, item := range pending {
-		link, linked := links[item.SessionID]
-		if item.SessionID == "" || !linked || !waitsOnPerson(item) {
+		if !waitsOnPerson(item) {
 			continue
 		}
-		byItem[link.ItemID] = append(byItem[link.ItemID], store.PersonalAgentItemNeedsYou{
+		itemID := item.WaitItemID
+		if link, linked := links[item.SessionID]; itemID == "" && item.SessionID != "" && linked {
+			itemID = link.ItemID
+		}
+		if itemID == "" {
+			continue
+		}
+		byItem[itemID] = append(byItem[itemID], store.PersonalAgentItemNeedsYou{
 			ID: item.ID, Source: item.Source, Title: item.Title, SessionID: item.SessionID, CreatedAt: item.CreatedAt,
 		})
 	}

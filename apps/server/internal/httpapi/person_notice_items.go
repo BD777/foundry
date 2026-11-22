@@ -35,7 +35,7 @@ var approvalNoticeOptions = []string{"同意", "拒绝"}
 // name ("question", "approval", "hand_over", "ask"); false when it earns none.
 func personNoticeKind(item store.PendingItem) (string, bool) {
 	switch {
-	case item.Source == store.PendingSourceAssistantQuestion:
+	case item.Source == store.PendingSourceAssistantQuestion, item.Source == store.PendingSourceItemWait:
 		return "ask", true
 	case item.Source == store.PendingSourceConnectorWrite && item.ConnectorWrite != nil:
 	case item.Source == store.PendingSourceQuestion && item.Title != "" && (item.MessageID != "" || item.HandedAt != ""):
@@ -77,6 +77,9 @@ func noticeWords(item store.PendingItem, kind string) (title, text string) {
 	if item.ConnectorWrite != nil {
 		title = "需要你批准一次写入：" + item.Title
 		text = strings.TrimSpace(item.ConnectorWrite.Operation + "\n\n" + item.Excerpt)
+	}
+	if item.Source == store.PendingSourceItemWait {
+		text = strings.TrimSpace("事项：" + item.Context + "\n\n" + item.Excerpt)
 	}
 	return title, text
 }
@@ -432,6 +435,9 @@ func (s *Server) settleItemByReply(ctx context.Context, item store.PendingItem, 
 	switch {
 	case item.Source == store.PendingSourceAssistantQuestion:
 		_, err := s.answerAssistantQuestion(ctx, item, answer)
+		return err
+	case item.Source == store.PendingSourceItemWait:
+		_, err := s.answerItemWait(ctx, item, answer)
 		return err
 	case item.Source == store.PendingSourceConnectorWrite && item.ConnectorWrite != nil:
 		agent, err := s.store.GetAssistant(ctx, item.AssistantID)

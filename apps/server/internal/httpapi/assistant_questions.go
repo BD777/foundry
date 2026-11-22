@@ -188,11 +188,20 @@ func (s *Server) handleAnswerPendingItem(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusConflict, "this item is already "+item.State)
 		return
 	}
-	if item.Source != store.PendingSourceAssistantQuestion {
+	var answered store.PendingItem
+	switch item.Source {
+	case store.PendingSourceAssistantQuestion:
+		answered, err = s.answerAssistantQuestion(ctx, item, text)
+	case store.PendingSourceItemWait:
+		answered, err = s.answerItemWait(ctx, item, text)
+		if errors.Is(err, errItemWaitGone) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	default:
 		writeError(w, http.StatusConflict, "answer this item in its conversation")
 		return
 	}
-	answered, err := s.answerAssistantQuestion(ctx, item, text)
 	if err != nil {
 		log.Printf("answer pending item %s: %v", id, err)
 		writeError(w, http.StatusInternalServerError, "the answer could not be delivered; try again")

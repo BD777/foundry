@@ -30,6 +30,7 @@ export const pending: Translation<typeof en> = {
     openIssue: "打开 Issue",
     groupLabel: "{{workspace}} 中的 {{title}}",
     notices: "知会",
+    itemGroup: "事项：{{text}}",
   },
   source: {
     question: "提问",
@@ -44,6 +45,7 @@ export const pending: Translation<typeof en> = {
     assistant_inbox: "没处理的消息",
     notice: "助理留言",
     assistant_question: "助理的提问",
+    item_wait: "事项在等你",
   },
   state: {
     open: "未处理",
@@ -103,11 +105,16 @@ export const pending: Translation<typeof en> = {
     replyLabel: "回复“{{title}}”",
     replyHint: "作为你的消息发到该对话，并引用这条内容。Ctrl+Enter 发送。",
     issueReplyHint: "回答 Issue 的提问，Issue 随后继续执行。",
+    assistantReplyHint:
+      "作为你对这个问题的回答，发回提问的助理对话。Ctrl+Enter 发送。",
+    itemReplyHint:
+      "作为你的回答，送给跟进这个事项的会话（没有就留给下一个接手的会话），并记入事项时间线。Ctrl+Enter 发送。",
     send: "发送",
     sending: "正在发送…",
     cancel: "取消",
     sendFailed: "回复未发送：{{error}}",
     openMessage: "打开原消息",
+    openItem: "打开事项",
     openConnectors: "打开连接器",
     accountReauth: "重新授权 {{title}}",
     connectorExpired: "重新登录：{{title}}",

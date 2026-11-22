@@ -97,6 +97,7 @@ export function groupPendingItems(
   personal = untitled,
   defaultAssistant = untitled,
   notices = untitled,
+  itemLabel: (text: string) => string = (text) => text || untitled,
 ): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
@@ -109,29 +110,38 @@ export function groupPendingItems(
     // several chats; a write waits for the person, not a chat).
     const inbox =
       item.source === "assistant_inbox" || item.source === "connector_write";
+    // An item waiting on the person belongs to that item, not a chat.
+    const waitingItem = item.source === "item_wait";
     const key = notice
       ? noticeGroupKey
-      : inbox
-        ? `assistant-inbox:${item.assistantId || item.id}`
-        : own
-          ? "personal"
-          : item.issueId
-            ? `issue:${item.issueId}`
-            : `session:${item.sessionId ?? item.id}`;
+      : waitingItem
+        ? `item:${item.itemId || item.id}`
+        : inbox
+          ? `assistant-inbox:${item.assistantId || item.id}`
+          : own
+            ? "personal"
+            : item.issueId
+              ? `issue:${item.issueId}`
+              : `session:${item.sessionId ?? item.id}`;
     let group = groups.get(key);
     if (!group) {
       group = {
         key,
         title: notice
           ? notices
-          : inbox
-            ? item.assistantName || defaultAssistant
-            : own
-              ? personal
-              : (item.issueId ? item.title : item.sessionTitle) || untitled,
+          : waitingItem
+            ? itemLabel(item.itemText ?? "")
+            : inbox
+              ? item.assistantName || defaultAssistant
+              : own
+                ? personal
+                : (item.issueId ? item.title : item.sessionTitle) || untitled,
         workspaceId: notice ? "" : item.workspaceId,
         workspaceName: notice ? "" : (item.workspaceName ?? ""),
-        sessionId: notice || inbox || item.issueId ? undefined : item.sessionId,
+        sessionId:
+          notice || inbox || waitingItem || item.issueId
+            ? undefined
+            : item.sessionId,
         issueId: notice ? undefined : item.issueId,
         items: [],
       };
@@ -168,7 +178,8 @@ const noticeGroupKey = "notices";
  */
 /**
  * Where a reply to an item goes: an Issue's question, the assistant's own
- * question (answered through the item), or the item's chat.
+ * question or an item that waits on the person (answered through the entry),
+ * or the item's chat.
  */
 export type PendingReplyRoute = "issue" | "answer" | "chat" | "none";
 
@@ -177,9 +188,34 @@ export function pendingReplyRoute(
 ): PendingReplyRoute {
   if (item.source === "issue_question" && item.issueId && item.eventId)
     return "issue";
-  if (item.source === "assistant_question") return "answer";
+  if (item.source === "assistant_question" || item.source === "item_wait")
+    return "answer";
   if (item.sessionId) return "chat";
   return "none";
+}
+
+/**
+ * What the reply box says about where the reply goes, by the reply's real
+ * route: the Issue's question, the assistant conversation that asked, whoever
+ * follows a waiting item (recorded on its timeline), or the item's chat.
+ */
+export function pendingReplyHintKey(
+  item: Pick<PendingItem, "source" | "issueId" | "eventId" | "sessionId">,
+):
+  | "item.issueReplyHint"
+  | "item.assistantReplyHint"
+  | "item.itemReplyHint"
+  | "item.replyHint" {
+  switch (pendingReplyRoute(item)) {
+    case "issue":
+      return "item.issueReplyHint";
+    case "answer":
+      return item.source === "item_wait"
+        ? "item.itemReplyHint"
+        : "item.assistantReplyHint";
+    default:
+      return "item.replyHint";
+  }
 }
 
 /**
@@ -322,6 +358,19 @@ export function pendingOptionLabel(option: string): string {
  */
 export type PendingPrimary = "options" | "reply" | "open" | "none";
 
+/**
+ * Whether the person can answer an item from its card: through its chat, its
+ * Issue, or its own answer route (an item waiting on them has no chat).
+ */
+export function pendingCanReply(
+  item: Pick<PendingItem, "source" | "sessionId" | "issueId" | "eventId">,
+): boolean {
+  return (
+    item.source === "item_wait" ||
+    Boolean(item.sessionId || (item.issueId && item.eventId))
+  );
+}
+
 export function pendingPrimary(item: PendingItem): PendingPrimary {
   if (pendingResolved(item)) return "none";
   // A saved message's actions are retry, not-process and its attempt.
@@ -329,7 +378,7 @@ export function pendingPrimary(item: PendingItem): PendingPrimary {
   // A note needs no answer: the person reads it and dismisses it (DEV-278).
   if (item.source === "notice") return "none";
   if (pendingPersonal(item)) return "open";
-  const canReply = Boolean(item.sessionId || (item.issueId && item.eventId));
+  const canReply = pendingCanReply(item);
   if (item.options?.length && canReply) return "options";
   if (
     item.source === "turn_failed" ||

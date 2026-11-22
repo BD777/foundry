@@ -75,6 +75,11 @@ const (
 	// and quote, their own words; supersedes names the decided event it
 	// replaces). Decisions are only appended; a later one supersedes.
 	PersonalAgentItemEventDecided = "decided"
+	// NeedsYouOpened: the item began waiting on the person (detail needsYouId
+	// and title, what it waits for). NeedsYouAnswered: the person answered it
+	// (detail needsYouId and quote, their own words).
+	PersonalAgentItemEventNeedsYouOpened   = "needs_you_opened"
+	PersonalAgentItemEventNeedsYouAnswered = "needs_you_answered"
 )
 
 // Views of the items page: open, finished (done or dropped) and archived; all
@@ -179,13 +184,16 @@ type PersonalAgentListItemInput struct {
 // PersonalAgentItemPlan supplements the person's short task without
 // duplicating execution state or changing what their original words meant.
 type PersonalAgentItemPlan struct {
-	Route        *PersonalAgentRouteDecision `json:"route,omitempty"`
-	Mode         string                      `json:"mode"`
-	Progress     string                      `json:"progress"`
-	NextAction   string                      `json:"nextAction,omitempty"`
-	WaitingFor   string                      `json:"waitingFor,omitempty"`
-	WorkspaceID  string                      `json:"workspaceId,omitempty"`
-	Dependencies []string                    `json:"dependencies,omitempty"`
+	Route      *PersonalAgentRouteDecision `json:"route,omitempty"`
+	Mode       string                      `json:"mode"`
+	Progress   string                      `json:"progress"`
+	NextAction string                      `json:"nextAction,omitempty"`
+	WaitingFor string                      `json:"waitingFor,omitempty"`
+	// WaitingOn is "person" when the item waits on the person
+	// (ItemWaitingOnPerson); empty when it waits on something else or nothing.
+	WaitingOn    string   `json:"waitingOn,omitempty"`
+	WorkspaceID  string   `json:"workspaceId,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
 	// Acceptance is what counts as done, one checkable criterion each.
 	Acceptance []string                          `json:"acceptance,omitempty"`
 	WorkRefs   []PersonalAgentWorkReference      `json:"workRefs,omitempty"`
@@ -321,6 +329,10 @@ type PersonalAgentListStore interface {
 	// of an item took one of its helper sessions: kind archived or restored,
 	// with the session.
 	RecordPersonalAgentItemSessionEvent(ctx context.Context, actor, assistantID, itemID, kind, sessionID string) error
+	// RecordPersonalAgentItemNeedsYouEvent records that the item began waiting
+	// on the person or that they answered it: kind needs_you_opened or
+	// needs_you_answered, with its detail.
+	RecordPersonalAgentItemNeedsYouEvent(ctx context.Context, actor, assistantID, itemID, kind string, detail PersonalAgentItemEventDetail) error
 	ListPersonalAgentItemPage(ctx context.Context, assistantID string, filter PersonalAgentItemFilter) (PersonalAgentItemPage, error)
 	// ReportPersonalAgentItems reviews [from, to), both RFC 3339 instants.
 	ReportPersonalAgentItems(ctx context.Context, assistantID, from, to string) (PersonalAgentItemRangeReport, error)

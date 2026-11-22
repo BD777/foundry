@@ -131,6 +131,7 @@ type Backend interface {
 }
 
 type Server struct {
+	itemWaits        itemWaitWatch
 	attachmentImages attachmentImageCache
 	nativeSignIns    nativeSignInRequests
 	tunnels          serviceTunnelRuntime

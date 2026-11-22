@@ -462,6 +462,51 @@ test("the detail shows its plan and its helper opens in a new tab", async () => 
   await page.unmount();
 });
 
+test("the timeline says what an item waited on the person for and their answer, in their words", async () => {
+  const detail = {
+    item: item("waits", { text: "rerun the batch" }),
+    events: [
+      {
+        id: "e1",
+        itemId: "waits",
+        at: nowIso,
+        actor: "foundry",
+        kind: "needs_you_opened",
+        detail: { needsYouId: "pnd_1", title: "Batch A or batch B?" },
+      },
+      {
+        id: "e2",
+        itemId: "waits",
+        at: nowIso,
+        actor: "person",
+        kind: "needs_you_answered",
+        detail: { needsYouId: "pnd_1", quote: "Batch A" },
+      },
+    ],
+  };
+  const page = await mount(ItemDetail, {
+    assistantId: "asst_1",
+    detail,
+    error: "",
+    onBack: () => {},
+    onOpenAssistant: () => {},
+    items: [],
+    operations: [],
+    workspaces: [],
+    onChanged: noop,
+    onDeleted: () => {},
+  });
+  const text = page.container.textContent;
+  assert.match(text, /Waiting for you: Batch A or batch B\?/);
+  assert.match(text, /You answered: “Batch A”/);
+  // Each line is the whole line, clamped with a way to read all of it, not
+  // cut to one line behind a hover title.
+  const lines = page.container.querySelectorAll("li .fdy-clamped-text");
+  assert.ok(lines.length >= 2, page.container.innerHTML);
+  assert.equal(page.container.querySelector("li span.truncate[title]"), null);
+  await page.unmount();
+});
+
 test("a detail that failed to load says so", async () => {
   const page = await mount(ItemDetail, {
     assistantId: "asst_1",
