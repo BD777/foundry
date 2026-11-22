@@ -30,6 +30,7 @@ export const pending: Translation<typeof en> = {
     openIssue: "打开 Issue",
     groupLabel: "{{workspace}} 中的 {{title}}",
     notices: "知会",
+    itemGroup: "事项：{{text}}",
   },
   source: {
     question: "提问",
@@ -109,6 +110,7 @@ export const pending: Translation<typeof en> = {
     cancel: "取消",
     sendFailed: "回复未发送：{{error}}",
     openMessage: "打开原消息",
+    openItem: "打开事项",
     openConnectors: "打开连接器",
     accountReauth: "重新授权 {{title}}",
     connectorExpired: "重新登录：{{title}}",

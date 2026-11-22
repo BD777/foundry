@@ -30,6 +30,7 @@ export const pending = {
     openIssue: "Open Issue",
     groupLabel: "{{title}} in {{workspace}}",
     notices: "For your information",
+    itemGroup: "Item: {{text}}",
   },
   source: {
     question: "Question",
@@ -111,6 +112,7 @@ export const pending = {
     cancel: "Cancel",
     sendFailed: "The reply was not sent: {{error}}",
     openMessage: "Open message",
+    openItem: "Open item",
     openConnectors: "Open Connectors",
     accountReauth: "Authorize {{title}} again",
     connectorExpired: "Sign in again: {{title}}",

@@ -13,6 +13,7 @@ import {
   Info,
   KeyRound,
   MessageCircleQuestion,
+  ListChecks,
   MessagesSquare,
   PackageX,
   RotateCcw,
@@ -34,6 +35,7 @@ import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
 import {
   pendingApprovalDetail,
+  pendingCanReply,
   pendingFailure,
   pendingHeadline,
   pendingInboxReason,
@@ -65,7 +67,7 @@ const kindIcon = {
   connector_write: { icon: MessagesSquare, tone: "warn" },
   notice: { icon: Info, tone: "brass" },
   assistant_question: { icon: MessagesSquare, tone: "brass" },
-  item_wait: { icon: MessageCircleQuestion, tone: "brass" },
+  item_wait: { icon: ListChecks, tone: "brass" },
 } as const;
 
 /**
@@ -188,10 +190,7 @@ export function PendingItemCard({
   const approvalDetail = pendingApprovalDetail(item);
   // A classified failure says what to do; its raw error waits in the menu.
   const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
-  const canReply =
-    !resolved &&
-    !readOnly &&
-    Boolean(item.sessionId || (item.issueId && item.eventId));
+  const canReply = !resolved && !readOnly && pendingCanReply(item);
   const when = resolved
     ? t("item.resolved", {
         state: t(pendingStatusKey(item)),
@@ -251,9 +250,11 @@ export function PendingItemCard({
           ? t("item.openConnectors")
           : item.issueId
             ? t("page.openIssue")
-            : where === "chat"
-              ? t("item.jumpToMessage")
-              : t("item.openMessage");
+            : item.source === "item_wait"
+              ? t("item.openItem")
+              : where === "chat"
+                ? t("item.jumpToMessage")
+                : t("item.openMessage");
   const primaryOpenLabel =
     item.source === "turn_failed" && !item.issueId
       ? where === "chat"

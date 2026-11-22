@@ -499,6 +499,11 @@ test("the timeline says what an item waited on the person for and their answer, 
   const text = page.container.textContent;
   assert.match(text, /Waiting for you: Batch A or batch B\?/);
   assert.match(text, /You answered: “Batch A”/);
+  // Each line is the whole line, clamped with a way to read all of it, not
+  // cut to one line behind a hover title.
+  const lines = page.container.querySelectorAll("li .fdy-clamped-text");
+  assert.ok(lines.length >= 2, page.container.innerHTML);
+  assert.equal(page.container.querySelector("li span.truncate[title]"), null);
   await page.unmount();
 });
 

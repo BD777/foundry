@@ -734,9 +734,9 @@ function TimelineRow({
       <span className="flex-none text-xs text-ink-muted">
         {actor[event.actor]}
       </span>
-      <span className="min-w-0 truncate text-ink" title={line}>
+      <ClampedText className="min-w-0 flex-1" clamp={2} tone="ink">
         {line}
-      </span>
+      </ClampedText>
     </li>
   );
 }

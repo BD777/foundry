@@ -15,6 +15,7 @@ import {
   navigateToConnectors,
   navigateToSkillLibrary,
   navigateToIssue,
+  navigateToItems,
 } from "../../lib/in-app-navigation";
 import { PendingItemCard } from "./pending-item-card";
 import {
@@ -39,6 +40,9 @@ export function openPendingItem(item: PendingItem): void {
     navigateToAssistantSettings("channels", item.assistantId);
   else if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
   else if (item.issueId) navigateToIssue(item.issueId);
+  else if (item.source === "item_wait" && item.itemId)
+    // An item waiting on the person opens at that item.
+    navigateToItems("", item.itemId);
   else if (item.source === "assistant_inbox" && item.sessionId)
     // A saved message's attempt is the assistant's conversation itself.
     navigateToChat(item.sessionId, item.workspaceId);
@@ -80,6 +84,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
             t("page.personal"),
             t("page.defaultAssistant"),
             t("page.notices"),
+            (text) => t("page.itemGroup", { text: text || t("page.untitled") }),
           )
         : [],
     [list, filteredItems, filter, t],

@@ -546,6 +546,62 @@ test("the page shows an item in its own words and replies into its chat", async 
   host.remove();
 });
 
+test("an item waiting on the person is answered from its card through its own answer route", async () => {
+  const waiting = item({
+    id: "pnd_w",
+    source: "item_wait",
+    sessionId: undefined,
+    sessionTitle: undefined,
+    assistantId: "asst_1",
+    assistantName: "Ada",
+    itemId: "pai_1",
+    itemText: "Rerun the batch",
+    context: "Rerun the batch",
+    title: "Batch A (17) or batch B (9)?",
+    excerpt: "Batch A (17) or batch B (9)?",
+  });
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: {},
+    items: [waiting],
+  });
+  // It belongs to its item, not to an untitled chat.
+  assert.match(host.textContent, /Item: Rerun the batch/);
+  assert.doesNotMatch(host.textContent, /Untitled/);
+  // Reply is its action; nothing offers a message it does not have.
+  assert.equal(buttonNamed(host, "Open message"), undefined);
+  const reply = buttonNamed(host, "Reply");
+  assert.ok(reply, host.innerHTML);
+  await act(async () => reply.click());
+  const textarea = host.querySelector("textarea");
+  assert.ok(textarea, "the reply box");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    ).set;
+    setter.call(textarea, "Batch A");
+    textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await act(async () => buttonNamed(host, "Send").click());
+  const answered = calls.find((call) =>
+    call.path.endsWith("/api/pending-items/pnd_w/answer"),
+  );
+  assert.ok(answered, JSON.stringify(calls));
+  assert.equal(answered.method, "POST");
+  assert.equal(answered.body.text, "Batch A");
+  assert.equal(
+    calls.some((call) => call.path.includes("/queue")),
+    false,
+  );
+  // Its menu opens the item itself.
+  const menu = await openMenu(host, "More for “Batch A (17) or batch B (9)?”");
+  assert.ok(menu.includes("Open item"), JSON.stringify(menu));
+  assert.equal(menu.includes("Open message"), false);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 test("a person can close an item as not needed without a confirmation", async () => {
   const { host, root, calls } = await render({
     open: 1,
