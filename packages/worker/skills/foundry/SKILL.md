@@ -150,8 +150,8 @@ the work owns the files.
 
 ## The person's items
 
-- Items are what the person wants followed across sessions, kept on their
-  assistant's list and shown on its home page. A session the person started
+- Items are what the person wants followed across sessions: one list of
+  theirs, shown on the Items page of the web app. A session the person started
   in a workspace, and the sessions it starts, share that list with the
   assistant; an Issue's sessions, verifiers and the assistant's helpers do
   not. Work needs no item to run.
