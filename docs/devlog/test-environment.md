@@ -8,6 +8,8 @@
 | 本机合成栈 isolation-dev006-007 | scratch-admin    | DEV-006/007 草稿与独立 Issue 验收；新 Workspace `ws_9a7f5fdc-72da-4599-a24a-782e59e1171e` 与无改动场景 `ws_d3f03f56-3125-4a8f-82f1-4e2c8618de09` | 实例 instance.env 与浏览器状态均在仓库外                 | [Astra 接续](https://dev.foundryapp.app/chats/sess_1792389911761860653) | 2026-10-19 |
 | 日常 dev                        | e2e-alice        | 既有独立账号，本轮仅登录并核验部署页面；不修改旧 Workspace/Issue                                                                                 | `~/.foundry/server/e2e-alice.password`，认证状态在仓库外 | [Astra 接续](https://dev.foundryapp.app/chats/sess_1792389911761860653) | 2026-10-19 |
 
+**合成测试的边界（2026-11-23，Needs you review S0①）**：合成测试只用 e2e-alice，或本人账号下单独新建、名称写明「测试」的会话或工作区。不进本人真实的助理对话、助理首页和消息通道，也不往这些地方发合成提问、`needs_you ask` / `tell` 或通知卡片。需要经本人的飞书机器人私聊验证卡片时，先由编排会话告诉本人并得到同意，卡片标题写明「[测试]」。
+
 用户已授权在其 dev 账号下验证。采用用户账号时使用明确标记的合成 Workspace/Issue，避免更改无关业务数据。采用独立账号时记录稳定账号标识，后续复用。清理只处理本次明确创建且不再需要的测试数据，验收证据需留存。
 
 2026-10-20：DEV-025 复用 e2e-alice 完成日常 dev 登录与 build smoke，无新增业务对象；本轮隔离 HTTP/UI fixture 使用独立临时 DB，不连接 Worker。浏览器认证状态保留仓库外，本轮临时 vault 项已删除。

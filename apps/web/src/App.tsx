@@ -107,15 +107,16 @@ export function App() {
     currentAssistant?.workspaceId,
     activeView === "assistant",
   );
+  const pending = usePendingItems(apiState !== "loading");
   useDocumentTitle({
     view: activeView,
     workspaceName: data.workspace.name,
     issue: current.selectedIssue,
     device: data.devices.find((row) => row.id === selectedDeviceId),
     assistantUnread,
+    needsYouCount: pending.list?.open,
   });
   const issueDraft = useIssueDraftRequest(location.setActiveView, setNotice);
-  const pending = usePendingItems(apiState !== "loading");
   const viewContext: AppViewContext = {
     current,
     location,

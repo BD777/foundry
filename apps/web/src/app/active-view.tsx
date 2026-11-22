@@ -11,6 +11,7 @@ import type {
 import type { ConnectorType } from "../lib/connector-types";
 import type { ProviderTab } from "../lib/provider-tabs";
 import { navigateToItems } from "../lib/in-app-navigation";
+import { pendingRequest } from "../lib/pending-display";
 import {
   AssistantHome,
   AssistantItemsPage,
@@ -200,7 +201,12 @@ export function ActiveView({
           assistants={assistants.assistants}
           devices={data.devices}
           key={location.selectedAssistantId}
-          needsYouTotal={pending.list?.open}
+          needsYou={
+            pending.list && {
+              count: pending.list.open,
+              items: pending.list.items.filter(pendingRequest),
+            }
+          }
           onEvent={handleAssistantEvent}
           workspaces={data.workspaces}
         />
@@ -240,6 +246,7 @@ export function ActiveView({
           key={location.selectedAssistantId}
           onEvent={handleAssistantEvent}
           onSectionChange={onAssistantSectionChange}
+          pendingItems={pending.list?.items}
           profiles={data.profiles}
           section={assistantSection}
           workspaces={data.workspaces}

@@ -238,7 +238,11 @@ func TestPendingItemsFollowAnIssueQuestion(t *testing.T) {
 	}
 }
 
-func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
+// A question in the person's own chat stays open after the runtime stops
+// waiting for it (timed out, its turn ended): the person may answer it later,
+// as the chat's next message. Their next message, a stopped turn, or the
+// chat's archiving closes it.
+func TestPersonChatQuestionsStayOpenUntilThePersonAnswers(t *testing.T) {
 	f := newPendingFixture(t)
 	ctx := context.Background()
 	reactions := pendingReactions{f.server}
@@ -250,59 +254,71 @@ func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
 				Questions: []store.AgentQuestion{{Title: title, Options: []string{"Approve", "Deny"}, Approval: true}}},
 		})
 	}
-	state := func(title string) string {
+	itemOf := func(title string) store.PendingItem {
 		t.Helper()
-		for _, item := range f.list().Items {
+		items, err := f.server.store.ListPendingItems(ctx, f.session.CreatedByUserID, []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone}, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
 			if item.Title == title {
-				return item.State
+				return item
 			}
 		}
 		t.Fatalf("no item %q", title)
-		return ""
-	}
-	outcome := func(title string) string {
-		t.Helper()
-		for _, item := range f.list().Items {
-			if item.Title == title {
-				return item.Outcome
-			}
-		}
-		t.Fatalf("no item %q", title)
-		return ""
+		return store.PendingItem{}
 	}
 	ask("evt_plan", "in_1/approval_toolu_1", "", "Approve this plan?")
 	ask("evt_cmd", "approval_cmd_1", "", "Allow this command?")
-	ask("evt_async", "call_async", "async", "Keep the rows?")
 
-	// Its worker reports it settled unanswered (timed out, declined): only
-	// that one closes; the report is a receipt, not transcript.
-	settled := store.AgentSessionEvent{SessionID: sessionID, Label: store.EventLabelQuestionSettled, Detail: "approval_toolu_1"}
-	if !f.server.observeQuestionSettled(ctx, settled) {
+	// Its worker reports it settled unanswered (timed out): it still waits for
+	// the person. The report is a receipt, not transcript.
+	if !f.server.observeQuestionSettled(ctx, store.AgentSessionEvent{SessionID: sessionID, Label: store.EventLabelQuestionSettled, Detail: "approval_toolu_1"}) {
 		t.Fatal("the settled report was not taken")
-	}
-	if got := state("Approve this plan?"); got != store.PendingSuperseded {
-		t.Fatalf("settled approval = %s", got)
-	}
-	if got := outcome("Approve this plan?"); got != store.PendingOutcomeAutoResolved {
-		t.Fatalf("settled approval outcome = %s", got)
-	}
-	if got := state("Allow this command?"); got != store.PendingOpen {
-		t.Fatalf("other approval = %s", got)
 	}
 	if f.server.observeQuestionSettled(ctx, store.AgentSessionEvent{SessionID: sessionID, Label: "Response stream"}) {
 		t.Fatal("another event was taken as a settled report")
 	}
+	if got := itemOf("Approve this plan?"); got.State != store.PendingOpen || got.Rule != store.PendingRuleHeld {
+		t.Fatalf("a timed-out question of the person's chat = %s rule %q, want open and held", got.State, got.Rule)
+	}
 
-	// The turn ended (however): what held it waits no more; an async
-	// question still does.
+	// The turn ended: both still wait, and the count says so.
 	failed := f.session
 	failed.Status = "failed"
 	reactions.SessionChanged(ctx, sessions.Completed, failed)
-	if got := state("Allow this command?"); got != store.PendingSuperseded {
-		t.Fatalf("held approval after the turn = %s", got)
+	for _, title := range []string{"Approve this plan?", "Allow this command?"} {
+		if got := itemOf(title).State; got != store.PendingOpen {
+			t.Fatalf("%q after its turn ended = %s, want open", title, got)
+		}
 	}
-	if got := state("Keep the rows?"); got != store.PendingOpen {
-		t.Fatalf("async question after the turn = %s", got)
+	if list := f.list(); list.Open != 2 || list.BySession[sessionID] != 2 {
+		t.Fatalf("counts after the turn = %d, %+v; want both", list.Open, list.BySession)
+	}
+
+	// The person's next message in the chat is their answer to both.
+	queued := f.session
+	queued.Input = store.SessionInput{ID: "in_later", Prompt: "Approve", At: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano)}
+	reactions.SessionChanged(ctx, sessions.Queued, queued)
+	if got := itemOf("Approve this plan?"); got.State != store.PendingReplied || got.Outcome != store.PendingOutcomePersonAnswered {
+		t.Fatalf("after the person's later message = %s %s, want replied by the person", got.State, got.Outcome)
+	}
+
+	// A stopped turn ends what it asked.
+	ask("evt_stop", "approval_stop", "", "Deploy now?")
+	canceled := f.session
+	canceled.Status = "canceled"
+	reactions.SessionChanged(ctx, sessions.Completed, canceled)
+	if got := itemOf("Deploy now?").State; got != store.PendingSuperseded {
+		t.Fatalf("after the person stopped the turn = %s, want superseded", got)
+	}
+
+	// The chat archived: its open question waits for no one, and says why.
+	ask("evt_archived", "approval_archived", "", "Ship the patch?")
+	archiveSession(t, f.server, f.session)
+	f.server.closeQuestionsOfGoneSessions(ctx)
+	if got := itemOf("Ship the patch?"); got.State != store.PendingDone || got.ResolutionDetail != "session_archived" {
+		t.Fatalf("question of an archived chat = %s %q, want done with session_archived", got.State, got.ResolutionDetail)
 	}
 }
 

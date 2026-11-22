@@ -79,6 +79,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
             t("page.untitled"),
             t("page.personal"),
             t("page.defaultAssistant"),
+            t("page.notices"),
           )
         : [],
     [list, filteredItems, filter, t],

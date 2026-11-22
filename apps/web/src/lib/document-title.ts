@@ -15,6 +15,10 @@ import { i18n } from "../i18n";
  * the chat's "scheduled · next at" note and its list row's clock say it will
  * wake.
  *
+ * Every page, a chat's too, counts the requests that need the person after
+ * the chat's waiting count ("Needs you 3 · "), the same number the sidebar's
+ * 等你处理 shows; notices are not counted.
+ *
  * On a chat page the mark means only that chat. The assistant's unseen home
  * answer is the sidebar's 助理 dot there; on any other page (the assistant
  * page itself, settings, lists) it is the assistant state: 💬 and its icon.
@@ -63,6 +67,8 @@ export interface DocumentTitleParts {
   background?: boolean;
   /** Direct sub-sessions that make the open chat wait. */
   waitingChildCount?: number;
+  /** Open requests that need the person, as the sidebar counts them. */
+  needsYouCount?: number;
 }
 
 export function tabStatus(parts: DocumentTitleParts): TabStatus {
@@ -90,7 +96,10 @@ export function buildDocumentTitle(parts: DocumentTitleParts): string {
   const waiting = parts.waitingChildCount
     ? `${i18n.t("chat:waitingChildren.tab", { count: parts.waitingChildCount })} · `
     : "";
-  return `${marker ? `${marker} ` : ""}${waiting}${label} — ${appName}`;
+  const needsYou = parts.needsYouCount
+    ? `${i18n.t("shell:tab.needsYou", { count: parts.needsYouCount })} · `
+    : "";
+  return `${marker ? `${marker} ` : ""}${waiting}${needsYou}${label} — ${appName}`;
 }
 
 let page: DocumentTitleParts = {};

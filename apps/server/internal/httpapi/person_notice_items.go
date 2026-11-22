@@ -107,24 +107,83 @@ func (s *Server) handPendingItem(ctx context.Context, userID, id, handler, note,
 // item has at most one notice: once it has one, a notice that failed or was
 // answered is not repeated, and a reopened item is a new item with its own.
 func (s *Server) noticeAboutItem(ctx context.Context, item store.PendingItem) {
-	s.queueItemNotice(ctx, item, s.noticeChatOf)
+	s.queueItemNotice(ctx, item, s.noticeBotReaches)
 }
 
-// noticeChatLookup reads the notice chat of a connector instance of a person.
-type noticeChatLookup func(ctx context.Context, userID, instanceID string) (string, error)
+// noticeBotLookup reports whether the Foundry bot can carry the notices of an
+// assistant to the person (feishu HasNoticeChat).
+type noticeBotLookup func(ctx context.Context, userID, assistantID string) bool
 
-// queueItemNotice is noticeAboutItem with the notice chat lookup given. The
-// notice goes through the item's assistant's own sinks or, when it has none,
-// the person's default assistant's: a notice goes to the same person whichever
-// assistant raised the item. A skipped notice is logged with its reason only.
-func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, chatOf noticeChatLookup) {
+// noticeBotReaches is the production noticeBotLookup.
+func (s *Server) noticeBotReaches(ctx context.Context, userID, assistantID string) bool {
+	return s.feishu.HasNoticeChat(ctx, userID, assistantID)
+}
+
+// Why an open request earns a notice but gets none. They are facts for the
+// person (the Web words each), never read by an Agent.
+const (
+	noticeSkipNoSinks             = "no_sinks"
+	noticeSkipKindNotTaken        = "kind_not_taken"
+	noticeSkipNotCardSink         = "not_card_sink"
+	noticeSkipBotNotPaired        = "bot_not_paired"
+	noticeSkipNoOrigin            = "no_origin"
+	noticeSkipAssistantUnreadable = "assistant_unreadable"
+)
+
+// noticeDecision is the one rule for an item's notice, used to queue it and to
+// show the person why there is none. earns is false for an item that never
+// gets a notice (not open, not theirs to handle, or of a kind that needs no
+// answer). Otherwise route is where it goes, or skip says why it cannot go.
+// Notices go only as the Foundry bot's interactive cards: a connector sink,
+// which would post plain text, is no destination.
+func (s *Server) noticeDecision(ctx context.Context, item store.PendingItem, bot noticeBotLookup) (route personnotice.Route, earns bool, skip string) {
 	kind, ok := personNoticeKind(item)
 	if !ok || item.State != store.PendingOpen || store.PendingHandledBy(item) != store.PendingHandlerPerson {
+		return personnotice.Route{}, false, ""
+	}
+	ownerID, sinks, skip := s.noticeSinksOf(ctx, item)
+	if skip != "" {
+		return personnotice.Route{}, true, skip
+	}
+	origin := strings.TrimRight(strings.TrimSpace(s.options.AllowedOrigin), "/")
+	if origin == "" {
+		return personnotice.Route{}, true, noticeSkipNoOrigin
+	}
+	skip = noticeSkipKindNotTaken
+	for _, sink := range sinks {
+		if !slices.Contains(sink.Kinds, kind) {
+			continue
+		}
+		if sink.ConnectorInstanceID != feishu.NoticeSinkID {
+			skip = noticeSkipNotCardSink
+			continue
+		}
+		if !bot(ctx, item.UserID, ownerID) {
+			skip = noticeSkipBotNotPaired
+			continue
+		}
+		title, text := noticeWords(item, kind)
+		route = personnotice.Route{
+			AssistantID: ownerID, SinkID: feishu.NoticeSinkID, Kind: kind, AllowFreeText: canAnswerFromNotice(item),
+			Title: title, Text: text, Link: origin + "/pending?item=" + url.QueryEscape(item.ID),
+		}
+		if itemIsApproval(item) {
+			route.Options = approvalNoticeOptions
+		}
+		return route, true, ""
+	}
+	return personnotice.Route{}, true, skip
+}
+
+// queueItemNotice is noticeAboutItem with the bot lookup given. A skipped
+// notice is logged with its reason only, never the item's content.
+func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, bot noticeBotLookup) {
+	route, earns, skip := s.noticeDecision(ctx, item, bot)
+	if !earns {
 		return
 	}
-	ownerID, sinks, reason := s.noticeSinksOf(ctx, item)
-	if reason != "" {
-		log.Printf("person notice for item %s skipped: %s", item.ID, reason)
+	if skip != "" {
+		log.Printf("person notice for item %s skipped: %s", item.ID, skip)
 		return
 	}
 	earlier, err := s.store.PersonNoticesOfItem(ctx, item.ID)
@@ -135,114 +194,103 @@ func (s *Server) queueItemNotice(ctx context.Context, item store.PendingItem, ch
 	if len(earlier) > 0 {
 		return
 	}
-	origin := strings.TrimRight(strings.TrimSpace(s.options.AllowedOrigin), "/")
-	if origin == "" {
-		log.Printf("person notice for item %s: the server has no allowed origin, so the notice has no Web address", item.ID)
+	if _, _, err := s.personNotices.EnqueueNotice(ctx, item, route); err != nil {
+		log.Printf("person notice for item %s: %v", item.ID, err)
+	}
+}
+
+// noticeOpenItems queues the notice of each of the person's open requests that
+// has none yet: those recorded while no sink could carry it (before the
+// setting was saved, or before a fix). An item that already has a notice is
+// left as it is, so running it again sends nothing twice.
+func (s *Server) noticeOpenItems(ctx context.Context, userID string, bot noticeBotLookup) {
+	items, err := s.store.ListVisiblePendingItems(ctx, userID, []string{store.PendingOpen}, "", 500)
+	if err != nil {
+		log.Printf("person notices of open items of %s: %v", userID, err)
 		return
 	}
-	title, text := noticeWords(item, kind)
-	route := personnotice.Route{
-		AssistantID: ownerID, Kind: kind, AllowFreeText: canAnswerFromNotice(item), Title: title, Text: text,
-		Link: origin + "/pending?item=" + url.QueryEscape(item.ID),
+	for _, item := range items {
+		s.queueItemNotice(ctx, item, bot)
 	}
-	if itemIsApproval(item) {
-		route.Options = approvalNoticeOptions
-	}
-	takesKind := false
-	for _, sink := range sinks {
-		if !slices.Contains(sink.Kinds, kind) {
-			continue
+}
+
+// noticeOpenItemsOfEveryone runs noticeOpenItems once for every person with an
+// open request of a kind that earns a notice, when the server starts.
+func (s *Server) noticeOpenItemsOfEveryone(ctx context.Context) {
+	users := map[string]bool{}
+	for _, source := range []string{store.PendingSourceQuestion, store.PendingSourceAssistantQuestion, store.PendingSourceConnectorWrite} {
+		items, err := s.store.ListOpenPendingItemsBySource(ctx, source)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("person notices at start: list open %s items: %v", source, err)
+			}
+			return
 		}
-		takesKind = true
-		target, ok := s.noticeTargetOf(ctx, item, ownerID, sink.ConnectorInstanceID, chatOf)
-		if !ok {
-			continue
+		for _, item := range items {
+			users[item.UserID] = true
 		}
-		route.SinkID, route.Target = noticeSinkID(sink.ConnectorInstanceID), target
-		if _, _, err := s.personNotices.EnqueueNotice(ctx, item, route); err != nil {
-			log.Printf("person notice for item %s: %v", item.ID, err)
+	}
+	for userID := range users {
+		if ctx.Err() != nil {
+			return
 		}
-		return
+		s.noticeOpenItems(ctx, userID, s.cachedNoticeBot())
 	}
-	if !takesKind {
-		log.Printf("person notice for item %s skipped: no notify sink takes kind %s", item.ID, kind)
+}
+
+// pendingNoticeView is what the person sees of an open request's notice: the
+// state of the notice it has, or why it has none.
+type pendingNoticeView struct {
+	State   string `json:"state,omitempty"`
+	Skipped string `json:"skipped,omitempty"`
+}
+
+// noticeViewOf is an item's pendingNoticeView, nil for an item that never
+// gets a notice, or one that earns a notice not queued yet.
+func (s *Server) noticeViewOf(ctx context.Context, item store.PendingItem, bot noticeBotLookup) (*pendingNoticeView, error) {
+	_, earns, skip := s.noticeDecision(ctx, item, bot)
+	if !earns {
+		return nil, nil
 	}
+	notices, err := s.store.PersonNoticesOfItem(ctx, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(notices) > 0 {
+		return &pendingNoticeView{State: notices[len(notices)-1].State}, nil
+	}
+	if skip != "" {
+		return &pendingNoticeView{Skipped: skip}, nil
+	}
+	return nil, nil
 }
 
 // noticeSinksOf is the sink list a notice of the item goes through, and the
 // assistant whose settings name them: the item's own assistant when it has
-// sinks, else the person's default assistant. reason says why there are none;
-// it never carries the item's content.
-func (s *Server) noticeSinksOf(ctx context.Context, item store.PendingItem) (ownerID string, sinks []store.PersonalAgentNotifySink, reason string) {
-	if item.AssistantID == "" {
-		return "", nil, "the item has no assistant"
-	}
-	agent, err := s.store.GetAssistant(ctx, item.AssistantID)
-	if err != nil {
-		return "", nil, fmt.Sprintf("its assistant cannot be read: %v", err)
-	}
-	if agent.UserID != item.UserID {
-		return "", nil, "its assistant belongs to another person"
-	}
-	if len(agent.Settings.Notify.Sinks) > 0 {
-		return agent.ID, agent.Settings.Notify.Sinks, ""
+// sinks, else the person's default assistant. An item no assistant raised (a
+// question in the person's own chat) goes through the default assistant's.
+// skip says why there are none.
+func (s *Server) noticeSinksOf(ctx context.Context, item store.PendingItem) (ownerID string, sinks []store.PersonalAgentNotifySink, skip string) {
+	if item.AssistantID != "" {
+		agent, err := s.store.GetAssistant(ctx, item.AssistantID)
+		if err != nil || agent.UserID != item.UserID {
+			return "", nil, noticeSkipAssistantUnreadable
+		}
+		if len(agent.Settings.Notify.Sinks) > 0 {
+			return agent.ID, agent.Settings.Notify.Sinks, ""
+		}
 	}
 	fallback, err := s.store.DefaultAssistant(ctx, item.UserID)
 	if errors.Is(err, store.ErrNotFound) {
-		return "", nil, "its assistant has no notify sinks and the person has no default assistant"
+		return "", nil, noticeSkipNoSinks
 	}
 	if err != nil {
-		return "", nil, fmt.Sprintf("the person's default assistant cannot be read: %v", err)
+		return "", nil, noticeSkipAssistantUnreadable
 	}
 	if len(fallback.Settings.Notify.Sinks) == 0 {
-		return "", nil, "neither its assistant nor the default assistant has notify sinks"
+		return "", nil, noticeSkipNoSinks
 	}
 	return fallback.ID, fallback.Settings.Notify.Sinks, ""
-}
-
-// noticeTargetOf is where a sink sends the notice: the chat of a connector
-// instance, or nothing for the built-in bot, which posts to the direct chat of
-// the assistant whose sink it is (ownerID). ok is false when the sink cannot
-// carry the notice now.
-func (s *Server) noticeTargetOf(ctx context.Context, item store.PendingItem, ownerID, instanceID string, chatOf noticeChatLookup) (string, bool) {
-	if instanceID == feishu.NoticeSinkID {
-		if !s.feishu.HasNoticeChat(ctx, item.UserID, ownerID) {
-			log.Printf("person notice for item %s: the Foundry bot has no direct chat with the assistant", item.ID)
-			return "", false
-		}
-		return "", true
-	}
-	chat, err := chatOf(ctx, item.UserID, instanceID)
-	if err != nil {
-		log.Printf("person notice for item %s: %v", item.ID, err)
-		return "", false
-	}
-	if chat == "" {
-		log.Printf("person notice for item %s: connector %s has no notice chat", item.ID, instanceID)
-		return "", false
-	}
-	return chat, true
-}
-
-// noticeChatOf is the chat a connector instance sends the person's notices to:
-// the descriptor's notify target field. Empty when the instance has none.
-func (s *Server) noticeChatOf(ctx context.Context, userID, instanceID string) (string, error) {
-	app, err := s.store.GetExternalProviderApp(ctx, instanceID)
-	if err != nil {
-		return "", fmt.Errorf("connector instance %s: %w", instanceID, err)
-	}
-	if app.OwnerUserID != userID || app.CreatedVia != "extension" {
-		return "", nil
-	}
-	data, err := s.connectors.ServerHeld.ExtensionData(ctx, app)
-	if err != nil {
-		return "", fmt.Errorf("connector instance %s: %w", instanceID, err)
-	}
-	serverHeld := data.Descriptor.ServerHeld
-	if serverHeld == nil || serverHeld.Notify == nil {
-		return "", nil
-	}
-	return strings.TrimSpace(data.Values[serverHeld.Notify.Target.Field]), nil
 }
 
 // messageChannelNoticeReply settles the person's reply to a notice and reports
@@ -566,4 +614,19 @@ func truncateRunes(text string, limit int) string {
 		return string(runes[:limit])
 	}
 	return text
+}
+
+// cachedNoticeBot is the production noticeBotLookup, answering each person and
+// assistant once: a list reads it for many items.
+func (s *Server) cachedNoticeBot() noticeBotLookup {
+	seen := map[string]bool{}
+	return func(ctx context.Context, userID, assistantID string) bool {
+		key := userID + "\x00" + assistantID
+		reaches, ok := seen[key]
+		if !ok {
+			reaches = s.noticeBotReaches(ctx, userID, assistantID)
+			seen[key] = reaches
+		}
+		return reaches
+	}
 }

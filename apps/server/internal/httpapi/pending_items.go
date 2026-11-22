@@ -271,9 +271,9 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded})
 			return
 		}
-		// A question that held the turn waits no more once the turn ended,
-		// however: answered, timed out, declined or interrupted.
-		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}, Rule: store.PendingRuleHeld})
+		// A question that held the turn stays open after its turn ends: the
+		// person may answer it later, and the answer is the chat's next
+		// message. Their next message in the chat closes it.
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
 			r.closePreviousTurnFailures(ctx, session)
@@ -281,10 +281,12 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 	}
 }
 
-// observeQuestionSettled closes the person's item of a question or approval
-// its worker reports settled without their answer (timed out, declined,
-// interrupted, its process ended). It reports whether the event was that
-// report, a receipt that is not transcript.
+// observeQuestionSettled closes the item of a question or approval its worker
+// reports settled without an answer (timed out, declined, interrupted, its
+// process ended). A question that held the person's own chat is kept open: the
+// runtime stopped waiting, the person did not, and their later answer reaches
+// the chat as its next message. It reports whether the event was that report,
+// a receipt that is not transcript.
 func (s *Server) observeQuestionSettled(ctx context.Context, event store.AgentSessionEvent) bool {
 	if event.Label != store.EventLabelQuestionSettled {
 		return false
@@ -293,9 +295,11 @@ func (s *Server) observeQuestionSettled(ctx context.Context, event store.AgentSe
 	if messageID == "" {
 		return true
 	}
-	if _, kept := s.pendingSession(ctx, event.SessionID); kept {
-		pendingReactions{s}.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, MessageID: messageID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}})
+	session, kept := s.pendingSession(ctx, event.SessionID)
+	if !kept || s.assistant.ResponsibleFor(ctx, session).Party == assistant.ResponsiblePerson {
+		return true
 	}
+	pendingReactions{s}.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, MessageID: messageID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}})
 	return true
 }
 
@@ -453,6 +457,9 @@ type pendingItemView struct {
 	ItemID          string `json:"itemId,omitempty"`
 	ItemAssistantID string `json:"itemAssistantId,omitempty"`
 	ItemText        string `json:"itemText,omitempty"`
+	// Notice is what became of an open request's notice to the person: its
+	// state, or why it has none. Absent for an item that never gets one.
+	Notice *pendingNoticeView `json:"notice,omitempty"`
 }
 
 type pendingAssistantView struct {
@@ -465,10 +472,13 @@ type pendingItemList struct {
 	Items []pendingItemView `json:"items"`
 	// Assistants are all of the person's assistants, for the page's filter.
 	Assistants []pendingAssistantView `json:"assistants"`
-	// Open counts the open items the person handles; BySession counts them
-	// per session. AssistantOpen counts those their assistant handles.
+	// Open counts the open requests the person handles (waitsOnPerson);
+	// BySession counts them per session. AssistantOpen counts those their
+	// assistant handles, NoticeOpen the open notes the assistant told the
+	// person, which ask for nothing and are not counted as requests.
 	Open          int            `json:"open"`
 	AssistantOpen int            `json:"assistantOpen"`
+	NoticeOpen    int            `json:"noticeOpen"`
 	BySession     map[string]int `json:"bySession"`
 }
 
@@ -528,6 +538,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	}
 	sessions := map[string]*store.AgentSession{}
 	workspaces := map[string]string{}
+	bot := s.cachedNoticeBot()
 	for _, item := range items {
 		view := pendingItemView{PendingItem: item, AssistantName: assistantNames[item.AssistantID]}
 		if item.Source == store.PendingSourceAssistantInbox {
@@ -560,13 +571,21 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 			workspaces[item.WorkspaceID] = name
 		}
 		view.WorkspaceName = name
-		if item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerAssistant {
+		switch {
+		case item.State != store.PendingOpen:
+		case store.PendingHandledBy(item) == store.PendingHandlerAssistant:
 			result.AssistantOpen++
-		} else if item.State == store.PendingOpen {
+		case item.Source == store.PendingSourceNotice:
+			result.NoticeOpen++
+		default:
 			result.Open++
 			if item.SessionID != "" && item.Source != store.PendingSourceIssueQuestion {
 				result.BySession[item.SessionID]++
 			}
+		}
+		if view.Notice, err = s.noticeViewOf(ctx, item, bot); err != nil {
+			writeError(w, http.StatusInternalServerError, "read pending item notice")
+			return
 		}
 		result.Items = append(result.Items, view)
 	}

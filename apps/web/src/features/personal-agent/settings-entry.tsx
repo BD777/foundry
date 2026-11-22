@@ -6,7 +6,11 @@ import type {
   ExternalProviderApp,
   PersonalAgentSettings,
 } from "@bd777/foundry-protocol";
-import { getExternalAccounts, listAssistants } from "../../api";
+import {
+  getExternalAccounts,
+  listAssistants,
+  type PendingItem,
+} from "../../api";
 import { Button } from "../../components/ui/button";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
@@ -80,10 +84,13 @@ export function EntrySection({
   assistantId,
   draft,
   change,
+  pendingItems,
 }: {
   assistantId?: string;
   draft: PersonalAgentSettings;
   change: ChangeSettings;
+  /** The person's pending items, for the notice setting's unsent requests. */
+  pendingItems?: readonly PendingItem[];
 }) {
   const { t } = useTranslation("personalAgent");
   const apps = useFeishuApps();
@@ -176,7 +183,12 @@ export function EntrySection({
           />
         </SettingsField>
       </SettingsGroup>
-      <NotifySection assistantId={assistantId} change={change} draft={draft} />
+      <NotifySection
+        assistantId={assistantId}
+        change={change}
+        draft={draft}
+        pendingItems={pendingItems}
+      />
       <SettingsGroup title={t("settings.entry.digestTitle")}>
         <SettingsCheck
           checked={draft.dailyDigest}

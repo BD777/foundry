@@ -1319,38 +1319,34 @@ export const personalAgent = {
       feishuHint: "Apps and pairing are set up in Connectors.",
       openConnectors: "Open Connectors",
       notifyTitle: "Notices to you",
-      notifyChannel: "Notice connector",
+      notifyChannel: "Notices",
       notifyHint:
-        "Items that need your answer (questions, approvals, hand-overs, requests) go to your own chat on the chosen connector.",
+        "Items that need your answer (questions, approvals, hand-overs, requests) come to you as cards from the Foundry bot in Feishu.",
       notifyNone: "No notices",
-      notifyRecommended: " (recommended)",
-      notifyNoConnectors:
-        "No connector takes notices yet. Add and check an OpenLark connector and it appears here.",
+      notifyNoBot:
+        "The Foundry bot is not available on this server, so no notices can be sent.",
       notifyListFailed:
-        "The connectors could not be listed. Reload the page to try again.",
+        "The notice settings could not be read. Reload the page to try again.",
       notifyInstanceUnavailable: "{{name}} cannot take notices yet. {{reason}}",
       notifyInstanceReasons: {
-        waiting_device:
-          "No online device reaches it. Notices are retried automatically and marked not delivered after several failed tries.",
-        connector_not_notifiable:
-          "Its installed extension does not take notices yet. Once the updated extension is installed, reload this page and Foundry picks it up.",
         feishu_not_paired:
           "Send the pairing code once in a Feishu direct chat with the Foundry bot.",
         feishu_not_reachable:
           "The Foundry bot cannot message you in Feishu: you are outside the app's availability range.",
         instance_unavailable:
-          "Foundry cannot read this connector right now. Reload the page to try again.",
+          "Foundry cannot read the bot right now. Reload the page to try again.",
       },
+      notifyRetiredOption: "A connector no longer offered",
+      notifyRetired:
+        "Notices now go only as Foundry bot cards. Choose the Foundry bot, or No notices, and save.",
+      notifyUnsent_one: "{{count}} request in the last 7 days was not sent",
+      notifyUnsent_other: "{{count}} requests in the last 7 days were not sent",
+      notifyUnsentReason: "{{count}} because {{reason}}",
       notifyKinds: "Kinds to notify",
-      notifyFinding: "Finding your chat with yourself…",
-      notifyFound: "Found your chat with yourself: {{name}}.",
-      notifyMissing: "The chat was not found automatically",
-      notifyChatId: "Chat ID",
-      notifyUseChat: "Use this chat",
       notifyTest: "Send a test notice",
       notifyTesting: "Sending…",
       notifyTestSent:
-        "The test notice was sent. Check your chat with yourself.",
+        "The test notice was sent. Check your direct chat with the Foundry bot.",
       notifyTestFailed: "The test notice failed.",
       notifyTestFailedWith: "The test notice failed: {{reason}}",
       notifyKindLabels: {
@@ -1358,18 +1354,6 @@ export const personalAgent = {
         approval: "Approvals",
         hand_over: "Hand-overs",
         ask: "Requests",
-      },
-      notifyReasons: {
-        self_chat_not_found:
-          "No chat with yourself was found on this connector.",
-        chat_not_found: "That chat ID was not found.",
-        chat_not_self: "That chat is not your chat with yourself.",
-        connector_unreachable:
-          "The connector cannot be reached right now. Try again later.",
-        waiting_device: "No online device reaches this connector.",
-        connector_not_notifiable: "This connector does not take notices.",
-        instance_unavailable: "This connector cannot be read.",
-        default: "No chat with yourself could be found.",
       },
       digestTitle: "Daily summary",
       dailyDigest: "Send me a daily summary",

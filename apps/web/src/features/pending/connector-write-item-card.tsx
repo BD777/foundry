@@ -8,7 +8,11 @@ import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { IconBox } from "../../components/ui/icon-box";
 import { MetaLine } from "../../components/ui/meta-line";
 import { relativeWhen } from "../../lib/time-format";
-import { pendingOrigin, pendingResolved } from "./pending-model";
+import {
+  pendingNoticeText,
+  pendingOrigin,
+  pendingResolved,
+} from "./pending-model";
 import { PendingItemRef } from "./pending-item-ref";
 import type { PendingItems } from "./use-pending-items";
 
@@ -32,6 +36,7 @@ export function ConnectorWriteItemCard({
   const [error, setError] = useState("");
   const resolved = pendingResolved(item);
   const detail = item.connectorWrite;
+  const noticeText = pendingNoticeText(item, t);
   const origin = pendingOrigin(
     item,
     t("page.untitled"),
@@ -182,6 +187,9 @@ export function ConnectorWriteItemCard({
                     when: relativeWhen(item.createdAt),
                   })}
           </time>
+          {noticeText ? (
+            <span className="fdy-pending-item-card-sent">{noticeText}</span>
+          ) : null}
         </MetaLine>
         {!resolved ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">

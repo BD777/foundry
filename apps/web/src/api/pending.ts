@@ -148,6 +148,34 @@ export interface PendingItem {
   detail?: string;
   /** What a connector-write item asks the person to decide (DEV-265). */
   connectorWrite?: PendingConnectorWriteDetail;
+  /**
+   * Whether the request went to the person as a Feishu card, or why not:
+   * only on an open request the person handles whose kind earns a notice.
+   */
+  notice?: PendingNoticeStatus;
+}
+
+/** The notice row's state: queued, being sent, sent, answered from the card… */
+export type PendingNoticeState =
+  "queued" | "sending" | "sent" | "answered" | "failed" | "superseded";
+
+/**
+ * Why no notice was queued: no notify setting on the item's assistant nor
+ * the default one; the setting does not take this kind; it names a sink that
+ * is not a card; the Foundry bot has no direct chat with the person; the
+ * server has no Web address; the assistant cannot be read.
+ */
+export type PendingNoticeSkip =
+  | "no_sinks"
+  | "kind_not_taken"
+  | "not_card_sink"
+  | "bot_not_paired"
+  | "no_origin"
+  | "assistant_unreadable";
+
+export interface PendingNoticeStatus {
+  state?: PendingNoticeState;
+  skipped?: PendingNoticeSkip;
 }
 
 /** One connector write waiting for the person, in structured parts. */
@@ -183,12 +211,14 @@ export interface PendingItemList {
   items: PendingItem[];
   /** Every assistant the person has, for filtering the global list. */
   assistants: PendingAssistant[];
-  /** Open items the person handles. */
+  /** Open requests the person handles (notices are not counted). */
   open: number;
   /** Open items their assistant handles. */
   assistantOpen?: number;
-  /** The person's open items per chat (Issue questions are counted on the Issue). */
+  /** The person's open requests per chat (Issue questions are counted on the Issue). */
   bySession: Record<string, number>;
+  /** Open notices: for the person's information, counted apart. */
+  noticeOpen?: number;
 }
 
 export interface PendingAssistant {

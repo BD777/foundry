@@ -122,7 +122,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	var changed []needsYouLine
 	if len(items) == 0 {
 		// A helper that asked in its answer, without a question card.
-		item, err := s.handOverWithoutCard(ctx, scope.Agent, helper, scope.Turn.ID, note, s.noticeChatOf)
+		item, err := s.handOverWithoutCard(ctx, scope.Agent, helper, scope.Turn.ID, note, s.noticeBotReaches)
 		if err != nil {
 			return "", err
 		}
@@ -142,7 +142,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 // with no question card, in needs-you as handed to the person. It notifies the
 // person as any hand-over does: the item is recorded through the notice queue,
 // not around it, so a sink that takes hand-overs hears of it.
-func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAgent, helper store.AgentSession, turnID, note string, chatOf noticeChatLookup) (store.PendingItem, error) {
+func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAgent, helper store.AgentSession, turnID, note string, bot noticeBotLookup) (store.PendingItem, error) {
 	now := formatPendingTime(time.Now())
 	item, changed, err := s.store.RecordPendingItem(ctx, store.PendingItem{
 		UserID: agent.UserID, AssistantID: agent.ID, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
@@ -154,7 +154,7 @@ func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAg
 		HandedInputID: turnID, Outcome: store.PendingOutcomeHandedOver,
 	})
 	if err == nil && changed {
-		s.queueItemNotice(ctx, item, chatOf)
+		s.queueItemNotice(ctx, item, bot)
 	}
 	return item, err
 }

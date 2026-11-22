@@ -29,6 +29,8 @@ export function documentPageTitle(input: {
   device?: Pick<DeviceProjection, "label">;
   /** The assistant's home conversation holds an unseen answer (DEV-278). */
   assistantUnread?: boolean;
+  /** Open requests that need the person (the sidebar's 等你处理 count). */
+  needsYouCount?: number;
 }): { primary: string; context?: string } {
   const page = i18n.t(
     input.view === "workspace"
@@ -51,9 +53,10 @@ export function useDocumentTitle(
 ) {
   const { primary, context } = documentPageTitle(input);
   const assistantUnread = input.assistantUnread ?? false;
+  const needsYouCount = input.needsYouCount ?? 0;
   useEffect(() => {
-    setDocumentPage({ primary, context, assistantUnread });
-  }, [primary, context, assistantUnread]);
+    setDocumentPage({ primary, context, assistantUnread, needsYouCount });
+  }, [primary, context, assistantUnread, needsYouCount]);
   useEffect(
     () => () => {
       document.title = appName;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -142,6 +143,10 @@ func (s *Server) saveAssistantSettings(ctx context.Context, agent store.Personal
 	saved, err := s.assistant.SaveSettings(ctx, agent, settings)
 	if errors.Is(err, store.ErrNotFound) {
 		err = assistant.ErrNoAssistant
+	}
+	// Requests opened while no sink could carry them get their notice now.
+	if err == nil && !reflect.DeepEqual(agent.Settings.Notify, saved.Settings.Notify) {
+		s.noticeOpenItems(ctx, saved.UserID, s.cachedNoticeBot())
 	}
 	return saved, err
 }

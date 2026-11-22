@@ -278,3 +278,40 @@ test("every state's icon is in public/", () => {
     );
   }
 });
+
+test("the tab counts the requests that need the person, on every page, after the chat's own marks", async () => {
+  assert.equal(
+    buildDocumentTitle({ primary: "Chats", context: "ws", needsYouCount: 3 }),
+    "Needs you 3 · Chats · ws — Foundry",
+  );
+  assert.equal(
+    buildDocumentTitle({
+      primary: "Digest",
+      context: "ws",
+      waitingChildCount: 2,
+      needsYouCount: 1,
+    }),
+    "⌛ Waiting 2 · Needs you 1 · Digest · ws — Foundry",
+  );
+  assert.equal(
+    buildDocumentTitle({ primary: "Chats", needsYouCount: 0 }),
+    "Chats — Foundry",
+    "nothing waiting adds nothing",
+  );
+  setDocumentUnread(false);
+  setDocumentPage({ primary: "Chats", context: "ws", needsYouCount: 2 });
+  setDocumentChat({ title: "Patrol", running: true });
+  assert.equal(document.title, "⏳ Needs you 2 · Patrol · ws — Foundry");
+  setDocumentChat(undefined);
+  assert.equal(document.title, "Needs you 2 · Chats · ws — Foundry");
+  await i18n.changeLanguage("zh-CN");
+  try {
+    assert.equal(
+      buildDocumentTitle({ primary: "对话", needsYouCount: 4 }),
+      "等你处理 4 · 对话 — Foundry",
+    );
+  } finally {
+    await i18n.changeLanguage("en");
+    setDocumentPage({ primary: "Chats", context: "ws" });
+  }
+});

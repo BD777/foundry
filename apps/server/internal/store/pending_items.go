@@ -77,8 +77,10 @@ const (
 // session that asked without a question card.
 const PendingRuleHandedOver = "handed_over"
 
-// PendingRuleHeld marks a question that held its turn while it waited (no
-// TranscriptMessage.delivery): once the turn ends it no longer waits.
+// PendingRuleHeld marks a question in the person's own chat that held its turn
+// while the runtime waited (no TranscriptMessage.delivery). It stays open after
+// the runtime stops waiting: the person's answer, or any message of theirs in
+// the chat, is the chat's next input.
 const PendingRuleHeld = "held"
 
 // PendingRetiredSources no longer wait for the person: they are left out of

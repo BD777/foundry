@@ -306,21 +306,14 @@ func TestAssistantSettingsRejectsUnknownOperations(t *testing.T) {
 	}
 }
 
-// notify_instances answers the person's extension instances with the reason
-// each cannot carry notices yet, and leaves out apps that are not extension
-// instances. An instance whose data cannot be read is listed with a reason.
+// notify_instances answers where notices can go: the Foundry bot alone, with
+// the reason it cannot carry them yet, even beside an extension instance.
 func TestAssistantSettingsListsNotifyInstancesWithReasons(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	if _, err := f.server.store.CreateExternalProviderApp(ctx, store.ExternalProviderApp{
 		ID: "xapp_stub", Provider: "acme-api", OwnerUserID: f.aliceID, Visibility: store.ExternalAppPersonal,
 		Label: "Stub", CreatedVia: "extension", ExtensionData: "{}",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.server.store.CreateExternalProviderApp(ctx, store.ExternalProviderApp{
-		ID: "xapp_pasted", Provider: "acme-api", OwnerUserID: f.aliceID, Visibility: store.ExternalAppPersonal,
-		Label: "Pasted", CreatedVia: "pasted", ExtensionData: "{}",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -334,20 +327,10 @@ func TestAssistantSettingsListsNotifyInstancesWithReasons(t *testing.T) {
 	if err := json.Unmarshal([]byte(reply.text), &answer); err != nil {
 		t.Fatalf("answer is not JSON: %q (%v)", reply.text, err)
 	}
-	if len(answer.Instances) != 2 {
-		t.Fatalf("instances = %v, want the Foundry bot and the extension instance", answer.Instances)
+	if len(answer.Instances) != 1 {
+		t.Fatalf("instances = %v, want the Foundry bot alone", answer.Instances)
 	}
 	if bot := answer.Instances[0]; bot["connectorInstanceId"] != "builtin:feishu" || bot["reason"] != notifyReasonFeishuNotPaired {
 		t.Fatalf("the Foundry bot = %v, want reason %q", bot, notifyReasonFeishuNotPaired)
-	}
-	instance := answer.Instances[1]
-	if instance["connectorInstanceId"] != "xapp_stub" || instance["label"] != "Stub" {
-		t.Fatalf("instance = %v", instance)
-	}
-	if reason, _ := instance["reason"].(string); reason == "" {
-		t.Fatalf("an instance that cannot carry notices has no reason: %v", instance)
-	}
-	if _, ok := instance["kind"]; ok {
-		t.Fatalf("instance carries a kind: %v", instance)
 	}
 }
