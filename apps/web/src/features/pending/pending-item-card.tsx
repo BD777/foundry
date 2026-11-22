@@ -28,6 +28,7 @@ import { ButtonRow } from "../../components/ui/button-row";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 import { FieldHint, Textarea } from "../../components/ui/field";
 import { IconBox } from "../../components/ui/icon-box";
+import { MetaLine } from "../../components/ui/meta-line";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
@@ -421,17 +422,13 @@ export function PendingItemCard({
           {title}
         </strong>
         <PendingItemRef item={item} />
-        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+        <MetaLine className="text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
-            <>
-              <span className="text-ink">
-                {t(`item.origin.${origin.kind}`, { name: origin.name })}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="text-ink">
+              {t(`item.origin.${origin.kind}`, { name: origin.name })}
+            </span>
           ) : null}
           <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
-          <span aria-hidden="true">·</span>
           <time
             className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : item.createdAt}
@@ -440,12 +437,9 @@ export function PendingItemCard({
             {when}
           </time>
           {item.occurrences > 1 ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>{t("item.occurrences", { count: item.occurrences })}</span>
-            </>
+            <span>{t("item.occurrences", { count: item.occurrences })}</span>
           ) : null}
-        </p>
+        </MetaLine>
         {hint ? (
           <p className="fdy-pending-item-fix text-xs leading-[1.5] text-ink-muted">
             {hint}
@@ -689,17 +683,13 @@ function NoticeItemCard({
           {note}
         </p>
         <PendingItemRef item={item} />
-        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+        <MetaLine className="text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
-            <>
-              <span className="text-ink">
-                {t(`item.origin.${origin.kind}`, { name: origin.name })}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="text-ink">
+              {t(`item.origin.${origin.kind}`, { name: origin.name })}
+            </span>
           ) : null}
           <span className="text-ink-muted">{t("source.notice")}</span>
-          <span aria-hidden="true">·</span>
           <time
             className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : item.createdAt}
@@ -712,7 +702,7 @@ function NoticeItemCard({
                 })
               : relativeWhen(item.createdAt)}
           </time>
-        </p>
+        </MetaLine>
         {!resolved ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {item.sessionId ? (
@@ -823,14 +813,11 @@ function InboxItemCard({
           </span>
         </p>
         <PendingItemRef item={item} />
-        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+        <MetaLine className="text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
-            <>
-              <span className="text-ink">
-                {t(`item.origin.${origin.kind}`, { name: origin.name })}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="text-ink">
+              {t(`item.origin.${origin.kind}`, { name: origin.name })}
+            </span>
           ) : null}
           <time
             className="tabular-nums"
@@ -844,7 +831,7 @@ function InboxItemCard({
                 })
               : relativeWhen(when)}
           </time>
-        </p>
+        </MetaLine>
         {!resolved ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <Button
