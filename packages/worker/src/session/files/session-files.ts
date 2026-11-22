@@ -697,6 +697,21 @@ const claudeWriteTools = new Set([
 ]);
 
 /**
+ * A Claude SDK hook callback. Claude Code validates its answer as a hook
+ * output object and refuses anything else, `undefined` among it; `{}` is
+ * the answer of a hook that only observes.
+ */
+export type ClaudeHookCallback = (
+  input: unknown,
+) => Promise<Record<string, unknown>>;
+
+/** Claude SDK `query()` hooks: each event's matchers and their callbacks. */
+export type ClaudeHooks = Record<
+  string,
+  Array<{ matcher?: string; hooks: ClaudeHookCallback[] }>
+>;
+
+/**
  * Claude SDK hooks that record each successful write-tool call, the main
  * thread's and every subagent's. PostToolUse fires only after a tool
  * succeeded; a failed write reaches PostToolUseFailure instead.
@@ -704,7 +719,7 @@ const claudeWriteTools = new Set([
 export function claudeFileWriteHooks(
   record: (write: ToolFileWrite) => Promise<void> | void,
   captureBefore?: (write: ToolFileWrite) => Promise<void> | void,
-): Record<string, unknown[]> {
+): ClaudeHooks {
   return {
     ...(captureBefore
       ? {
@@ -740,16 +755,11 @@ export function claudeFileWriteHooks(
 }
 
 /** Joins SDK hook maps: each event keeps every source's matchers. */
-export function mergeClaudeHooks(
-  ...sources: Array<Record<string, unknown>>
-): Record<string, unknown[]> {
-  const merged: Record<string, unknown[]> = {};
+export function mergeClaudeHooks(...sources: ClaudeHooks[]): ClaudeHooks {
+  const merged: ClaudeHooks = {};
   for (const source of sources)
     for (const [event, matchers] of Object.entries(source))
-      merged[event] = [
-        ...(merged[event] ?? []),
-        ...(Array.isArray(matchers) ? matchers : []),
-      ];
+      merged[event] = [...(merged[event] ?? []), ...matchers];
   return merged;
 }
 

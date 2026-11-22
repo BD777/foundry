@@ -18,6 +18,7 @@
  */
 
 import { processLabels } from "@bd777/foundry-protocol";
+import type { ClaudeHooks } from "../files/session-files.js";
 import {
   claudeTimerNextFire,
   cronTimeZone,
@@ -318,25 +319,35 @@ export class ClaudeTimerTracker {
   }
 
   /** Options fragment merged into the Claude SDK `query()` options. */
-  hooks(): Record<string, unknown> {
+  hooks(): ClaudeHooks {
     return {
       PostToolUse: [
         {
-          hooks: [async (input: unknown) => this.handlePostToolUse(input)],
+          hooks: [
+            async (input: unknown) => {
+              this.handlePostToolUse(input);
+              return {};
+            },
+          ],
         },
       ],
       Stop: [
         {
           hooks: [
-            async (input: unknown) => this.handleStop(input as StopHookInput),
+            async (input: unknown) => {
+              await this.handleStop(input as StopHookInput);
+              return {};
+            },
           ],
         },
       ],
       UserPromptSubmit: [
         {
           hooks: [
-            async (input: unknown) =>
-              await this.handlePromptSubmit(input as UserPromptSubmitHookInput),
+            async (input: unknown) => {
+              await this.handlePromptSubmit(input as UserPromptSubmitHookInput);
+              return {};
+            },
           ],
         },
       ],
