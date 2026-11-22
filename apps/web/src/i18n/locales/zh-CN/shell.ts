@@ -50,6 +50,9 @@ export const shell: Translation<typeof en> = {
     sharing: "共享",
     workspace: "工作区",
   },
+  tab: {
+    needsYou: "等你处理 {{count}}",
+  },
   sidebar: {
     interfaceControls: "界面工具",
     menu: "菜单",

@@ -19,6 +19,7 @@ import {
   listAgentProfiles,
   setPersonalAgentConnectors,
   updatePersonalAgentSettings,
+  type PendingItem,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { AppLink } from "../../components/ui/app-link";
@@ -71,6 +72,8 @@ export interface AssistantSettingsProps {
   profiles?: ProfileDefinition[];
   /** For the names of the projects its activity concerns. */
   workspaces: WorkspaceProjection[];
+  /** The person's pending items: which requests were not sent as notices. */
+  pendingItems?: readonly PendingItem[];
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
@@ -123,6 +126,7 @@ function SettingsPanel({
   agentProfiles,
   profiles = [],
   workspaces,
+  pendingItems,
   onEvent,
 }: AssistantSettingsProps & {
   agent: PersonalAgent;
@@ -422,6 +426,7 @@ function SettingsPanel({
                 assistantId={assistantId}
                 change={change}
                 draft={draft}
+                pendingItems={pendingItems}
               />
             ) : activeSection === "channels" ? (
               <ChannelsSection

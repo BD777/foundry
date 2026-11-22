@@ -37,6 +37,7 @@ import {
   pendingFailure,
   pendingHeadline,
   pendingInboxReason,
+  pendingNoticeText,
   pendingOptionLabel,
   pendingOrigin,
   pendingPersonal,
@@ -157,6 +158,7 @@ export function PendingItemCard({
     t("page.defaultAssistant"),
   );
   const hint = known ? failureHint(failure, t) : "";
+  const noticeText = pendingNoticeText(item, t);
   // What the assistant said when the item came to the person (§h). An item
   // it made from its own words shows their first line as its title, so the
   // note shows only when it says more (a draft on later lines, a cut title).
@@ -438,6 +440,9 @@ export function PendingItemCard({
           </time>
           {item.occurrences > 1 ? (
             <span>{t("item.occurrences", { count: item.occurrences })}</span>
+          ) : null}
+          {noticeText ? (
+            <span className="fdy-pending-item-card-sent">{noticeText}</span>
           ) : null}
         </MetaLine>
         {hint ? (

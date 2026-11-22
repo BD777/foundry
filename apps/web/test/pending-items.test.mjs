@@ -1777,3 +1777,219 @@ test("a notice's link names its item, and the item's card has its own id", () =>
   assert.equal(pendingFocusItemId(""), "");
   assert.equal(pendingItemDomId("pnd_1"), "pending-item-pnd_1");
 });
+
+const noteItem = (fields) =>
+  item({
+    id: "pnd_note",
+    source: "notice",
+    assistantId: "asst_1",
+    assistantName: "Ada",
+    title: "The image did not make it into the thread",
+    excerpt: "The image did not make it into the thread.",
+    updatedAt: "2026-10-29T12:00:00Z",
+    ...fields,
+  });
+
+test("notices form their own group after the requests and count nowhere", async () => {
+  const items = [
+    item({ id: "ask", updatedAt: "2026-10-29T08:00:00Z" }),
+    noteItem({}),
+    noteItem({ id: "pnd_note_2", assistantId: "asst_2", assistantName: "Bo" }),
+  ];
+  const groups = groupPendingItems(
+    items,
+    "open",
+    "Untitled",
+    "Personal",
+    "Default assistant",
+    "For your information",
+  );
+  assert.deepEqual(
+    groups.map((group) => [group.title, group.items.map((x) => x.id)]),
+    [
+      ["Fix the export", ["ask"]],
+      // Newer than the request, still after it; both assistants' notes in one.
+      ["For your information", ["pnd_note", "pnd_note_2"]],
+    ],
+  );
+  const { host, root } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    noticeOpen: 2,
+    items,
+  });
+  try {
+    assert.match(host.textContent, /Open · 1/);
+    const headings = [...host.querySelectorAll("section h2")].map(
+      (heading) => heading.textContent,
+    );
+    assert.deepEqual(headings, ["Fix the export", "For your information"]);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+test("the list's own counts leave notices out: open, per chat and apart", async () => {
+  let seen;
+  function Probe() {
+    seen = usePendingItems().list;
+    return null;
+  }
+  globalThis.fetch = async () =>
+    answer({
+      assistants: [],
+      open: 1,
+      bySession: { sess_1: 1 },
+      noticeOpen: 1,
+      items: [
+        item({ id: "ask" }),
+        noteItem({ sessionId: "sess_1" }),
+        item({ id: "helper", handler: "assistant" }),
+      ],
+    });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  try {
+    assert.equal(seen.open, 1);
+    assert.deepEqual(seen.bySession, { sess_1: 1 });
+    assert.equal(seen.noticeOpen, 1);
+    assert.equal(seen.assistantOpen, 1);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+test("a chat's bar counts its requests, not a notice posted in it", async () => {
+  const { PendingChatBar } =
+    await import("../src/features/pending/pending-chat-bar.tsx");
+  const pending = {
+    list: {
+      open: 1,
+      bySession: { sess_1: 1 },
+      items: [
+        item({ id: "a", title: "Keep the closed rows blocked?" }),
+        noteItem({ sessionId: "sess_1" }),
+      ],
+    },
+    changeState: async () => undefined,
+    reply: async () => undefined,
+    refresh: () => undefined,
+  };
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      createElement(PendingChatBar, { pending, sessionId: "sess_1" }),
+    ),
+  );
+  try {
+    assert.match(host.textContent, /Waiting on you · 1/);
+    // A chat whose only open entry is a notice shows no bar.
+    await act(async () =>
+      root.render(
+        createElement(PendingChatBar, {
+          pending: {
+            ...pending,
+            list: {
+              ...pending.list,
+              items: [noteItem({ sessionId: "sess_1" })],
+            },
+          },
+          sessionId: "sess_1",
+        }),
+      ),
+    );
+    assert.equal(host.querySelector("section"), null);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+test("a request says whether its Feishu card went out, or why not", async () => {
+  const { pendingNoticeText } =
+    await import("../src/features/pending/pending-model.ts");
+  const en = i18n.getFixedT("en", "pending");
+  const zh = i18n.getFixedT("zh-CN", "pending");
+  const said = (notice, t = en, fields = {}) =>
+    pendingNoticeText(item({ notice, ...fields }), t);
+  assert.equal(said({ state: "queued" }), "Sending to Feishu");
+  assert.equal(said({ state: "sending" }), "Sending to Feishu");
+  assert.equal(said({ state: "sent" }), "Sent to Feishu");
+  assert.equal(said({ state: "answered" }), "Answered in Feishu");
+  assert.equal(said({ state: "failed" }), "Failed to send to Feishu");
+  assert.equal(said({ state: "superseded" }), "");
+  assert.equal(said(undefined), "");
+  assert.equal(said({ state: "sent" }, en, { state: "done" }), "");
+  const reasons = {
+    no_sinks: [
+      "Not sent to Feishu: no notice channel is set",
+      "未发到飞书：没有设置通知渠道",
+    ],
+    kind_not_taken: [
+      "Not sent to Feishu: the notice setting leaves this kind out",
+      "未发到飞书：通知设置没有勾选这类事项",
+    ],
+    not_card_sink: [
+      "Not sent to Feishu: the notice channel is not the Foundry bot",
+      "未发到飞书：通知渠道不是 Foundry 机器人",
+    ],
+    bot_not_paired: [
+      "Not sent to Feishu: the Foundry bot has no direct chat with you",
+      "未发到飞书：Foundry 机器人还没有和你的私聊",
+    ],
+    no_origin: [
+      "Not sent to Feishu: the server has no Web address",
+      "未发到飞书：服务器没有配置 Web 地址",
+    ],
+    assistant_unreadable: [
+      "Not sent to Feishu: the assistant could not be read",
+      "未发到飞书：读不到助理",
+    ],
+  };
+  for (const [reason, [english, chinese]] of Object.entries(reasons)) {
+    assert.equal(said({ skipped: reason }), english);
+    assert.equal(said({ skipped: reason }, zh), chinese);
+  }
+  assert.equal(said({ state: "sent" }, zh), "已发到飞书");
+
+  // The card states it in its fact line, the page's and the bar's alike.
+  const { host, root } = await render({
+    open: 2,
+    bySession: { sess_1: 1, sess_2: 1 },
+    items: [
+      item({ id: "sent", notice: { state: "sent" } }),
+      item({
+        id: "skipped",
+        sessionId: "sess_2",
+        title: "Which day?",
+        notice: { skipped: "bot_not_paired" },
+      }),
+    ],
+  });
+  try {
+    const facts = [...host.querySelectorAll(".fdy-pending-item-card-sent")].map(
+      (fact) => fact.textContent,
+    );
+    assert.deepEqual(facts.sort(), [
+      "Not sent to Feishu: the Foundry bot has no direct chat with you",
+      "Sent to Feishu",
+    ]);
+    assert.ok(
+      host
+        .querySelector(".fdy-pending-item-card-sent")
+        .closest("p")
+        .querySelector("time"),
+      "in the line with its time",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

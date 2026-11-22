@@ -50,6 +50,19 @@ const { NeedsYouSection } =
 const { sideSummary } =
   await import("../src/features/personal-agent/assistant-model.ts");
 
+const { pendingRequest } = await import("../src/lib/pending-display.ts");
+
+const request = (fields) => ({
+  workspaceId: "ws_1",
+  source: "question",
+  state: "open",
+  excerpt: fields.title,
+  occurrences: 1,
+  createdAt: "2026-11-21T12:00:00Z",
+  updatedAt: "2026-11-21T12:00:00Z",
+  ...fields,
+});
+
 async function render(component, props) {
   const container = window.document.createElement("div");
   window.document.body.append(container);
@@ -98,10 +111,10 @@ test("the entry lists the newest three titles, and each opens its item", async (
   const longTitle =
     "Reconcile the Q4 supplier invoices against the purchase orders the export left unmatched, then tell me which ones still need a signature from finance before the month closes";
   const items = [
-    { id: "pnd_1", title: longTitle },
-    { id: "pnd_2", title: "Choose the report format" },
-    { id: "pnd_3", title: "Confirm the channel reply" },
-    { id: "pnd_4", title: "Fourth, not listed" },
+    request({ id: "pnd_1", title: longTitle }),
+    request({ id: "pnd_2", title: "Choose the report format" }),
+    request({ id: "pnd_3", title: "Confirm the channel reply" }),
+    request({ id: "pnd_4", title: "Fourth, not listed" }),
   ];
   const page = await render(NeedsYouSection, {
     count: 4,
@@ -128,4 +141,35 @@ test("without titles the entry is only its heading", async () => {
   assert.equal(page.container.querySelectorAll("button").length, 0);
   assert.equal(page.container.querySelectorAll("a").length, 1);
   await page.unmount();
+});
+
+test("the entry's rows are the sidebar's requests: no notice, no helper's item, titled as the page titles them", async () => {
+  const items = [
+    request({ id: "note", source: "notice", title: "For your information" }),
+    request({ id: "helper", handler: "assistant", title: "Helper asks" }),
+    request({ id: "ask", title: "Which day?" }),
+    request({ id: "account", source: "account", title: "Work Feishu" }),
+    request({ id: "done", state: "done", title: "Already answered" }),
+  ];
+  const requests = items.filter(pendingRequest);
+  assert.deepEqual(
+    requests.map((item) => item.id),
+    ["ask", "account"],
+  );
+  const page = await render(NeedsYouSection, {
+    count: requests.length,
+    items: requests,
+    onOpenItem: () => {},
+  });
+  try {
+    assert.match(page.container.querySelector("h3").textContent, /2$/);
+    assert.deepEqual(
+      [...page.container.querySelectorAll("button")].map((row) =>
+        row.textContent.trim(),
+      ),
+      ["Which day?", "Authorize Work Feishu again"],
+    );
+  } finally {
+    await page.unmount();
+  }
 });

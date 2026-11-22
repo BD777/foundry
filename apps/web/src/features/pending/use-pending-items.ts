@@ -12,7 +12,11 @@ import {
   type PendingItemList,
 } from "../../api";
 import { issuesEnabled } from "../../lib/feature-flags";
-import { pendingReplyRoute, pendingReplyText } from "./pending-model";
+import {
+  pendingReplyRoute,
+  pendingReplyText,
+  pendingRequest,
+} from "./pending-model";
 
 /** How often the list is read again while the page is visible. */
 const pendingPollMs = 20_000;
@@ -150,7 +154,7 @@ function withItem(list: PendingItemList, item: PendingItem): PendingItemList {
   );
 }
 
-/** `items` with their open counts. */
+/** `items` with their open counts; a notice counts only as a notice. */
 function recounted(
   items: PendingItem[],
   assistants: PendingItemList["assistants"],
@@ -158,15 +162,20 @@ function recounted(
   const bySession: Record<string, number> = {};
   let open = 0;
   let assistantOpen = 0;
+  let noticeOpen = 0;
   for (const shown of items) {
     if (shown.state !== "open") continue;
     if (shown.handler === "assistant") {
       assistantOpen += 1;
       continue;
     }
+    if (!pendingRequest(shown)) {
+      noticeOpen += 1;
+      continue;
+    }
     open += 1;
     if (shown.sessionId && !shown.issueId)
       bySession[shown.sessionId] = (bySession[shown.sessionId] ?? 0) + 1;
   }
-  return { items, assistants, open, assistantOpen, bySession };
+  return { items, assistants, open, assistantOpen, bySession, noticeOpen };
 }

@@ -10,7 +10,11 @@ import {
 import { Button } from "../../components/ui/button";
 import { PendingItemCard } from "./pending-item-card";
 import { openPendingItem } from "./pending-feature";
-import { pendingForSession, pendingHeadline } from "./pending-model";
+import {
+  pendingForSession,
+  pendingHeadline,
+  pendingRequest,
+} from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
 
 /**
@@ -19,7 +23,7 @@ import type { PendingItems } from "./use-pending-items";
  * opens into one item at a time, in the compact density of the shared item
  * (its options, reply and "…" menu), with "1 of 3" to step through the rest,
  * so the composer keeps its room. Nothing shows while the chat has no open
- * item.
+ * request; a notice waits on the Needs you page.
  */
 export function PendingChatBar({
   pending,
@@ -34,7 +38,7 @@ export function PendingChatBar({
   const items = useMemo(
     () =>
       pendingForSession(pending.list?.items ?? [], sessionId).filter(
-        (item) => item.state === "open",
+        pendingRequest,
       ),
     [pending.list, sessionId],
   );

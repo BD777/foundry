@@ -20,7 +20,6 @@ import type {
   MessageChannelView,
   PersonalAgent,
   PersonalAgentInboxEntry,
-  PersonalAgentOverview,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Conversation } from "../../components/conversation/conversation";
@@ -70,7 +69,7 @@ import { ItemsCard } from "./items-card";
 import { StopAssistantButton } from "./stop-assistant-button";
 import { closedToday } from "./items-model";
 import { ProposalCard } from "./proposal-card";
-import { NeedsYouSection } from "./assistant-side-card";
+import { NeedsYouSection, type NeedsYouRequests } from "./assistant-side-card";
 import { ContextCard } from "../../components/ui/context-card";
 import { Dialog } from "../../components/ui/dialog";
 import { useAssistant, type AssistantController } from "./use-assistant";
@@ -88,8 +87,11 @@ export interface AssistantHomeProps {
   agentProfiles: AgentProfileProjection[];
   /** For the names of the projects work goes to. */
   workspaces: WorkspaceProjection[];
-  /** Everything that needs the person, as the sidebar counts it. */
-  needsYouTotal?: number;
+  /**
+   * The requests that need the person, as the sidebar counts them: its
+   * count and the list its newest rows come from. Absent until read.
+   */
+  needsYou?: NeedsYouRequests;
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
@@ -135,7 +137,7 @@ export function AssistantHome({
   assistants = [],
   devices,
   workspaces,
-  needsYouTotal,
+  needsYou,
   onEvent,
 }: AssistantHomeProps) {
   const assistant = useAssistant(assistantId);
@@ -157,8 +159,7 @@ export function AssistantHome({
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
-            needsYou={overview.needsYou}
-            needsYouTotal={needsYouTotal}
+            needsYou={needsYou}
             onEvent={onEvent}
             workspaces={workspaces}
           />
@@ -176,7 +177,6 @@ function AssistantHomeReady({
   home,
   homeOnline,
   needsYou,
-  needsYouTotal,
   onEvent,
   workspaces,
 }: {
@@ -186,8 +186,7 @@ function AssistantHomeReady({
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
-  needsYou: PersonalAgentOverview["needsYou"];
-  needsYouTotal: number | undefined;
+  needsYou: NeedsYouRequests | undefined;
   onEvent: (event: AssistantFeatureEvent) => void;
   workspaces: WorkspaceProjection[];
 }) {
@@ -520,7 +519,7 @@ function AssistantHomeReady({
   const sideSections = (
     <>
       <NeedsYouSection
-        count={needsYouTotal ?? needsYou?.open ?? 0}
+        count={needsYou?.count ?? 0}
         items={needsYou?.items}
         onOpenItem={(itemId) => onEvent({ type: "pending.item", itemId })}
       />
@@ -539,7 +538,7 @@ function AssistantHomeReady({
     </>
   );
   const summary = sideSummary({
-    needsYou: needsYouTotal ?? needsYou?.open ?? 0,
+    needsYou: needsYou?.count ?? 0,
     list: assistant.openItems.value?.total ?? 0,
     tasks: visibleTasks(assistant.tasks).active.length,
   });

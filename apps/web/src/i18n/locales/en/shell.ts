@@ -48,6 +48,9 @@ export const shell = {
     sharing: "Sharing",
     workspace: "Workspace",
   },
+  tab: {
+    needsYou: "Needs you {{count}}",
+  },
   sidebar: {
     interfaceControls: "Interface controls",
     menu: "Menu",

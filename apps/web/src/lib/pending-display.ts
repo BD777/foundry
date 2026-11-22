@@ -1,4 +1,9 @@
 import type { TFunction } from "i18next";
+import type {
+  PendingHandler,
+  PendingNoticeSkip,
+  PendingNoticeStatus,
+} from "../api/pending";
 
 /*
  * What a needs-you item says it needs, the same wherever it is shown: the
@@ -15,6 +20,86 @@ export interface PendingDisplayItem {
   excerpt: string;
   context?: string;
   eventId?: string;
+}
+
+/**
+ * A request: an open item the person handles that asks something of them.
+ * A notice is for their information only, so no count includes it: the
+ * sidebar, the assistant's home, a chat's bar and its list badge, and the
+ * tab title count the same requests.
+ */
+export function pendingRequest(item: {
+  state: string;
+  source: string;
+  handler?: PendingHandler;
+}): boolean {
+  return (
+    item.state === "open" &&
+    item.handler !== "assistant" &&
+    item.source !== "notice"
+  );
+}
+
+/**
+ * The one fact a request states about its Feishu card: sending, sent,
+ * answered from the card, failed to send, or not sent and why. None for a
+ * resolved item, an item without a notice, or a superseded card.
+ */
+export type PendingNoticeFact =
+  | { key: "sending" | "sent" | "answered" | "failed" }
+  | { key: "skipped"; reason: PendingNoticeSkip };
+
+export function pendingNoticeFact(item: {
+  state: string;
+  notice?: PendingNoticeStatus;
+}): PendingNoticeFact | undefined {
+  if (item.state !== "open" || !item.notice) return undefined;
+  const { state, skipped } = item.notice;
+  if (skipped) return { key: "skipped", reason: skipped };
+  switch (state) {
+    case "queued":
+    case "sending":
+      return { key: "sending" };
+    case "sent":
+    case "answered":
+    case "failed":
+      return { key: state };
+    default:
+      return undefined;
+  }
+}
+
+/** How far back the notice setting counts requests that were not sent. */
+const unsentNoticeWindowMs = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Open requests of the last 7 days that were not sent as a notice, by
+ * reason, the most frequent first.
+ */
+export function unsentNotices(
+  items: readonly {
+    state: string;
+    source: string;
+    handler?: PendingHandler;
+    createdAt: string;
+    notice?: PendingNoticeStatus;
+  }[],
+  now = Date.now(),
+): { count: number; reasons: { reason: PendingNoticeSkip; count: number }[] } {
+  const byReason = new Map<PendingNoticeSkip, number>();
+  let count = 0;
+  for (const item of items) {
+    const reason = item.notice?.skipped;
+    if (!reason || !pendingRequest(item)) continue;
+    const created = Date.parse(item.createdAt);
+    if (Number.isNaN(created) || now - created > unsentNoticeWindowMs) continue;
+    count += 1;
+    byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
+  }
+  const reasons = [...byReason]
+    .map(([reason, reasonCount]) => ({ reason, count: reasonCount }))
+    .sort((a, b) => b.count - a.count);
+  return { count, reasons };
 }
 
 /**

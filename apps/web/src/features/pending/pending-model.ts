@@ -5,13 +5,14 @@ import {
 } from "@bd777/foundry-protocol";
 import type { PendingItem } from "../../api";
 import type { PendingState } from "../../api/pending";
-import { pendingPersonal } from "../../lib/pending-display";
+import { pendingNoticeFact, pendingPersonal } from "../../lib/pending-display";
 import { clockTime } from "../../lib/time-format";
 
 export {
   pendingFailure,
   pendingHeadline,
   pendingPersonal,
+  pendingRequest,
   pendingScopeUpdate,
   pendingTitle,
   type PendingFailure,
@@ -54,10 +55,6 @@ export function pendingByAssistant(item: PendingItem): boolean {
   return item.state === "open" && item.handler === "assistant";
 }
 
-/**
- * The items a filter shows, grouped by the chat or Issue they belong to:
- * groups ordered by their newest item, items newest first.
- */
 /** Where an item came from: the assistant, its chat, or its project. */
 export interface PendingOrigin {
   kind: "assistant" | "chat" | "project" | "personal";
@@ -88,45 +85,54 @@ export function pendingOrigin(
   return { kind: "chat", name: untitled };
 }
 
+/**
+ * The items a filter shows, grouped by the chat or Issue they belong to:
+ * groups ordered by their newest item, items newest first. Notices, for the
+ * person's information, form one group of their own after the requests.
+ */
 export function groupPendingItems(
   items: readonly PendingItem[],
   filter: PendingFilter,
   untitled: string,
   personal = untitled,
   defaultAssistant = untitled,
+  notices = untitled,
 ): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
     if ((filter === "open") === pendingResolved(item)) continue;
     if (pendingByAssistant(item)) continue;
+    const notice = item.source === "notice";
     const own = pendingPersonal(item);
     // Saved messages and connector writes group under the assistant they
     // belong to, not a chat chosen among them (their attempts may run in
     // several chats; a write waits for the person, not a chat).
     const inbox =
-      item.source === "assistant_inbox" ||
-      item.source === "connector_write" ||
-      item.source === "notice";
-    const key = inbox
-      ? `assistant-inbox:${item.assistantId || item.id}`
-      : own
-        ? "personal"
-        : item.issueId
-          ? `issue:${item.issueId}`
-          : `session:${item.sessionId ?? item.id}`;
+      item.source === "assistant_inbox" || item.source === "connector_write";
+    const key = notice
+      ? noticeGroupKey
+      : inbox
+        ? `assistant-inbox:${item.assistantId || item.id}`
+        : own
+          ? "personal"
+          : item.issueId
+            ? `issue:${item.issueId}`
+            : `session:${item.sessionId ?? item.id}`;
     let group = groups.get(key);
     if (!group) {
       group = {
         key,
-        title: inbox
-          ? item.assistantName || defaultAssistant
-          : own
-            ? personal
-            : (item.issueId ? item.title : item.sessionTitle) || untitled,
-        workspaceId: item.workspaceId,
-        workspaceName: item.workspaceName ?? "",
-        sessionId: inbox || item.issueId ? undefined : item.sessionId,
-        issueId: item.issueId,
+        title: notice
+          ? notices
+          : inbox
+            ? item.assistantName || defaultAssistant
+            : own
+              ? personal
+              : (item.issueId ? item.title : item.sessionTitle) || untitled,
+        workspaceId: notice ? "" : item.workspaceId,
+        workspaceName: notice ? "" : (item.workspaceName ?? ""),
+        sessionId: notice || inbox || item.issueId ? undefined : item.sessionId,
+        issueId: notice ? undefined : item.issueId,
         items: [],
       };
       groups.set(key, group);
@@ -143,8 +149,15 @@ export function groupPendingItems(
           (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
       ),
     }))
-    .sort((a, b) => newest(b) - newest(a));
+    .sort(
+      (a, b) =>
+        Number(a.key === noticeGroupKey) - Number(b.key === noticeGroupKey) ||
+        newest(b) - newest(a),
+    );
 }
+
+/** The one group notices form on the page. */
+const noticeGroupKey = "notices";
 
 /**
  * The message a reply sends to the chat. A question answers in the envelope
@@ -325,4 +338,21 @@ export function pendingPrimary(item: PendingItem): PendingPrimary {
   )
     return "open";
   return canReply ? "reply" : "open";
+}
+
+/**
+ * What a request's fact line says about its Feishu card, in words; empty
+ * when it says nothing (see pendingNoticeFact).
+ */
+export function pendingNoticeText(
+  item: Pick<PendingItem, "state" | "notice">,
+  t: TFunction<"pending">,
+): string {
+  const fact = pendingNoticeFact(item);
+  if (!fact) return "";
+  if (fact.key === "skipped")
+    return t("item.notice.skipped", {
+      reason: t(`item.noticeSkipped.${fact.reason}`),
+    });
+  return t(`item.notice.${fact.key}`);
 }

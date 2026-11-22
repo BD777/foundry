@@ -51,16 +51,13 @@ globalThis.EventSource = class {
   close() {}
 };
 
-const openLarkInstance = {
-  id: "app_openlark_1",
-  label: "OpenLark",
-  kind: "open-lark",
+const bot = {
+  connectorInstanceId: "builtin:feishu",
+  label: "Foundry 飞书机器人",
+  reason: "",
+  recommended: true,
 };
-const readyInstance = () => ({
-  connectorInstanceId: openLarkInstance.id,
-  label: openLarkInstance.label,
-});
-let notifyInstances = [readyInstance()];
+let notifyInstances = [bot];
 let notifyListStatus = 200;
 
 let testResponse = {
@@ -92,11 +89,6 @@ globalThis.fetch = async (input, init = {}) => {
   }
   if (method === "POST" && url.pathname === "/api/personal-agent/notify/test")
     return json(testResponse);
-  if (method === "POST" && url.pathname === "/api/personal-agent/notify/chat")
-    return json({
-      connectorInstanceId: body.connectorInstanceId,
-      reason: "self_chat_not_found",
-    });
   throw new Error(`unexpected ${method} ${url.pathname}`);
 };
 
@@ -105,20 +97,19 @@ const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
 const { NotifySection } =
   await import("../src/features/personal-agent/settings-notify.tsx");
-const { findPersonalAgentNotifyChat } =
-  await import("../src/api/personal-agent.ts");
+const { unsentNotices } = await import("../src/lib/pending-display.ts");
 
 async function settle() {
   for (let index = 0; index < 4; index += 1)
     await act(async () => new Promise((done) => setTimeout(done, 0)));
 }
 
-async function render(draft, change = () => {}) {
+async function render(draft, change = () => {}, pendingItems) {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
   await act(async () =>
-    root.render(createElement(NotifySection, { draft, change })),
+    root.render(createElement(NotifySection, { draft, change, pendingItems })),
   );
   await settle();
   return {
@@ -151,7 +142,7 @@ const savedDraft = {
   notify: {
     sinks: [
       {
-        connectorInstanceId: openLarkInstance.id,
+        connectorInstanceId: bot.connectorInstanceId,
         kinds: ["question", "approval", "hand_over", "ask"],
       },
     ],
@@ -186,7 +177,9 @@ test("the test notice reports a failed send with its reason", async () => {
     const sent = calls.find(
       (call) => call.path === "/api/personal-agent/notify/test",
     );
-    assert.deepEqual(sent?.body, { connectorInstanceId: openLarkInstance.id });
+    assert.deepEqual(sent?.body, {
+      connectorInstanceId: bot.connectorInstanceId,
+    });
     assert.match(
       page.container.textContent,
       /The test notice failed: the connector does not take notices/,
@@ -215,7 +208,7 @@ test("unticking a kind saves the rest, and the last kind cannot be removed", asy
   const draft = {
     notify: {
       sinks: [
-        { connectorInstanceId: openLarkInstance.id, kinds: ["question"] },
+        { connectorInstanceId: bot.connectorInstanceId, kinds: ["question"] },
       ],
     },
   };
@@ -227,7 +220,7 @@ test("unticking a kind saves the rest, and the last kind cannot be removed", asy
       notify: {
         sinks: [
           {
-            connectorInstanceId: openLarkInstance.id,
+            connectorInstanceId: bot.connectorInstanceId,
             kinds: ["question", "approval"],
           },
         ],
@@ -241,123 +234,118 @@ test("unticking a kind saves the rest, and the last kind cannot be removed", asy
   }
 });
 
-test("discovery failure is a reason the setting can show, with a chat id fallback", async () => {
-  const result = await findPersonalAgentNotifyChat(undefined, {
-    connectorInstanceId: openLarkInstance.id,
-  });
-  assert.equal(result.reason, "self_chat_not_found");
-  assert.equal(result.chat, undefined);
-  assert.equal(calls.at(-1).path, "/api/personal-agent/notify/chat");
-});
-
-test("an instance that can carry notices is listed and shown as the saved connector", async () => {
+test("only the Foundry bot is offered, read from the notify instances route", async () => {
+  // A server that still lists an extension instance: the picker leaves it out.
+  notifyInstances = [
+    bot,
+    { connectorInstanceId: "app_openlark_1", label: "OpenLark", reason: "" },
+  ];
   calls.length = 0;
   const page = await render(savedDraft);
   try {
-    assert.match(page.container.textContent, /OpenLark/);
-    assert.doesNotMatch(
-      page.container.textContent,
-      /No connector takes notices yet/,
+    assert.match(page.container.textContent, /Foundry 飞书机器人/);
+    assert.doesNotMatch(page.container.textContent, /OpenLark/);
+    assert.doesNotMatch(page.container.textContent, /recommended/);
+    // Radix opens on keyboard activation, not happy-dom's synthetic click.
+    await act(async () =>
+      page.container.querySelector('[aria-label^="Notices"]').dispatchEvent(
+        new window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
     );
+    await settle();
+    const labels = [
+      ...window.document.querySelectorAll('[role="menuitemradio"]'),
+    ].map((option) => option.textContent.trim());
+    await act(async () =>
+      window.document.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+    assert.deepEqual(labels, ["No notices", "Foundry 飞书机器人"]);
     assert.ok(
       calls.some(
         (call) =>
           call.method === "GET" &&
           call.path === "/api/personal-agent/notify/instances",
       ),
-      "the list comes from the notify instances route",
     );
     assert.equal(
-      calls.some((call) => call.path === "/api/external-accounts"),
+      calls.some((call) => call.path === "/api/personal-agent/notify/chat"),
       false,
-      "the apps list leaves extension instances out, so the kinds are not read from it",
+      "the bot needs no self chat",
     );
+  } finally {
+    await page.unmount();
+    notifyInstances = [bot];
+  }
+});
+
+test("a bot that cannot take notices yet says why", async () => {
+  notifyInstances = [{ ...bot, reason: "feishu_not_paired" }];
+  try {
+    const page = await render({});
+    try {
+      assert.match(
+        page.container.textContent,
+        /Foundry 飞书机器人 cannot take notices yet\. Send the pairing code once/,
+      );
+    } finally {
+      await page.unmount();
+    }
+  } finally {
+    notifyInstances = [bot];
+  }
+});
+
+test("a connector sink saved before cards only says it is no longer offered", async () => {
+  const page = await render({
+    notify: {
+      sinks: [{ connectorInstanceId: "app_openlark_1", kinds: ["question"] }],
+    },
+  });
+  try {
+    assert.match(page.container.textContent, /A connector no longer offered/);
+    assert.match(
+      page.container.textContent,
+      /Notices now go only as Foundry bot cards/,
+    );
+    assert.doesNotMatch(page.container.textContent, /Send a test notice/);
   } finally {
     await page.unmount();
   }
 });
 
-test("an instance that cannot carry notices is listed with its reason and what Foundry does", async () => {
-  notifyInstances = [
-    {
-      connectorInstanceId: "app_openlark_2",
-      label: "byte-dev OpenLark",
-      reason: "waiting_device",
-    },
-  ];
-  try {
-    const page = await render({});
-    try {
-      assert.match(
-        page.container.textContent,
-        /byte-dev OpenLark cannot take notices yet\. No online device reaches it\./,
-      );
-      assert.match(page.container.textContent, /retried automatically/);
-      assert.doesNotMatch(
-        page.container.textContent,
-        /No connector takes notices yet/,
-      );
-    } finally {
-      await page.unmount();
-    }
-  } finally {
-    notifyInstances = [readyInstance()];
-  }
-});
-
-test("an installed extension that predates notices says the update picks it up", async () => {
-  notifyInstances = [
-    {
-      connectorInstanceId: "app_openlark_3",
-      label: "OpenLark",
-      reason: "connector_not_notifiable",
-    },
-  ];
-  try {
-    const page = await render({});
-    try {
-      assert.match(
-        page.container.textContent,
-        /OpenLark cannot take notices yet\. Its installed extension does not take notices yet\./,
-      );
-    } finally {
-      await page.unmount();
-    }
-  } finally {
-    notifyInstances = [readyInstance()];
-  }
-});
-
-test("with no extension instance the setting asks for a connector", async () => {
+test("without the bot the setting says no notices can be sent", async () => {
   notifyInstances = [];
   try {
     const page = await render({});
     try {
       assert.match(
         page.container.textContent,
-        /No connector takes notices yet/,
+        /The Foundry bot is not available on this server/,
       );
     } finally {
       await page.unmount();
     }
   } finally {
-    notifyInstances = [readyInstance()];
+    notifyInstances = [bot];
   }
 });
 
-test("a failed connector list is reported, not shown as no connector", async () => {
+test("a failed list is reported, not shown as no bot", async () => {
   notifyListStatus = 500;
   try {
     const page = await render({});
     try {
       assert.match(
         page.container.textContent,
-        /The connectors could not be listed/,
+        /The notice settings could not be read/,
       );
-      assert.doesNotMatch(
-        page.container.textContent,
-        /No connector takes notices yet/,
-      );
+      assert.doesNotMatch(page.container.textContent, /not available/);
     } finally {
       await page.unmount();
     }
@@ -366,35 +354,93 @@ test("a failed connector list is reported, not shown as no connector", async () 
   }
 });
 
-test("the Foundry bot is listed first as recommended and needs no self chat", async () => {
-  const bot = {
-    connectorInstanceId: "builtin:feishu",
-    label: "Foundry 飞书机器人",
-    reason: "",
-    recommended: true,
-  };
-  notifyInstances = [bot, readyInstance()];
-  calls.length = 0;
-  const page = await render({
-    notify: {
-      sinks: [
-        {
-          connectorInstanceId: bot.connectorInstanceId,
-          kinds: ["question", "ask"],
-        },
-      ],
-    },
+const now = Date.parse("2026-11-22T12:00:00Z");
+const request = (fields) => ({
+  id: "pnd_1",
+  workspaceId: "ws_1",
+  source: "question",
+  state: "open",
+  title: "Which day?",
+  excerpt: "Which day?",
+  occurrences: 1,
+  createdAt: "2026-11-21T12:00:00Z",
+  updatedAt: "2026-11-21T12:00:00Z",
+  ...fields,
+});
+
+test("unsent requests of the last 7 days are counted by reason, open requests only", () => {
+  const items = [
+    request({ id: "a", notice: { skipped: "no_sinks" } }),
+    request({ id: "b", notice: { skipped: "no_sinks" } }),
+    request({ id: "c", notice: { skipped: "bot_not_paired" } }),
+    request({ id: "sent", notice: { state: "sent" } }),
+    request({
+      id: "old",
+      createdAt: "2026-11-10T12:00:00Z",
+      notice: { skipped: "no_sinks" },
+    }),
+    request({
+      id: "done",
+      state: "done",
+      notice: { skipped: "no_sinks" },
+    }),
+    request({
+      id: "note",
+      source: "notice",
+      notice: { skipped: "no_sinks" },
+    }),
+    request({
+      id: "helper",
+      handler: "assistant",
+      notice: { skipped: "no_sinks" },
+    }),
+  ];
+  assert.deepEqual(unsentNotices(items, now), {
+    count: 3,
+    reasons: [
+      { reason: "no_sinks", count: 2 },
+      { reason: "bot_not_paired", count: 1 },
+    ],
   });
+  assert.deepEqual(unsentNotices([], now), { count: 0, reasons: [] });
+});
+
+test("the setting says how many recent requests were not sent and why; nothing when none", async () => {
+  const recent = new Date().toISOString();
+  const page = await render(savedDraft, () => {}, [
+    request({ id: "a", createdAt: recent, notice: { skipped: "no_sinks" } }),
+    request({
+      id: "b",
+      createdAt: recent,
+      notice: { skipped: "kind_not_taken" },
+    }),
+    request({
+      id: "c",
+      createdAt: recent,
+      notice: { skipped: "kind_not_taken" },
+    }),
+  ]);
   try {
-    assert.match(page.container.textContent, /Foundry 飞书机器人/);
-    assert.match(page.container.textContent, /推荐|recommended/);
-    assert.equal(
-      calls.some((call) => call.path === "/api/personal-agent/notify/chat"),
-      false,
-      "the bot is not asked for a self chat",
+    const summary = page.container.querySelector(".fdy-pa-notify-unsent");
+    assert.ok(summary, "the summary is shown");
+    assert.match(
+      summary.textContent,
+      /3 requests in the last 7 days were not sent/,
     );
+    assert.match(
+      summary.textContent,
+      /2 because the notice setting leaves this kind out/,
+    );
+    assert.match(summary.textContent, /1 because no notice channel is set/);
   } finally {
     await page.unmount();
-    notifyInstances = [readyInstance()];
+  }
+  const quiet = await render(savedDraft, () => {}, [
+    request({ id: "s", notice: { state: "sent" } }),
+  ]);
+  try {
+    assert.equal(quiet.container.querySelector(".fdy-pa-notify-unsent"), null);
+  } finally {
+    await quiet.unmount();
   }
 });
