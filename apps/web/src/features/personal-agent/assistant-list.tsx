@@ -18,7 +18,12 @@ import { Dialog } from "../../components/ui/dialog";
 import { EmptyState } from "../../components/ui/empty-state";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { LoadingState } from "../../components/ui/loading";
-import { ManagementRow } from "../../components/ui/management-row";
+import { ClampedText } from "../../components/ui/clamped-text";
+import {
+  ManagementRow,
+  ManagementRowActions,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
 import { PageHeader } from "../../components/ui/page-header";
 import { PageSurface } from "../../components/ui/page-surface";
 import { RowMenu } from "../../components/ui/row-menu";
@@ -152,100 +157,100 @@ export function AssistantList({
             return (
               <ManagementRow
                 aria-current={current ? "true" : undefined}
-                className="transition-colors hover:bg-control-ghost-hover data-[current=true]:bg-selection data-[current=true]:hover:bg-selection max-[700px]:flex-nowrap"
+                className="data-[current=true]:bg-selection"
                 data-current={current ? "true" : "false"}
                 key={assistant.id}
               >
-                <Button
-                  aria-label={t("assistants.open", {
-                    name: assistantName(assistant),
-                  })}
-                  className="h-auto min-w-0 flex-1 basis-auto justify-start gap-3.5 rounded-lg p-0 text-left leading-normal active:scale-100 max-[700px]:basis-full max-[700px]:flex-wrap max-[700px]:gap-x-2.5 max-[700px]:gap-y-2"
-                  onClick={() =>
-                    onEvent({
-                      type: "assistant.open",
-                      assistantId: assistant.id,
-                    })
-                  }
-                  variant="bare"
-                >
-                  <UserRound
-                    aria-hidden="true"
-                    className="flex-none text-ink-muted"
-                    size={24}
-                  />
-                  <span className="grid min-w-0 flex-1 gap-[5px] leading-[1.3] whitespace-normal">
-                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <strong>{assistantName(assistant)}</strong>
-                      {assistant.isDefault ? (
-                        <Badge tone="brass">{t("assistants.default")}</Badge>
-                      ) : null}
-                    </span>
-                    {assistant.responsibility ? (
-                      <span className="line-clamp-2 text-sm text-ink">
-                        {assistant.responsibility}
-                      </span>
-                    ) : null}
+                <UserRound
+                  aria-hidden="true"
+                  className="flex-none text-ink-muted"
+                  size={24}
+                />
+                <ManagementRowCopy as="div" className="leading-[1.3]">
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <strong>{assistantName(assistant)}</strong>
                     {assistant.isDefault ? (
-                      <small>{t("assistants.defaultAccess")}</small>
-                    ) : (
-                      <AssistantProjectAccessHint assistantId={assistant.id} />
-                    )}
-                    <small>
-                      <MetaLine as="span">
-                        {device?.label ?? assistant.homeDeviceId}
-                        {device
-                          ? online
-                            ? t("settings.status.online")
-                            : t("settings.status.offline")
-                          : null}
-                      </MetaLine>
-                    </small>
+                      <Badge tone="brass">{t("assistants.default")}</Badge>
+                    ) : null}
                   </span>
+                  {assistant.responsibility ? (
+                    <ClampedText clamp={2} tone="ink">
+                      {assistant.responsibility}
+                    </ClampedText>
+                  ) : null}
+                  {assistant.isDefault ? (
+                    <small>{t("assistants.defaultAccess")}</small>
+                  ) : (
+                    <AssistantProjectAccessHint assistantId={assistant.id} />
+                  )}
+                  <small>
+                    <MetaLine as="span">
+                      {device?.label ?? assistant.homeDeviceId}
+                      {device
+                        ? online
+                          ? t("settings.status.online")
+                          : t("settings.status.offline")
+                        : null}
+                    </MetaLine>
+                  </small>
+                </ManagementRowCopy>
+                <ManagementRowActions>
                   <Badge tone={stopped ? "warn" : "online"}>
                     {stopped
                       ? t("assistants.stopped")
                       : t("settings.status.running")}
                   </Badge>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-ink-muted">
+                  <Button
+                    aria-label={t("assistants.open", {
+                      name: assistantName(assistant),
+                    })}
+                    onClick={() =>
+                      onEvent({
+                        type: "assistant.open",
+                        assistantId: assistant.id,
+                      })
+                    }
+                    size="sm"
+                    variant="ghost"
+                  >
                     {t("assistants.openShort")}
                     <ArrowRight aria-hidden="true" size={14} />
-                  </span>
-                </Button>
-                <RowMenu
-                  disabled={busy === `delete:${assistant.id}`}
-                  items={[
-                    {
-                      key: "rename",
-                      label: t("assistants.rename"),
-                      icon: <Pencil aria-hidden="true" size={15} />,
-                      onSelect: () => openRename(assistant),
-                    },
-                    ...(!assistant.isDefault
-                      ? [
-                          {
-                            key: "delete",
-                            label: t("assistants.delete"),
-                            icon: <Trash2 aria-hidden="true" size={15} />,
-                            tone: "danger" as const,
-                            confirm: {
-                              title: t("assistants.deleteTitle", {
-                                name: assistantName(assistant),
-                              }),
-                              body: t("assistants.deleteBody", {
-                                name: assistantName(assistant),
-                              }),
-                              action: t("assistants.delete"),
+                  </Button>
+                  <RowMenu
+                    disabled={busy === `delete:${assistant.id}`}
+                    items={[
+                      {
+                        key: "rename",
+                        label: t("assistants.rename"),
+                        icon: <Pencil aria-hidden="true" size={15} />,
+                        onSelect: () => openRename(assistant),
+                      },
+                      ...(!assistant.isDefault
+                        ? [
+                            {
+                              key: "delete",
+                              label: t("assistants.delete"),
+                              icon: <Trash2 aria-hidden="true" size={15} />,
+                              tone: "danger" as const,
+                              confirm: {
+                                title: t("assistants.deleteTitle", {
+                                  name: assistantName(assistant),
+                                }),
+                                body: t("assistants.deleteBody", {
+                                  name: assistantName(assistant),
+                                }),
+                                action: t("assistants.delete"),
+                              },
+                              onSelect: () => void remove(assistant),
                             },
-                            onSelect: () => void remove(assistant),
-                          },
-                        ]
-                      : []),
-                  ]}
-                  label={t("assistants.actionsFor", {
-                    name: assistantName(assistant),
-                  })}
-                />
+                          ]
+                        : []),
+                    ]}
+                    label={t("assistants.actionsFor", {
+                      name: assistantName(assistant),
+                    })}
+                  />
+                </ManagementRowActions>
               </ManagementRow>
             );
           })}
