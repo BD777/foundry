@@ -345,16 +345,32 @@ func (s *Service) planRememberSource(ctx context.Context, scope Scope, spec memo
 // Resolve the actual user event, not the later notice that happened to recall
 // it. Stable origin identity also prevents repeated notices duplicating a fact.
 func (s *Service) personFactSource(ctx context.Context, scope Scope, quote string) (store.SessionInput, error) {
+	source, found, err := s.PersonQuoteSource(ctx, scope.SessionID, scope.Turn, quote)
+	if err != nil {
+		return store.SessionInput{}, err
+	}
+	if !found {
+		return store.SessionInput{}, invalid("the stated fact has no attributable user event")
+	}
+	return source, nil
+}
+
+// PersonQuoteSource is the person's own message that quote comes from, in
+// conversation sessionID whose current input is turn: the current input if
+// it holds the quote, else the newest earlier message that does, each judged
+// as update_list judges a quote (PersonWords, QuoteGrounded). found is false
+// when no one message of the person holds it.
+func (s *Service) PersonQuoteSource(ctx context.Context, sessionID string, turn store.SessionInput, quote string) (source store.SessionInput, found bool, err error) {
 	matches := func(input store.SessionInput) bool {
 		words, ok := personalagent.PersonWords(input)
 		return ok && personalagent.QuoteGrounded(quote, []string{withoutTurnContext(words)})
 	}
-	if scope.Turn.ID != "" && matches(scope.Turn) {
-		return scope.Turn, nil
+	if turn.ID != "" && matches(turn) {
+		return turn, true, nil
 	}
-	session, err := s.store.GetAgentSession(ctx, scope.SessionID)
+	session, err := s.store.GetAgentSession(ctx, sessionID)
 	if err != nil {
-		return store.SessionInput{}, err
+		return store.SessionInput{}, false, err
 	}
 	for i := len(session.Events) - 1; i >= 0; i-- {
 		event := session.Events[i]
@@ -371,10 +387,11 @@ func (s *Service) personFactSource(ctx context.Context, scope Scope, quote strin
 		if event.Metadata != nil {
 			input.SentBySessionID = event.Metadata.SentBySessionID
 			input.TimerFire = event.Metadata.TimerFire
+			input.InputSource = event.Metadata.InputSource
 		}
 		if input.ID != "" && matches(input) {
-			return input, nil
+			return input, true, nil
 		}
 	}
-	return store.SessionInput{}, invalid("the stated fact has no attributable user event")
+	return store.SessionInput{}, false, nil
 }

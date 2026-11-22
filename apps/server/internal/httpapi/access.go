@@ -45,6 +45,9 @@ type accessScope struct {
 	// assistant is the package of the assistant an agent works for (its
 	// own conversation or a helper); not Applicable for any other session.
 	assistant permission.Access
+	// lineage is the agent's own parent chain (agentLineage): sessions it
+	// reads wherever they run, and nothing more.
+	lineage map[string]bool
 }
 
 func (a accessScope) role(workspaceID string) string {
@@ -71,6 +74,9 @@ func (a accessScope) fingerprint() string {
 	}
 	for deviceID := range a.owned {
 		parts = append(parts, "d:"+deviceID)
+	}
+	for sessionID := range a.lineage {
+		parts = append(parts, "s:"+sessionID)
 	}
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
@@ -175,6 +181,9 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}
+	if scope.lineage, err = s.agentLineage(ctx, session); err != nil {
+		return accessScope{}, err
+	}
 	permissionAccess, err := permission.Resolve(ctx, s.store, session)
 	if err != nil {
 		return accessScope{}, err
@@ -201,6 +210,34 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 		scope.roles[workspaceID] = role
 	}
 	return scope, nil
+}
+
+// agentLineageLimit bounds the parent chain agentLineage follows; sessions
+// nest at most 4 levels.
+const agentLineageLimit = 8
+
+// agentLineage is the session's parent, its parent's, and so on, while the
+// same person started them: the sessions that handed this one its work. Its
+// agent reads them in any workspace (canReadSession), so a helper of the
+// person's assistant reads the conversation that sent it even where its
+// package does not reach; it controls nothing more for it.
+func (s *Server) agentLineage(ctx context.Context, session store.AgentSession) (map[string]bool, error) {
+	lineage := map[string]bool{}
+	for current := session; current.ParentSessionID != "" && len(lineage) < agentLineageLimit; {
+		parent, err := s.store.GetAgentSessionSummary(ctx, current.ParentSessionID)
+		if errors.Is(err, store.ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if parent.CreatedByUserID != session.CreatedByUserID || lineage[parent.ID] {
+			break
+		}
+		lineage[parent.ID] = true
+		current = parent
+	}
+	return lineage, nil
 }
 
 // assistantChannelWorkspaces are the workspaces of the message channels an

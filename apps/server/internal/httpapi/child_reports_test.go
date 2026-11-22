@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -618,4 +620,72 @@ func TestChildReportOutdatedReportsAreNeverLost(t *testing.T) {
 			t.Fatalf("reports = %+v, want the next one carrying it", reports)
 		}
 	})
+}
+
+// A report states what the turn did beside what it said: the files its
+// tools wrote this turn, its tool calls with how each ended and how long it
+// ran, the background commands it started with their exit codes, and how
+// to read a long answer whole.
+func TestChildReportStatesWhatTheTurnDid(t *testing.T) {
+	f := newChildReportFixture(t)
+	ctx := context.Background()
+	child, err := f.db.StartAgentSession(ctx, f.child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := func(value int) *int { return &value }
+	failedExit := int64(1)
+	base := time.Now().UTC().Add(time.Second)
+	at := func(seconds int) string {
+		return base.Add(time.Duration(seconds) * time.Second).Format(time.RFC3339Nano)
+	}
+	tool := func(callID string) *store.TranscriptMessage {
+		return &store.TranscriptMessage{ID: callID, Kind: "tool", CallID: callID}
+	}
+	for index, event := range []store.AgentSessionEvent{
+		{Label: store.ProcessLabelRunningCommand, Detail: "go test ./internal/greet\n\n```\n```", Message: tool("call_1"), At: at(0)},
+		{Label: store.ProcessLabelRanCommand, Detail: "go test ./internal/greet\n\n```\nFAIL\n```", Level: "error", Message: tool("call_1"), At: at(4)},
+		{Label: store.ProcessLabelRunningCommand, Detail: "gofmt -l .\n", Message: tool("call_2"), At: at(5)},
+		{Label: store.ProcessLabelRanCommand, Detail: "gofmt -l .\n", Message: tool("call_2"), At: at(6)},
+		{Label: "File changed", Metadata: &store.AgentSessionEventMetadata{SessionFile: &store.SessionFileRecord{
+			Path: "/work/greet.go", WorkspacePath: "greet.go", Origin: "tool", Op: "modified", InputID: child.Input.ID, Added: lines(4), Removed: lines(1)}}, At: at(7)},
+		{Label: "File changed", Metadata: &store.AgentSessionEventMetadata{SessionFile: &store.SessionFileRecord{
+			Path: "/elsewhere/notes.md", Origin: "reference", Op: "referenced", InputID: child.Input.ID}}, At: at(7)},
+		{Label: "File changed", Metadata: &store.AgentSessionEventMetadata{SessionFile: &store.SessionFileRecord{
+			Path: "/work/old.go", WorkspacePath: "old.go", Origin: "tool", Op: "created", InputID: "inp_earlier"}}, At: at(7)},
+		{Label: "Background tasks", Metadata: &store.AgentSessionEventMetadata{BackgroundTaskSnapshot: &[]store.AgentBackgroundTask{
+			{ID: "bash_7", Kind: "bash", Description: "go test ./...", Status: "completed", ExitCode: &failedExit, StartedAt: at(8), EndedAt: at(20)},
+		}}, At: at(21)},
+	} {
+		event.ID = fmt.Sprintf("evt_facts_%d", index)
+		event.SessionID = child.ID
+		event.Level = cmp.Or(event.Level, "info")
+		if err := f.db.AppendAgentSessionEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.finish(strings.Repeat("é", 4000))
+	reports := f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("reports = %d, want 1", len(reports))
+	}
+	report := reports[0].Prompt
+	for _, want := range []string{
+		"read_context scope=thread limit=1 maxChars=4000 on " + child.ID + " reads it whole",
+		"Files its tools wrote: 1\n- modified greet.go +4 -1\n",
+		"inputId=" + child.Input.ID,
+		"Tool calls: 2, 1 failed (read_context scope=progress on " + child.ID,
+		"- failed 4s go test ./internal/greet",
+		"- completed 1s gofmt -l .",
+		"Background commands it started: 1\n- bash_7 completed exit 1 bash: go test ./...",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report lacks %q:\n%s", want, report)
+		}
+	}
+	for _, unwanted := range []string{"notes.md", "old.go"} {
+		if strings.Contains(report, unwanted) {
+			t.Fatalf("report names %s, which this turn did not write:\n%s", unwanted, report)
+		}
+	}
 }

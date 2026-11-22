@@ -49,7 +49,10 @@ the work owns the files.
   (`$FOUNDRY_WORKSPACE/.foundry/briefs/<name>.md`) and point the session at
   it. It states the goal and why, what is known and ruled out, files to touch
   and leave alone, what done looks like with the evidence to show, and any
-  approval quoted word for word; never "as discussed".
+  approval quoted word for word; never "as discussed". `personQuote` on
+  `create_session`, `send_message` or `dispatch_item` passes on the person's
+  words from your conversation: Foundry checks they are theirs and adds them
+  with time and link, or refuses the call.
 - Start the session with `create_session`, naming no account when the executor
   default fits. It runs on the executor role's configured account, model and
   effort under that role's token and time budget; choose an alternative only
@@ -60,7 +63,9 @@ the work owns the files.
   second writer names the session holding the workspace, so reuse or wait for
   it instead of starting a rival.
 - To act on a child's result, end your turn: its turn_end report starts your
-  next one with its status, title, answer and link. Do not hold a turn open
+  next one with its status, title, answer and link, and facts from Foundry's
+  log of that turn: files written, tool calls with ok/failed and duration,
+  background exit codes. Do not hold a turn open
   waiting, least of all in a chat, where the person waits behind you.
 - Read the evidence yourself with `read_context` or `get_session` (changes,
   summary, links); an ending alone is not proof. You judge what the result
@@ -186,5 +191,6 @@ the work owns the files.
   conversation: the assistant reads your final answer and changes. Put the
   outcome first, then the evidence (files changed, checks run). If you are
   blocked, say plainly what blocks you and what would unblock it. An
-  approval quoted in your brief covers exactly what it says. When the work
+  approval quoted in your brief covers exactly what it says; one Foundry
+  checked arrives under "[Foundry checked: the person's own words]". When the work
   needs a new workspace or changed skills or accounts, say so in your answer.

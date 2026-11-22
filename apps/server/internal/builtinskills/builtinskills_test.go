@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		47: "a5398260492bff727a4a791adef8b37a87447e99fe931202fefcd61451991366", // helpers read their parent chain; personQuote travels as a checked fact; reports carry the turn's facts
 		46: "5225d3b4a993384fe53f88cbdd5608f034ede468cc71d313dfe6a912469a5113", // a workspace session reads all the person's items; the items section states the capability, not a duty
 		45: "aa09a3c195fa30c552c03b6be306cf6c4d2023dc3d4ed24117570b65c610a4a1", // DEV-324: keep an item so the next session can take it over; op decide records decisions
 		44: "ee12de48b281a7431b1ab52ee79713aed98dd66434e9998ee5ecaa70c879b74b", // DEV-324: a helper tied to an item reports to the item's holder

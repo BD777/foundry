@@ -13,8 +13,8 @@ import (
 // scope grants (agentScope, access.go): it reads any session there and
 // controls the sessions its person started, which include every session
 // their agents started (children inherit their parent's creator). Lineage
-// is a record, never a permission. People are judged by their workspace
-// role. All checks live here so handlers stay free of policy.
+// grants one thing: an agent reads its own parent chain wherever it runs
+// (agentLineage). People are judged by their workspace role. All checks live here so handlers stay free of policy.
 
 // onlyAgentRoutes refuses a session token any request that does not match a
 // route marked agent in routeTable, before the route (or the mux) answers.
@@ -48,7 +48,7 @@ func requestedWorkspace(actor Actor, requested string) string {
 
 func (s *Server) canReadSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
 	scope, err := s.contextScope(ctx, actor)
-	return err == nil && scope.can(target.WorkspaceID, store.WorkspaceRoleViewer)
+	return err == nil && (scope.can(target.WorkspaceID, store.WorkspaceRoleViewer) || (actor.Agent() && scope.lineage[target.ID]))
 }
 
 // canControlSession: an agent controls its person's sessions where it
