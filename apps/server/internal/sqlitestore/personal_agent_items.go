@@ -505,6 +505,12 @@ func (s *Store) ListPersonalAgentItemPage(ctx context.Context, assistantID strin
 			JOIN agent_sessions a ON a.id = h.session_id WHERE h.assistant_id = pa_items.assistant_id AND h.item_id = pa_items.id AND a.workspace_id = ?))`)
 		args = append(args, filter.WorkspaceID, filter.WorkspaceID, filter.WorkspaceID)
 	}
+	if filter.Inbox {
+		if filter.WorkspaceID != "" {
+			return store.PersonalAgentItemPage{}, fmt.Errorf("%w: a page of items is of a workspace or of the inbox, not both", store.ErrPersonalAgentItemInvalid)
+		}
+		where = append(where, "home_workspace_id = ''")
+	}
 	archivedView := false
 	if filter.ClosedSince != "" {
 		if _, err := parseInstant("closedSince", filter.ClosedSince); err != nil {

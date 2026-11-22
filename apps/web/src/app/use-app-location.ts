@@ -138,8 +138,7 @@ export function useAppLocation(): AppLocation {
       if (route.selectedIssueId !== undefined) {
         setSelectedIssueId(route.selectedIssueId);
       }
-      if (route.view === "assistantItems")
-        setSelectedItemId(route.selectedItemId ?? "");
+      if (route.view === "items") setSelectedItemId(route.selectedItemId ?? "");
     },
     openDevices: (deviceId, section) => {
       setSelectedDeviceId(deviceId);

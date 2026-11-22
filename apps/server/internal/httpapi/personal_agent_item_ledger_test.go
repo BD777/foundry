@@ -59,3 +59,39 @@ func jsonInt(value int64) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
 }
+
+// The items page's workspace filter: a workspace keeps what is homed in or
+// touches it, inbox what has no home workspace; both at once answer 400.
+func TestItemsPageFiltersByWorkspaceOrInbox(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	agent := mustAgent(t, f)
+	inboxItem := addItem(t, f, agent, "Renew the passport", store.PersonalAgentItemOwnerPerson)
+	homed, err := f.server.store.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{
+		AssistantID: agent.ID, UserID: f.aliceID, Text: "Ship the release", Owner: store.PersonalAgentItemOwnerAssistant,
+		Status: store.PersonalAgentItemOpen, Quote: "Ship the release", HomeWorkspaceID: "ws_alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(query string) store.PersonalAgentItemList {
+		t.Helper()
+		recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/personal-agent/items?"+query, ""))
+		expectStatus(t, recorder, http.StatusOK, query)
+		var page store.PersonalAgentItemList
+		if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	if page := read("workspace=ws_alice"); page.Total != 1 || page.Items[0].ID != homed.ID {
+		t.Fatalf("workspace page = %+v", page)
+	}
+	if page := read("inbox=true"); page.Total != 1 || page.Items[0].ID != inboxItem.ID {
+		t.Fatalf("inbox page = %+v", page)
+	}
+	if page := read("inbox=false"); page.Total != 2 {
+		t.Fatalf("inbox=false page = %+v", page)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/personal-agent/items?inbox=true&workspace=ws_alice", "")), http.StatusBadRequest, "workspace and inbox")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/personal-agent/items?inbox=maybe", "")), http.StatusBadRequest, "inbox not a boolean")
+}

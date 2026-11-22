@@ -63,7 +63,7 @@ export function resolveAssistantSelection(
   const rememberedStale = Boolean(rememberedAssistantId && !remembered);
   const selectedStale = Boolean(selectedAssistantId && !selected);
 
-  if (route.view === "assistantItems") {
+  if (route.view === "items") {
     // The person's own list: a direct load or a reload opens it for the
     // current choice, else the default assistant, never the assistant list.
     const fallback = assistants.find((row) => row.isDefault);

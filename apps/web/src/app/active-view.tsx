@@ -10,6 +10,7 @@ import type {
 } from "../lib/assistant-settings-sections";
 import type { ConnectorType } from "../lib/connector-types";
 import type { ProviderTab } from "../lib/provider-tabs";
+import { navigateToItems } from "../lib/in-app-navigation";
 import {
   AssistantHome,
   AssistantItemsPage,
@@ -137,8 +138,8 @@ export function ActiveView({
         location.setActiveView("assistant");
         return;
       case "items.open":
-        location.setSelectedItemId(event.itemId ?? "");
-        location.setActiveView("assistantItems");
+        // From the assistant: every item, whatever the page filtered last.
+        navigateToItems("", event.itemId);
         return;
       case "pending.open":
         location.setActiveView("pending");
@@ -204,7 +205,7 @@ export function ActiveView({
           workspaces={data.workspaces}
         />
       );
-    case "assistantItems":
+    case "items":
       return (
         <AssistantItemsPage
           onOpenAssistant={() => location.setActiveView("assistant")}
@@ -277,10 +278,8 @@ export function ActiveView({
         <WorkspaceHubView
           {...context}
           items={{
-            onOpen: (itemId) => {
-              location.setSelectedItemId(itemId ?? "");
-              location.setActiveView("assistantItems");
-            },
+            // The items page opens filtered to this workspace.
+            onOpen: (itemId) => navigateToItems(activeWorkspaceId, itemId),
           }}
         />
       );

@@ -151,10 +151,14 @@ test("the assistant section has one dynamic entry and no switcher row", async ()
     [...section.querySelectorAll("[data-nav-id]")].map(
       (item) => item.dataset.navId,
     ),
-    ["assistant", "pending", "assistantSettings"],
+    ["assistant", "items", "pending", "assistantSettings"],
   );
   const assistant = section.querySelector('[data-nav-id="assistant"]');
   assert.match(assistant.textContent, /ByteWork/);
+  // Items are the person's across assistants: their tooltip says Global.
+  const items = section.querySelector('[data-nav-id="items"]');
+  assert.equal(items.title, "Global · Items");
+  assert.match(assistant.title, /^Assistant: ByteWork · /);
   assert.match(
     assistant.querySelector("svg").getAttribute("class"),
     /sparkles/,

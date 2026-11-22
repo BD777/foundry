@@ -108,9 +108,9 @@ export function useAppRouteSync({
           }
         : activeView === "issue"
           ? { view: "issue", selectedIssueId: selectedIssueId || undefined }
-          : activeView === "assistantItems"
+          : activeView === "items"
             ? {
-                view: "assistantItems",
+                view: "items",
                 selectedItemId: selectedItemId || undefined,
               }
             : activeView === "devices"

@@ -12,7 +12,7 @@ import { providerTabFrom, type ProviderTab } from "./provider-tabs";
 export type NavView =
   | "assistants"
   | "assistant"
-  | "assistantItems"
+  | "items"
   | "assistantSettings"
   | "pending"
   | "account"
@@ -71,6 +71,14 @@ function encodePathSegment(value: string): string {
   return encodeURIComponent(value);
 }
 
+/** The items page, at one item's detail when `itemId` names one. */
+function itemsRoute(itemId: string | undefined): AppRoute {
+  return {
+    view: "items",
+    ...(itemId ? { selectedItemId: decodePathSegment(itemId) } : {}),
+  };
+}
+
 export function parseAppRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean);
   const [section, id] = segments;
@@ -93,14 +101,8 @@ export function parseAppRoute(pathname: string): AppRoute {
     // Legacy aliases resolve to the default assistant in the app shell.
     case "assistant": {
       const assistantSection = assistantSettingsSectionValue(segments[2]);
-      // The items page and one item's detail; no sidebar entry of its own.
-      if (id === "items")
-        return {
-          view: "assistantItems",
-          ...(segments[2]
-            ? { selectedItemId: decodePathSegment(segments[2]) }
-            : {}),
-        };
+      // The items page was /assistant/items[/<id>]; old links still open it.
+      if (id === "items") return itemsRoute(segments[2]);
       return id === "settings"
         ? {
             view: "assistantSettings",
@@ -108,6 +110,8 @@ export function parseAppRoute(pathname: string): AppRoute {
           }
         : { view: "assistant" };
     }
+    case "items":
+      return itemsRoute(id);
     case "locations":
       // /locations/<device> brings that device's workspaces into view.
       return id
@@ -207,10 +211,10 @@ export function pathForAppRoute(route: AppRoute): string {
         : route.assistantSection
           ? `/assistant/settings/${route.assistantSection}`
           : "/assistant/settings";
-    case "assistantItems":
+    case "items":
       return route.selectedItemId
-        ? `/assistant/items/${encodePathSegment(route.selectedItemId)}`
-        : "/assistant/items";
+        ? `/items/${encodePathSegment(route.selectedItemId)}`
+        : "/items";
     case "assistants":
       return "/assistants";
     case "locations":
@@ -274,6 +278,7 @@ const appSections = new Set([
   "",
   "assistant",
   "assistants",
+  "items",
   "pending",
   "locations",
   "account",

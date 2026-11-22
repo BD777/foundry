@@ -28,7 +28,7 @@ const (
 )
 
 // personalAgentItemFilter reads the items page's query: view, owner, from,
-// to, workspace, q, limit and offset. Out-of-range values answer 400.
+// to, workspace or inbox, q, limit and offset. Out-of-range values answer 400.
 func personalAgentItemFilter(w http.ResponseWriter, r *http.Request) (store.PersonalAgentItemFilter, bool) {
 	query := r.URL.Query()
 	filter := store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewOpen, Query: strings.TrimSpace(query.Get("q")), Limit: personalAgentItemDefaultLimit,
@@ -49,6 +49,18 @@ func personalAgentItemFilter(w http.ResponseWriter, r *http.Request) (store.Pers
 	default:
 		writeError(w, http.StatusBadRequest, "owner must be person or assistant")
 		return filter, false
+	}
+	if value := strings.TrimSpace(query.Get("inbox")); value != "" {
+		inbox, err := strconv.ParseBool(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "inbox must be true or false")
+			return filter, false
+		}
+		if inbox && filter.WorkspaceID != "" {
+			writeError(w, http.StatusBadRequest, "give workspace or inbox, not both")
+			return filter, false
+		}
+		filter.Inbox = inbox
 	}
 	from, ok := personalAgentItemInstant(w, query, "from")
 	if !ok {

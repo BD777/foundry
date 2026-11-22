@@ -138,6 +138,8 @@ export interface SidebarNavItem<T extends string> {
   id: T;
   label: string;
   liveCount?: SidebarNavLiveCount;
+  /** The item's own scope in tooltips, when it is not its section's. */
+  scopeLabel?: string;
 }
 
 export interface SidebarNavSection<T extends string> {
@@ -490,7 +492,9 @@ export function SidebarNav<T extends string>({
                   <SidebarNavButton
                     active={item.id === activeItemId}
                     item={item}
-                    scopeLabel={section.scopeLabel ?? section.label}
+                    scopeLabel={
+                      item.scopeLabel ?? section.scopeLabel ?? section.label
+                    }
                     key={item.id}
                     refCallback={(node) => {
                       if (node) {

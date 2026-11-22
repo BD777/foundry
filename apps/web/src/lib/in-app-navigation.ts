@@ -182,6 +182,21 @@ export function workspaceHref(workspaceId: string): string {
   return `${pathForAppRoute({ view: "workspace" })}${searchWithWorkspace(workspaceId)}`;
 }
 
+/** The items page's own URL parameter: its workspace filter (?in=). */
+export const itemsWorkspaceParam = "in";
+
+/**
+ * Opens the items page filtered to one workspace's items ("" for all), at
+ * one item's detail when given.
+ */
+export function navigateToItems(workspaceId: string, itemId?: string): void {
+  navigateAppRoute(
+    { view: "items", ...(itemId ? { selectedItemId: itemId } : {}) },
+    undefined,
+    { [itemsWorkspaceParam]: workspaceId },
+  );
+}
+
 /** A real link to the Needs-you page, for opening it in a new tab. */
 export function pendingHref(): string {
   return pathForAppRoute({ view: "pending" });
