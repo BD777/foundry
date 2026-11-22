@@ -1255,10 +1255,19 @@ async function type(input, value) {
   });
 }
 
+/** An element's text as a screen reader gets it: without aria-hidden parts. */
+function spokenText(element) {
+  const copy = element.cloneNode(true);
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]'))
+    hidden.remove();
+  return copy.textContent;
+}
+
 function fieldInput(scope, label) {
-  const field = [...scope.querySelectorAll(".fdy-xacc-field")].find((f) =>
-    f.querySelector("label")?.textContent.startsWith(label),
-  );
+  const field = [...scope.querySelectorAll(".fdy-xacc-field")].find((f) => {
+    const caption = f.querySelector("label");
+    return caption ? spokenText(caption).startsWith(label) : false;
+  });
   assert.ok(field, `field ${label}`);
   return field.querySelector("input");
 }
