@@ -499,11 +499,13 @@ func (s *Store) ListPersonalAgentItemPage(ctx context.Context, assistantID strin
 		where[0], args[0] = "user_id = ?", filter.UserID
 	}
 	if filter.WorkspaceID != "" {
-		// Home, or touched: a helper of either kind runs there.
-		where = append(where, `(home_workspace_id = ? OR EXISTS (SELECT 1 FROM pa_tasks WHERE pa_tasks.assistant_id = pa_items.assistant_id
+		// Home, or touched: a helper of either kind runs there. The inbox is
+		// its assistant's own workspace.
+		where = append(where, `(home_workspace_id = ? OR (home_workspace_id = '' AND EXISTS (SELECT 1 FROM assistants
+			WHERE assistants.id = pa_items.assistant_id AND assistants.home_workspace_id = ?)) OR EXISTS (SELECT 1 FROM pa_tasks WHERE pa_tasks.assistant_id = pa_items.assistant_id
 			AND pa_tasks.item_id = pa_items.id AND pa_tasks.workspace_id = ?) OR EXISTS (SELECT 1 FROM pa_item_helpers h
 			JOIN agent_sessions a ON a.id = h.session_id WHERE h.assistant_id = pa_items.assistant_id AND h.item_id = pa_items.id AND a.workspace_id = ?))`)
-		args = append(args, filter.WorkspaceID, filter.WorkspaceID, filter.WorkspaceID)
+		args = append(args, filter.WorkspaceID, filter.WorkspaceID, filter.WorkspaceID, filter.WorkspaceID)
 	}
 	if filter.Inbox {
 		if filter.WorkspaceID != "" {

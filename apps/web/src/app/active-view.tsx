@@ -212,6 +212,7 @@ export function ActiveView({
           onSelectItem={(itemId) => location.setSelectedItemId(itemId ?? "")}
           selectedItemId={location.selectedItemId || undefined}
           workspaces={data.workspaces}
+          workspacesLoaded={workspaceData.apiState !== "loading"}
         />
       );
     case "assistantSettings":

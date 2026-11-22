@@ -40,17 +40,21 @@ export function originLabel(
 /**
  * A workspace an item names, by its name: no id is the assistant's inbox,
  * one the person cannot see (removed, or not shared) says so, never the id.
+ * Until the workspaces are loaded (`loaded` false) an unknown one is "": not
+ * known yet is not unseen.
  */
 export function workspaceLabel(
   workspaceId: string | undefined,
   workspaces: WorkspaceProjection[],
   t: TFunction<"personalAgent">,
+  loaded = true,
 ): string {
   if (!workspaceId) return t("items.home.inbox");
-  return (
-    workspaces.find((workspace) => workspace.id === workspaceId)?.name ||
-    t("items.home.removed")
-  );
+  const name = workspaces.find(
+    (workspace) => workspace.id === workspaceId,
+  )?.name;
+  if (name) return name;
+  return loaded ? t("items.home.removed") : "";
 }
 
 /** A helper's status in words; a status the Web does not know is shown as the server names it. */

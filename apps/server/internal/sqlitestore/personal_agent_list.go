@@ -270,6 +270,11 @@ func (s *Store) addPersonalAgentItem(ctx context.Context, actor string, item sto
 		item.Owner = store.PersonalAgentItemOwnerPerson
 	}
 	item.HolderSessionID = ""
+	home, err := s.itemHome(ctx, item.AssistantID, item.HomeWorkspaceID)
+	if err != nil {
+		return item, err
+	}
+	item.HomeWorkspaceID = home
 	plan, err := encodeItemPlan(item.Plan)
 	if err != nil {
 		return item, err
@@ -328,6 +333,9 @@ func (s *Store) SavePersonalAgentItem(ctx context.Context, actor string, item st
 		item.Owner = cmp.Or(item.Owner, previous.Owner)
 		item.Origin, item.ArchivedAt = previous.Origin, previous.ArchivedAt
 		item.HolderSessionID = previous.HolderSessionID
+		if item.HomeWorkspaceID, err = tx.itemHome(ctx, item.AssistantID, item.HomeWorkspaceID); err != nil {
+			return err
+		}
 		if err := checkItemFields(actor, item); err != nil {
 			return err
 		}

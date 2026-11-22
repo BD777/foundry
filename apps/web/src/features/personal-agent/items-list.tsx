@@ -25,6 +25,8 @@ export interface ItemsListProps {
   items: PersonalAgentItem[];
   /** For the name of the workspace an item lives in. */
   workspaces: WorkspaceProjection[];
+  /** Whether `workspaces` is read; until then an unknown one goes unnamed. */
+  workspacesLoaded?: boolean;
   selectedItemId?: string;
   /** The item whose tick is being saved. */
   busyId: string;
@@ -36,6 +38,7 @@ export interface ItemsListProps {
 export function ItemsList({
   items,
   workspaces,
+  workspacesLoaded = true,
   selectedItemId,
   busyId,
   onOpen,
@@ -62,6 +65,7 @@ export function ItemsList({
                   onTick={onTick}
                   selected={item.id === selectedItemId}
                   workspaces={workspaces}
+                  workspacesLoaded={workspacesLoaded}
                 />
               ))}
             </ContextList>
@@ -93,6 +97,7 @@ function ItemListRow({
   onTick,
   selected,
   workspaces,
+  workspacesLoaded,
 }: {
   busy: boolean;
   item: PersonalAgentItem;
@@ -100,6 +105,7 @@ function ItemListRow({
   onTick: (item: PersonalAgentItem) => void;
   selected: boolean;
   workspaces: WorkspaceProjection[];
+  workspacesLoaded: boolean;
 }) {
   const { t } = useTranslation("personalAgent");
   // Only a channel names someone else; the person's own web and self-chat items need no chip.
@@ -119,7 +125,12 @@ function ItemListRow({
             stateLabel(item, t),
             // The inbox is where an item lives by default; only a workspace is named.
             item.homeWorkspaceId
-              ? workspaceLabel(item.homeWorkspaceId, workspaces, t)
+              ? workspaceLabel(
+                  item.homeWorkspaceId,
+                  workspaces,
+                  t,
+                  workspacesLoaded,
+                )
               : "",
           ]
             .filter(Boolean)

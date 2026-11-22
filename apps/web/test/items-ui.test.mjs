@@ -640,3 +640,57 @@ test("the items page filters by workspace or the inbox: read from the URL once, 
   await page.unmount();
   window.history.replaceState(null, "", "/items");
 });
+
+test("before the workspaces are read, a workspace not in the list is not yet called one you can't see", async () => {
+  const rowsOf = async (workspacesLoaded) => {
+    const page = await mount(ItemsList, {
+      items: [item("far", { text: "lives far", homeWorkspaceId: "ws_far" })],
+      workspaces: [],
+      workspacesLoaded,
+      busyId: "",
+      onOpen: () => {},
+      onTick: () => {},
+    });
+    const text = page.container.textContent;
+    await page.unmount();
+    return text;
+  };
+  assert.doesNotMatch(await rowsOf(false), /can't see/);
+  assert.match(await rowsOf(true), /A workspace you can't see/);
+
+  calls.length = 0;
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/personal-agent/items"
+      ? { items: [], total: 0, offset: 0 }
+      : undefined;
+  window.history.replaceState(null, "", "/items?in=ws_far");
+  const props = {
+    onSelectItem() {},
+    onOpenAssistant() {},
+    workspaces: [],
+    workspacesLoaded: false,
+  };
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(AssistantItemsPage, props)));
+  const trigger = () =>
+    container.querySelector('button[aria-label^="Filter by workspace"]');
+  assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Filter by workspace: Loading…",
+  );
+  // Read: one the list does not hold is one the person cannot see.
+  await act(async () =>
+    root.render(
+      createElement(AssistantItemsPage, { ...props, workspacesLoaded: true }),
+    ),
+  );
+  assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Filter by workspace: A workspace you can't see",
+  );
+  await act(async () => root.unmount());
+  container.remove();
+  window.history.replaceState(null, "", "/items");
+});

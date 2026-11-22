@@ -54,6 +54,11 @@ export interface AssistantItemsPageProps {
   onOpenAssistant: () => void;
   /** For the names of the workspaces items live in, and the filter. */
   workspaces: WorkspaceProjection[];
+  /**
+   * Whether `workspaces` is read. Until then a workspace the URL or a row
+   * names is not yet known, not one the person cannot see.
+   */
+  workspacesLoaded?: boolean;
 }
 
 /**
@@ -67,6 +72,7 @@ export function AssistantItemsPage({
   onSelectItem,
   onOpenAssistant,
   workspaces,
+  workspacesLoaded = true,
 }: AssistantItemsPageProps) {
   const { t, i18n } = useTranslation("personalAgent");
   const [tab, setTab] = useState<ItemsTab>("open");
@@ -188,14 +194,21 @@ export function AssistantItemsPage({
     { value: "", label: t("items.filter.all") },
     { value: inboxFilter, label: t("items.home.inbox") },
     ...choices,
-    // A link may name a workspace that is no longer a choice (archived).
+    // A link may name a workspace that is no longer a choice (archived),
+    // or one not read yet.
     ...(workspaceFilter &&
     workspaceFilter !== inboxFilter &&
     !choices.some((choice) => choice.value === workspaceFilter)
       ? [
           {
             value: workspaceFilter,
-            label: workspaceLabel(workspaceFilter, workspaces, t),
+            label:
+              workspaceLabel(
+                workspaceFilter,
+                workspaces,
+                t,
+                workspacesLoaded,
+              ) || t("loading"),
           },
         ]
       : []),
@@ -300,6 +313,7 @@ export function AssistantItemsPage({
                   busyId={busyId}
                   items={list.items}
                   workspaces={workspaces}
+                  workspacesLoaded={workspacesLoaded}
                   onOpen={(itemId) => onSelectItem(itemId)}
                   onTick={(item) => void tick(item)}
                   selectedItemId={selectedItemId}
