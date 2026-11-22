@@ -44,6 +44,7 @@ import {
 } from "../../platform/secret-redaction.js";
 import { writePrivateJSONAtomic } from "../../platform/storage.js";
 import type { TimerSinkEvent } from "./agent-timers.js";
+import type { ClaudeHooks } from "../files/session-files.js";
 import { errorMessage } from "../../platform/utils.js";
 import { isInside } from "../../platform/paths.js";
 
@@ -251,14 +252,14 @@ export class ClaudeBackgroundTaskTracker {
   }
 
   /** Options fragment merged into the Claude SDK `query()` hooks. */
-  hooks(): Record<string, unknown> {
+  hooks(): ClaudeHooks {
     return {
       Stop: [
         {
           hooks: [
             async (input: unknown) => {
               this.handleStop(input);
-              return undefined;
+              return {};
             },
           ],
         },

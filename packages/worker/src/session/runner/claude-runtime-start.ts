@@ -15,6 +15,7 @@ import { executionSessionsRoot } from "../session-artifacts.js";
 import {
   claudeFileWriteHooks,
   mergeClaudeHooks,
+  type ClaudeHooks,
 } from "../files/session-files.js";
 import {
   activeClaudeRuntimes,
@@ -269,49 +270,7 @@ function installClaudeRuntimeObservers(
     configured: configuredWindow(run.profile.contextWindow),
   });
   options.hooks = mergeClaudeHooks(
-    {
-      // Foundry only observes: which tool call started which process. It
-      // adds nothing to what Claude sees.
-      PreToolUse: [
-        {
-          hooks: [
-            async (input: unknown) => {
-              const tool = (input as { tool_name?: string }).tool_name;
-              if (tool === "Bash")
-                recordWorkToolStarting(
-                  runtime.foundrySessionId,
-                  (input as { tool_use_id?: string }).tool_use_id || "",
-                );
-              return undefined;
-            },
-          ],
-        },
-      ],
-      PostToolUse: [
-        {
-          hooks: [
-            async (input: unknown) => {
-              recordWorkToolCompleted(
-                (input as { tool_use_id?: string }).tool_use_id || "",
-              );
-              return undefined;
-            },
-          ],
-        },
-      ],
-      PostToolUseFailure: [
-        {
-          hooks: [
-            async (input: unknown) => {
-              recordWorkToolCompleted(
-                (input as { tool_use_id?: string }).tool_use_id || "",
-              );
-              return undefined;
-            },
-          ],
-        },
-      ],
-    },
+    claudeWorkToolHooks(() => runtime.foundrySessionId),
     runtime.timers.hooks(),
     runtime.background.hooks(),
     // A write belongs to the turn the stream answers, else to the work
@@ -321,6 +280,38 @@ function installClaudeRuntimeObservers(
       (write) => claudeWriteFiles(runtime)?.captureBeforeWrite(write),
     ),
   );
+}
+
+/**
+ * Which tool call started which process. Foundry only observes: the hooks
+ * add nothing to what Claude sees.
+ */
+export function claudeWorkToolHooks(sessionId: () => string): ClaudeHooks {
+  const completed = async (input: unknown) => {
+    recordWorkToolCompleted(
+      (input as { tool_use_id?: string }).tool_use_id || "",
+    );
+    return {};
+  };
+  return {
+    PreToolUse: [
+      {
+        hooks: [
+          async (input: unknown) => {
+            const tool = (input as { tool_name?: string }).tool_name;
+            if (tool === "Bash")
+              recordWorkToolStarting(
+                sessionId(),
+                (input as { tool_use_id?: string }).tool_use_id || "",
+              );
+            return {};
+          },
+        ],
+      },
+    ],
+    PostToolUse: [{ hooks: [completed] }],
+    PostToolUseFailure: [{ hooks: [completed] }],
+  };
 }
 
 /** Where the process's stderr goes, and how it is spawned. */
