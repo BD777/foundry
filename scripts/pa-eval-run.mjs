@@ -87,6 +87,10 @@ import {
   questionsIn,
 } from "./pa-eval-score.mjs";
 import { appendRow, journalKey, readJournal } from "./pa-eval-journal.mjs";
+import {
+  hostConnectorProfile,
+  startConnectionRelay,
+} from "./pa-eval-connection-relay.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -707,6 +711,13 @@ class Worker {
   async start({ logins }) {
     await this.stop();
     this.logins = logins;
+    // A connector-provided --profile (pa-eval-connection-relay.mjs).
+    if (this.deviceProfiles)
+      writeFileSync(
+        resolve(this.stateRoot, "agent-profiles.local.json"),
+        JSON.stringify({ profiles: this.deviceProfiles }),
+        { mode: 0o600 },
+      );
     const logFile = openSync(this.logPath, "a");
     const command = ["node", this.cli, "connect"];
     const [file, ...argv] =
@@ -1224,6 +1235,20 @@ async function workerAndAssistant(client, worker, logins) {
   }
   await worker.start({ logins });
   await worker.waitConnected(client, deviceId, true);
+  // An external connection is usable once checked, as the person's was
+  // (Check in the device's model settings): one short turn through it.
+  if (worker.deviceProfiles)
+    for (const profile of worker.deviceProfiles) {
+      const check = await client.post(
+        `/api/devices/${encodeURIComponent(deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
+        {},
+      );
+      if (check?.status !== "passed")
+        throw new SetupError(
+          `${profile.id} check did not pass: ${check?.message || check?.status || "no result"}`,
+        );
+      log(`${profile.id} checked on the eval's worker`);
+    }
   // The seeded server profile (--profile) is the eval worker's model: bound
   // to it before the assistant exists, the assistant's default right after,
   // so its first project summaries run on it too.
@@ -2771,6 +2796,7 @@ async function main() {
     );
   }
   let failed = false;
+  let relay;
   try {
     // A fresh seeded database holds no eval chats to hide, and the run signs
     // in as its own synthetic user, never the person.
@@ -2781,6 +2807,17 @@ async function main() {
     await client.post("/api/auth/login", { username, password });
     log(`signed in as ${username} on ${stack.url}`);
 
+    // --profile names a model this computer has through a connector (Limen's
+    // limen_default): the run uses it as production does, relayed into the
+    // sandbox. Otherwise it is a seeded server profile.
+    const hosted = hostConnectorProfile(runProfile.id);
+    if (hosted) {
+      relay = startConnectionRelay(hosted, stack.evalDir, log);
+      worker.deviceProfiles = [relay.profile];
+      log(
+        `${runProfile.id} through this computer's ${hosted.connector?.label || "connector"} connection, relayed into the sandbox`,
+      );
+    }
     if (args.e2e) {
       // The assistant reads the project summary files natively; the eval
       // scores the workspace it dispatched to.
@@ -2814,6 +2851,7 @@ async function main() {
   } catch (error) {
     await worker.stop().catch(() => {});
     for (const w of activeWorkers) await w.stop().catch(() => {});
+    relay?.stop();
     stack.down();
     console.error(
       `pa-eval: ${error instanceof SetupError ? "" : "unexpected error: "}${error.message}`,
@@ -2823,6 +2861,8 @@ async function main() {
   }
   await worker.stop();
   for (const fixture of fixtureWorkers) await fixture.stop();
+  if (relay) report.connectionRelay = { sessions: relay.served() };
+  relay?.stop();
   if (fixtureWorkers.length)
     report.fixtures = {
       computers: fixtureWorkers.length,
