@@ -55,10 +55,12 @@ func (s *Server) openItemsBySession(ctx context.Context, userID string) (map[str
 	return links, nil
 }
 
-// waitsOnPerson is an entry the person has to act on now: open and theirs to
-// handle, not their assistant's.
+// waitsOnPerson is a request the person has to act on now: open and theirs to
+// handle, not their assistant's, and not a note that asks for nothing. Every
+// count of Needs you counts these.
 func waitsOnPerson(item store.PendingItem) bool {
-	return item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerPerson
+	return item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerPerson &&
+		item.Source != store.PendingSourceNotice
 }
 
 // needsYouByItem is what waits on the person for each of their open items, by

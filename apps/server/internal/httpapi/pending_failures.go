@@ -122,9 +122,10 @@ func failureOfSessionOnly(item store.PendingItem, sessionID string) bool {
 	return true
 }
 
-// failureSessionsGone is why a turn_failed item waits for no one: every
-// session it stands for was archived (session_archived) or deleted
-// (session_deleted); "" while one of them is still there or cannot be read.
+// failureSessionsGone is why an item waits for no one: every session it stands
+// for (a turn_failed item's failure sessions, else its own session) was
+// archived (session_archived) or deleted (session_deleted); "" while one of
+// them is still there or cannot be read.
 func failureSessionsGone(ctx context.Context, backend Backend, item store.PendingItem) string {
 	sessionIDs := item.FailureSessions
 	if len(sessionIDs) == 0 && item.SessionID != "" {
@@ -460,6 +461,31 @@ func (s *Server) maintainPendingTurnFailures(ctx context.Context) {
 		}
 		if _, _, err := s.store.MergePendingItems(ctx, target, ids); err != nil {
 			log.Printf("pending failures: merge %s: %v", key, err)
+		}
+	}
+}
+
+// closeQuestionsOfGoneSessions closes the open questions whose session was
+// archived or deleted: a question in the person's own chat stays open after its
+// turn, so only its session's end makes it moot. The detail says which.
+func (s *Server) closeQuestionsOfGoneSessions(ctx context.Context) {
+	items, err := s.store.ListOpenPendingItemsBySource(ctx, store.PendingSourceQuestion)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("pending questions: list open: %v", err)
+		}
+		return
+	}
+	for _, item := range items {
+		detail := failureSessionsGone(ctx, s.store, item)
+		if detail == "" {
+			continue
+		}
+		if _, err := s.store.ResolvePendingItems(ctx, store.PendingResolution{
+			Key: item.Key, Sources: []string{store.PendingSourceQuestion}, State: store.PendingDone,
+			ResolutionReason: store.PendingResolutionAutoResolved, ResolutionDetail: detail,
+		}); err != nil {
+			log.Printf("pending questions: close %s: %v", item.ID, err)
 		}
 	}
 }

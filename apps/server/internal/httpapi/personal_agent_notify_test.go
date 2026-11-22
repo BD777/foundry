@@ -16,12 +16,12 @@ import (
 
 func TestNormalizePersonalAgentNotifyDefaultsToEveryAnswerKind(t *testing.T) {
 	settings, err := normalizePersonalAgentNotify(store.PersonalAgentNotifySettings{
-		Sinks: []store.PersonalAgentNotifySink{{ConnectorInstanceID: " app_1 ", Kinds: nil}},
+		Sinks: []store.PersonalAgentNotifySink{{ConnectorInstanceID: " builtin:feishu ", Kinds: nil}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(settings.Sinks) != 1 || settings.Sinks[0].ConnectorInstanceID != "app_1" {
+	if len(settings.Sinks) != 1 || settings.Sinks[0].ConnectorInstanceID != "builtin:feishu" {
 		t.Fatalf("sink = %+v, want the trimmed instance", settings.Sinks)
 	}
 	want := []string{"question", "approval", "hand_over", "ask"}
@@ -32,7 +32,7 @@ func TestNormalizePersonalAgentNotifyDefaultsToEveryAnswerKind(t *testing.T) {
 
 func TestNormalizePersonalAgentNotifyRejectsUnknownKindsAndTwoSinks(t *testing.T) {
 	if _, err := normalizePersonalAgentNotify(store.PersonalAgentNotifySettings{
-		Sinks: []store.PersonalAgentNotifySink{{ConnectorInstanceID: "app_1", Kinds: []string{"question", "turn_failed"}}},
+		Sinks: []store.PersonalAgentNotifySink{{ConnectorInstanceID: "builtin:feishu", Kinds: []string{"question", "turn_failed"}}},
 	}); err == nil {
 		t.Fatal("an unknown kind was accepted")
 	}

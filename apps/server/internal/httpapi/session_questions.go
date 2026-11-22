@@ -86,12 +86,10 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 		log.Printf("session question not relayed: session=%s message=%s reason=%q", child.ID, message.ID, "already answered")
 		return
 	}
+	// What the parent reads is facts only: who asks, what, and how an answer
+	// reaches it. When to hand it to the person is the needs_you tool's
+	// contract, not this message's.
 	prompt := s.relayedQuestionText(child, target, *message)
-	// A helper of the person's assistant (§h): a running assistant may hand it
-	// to the person when only they can decide.
-	if responsible.Party == assistant.ResponsibleAssistant {
-		prompt += fmt.Sprintf("If only the person can decide, do not guess: hand it to them with needs_you (op hand_over, sessionId %s, note: one plain sentence for the person); they answer it in their list and it reaches the helper.\n", child.ID)
-	}
 	item := store.SessionInboxItem{
 		SessionID: target.SessionID, InputID: uuid.NewSHA1(relayedQuestionSpace, []byte(child.ID+"\x00"+message.ID)).String(),
 		SenderSessionID: child.ID, Prompt: prompt, RequestedDelivery: store.DeliveryBoundary,
@@ -190,7 +188,7 @@ func (s *Server) relayedQuestionText(child store.AgentSession, target assistant.
 		}
 		builder.WriteString(".")
 	}
-	builder.WriteString(" Answer it yourself when you know; otherwise decide whether it needs your own person, and if so ask with your question tool.\n")
+	builder.WriteString("\n")
 	return builder.String()
 }
 

@@ -465,8 +465,9 @@ func TestNeedsYouTellPutsOneDismissableNote(t *testing.T) {
 		store.PendingHandledBy(item.PendingItem) != store.PendingHandlerPerson || item.Note != note {
 		t.Fatalf("notice = %+v", item)
 	}
-	if list.Open != 1 || list.AssistantOpen != 0 {
-		t.Fatalf("counts: open %d assistant %d", list.Open, list.AssistantOpen)
+	// A note asks for nothing: it is listed, not counted as a request.
+	if list.Open != 0 || list.NoticeOpen != 1 || list.AssistantOpen != 0 {
+		t.Fatalf("counts: open %d notes %d assistant %d", list.Open, list.NoticeOpen, list.AssistantOpen)
 	}
 	// The same note from the same conversation stays one open item.
 	if _, failed := f.needsYou(t, map[string]any{"op": "tell", "note": note}); failed {

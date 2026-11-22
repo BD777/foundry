@@ -44,10 +44,14 @@ func TestChildQuestionIsRelayedAndAnsweredInPlainText(t *testing.T) {
 	if len(relayed) != 1 {
 		t.Fatalf("relayed questions = %d, want 1: %+v", len(relayed), items)
 	}
-	for _, want := range []string{f.child.ID, "Which greeting?", "- Bonjour: French", "send_message to " + f.child.ID, "otherwise decide whether it needs your own person, and if so ask with your question tool"} {
+	for _, want := range []string{f.child.ID, "Which greeting?", "- Bonjour: French", "send_message to " + f.child.ID} {
 		if !strings.Contains(relayed[0].Prompt, want) {
 			t.Errorf("relayed question lacks %q:\n%s", want, relayed[0].Prompt)
 		}
+	}
+	// Facts only: nothing tells the parent when to involve its person.
+	if strings.Contains(relayed[0].Prompt, "decide whether") || strings.Contains(relayed[0].Prompt, "question tool") {
+		t.Errorf("relayed question carries guidance:\n%s", relayed[0].Prompt)
 	}
 	if relayed[0].RequestedDelivery != store.DeliveryBoundary {
 		t.Errorf("delivery = %q, want boundary", relayed[0].RequestedDelivery)
@@ -247,7 +251,8 @@ func TestAsyncHelperQuestionFollowsTheAssistantState(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("running assistant got %d questions, want 1", len(got))
 	}
-	if !strings.Contains(got[0].Prompt, "hand_over") || !strings.Contains(got[0].Prompt, "keeps working") {
-		t.Errorf("running assistant's question lacks the hand-over hint or the keep-working line:\n%s", got[0].Prompt)
+	// Facts only: when to hand it to the person is the needs_you tool's contract.
+	if strings.Contains(got[0].Prompt, "hand_over") || !strings.Contains(got[0].Prompt, "keeps working") {
+		t.Errorf("running assistant's question carries the hand-over hint or lacks the keep-working line:\n%s", got[0].Prompt)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -41,6 +40,9 @@ const (
 	notifyReasonInstance         = "instance_unavailable"
 	notifyReasonFeishuNotPaired  = feishu.NoticeReasonNotPaired
 )
+
+// notifyOnlyBotMessage refuses a notice sink other than the Foundry bot.
+const notifyOnlyBotMessage = "notices go only to the Foundry bot, as interactive cards"
 
 // feishuNoticeReasonMessage says, for the save refusal, why the Foundry bot cannot
 // take the person's notices yet. A refused open_id is not a pairing task.
@@ -113,7 +115,9 @@ func notifyFailure(reason, format string, args ...any) error {
 }
 
 // normalizePersonalAgentNotify checks the kinds of each sink and fills the
-// default: every kind that needs an answer. One sink is supported for now.
+// default: every kind that needs an answer. One sink is supported for now, and
+// only the Foundry bot: a notice is its interactive card, never a connector's
+// plain-text message.
 func normalizePersonalAgentNotify(settings store.PersonalAgentNotifySettings) (store.PersonalAgentNotifySettings, error) {
 	if len(settings.Sinks) > 1 {
 		return store.PersonalAgentNotifySettings{}, errors.New("one notice connector is supported for now")
@@ -123,6 +127,9 @@ func normalizePersonalAgentNotify(settings store.PersonalAgentNotifySettings) (s
 		instanceID := strings.TrimSpace(sink.ConnectorInstanceID)
 		if instanceID == "" {
 			return store.PersonalAgentNotifySettings{}, errors.New("a notice connector needs an instance")
+		}
+		if instanceID != feishu.NoticeSinkID {
+			return store.PersonalAgentNotifySettings{}, errors.New(notifyOnlyBotMessage)
 		}
 		kinds := make([]string, 0, len(personNotifyKinds))
 		for _, kind := range sink.Kinds {
@@ -310,9 +317,8 @@ func (u notifyUpstream) notifyChatOf() string {
 }
 
 // checkPersonalAgentNotify checks a changed sink before it is saved: the
-// instance takes notices and its notice chat is still the person's self chat.
-// An unchanged sink is not read again, so saving other settings never waits
-// on the connector.
+// Foundry bot can reach the person for this assistant. An unchanged sink is not
+// read again, so saving other settings never waits on it.
 func (s *Server) checkPersonalAgentNotify(ctx context.Context, agent store.PersonalAgent, previous, next store.PersonalAgentNotifySettings) error {
 	for _, sink := range next.Sinks {
 		if slices.ContainsFunc(previous.Sinks, func(old store.PersonalAgentNotifySink) bool {
@@ -320,26 +326,8 @@ func (s *Server) checkPersonalAgentNotify(ctx context.Context, agent store.Perso
 		}) {
 			continue
 		}
-		if sink.ConnectorInstanceID == feishu.NoticeSinkID {
-			if reason := s.feishu.NoticeChatReason(ctx, agent.UserID, agent.ID); reason != "" {
-				return notifyFailure(reason, "%s", feishuNoticeReasonMessage(reason))
-			}
-			continue
-		}
-		upstream, err := s.openNotifyUpstream(ctx, agent.UserID, sink.ConnectorInstanceID)
-		if err != nil {
-			return err
-		}
-		chat := upstream.notifyChatOf()
-		if chat == "" {
-			return notifyFailure(notifyReasonSelfChatNotFound, "find your chat with yourself on this connector first")
-		}
-		meID, err := upstream.me(ctx)
-		if err != nil {
-			return err
-		}
-		if _, err := upstream.readSelfChat(ctx, meID, chat); err != nil {
-			return err
+		if reason := s.feishu.NoticeChatReason(ctx, agent.UserID, agent.ID); reason != "" {
+			return notifyFailure(reason, "%s", feishuNoticeReasonMessage(reason))
 		}
 	}
 	return nil
@@ -414,21 +402,8 @@ func (s *Server) discoverNotifyChat(ctx context.Context, userID, instanceID, typ
 	return chat, nil
 }
 
-// notifyInstanceReason explains why an instance cannot carry notices, "" when it
-// can: its descriptor declares a notify section and a device that reaches it is
-// online. The Web shows the reason next to the instance.
-func notifyInstanceReason(data store.ExtensionInstanceData, deviceErr error) string {
-	if data.Descriptor.ServerHeld == nil || data.Descriptor.ServerHeld.Notify == nil {
-		return notifyReasonNotNotifiable
-	}
-	if deviceErr != nil {
-		return notifyReasonNoDevice
-	}
-	return ""
-}
-
-// handleListPersonalAgentNotifyInstances lists the person's extension instances
-// with whether each can carry notices.
+// handleListPersonalAgentNotifyInstances lists where notices can go, with
+// whether each can carry them now.
 func (s *Server) handleListPersonalAgentNotifyInstances(w http.ResponseWriter, r *http.Request) {
 	agent, ok := s.personalAgentOf(w, r)
 	if !ok {
@@ -443,41 +418,12 @@ func (s *Server) handleListPersonalAgentNotifyInstances(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, PersonalAgentNotifyInstancesResult{Instances: instances})
 }
 
-// listPersonalAgentNotifyInstances lists the Foundry bot first, then every extension
-// instance the owner has. An instance that cannot carry notices yet is listed
-// with its reason, not left out: the Web offers the connector kinds from these
-// instances, not from the apps list, which leaves extension instances out. The
-// bot without a paired direct chat is listed with notifyReasonFeishuNotPaired.
+// listPersonalAgentNotifyInstances lists where the assistant's notices can go:
+// the Foundry bot only, since a notice is its interactive card. The bot without
+// a paired direct chat is listed with notifyReasonFeishuNotPaired.
 func (s *Server) listPersonalAgentNotifyInstances(ctx context.Context, agent store.PersonalAgent) ([]PersonalAgentNotifyInstance, error) {
-	apps, err := s.store.ListExternalProviderApps(ctx, agent.UserID)
-	if err != nil {
-		return nil, err
-	}
 	reason := s.feishu.NoticeChatReason(ctx, agent.UserID, agent.ID)
-	feishuBot := PersonalAgentNotifyInstance{ConnectorInstanceID: feishu.NoticeSinkID, Label: notifyFeishuBotLabel, Reason: reason, Recommended: reason == ""}
-	instances := []PersonalAgentNotifyInstance{feishuBot}
-	for _, app := range apps {
-		if app.CreatedVia != "extension" || app.OwnerUserID != agent.UserID {
-			continue
-		}
-		instances = append(instances, s.notifyInstanceOf(ctx, app))
-	}
-	return instances, nil
-}
-
-// notifyInstanceOf reads one extension instance the way a notice would. Reading
-// it also brings its descriptor snapshot up to the installed extension.
-func (s *Server) notifyInstanceOf(ctx context.Context, app store.ExternalProviderApp) PersonalAgentNotifyInstance {
-	instance := PersonalAgentNotifyInstance{ConnectorInstanceID: app.ID, Label: app.Label}
-	data, err := s.connectors.ServerHeld.ExtensionData(ctx, app)
-	if err != nil {
-		log.Printf("notice connector %s cannot be read: %v", app.ID, err)
-		instance.Reason = notifyReasonInstance
-		return instance
-	}
-	_, deviceErr := s.messageChannelDevice(data)
-	instance.Reason = notifyInstanceReason(data, deviceErr)
-	return instance
+	return []PersonalAgentNotifyInstance{{ConnectorInstanceID: feishu.NoticeSinkID, Label: notifyFeishuBotLabel, Reason: reason, Recommended: reason == ""}}, nil
 }
 
 // handleSendPersonalAgentTestNotice sends one test notice to the chosen
@@ -514,6 +460,10 @@ func (s *Server) sendPersonalAgentTestNotice(ctx context.Context, agent store.Pe
 		CreatedAt:   time.Now().UTC(),
 	}
 	result := PersonalAgentNotifyTestResult{Status: "failed"}
+	if instanceID != feishu.NoticeSinkID {
+		result.Reason = notifyOnlyBotMessage
+		return result
+	}
 	sink, ok := s.resolveNoticeSink(notice.SinkID)
 	if !ok {
 		result.Reason = "the connector instance id is empty"

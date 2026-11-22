@@ -63,12 +63,17 @@ func (s *Server) backgroundJobs() []backgroundJob {
 			})
 		}},
 		{"pending-turn-failures", func(ctx context.Context) {
-			everyFromNow(ctx, pendingFailureSweepInterval, nil, s.maintainPendingTurnFailures)
+			everyFromNow(ctx, pendingFailureSweepInterval, nil, func(ctx context.Context) {
+				s.maintainPendingTurnFailures(ctx)
+				s.closeQuestionsOfGoneSessions(ctx)
+			})
 		}},
 		{"pending-needs-you", s.runNeedsYouMaintenance},
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},
+		// Once at start: open requests recorded while no sink could carry them.
+		{"person-notice-backfill", s.noticeOpenItemsOfEveryone},
 		{"person-notices", func(ctx context.Context) {
 			everyFromNow(ctx, personNoticePumpInterval, nil, s.pumpPersonNotices)
 		}},
