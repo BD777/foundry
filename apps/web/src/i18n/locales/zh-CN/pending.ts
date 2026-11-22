@@ -44,6 +44,7 @@ export const pending: Translation<typeof en> = {
     assistant_inbox: "没处理的消息",
     notice: "助理留言",
     assistant_question: "助理的提问",
+    item_wait: "事项在等你",
   },
   state: {
     open: "未处理",

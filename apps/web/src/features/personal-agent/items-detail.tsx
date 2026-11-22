@@ -689,10 +689,14 @@ function TimelineRow({
       });
       break;
     case "needs_you_opened":
-      line = t("items.event.needsYouOpened");
+      line = detail.title
+        ? t("items.event.needsYouOpenedFor", { what: detail.title })
+        : t("items.event.needsYouOpened");
       break;
     case "needs_you_answered":
-      line = t("items.event.needsYouAnswered");
+      line = detail.quote
+        ? t("items.event.needsYouAnsweredWith", { words: detail.quote })
+        : t("items.event.needsYouAnswered");
       break;
     case "archived":
       line = t("items.event.archived");

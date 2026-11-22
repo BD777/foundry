@@ -405,6 +405,9 @@ func itemEventLine(event store.PersonalAgentItemEvent, location *time.Location) 
 	if decision := itemFileLine(detail.Decision); decision != "" {
 		parts = append(parts, decision)
 	}
+	if quote := itemFileLine(detail.Quote); quote != "" && event.Kind == store.PersonalAgentItemEventNeedsYouAnswered {
+		parts = append(parts, "「"+quote+"」")
+	}
 	if len(parts) > 0 {
 		line += "：" + strings.Join(parts, "，")
 	}

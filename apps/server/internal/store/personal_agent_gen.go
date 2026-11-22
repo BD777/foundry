@@ -414,14 +414,14 @@ type PersonalAgentItemEvent struct {
 	// Kind The mechanical fact an event records.
 	Kind PersonalAgentItemEventKind `json:"kind"`
 
-	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
+	// Detail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its Needs you entry (needsYouId): needs_you_opened what the item waits on the person for (title), needs_you_answered the person's answer in their own words (quote). claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
 	Detail *PersonalAgentItemEventDetail `json:"detail,omitempty"`
 }
 
 // PersonalAgentItemEventActor Who caused the change an event records. session is a session the person started in a workspace, changing an item whose home is there.
 type PersonalAgentItemEventActor = string
 
-// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
+// PersonalAgentItemEventDetail The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its Needs you entry (needsYouId): needs_you_opened what the item waits on the person for (title), needs_you_answered the person's answer in their own words (quote). claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes).
 type PersonalAgentItemEventDetail struct {
 	Decision    string `json:"decision,omitempty"`
 	Quote       string `json:"quote,omitempty"`

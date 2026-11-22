@@ -1,6 +1,11 @@
 package store
 
-import "context"
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+)
 
 // A pending item is something that waits for the person (DEV-079): in a
 // session, a question an Agent asked, an Issue's question, a turn that
@@ -51,7 +56,31 @@ const (
 	// itself (needs_you ask, DEV-293). It does not wait: the person's answer
 	// comes back to the asking conversation as a Foundry message.
 	PendingSourceAssistantQuestion = "assistant_question"
+	// PendingSourceItemWait: an open item whose plan says it waits on the
+	// person (ItemWaitsOnPerson). The session that keeps the item wrote it;
+	// Foundry only lists it. The person's answer goes where the item's signals
+	// go, and the item's timeline records it.
+	PendingSourceItemWait = "item_wait"
 )
+
+// ItemWaitingOnPerson is plan.waitingOn for an item that waits on the person.
+const ItemWaitingOnPerson = "person"
+
+// ItemWaitsOnPerson reports whether an item waits on the person: open, and its
+// plan's progress waiting, waitingOn person and waitingFor saying what for.
+func ItemWaitsOnPerson(item PersonalAgentListItem) bool {
+	return item.Status == PersonalAgentItemOpen && item.ArchivedAt == "" && item.Plan != nil &&
+		item.Plan.Progress == "waiting" && item.Plan.WaitingOn == ItemWaitingOnPerson &&
+		strings.TrimSpace(item.Plan.WaitingFor) != ""
+}
+
+// ItemWaitKey is the key of an item's wait on the person: the item and what it
+// waits for, so a changed question is a new request and the same question
+// answered once is not asked again.
+func ItemWaitKey(itemID, waitingFor string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(waitingFor)))
+	return "item_wait:" + itemID + ":" + hex.EncodeToString(sum[:8])
+}
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
 // person, or their assistant, which answers or retries its own helpers'
@@ -188,6 +217,8 @@ type PendingItem struct {
 	FailureAccountID string   `json:"failureAccountId,omitempty"`
 	FailureResetAt   string   `json:"failureResetAt,omitempty"`
 	FailureSessions  []string `json:"failureSessions,omitempty"`
+	// WaitItemID is the list item an item_wait entry stands for.
+	WaitItemID string `json:"waitItemId,omitempty"`
 	// ConnectorWrite is what a connector-write item asks the person to
 	// decide (DEV-265), in structured form so the page words it locally.
 	ConnectorWrite *PendingConnectorWriteDetail `json:"connectorWrite,omitempty"`

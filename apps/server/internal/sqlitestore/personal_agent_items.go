@@ -197,6 +197,17 @@ func (s *Store) RecordPersonalAgentItemSessionEvent(ctx context.Context, actor, 
 	return s.recordItemEvent(ctx, item, paNow(), actor, kind, store.PersonalAgentItemEventDetail{SessionID: sessionID})
 }
 
+func (s *Store) RecordPersonalAgentItemNeedsYouEvent(ctx context.Context, actor, assistantID, itemID, kind string, detail store.PersonalAgentItemEventDetail) error {
+	if kind != store.PersonalAgentItemEventNeedsYouOpened && kind != store.PersonalAgentItemEventNeedsYouAnswered {
+		return fmt.Errorf("%w: needs-you event kind %q is neither needs_you_opened nor needs_you_answered", store.ErrPersonalAgentItemInvalid, kind)
+	}
+	item, err := s.GetPersonalAgentItem(ctx, assistantID, itemID)
+	if err != nil {
+		return err
+	}
+	return s.recordItemEvent(ctx, item, paNow(), actor, kind, detail)
+}
+
 // setItemArchived archives a closed item that no helper of it runs for, or
 // restores it, and records the change for actor.
 func (s *Store) setItemArchived(ctx context.Context, actor string, item store.PersonalAgentListItem, archived bool, now string) error {

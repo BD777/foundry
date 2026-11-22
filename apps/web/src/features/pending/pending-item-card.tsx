@@ -65,6 +65,7 @@ const kindIcon = {
   connector_write: { icon: MessagesSquare, tone: "warn" },
   notice: { icon: Info, tone: "brass" },
   assistant_question: { icon: MessagesSquare, tone: "brass" },
+  item_wait: { icon: MessageCircleQuestion, tone: "brass" },
 } as const;
 
 /**

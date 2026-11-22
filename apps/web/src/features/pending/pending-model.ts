@@ -168,7 +168,8 @@ const noticeGroupKey = "notices";
  */
 /**
  * Where a reply to an item goes: an Issue's question, the assistant's own
- * question (answered through the item), or the item's chat.
+ * question or an item that waits on the person (answered through the entry),
+ * or the item's chat.
  */
 export type PendingReplyRoute = "issue" | "answer" | "chat" | "none";
 
@@ -177,7 +178,8 @@ export function pendingReplyRoute(
 ): PendingReplyRoute {
   if (item.source === "issue_question" && item.issueId && item.eventId)
     return "issue";
-  if (item.source === "assistant_question") return "answer";
+  if (item.source === "assistant_question" || item.source === "item_wait")
+    return "answer";
   if (item.sessionId) return "chat";
   return "none";
 }

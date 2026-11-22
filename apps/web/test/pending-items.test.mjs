@@ -1709,6 +1709,14 @@ test("other items keep the quoted reply, even with a message id", async () => {
   );
 });
 
+test("an item waiting on the person is answered through its entry, not a chat", () => {
+  assert.equal(pendingReplyRoute({ source: "item_wait" }), "answer");
+  assert.equal(
+    pendingReplyRoute({ source: "item_wait", sessionId: "sess_holder" }),
+    "answer",
+  );
+});
+
 test("a reply goes to the item an assistant asked, and a withdrawn question says so", () => {
   assert.equal(
     pendingReplyRoute({ source: "assistant_question", sessionId: "sess_home" }),

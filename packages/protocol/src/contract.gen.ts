@@ -3510,7 +3510,7 @@ interface components {
       | "released"
       | "rehomed"
       | "decided";
-    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its item. claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes). */
+    /** @description The small difference an event records; fields absent when they do not apply. A helper event names its session and workspace, a needs_you event its Needs you entry (needsYouId): needs_you_opened what the item waits on the person for (title), needs_you_answered the person's answer in their own words (quote). claimed names the new holder (sessionId) and the holder it replaced (from); released the holder that let go (sessionId); rehomed the home before and after (from, to; empty is the assistant's inbox); decided the person's decision (decision), the words it rests on (quote) and the decided event it replaces (supersedes). */
     PersonalAgentItemEventDetail: {
       decision?: string;
       quote?: string;
@@ -3556,6 +3556,11 @@ interface components {
       progress: "inbox" | "ready" | "waiting" | "working" | "review";
       nextAction?: string;
       waitingFor?: string;
+      /**
+       * @description person when the item waits on the person: with progress waiting and waitingFor saying what for, the item is a request in their Needs you until they answer it or a plan without it withdraws it. Absent when it waits on something else or nothing.
+       * @enum {string}
+       */
+      waitingOn?: "person";
       /** @description The item's homeWorkspaceId, repeated for older readers. Not stored in the plan; a write of it moves the item's home. */
       workspaceId?: string;
       dependencies?: string[];

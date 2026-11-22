@@ -132,10 +132,14 @@ func personalAgentItemError(err error) error {
 // handleListPersonalAgentItems answers one page of the items page
 // (GET /api/personal-agent/items).
 // observeItemChanges writes every item change into the item files of the
-// homes it concerns (assistant/itemfiles.go).
+// homes it concerns (assistant/itemfiles.go), and keeps the person's Needs you
+// entries for items that wait on them (item_waits.go).
 func (s *Server) observeItemChanges() {
 	if source, ok := s.store.(store.PersonalAgentItemChangeSource); ok {
-		source.ObservePersonalAgentItemChanges(s.assistant.ItemChanged)
+		source.ObservePersonalAgentItemChanges(func(change store.PersonalAgentItemChange) {
+			s.assistant.ItemChanged(change)
+			s.itemChangedForWaits(change)
+		})
 	}
 }
 

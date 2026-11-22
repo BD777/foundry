@@ -24,6 +24,9 @@ func (s *Service) validateItemPlan(ctx context.Context, agent store.PersonalAgen
 		!slices.Contains([]string{"inbox", "ready", "waiting", "working", "review"}, plan.Progress) {
 		return invalid("plan requires mode record/execute and progress inbox/ready/waiting/working/review")
 	}
+	if plan.WaitingOn != "" && plan.WaitingOn != store.ItemWaitingOnPerson {
+		return invalid("plan.waitingOn is %q (the item waits on the person) or empty", store.ItemWaitingOnPerson)
+	}
 	if len(plan.NextAction) > 2000 || len(plan.WaitingFor) > 1000 ||
 		len(plan.WorkRefs) > 32 || len(plan.Evidence) > 32 {
 		return invalid("plan exceeds its size limits")

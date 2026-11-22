@@ -41,7 +41,12 @@ export type PendingSource =
    * the person answers it here, and the answer goes to the assistant's
    * conversation.
    */
-  | "assistant_question";
+  | "assistant_question"
+  /**
+   * An item whose plan waits on the person (plan.waitingOn person): the
+   * person answers it here, and the answer goes to whoever follows the item.
+   */
+  | "item_wait";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person

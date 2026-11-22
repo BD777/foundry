@@ -44,6 +44,7 @@ export const pending = {
     assistant_inbox: "Unprocessed message",
     notice: "A note from your assistant",
     assistant_question: "Your assistant asks",
+    item_wait: "An item waits for you",
   },
   state: {
     open: "Open",
