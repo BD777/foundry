@@ -900,3 +900,62 @@ func TestSettledRunLeavesTheDevicesLaterObservation(t *testing.T) {
 		t.Fatalf("settling a recorded run overwrote the device's observation: %+v", got)
 	}
 }
+
+// A background command's end is recorded on its work as its device reports
+// it: no one reads the work list, more than 20 other tasks end after it, and
+// its work has already ended at that moment with its exit code.
+func TestBackgroundCommandEndIsRecordedAsItArrives(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "claude")
+	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "build in the background", Source: "chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = backing.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	connection := newDaemonConnection(server.hub, nil)
+	t.Cleanup(connection.endLifetime)
+	report := func(event store.AgentSessionEvent) {
+		t.Helper()
+		event.SessionID, event.Level = session.ID, "info"
+		recordDaemonEventForUsageTest(t, ctx, connection, event.ID, event)
+	}
+	inventory := func(id string, tasks []store.AgentBackgroundTask) {
+		report(store.AgentSessionEvent{ID: id, Label: store.ProcessLabelBackgroundTasksSync, Metadata: &store.AgentSessionEventMetadata{BackgroundTaskSnapshot: &tasks}})
+	}
+	inventory("evt_bg_running", []store.AgentBackgroundTask{{ID: "bcmd", Provider: "claude", Kind: "command", Description: "Build the app", Status: "running", StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}})
+	code := int64(0)
+	reported := time.Now()
+	report(store.AgentSessionEvent{ID: "evt_cmd_end", Label: store.ProcessLabelSubtaskCompleted, Detail: `Background command "Build the app" completed (exit code 0)`,
+		Metadata: &store.AgentSessionEventMetadata{TaskID: "bcmd", TaskStatus: "completed", ExitCode: &code}})
+	acknowledged := time.Now()
+	var finished []store.AgentBackgroundTask
+	for n := range 21 {
+		task := fmt.Sprintf("bother%d", n)
+		report(store.AgentSessionEvent{ID: "evt_end_" + task, Label: store.ProcessLabelSubtaskCompleted, Detail: "done", Metadata: &store.AgentSessionEventMetadata{TaskID: task, TaskStatus: "completed"}})
+		finished = append([]store.AgentBackgroundTask{{ID: task, Provider: "claude", Kind: "command", Description: task, Status: "completed"}}, finished...)
+	}
+	inventory("evt_bg_latest", finished[:20])
+
+	// The device's list imports nothing from transcripts.
+	list, err := backing.ListSessionWork(ctx, "", "dev_queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := slices.IndexFunc(list.Items, func(item store.SessionWork) bool { return item.SourceID == "bcmd" })
+	if index < 0 {
+		t.Fatalf("background command not recorded: %+v", list.Items)
+	}
+	item := list.Items[index]
+	endedAt, err := time.Parse(time.RFC3339Nano, item.Observation.EndedAt)
+	if err != nil || endedAt.Before(reported.Truncate(time.Millisecond)) || endedAt.After(acknowledged) {
+		t.Fatalf("its end %q is not when its device reported it (%s–%s)", item.Observation.EndedAt, reported, acknowledged)
+	}
+	if item.Title != "Build the app" || item.Observation.Status != "completed" || item.Observation.ExitCode == nil || *item.Observation.ExitCode != 0 ||
+		item.Observation.ConfirmedRevision != item.Revision {
+		t.Fatalf("recorded work: title %q, %+v", item.Title, item.Observation)
+	}
+}

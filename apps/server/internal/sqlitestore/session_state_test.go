@@ -42,8 +42,8 @@ func taskEvent(id, label, taskID, taskType, detail string) store.AgentSessionEve
 
 // The side panel's state older than a window comes back one event per
 // state key: the newest snapshot and task progress, every recorded file,
-// a subagent's start, and the first load of each workspace; a background
-// command's progress and the transcript itself do not.
+// a subagent's start, a background command's end, and the first load of each
+// workspace; a background command's start and the transcript itself do not.
 func TestAgentSessionStateEventsBeforeAWindow(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
@@ -97,7 +97,7 @@ func TestAgentSessionStateEventsBeforeAWindow(t *testing.T) {
 		t.Fatalf("first state event = %+v; want the input without its message", state)
 	}
 	state = state[1:]
-	want := []string{"evt_ws_a", "evt_file_1", "evt_sub_start", "evt_timers_new", "evt_bg_new", "evt_file_2", "evt_sub_progress_2", "evt_ws_b"}
+	want := []string{"evt_ws_a", "evt_file_1", "evt_sub_start", "evt_bash_end", "evt_timers_new", "evt_bg_new", "evt_file_2", "evt_sub_progress_2", "evt_ws_b"}
 	if got := eventIDs(state); !slices.Equal(got, want) {
 		t.Fatalf("state events = %v\nwant %v", got, want)
 	}
@@ -111,7 +111,7 @@ func TestAgentSessionStateEventsBeforeAWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = []string{"evt_ws_a", "evt_timers_old", "evt_bg_old", "evt_file_1", "evt_sub_start", "evt_sub_progress_1"}
+	want = []string{"evt_ws_a", "evt_timers_old", "evt_bg_old", "evt_file_1", "evt_sub_start", "evt_sub_progress_1", "evt_bash_end"}
 	if got := eventIDs(state[1:]); !slices.Equal(got, want) {
 		t.Fatalf("state events before %s = %v\nwant %v", older[0].ID, got, want)
 	}

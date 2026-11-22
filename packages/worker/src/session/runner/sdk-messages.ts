@@ -10,6 +10,7 @@ import {
   claudeSubagentUsage,
 } from "../usage/turn-usage.js";
 import { claudeNarrationMessage } from "./claude-narration.js";
+import { backgroundExitCode } from "../tasks/agent-background-tasks.js";
 import { record as jsonRecord } from "../../platform/json-values.js";
 import { redactTranscriptValue } from "../../platform/secret-redaction.js";
 import type {
@@ -502,6 +503,12 @@ export function claudeSystemProcessEvent(
         level: taskFailed ? "error" : "info",
         metadata: {
           ...(taskFailed ? nativeHoldMetadata(sdkString(record.summary)) : {}),
+          // Its label says failed for a stopped task too.
+          taskStatus:
+            record.status === "completed" || record.status === "failed"
+              ? record.status
+              : "stopped",
+          exitCode: backgroundExitCode(sdkString(record.summary)),
           taskOutputFile: sdkString(record.output_file) || undefined,
           subagentUsage: claudeSubagentUsage(record),
           taskId: sdkString(record.task_id) || undefined,
