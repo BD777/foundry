@@ -167,7 +167,9 @@
   --fdy-accent-dark: var(--accent-ink);
   --fdy-info-text: var(--accent-ink);
   --fdy-ink-faint: color-mix(in oklab, var(--ink-2) 88%, var(--ink-3));
-  --fdy-selected-surface: var(--hover);
+  /* Above the hover fill (--hover-2), so a selected row and a hovered one
+     stay apart side by side; in light the raised white does the same. */
+  --fdy-selected-surface: color-mix(in oklab, var(--hover-2) 88%, var(--ink));
   --fdy-on-accent: oklch(0.18 0.02 265);
   --fdy-success-text: var(--green);
   --fdy-warning-text: var(--orange);

@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAppRoute, pathForAppRoute } from "../src/lib/routes.ts";
+import {
+  isAppPath,
+  parseAppRoute,
+  pathForAppRoute,
+} from "../src/lib/routes.ts";
 import {
   assistantEntryRoute,
   resolveAssistantSelection,
 } from "../src/app/use-assistant-route-resolution.ts";
-import { navSections } from "../src/app/navigation.ts";
+import { navSections, simpleNavSections } from "../src/app/navigation.ts";
 import {
   viewErrorLabel,
   viewErrorResetKey,
@@ -337,32 +341,33 @@ test("a deleted assistant clears the stale choice and opens the list", () => {
   });
 });
 
-test("a direct load or reload of the items page opens the default assistant, not the list", () => {
-  assert.deepEqual(parseAppRoute("/assistant/items"), {
-    view: "assistantItems",
-  });
-  assert.deepEqual(parseAppRoute("/assistant/items/item_1"), {
-    view: "assistantItems",
-    selectedItemId: "item_1",
-  });
-  // A fresh browser has no remembered choice: the default stands in, unremembered.
-  assert.deepEqual(
-    resolveAssistantSelection("/assistant/items", assistantRows, ""),
-    {
-      assistantId: "asst_default",
-      fallback: true,
-      stale: false,
-      clearSelection: false,
-    },
+test("the items page lives at /items; the old /assistant/items links still open it", () => {
+  for (const prefix of ["/items", "/assistant/items"]) {
+    assert.deepEqual(parseAppRoute(prefix), { view: "items" });
+    assert.deepEqual(parseAppRoute(`${prefix}/item_1`), {
+      view: "items",
+      selectedItemId: "item_1",
+    });
+  }
+  assert.equal(pathForAppRoute({ view: "items" }), "/items");
+  assert.equal(
+    pathForAppRoute({ view: "items", selectedItemId: "item/1" }),
+    "/items/item%2F1",
   );
+  assert.equal(isAppPath("/items/item_1"), true);
+});
+
+test("a direct load or reload of the items page opens the default assistant, not the list", () => {
+  // A fresh browser has no remembered choice: the default stands in, unremembered.
+  assert.deepEqual(resolveAssistantSelection("/items", assistantRows, ""), {
+    assistantId: "asst_default",
+    fallback: true,
+    stale: false,
+    clearSelection: false,
+  });
   // A second run, with the default already selected, still remembers nothing.
   assert.deepEqual(
-    resolveAssistantSelection(
-      "/assistant/items",
-      assistantRows,
-      "",
-      "asst_default",
-    ),
+    resolveAssistantSelection("/items", assistantRows, "", "asst_default"),
     {
       assistantId: "asst_default",
       fallback: true,
@@ -372,20 +377,12 @@ test("a direct load or reload of the items page opens the default assistant, not
   );
   // A remembered choice wins over the default and needs no fallback.
   assert.deepEqual(
-    resolveAssistantSelection(
-      "/assistant/items/item_1",
-      assistantRows,
-      "asst_work",
-    ),
+    resolveAssistantSelection("/items/item_1", assistantRows, "asst_work"),
     { assistantId: "asst_work", stale: false, clearSelection: false },
   );
   // A deleted remembered choice is stale; the default stands in for this load.
   assert.deepEqual(
-    resolveAssistantSelection(
-      "/assistant/items",
-      assistantRows,
-      "asst_deleted",
-    ),
+    resolveAssistantSelection("/items", assistantRows, "asst_deleted"),
     {
       assistantId: "asst_default",
       fallback: true,
@@ -396,7 +393,7 @@ test("a direct load or reload of the items page opens the default assistant, not
   // With no default flagged, the items page still needs no redirect.
   assert.deepEqual(
     resolveAssistantSelection(
-      "/assistant/items",
+      "/items",
       [{ id: "asst_a", isDefault: false }],
       "",
     ),
@@ -411,11 +408,28 @@ test("a direct load or reload of the items page opens the default assistant, not
   );
 });
 
-test("the assistant sidebar keeps the same conversation, needs-you and settings items", () => {
-  const items = navSections
-    .find((section) => section.id === "assistant")
-    ?.items.map((item) => item.id);
-  assert.deepEqual(items, ["assistant", "pending", "assistantSettings"]);
+test("items are a global entry right after the assistant, in both interfaces, once", () => {
+  for (const sections of [navSections, simpleNavSections]) {
+    const items = sections
+      .find((section) => section.id === "assistant")
+      ?.items.map((item) => item.id);
+    assert.deepEqual(items, [
+      "assistant",
+      "items",
+      "pending",
+      "assistantSettings",
+    ]);
+    const entries = sections.flatMap((section) =>
+      section.items.filter((item) => item.id === "items"),
+    );
+    assert.equal(entries.length, 1);
+  }
+  assert.equal(
+    navSections
+      .find((section) => section.id === "workspace")
+      ?.items.some((item) => item.id === "items"),
+    false,
+  );
 });
 
 test("the assistant's settings sections have their own URLs", () => {

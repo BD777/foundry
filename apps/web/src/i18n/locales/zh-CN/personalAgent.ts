@@ -615,7 +615,7 @@ export const personalAgent: Translation<typeof en> = {
     },
     filter: {
       workspace: "按工作区筛选",
-      allWorkspaces: "全部工作区",
+      all: "全部",
     },
     workspace: {
       title: "事项",

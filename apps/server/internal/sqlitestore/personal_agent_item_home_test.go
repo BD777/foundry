@@ -141,7 +141,7 @@ func TestPersonalAgentItemPageByWorkspace(t *testing.T) {
 	homed := add("asst_a", "Homed in ws_a", "ws_a")
 	other := add("asst_b", "Homed in ws_a on the work assistant", "ws_a")
 	touching := add("asst_a", "Homed in ws_b, helped in ws_a", "ws_b")
-	add("asst_a", "Inbox", "")
+	inbox := add("asst_b", "Inbox", "")
 	if _, err := db.AddPersonalAgentItem(ctx, store.PersonalAgentActorAssistant, store.PersonalAgentListItem{UserID: "user_b", AssistantID: "asst_c", Text: "Someone else's", HomeWorkspaceID: "ws_a"}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +164,16 @@ func TestPersonalAgentItemPageByWorkspace(t *testing.T) {
 	}
 	if touches := store.ItemTouches(touching.HomeWorkspaceID, page.Helpers[touching.ID]); !slices.Equal(touches, []string{"ws_a"}) {
 		t.Fatalf("touches = %v", touches)
+	}
+	inboxPage, err := db.ListPersonalAgentItemPage(ctx, "", store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewAll, UserID: "user_a", Inbox: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inboxPage.Items) != 1 || inboxPage.Items[0].ID != inbox.ID || inboxPage.Total != 1 {
+		t.Fatalf("inbox items = %+v (total %d), want only %s", inboxPage.Items, inboxPage.Total, inbox.ID)
+	}
+	if _, err := db.ListPersonalAgentItemPage(ctx, "", store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewAll, UserID: "user_a", WorkspaceID: "ws_a", Inbox: true}); !errors.Is(err, store.ErrPersonalAgentItemInvalid) {
+		t.Fatalf("a page of a workspace and the inbox = %v, want invalid", err)
 	}
 	if _, err := db.ListPersonalAgentItemPage(ctx, "", store.PersonalAgentItemFilter{View: store.PersonalAgentItemViewAll}); err == nil {
 		t.Fatal("a page with neither an assistant nor a person was answered")

@@ -334,6 +334,8 @@ export interface PersonalAgentItemsQuery {
   to?: string;
   /** A workspace id: the items whose home is it or that touch it. */
   workspace?: string;
+  /** Only the items without a home workspace (the assistant's inbox); not with `workspace`. */
+  inbox?: boolean;
   /** Case-insensitive search in the item's words and summary. */
   q?: string;
   /** Default 50, at most 200. */

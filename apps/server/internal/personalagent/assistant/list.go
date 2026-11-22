@@ -357,16 +357,19 @@ func (s *Service) scopeItem(ctx context.Context, scope Scope, id string) (store.
 	if err != nil {
 		return item, scope.Agent, err
 	}
-	if item.HomeWorkspaceID != scope.Workspace {
+	agent := scope.Agent
+	if item.AssistantID != scope.Agent.ID {
+		if agent, err = s.store.GetAssistant(ctx, item.AssistantID); err != nil {
+			return item, agent, err
+		}
+	}
+	// The inbox is the assistant's own workspace: one place, stored as "".
+	if cmp.Or(item.HomeWorkspaceID, agent.WorkspaceID) != scope.Workspace {
 		return item, scope.Agent, refuse(store.PersonalAgentRefusalNotAllowed, http.StatusForbidden,
 			"not allowed: item %q has its home in %s, not in this session's workspace %s; only a session there or the person's assistant changes it",
 			id, cmp.Or(item.HomeWorkspaceID, "the assistant's inbox"), scope.Workspace)
 	}
-	if item.AssistantID == scope.Agent.ID {
-		return item, scope.Agent, nil
-	}
-	agent, err := s.store.GetAssistant(ctx, item.AssistantID)
-	return item, agent, err
+	return item, agent, nil
 }
 
 // resolveItemHome applies update_list's home to item: item.home, or the

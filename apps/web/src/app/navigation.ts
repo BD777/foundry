@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   KeyRound,
   Library,
+  ListChecks,
   MessageSquareText,
   Monitor,
   Plug,
@@ -82,6 +83,9 @@ const assistantNavSection: SidebarNavSection<SidebarView> = {
   label: "assistantSection",
   items: [
     { id: "assistant", label: "assistant", icon: Sparkles },
+    // The person's items across workspaces and assistants: global, the
+    // first entry after the conversation they come from.
+    { id: "items", label: "items", icon: ListChecks },
     { id: "pending", label: "pending", icon: Inbox },
     {
       id: "assistantSettings",
@@ -124,7 +128,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
 ];
 
 /**
- * The simple interface's sidebar: the assistant and its settings; the
+ * The simple interface's sidebar: the assistant, items and settings; the
  * account entries join the empty "manage" section (withAccountNav).
  */
 export const simpleNavSections: Array<SidebarNavSection<SidebarView>> = [

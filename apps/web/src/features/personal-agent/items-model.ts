@@ -296,3 +296,15 @@ export function shortWhen(iso: string | undefined, language: string): string {
     minute: "2-digit",
   }).format(at);
 }
+
+/** The filter value of the items without a home workspace, the assistant's inbox. */
+export const inboxFilter = "inbox";
+
+/** The list query of a workspace filter: "", the inbox or a workspace id. */
+export function itemsFilterQuery(filter: string): {
+  workspace?: string;
+  inbox?: boolean;
+} {
+  if (!filter) return {};
+  return filter === inboxFilter ? { inbox: true } : { workspace: filter };
+}

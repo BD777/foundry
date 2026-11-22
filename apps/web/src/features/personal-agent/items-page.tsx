@@ -17,9 +17,13 @@ import {
 } from "../../components/ui/segmented-control";
 import { cn } from "../../lib/cn";
 import { serverErrorText } from "../../lib/errors";
+import { itemsWorkspaceParam } from "../../lib/in-app-navigation";
+import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { dateOnly } from "../../lib/time-format";
 import {
   customRange,
+  inboxFilter,
+  itemsFilterQuery,
   rangeFor,
   rangePresets,
   type RangePreset,
@@ -27,6 +31,7 @@ import {
 import { ItemDetail } from "./items-detail";
 import { homeChoices } from "./items-home";
 import { ItemsList } from "./items-list";
+import { workspaceLabel } from "./items-marks";
 import { ItemsReview } from "./items-review";
 import {
   personalItemActions,
@@ -49,6 +54,11 @@ export interface AssistantItemsPageProps {
   onOpenAssistant: () => void;
   /** For the names of the workspaces items live in, and the filter. */
   workspaces: WorkspaceProjection[];
+  /**
+   * Whether `workspaces` is read. Until then a workspace the URL or a row
+   * names is not yet known, not one the person cannot see.
+   */
+  workspacesLoaded?: boolean;
 }
 
 /**
@@ -62,6 +72,7 @@ export function AssistantItemsPage({
   onSelectItem,
   onOpenAssistant,
   workspaces,
+  workspacesLoaded = true,
 }: AssistantItemsPageProps) {
   const { t, i18n } = useTranslation("personalAgent");
   const [tab, setTab] = useState<ItemsTab>("open");
@@ -69,7 +80,15 @@ export function AssistantItemsPage({
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
-  const [workspaceFilter, setWorkspaceFilter] = useState("");
+  // A workspace id, the inbox or "" for every item. The URL is read once
+  // when the page opens; the filter writes it back, never the other way.
+  const [workspaceFilter, setWorkspaceFilter] = useState(() =>
+    readPageQuery(itemsWorkspaceParam),
+  );
+  const chooseWorkspace = (value: string) => {
+    setWorkspaceFilter(value);
+    replacePageQuery({ [itemsWorkspaceParam]: value });
+  };
   const query = useDebounced(search.trim(), 250);
   const [reviewing, setReviewing] = useState(false);
   const [busyId, setBusyId] = useState("");
@@ -90,7 +109,7 @@ export function AssistantItemsPage({
           view: tab,
           from: bounds.from,
           to: bounds.to,
-          workspace: workspaceFilter || undefined,
+          ...itemsFilterQuery(workspaceFilter),
           q: query || undefined,
         },
   );
@@ -167,6 +186,34 @@ export function AssistantItemsPage({
     </div>
   );
 
+  const choices = homeChoices(workspaces).map((workspace) => ({
+    value: workspace.id,
+    label: workspace.name,
+  }));
+  const workspaceFilterOptions = [
+    { value: "", label: t("items.filter.all") },
+    { value: inboxFilter, label: t("items.home.inbox") },
+    ...choices,
+    // A link may name a workspace that is no longer a choice (archived),
+    // or one not read yet.
+    ...(workspaceFilter &&
+    workspaceFilter !== inboxFilter &&
+    !choices.some((choice) => choice.value === workspaceFilter)
+      ? [
+          {
+            value: workspaceFilter,
+            label:
+              workspaceLabel(
+                workspaceFilter,
+                workspaces,
+                t,
+                workspacesLoaded,
+              ) || t("loading"),
+          },
+        ]
+      : []),
+  ];
+
   const listError = list.error || detail.error;
   const shown = list.items.length;
   return (
@@ -201,14 +248,8 @@ export function AssistantItemsPage({
               <SelectMenu
                 ariaLabel={t("items.filter.workspace")}
                 className="w-48 max-w-full"
-                onChange={setWorkspaceFilter}
-                options={[
-                  { value: "", label: t("items.filter.allWorkspaces") },
-                  ...homeChoices(workspaces).map((workspace) => ({
-                    value: workspace.id,
-                    label: workspace.name,
-                  })),
-                ]}
+                onChange={chooseWorkspace}
+                options={workspaceFilterOptions}
                 tone="pill"
                 value={workspaceFilter}
               />
@@ -272,6 +313,7 @@ export function AssistantItemsPage({
                   busyId={busyId}
                   items={list.items}
                   workspaces={workspaces}
+                  workspacesLoaded={workspacesLoaded}
                   onOpen={(itemId) => onSelectItem(itemId)}
                   onTick={(item) => void tick(item)}
                   selectedItemId={selectedItemId}

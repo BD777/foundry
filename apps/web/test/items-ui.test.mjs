@@ -8,7 +8,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const window = new Window({ url: "https://foundry.example/assistant/items" });
+const window = new Window({ url: "https://foundry.example/items" });
 for (const key of [
   "window",
   "document",
@@ -56,6 +56,8 @@ const { ItemDetail } =
   await import("../src/features/personal-agent/items-detail.tsx");
 const { WorkspaceItems } =
   await import("../src/features/personal-agent/workspace-items.tsx");
+const { AssistantItemsPage } =
+  await import("../src/features/personal-agent/items-page.tsx");
 
 // The live reads subscribe to the stream; nothing streams here.
 globalThis.EventSource = class {
@@ -579,4 +581,116 @@ test("a workspace lists its open items: those living here apart from those touch
   await act(async () => here.querySelector("button").click());
   assert.deepEqual(opened, ["mine"]);
   await page.unmount();
+});
+
+test("the items page filters by workspace or the inbox: read from the URL once, written back on change", async () => {
+  calls.length = 0;
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/personal-agent/items"
+      ? { items: [], total: 0, offset: 0 }
+      : undefined;
+  window.history.replaceState(null, "", "/items?workspace=ws_home&in=inbox");
+  const page = await mount(AssistantItemsPage, {
+    onSelectItem() {},
+    onOpenAssistant() {},
+    workspaces,
+  });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const reads = () =>
+    calls.filter((call) => call.path === "/api/personal-agent/items");
+  assert.equal(reads().at(-1).query.get("inbox"), "true");
+  assert.equal(reads().at(-1).query.get("workspace"), null);
+  const trigger = page.container.querySelector(
+    'button[aria-label^="Filter by workspace"]',
+  );
+  assert.equal(
+    trigger.getAttribute("aria-label"),
+    "Filter by workspace: Assistant's inbox",
+  );
+
+  await act(() =>
+    trigger.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "ArrowDown",
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  const options = [
+    ...window.document.querySelectorAll("[role=menu] [role=menuitemradio]"),
+  ];
+  assert.deepEqual(
+    options.map((option) => option.textContent),
+    ["All", "Assistant's inbox", "Foundry", "Docs"],
+  );
+  await act(() => options[3].click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  assert.equal(reads().at(-1).query.get("workspace"), "ws_docs");
+  assert.equal(reads().at(-1).query.get("inbox"), null);
+  // The filter writes the URL; the active workspace stays as it was.
+  const params = new URLSearchParams(window.location.search);
+  assert.equal(params.get("in"), "ws_docs");
+  assert.equal(params.get("workspace"), "ws_home");
+  // A later URL change does not drive the filter back.
+  window.history.replaceState(null, "", "/items?in=inbox");
+  window.dispatchEvent(new window.PopStateEvent("popstate"));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  assert.equal(trigger.getAttribute("aria-label"), "Filter by workspace: Docs");
+  await page.unmount();
+  window.history.replaceState(null, "", "/items");
+});
+
+test("before the workspaces are read, a workspace not in the list is not yet called one you can't see", async () => {
+  const rowsOf = async (workspacesLoaded) => {
+    const page = await mount(ItemsList, {
+      items: [item("far", { text: "lives far", homeWorkspaceId: "ws_far" })],
+      workspaces: [],
+      workspacesLoaded,
+      busyId: "",
+      onOpen: () => {},
+      onTick: () => {},
+    });
+    const text = page.container.textContent;
+    await page.unmount();
+    return text;
+  };
+  assert.doesNotMatch(await rowsOf(false), /can't see/);
+  assert.match(await rowsOf(true), /A workspace you can't see/);
+
+  calls.length = 0;
+  answer = (method, url) =>
+    method === "GET" && url.pathname === "/api/personal-agent/items"
+      ? { items: [], total: 0, offset: 0 }
+      : undefined;
+  window.history.replaceState(null, "", "/items?in=ws_far");
+  const props = {
+    onSelectItem() {},
+    onOpenAssistant() {},
+    workspaces: [],
+    workspacesLoaded: false,
+  };
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(AssistantItemsPage, props)));
+  const trigger = () =>
+    container.querySelector('button[aria-label^="Filter by workspace"]');
+  assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Filter by workspace: Loading…",
+  );
+  // Read: one the list does not hold is one the person cannot see.
+  await act(async () =>
+    root.render(
+      createElement(AssistantItemsPage, { ...props, workspacesLoaded: true }),
+    ),
+  );
+  assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Filter by workspace: A workspace you can't see",
+  );
+  await act(async () => root.unmount());
+  container.remove();
+  window.history.replaceState(null, "", "/items");
 });

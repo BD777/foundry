@@ -678,7 +678,7 @@ export const personalAgent = {
     },
     filter: {
       workspace: "Filter by workspace",
-      allWorkspaces: "All workspaces",
+      all: "All",
     },
     workspace: {
       title: "Items",

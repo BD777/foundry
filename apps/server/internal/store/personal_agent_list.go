@@ -228,8 +228,11 @@ type PersonalAgentItemFilter struct {
 	// WorkspaceID keeps the items whose home is the workspace or that touch it
 	// (a helper of the item runs there).
 	WorkspaceID string
-	Limit       int
-	Offset      int
+	// Inbox keeps the items without a home workspace: those the assistant
+	// looks after in its own home. It excludes WorkspaceID.
+	Inbox  bool
+	Limit  int
+	Offset int
 	// ClosedSince, when set, replaces View: the open items and those closed at
 	// or after it, the list the older /list route answered (closed_at, not
 	// updatedAt). Status and Owner still narrow it; archived items are left out
