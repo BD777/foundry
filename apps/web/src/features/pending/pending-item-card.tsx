@@ -44,6 +44,7 @@ import {
   pendingOrigin,
   pendingPersonal,
   pendingPrimary,
+  pendingReplyHintKey,
   pendingResolved,
   pendingStatusKey,
   pendingTitle,
@@ -570,11 +571,7 @@ export function PendingItemCard({
               value={draft}
             />
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-              <FieldHint id={hintId}>
-                {item.source === "issue_question"
-                  ? t("item.issueReplyHint")
-                  : t("item.replyHint")}
-              </FieldHint>
+              <FieldHint id={hintId}>{t(pendingReplyHintKey(item))}</FieldHint>
               <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
                 <Button
                   disabled={busy === "send"}

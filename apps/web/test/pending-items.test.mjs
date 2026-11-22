@@ -59,6 +59,7 @@ const {
   pendingMatchesAssistant,
   pendingOrigin,
   pendingPrimary,
+  pendingReplyHintKey,
   pendingReplyRoute,
   pendingReplyText,
   pendingStatusKey,
@@ -546,6 +547,32 @@ test("the page shows an item in its own words and replies into its chat", async 
   host.remove();
 });
 
+test("each reply box says where its reply really goes", () => {
+  assert.equal(
+    pendingReplyHintKey({ source: "question", sessionId: "sess_1" }),
+    "item.replyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({
+      source: "issue_question",
+      issueId: "iss_1",
+      eventId: "evt_1",
+    }),
+    "item.issueReplyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({
+      source: "assistant_question",
+      sessionId: "sess_home",
+    }),
+    "item.assistantReplyHint",
+  );
+  assert.equal(
+    pendingReplyHintKey({ source: "item_wait" }),
+    "item.itemReplyHint",
+  );
+});
+
 test("an item waiting on the person is answered from its card through its own answer route", async () => {
   const waiting = item({
     id: "pnd_w",
@@ -575,6 +602,15 @@ test("an item waiting on the person is answered from its card through its own an
   await act(async () => reply.click());
   const textarea = host.querySelector("textarea");
   assert.ok(textarea, "the reply box");
+  // The box says where the answer really goes: not a chat it does not have.
+  const hint = host.ownerDocument.getElementById(
+    textarea.getAttribute("aria-describedby"),
+  );
+  assert.match(
+    hint?.textContent ?? host.textContent,
+    /session following this item .* recorded on the item's timeline/,
+  );
+  assert.doesNotMatch(host.textContent, /Sent to the chat as your message/);
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
       window.HTMLTextAreaElement.prototype,

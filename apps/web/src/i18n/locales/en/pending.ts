@@ -107,6 +107,10 @@ export const pending = {
     replyHint:
       "Sent to the chat as your message, quoting this item. Ctrl+Enter sends.",
     issueReplyHint: "Answers the Issue's question; the Issue continues.",
+    assistantReplyHint:
+      "Goes to the assistant conversation that asked, as your answer to this question. Ctrl+Enter sends.",
+    itemReplyHint:
+      "Goes to the session following this item (or the next one to take it up) as your answer, and is recorded on the item's timeline. Ctrl+Enter sends.",
     send: "Send",
     sending: "Sending…",
     cancel: "Cancel",

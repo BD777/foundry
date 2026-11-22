@@ -195,6 +195,30 @@ export function pendingReplyRoute(
 }
 
 /**
+ * What the reply box says about where the reply goes, by the reply's real
+ * route: the Issue's question, the assistant conversation that asked, whoever
+ * follows a waiting item (recorded on its timeline), or the item's chat.
+ */
+export function pendingReplyHintKey(
+  item: Pick<PendingItem, "source" | "issueId" | "eventId" | "sessionId">,
+):
+  | "item.issueReplyHint"
+  | "item.assistantReplyHint"
+  | "item.itemReplyHint"
+  | "item.replyHint" {
+  switch (pendingReplyRoute(item)) {
+    case "issue":
+      return "item.issueReplyHint";
+    case "answer":
+      return item.source === "item_wait"
+        ? "item.itemReplyHint"
+        : "item.assistantReplyHint";
+    default:
+      return "item.replyHint";
+  }
+}
+
+/**
  * The item a notice's link opens: `/pending?item=<id>` (DEV-294). Empty when
  * the address names none.
  */

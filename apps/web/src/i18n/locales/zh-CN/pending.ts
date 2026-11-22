@@ -105,6 +105,10 @@ export const pending: Translation<typeof en> = {
     replyLabel: "回复“{{title}}”",
     replyHint: "作为你的消息发到该对话，并引用这条内容。Ctrl+Enter 发送。",
     issueReplyHint: "回答 Issue 的提问，Issue 随后继续执行。",
+    assistantReplyHint:
+      "作为你对这个问题的回答，发回提问的助理对话。Ctrl+Enter 发送。",
+    itemReplyHint:
+      "作为你的回答，送给跟进这个事项的会话（没有就留给下一个接手的会话），并记入事项时间线。Ctrl+Enter 发送。",
     send: "发送",
     sending: "正在发送…",
     cancel: "取消",
