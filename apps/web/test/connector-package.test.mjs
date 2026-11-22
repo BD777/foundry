@@ -171,7 +171,7 @@ test("package devices explain eligibility and save only the chosen set", async (
 
     assert.equal(packageToolVersion(repository), "abcdef1");
     const text = document.body.textContent.replace(/\s+/g, " ");
-    assert.match(text, /olk · abcdef1/);
+    assert.match(text, /olk\s*·\s*abcdef1/);
     assert.match(text, /Build Linux/);
     assert.match(text, /Online now\. Select this device/);
     assert.match(text, /Cannot enable: the device is offline/);

@@ -26,6 +26,7 @@ import type {
   ChatMessageItem,
   ConversationBackgroundTask,
 } from "./conversation-types";
+import { MetaLine } from "../ui/meta-line";
 
 const sourceIcons: Partial<Record<TurnSource["kind"], LucideIcon>> = {
   session: MessagesSquare,
@@ -106,16 +107,15 @@ function SourceLabel({
       );
     case "report":
       return (
-        <>
-          <SourceSessionLink source={source} title={title} />{" "}
-          <span>{t("turnSource.reported")}</span>
+        <MetaLine as="span" separatorClassName="font-normal">
+          <span>
+            <SourceSessionLink source={source} title={title} />{" "}
+            <span>{t("turnSource.reported")}</span>
+          </span>
           {status ? (
-            <span className="font-normal text-ink-muted">
-              {" · "}
-              {status}
-            </span>
+            <span className="font-normal text-ink-muted">{status}</span>
           ) : null}
-        </>
+        </MetaLine>
       );
     case "background":
       return <BackgroundLabel source={source} />;
@@ -154,27 +154,20 @@ function BackgroundLabel({ source }: { source: TurnSource }) {
     const description = taskDescription(task);
     const outcome = taskOutcome(task, t);
     return (
-      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+      <MetaLine as="span" separatorClassName="font-normal text-ink-faint">
         <span>{t("turnSource.background")}</span>
-        <span className="font-normal text-ink-faint">·</span>
         <span className="font-normal text-ink-muted">
           {t(`turnSource.taskKind.${task.kind}`)}
         </span>
         {description ? (
-          <>
-            <span className="font-normal text-ink-faint">·</span>
-            <span className="min-w-0 font-normal text-ink-muted [overflow-wrap:anywhere]">
-              {description}
-            </span>
-          </>
+          <span className="min-w-0 font-normal text-ink-muted [overflow-wrap:anywhere]">
+            {description}
+          </span>
         ) : null}
         {outcome ? (
-          <>
-            <span className="font-normal text-ink-faint">·</span>
-            <span className="font-normal text-ink-muted">{outcome}</span>
-          </>
+          <span className="font-normal text-ink-muted">{outcome}</span>
         ) : null}
-      </span>
+      </MetaLine>
     );
   }
   if (tasks.length > 1)

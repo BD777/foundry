@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "../ui/badge";
 import { Disclosure, DisclosureSummary } from "../ui/disclosure";
 import { clockTime } from "../../lib/time-format";
+import { MetaLine } from "../ui/meta-line";
 
 /**
  * A message channel turn (DEV-234): the source conversation, who sent its
@@ -31,17 +32,15 @@ export function ChannelTurnMessage({
   return (
     <div className="grid min-w-0 gap-2 rounded-lg bg-inset px-3.5 py-2.5">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-        <span className="font-semibold text-ink">{origin.source}</span>
-        <span aria-hidden="true">·</span>
-        <span className="min-w-0 font-medium wrap-anywhere text-ink">
-          {conversation}
-        </span>
-        {sender ? (
-          <>
-            <span aria-hidden="true">·</span>
+        <MetaLine as="span">
+          <span className="font-semibold text-ink">{origin.source}</span>
+          <span className="min-w-0 font-medium wrap-anywhere text-ink">
+            {conversation}
+          </span>
+          {sender ? (
             <span className="min-w-0 wrap-anywhere">{sender}</span>
-          </>
-        ) : null}
+          ) : null}
+        </MetaLine>
         {at ? (
           <time dateTime={at} title={new Date(at).toLocaleString()}>
             {clockTime(at, { date: "short" })}

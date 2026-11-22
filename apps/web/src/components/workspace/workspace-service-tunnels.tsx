@@ -26,6 +26,7 @@ import { RowMenu } from "../ui/row-menu";
 import { Alert } from "../ui/alert";
 import { cn } from "../../lib/cn";
 import { ServiceNote } from "./service-note";
+import { MetaLine } from "../ui/meta-line";
 
 /** running: the device reports the port listening; idle: reachable but no
  * liveness report yet; off: nothing to open. */
@@ -406,29 +407,25 @@ export function WorkspaceServiceTunnels({
             tone={tone}
             name={item.name}
             facts={
-              <ServiceNote as="span">
-                <span role="status">
-                  {busy === item.id
-                    ? t("tunnels.saving")
-                    : t(
-                        `tunnels.status.${tone === "idle" ? "available" : item.status}`,
-                      )}
-                </span>
-                {" · "}
-                {item.deviceLabel || item.deviceId}
-                {item.targetWorkspaceId !== item.workspaceId
-                  ? ` · ${item.targetWorkspaceName}`
-                  : ""}{" "}
-                · :{item.port}
-                {seen && tone !== "running" ? (
-                  <>
-                    {" · "}
+              <ServiceNote as="span" className="block">
+                <MetaLine as="span">
+                  <span role="status">
+                    {busy === item.id
+                      ? t("tunnels.saving")
+                      : t(
+                          `tunnels.status.${tone === "idle" ? "available" : item.status}`,
+                        )}
+                  </span>
+                  {item.deviceLabel || item.deviceId}
+                  {item.targetWorkspaceId !== item.workspaceId
+                    ? item.targetWorkspaceName
+                    : null}
+                  {`:${item.port}`}
+                  {seen && tone !== "running" ? (
                     <span title={fullWhen(item.lastSeenAt)}>{seen}</span>
-                  </>
-                ) : null}
-                {item.visibility === "workspace"
-                  ? ` · ${t("tunnels.shared")}`
-                  : ""}
+                  ) : null}
+                  {item.visibility === "workspace" ? t("tunnels.shared") : null}
+                </MetaLine>
               </ServiceNote>
             }
             actions={

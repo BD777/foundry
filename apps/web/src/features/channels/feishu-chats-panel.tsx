@@ -28,6 +28,7 @@ import { SectionPanel } from "../../components/ui/section-panel";
 import { navigateToAssistantSettings } from "../../lib/in-app-navigation";
 import { useCopied } from "../../lib/use-copied";
 import { clockTime } from "./feishu-format";
+import { MetaLine } from "../../components/ui/meta-line";
 
 export interface FeishuChatsPanelProps {
   bot?: WorkspaceFeishuBot;
@@ -282,13 +283,14 @@ function ChatRow({
       >
         <strong>{name}</strong>
         <small>
-          {direct ? t("chats.direct") : t("chats.group")}
-          {shortId ? (
-            <span title={chat.chatId}>
-              {" · "}
-              {t("chats.shortId", { id: shortId })}
-            </span>
-          ) : null}
+          <MetaLine as="span">
+            {direct ? t("chats.direct") : t("chats.group")}
+            {shortId ? (
+              <span title={chat.chatId}>
+                {t("chats.shortId", { id: shortId })}
+              </span>
+            ) : null}
+          </MetaLine>
         </small>
         {pairedIn !== undefined ? (
           <small>{t("chats.movedHere", { workspace: pairedIn })}</small>

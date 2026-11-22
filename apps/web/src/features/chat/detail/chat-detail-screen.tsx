@@ -20,6 +20,7 @@ import type {
 import { formatBytes } from "../../../lib/format";
 import type { ChatScreenItem } from "../chat-types";
 import { DetailFeedback, DetailMessage } from "./chat-detail-parts";
+import { MetaLine } from "../../../components/ui/meta-line";
 
 /**
  * A session's tool screenshots (DEV-075) as an inline gallery: the frame
@@ -116,19 +117,20 @@ export function ScreenDetail({
       }}
     >
       <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <span className="fdy-chat-screen-position text-xs text-ink-muted tabular-nums">
+        <MetaLine
+          as="span"
+          className="fdy-chat-screen-position text-xs text-ink-muted tabular-nums"
+        >
           {t("chat:detail.screen.position", {
             index: index + 1,
             count: frames.length,
           })}
-          {" · "}
           {t(`conversation:process.frameSource.${frame.source}`)}
-          {" · "}
           {frameTime(frame, i18n.language)}
           {frame.width && frame.height
-            ? ` · ${frame.width}×${frame.height}`
-            : ""}
-        </span>
+            ? `${frame.width}×${frame.height}`
+            : null}
+        </MetaLine>
         {following ? (
           <span className="text-xs text-ink-muted tabular-nums">
             {t("chat:detail.screen.following")}

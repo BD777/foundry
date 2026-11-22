@@ -37,6 +37,7 @@ import {
 import { ChannelEditor } from "./settings-channel-editor";
 import { PaMuted } from "./pa-muted";
 import { PrerequisiteNotice } from "./settings-channel-prerequisites";
+import { MetaLine } from "../../components/ui/meta-line";
 
 const stateTone: Record<MessageChannelState, BadgeProps["tone"]> = {
   starting: "slate",
@@ -318,20 +319,21 @@ function ChannelRow({
             </Badge>
           </span>
           <PaMuted size="xs">
-            {source}
-            {" · "}
-            {status.lastEventAt ? (
-              <time
-                dateTime={status.lastEventAt}
-                title={fullWhen(status.lastEventAt)}
-              >
-                {t("settings.channels.lastEvent", {
-                  when: relativeWhen(status.lastEventAt),
-                })}
-              </time>
-            ) : (
-              t("settings.channels.noEvents")
-            )}
+            <MetaLine as="span">
+              {source}
+              {status.lastEventAt ? (
+                <time
+                  dateTime={status.lastEventAt}
+                  title={fullWhen(status.lastEventAt)}
+                >
+                  {t("settings.channels.lastEvent", {
+                    when: relativeWhen(status.lastEventAt),
+                  })}
+                </time>
+              ) : (
+                t("settings.channels.noEvents")
+              )}
+            </MetaLine>
           </PaMuted>
           {status.detail ? <PaMuted size="xs">{status.detail}</PaMuted> : null}
           {rules.length ? (

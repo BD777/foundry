@@ -7,6 +7,7 @@ import { ButtonRow } from "../../components/ui/button-row";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { FormFieldGroup } from "../../components/ui/form-field";
 import { errorText } from "./account-format";
+import { MetaLine } from "../../components/ui/meta-line";
 
 const regionPattern = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
 
@@ -66,13 +67,12 @@ export function DeviceConnectorConfiguration({
 
   if (!editing)
     return (
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+      <MetaLine as="div" className="text-xs text-ink-muted">
         <span>{t("deviceHeld.configuration.region", { region: current })}</span>
-        <span aria-hidden="true">·</span>
         <Button disabled={disabled} onClick={edit} size="sm" variant="ghost">
           {t("deviceHeld.configuration.change")}
         </Button>
-      </div>
+      </MetaLine>
     );
 
   return (
