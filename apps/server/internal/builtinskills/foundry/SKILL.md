@@ -1,6 +1,6 @@
 ---
 name: foundry
-description: Work with Foundry, the platform this session runs on - read other Foundry sessions and what they changed, native chats, Issues, workspaces and devices, and start, steer or verify sessions on this or another device. Use it when you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a chat link (…/chats/<id>), when asked what another session did or why it failed, or when work belongs in another workspace, on another device or in its own chat. For temporary work within the current task, prefer native subagents.
+description: Work with Foundry, the platform this session runs on - read other Foundry sessions and what they changed, native chats, Issues, workspaces and devices, and start, steer or verify sessions on this or another device. It also reads and keeps the person's items: what they want followed across sessions. Use it when you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a chat link (…/chats/<id>), when asked what another session did or why it failed, when the person asks about their items or to keep something as one, or when work belongs in another workspace, on another device or in its own chat. For temporary work within the current task, prefer native subagents.
 ---
 
 # Foundry
@@ -148,6 +148,31 @@ the work owns the files.
   and `get_issue` tools and `ask_person` are not offered. Do not try to create
   an Issue or ask the person through one; ask in your own answer instead.
 
+## The person's items
+
+- Items are what the person wants followed across sessions: one list of
+  theirs, shown on the Items page of the web app. A session the person started
+  in a workspace, and the sessions it starts, share that list with the
+  assistant; an Issue's sessions, verifiers and the assistant's helpers do
+  not. Work needs no item to run.
+- `read_list` reads all the person's items a page at a time; `workspaceId`
+  narrows it to the items homed in or touching any workspace the person
+  reaches, and other workspaces are refused. Each item is also a read-only
+  file, `.foundry/items/<id>.md`, in its home workspace.
+- `update_list` changes only the items homed in your workspace. op `add`
+  needs the person's own words from this conversation as `quote` and homes
+  the item here; `update` with `home` moves it to another workspace the
+  person reaches, after which it is no longer yours to change. You can keep
+  its summary and plan (progress, nextAction, waitingFor, acceptance,
+  evidence), record a decision the person made with op `decide` (their words
+  as the quote), and `claim` it to become its holder, the session following
+  it (a new claim replaces the one before), or `release` it.
+- A helper you tie to an item homed here (`create_session` or `send_message`
+  `itemId`) may run in any workspace or device you reach; its workspace then
+  shows in the item's touches. It reports to the item's holder; with none
+  reachable its reports wait on the item for the next session that claims
+  it.
+
 ## The person's assistant
 
 - A person may have an assistant ("助理" in the web app): a session in their
@@ -155,19 +180,6 @@ the work owns the files.
   sessions, and reports to the person in plain words. Only it has the
   workspace and planning tools, and Foundry checks its changes against the
   person's rules.
-- The person's items (what they want done, kept on the assistant's list) are
-  shared with the sessions they start in a workspace. For continuing work
-  there, `read_list` shows the items homed in or touching your workspace;
-  `update_list` adds one (homed here, quoting the person's own words), keeps
-  its summary, and `claim`s it so you hold it as the session following it;
-  `release` it when you hand it back. A helper you tie to an item
-  (`create_session` or `send_message` `itemId`) reports to the item's holder;
-  with none reachable its reports wait on the item for the next session that
-  claims it. Keep an item you hold so the next session can take it over from
-  the item alone (its file is `.foundry/items/<id>.md`): the plan's progress,
-  nextAction, waitingFor, acceptance and evidence current, each decision the
-  person makes about it recorded with `update_list` op `decide` (their words
-  as the quote), and the summary for context.
 - Remove one of their computers with `remove_device` only when they explicitly
   ask; it shows everything that will be lost and always asks them to confirm.
 - When the assistant started you, the person does not read your

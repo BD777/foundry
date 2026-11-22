@@ -24,9 +24,9 @@ type Scope struct {
 	Turn      store.SessionInput
 	// Workspace, when set, makes this the scope of a session the person
 	// started in that workspace, not of their assistant (WorkspaceScopeFor):
-	// its item tools reach only the items whose home is that workspace, and
-	// for reading also those that touch it. Agent is then the person's
-	// default assistant, whose list a new item joins.
+	// it reads all the person's items, narrowed to any workspace the person
+	// reaches, and changes only the items whose home is that workspace. Agent
+	// is then the person's default assistant, whose list a new item joins.
 	Workspace string
 	owned     map[string]bool
 	// role holds every workspace the person can read and the assistant's

@@ -2673,12 +2673,12 @@
     "_meta": {
       "anthropic/searchHint": "person list & memory: read the person's items, status, summary, helpers"
     },
-    "description": "Read the person's items one page at a time, newest updated first. Each item shows its revision (pass it to update_list), text, when, owner, status, summary, quote (when short), times and helpers; events and plans are not returned. status and owner narrow the page. from and to bound updatedAt as RFC 3339 instants, [from, to). closedSince instead gives the open items and those closed since a date or time, as before. Archived items come back only with includeArchived. limit is 1 to 50 (default 20); offset takes nextOffset from the last page. Each item also shows its homeWorkspaceId (absent: the assistant's inbox), touches (other workspaces its helpers run in) and holderSessionId (the session following it); workspaceId keeps the items homed in or touching a workspace. The answer also gives now in the person's zone, total and the pending operations.",
+    "description": "Read the person's items one page at a time, newest updated first. Each item shows its revision (pass it to update_list), text, when, owner, status, summary, quote (when short), times and helpers; events and plans are not returned. status and owner narrow the page. from and to bound updatedAt as RFC 3339 instants, [from, to). closedSince instead gives the open items and those closed since a date or time, as before. Archived items come back only with includeArchived. limit is 1 to 50 (default 20); offset takes nextOffset from the last page. Each item also shows its homeWorkspaceId (absent: the assistant's inbox), touches (other workspaces its helpers run in) and holderSessionId (the session following it); workspaceId keeps the items homed in or touching a workspace the person reaches. The answer also gives now in the person's zone, total and the pending operations.",
     "summary": "Reads the person's items a page at a time: their words, times, status, summary, home, holder and helpers.",
     "limits": [
       "Only the list of the assistant's own person.",
       "At most 50 items a call.",
-      "The person's assistant reads its whole list; a session the person started in a workspace reads only the items homed in or touching that workspace, without pending operations. An Issue's sessions, verifiers and the assistant's helpers do not have it."
+      "The person's assistant and a session the person started in a workspace read the same whole list; workspaceId must be a workspace the person reaches, and a workspace session gets no pending operations. An Issue's sessions, verifiers and the assistant's helpers do not have it."
     ],
     "inputSchema": {
       "type": "object",
