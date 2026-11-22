@@ -64,12 +64,15 @@ async function render(component, props) {
   };
 }
 
-test("needs-you is one count row to the Needs you page, in a new tab", async () => {
+test("needs-you is headed as the items are: title, count, and All to the page in a new tab", async () => {
   const page = await render(NeedsYouSection, { count: 3 });
+  const heading = page.container.querySelector("h3");
+  assert.equal(heading.textContent.trim(), "Needs you3");
   const link = page.container.querySelector("a");
   assert.ok(link);
   assert.equal(link.getAttribute("target"), "_blank");
-  assert.equal(link.textContent.trim(), "Needs you3");
+  assert.equal(link.textContent.trim(), "All");
+  assert.equal(link.getAttribute("aria-label"), "Open what needs you");
   assert.equal(page.container.querySelectorAll("a").length, 1);
   await page.unmount();
 });
@@ -117,7 +120,7 @@ test("the entry lists the newest three titles, and each opens its item", async (
   await page.unmount();
 });
 
-test("without titles the entry is only the count row", async () => {
+test("without titles the entry is only its heading", async () => {
   const page = await render(NeedsYouSection, {
     count: 2,
     onOpenItem: () => {},

@@ -733,6 +733,11 @@ export const personalAgent = {
       updated: "Updated",
       closed: "Finished",
       empty: "No items in this range.",
+      emptyTitle: "No items in this range",
+      emptyBody:
+        "Choose a longer range to see what was added, finished or dropped.",
+      nothingToSummarise:
+        "There is nothing in this range to copy or summarise.",
       copy: "Copy as Markdown",
       copied: "Copied",
       ask: "Ask the assistant to write it up",

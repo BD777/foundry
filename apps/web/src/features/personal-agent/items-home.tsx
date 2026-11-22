@@ -96,7 +96,7 @@ export function ItemHome({
               <Button
                 onClick={() => setChoosing(true)}
                 size="sm"
-                variant="ghost"
+                variant="secondary"
               >
                 {t("items.home.change")}
               </Button>

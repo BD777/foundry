@@ -6,6 +6,7 @@ import { capturePersonalAgentInbox } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ClampedText } from "../../components/ui/clamped-text";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Subheading } from "../../components/ui/subheading";
 import { Skeleton } from "../../components/ui/loading";
 import { serverErrorText } from "../../lib/errors";
@@ -106,6 +107,8 @@ export function ItemsReview({
   };
 
   const populated = report?.groups.filter((group) => group.items.length > 0);
+  const empty = populated?.length === 0;
+  const emptyReason = empty ? t("items.review.nothingToSummarise") : undefined;
   return (
     <section
       aria-labelledby="fdy-items-review-title"
@@ -125,7 +128,8 @@ export function ItemsReview({
         <p className="text-sm text-ink-muted">{rangeLabel}</p>
         <div className="ms-auto flex flex-wrap gap-2">
           <Button
-            disabled={!report}
+            disabled={!report || empty}
+            disabledReason={emptyReason}
             onClick={() => void copy()}
             size="sm"
             variant="secondary"
@@ -133,7 +137,8 @@ export function ItemsReview({
             {copied ? t("items.review.copied") : t("items.review.copy")}
           </Button>
           <Button
-            disabled={!report || asking}
+            disabled={!report || empty || asking}
+            disabledReason={emptyReason}
             onClick={() => void ask()}
             size="sm"
           >
@@ -164,8 +169,13 @@ export function ItemsReview({
               </div>
             ))}
           </dl>
-          {populated?.length === 0 ? (
-            <p className="text-sm text-ink-muted">{labels.empty}</p>
+          {empty ? (
+            <EmptyState
+              body={t("items.review.emptyBody")}
+              role="status"
+              size="pane"
+              title={t("items.review.emptyTitle")}
+            />
           ) : null}
           {populated?.map((group) => (
             <section

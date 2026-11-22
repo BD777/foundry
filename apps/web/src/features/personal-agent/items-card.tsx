@@ -8,10 +8,10 @@ import type {
   PersonalAgentTask,
 } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
-import { Button } from "../../components/ui/button";
 import {
   ContextEmpty,
   ContextHeading,
+  ContextHeadingAction,
   ContextList,
   ContextRow,
   ContextRowCopy,
@@ -87,16 +87,12 @@ export function ItemsCard({
   };
 
   const all = (
-    <Button
-      aria-label={t("items.card.allLabel", { count: openCount })}
-      className="-mr-1.5 h-6 gap-0.5 px-1.5 text-xs text-ink-muted"
+    <ContextHeadingAction
+      label={t("items.card.allLabel", { count: openCount })}
       onClick={onOpenAll}
-      size="sm"
-      variant="ghost"
     >
       {t("items.card.all")}
-      <ChevronRight aria-hidden="true" size={13} />
-    </Button>
+    </ContextHeadingAction>
   );
 
   return (

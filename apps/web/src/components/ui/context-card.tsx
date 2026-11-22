@@ -5,6 +5,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { ChevronRight } from "lucide-react";
 import { Button, type ButtonProps } from "./button";
 import { IconBox, type IconBoxProps } from "./icon-box";
 import { cn } from "../../lib/cn";
@@ -118,6 +119,50 @@ export function ContextHeading({
       {heading}
       {action}
     </div>
+  );
+}
+
+/**
+ * A heading's way to the whole list (「全部 ›」): a link opening `href` in a
+ * new tab, or a button calling `onClick`.
+ */
+export function ContextHeadingAction({
+  children,
+  href,
+  label,
+  onClick,
+}: {
+  children: ReactNode;
+  href?: string;
+  /** The accessible name, when the visible word alone is too short. */
+  label?: string;
+  onClick?: () => void;
+}) {
+  const className = "-mr-1.5 h-6 gap-0.5 px-1.5 text-xs text-ink-muted";
+  const content = (
+    <>
+      {children}
+      <ChevronRight aria-hidden="true" size={13} />
+    </>
+  );
+  if (href)
+    return (
+      <Button asChild className={className} size="sm" variant="ghost">
+        <a aria-label={label} href={href} rel="noopener" target="_blank">
+          {content}
+        </a>
+      </Button>
+    );
+  return (
+    <Button
+      aria-label={label}
+      className={className}
+      onClick={onClick}
+      size="sm"
+      variant="ghost"
+    >
+      {content}
+    </Button>
   );
 }
 
