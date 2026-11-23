@@ -119,3 +119,20 @@ test("only a usable connector profile on this computer is relayed", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the reply's loopback ports are the ones bridged", async () => {
+  const { replyPorts } = await import("./pa-eval-connection-relay.mjs");
+  const line = JSON.stringify({
+    environment: {
+      set: {
+        HTTPS_PROXY: "http://127.0.0.1:41234",
+        HTTP_PROXY: "http://user:secret@127.0.0.1:41234/",
+        ANTHROPIC_BASE_URL: "http://localhost:5555",
+        NODE_EXTRA_CA_CERTS: "/x/ca.pem",
+        OTHER: "https://example.com:443",
+      },
+    },
+  });
+  assert.deepEqual(replyPorts(line), [41234, 5555]);
+  assert.deepEqual(replyPorts("not json"), []);
+});

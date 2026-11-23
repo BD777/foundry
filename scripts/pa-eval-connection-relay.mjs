@@ -9,6 +9,13 @@
 // into the configuration folder named in the request, which is under the run
 // folder at the same path inside and outside. The helper's stderr is not
 // relayed (it may carry credentials); the harness logs only its error code.
+//
+// A sandbox with its own network (pa-eval-sandbox.mjs, `net`) cannot reach
+// the helper's local adapter: the relay reads the helper's reply, bridges
+// each loopback port its environment names (a proxy such as
+// HTTPS_PROXY=http://127.0.0.1:PORT) into the sandbox at the same port, and
+// passes the reply on unchanged once the bridge listens. Nothing of the
+// reply is logged.
 
 import { spawn } from "node:child_process";
 import {
@@ -56,11 +63,67 @@ process.on("SIGTERM", () => { socket.destroy(); process.exit(0); });
 process.on("SIGINT", () => { socket.destroy(); process.exit(0); });
 `;
 
+// The loopback ports a helper's reply points the CLI at.
+export function replyPorts(line) {
+  let reply;
+  try {
+    reply = JSON.parse(line);
+  } catch {
+    return [];
+  }
+  const set = reply?.environment?.set || {};
+  return [
+    ...new Set(
+      Object.values(set)
+        .map(
+          (v) =>
+            /^[a-z]+:\/\/(?:[^@/\s]*@)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\/?$/i.exec(
+              String(v),
+            )?.[1],
+        )
+        .filter(Boolean)
+        .map(Number),
+    ),
+  ];
+}
+
+// The helper's output to the shim: the first line (the reply) once its
+// ports are bridged, then the rest as it comes.
+function relayReply(stdout, socket, net, log) {
+  if (!net) {
+    stdout.pipe(socket);
+    return;
+  }
+  let head = Buffer.alloc(0);
+  const onData = async (chunk) => {
+    head = Buffer.concat([head, chunk]);
+    const newline = head.indexOf(10);
+    if (newline < 0 && head.length < 262144) return;
+    stdout.removeListener("data", onData);
+    stdout.pause();
+    const line = head.subarray(0, newline < 0 ? head.length : newline);
+    for (const port of replyPorts(line.toString("utf8"))) {
+      net.forward(port);
+      if (!(await net.ready(port)))
+        log(`the sandbox's bridge did not take port ${port} in time`);
+    }
+    socket.write(head);
+    stdout.pipe(socket);
+    stdout.resume();
+  };
+  stdout.on("data", onData);
+}
+
 /**
  * Starts the relay for one provider: returns the device profile for the
  * worker's agent-profiles.local.json and a stop function.
  */
-export function startConnectionRelay(provider, runDir, log = () => {}) {
+export function startConnectionRelay(
+  provider,
+  runDir,
+  log = () => {},
+  net = null,
+) {
   const socketPath = resolve(runDir, "connection-relay.sock");
   const shimPath = resolve(runDir, "connection-relay-shim.cjs");
   rmSync(socketPath, { force: true });
@@ -103,7 +166,7 @@ export function startConnectionRelay(provider, runDir, log = () => {}) {
       child.stderr.on("data", (c) => {
         stderrTail = (stderrTail + c).slice(-4096);
       });
-      child.stdout.pipe(socket);
+      relayReply(child.stdout, socket, net, log);
       if (rest.length) child.stdin.write(rest);
       socket.pipe(child.stdin);
       child.stdin.on("error", () => {});

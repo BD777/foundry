@@ -225,17 +225,15 @@ function readFirstMessages(db, personId, projectIds) {
     const transcript = Array.isArray(p.transcript) ? p.transcript : [];
     const firstUser = transcript
       .filter((m) => m && m.kind === "user")
-      .map((m) => cleanText(m.text || ""))
-      .find((t) => t !== null);
+      .find((m) => cleanText(m.text || "") !== null);
     const at = transcript.find((m) => m && m.at)?.at || p.updatedAt || "";
     items.push({
       kind: "native",
       id: row.id,
       workspaceId: row.workspace_id,
       at,
-      text: firstUser ?? "",
+      text: firstUser?.text || "",
       title: row.title || p.title || "",
-      raw: true,
     });
   }
   return items;
@@ -285,6 +283,31 @@ function readTitles(db, projectIds) {
   return titles;
 }
 
+// The raw first message of each frozen case's source (a Foundry session's
+// prompt; a native chat's first message from the person), by source id.
+function sourceTexts(db, selected) {
+  const out = new Map();
+  const session = db.prepare(
+    "SELECT payload_json FROM agent_sessions WHERE id = ?",
+  );
+  const chat = db.prepare("SELECT payload_json FROM chats WHERE id = ?");
+  for (const c of selected) {
+    if (c.kind === "session") {
+      const row = session.get(c.id);
+      if (row) out.set(c.id, json(row.payload_json).prompt || "");
+    } else {
+      const row = chat.get(c.id);
+      if (!row) continue;
+      const transcript = json(row.payload_json).transcript;
+      const first = (Array.isArray(transcript) ? transcript : [])
+        .filter((m) => m && m.kind === "user")
+        .find((m) => cleanText(m.text || "") !== null);
+      if (first) out.set(c.id, first.text);
+    }
+  }
+  return out;
+}
+
 // --- cleaning ----------------------------------------------------------------
 
 // Wrappers a runtime or a tool put around the person's words, and test or
@@ -317,26 +340,51 @@ const notAPersonRequest = [
 ];
 
 // null: not a request of the person's; otherwise the text with skill links
-// and image markers reduced to what the person typed.
-function cleanText(text) {
+// and image markers reduced to what the person typed. Pasted text and code
+// blocks stay (the redactor takes secrets and identifiers out of them, as
+// out of everything else); { pasted: false } is the set's first wording,
+// which put "（粘贴的内容）" in their place.
+function cleanText(text, { pasted = true } = {}) {
   if (typeof text !== "string") return null;
   let t = text.replace(/\r/g, "").trim();
   if (!t || notAPersonRequest.some((re) => re.test(t))) return null;
   t = t
     .replace(/\[\$([\w:.-]+)\]\([^)]*\)/g, "$$$1") // [$skill](path) -> $skill
     .replace(/\[Image #\d+\]\s*/gi, "[图片] ")
-    .replace(/\[image\]\s*/gi, "[图片] ")
-    // Pasted text and code blocks are someone else's words: keep the gist.
-    .replace(
-      /<pasted_content[^>]*>[\s\S]*?(<\/pasted_content[^>]*>|$)/g,
-      "（粘贴的内容）",
-    )
-    .replace(/```[\s\S]*?(```|$)/g, "（粘贴的内容）")
+    .replace(/\[image\]\s*/gi, "[图片] ");
+  t = pasted
+    ? t.replace(
+        /<pasted_content[^>]*>([\s\S]*?)(<\/pasted_content[^>]*>|$)/g,
+        (m, inner) => `\n${inner.trim()}\n`,
+      )
+    : t
+        .replace(
+          /<pasted_content[^>]*>[\s\S]*?(<\/pasted_content[^>]*>|$)/g,
+          "（粘贴的内容）",
+        )
+        .replace(/```[\s\S]*?(```|$)/g, "（粘贴的内容）");
+  return t
     .replace(/&#x20;/g, " ")
     .replace(/\s+\n/g, "\n")
     .trim();
-  return t;
 }
+
+// How much of a request the set keeps: what a project digest reads of a
+// message (maxRequestBytes in workspacedigest/compile.go).
+const maxRequestChars = 4096;
+// The set's first wording kept 400.
+const legacyRequestChars = 400;
+// The start of a text, at most n characters, ending before a word the cut
+// would split (a link or an id is kept whole or not at all).
+function cut(text, n) {
+  if (text.length <= n) return text;
+  const start = text.slice(0, n);
+  return /\s/.test(text[n]) ? start : start.replace(/\S*$/, "").trimEnd();
+}
+
+// How much of each earlier message the fixture keeps: a digest reads 200
+// characters of each (maxHistoryRunes).
+const maxHistoryChars = 600;
 
 const tooVague = /^(hi|hello|继续|分析这个|```|好的?|ok|test|\.\.\.)$/i;
 
@@ -374,34 +422,218 @@ function linkLabel(url) {
   return "<内部链接>";
 }
 
-function makeRedactor(privateRules, accountNames, label) {
+// Realistic stand-ins for what de-identification takes out (`synth` of
+// makeRedactor): each original maps to a stable fake of the same kind and
+// shape (seeded by a hash of the original), never to itself. Links keep
+// their kind (a Feishu doc stays a Feishu doc under example.feishu.cn) and
+// the generic words of their path; a public site's link stays as it is
+// unless it carries a private pattern or an account name. `emitted` holds
+// every stand-in, so the leak check tells them from a surviving original.
+const genericPathWords = new Set(
+  "api v1 v2 v3 client subscribe sub link docs doc docx wiki base sheets sheet minutes file files drive slides mindnotes story detail issue issues pull pulls merge_requests mr tree blob main master raw view jobs job careers position share s p d app apps dashboard project projects board".split(
+    " ",
+  ),
+);
+const syntheticPeople =
+  "王磊 陈静 刘洋 张敏 李娜 赵强 孙悦 周婷 吴昊 郑凯 冯雪 何川 高原 林晨 罗兰 宋佳".split(
+    " ",
+  );
+const syntheticGroups =
+  "北极星群 青松群 飞鱼群 白鹭群 远山群 晨光群 银杏群 灯塔群 长风群 星河群 竹林群 海燕群".split(
+    " ",
+  );
+const syntheticHandles =
+  "alex sam jordan casey riley morgan taylor jamie".split(" ");
+
+function makeSynth(isPrivateText) {
+  const emitted = new Set();
+  const bytes = (kind, original, n) => {
+    let out = Buffer.alloc(0);
+    for (let i = 0; out.length < n; i++)
+      out = Buffer.concat([
+        out,
+        createHash("sha256").update(`${kind}\0${i}\0${original}`).digest(),
+      ]);
+    return out.subarray(0, n);
+  };
+  const from = (alphabet) => (kind, original, n) =>
+    [...bytes(kind, original, n)]
+      .map((b) => alphabet[b % alphabet.length])
+      .join("");
+  const hex = from("0123456789abcdef");
+  const digits = from("0123456789");
+  const alnum = from(
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789",
+  );
+  const pick = (list, kind, original) =>
+    list[bytes(kind, original, 1)[0] % list.length];
+  const keep = (value) => (emitted.add(value), value);
+  const uuid = (original) => {
+    const h = hex("uuid", original, 32);
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  };
+  // A token of the same length and kind of characters.
+  const like = (kind, segment) =>
+    /^\d+$/.test(segment)
+      ? digits(kind, segment, segment.length)
+      : /^[0-9a-f]+$/.test(segment)
+        ? hex(kind, segment, segment.length)
+        : alnum(kind, segment, segment.length);
+  const syntheticPath = (url) => {
+    const path = url.pathname
+      .split("/")
+      .map((seg) =>
+        !seg || genericPathWords.has(seg.toLowerCase())
+          ? seg
+          : like("path", seg),
+      )
+      .join("/");
+    const query = [...url.searchParams.keys()]
+      .map((k) => `${k}=${like("query", url.searchParams.get(k) || k)}`)
+      .join("&");
+    return `${path}${query ? `?${query}` : ""}`;
+  };
+  const ip = (original) => `192.0.2.${(bytes("ip", original, 1)[0] % 250) + 2}`;
+  const link = (original) => {
+    let url;
+    try {
+      url = new URL(original);
+    } catch {
+      return keep(
+        `https://internal.example.com/${alnum("link", original, 10)}`,
+      );
+    }
+    const host = url.hostname;
+    const port = url.port ? `:${url.port}` : "";
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(host))
+      return keep(`${url.protocol}//${ip(host)}${port}${syntheticPath(url)}`);
+    if (/meego\./i.test(host))
+      return keep(
+        `https://meego.example.com/team/story/detail/${digits("meego", original, 10)}`,
+      );
+    if (feishuHosts.test(host)) {
+      const [kind = "docx"] = url.pathname.split("/").filter(Boolean);
+      const kinds =
+        /^(docx|docs|wiki|base|sheets|minutes|file|drive|mindnotes|slides)$/;
+      const table = url.searchParams.get("table")
+        ? `?table=tbl${alnum("tbl", original, 13)}&view=vew${alnum("vew", original, 7)}`
+        : "";
+      return keep(
+        `https://example.feishu.cn/${kinds.test(kind) ? kind : "docx"}/${alnum("feishu", original, 27)}${table}`,
+      );
+    }
+    if (publicHosts.test(host))
+      return keep(
+        isPrivateText(original)
+          ? `${url.protocol}//${host}${port}${syntheticPath(url)}`
+          : original,
+      );
+    const label = host.split(".")[0].toLowerCase();
+    const sub =
+      /^(api|sub|git|code|wiki|docs|grafana|console|admin|portal|panel|dash)$/.test(
+        label,
+      )
+        ? label
+        : "internal";
+    return keep(
+      `${url.protocol}//${sub}.example.com${port}${syntheticPath(url)}`,
+    );
+  };
+  return {
+    emitted,
+    link,
+    ip: (original) => keep(ip(original)),
+    email: (original) =>
+      keep(
+        `${pick(syntheticHandles, "email", original)}.${digits("email", original, 3)}@example.com`,
+      ),
+    git: (original) => {
+      const repo = original
+        .split(/[/:]/)
+        .pop()
+        .replace(/\.git$/, "");
+      return keep(`git@code.example.com:team/${repo}.git`);
+    },
+    terminal: () => keep("alex@devbox:~$"),
+    codex: (original) => keep(`codex://threads/${uuid(original)}`),
+    secret: (original) =>
+      keep(
+        `${/^(sk|pk|ghp|gho|xox[bap])/.exec(original)?.[0] || "sk"}-eval${hex("secret", original, 24)}`,
+      ),
+    bearer: (original) => keep(`Bearer eval.${hex("bearer", original, 32)}`),
+    session: (original) => keep(`sess_${digits("sess", original, 19)}`),
+    uuid: (original) => keep(uuid(original)),
+    like: (original) => keep(like("id", original)),
+    user: (original) =>
+      keep(pick(syntheticHandles, "user", original.toLowerCase())),
+    person: (label) =>
+      keep(
+        syntheticPeople[
+          (Number(label.replace(/\D/g, "")) - 1) % syntheticPeople.length
+        ],
+      ),
+    group: (label) =>
+      keep(
+        syntheticGroups[
+          (Number(label.replace(/\D/g, "")) - 1) % syntheticGroups.length
+        ],
+      ),
+  };
+}
+
+// The redactor. Without `synth` it writes the set's first placeholders
+// (<飞书链接>, <id>, 人1, ...); with it, realistic stand-ins of the same kind.
+function makeRedactor(privateRules, accountNames, label, synth = null) {
+  // A stand-in is set aside until the end, so a later pattern (an id shape,
+  // an account name) never rewrites it.
+  let kept = [];
+  const setAside = (value) => `\uE000${kept.push(value) - 1}\uE001`;
+  const or = (to, fn) => (synth ? (...a) => setAside(fn(...a)) : to);
   // Shapes first (links, ids, paths), then the private patterns, then people
   // and chats, then account names.
   const shapes = [
     [
       /\b[\w.-]+@[\w.-]+:[\w./-]+/g,
-      (m) =>
-        `<git 仓库 ${m
-          .split("/")
-          .pop()
-          .replace(/\.git$/, "")}>`,
+      or(
+        (m) =>
+          `<git 仓库 ${m
+            .split("/")
+            .pop()
+            .replace(/\.git$/, "")}>`,
+        (m) => synth.git(m),
+      ),
     ],
-    [/\S+:~\s+\S+\$/g, "<终端>$"],
-    [/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "<邮箱>"],
-    [/https?:\/\/[^\s)\]>"'，。“”]+/g, (url) => linkLabel(url)],
-    [/codex:\/\/threads\/[\w-]+/g, "codex://threads/<id>"],
-    [/\b(sk|pk|ghp|gho|xox[bap])[-_][\w-]{6,}/g, "<密钥>"],
-    [/Bearer\s+[\w.-]+/gi, "Bearer <密钥>"],
-    [/\b\d{1,3}(\.\d{1,3}){3}\b/g, "<IP>"],
-    [/\b\d{1,3}(\.\d{1,3}){0,2}\.{2,}/g, "<IP>…"], // cut short by a title
-    [/\bsess_\d+\b/g, "sess_<id>"],
+    [/\S+:~\s+\S+\$/g, or("<终端>$", () => synth.terminal())],
+    [/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, or("<邮箱>", (m) => synth.email(m))],
+    [
+      /https?:\/\/[^\s)\]>"'，。“”]+/g,
+      or(
+        (url) => linkLabel(url),
+        (url) => synth.link(url),
+      ),
+    ],
+    [
+      /codex:\/\/threads\/[\w-]+/g,
+      or("codex://threads/<id>", (m) => synth.codex(m)),
+    ],
+    [
+      /\b(sk|pk|ghp|gho|xox[bap])[-_][\w-]{6,}/g,
+      or("<密钥>", (m) => synth.secret(m)),
+    ],
+    [/Bearer\s+[\w.-]+/gi, or("Bearer <密钥>", (m) => synth.bearer(m))],
+    [/\b\d{1,3}(\.\d{1,3}){3}\b/g, or("<IP>", (m) => synth.ip(m))],
+    [/\b\d{1,3}(\.\d{1,3}){0,2}\.{2,}/g, or("<IP>…", () => "192.0…")], // cut short by a title
+    [/\bsess_\d+\b/g, or("sess_<id>", (m) => synth.session(m))],
     [
       /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
-      "<id>",
+      or("<id>", (m) => synth.uuid(m)),
     ],
-    [/\b[0-9a-f]{24,}\b/gi, "<id>"],
-    [/\b\d{12,}[0-9A-Za-z]*\b/g, "<id>"],
-    [/\b(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{24,}\b/g, "<id>"],
+    [/\b[0-9a-f]{24,}\b/gi, or("<id>", (m) => synth.like(m))],
+    [/\b\d{12,}[0-9A-Za-z]*\b/g, or("<id>", (m) => synth.like(m))],
+    [
+      /\b(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{24,}\b/g,
+      or("<id>", (m) => synth.like(m)),
+    ],
     [/(\/data\d*)?\/(home|Users)\/[^/\s]+/g, "~"],
   ];
   const extra = (privateRules || []).map(([pattern, text]) => [
@@ -412,27 +644,38 @@ function makeRedactor(privateRules, accountNames, label) {
     .filter((n) => n && n.length >= 4)
     .map((n) => [
       new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-      "<用户>",
+      or("<用户>", (m) => synth.user(m)),
     ]);
   // `label(kind, name)` gives the pseudonym; `used` collects the ones a text
-  // carries, so the binding check can find them per case.
+  // carries, so the binding check can find them per case. With `synth` the
+  // text carries the pseudonym's stand-in name.
   return (text, used = []) => {
     const tag = (kind, raw) => {
       const name = raw.replace(/\*+/g, "");
       const pseudonym = label(kind, name);
       used.push(pseudonym);
-      return pseudonym;
+      return synth
+        ? synth[kind === "person" ? "person" : "group"](pseudonym)
+        : pseudonym;
     };
+    kept = [];
     let out = text;
     for (const [re, to] of [...shapes, ...extra, ...names])
       out = out.replace(re, to);
+    const people = synth
+      ? new RegExp(`^(人\\d+|${syntheticPeople.join("|")})$`)
+      : /^人\d+$/;
     // People and chats named in quotes: who the person talked to, which group.
     out = out
       .replace(
         /(跟|和|与|给|同)\s*[“”"「]\**([^“”"「」\n]{1,12})[“”"」]/g,
         (m, lead, name) => `${lead}“${tag("person", name)}”`,
       )
-      .replace(/@[^\s@,，。<]{1,20}/g, (m) => `@${tag("person", m.slice(1))}`);
+      .replace(/@[^\s@,，。<]{1,20}/g, (m) =>
+        synth && synth.emitted.has(m.slice(1))
+          ? m
+          : `@${tag("person", m.slice(1))}`,
+      );
     // In a message about Feishu chats, every quoted span names a chat or
     // quotes one: neither is the person's to publish. A person pseudonym
     // from the rule above stays.
@@ -440,12 +683,43 @@ function makeRedactor(privateRules, accountNames, label) {
       out = out.replace(
         /[“”"「]\**([^“”"「」\n]{1,80})\**[“”"」]/g,
         (m, inner) =>
-          /^人\d+$/.test(inner.replace(/\*+/g, ""))
+          people.test(inner.replace(/\*+/g, ""))
             ? m
             : `“${tag("group", inner)}”`,
       );
-    return out.replace(/\n{3,}/g, "\n\n").trim();
+    return out
+      .replace(/\uE000(\d+)\uE001/g, (m, i) => kept[Number(i)])
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   };
+}
+
+// A frozen request's placeholders as realistic stand-ins, for a case whose
+// source the database no longer has in the same words: what the placeholder
+// stood for is gone, so the stand-in is generic of its kind.
+function renderPlaceholders(text, synth) {
+  return text
+    .replace(/<飞书链接>/g, (m) =>
+      synth.link(`https://x.feishu.cn/docx/${text}`),
+    )
+    .replace(/<需求单链接>/g, () => synth.link(`https://meego.x/${text}`))
+    .replace(/<内部链接>|<链接>/g, () =>
+      synth.link(`https://internal.x/${text}`),
+    )
+    .replace(/<([\w.-]+\.[a-z]{2,}) 链接>/g, (m, host) =>
+      synth.link(`https://${host}/`),
+    )
+    .replace(/<内网地址>|<IP>/g, () => synth.ip(text))
+    .replace(/<git 仓库 ([^>]+)>/g, (m, repo) => synth.git(`git@x:${repo}`))
+    .replace(/<邮箱>/g, () => synth.email(text))
+    .replace(/<终端>\$/g, () => synth.terminal())
+    .replace(/<密钥>/g, () => synth.secret(`sk-${text}`))
+    .replace(/<id>/g, () => synth.uuid(text))
+    .replace(/<用户>/g, () => synth.user(text))
+    .replace(/(?<![\p{L}\d])人(\d+)/gu, (m) => synth.person(m))
+    .replace(/(?<![\p{L}\d])群(\d+)/gu, (m) => synth.group(m))
+    .replace(/某人/g, () => synth.person("人1"))
+    .replace(/某群/g, () => synth.group("群1"));
 }
 
 // --- pseudonyms ---------------------------------------------------------------
@@ -493,7 +767,13 @@ function feishuBindingCount(db, kind, name, workspaceId) {
     .get(name, workspaceId).n;
 }
 
-function leakCheck(texts, privateRules, accountNames, deviceLabels) {
+function leakCheck(
+  texts,
+  privateRules,
+  accountNames,
+  deviceLabels,
+  standIns = new Set(),
+) {
   const shapes = [
     [/[\w.+-]+@[\w-]+\.[\w.-]+/, "email"],
     [/https?:\/\//, "link"],
@@ -519,9 +799,16 @@ function leakCheck(texts, privateRules, accountNames, deviceLabels) {
     ]),
   ];
   const hits = [];
-  for (const { where, text } of texts) {
+  // The redactor's own stand-ins are not originals: they are read past.
+  const known = [...standIns].sort((a, b) => b.length - a.length);
+  for (const { where, text: raw } of texts) {
+    let text = raw;
+    for (const standIn of known) text = text.split(standIn).join(" ");
     for (const [re, what] of [...shapes, ...named])
-      if (re.test(text)) hits.push(`${where}: ${what}`);
+      if (re.test(text))
+        hits.push(
+          `${where}: ${what}${process.env.PA_EVAL_BUILD_DEBUG ? ` ${JSON.stringify(text.slice(Math.max(0, text.search(re) - 20), text.search(re) + 60))}` : ""}`,
+        );
   }
   return hits;
 }
@@ -641,9 +928,21 @@ async function main() {
     ]),
   ];
   const pseudonyms = loadPseudonyms(args.pseudonyms);
-  const redact = makeRedactor(privateRules, accountNames, (kind, name) =>
-    pseudonymLabel(pseudonyms, kind, name),
-  );
+  const pseudonymOf = (kind, name) => pseudonymLabel(pseudonyms, kind, name);
+  // Names, computers and files keep the set's first redaction (the refs the
+  // overrides use); what the person wrote is rendered with stand-ins.
+  const redact = makeRedactor(privateRules, accountNames, pseudonymOf);
+  // Whether a public link names something of the person's: a private
+  // pattern or an account name in it.
+  const privatePatterns = [
+    ...privateRules.map(([pattern]) => new RegExp(pattern, "i")),
+    ...accountNames
+      .filter((n) => n && n.length >= 4)
+      .map((n) => new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")),
+  ];
+  const privateText = (text) => privatePatterns.some((re) => re.test(text));
+  const synth = makeSynth(privateText);
+  let render = makeRedactor(privateRules, accountNames, pseudonymOf, synth);
 
   // Computer aliases: the private map first, then the label itself when it
   // carries nothing personal.
@@ -659,6 +958,23 @@ async function main() {
     aliasOf.set(label, alias);
   }
   const ref = (p) => `${redact(p.name)}@${aliasOf.get(p.deviceLabel)}`;
+  // A computer named in what the person wrote is named by its alias.
+  const renamed = [...aliasOf]
+    .filter(([label, alias]) => label !== alias)
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([label, alias]) => [
+      new RegExp(
+        `\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b(?!-)`,
+        "gi",
+      ),
+      alias,
+    ]);
+  const renderWords = render;
+  render = (text, used) =>
+    renamed.reduce(
+      (t, [re, alias]) => t.replace(re, alias),
+      renderWords(text, used),
+    );
   const byRef = new Map(projects.map((p) => [ref(p), p]));
   if (byRef.size !== projects.length)
     throw new Error(
@@ -671,7 +987,7 @@ async function main() {
   for (const item of readFirstMessages(db, person.id, projectIds).sort((a, b) =>
     a.at.localeCompare(b.at),
   )) {
-    const text = item.raw ? item.text : cleanText(item.text);
+    const text = cleanText(item.text);
     if (!meaningful(text)) continue;
     const key = `${item.workspaceId}:${normalize(text)}`;
     const keyAny = normalize(text).slice(0, 24);
@@ -679,7 +995,7 @@ async function main() {
     seen.add(key);
     seen.add(keyAny);
     const used = [];
-    const request = redact(text, used).slice(0, 400);
+    const request = cut(render(text, used), maxRequestChars);
     // Only pseudonyms the stored request still carries (the cut is at 400).
     const carried = [...new Set(used)].filter((label) =>
       new RegExp(`${label}(?!\\d)`).test(request),
@@ -724,9 +1040,33 @@ async function main() {
         request: c.request,
         pseudonyms: [],
         frozen: true,
+        unanswerable: Boolean(c["unanswerable-as-redacted"]),
       }));
+    // The frozen request is the source message in the set's first wording.
+    // Where the database still has that message (its first wording is the
+    // frozen request), the request is worded again from it with stand-ins,
+    // its pasted text and up to maxRequestChars; otherwise the frozen
+    // request's placeholders become generic stand-ins of their kind.
+    const sources = sourceTexts(db, selected);
+    const reworded = { source: 0, placeholders: 0, unchanged: 0 };
+    for (const c of selected) {
+      const raw = sources.get(c.id);
+      const first =
+        raw === undefined ? null : cleanText(raw, { pasted: false });
+      let legacy =
+        first === null ? null : redact(first).slice(0, legacyRequestChars);
+      if (legacy !== null && c.unanswerable) legacy = genericWording(legacy);
+      if (legacy !== null && legacy === c.request) {
+        c.request = cut(render(cleanText(raw)), maxRequestChars);
+        reworded.source++;
+      } else {
+        const rendered = renderPlaceholders(c.request, synth);
+        reworded[rendered === c.request ? "unchanged" : "placeholders"]++;
+        c.request = rendered;
+      }
+    }
     console.log(
-      `pa-eval-build: ${selected.length} real cases taken from the frozen record`,
+      `pa-eval-build: ${selected.length} real cases taken from the frozen record; worded from their source ${reworded.source}, placeholders replaced ${reworded.placeholders}, unchanged ${reworded.unchanged}`,
     );
   } else {
     for (const list of perProject.values()) {
@@ -863,6 +1203,24 @@ async function main() {
       ...(o.policy ? { policy: true } : {}),
     });
   }
+  // An image the person sent is a synthetic picture of the same kind, made
+  // for the set (<out>/images/<case id>.png): the case sends it as an
+  // attachment instead of the "[图片]" marker. Without one the marker stays.
+  const withoutImage = [];
+  for (const c of cases) {
+    if (!c.request.includes("[图片]")) continue;
+    const image = `images/${c.id}.png`;
+    if (!existsSync(resolve(args.out, image))) {
+      withoutImage.push(c.id);
+      continue;
+    }
+    c.request = c.request.replace(/\[图片\]\s*/g, "").trim();
+    c.attachments = [image];
+  }
+  if (withoutImage.length)
+    console.warn(
+      `pa-eval-build: no synthetic image for ${withoutImage.join(", ")} (add ${args.out}/images/<id>.png)`,
+    );
   cases.sort((a, b) => a.id.localeCompare(b.id));
   const ids = new Set();
   for (const c of cases) {
@@ -913,7 +1271,70 @@ async function main() {
 
   // The index is the frozen one: the database has moved on since the set was
   // measured (project files, chat titles), and the assistant reads this index.
-  if (pinned) index = pinned.index;
+  if (pinned)
+    index = {
+      ...pinned.index,
+      projects: pinned.index.projects.map((p) => ({ ...p })),
+    };
+  // The names the fixture shows (a placeholder in a project's name or files
+  // becomes a stand-in); `ref` and `name` stay what the overrides use.
+  for (const p of index.projects) {
+    p.displayName = renderPlaceholders(p.name, synth);
+    p.files = p.files.map((f) => renderPlaceholders(f, synth));
+  }
+
+  // What a production digest of each project is built from, for the seed to
+  // write as the project's own chats (pa-eval-fixture.mjs): every chat and
+  // session the person started there, with its time, title and first
+  // message, worded with stand-ins, eval cases' own chats left out; and the
+  // intro the server read from its instruction file. The run keeps only
+  // what came before a case's week.
+  const historyOf = new Map();
+  for (const item of readFirstMessages(db, person.id, projectIds)) {
+    if (holdout.has(item.id) || !item.at) continue;
+    const text = cleanText(item.text);
+    const title = item.title && cleanText(item.title);
+    if (text === null && !title) continue;
+    const list = historyOf.get(item.workspaceId) || [];
+    list.push({
+      at: item.at,
+      title: title ? cut(render(title).replace(/\s+/g, " "), 80) : "",
+      request: text ? cut(render(text), maxHistoryChars) : "",
+    });
+    historyOf.set(item.workspaceId, list);
+  }
+  const intros = new Map(
+    db
+      .prepare(
+        "SELECT workspace_id, intro FROM workspace_digests WHERE user_id = ?",
+      )
+      .all(person.id)
+      .map((r) => [r.workspace_id, r.intro]),
+  );
+  // The model profiles each computer could run a helper on (healthy in the
+  // dev database): the fixture computers offer the same ones.
+  const healthy = db
+    .prepare(
+      "SELECT id, device_id FROM agent_profiles WHERE status = 'healthy'",
+    )
+    .all();
+  index.computers = {};
+  for (const p of projects) {
+    const alias = aliasOf.get(p.deviceLabel);
+    index.computers[alias] = {
+      profiles: [
+        ...new Set(
+          healthy.filter((h) => h.device_id === p.deviceId).map((h) => h.id),
+        ),
+      ].sort(),
+    };
+  }
+  for (const p of index.projects) {
+    p.intro = render(intros.get(p.workspaceId) || "");
+    p.history = (historyOf.get(p.workspaceId) || []).sort((a, b) =>
+      b.at.localeCompare(a.at),
+    );
+  }
 
   const texts = [
     ...cases.map((c) => ({
@@ -925,14 +1346,21 @@ async function main() {
     ),
     ...index.projects.map((p) => ({
       where: `project ${p.ref}`,
-      text: `${p.ref} ${p.files.join(" ")}`,
+      text: `${p.ref} ${p.files.join(" ")} ${p.intro}`,
     })),
+    ...index.projects.flatMap((p) =>
+      p.history.map((h) => ({
+        where: `history ${p.ref} ${h.at}`,
+        text: `${h.title} ${h.request}`,
+      })),
+    ),
   ];
   const leaks = leakCheck(
     texts,
     privateRules,
     accountNames,
     deviceLabels.filter((l) => aliasOf.get(l) !== l),
+    synth.emitted,
   );
   if (leaks.length) {
     console.error(
