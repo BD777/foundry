@@ -16,17 +16,28 @@
 //                      wrong dispatches when it went ahead, asking on ambiguous
 //                      requests, needless questions, "should create" precision
 //                      and recall, wrong creations, banned words, latency and
-//                      cost. Helpers it starts are cancelled at once, and
-//                      projects it created and what it remembered are undone
-//                      after each case. The copy's projects sit on
-//                      fixture computers, online with a stand-in runtime (the
-//                      fake Claude CLI, one Worker each): a dispatch is a real
-//                      session. The decision is a dispatch tool call or an ask;
-//                      a reply naming a project is a diagnostic only. The worker runs in bubblewrap (home
-//                      read-only, keys hidden): the assistant is a real agent
-//                      on this computer. --judge
-//                      adds one read-only Foundry session that rates whether
-//                      each reply is plain, human language.
+//                      cost. The copy's projects sit on fixture computers,
+//                      online with a stand-in runtime (the fake Claude CLI,
+//                      one Worker each): a dispatch is a real session, and its
+//                      helper stays at work until the assistant's turn is over,
+//                      then it is cancelled. Each project's folder is there
+//                      with its files and instruction file, and its chats are
+//                      the person's from before the case's week
+//                      (pa-eval-fixture.mjs): cases run grouped by that cutoff,
+//                      and between groups the server restarts on the moved
+//                      history and summarizes the changed projects as
+//                      production does. Setup fails when any project is not
+//                      open on its computer. After each case, projects it
+//                      created (a failed removal fails the case), its list
+//                      items, scheduled work, memory, rules and the assistant's
+//                      own files are undone. The decision is a dispatch tool
+//                      call or an ask; a reply naming a project is a
+//                      diagnostic only. Every Worker runs sandboxed
+//                      (pa-eval-sandbox.mjs): its own minimal root and network,
+//                      nothing of this computer's files or services. A judge
+//                      (one read-only Foundry session; --no-judge leaves it
+//                      out) rates whether each reply is plain and whether it
+//                      asks; its reading, not a question mark, scores asking.
 //   --scenario a1a2    acceptance A1 and A2 with a real model, for a fresh
 //                      account whose only project is the assistant's own: "make
 //                      a small web page for family spending" must create a
@@ -53,7 +64,7 @@
 // its dispatched workspace is the routing answer.
 //
 // usage: node scripts/pa-eval-run.mjs --stack-dir DIR [--e2e] [--sample N]
-//          [--only id,id] [--judge] [--instance NAME] [--reuse] [--keep]
+//          [--only id,id] [--no-judge] [--instance NAME] [--reuse] [--keep]
 //          [--profile ID[,model[,effort]]] [--max-cost-usd N]
 //          [--user USERNAME] [--provider claude|codex] [--model M]
 //          [--worker-home scratch|real] [--case-timeout-s N] [--eval DIR]
@@ -65,16 +76,21 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
+import { DatabaseSync } from "node:sqlite";
 import { homedir, tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
@@ -91,6 +107,22 @@ import {
   hostConnectorProfile,
   startConnectionRelay,
 } from "./pa-eval-connection-relay.mjs";
+import {
+  NetBridge,
+  nodeInstall,
+  runToEnd,
+  runtimeOf,
+  sandboxCommand,
+} from "./pa-eval-sandbox.mjs";
+import {
+  applyHistory,
+  cutoffGroups,
+  exportDigests,
+  importDigests,
+  markPresence,
+  restorePresence,
+  writeRegistry,
+} from "./pa-eval-fixture.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -158,7 +190,10 @@ function parseArgs(argv) {
     e2e: false,
     sample: 24,
     only: [],
-    judge: false,
+    // The judge reads whether a reply asks (a question mark does not):
+    // on by default, --no-judge to leave it out.
+    judge: true,
+    presence: true,
     instance: "pa-eval",
     reuse: false,
     keep: false,
@@ -201,6 +236,12 @@ function parseArgs(argv) {
       case "--judge":
         args.judge = true;
         break;
+      case "--no-judge":
+        args.judge = false;
+        break;
+      case "--no-presence":
+        args.presence = false;
+        break;
       case "--instance":
         args.instance = value();
         break;
@@ -240,6 +281,22 @@ function parseArgs(argv) {
       case "--case-timeout-s":
         args.caseTimeoutS = Number(value());
         break;
+      case "--digest-cache":
+        args.digestCache = resolve(value());
+        break;
+      case "--prepare-digests":
+        args.prepareCutoff = value();
+        break;
+      case "--units": {
+        // [{ "id": case id, "repeat": k }, ...]
+        const units = JSON.parse(readFileSync(resolve(value()), "utf8"));
+        args.units = new Set(units.map((u) => journalKey(u.repeat, u.id)));
+        args.unitIds = new Set(units.map((u) => u.id));
+        if (units.every((u) => u.cutoff))
+          args.unitCutoffs = new Map(units.map((u) => [u.id, u.cutoff]));
+        args.repeat = Math.max(args.repeat, ...units.map((u) => u.repeat));
+        break;
+      }
       case "--resume":
         args.resume = value();
         break;
@@ -279,14 +336,17 @@ function parseArgs(argv) {
     throw new Error("--worker-home is scratch or real");
   if (args.scenario && !["a1a2", "plans"].includes(args.scenario))
     throw new Error("--scenario is a1a2 or plans");
-  if (!args.e2e && !args.scenario)
+  if (args.prepareCutoff && !args.digestCache)
+    throw new Error("--prepare-digests needs --digest-cache");
+  if (!args.e2e && !args.scenario && !args.prepareCutoff)
     throw new Error(
       "nothing to run: routing accuracy needs --e2e (or use --scenario)",
     );
   return args;
 }
 
-const log = (...parts) => console.error("pa-eval:", ...parts);
+const log = (...parts) =>
+  console.error(`pa-eval ${new Date().toISOString().slice(11, 19)}:`, ...parts);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hash = (s) => createHash("sha1").update(s).digest("hex");
 
@@ -358,10 +418,12 @@ class Stack {
     ).trim();
   }
 
+  // A restart keeps the port: the Workers keep the server URL they paired with.
   async up() {
     this.load();
     this.down();
-    const port = await freePort();
+    const port = this.port || (await freePort());
+    this.port = port;
     this.url = `http://127.0.0.1:${port}`;
     log(`starting ${this.bin} on ${this.url}`);
     mkdirSync(resolve(this.dir, "logs"), { recursive: true });
@@ -618,8 +680,40 @@ class Worker {
     );
     this.pidFile = resolve(stack.evalDir, `${name}.pid`);
     this.logPath = resolve(stack.evalDir, `${name}.log`);
-    // Run the runtime under the sandbox even without the person's logins.
-    this.sandboxed = false;
+    // The computer's name inside its sandbox (pa-eval-sandbox.mjs): the
+    // device label the server learns at pairing, never this host's.
+    this.hostname = "home-server";
+    this.claude = workerHome === "real" ? "" : hostClaude();
+  }
+
+  // The sandboxed command (pa-eval-sandbox.mjs) for `node <cli> ...argv`:
+  // its own minimal root and network, the stack's server bridged in.
+  sandboxed(argv) {
+    this.net ||= new NetBridge(this.stack.evalDir, this.name);
+    this.net.forward(this.stack.port);
+    const {
+      argv: wrap,
+      env,
+      cli,
+    } = sandboxCommand({
+      root: this.stack.evalDir,
+      hostname: this.hostname,
+      net: this.net,
+      node: nodeInstall(),
+      runtime: runtimeOf(this.cli),
+      claude: this.claude,
+      cli: this.cli,
+      loginDirs: this.realLogins
+        ? [
+            process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), ".claude"),
+            ...(this.provider === "codex"
+              ? [process.env.CODEX_HOME || resolve(homedir(), ".codex")]
+              : []),
+          ]
+        : [],
+    });
+    this.insideCli = cli;
+    return { argv: [...wrap, "/opt/node/bin/node", cli, ...argv], env };
   }
 
   // Only what the harness sets reaches the worker: the caller's session
@@ -630,9 +724,7 @@ class Worker {
   env({ logins }) {
     const inherited = Object.fromEntries(
       Object.entries(process.env).filter(
-        ([k]) =>
-          ["PATH", "USER", "LOGNAME", "LANG", "TZ"].includes(k) ||
-          k.startsWith("LC_"),
+        ([k]) => ["LANG", "TZ"].includes(k) || k.startsWith("LC_"),
       ),
     );
     // Tools and the npm cache are one shared folder per stack: a Worker's home
@@ -651,8 +743,14 @@ class Worker {
       FOUNDRY_STACK: `scratch-${this.stack.name}`,
       // Each case is one turn: an idle runtime kept for the default 15
       // minutes is only memory (a few hundred MB each, several per case).
-      FOUNDRY_ACTIVE_RUNTIME_TTL_MS: "15000",
+      // An idle runtime holds its model connection (a gateway slot): with
+      // PA_EVAL_HELPER_SLOTS set (a parallel run) it lets go at once.
+      FOUNDRY_ACTIVE_RUNTIME_TTL_MS: process.env.PA_EVAL_HELPER_SLOTS
+        ? "1000"
+        : "15000",
       HOME: this.home,
+      USER: "pa",
+      LOGNAME: "pa",
     };
     // Only the run's own provider's login: another one on the device would
     // be the person's account serving the assistant's upkeep.
@@ -680,18 +778,17 @@ class Worker {
     mkdirSync(this.stateRoot, { recursive: true, mode: 0o700 });
     const before = new Set((await client.get("/api/devices")).map((d) => d.id));
     const { token } = await client.post("/api/devices/pairing-tokens");
-    const result = spawnSync(
-      "node",
-      [
-        this.cli,
-        "setup",
-        "--server",
-        this.stack.url,
-        `--token=${token}`,
-        "--no-service",
-      ],
-      { encoding: "utf8", env: this.env({ logins: false }) },
-    );
+    const { argv, env } = this.sandboxed([
+      "setup",
+      "--server",
+      this.stack.url,
+      `--token=${token}`,
+      "--no-service",
+    ]);
+    const result = await runToEnd(argv, {
+      ...this.env({ logins: false }),
+      ...env,
+    });
     if (result.status !== 0)
       throw new SetupError(
         `worker setup failed: ${result.stderr || result.stdout}`,
@@ -711,6 +808,12 @@ class Worker {
   async start({ logins }) {
     await this.stop();
     this.logins = logins;
+    // This computer's egress (its Worker's proxy setting), as the person's
+    // computer has it: a model connection's helper sends its onward traffic
+    // through it. Only the assistant's computer talks to a model.
+    const egress = resolve(homedir(), ".foundry/worker-proxy.json");
+    if (this.hostEgress && existsSync(egress))
+      copyFileSync(egress, resolve(this.stateRoot, "worker-proxy.json"));
     // A connector-provided --profile (pa-eval-connection-relay.mjs).
     if (this.deviceProfiles)
       writeFileSync(
@@ -719,18 +822,9 @@ class Worker {
         { mode: 0o600 },
       );
     const logFile = openSync(this.logPath, "a");
-    const command = ["node", this.cli, "connect"];
-    const [file, ...argv] =
-      logins || this.sandboxed
-        ? [
-            ...sandbox(this.provider, this.cli, this.realLogins, [
-              this.stack.evalDir,
-            ]),
-            ...command,
-          ]
-        : command;
-    const child = spawn(file, argv, {
-      env: this.env({ logins }),
+    const { argv, env } = this.sandboxed(["connect"]);
+    const child = spawn(argv[0], argv.slice(1), {
+      env: { ...this.env({ logins }), ...env },
       stdio: ["ignore", logFile, logFile],
       detached: true,
     });
@@ -745,14 +839,15 @@ class Worker {
       (existsSync(this.pidFile)
         ? Number(readFileSync(this.pidFile, "utf8"))
         : 0);
-    if (!pid || !isOurs(pid, this.cli)) return;
+    const cli = this.insideCli || this.cli;
+    if (!pid || !isOurs(pid, cli)) return;
     try {
       process.kill(pid, "SIGTERM");
     } catch {
       return;
     }
-    for (let i = 0; i < 40 && isOurs(pid, this.cli); i++) await sleep(250);
-    if (isOurs(pid, this.cli)) process.kill(pid, "SIGKILL");
+    for (let i = 0; i < 40 && isOurs(pid, cli); i++) await sleep(250);
+    if (isOurs(pid, cli)) process.kill(pid, "SIGKILL");
     this.pid = 0;
   }
 
@@ -785,7 +880,8 @@ class FixtureWorker extends Worker {
     this.computer = computer;
     this.deviceId = deviceId;
     this.realLogins = false;
-    this.sandboxed = true;
+    this.hostname = computer;
+    this.claude = "";
     this.fakeClaude = resolve(stack.evalDir, "fixtures/claude");
   }
 
@@ -816,13 +912,65 @@ class FixtureWorker extends Worker {
   }
 }
 
+// The stand-in for a connection helper on a fixture computer: it answers the
+// request with nothing to set and stays until released.
+const connectionStubSource = `#!/usr/bin/env node
+let buffer = "";
+let answered = false;
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  const newline = buffer.indexOf("\\n");
+  if (answered || newline < 0) return;
+  answered = true;
+  const request = JSON.parse(buffer.slice(0, newline));
+  process.stdout.write(
+    JSON.stringify({
+      protocol: "foundry.connection.v1",
+      identity: request.identity,
+      environment: { set: {}, unset: [] },
+    }) + "\\n",
+  );
+});
+process.stdin.on("end", () => process.exit(0));
+`;
+
 // Pairs and starts every computer of the fixture, then waits until each shows
 // as connected. The fake CLI is copied into the stack, never run from the repo.
 async function startFixtureWorkers(client, stack, index) {
+  // The fake CLI holds every turn (FAKE_CLAUDE_HOLD): a helper the
+  // assistant starts is still at work when its turn ends, as a real one is,
+  // and is cancelled only after that turn.
   const fixtureDir = resolve(stack.evalDir, "fixtures");
   mkdirSync(fixtureDir, { recursive: true, mode: 0o700 });
-  copyFileSync(fakeClaudeSource, resolve(fixtureDir, "claude"));
+  copyFileSync(fakeClaudeSource, resolve(fixtureDir, "fake-claude-code.cjs"));
+  writeFileSync(
+    resolve(fixtureDir, "claude"),
+    '#!/usr/bin/env node\nprocess.env.FAKE_CLAUDE_HOLD = "1";\nrequire("./fake-claude-code.cjs");\n',
+  );
   chmodSync(resolve(fixtureDir, "claude"), 0o755);
+  // A connector-provided profile the person's computer has (index.computers)
+  // is on the fixture computer too, with the same id and identity; its
+  // helper is a stub that prepares nothing (the CLI is the fake one).
+  const stub = resolve(fixtureDir, "connection-stub.cjs");
+  writeFileSync(stub, connectionStubSource, { mode: 0o700 });
+  const stubProfiles = (computer) =>
+    (index.computers?.[computer]?.profiles || [])
+      .map((id) => hostConnectorProfile(id))
+      .filter(Boolean)
+      .map((p) => ({
+        id: p.id,
+        label: p.label,
+        runtime: p.runtime,
+        connectionType: "external",
+        model: p.model,
+        models: p.models,
+        externalConnection: {
+          executable: stub,
+          args: [],
+          identity: p.externalConnection.identity,
+        },
+      }));
   const ids = new Map(
     (await client.get("/api/devices")).map((d) => [d.label, d.id]),
   );
@@ -839,12 +987,33 @@ async function startFixtureWorkers(client, stack, index) {
       `fixture-${i + 1}`,
     );
     await fixture.pair(client);
+    const profiles = stubProfiles(computer);
+    if (profiles.length) fixture.deviceProfiles = profiles;
+    // The computer serves its projects (their folders are under the run
+    // folder, registered as `foundry-worker init` would).
+    writeRegistry(
+      fixture.stateRoot,
+      stack.dir,
+      index.projects.filter((p) => p.computer === computer),
+    );
     await fixture.start({ logins: false });
     activeWorkers.add(fixture);
     fixtures.push(fixture);
   }
   for (const fixture of fixtures)
     await fixture.waitConnected(client, fixture.deviceId, true);
+  // Checked, as the person's were, so a helper may run on them.
+  for (const fixture of fixtures)
+    for (const profile of fixture.deviceProfiles || []) {
+      const check = await client.post(
+        `/api/devices/${encodeURIComponent(fixture.deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
+        {},
+      );
+      if (check?.status !== "passed")
+        throw new SetupError(
+          `${profile.id} on ${fixture.computer}: check did not pass: ${check?.message || check?.status || "no result"}`,
+        );
+    }
   fixtureWorkers.splice(0, fixtureWorkers.length, ...fixtures);
   sampleFixtureMemory();
   log(
@@ -927,126 +1096,76 @@ function sampleFixtureMemory() {
   }));
 }
 
-// With a model, the assistant is a full agent on this computer, which is
-// the person's own, not a fixture: real requests ("update feishu-cli and
-// install its skills") would really run. The worker and everything it starts
-// see the whole host read-only (--ro-bind / /), with a private /dev, /proc and
-// /tmp and their own process view (--unshare-pid). They can write only to
-// `writable` (the run's own folder: the Worker's state, home and fixture
-// workspaces) and, with a real login, to that login's config folder. Keys and
-// tokens under the person's home are hidden (tmpfs). `--sandbox-check` proves
-// this from inside. Setuid programs (sudo) do not work inside.
-function sandbox(provider, cli, realLogins = true, writable = []) {
-  const bwrap = ["/usr/bin/bwrap", "/bin/bwrap"].find((p) => existsSync(p));
-  if (!bwrap)
-    throw new SetupError(
-      "bubblewrap (bwrap) is needed to run the assistant with a model here without letting it change this computer",
-    );
-  const home = homedir();
-  const at = (...parts) => resolve(home, ...parts);
-  const args = [
-    bwrap,
-    "--ro-bind",
-    "/",
-    "/",
-    "--dev",
-    "/dev",
-    "--proc",
-    "/proc",
-    "--tmpfs",
-    "/tmp",
-  ];
-  const loginDirs = realLogins
-    ? [
-        process.env.CLAUDE_CONFIG_DIR || at(".claude"),
-        ...(provider === "codex"
-          ? [process.env.CODEX_HOME || at(".codex")]
-          : []),
-      ]
-    : [];
-  // After the tmpfs /tmp, so a run root under /tmp stays visible.
-  for (const dir of loginDirs)
-    if (existsSync(dir)) args.push("--bind", dir, dir);
-  // A login's config folder is writable as a whole; the files the person
-  // owns in it come back read-only. Without a login the folder is hidden.
-  if (realLogins) {
-    const claude = process.env.CLAUDE_CONFIG_DIR || at(".claude");
-    for (const name of [
-      "CLAUDE.md",
-      "settings.json",
-      "settings.local.json",
-      "skills",
-      "rules",
-      "notes",
-      "commands",
-      "hooks",
-      "agents",
-      "plugins",
-    ]) {
-      const path = resolve(claude, name);
-      if (existsSync(path)) args.push("--ro-bind", path, path);
-    }
+// The Claude CLI the assistant's computer gets (/opt/bin/claude in its
+// sandbox): PA_EVAL_CLAUDE_BIN, else the one on this computer's PATH.
+function hostClaude() {
+  const named = process.env.PA_EVAL_CLAUDE_BIN;
+  if (named) return realpathSync(named);
+  for (const dir of (process.env.PATH || "").split(":")) {
+    const path = resolve(dir || ".", "claude");
+    if (existsSync(path)) return realpathSync(path);
   }
-  for (const secret of [
-    ...(realLogins ? [] : [".claude", ".codex"]),
-    ".ssh",
-    ".foundry",
-    ".feishu-cli",
-    ".lark-cli",
-    ".config/gh",
-    ".docker",
-    ".aws",
-    ".kube",
-    ".gnupg",
-  ]) {
-    const path = at(secret);
-    if (existsSync(path)) args.push("--tmpfs", path);
-  }
-  // The installed Worker lives under the hidden ~/.foundry: its runtime
-  // folder comes back read-only, nothing else of it.
-  const runtime = resolve(cli, "../../../../..");
-  if (runtime.startsWith(at(".foundry") + "/"))
-    args.push("--ro-bind", runtime, runtime);
-  // Last, so the run folder stays writable where a hidden folder (a
-  // tmpfs over ~/.foundry) covers its real path.
-  for (const dir of writable)
-    if (existsSync(dir)) args.push("--bind", dir, dir);
-  args.push("--unshare-pid", "--proc", "/proc", "--die-with-parent", "--");
-  return args;
+  throw new SetupError("no Claude CLI on PATH (set PA_EVAL_CLAUDE_BIN)");
 }
 
-// --sandbox-check: the sandbox proven from inside. A write under the run's own
-// folder succeeds; writes to /var/tmp, to the home directory and to /etc fail;
-// the process list is the sandbox's own (--unshare-pid). Exit 0 when all hold.
-function sandboxCheck() {
-  const root = mkdtempSync(
-    resolve(process.env.TMPDIR || tmpdir(), "pa-eval-sandbox-"),
-  );
-  const probes = [
-    "/var/tmp/pa-eval-sandbox-probe",
-    resolve(homedir(), "pa-eval-sandbox-probe"),
-    "/etc/pa-eval-sandbox-probe",
-  ];
+// --sandbox-check: an eval computer's sandbox (pa-eval-sandbox.mjs) proven
+// from inside. A write under the run folder succeeds; writes to /var/tmp and
+// /etc fail; this host's home and /home are not there; the host name is the
+// fixture's; a port this host listens on is unreachable unless bridged, and
+// a bridged one answers; the process list is the sandbox's own. Exit 0 when
+// all hold.
+async function sandboxCheck() {
+  const root = mkdtempSync(resolve("/tmp", "pa-eval-sandbox-"));
+  const listen = () =>
+    new Promise((done) => {
+      const server = createServer((s) => s.end("pong\n"));
+      server.listen(0, "127.0.0.1", () => done(server));
+    });
+  const [open, bridged] = [await listen(), await listen()];
+  const net = new NetBridge(root, "check");
+  net.forward(bridged.address().port);
+  const probe = (port) =>
+    `node -e 'require("net").connect(${port},"127.0.0.1").on("data",d=>{console.log("PORT_${port}_"+String(d).trim());process.exit(0)}).on("error",()=>{console.log("PORT_${port}_closed");process.exit(0)})'`;
   const script = [
     `echo x > '${resolve(root, "inside-probe")}' && echo INSIDE_WRITE_OK`,
-    ...probes.map(
+    ...["/var/tmp/pa-eval-sandbox-probe", "/etc/pa-eval-sandbox-probe"].map(
       (p) => `(echo x > '${p}') 2>/dev/null && echo 'OUTSIDE_WRITE ${p}'`,
     ),
+    `[ -e '${homedir()}' ] && echo HOST_HOME_VISIBLE`,
+    `[ -n "$(ls -A /home 2>/dev/null)" ] && echo HOME_LISTED`,
+    'echo "HOSTNAME $(cat /proc/sys/kernel/hostname)"',
+    probe(open.address().port),
+    probe(bridged.address().port),
     'echo "PROCESSES $(ls /proc | grep -c "^[0-9]")"',
   ].join("; ");
   try {
-    const [file, ...argv] = [
-      ...sandbox("claude", "/nonexistent/cli.js", false, [root]),
-      "sh",
-      "-c",
-      script,
-    ];
-    const result = spawnSync(file, argv, { encoding: "utf8", timeout: 30000 });
+    const { argv, env } = sandboxCommand({
+      root,
+      hostname: "pa-check",
+      net,
+      node: nodeInstall(),
+      cli: "",
+    });
+    const result = await runToEnd([...argv, "/bin/sh", "-c", script], {
+      ...env,
+      HOME: root,
+    });
     const out = result.stdout || "";
     const processes = Number(/PROCESSES (\d+)/.exec(out)?.[1] ?? NaN);
     const checks = [
       ["write inside the run folder succeeds", out.includes("INSIDE_WRITE_OK")],
       ["no write outside the run folder", !out.includes("OUTSIDE_WRITE")],
+      ["this host's home is not there", !out.includes("HOST_HOME_VISIBLE")],
+      ["/home lists nothing", !out.includes("HOME_LISTED")],
+      ["the host name is the fixture's", out.includes("HOSTNAME pa-check")],
+      [
+        "a port of this host is unreachable",
+        out.includes(`PORT_${open.address().port}_closed`),
+      ],
+      [
+        "a bridged port answers",
+        out.includes(`PORT_${bridged.address().port}_pong`),
+      ],
       ["own process view (--unshare-pid)", processes > 0 && processes < 30],
     ];
     for (const [name, pass] of checks)
@@ -1054,6 +1173,9 @@ function sandboxCheck() {
     if (!checks.every(([, pass]) => pass)) console.log(out, result.stderr);
     return checks.every(([, pass]) => pass) ? 0 : 1;
   } finally {
+    net.stop();
+    open.close();
+    bridged.close();
     rmSync(root, { recursive: true, force: true });
   }
 }
@@ -1141,11 +1263,12 @@ async function startAssistantSession(client, agent, provider, model, prompt) {
 // assistant's conversation and records the session on it (entry.sessionId);
 // the per-turn context (the Now line and the receipt) is added on that path
 // (instructions.go). The model is the assistant's run default (--profile).
-async function captureInboxTurn(client, text, timeoutMs) {
+async function captureInboxTurn(client, text, timeoutMs, attachments = []) {
   const messageId = randomUUID();
   let entry = await client.post("/api/personal-agent/inbox", {
     text,
     messageId,
+    ...(attachments.length ? { attachments } : {}),
   });
   const until = Date.now() + timeoutMs;
   while (!entry.sessionId) {
@@ -1239,10 +1362,20 @@ async function workerAndAssistant(client, worker, logins) {
   // (Check in the device's model settings): one short turn through it.
   if (worker.deviceProfiles)
     for (const profile of worker.deviceProfiles) {
-      const check = await client.post(
-        `/api/devices/${encodeURIComponent(deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
-        {},
-      );
+      // A busy gateway (other stacks of a parallel run) may answer late:
+      // the check is tried up to four times.
+      let check;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        check = await client.post(
+          `/api/devices/${encodeURIComponent(deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
+          {},
+        );
+        if (check?.status === "passed") break;
+        log(
+          `${profile.id} check ${attempt}/4: ${check?.message || check?.status}`,
+        );
+        await sleep(20_000);
+      }
       if (check?.status !== "passed")
         throw new SetupError(
           `${profile.id} check did not pass: ${check?.message || check?.status || "no result"}`,
@@ -1344,29 +1477,43 @@ function bannedIn(reply, request) {
     .map(([term]) => term);
 }
 
-async function e2eRun(
-  client,
-  worker,
-  agent,
-  deviceId,
-  sample,
-  args,
-  names,
-  repeat = 1,
-) {
-  // A restart would orphan the project summaries the setup just started.
-  if (!worker.pid || !worker.logins) await worker.start({ logins: true });
-  await worker.waitConnected(client, deviceId, true);
-  const knownWorkspaces = new Set(
-    (await client.get("/api/workspaces")).map((w) => w.id),
-  );
-  const baseline = (await client.get("/api/personal-agent"))?.agent?.settings;
+// The state each case starts from, taken once the assistant is set up: the
+// projects there are, the assistant's rules, its list and its own files.
+async function caseBaseline(client, agent, stack) {
+  const workspaces = await client.get("/api/workspaces");
+  const own = workspaces.find((w) => w.id === agent.workspaceId);
+  const folder = own?.localPath || "";
+  const copy = resolve(stack.evalDir, "assistant-baseline");
+  rmSync(copy, { recursive: true, force: true });
+  if (folder && existsSync(folder))
+    cpSync(folder, copy, {
+      recursive: true,
+      filter: (src) => !isServerWritten(folder, src),
+    });
+  else
+    log(`the assistant's folder ${folder || "(none)"} is not on this computer`);
+  return {
+    knownWorkspaces: new Set(workspaces.map((w) => w.id)),
+    settings: (await client.get("/api/personal-agent"))?.agent?.settings,
+    items: await itemIds(client),
+    folder,
+    copy,
+  };
+}
+
+// What the server writes into the assistant's folder for each turn (its
+// project files) is the server's: the reset leaves it.
+const isServerWritten = (folder, path) =>
+  path === resolve(folder, ".foundry") ||
+  path.startsWith(resolve(folder, ".foundry") + "/");
+
+// Every project the assistant can route to, as a reply may name it. The
+// mention diagnostic reads these; the decision never does.
+async function routableProjects(client, agent) {
   const devices = new Map(
     (await client.get("/api/devices")).map((d) => [d.id, d]),
   );
-  // Every project the assistant can route to, as a reply may name it. The
-  // mention diagnostic reads these; the decision never does.
-  const projects = (await client.get("/api/workspaces"))
+  return (await client.get("/api/workspaces"))
     .filter((w) => w.id !== agent.workspaceId)
     .map((w) => {
       const device = w.deviceLabel || devices.get(w.deviceId)?.label || "";
@@ -1377,13 +1524,59 @@ async function e2eRun(
         ref: device ? `${w.name}@${device}` : "",
       };
     });
-  summaries.push(...(await waitForSummaries(client, agent, worker.stack)));
-  const summaryCost = summaries.reduce((t, x) => t + x.costUsd, 0);
-  log(`project summaries: ${summaries.length}, $${summaryCost.toFixed(2)}`);
+}
+
+// A case's attachments (synthetic images of the set), uploaded into the
+// assistant's workspace as the web's composer does (POST /api/attachments).
+async function uploadAttachments(client, agent, c, evalDir) {
+  if (!c.attachments?.length) return [];
+  const body = new FormData();
+  body.set("workspaceId", agent.workspaceId);
+  for (const path of c.attachments) {
+    const file = resolve(evalDir, path);
+    body.append(
+      "files",
+      new Blob([readFileSync(file)], {
+        type: /\.png$/i.test(path) ? "image/png" : "application/octet-stream",
+      }),
+      path.split("/").pop(),
+    );
+  }
+  const response = await fetch(`${client.base}/api/attachments`, {
+    method: "POST",
+    headers: {
+      Origin: client.base,
+      Cookie: client.cookie,
+      "Idempotency-Key": randomBytes(12).toString("hex"),
+    },
+    body,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(data))
+    throw new Error(
+      `attachments of ${c.id}: ${response.status} ${JSON.stringify(data).slice(0, 200)}`,
+    );
+  return data;
+}
+
+async function e2eRun(
+  client,
+  worker,
+  agent,
+  deviceId,
+  sample,
+  args,
+  base,
+  repeat = 1,
+) {
+  if (!worker.pid || !worker.logins) await worker.start({ logins: true });
+  await worker.waitConnected(client, deviceId, true);
+  const projects = await routableProjects(client, agent);
   if (!runProfile.id && args.model)
     throw new SetupError(
       "the inbox path takes the model from the assistant's run default: pass --profile ID[,model[,effort]]",
     );
+  const summaryCost = summaries.reduce((t, x) => t + x.costUsd, 0);
   const rows = [];
   // Each finished case is journaled as it ends (see pa-eval-journal.mjs).
   const record = (row) => {
@@ -1392,7 +1585,6 @@ async function e2eRun(
   };
   // The previous case's conversation: a case that lands in it carries over.
   let previousSessionId = "";
-  const baselineItems = await itemIds(client);
   for (const [i, c] of sample.entries()) {
     const done = args.resumed.get(journalKey(repeat, c.id));
     if (done) {
@@ -1403,40 +1595,53 @@ async function e2eRun(
     await waitForDisk();
     await waitForMemory();
     sampleFixtureMemory();
-    const spent = rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
+    const spent =
+      spentBefore + rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
     if (rows.length >= 3) {
+      const done = finishedCases + rows.length;
       const projected =
-        summaryCost + spent + (spent / rows.length) * (sample.length - i);
+        summaryCost + spent + (spent / done) * (plannedCases - done);
       if (projected > args.maxCostUsd) {
         log(
           `stopping before ${c.id}: projected $${projected.toFixed(2)} > $${args.maxCostUsd}`,
         );
+        stopRun = true;
         break;
       }
     }
-    log(`e2e ${i + 1}/${sample.length} ${c.id}`);
+    log(`e2e r${repeat} ${i + 1}/${sample.length} ${c.id}`);
+    // Where the person was: the computer the request was typed on.
+    const presence = presenceFor(worker.stack, base.index, c, args);
     let entry;
     let error = null;
     try {
+      const attachments = await uploadAttachments(
+        client,
+        agent,
+        c,
+        args.evalDir,
+      );
       entry = await captureInboxTurn(
         client,
         c.request,
         args.caseTimeoutS * 1000,
+        attachments,
       );
     } catch (e) {
       error = e;
     }
     if (error) {
+      const reset = await resetAfterCase(client, base, {
+        sessionId: "",
+        workspaceId: agent.workspaceId,
+      });
+      presence?.restore();
       record({
         id: c.id,
         error: error.message,
+        ...resetFields(reset),
         policy: isPolicyCase(c),
         unanswerable: isUnanswerableCase(c),
-      });
-      await resetAfterCase(client, [], knownWorkspaces, baseline, {
-        sessionId: "",
-        workspaceId: agent.workspaceId,
-        items: baselineItems,
       });
       continue;
     }
@@ -1449,18 +1654,12 @@ async function e2eRun(
     const caseStarted = Date.now();
     const until = caseStarted + args.caseTimeoutS * 1000;
     let detail = session;
-    const cancelled = new Set();
+    // Helpers run during the turn as they would (the fixture's CLI holds
+    // them at work); they are cancelled once the turn is over.
     while (Date.now() < until) {
       await sleep(3000);
       detail = await client.get(
         `/api/agent-sessions/${encodeURIComponent(session.id)}`,
-      );
-      await cancelHelpers(
-        client,
-        detail,
-        agent.workspaceId,
-        knownWorkspaces,
-        cancelled,
       );
       if (["completed", "failed", "canceled"].includes(detail.status)) break;
     }
@@ -1474,21 +1673,18 @@ async function e2eRun(
           {},
         )
         .catch(() => {});
-    await cancelHelpers(
+    const events = detail.events || [];
+    const tools = events.map(parseToolEvent).filter(Boolean);
+    const { cancelled, helpers } = await cancelHelpers(
       client,
       detail,
       agent.workspaceId,
-      knownWorkspaces,
-      cancelled,
+      base.knownWorkspaces,
     );
-    const events = detail.events || [];
-    const tools = events.map(parseToolEvent).filter(Boolean);
-    await resetAfterCase(client, tools, knownWorkspaces, baseline, {
-      sessionId: session.id,
-      workspaceId: agent.workspaceId,
-      items: baselineItems,
-    });
-    previousSessionId = session.id;
+    // What a cancelled helper reports must not start a turn the next case
+    // would land in.
+    await quietConversation(client, agent, session.id);
+    const helperProblems = await archiveHelpers(client, helpers);
     // Continuing a helper names its session: the project is the session's.
     for (const t of tools) {
       if (t.args.workspaceId || !t.args.sessionId) continue;
@@ -1499,6 +1695,17 @@ async function e2eRun(
         .catch(() => null);
       if (helper?.workspaceId) t.args.workspaceId = helper.workspaceId;
     }
+    if (!projectFilesKept.has(base.cutoff)) {
+      keepProjectFiles(base, args);
+      projectFilesKept.add(base.cutoff);
+    }
+    const reset = await resetAfterCase(client, base, {
+      sessionId: session.id,
+      workspaceId: agent.workspaceId,
+      tools,
+    });
+    presence?.restore();
+    previousSessionId = session.id;
     const reply = typeof detail.response === "string" ? detail.response : "";
     const outcome = classifyOutcome(tools, reply, agent.workspaceId, projects);
     const finalEntry = (await client.get("/api/personal-agent/inbox")).find(
@@ -1513,7 +1720,18 @@ async function e2eRun(
         resultStatus: finalEntry?.resultStatus || "",
         resultError: finalEntry?.resultError || "",
       },
+      cutoff: base.cutoff,
+      presence: presence?.computer || "",
       carryOver,
+      // A case whose new project could not be removed did not end clean:
+      // it fails (and later cases try the removal again).
+      ...(reset.failures.length
+        ? { error: `reset: ${reset.failures.join("; ")}` }
+        : {}),
+      ...resetFields({
+        failures: reset.failures,
+        problems: [...helperProblems, ...reset.problems],
+      }),
       policy: isPolicyCase(c),
       unanswerable: isUnanswerableCase(c),
       status: detail.status,
@@ -1530,7 +1748,7 @@ async function e2eRun(
       proposals: events.filter((e) =>
         /needs_confirmation/.test(JSON.stringify(e.message || e.detail || "")),
       ).length,
-      helpersCancelled: cancelled.size,
+      helpersCancelled: cancelled,
       reply,
       questions: questionsIn(reply) + cardAsksIn(tools),
       questionsInReply: questionsIn(reply),
@@ -1539,9 +1757,91 @@ async function e2eRun(
       ...outcome,
     });
   }
-  await worker.stop();
   e2eProjects.splice(0, e2eProjects.length, ...projects);
   return rows;
+}
+
+// The person's presence for a case (pa-eval-fixture.mjs markPresence): a
+// real case was typed on its project's computer; a handwritten one has no
+// computer. Written into the running server's database; the turn's facts
+// read it. --no-presence leaves it out.
+function presenceFor(stack, index, c, args) {
+  if (!args.presence || !c.observed?.workspaceId || !index) return null;
+  const computer = index.projects.find(
+    (p) => p.workspaceId === c.observed.workspaceId,
+  )?.computer;
+  if (!computer) return null;
+  const db = new DatabaseSync(stack.dbPath);
+  try {
+    db.exec("PRAGMA busy_timeout = 15000");
+    const mark = markPresence(
+      db,
+      index,
+      computer,
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+    if (!mark) return null;
+    return {
+      computer,
+      restore: () => {
+        const again = new DatabaseSync(stack.dbPath);
+        try {
+          again.exec("PRAGMA busy_timeout = 15000");
+          restorePresence(again, mark);
+        } finally {
+          again.close();
+        }
+      },
+    };
+  } finally {
+    db.close();
+  }
+}
+
+// Run-wide counts the cost projection reads.
+let spentBefore = 0;
+let finishedCases = 0;
+let plannedCases = 0;
+let stopRun = false;
+
+// The project files the assistant read (its .foundry folder) at each
+// history cutoff, kept next to the report so they can be checked later.
+const projectFilesKept = new Set();
+function keepProjectFiles(base, args) {
+  const from = resolve(base.folder, ".foundry");
+  if (!base.folder || !existsSync(from) || !args.out) return;
+  const to = resolve(`${args.out}.fixture`, base.cutoff);
+  rmSync(to, { recursive: true, force: true });
+  mkdirSync(to, { recursive: true, mode: 0o700 });
+  cpSync(from, to, {
+    recursive: true,
+    filter: (src) => !/\/attachments(\/|$)/.test(src),
+  });
+}
+
+// After a case: no turn of the assistant may still be running or queued in
+// its workspace (a helper's report after its cancellation starts one).
+async function quietConversation(client, agent, sessionId) {
+  await sleep(4000);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const sessions = await client
+      .get(
+        `/api/agent-sessions?workspaceId=${encodeURIComponent(agent.workspaceId)}`,
+      )
+      .catch(() => []);
+    const busy = (Array.isArray(sessions) ? sessions : []).filter(
+      (x) =>
+        ["queued", "running", "blocked"].includes(x.status) &&
+        (x.id === sessionId || x.source === "chat"),
+    );
+    if (!busy.length) return;
+    for (const x of busy)
+      await client
+        .post(`/api/agent-sessions/${encodeURIComponent(x.id)}/cancel`, {})
+        .catch(() => {});
+    await sleep(3000);
+  }
+  log(`the assistant's workspace still has a turn running after ${sessionId}`);
 }
 
 // The projects of the run (mention diagnostic), for scoring rows again after the judge.
@@ -1550,11 +1850,14 @@ const e2eProjects = [];
 // A row scored again from what it stored, with the judge's reading of whether
 // the reply asks (classifyOutcome). The first decision stays as
 // `decisionByMark` when the reading changed it.
+// A reply's key for the judge: the case and, with --repeat, its repetition.
+const judgeKey = (r) => (r.repeat ? `${r.id}#${r.repeat}` : r.id);
+
 function rescoreRows(rows, assistantWorkspace, verdicts) {
   const byId = new Map(verdicts.map((v) => [v.id, v]));
   for (const r of rows) {
     if (r.error || typeof r.reply !== "string") continue;
-    const v = byId.get(r.id);
+    const v = byId.get(judgeKey(r));
     const asks = typeof v?.asks === "boolean" ? v.asks : undefined;
     const tools = r.tools.map((t) => ({
       name: t.name,
@@ -1581,41 +1884,67 @@ function rescoreRows(rows, assistantWorkspace, verdicts) {
 }
 
 // The first summary of every project runs when the assistant is set up
-// (§14); the cases wait for them, one model session at a time otherwise.
-async function waitForSummaries(client, agent, stack, timeoutMs = 40 * 60_000) {
+// (§14), and again for each project whose history a cutoff moved (its
+// digest was deleted, so the server builds and summarizes it anew). The
+// cases wait until every fixture project has a summarized digest. Returns
+// the summary sessions not seen before, with their cost.
+async function waitForDigests(
+  client,
+  stack,
+  index,
+  timeoutMs = 40 * 60_000,
+  stallMs = 2 * 60_000,
+) {
   const { DatabaseSync } = await import("node:sqlite");
-  const pending = () => {
+  const ids = index.projects.map((p) => p.workspaceId);
+  const read = (sql, ...params) => {
     const db = new DatabaseSync(stack.dbPath, { readOnly: true });
     try {
-      return db
-        .prepare(
-          "SELECT COUNT(*) AS n FROM workspace_digests WHERE summarized_at = ''",
-        )
-        .get().n;
+      return db.prepare(sql).all(...params);
     } finally {
       db.close();
     }
   };
+  const pending = () => {
+    const done = new Set(
+      read(
+        `SELECT workspace_id FROM workspace_digests WHERE summarized_at != '' AND workspace_id IN (${ids.map(() => "?").join(", ")})`,
+        ...ids,
+      ).map((r) => r.workspace_id),
+    );
+    return ids.filter((id) => !done.has(id));
+  };
   const until = Date.now() + timeoutMs;
-  for (let left = pending(); left > 0 && Date.now() < until; left = pending()) {
-    log(`waiting for ${left} project summaries`);
+  // A summary whose session failed is due again only hours later (as in
+  // production): no progress for stallMs ends the wait early (stalled).
+  let lastCount = Infinity;
+  let lastProgress = Date.now();
+  let stalled = false;
+  for (
+    let left = pending();
+    left.length && Date.now() < until;
+    left = pending()
+  ) {
+    if (left.length < lastCount) {
+      lastCount = left.length;
+      lastProgress = Date.now();
+    } else if (Date.now() - lastProgress > stallMs) {
+      stalled = true;
+      break;
+    }
+    log(`waiting for ${left.length} project summaries`);
     await sleep(20_000);
   }
-  // Ended summary sessions leave the list; their usage is in the digest
-  // records' sessions, read from the store.
-  const db = new DatabaseSync(stack.dbPath, { readOnly: true });
-  let rows = [];
-  try {
-    rows = db
-      .prepare(
-        "SELECT id, status FROM agent_sessions WHERE workspace_id = ? AND json_extract(payload_json, '$.source') = 'digest'",
-      )
-      .all(agent.workspaceId);
-  } finally {
-    db.close();
-  }
+  const left = pending();
+  if (left.length)
+    log(`project summaries still missing after the wait: ${left.length}`);
+  // Ended summary sessions leave the list; their usage is in their events.
   const out = [];
-  for (const s of rows) {
+  for (const s of read(
+    "SELECT id, status FROM agent_sessions WHERE json_extract(payload_json, '$.source') = 'digest'",
+  )) {
+    if (seenSummaries.has(s.id)) continue;
+    seenSummaries.add(s.id);
     const detail = await client
       .get(`/api/agent-sessions/${encodeURIComponent(s.id)}`)
       .catch(() => null);
@@ -1625,9 +1954,9 @@ async function waitForSummaries(client, agent, stack, timeoutMs = 40 * 60_000) {
       costUsd: turnUsage(detail?.events || []).costUsd,
     });
   }
-  log(`project summaries left unsummarized: ${pending()}`);
-  return out;
+  return { sessions: out, missing: left, stalled };
 }
+const seenSummaries = new Set();
 
 // A case starts only while the computer has memory to spare.
 // Free space on the disk the stacks live on, in GB (df's available blocks).
@@ -1664,61 +1993,128 @@ async function waitForMemory(minMB = 800) {
 
 const summaries = [];
 
-// Each case starts from the same state: projects it created are removed
-// from the copy (their folders stay under the worker's scratch HOME), what it
-// remembered or changed in the rules is undone, its list items are removed,
-// and its conversation is archived so the next inbox message starts a new one.
-// Not reset: the assistant's own files (no delete endpoint; see the report's
-// carry-over list).
+// Each case starts from the same state (caseBaseline): projects it created
+// are removed from the copy (their folders stay on the computer), what it
+// remembered or changed in the rules is undone, its list items and the
+// scheduled work of its conversation are removed, the assistant's own files
+// are put back as they were, and its conversation is archived so the next
+// inbox message starts a new one. Returns what could not be undone: a
+// project that would not go is a failed case, never left silently.
 async function resetAfterCase(
   client,
-  tools,
-  knownWorkspaces,
-  baseline,
-  { sessionId, workspaceId, items },
+  base,
+  { sessionId, workspaceId, tools = [] },
 ) {
+  // Projects the case created (create_workspace) must go; a workspace the
+  // server made for the assistant (its Personal Memory vault) may refuse to.
+  const created = tools.some((t) => t.name === "create_workspace");
+  const failures = [];
+  const problems = [];
   for (const w of await client.get("/api/workspaces").catch(() => [])) {
-    if (knownWorkspaces.has(w.id)) continue;
+    if (base.knownWorkspaces.has(w.id)) continue;
+    let status = 0;
     for (let attempt = 0; attempt < 10; attempt++) {
-      const { status } = await client.request(
+      ({ status } = await client.request(
         "DELETE",
         `/api/workspaces/${encodeURIComponent(w.id)}`,
         { raw: true },
-      );
+      ));
       if (status < 300 || status === 404) break;
       await sleep(3000);
+    }
+    if (status >= 300 && status !== 404) {
+      if (created)
+        failures.push(`project ${w.name} (${w.id}) not removed: ${status}`);
+      else {
+        problems.push(`kept ${w.name} (${w.id}): ${status}`);
+        base.knownWorkspaces.add(w.id);
+      }
+    }
+  }
+  // Scheduled work of the conversation: stopped (it can no longer fire),
+  // then removed where the server allows it.
+  if (sessionId) {
+    const operate = (body) =>
+      client.request(
+        "POST",
+        `/api/agent-sessions/${encodeURIComponent(sessionId)}/work/operations`,
+        { body: { ...body, idempotencyKey: randomUUID() }, raw: true },
+      );
+    const work = await client
+      .get(`/api/agent-sessions/${encodeURIComponent(sessionId)}/work`)
+      .catch(() => null);
+    if (work?.items?.length) {
+      const stopped = await operate({ action: "stop_all" });
+      if (stopped.status >= 300)
+        problems.push(`work of ${sessionId} not stopped: ${stopped.status}`);
+      for (const item of work.items) {
+        const { status } = await operate({ id: item.id, action: "remove" });
+        if (status >= 300)
+          problems.push(
+            `work ${item.id} (${item.kind || "?"}) kept: ${status}`,
+          );
+      }
     }
   }
   await client
     .request("DELETE", "/api/personal-agent/memory")
-    .catch((e) => log(`could not reset memory: ${e.message}`));
-  if (baseline)
+    .catch((e) => problems.push(`memory: ${e.message}`));
+  if (base.settings)
     await client
-      .request("PUT", "/api/personal-agent/settings", { body: baseline })
-      .catch((e) => log(`could not reset rules: ${e.message}`));
+      .request("PUT", "/api/personal-agent/settings", { body: base.settings })
+      .catch((e) => problems.push(`rules: ${e.message}`));
   await archiveConversation(client, workspaceId, sessionId).catch((e) =>
-    log(`could not archive ${sessionId}: ${e.message}`),
+    problems.push(`archive ${sessionId}: ${e.message}`),
   );
-  if (items)
-    for (const id of await itemIds(client).catch(() => new Set()))
-      if (!items.has(id))
-        await client
-          .request(
-            "DELETE",
-            `/api/personal-agent/items/${encodeURIComponent(id)}`,
-          )
-          .catch((e) => log(`could not delete item ${id}: ${e.message}`));
+  for (const id of await itemIds(client).catch(() => new Set()))
+    if (!base.items.has(id))
+      await client
+        .request(
+          "DELETE",
+          `/api/personal-agent/items/${encodeURIComponent(id)}`,
+        )
+        .catch((e) => problems.push(`item ${id}: ${e.message}`));
+  if (base.folder && existsSync(base.copy)) {
+    try {
+      restoreFolder(base.folder, base.copy);
+    } catch (e) {
+      problems.push(`assistant files: ${e.message}`);
+    }
+  }
+  for (const p of [...failures, ...problems]) log(`reset: ${p}`);
+  return { failures, problems };
 }
 
-// Helpers the assistant starts are cancelled at once: the eval measures where
-// work goes, not the work. Its tool calls name the projects; new projects are
-// found by comparing the project list.
+const resetFields = ({ failures, problems }) =>
+  failures.length || problems.length
+    ? { resetProblems: [...failures, ...problems] }
+    : {};
+
+// The assistant's folder as its copy has it, the server's files left alone.
+function restoreFolder(folder, copy) {
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = resolve(dir, name);
+      if (isServerWritten(folder, path)) continue;
+      const kept = resolve(copy, path.slice(folder.length + 1));
+      if (!existsSync(kept)) rmSync(path, { recursive: true, force: true });
+      else if (statSync(path).isDirectory() && statSync(kept).isDirectory())
+        walk(path);
+    }
+  };
+  walk(folder);
+  cpSync(copy, folder, { recursive: true, force: true });
+}
+
+// Helpers the assistant started in this case, cancelled once its turn is
+// over: the eval measures where work goes, not the work. Its tool calls name
+// the projects; new projects are found by comparing the project list.
+// Returns how many were cancelled.
 async function cancelHelpers(
   client,
   detail,
   assistantWorkspace,
   knownWorkspaces,
-  cancelled,
 ) {
   const tools = (detail.events || []).map(parseToolEvent).filter(Boolean);
   const targets = new Set(
@@ -1726,27 +2122,47 @@ async function cancelHelpers(
       .filter((t) => DISPATCH_TOOLS.includes(t.name))
       .map((t) => t.args.workspaceId || assistantWorkspace),
   );
-  if (tools.some((t) => t.name === "create_workspace")) {
-    for (const w of await client.get("/api/workspaces").catch(() => []))
-      if (!knownWorkspaces.has(w.id)) targets.add(w.id);
-  }
+  for (const w of await client.get("/api/workspaces").catch(() => []))
+    if (!knownWorkspaces.has(w.id)) targets.add(w.id);
+  let cancelled = 0;
+  const helpers = [];
   for (const workspaceId of targets) {
     const sessions = await client
       .get(`/api/agent-sessions?workspaceId=${encodeURIComponent(workspaceId)}`)
       .catch(() => []);
     for (const s of Array.isArray(sessions) ? sessions : []) {
-      if (
-        s.parentSessionId !== detail.id ||
-        cancelled.has(s.id) ||
-        !["queued", "running", "blocked"].includes(s.status)
-      )
-        continue;
+      if (s.parentSessionId !== detail.id) continue;
+      helpers.push({ id: s.id, workspaceId });
+      if (!["queued", "running", "blocked"].includes(s.status)) continue;
       await client
         .post(`/api/agent-sessions/${encodeURIComponent(s.id)}/cancel`, {})
         .catch(() => {});
-      cancelled.add(s.id);
+      cancelled++;
     }
   }
+  return { cancelled, helpers };
+}
+
+// A case's helpers leave no trace in their projects: archived, they are out
+// of the project's sessions, its digest and the assistant's view, as if the
+// case had not happened.
+async function archiveHelpers(client, helpers) {
+  const problems = [];
+  const byWorkspace = new Map();
+  for (const h of helpers)
+    byWorkspace.set(h.workspaceId, [
+      ...(byWorkspace.get(h.workspaceId) || []),
+      h.id,
+    ]);
+  for (const [workspaceId, chatIds] of byWorkspace) {
+    const result = await client
+      .post("/api/chats/archive", { workspaceId, chatIds })
+      .catch((e) => ({ error: e.message }));
+    const archived = new Set(result?.archived || []);
+    for (const id of chatIds)
+      if (!archived.has(id)) problems.push(`helper ${id} not archived`);
+  }
+  return problems;
 }
 
 function scoreE2E(allRows, cases, names) {
@@ -1962,7 +2378,7 @@ async function judgeReplies(client, worker, deviceId, rows, cases, args) {
   try {
     for (let at = 0; at < judged.length; at += judgeBatch) {
       const items = judged.slice(at, at + judgeBatch).map((r) => ({
-        id: r.id,
+        id: judgeKey(r),
         request: byId.get(r.id).request,
         reply: r.reply,
       }));
@@ -2310,89 +2726,371 @@ function printReport(report) {
   console.log(lines.join("\n"));
 }
 
+// The cases in the order they run: by history cutoff (pa-eval-fixture.mjs
+// cutoffGroups), oldest first; within a cutoff every repetition. A group
+// the resumed journal holds in full is skipped.
+// With --units, only the listed (repetition, case) units run: a shard of a
+// parallel run (pa-eval-parallel.mjs).
+function runPlan(cases, args) {
+  const sample = args.units
+    ? cases.filter((c) => args.unitIds.has(c.id))
+    : sampleCases(cases, args.sample, args.only);
+  const wanted = (k, c) => !args.units || args.units.has(journalKey(k, c.id));
+  // A parallel run's units name their cutoff (the whole run's grouping), so
+  // every shard cuts history where the others do.
+  const grouped = args.unitCutoffs
+    ? [...new Set(sample.map((c) => args.unitCutoffs.get(c.id)))]
+        .sort()
+        .map((cutoff) => ({
+          cutoff,
+          cases: sample.filter((c) => args.unitCutoffs.get(c.id) === cutoff),
+        }))
+    : cutoffGroups(sample);
+  const groups = grouped.map((g) => {
+    const runs = Array.from({ length: args.repeat }, (_, i) => ({
+      k: i + 1,
+      cases: g.cases.filter((c) => wanted(i + 1, c)),
+    })).filter((r) => r.cases.length);
+    return {
+      ...g,
+      runs,
+      done: runs.every((r) =>
+        r.cases.every((c) => args.resumed.has(journalKey(r.k, c.id))),
+      ),
+    };
+  });
+  const units = groups.reduce(
+    (n, g) => n + g.runs.reduce((m, r) => m + r.cases.length, 0),
+    0,
+  );
+  return { sample, groups, units };
+}
+
+// The fixture's history at a cutoff, written into the stopped server's
+// database; with --digest-cache, the digests another stack summarized at the
+// same cutoff (pa-eval-parallel.mjs prepares them) come with it, so the
+// projects are not summarized again here.
+function historyAt(stack, index, cutoff, args, { reuse = true } = {}) {
+  return withStackDb(stack, (db) => {
+    const user = userIdOf(db, args.user);
+    const changed = applyHistory(db, index, user, cutoff, {
+      shiftMs: Date.now() - Date.parse(`${cutoff}T00:00:00Z`),
+    });
+    const cached =
+      args.digestCache && reuse
+        ? resolve(args.digestCache, `${cutoff}.json`)
+        : "";
+    const imported =
+      cached && existsSync(cached)
+        ? importDigests(db, user, JSON.parse(readFileSync(cached, "utf8")))
+        : 0;
+    return { changed, imported };
+  });
+}
+
+// The digests prepared at the first cutoff, put in once the assistant exists
+// (before it, the server keeps no digests of the person: it drops them). The
+// server restarts on them; their content differs only in the folders' file
+// stamps, so they are not summarized again now (a changed digest is, 30
+// minutes later, as in production).
+async function reuseDigests(client, stack, index, cutoff, args, workers) {
+  const cached = args.digestCache
+    ? resolve(args.digestCache, `${cutoff}.json`)
+    : "";
+  if (!cached || !existsSync(cached)) return 0;
+  stack.down();
+  const imported = withStackDb(stack, (db) =>
+    importDigests(
+      db,
+      userIdOf(db, args.user),
+      JSON.parse(readFileSync(cached, "utf8")),
+    ),
+  );
+  await stack.up();
+  await client.post("/api/auth/login", {
+    username: args.user,
+    password: stack.password(),
+  });
+  for (const { worker, deviceId } of workers)
+    await worker.waitConnected(client, deviceId, true, 180_000);
+  log(`history at ${cutoff}: ${imported} summaries reused`);
+  return imported;
+}
+
+// Moves the fixture's history to a cutoff: the server stops, each project's
+// chats before the cutoff are written (pa-eval-fixture.mjs applyHistory),
+// and it starts again on the same port; the computers reconnect.
+async function moveHistory(client, stack, index, cutoff, args, workers) {
+  stack.down();
+  const { changed, imported } = historyAt(stack, index, cutoff, args);
+  await stack.up();
+  await client.post("/api/auth/login", {
+    username: args.user,
+    password: stack.password(),
+  });
+  for (const { worker, deviceId } of workers)
+    await worker.waitConnected(client, deviceId, true, 180_000);
+  log(
+    `history moved to ${cutoff}: ${changed.length} projects changed, ${imported} summaries reused`,
+  );
+  return changed;
+}
+
+// Every fixture project summarized. Summaries that failed (a model
+// connection refused, say) are made due again at once: their digests are
+// dropped and the server restarted, as for a history move; at most three
+// times.
+async function digestsReady(client, stack, index, args, workers) {
+  let wait = await waitForDigests(client, stack, index);
+  for (
+    let retry = 1;
+    retry <= 3 && wait.missing.length && wait.stalled;
+    retry++
+  ) {
+    log(
+      `summaries of ${wait.missing.length} projects did not finish: again (${retry}/3)`,
+    );
+    await restartWithout(client, stack, wait.missing, args, workers);
+    const again = await waitForDigests(client, stack, index);
+    wait = { ...again, sessions: [...wait.sessions, ...again.sessions] };
+  }
+  return wait;
+}
+
+// --prepare-digests CUTOFF --digest-cache DIR: a stack that only summarizes
+// the fixture at one cutoff and leaves the digests in DIR/<cutoff>.json for
+// the shards of a parallel run. No case runs.
+async function prepareDigests(client, worker, deviceId, index, args, report) {
+  const workers = [
+    ...fixtureWorkers.map((w) => ({ worker: w, deviceId: w.deviceId })),
+    { worker, deviceId },
+  ];
+  const started = Date.now();
+  await reuseDigests(
+    client,
+    worker.stack,
+    index,
+    args.prepareCutoff,
+    args,
+    workers,
+  );
+  const wait = await digestsReady(client, worker.stack, index, args, workers);
+  if (wait.missing.length)
+    throw new SetupError(
+      `${wait.missing.length} projects not summarized at ${args.prepareCutoff}`,
+    );
+  const rows = withStackDb(worker.stack, (db) =>
+    exportDigests(
+      db,
+      userIdOf(db, args.user),
+      index.projects.map((p) => p.workspaceId),
+    ),
+  );
+  mkdirSync(args.digestCache, { recursive: true, mode: 0o700 });
+  const file = resolve(args.digestCache, `${args.prepareCutoff}.json`);
+  writeFileSync(`${file}.tmp`, JSON.stringify(rows), { mode: 0o600 });
+  renameSync(`${file}.tmp`, file);
+  report.prepared = {
+    cutoff: args.prepareCutoff,
+    digests: rows.length,
+    summaries: wait.sessions.length,
+    costUsd: round(
+      wait.sessions.reduce((t, x) => t + x.costUsd, 0),
+      4,
+    ),
+    waitMs: Date.now() - started,
+  };
+  log(
+    `digests at ${args.prepareCutoff}: ${rows.length} kept in ${file} ($${report.prepared.costUsd})`,
+  );
+}
+
+// The server restarted without the person's digests of these projects:
+// they are built and summarized again when the computers reconnect.
+async function restartWithout(client, stack, workspaceIds, args, workers) {
+  stack.down();
+  withStackDb(stack, (db) => {
+    const user = userIdOf(db, args.user);
+    for (const id of workspaceIds)
+      db.prepare(
+        "DELETE FROM workspace_digests WHERE user_id = ? AND workspace_id = ?",
+      ).run(user, id);
+  });
+  await stack.up();
+  await client.post("/api/auth/login", {
+    username: args.user,
+    password: stack.password(),
+  });
+  for (const { worker, deviceId } of workers)
+    await worker.waitConnected(client, deviceId, true, 180_000);
+}
+
+function withStackDb(stack, fn) {
+  const db = new DatabaseSync(stack.dbPath);
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    return fn(db);
+  } finally {
+    db.close();
+  }
+}
+
+function userIdOf(db, username) {
+  const user = db
+    .prepare("SELECT id FROM users WHERE username = ?")
+    .get(username);
+  if (!user) throw new SetupError(`no user ${username} in the stack`);
+  return user.id;
+}
+
+// Before any case: every fixture project is on its connected computer and
+// its folder is there (no unavailableOnDevice). Any other state fails the
+// setup: a project the assistant cannot open is the harness's fault.
+async function preflightProjects(client, index, timeoutMs = 120_000) {
+  const until = Date.now() + timeoutMs;
+  let problems = [];
+  for (;;) {
+    const workspaces = new Map(
+      (await client.get("/api/workspaces")).map((w) => [w.id, w]),
+    );
+    const devices = new Map(
+      (await client.get("/api/devices")).map((d) => [d.id, d]),
+    );
+    problems = index.projects.flatMap((p) => {
+      const w = workspaces.get(p.workspaceId);
+      if (!w) return [`${p.ref}: not listed`];
+      if (devices.get(w.deviceId)?.status !== "connected")
+        return [`${p.ref}: its computer is not connected`];
+      if (w.unavailableOnDevice)
+        return [
+          `${p.ref}: unavailable on its computer (${w.unavailableOnDevice.reason || "?"})`,
+        ];
+      return [];
+    });
+    if (!problems.length || Date.now() >= until) break;
+    await sleep(3000);
+  }
+  if (problems.length)
+    throw new SetupError(
+      `fixture projects not usable:\n  ${problems.join("\n  ")}`,
+    );
+  log(`preflight: all ${index.projects.length} fixture projects open`);
+  return { projects: index.projects.length, unavailable: [] };
+}
+
 async function runRoutingAndE2E(
   client,
   worker,
   agent,
   deviceId,
-  cases,
-  names,
+  { cases, index, names },
+  plan,
   args,
   report,
 ) {
-  if (args.e2e) {
-    const sample = sampleCases(cases, args.sample, args.only);
-    // Repetitions share the stack; each is the whole sample. The cost cap
-    // covers all of them: a repetition starts only if the last one's cost
-    // still fits under it.
-    const runs = [];
-    let spent = 0;
-    for (let k = 1; k <= args.repeat; k++) {
-      const lastCost = runs.length
-        ? runs.at(-1).reduce((t, r) => t + (r.usage?.costUsd || 0), 0)
-        : 0;
-      if (k > 1 && spent + lastCost > args.maxCostUsd) {
-        log(
-          `stopping before repetition ${k}: $${(spent + lastCost).toFixed(2)} would pass $${args.maxCostUsd}`,
-        );
-        break;
-      }
-      log(`repetition ${k} of ${args.repeat}`);
+  if (!args.e2e) return;
+  const stack = worker.stack;
+  const workers = [
+    ...fixtureWorkers.map((w) => ({ worker: w, deviceId: w.deviceId })),
+    { worker, deviceId },
+  ];
+  plannedCases = plan.units;
+  const runs = Array.from({ length: args.repeat }, () => []);
+  const digestWaits = [];
+  let base = null;
+  let moved = false;
+  for (const group of plan.groups) {
+    if (group.done) {
+      for (const { k, cases } of group.runs)
+        for (const c of cases) {
+          const row = args.resumed.get(journalKey(k, c.id));
+          row.repeat = k;
+          runs[k - 1].push(row);
+        }
+      log(`history ${group.cutoff}: done in the resumed journal`);
+      continue;
+    }
+    if (stopRun) break;
+    // The first group's history was written before the server started.
+    if (moved)
+      await moveHistory(client, stack, index, group.cutoff, args, workers);
+    else await reuseDigests(client, stack, index, group.cutoff, args, workers);
+    moved = true;
+    const waitStarted = Date.now();
+    const wait = await digestsReady(client, stack, index, args, workers);
+    summaries.push(...wait.sessions);
+    digestWaits.push({
+      cutoff: group.cutoff,
+      summaries: wait.sessions.length,
+      costUsd: round(
+        wait.sessions.reduce((t, x) => t + x.costUsd, 0),
+        4,
+      ),
+      missing: wait.missing,
+      waitMs: Date.now() - waitStarted,
+    });
+    base ||= { ...(await caseBaseline(client, agent, stack)), index };
+    base.cutoff = group.cutoff;
+    log(
+      `history ${group.cutoff}: ${group.cases.length} cases × ${args.repeat}`,
+    );
+    for (const { k, cases } of group.runs) {
+      if (stopRun) break;
       const rows = await e2eRun(
         client,
         worker,
         agent,
         deviceId,
-        sample,
+        cases,
         args,
-        names,
+        base,
         k,
       );
       for (const r of rows) r.repeat = k;
-      runs.push(rows);
-      spent += rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
+      runs[k - 1].push(...rows);
+      spentBefore += rows.reduce((t, r) => t + (r.usage?.costUsd || 0), 0);
+      finishedCases += rows.length;
     }
-    const rows = runs.flat();
-    report.e2e = {
-      ...scoreE2E(rows, cases, names),
-      rows,
-      summaries,
-      assistantWorkspace: agent.workspaceId,
-      projects: e2eProjects,
-    };
-    report.checks.push(...report.e2e.checks);
-    // The rows are the run's result: a judge that fails must not lose them.
-    if (args.judge) {
-      report.judge = await judgeReplies(
-        client,
-        worker,
-        deviceId,
-        rows,
-        cases,
-        args,
-      ).catch((error) => {
-        log(`the judge failed: ${error.message}`);
-        return { error: error.message };
-      });
-      // The judge's reading of whether a reply asks replaces the question
-      // mark; the scores are taken again from the stored rows.
-      if (report.judge?.verdicts?.length) {
-        rescoreRows(rows, agent.workspaceId, report.judge.verdicts);
-        const scored = scoreE2E(rows, cases, names);
-        report.e2e.byMark = {
-          metrics: report.e2e.metrics,
-          checks: report.e2e.checks,
-          misses: report.e2e.misses,
-        };
-        Object.assign(report.e2e, scored);
-        report.checks = report.checks.filter(
-          (c) => !c.name.startsWith("e2e: "),
-        );
-        report.checks.push(...scored.checks);
-      }
-    }
-    if (runs.length > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
   }
+  const rows = runs.flat();
+  report.e2e = {
+    ...scoreE2E(rows, cases, names),
+    rows,
+    summaries,
+    digestWaits,
+    assistantWorkspace: agent.workspaceId,
+    projects: e2eProjects,
+  };
+  report.checks.push(...report.e2e.checks);
+  // The rows are the run's result: a judge that fails must not lose them.
+  if (args.judge) {
+    report.judge = await judgeReplies(
+      client,
+      worker,
+      deviceId,
+      rows,
+      cases,
+      args,
+    ).catch((error) => {
+      log(`the judge failed: ${error.message}`);
+      return { error: error.message };
+    });
+    // The judge's reading of whether a reply asks replaces the question
+    // mark; the scores are taken again from the stored rows.
+    if (report.judge?.verdicts?.length) {
+      rescoreRows(rows, agent.workspaceId, report.judge.verdicts);
+      const scored = scoreE2E(rows, cases, names);
+      report.e2e.byMark = {
+        metrics: report.e2e.metrics,
+        checks: report.e2e.checks,
+        misses: report.e2e.misses,
+      };
+      Object.assign(report.e2e, scored);
+      report.checks = report.checks.filter((c) => !c.name.startsWith("e2e: "));
+      report.checks.push(...scored.checks);
+    }
+  }
+  if (args.repeat > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
 }
 
 // --- A1 + A2: an account whose only project is the assistant's -----------------
@@ -2487,14 +3185,7 @@ async function scenarioA1A2(stack, args) {
       .filter((t) => ["create_session", "send_message"].includes(t.name))
       .map((t) => t.args.workspaceId);
     const after = (await client.get("/api/workspaces")).map((w) => w.id);
-    const cancelled = new Set();
-    await cancelHelpers(
-      client,
-      detail,
-      agent.workspaceId,
-      new Set(after),
-      cancelled,
-    );
+    await cancelHelpers(client, detail, agent.workspaceId, new Set(after));
 
     const checks = [
       gate(
@@ -2650,13 +3341,7 @@ async function scenarioPlans(client, worker, deviceId, args) {
       minute: "2-digit",
     }) === "19:00";
   const reminded = after.filter((item) => /猎头|微信|脉脉/.test(item.text));
-  await cancelHelpers(
-    client,
-    detail,
-    agent.workspaceId,
-    knownWorkspaces,
-    new Set(),
-  );
+  await cancelHelpers(client, detail, agent.workspaceId, knownWorkspaces);
 
   const replies = firstReply + "\n" + secondReply;
   const named = technical.filter((name) => replies.includes(name));
@@ -2761,16 +3446,128 @@ function rescoreReport(file) {
   return report.checks.some((c) => c.pass === false) ? 1 : 0;
 }
 
+// --merge OUT SHARD...: one report from the shards of a parallel run
+// (pa-eval-parallel.mjs). Rows, summaries, judge verdicts and costs are put
+// together; the scores, the judge's rescoring and the agreement between
+// repetitions are taken again over all of them, as one run would have.
+function mergeReports(out, files, evalDir) {
+  const shards = files.map((f) => JSON.parse(readFileSync(resolve(f), "utf8")));
+  const { cases, names } = loadEvalSet(evalDir);
+  const rows = shards.flatMap((r) => r.e2e?.rows || []);
+  const seen = new Set();
+  for (const r of rows) {
+    const key = journalKey(r.repeat || 1, r.id);
+    if (seen.has(key)) throw new Error(`two shards ran ${r.id} #${r.repeat}`);
+    seen.add(key);
+  }
+  const projects = shards.find((r) => r.e2e?.projects?.length)?.e2e.projects;
+  e2eProjects.splice(0, e2eProjects.length, ...(projects || []));
+  const verdicts = shards.flatMap((r) => r.judge?.verdicts || []);
+  // Each shard's assistant has its own workspace id; a row's own is kept.
+  const report = {
+    startedAt: shards.map((r) => r.startedAt).sort()[0],
+    finishedAt: shards
+      .map((r) => r.finishedAt)
+      .sort()
+      .at(-1),
+    instance: shards.map((r) => r.instance).join(","),
+    cases: shards[0]?.cases,
+    evalSet: shards[0]?.evalSet,
+    parallel: {
+      shards: shards.length,
+      files,
+      rowsPerShard: shards.map((r) => r.e2e?.rows?.length || 0),
+      preflight: shards.map((r) => r.preflight),
+    },
+    checks: [],
+  };
+  const byShard = shards.flatMap((r) =>
+    (r.e2e?.rows || []).map((row) => [row, r.e2e.assistantWorkspace]),
+  );
+  for (const [row, assistant] of byShard)
+    if (verdicts.length) rescoreRows([row], assistant, verdicts);
+  const scored = scoreE2E(rows, cases, names);
+  const maxRepeat = Math.max(1, ...rows.map((r) => r.repeat || 1));
+  const runs = Array.from({ length: maxRepeat }, (_, i) =>
+    rows.filter((r) => (r.repeat || 1) === i + 1),
+  );
+  report.e2e = {
+    ...scored,
+    rows,
+    summaries: shards.flatMap((r) => r.e2e?.summaries || []),
+    digestWaits: shards.flatMap((r) =>
+      (r.e2e?.digestWaits || []).map((w) => ({ shard: r.instance, ...w })),
+    ),
+    projects: e2eProjects,
+  };
+  if (maxRepeat > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
+  // Asking read from the question mark, as before the judge (comparable
+  // with runs without one).
+  if (verdicts.length) {
+    const byMark = scoreE2E(
+      rows.map((r) =>
+        r.decisionByMark ? { ...r, decision: r.decisionByMark } : r,
+      ),
+      cases,
+      names,
+    );
+    report.e2e.byMark = { metrics: byMark.metrics };
+  }
+  report.judge = verdicts.length
+    ? {
+        costUsd: round(
+          shards.reduce((t, r) => t + (r.judge?.costUsd || 0), 0),
+          4,
+        ),
+        judged: shards.reduce((t, r) => t + (r.judge?.judged || 0), 0),
+        verdictCount: verdicts.length,
+        plainShare: ratio(
+          verdicts.filter((v) => v.plain).length,
+          verdicts.length,
+        ),
+        notPlain: verdicts
+          .filter((v) => !v.plain)
+          .map((v) => ({ id: v.id, reason: v.reason })),
+        multipleQuestions: verdicts
+          .filter((v) => v.multipleQuestions)
+          .map((v) => v.id),
+        verdicts,
+      }
+    : shards.find((r) => r.judge?.error)?.judge;
+  report.checks.push(...scored.checks);
+  mkdirSync(resolve(out, ".."), { recursive: true });
+  writeFileSync(out, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
+  printReport(report);
+  console.log(`\nreport: ${out}`);
+  return report.checks.some((c) => c.pass === false) ? 1 : 0;
+}
+
 // --- main ------------------------------------------------------------------------
 
 async function main() {
-  if (process.argv.includes("--sandbox-check")) process.exit(sandboxCheck());
+  if (process.argv.includes("--sandbox-check"))
+    process.exit(await sandboxCheck());
+  const mergeAt = process.argv.indexOf("--merge");
+  if (mergeAt > 0) {
+    const evalAt = process.argv.indexOf("--eval");
+    const evalDir =
+      evalAt > 0
+        ? resolve(process.argv[evalAt + 1])
+        : resolve(homedir(), ".foundry/pa-eval/set");
+    const files = process.argv
+      .slice(mergeAt + 2)
+      .filter((a, i, all) => a !== "--eval" && all[i - 1] !== "--eval");
+    process.exit(
+      mergeReports(resolve(process.argv[mergeAt + 1]), files, evalDir),
+    );
+  }
   const rescoreAt = process.argv.indexOf("--rescore");
   if (rescoreAt > 0) process.exit(rescoreReport(process.argv[rescoreAt + 1]));
   const args = parseArgs(process.argv);
   const { cases, index, names } = loadEvalSet(args.evalDir);
   const stack = new Stack(args.instance, args.stackDir);
   const worker = new Worker(stack, args.workerHome, "worker", args.provider);
+  worker.hostEgress = true;
   const report = {
     startedAt: new Date().toISOString(),
     instance: args.instance,
@@ -2797,7 +3594,39 @@ async function main() {
   }
   let failed = false;
   let relay;
+  // Stopped from outside (a parallel run interrupted): its stack and
+  // computers go with it, nothing is left running.
+  for (const signal of ["SIGTERM", "SIGINT", "uncaughtException"])
+    process.once(signal, async (error) => {
+      log(
+        `${signal}: stopping the stack${error?.stack ? `\n${error.stack}` : ""}`,
+      );
+      await worker.stop().catch(() => {});
+      for (const w of activeWorkers) await w.stop().catch(() => {});
+      relay?.stop();
+      stack.down();
+      process.exit(2);
+    });
   try {
+    // The cases' order and the fixture's first history cutoff, written
+    // while the server is still down.
+    const plan = args.e2e ? runPlan(cases, args) : null;
+    const firstGroup = args.prepareCutoff
+      ? { cutoff: args.prepareCutoff }
+      : plan?.groups.find((g) => !g.done);
+    if (firstGroup) {
+      stack.load();
+      const { changed, imported } = historyAt(
+        stack,
+        index,
+        firstGroup.cutoff,
+        args,
+        { reuse: false },
+      );
+      log(
+        `history at ${firstGroup.cutoff}: ${changed.length} projects written, ${imported} summaries reused${plan ? `; cutoffs ${plan.groups.map((g) => `${g.cutoff}×${g.cases.length}`).join(" ")}` : ""}`,
+      );
+    }
     // A fresh seeded database holds no eval chats to hide, and the run signs
     // in as its own synthetic user, never the person.
     await stack.up();
@@ -2812,11 +3641,18 @@ async function main() {
     // sandbox. Otherwise it is a seeded server profile.
     const hosted = hostConnectorProfile(runProfile.id);
     if (hosted) {
-      relay = startConnectionRelay(hosted, stack.evalDir, log);
+      worker.net ||= new NetBridge(stack.evalDir, worker.name);
+      relay = startConnectionRelay(hosted, stack.evalDir, log, worker.net);
       worker.deviceProfiles = [relay.profile];
       log(
         `${runProfile.id} through this computer's ${hosted.connector?.label || "connector"} connection, relayed into the sandbox`,
       );
+    }
+    if (args.prepareCutoff) {
+      await startFixtureWorkers(client, stack, index);
+      const { deviceId } = await workerAndAssistant(client, worker, true);
+      report.preflight = await preflightProjects(client, index);
+      await prepareDigests(client, worker, deviceId, index, args, report);
     }
     if (args.e2e) {
       // The assistant reads the project summary files natively; the eval
@@ -2827,13 +3663,15 @@ async function main() {
         worker,
         true,
       );
+      report.preflight = await preflightProjects(client, index);
+      report.evalSet = args.evalDir;
       await runRoutingAndE2E(
         client,
         worker,
         agent,
         deviceId,
-        cases,
-        names,
+        { cases, index, names },
+        plan,
         args,
         report,
       );

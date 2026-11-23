@@ -422,7 +422,16 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 
 - **来源**：本人在现有各 Workspace 里真实发起的会话的第一条消息（dev 数据库，`scripts/pa-eval-build.mjs` 导出，人名、邮箱、密钥替换），金标准 = 它实际所在的 Workspace；加上手写的“答复即可 / 应新建 / 应先问”样例；上线后追加 `pa_routing_decisions` 中被本人纠正的条目。每条：`request`、当时的 L0 索引快照、`gold = {class, target: <ws>|new|answer|ask}`。
 - **指标**：明确样例 top-1 ≥ 90%；“确定 / 较确定”直接执行中的错投 ≤ 3%；歧义样例中提问的比例 ≥ 80%；“应新建”的精确率与召回率各 ≥ 85%；默认说话方式下回复里的禁用词 = 0（词表正则）；每条请求的平均提问数 ≤ 0.2。
-- **跑法**：`scripts/pa-eval-run.mjs` 在 scratch stack（`FOUNDRY_INTEGRATIONS=off`）上运行，每次都用新库（`scripts/pa-eval-seed.mjs` 写入一个合成用户和夹具 Workspace，不复用 dev 数据库，也不重置任何真实用户的登录），使用已构建好的二进制；用真实助理会话（原生 CLI）逐条回放，抓取工具调用判分；评测进程在只读绑定宿主的沙箱中运行，只有本次运行目录可写。需要模型判断的项（是否是人话）由一个只读的 Foundry 判定会话完成，不直接调用模型接口。
+- **跑法**：`scripts/pa-eval-run.mjs` 在 scratch stack（`FOUNDRY_INTEGRATIONS=off`）上运行，每次都用新库（`scripts/pa-eval-seed.mjs` 写入一个合成用户和夹具 Workspace，不复用 dev 数据库，也不重置任何真实用户的登录），使用已构建好的二进制；用真实助理会话（原生 CLI）逐条回放，抓取工具调用判分。
+  - 夹具按生产方式构建（`scripts/pa-eval-fixture.mjs`）：每个项目在夹具电脑上有真实文件夹（顶层文件、说明文件），已登记在该电脑的 Worker 上；项目的历史对话只写入用例所在周之前的部分，用例按截止周分组运行，组间服务重启并重新概括有变化的项目；开跑前任一项目打不开即失败。
+  - 夹具电脑提供与本人电脑相同的连接器模型配置（如 `limen_default`），帮手在助理这一轮结束前保持运行，结束后才取消；每例之后撤销新建项目（删不掉则该例失败）、清单、定时任务、记忆、规则和助理自己的文件。
+  - 每台评测电脑（助理与夹具）都在自己的最小根文件系统和独立网络里运行（`scripts/pa-eval-sandbox.mjs`）：看不到宿主的文件与服务，只桥接评测服务端口和模型连接的本地端口；`--sandbox-check` 自证。
+  - 是否在提问由只读的 Foundry 判定会话判断（默认开启，`--no-judge` 关闭），不看问号；判定会话不直接调用模型接口。
+  - 并行：`scripts/pa-eval-parallel.mjs --server <bin> --out <file> [--parallel N]`。它开 N 个互相隔离的栈（各自的库、端口、夹具电脑、助理、沙箱和模型连接中转），把（遍次, 用例）按截止周连续分片，跑完合并成一份报告（`pa-eval-run.mjs --merge`）。
+    - 每个截止周的项目摘要先各用一个栈算一次，结果按「server 二进制 + 评测集 + 模型」缓存在 `~/.foundry/pa-eval/digest-cache/`，分片直接复用。
+    - 所有栈共用一个模型连接并发上限（`--helper-slots`，默认 20）。
+    - N 默认按每 4 核、每 3 GB 可用内存各一个分片计算。
+  - 评测集里的链接、名字、粘贴内容和图片是同类的合成内容（`scripts/pa-eval-build.mjs`，`--pin` 时从原始消息重新生成，上限 4096 字），不是占位符。
 
 **验收场景**（`cases/personal-agent/*.case.json`，真实浏览器与真实单聊）：
 

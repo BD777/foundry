@@ -9,8 +9,11 @@
 // projects sit on the person's own (offline) computers, which no API can
 // register without a paired worker. What is written:
 // - from the eval set's index.json: one disconnected device per computer,
-//   one project per entry (owner: <username>), its top-level files, and the
-//   latest snapshot's chat titles;
+//   one project per entry (owner: <username>) and its top-level files; the
+//   project's folder under the stack's run folder, with those files and its
+//   instruction file (pa-eval-fixture.mjs populateProject). The person's
+//   chats there are written by the run, up to each case's week
+//   (pa-eval-fixture.mjs applyHistory);
 // - connector metadata from the dev DB, opened read-only, column by column:
 //   external accounts (kind, status) bound to the index's projects and their
 //   bindings, and device-held connector bindings on those projects. Labels
@@ -24,10 +27,15 @@
 //   reports it.
 // - --execution-default: the user's global execution default row.
 import { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
+import {
+  connectorsOf,
+  displayName,
+  populateProject,
+} from "./pa-eval-fixture.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (name) => {
@@ -37,8 +45,8 @@ const flag = (name) => {
   return value || "";
 };
 const profileId = flag("--profile");
-// The stack's folder for the fixture computers (next to its data folder).
-const fixtureRoot = resolve(dirname(argv[0]), "..", "fixtures");
+// The stack's folder (the database is in its data folder).
+const stackDir = resolve(dirname(argv[0]), "..");
 const executionDefault = flag("--execution-default");
 const [dbPath, username, evalDir] = argv;
 if (!dbPath || !username || !evalDir)
@@ -49,10 +57,10 @@ const liveDB = resolve(homedir(), ".foundry/server/foundry.db");
 if (resolve(dbPath) === liveDB) throw new Error("refusing the live database");
 
 const index = JSON.parse(readFileSync(resolve(evalDir, "index.json"), "utf8"));
-const snapshotWeek = Object.keys(index.snapshots).sort().pop();
-const recent = new Map(
-  index.snapshots[snapshotWeek].map((s) => [s.workspaceId, s.recent]),
-);
+if (index.projects.some((p) => !Array.isArray(p.history)))
+  throw new Error(
+    `${evalDir}/index.json has no project history: build the set again (pa-eval-build.mjs)`,
+  );
 
 const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA foreign_keys = ON");
@@ -68,10 +76,18 @@ const slug = (s) =>
     .replace(/^-|-$/g, "");
 const mac = (computer) => /mac/i.test(computer);
 
-const dev = new DatabaseSync(liveDB, { readOnly: true });
-dev.exec("PRAGMA query_only = 1");
+// The dev database, read-only, only when the set does not carry what is
+// needed (connector metadata of an older set; a --profile's row and secret).
+let devDB = null;
+const dev = () => {
+  if (!devDB) {
+    devDB = new DatabaseSync(liveDB, { readOnly: true });
+    devDB.exec("PRAGMA query_only = 1");
+  }
+  return devDB;
+};
 
-const counts = { devices: 0, workspaces: 0, files: 0, chats: 0 };
+const counts = { devices: 0, workspaces: 0, files: 0 };
 const seededConnectors = { accounts: [], bindings: [], deviceConnectors: [] };
 db.exec("BEGIN");
 try {
@@ -95,13 +111,14 @@ try {
 
   for (const p of index.projects) {
     const deviceId = devices.get(p.computer);
-    // Each computer's project folder is real but empty, under the stack (the
-    // fixture's computers are this host): a dispatch finds a folder to work in.
-    const localPath = resolve(fixtureRoot, p.computer, "workspace", p.name);
-    mkdirSync(localPath, { recursive: true, mode: 0o700 });
+    // Each computer's project folder is real, under the stack's run folder
+    // (the fixture's computers are this host, sandboxed): a dispatch finds a
+    // folder to work in, and the computer reports its files.
+    const localPath = populateProject(stackDir, p);
+    const name = displayName(p);
     const payload = {
       id: p.workspaceId,
-      name: p.name,
+      name,
       localPath,
       baseline: "",
       contextSummary: "",
@@ -115,7 +132,7 @@ try {
        VALUES (?, ?, ?, '', '', 0, 0, ?, ?, ?, 'project', '', '')`,
     ).run(
       p.workspaceId,
-      p.name,
+      name,
       localPath,
       JSON.stringify(payload),
       now,
@@ -151,60 +168,19 @@ try {
       );
       counts.files++;
     }
-
-    // The latest snapshot's chat titles (eval sources already left out by
-    // pa-eval-build), newest first, a day apart before that week.
-    const weekStart = Date.parse(`${snapshotWeek}T00:00:00Z`);
-    for (const [i, title] of (recent.get(p.workspaceId) || []).entries()) {
-      const native = randomUUID();
-      const id = `native_claude_${native}`;
-      const at = new Date(weekStart - (i + 1) * 86_400_000).toISOString();
-      const payload = {
-        id,
-        workspaceId: p.workspaceId,
-        provider: "claude",
-        nativeSessionId: native,
-        title,
-        preview: title,
-        status: "completed",
-        updatedAt: at,
-        // The person's first message: a native chat with no turns is
-        // dropped at server start.
-        recentMessages: [{ role: "user", text: title }],
-        readonly: false,
-      };
-      db.prepare(
-        "INSERT INTO chats (id, title, payload_json, updated_at, workspace_id, provider, native_session_id, activity_at) VALUES (?, ?, ?, ?, ?, 'claude', ?, ?)",
-      ).run(id, title, JSON.stringify(payload), at, p.workspaceId, native, at);
-      counts.chats++;
-    }
   }
 
   // Connector metadata bound to the index's projects (dev DB, read-only).
   const projectIds = index.projects.map((p) => p.workspaceId);
-  const marks = projectIds.map(() => "?").join(", ");
   const neutralLabel = {
     feishu: () => "PA1 Eval",
     cloudflare: () => "PA1 Eval",
     openlark: () => "work-dev OpenLark（内网）",
   };
-  const bindings = dev
-    .prepare(
-      `SELECT workspace_id, account_id, access FROM external_account_bindings WHERE workspace_id IN (${marks})`,
-    )
-    .all(...projectIds);
-  const accountIds = [...new Set(bindings.map((b) => b.account_id))];
-  for (const accountId of accountIds) {
-    const a = dev
-      .prepare(
-        "SELECT id, provider, app_id, mode, status, keep_alive FROM external_accounts WHERE id = ?",
-      )
-      .get(accountId);
-    const app = dev
-      .prepare(
-        "SELECT id, provider, visibility, created_via FROM external_provider_apps WHERE id = ?",
-      )
-      .get(a.app_id);
+  const connectors = index.connectors || connectorsOf(dev(), projectIds);
+  const { bindings } = connectors;
+  for (const a of connectors.accounts) {
+    const { app } = a;
     const label = (neutralLabel[a.provider] || (() => a.provider))();
     db.prepare(
       `INSERT OR IGNORE INTO external_provider_apps (id, provider, owner_user_id, visibility, label, client_id, created_via, created_at, updated_at)
@@ -254,11 +230,7 @@ try {
   const projectDevice = new Map(
     index.projects.map((p) => [p.workspaceId, devices.get(p.computer)]),
   );
-  for (const b of dev
-    .prepare(
-      `SELECT workspace_id, kind, members FROM device_connector_bindings WHERE workspace_id IN (${marks})`,
-    )
-    .all(...projectIds)) {
+  for (const b of connectors.deviceBindings) {
     const deviceId = projectDevice.get(b.workspace_id);
     db.prepare(
       `INSERT OR IGNORE INTO device_connector_states (device_id, kind, status, installed, signed_in, checked_at)
@@ -275,7 +247,7 @@ try {
   }
 
   if (profileId) {
-    const profile = dev
+    const profile = dev()
       .prepare("SELECT * FROM profiles WHERE id = ?")
       .get(profileId);
     if (!profile)
@@ -290,7 +262,7 @@ try {
     db.prepare(
       `INSERT INTO profiles (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
     ).run(...cols.map((c) => profile[c]));
-    const secret = dev
+    const secret = dev()
       .prepare("SELECT * FROM secret_records WHERE id = ?")
       .get(`agent-profile:${profileId}`);
     if (!secret) throw new Error(`no secret for ${profileId}`);
@@ -313,13 +285,12 @@ try {
   db.exec("ROLLBACK");
   throw error;
 } finally {
-  dev.close();
+  devDB?.close();
 }
 db.close();
 console.log(
   JSON.stringify(
     {
-      snapshotWeek,
       ...counts,
       profile: profileId || null,
       executionDefault: executionDefault || null,

@@ -6,6 +6,10 @@
 // CLAUDE_CONFIG_DIR, or ~/.claude), and an answer is read back from that
 // transcript. The Worker checks for that transcript before it resumes a native
 // session, and --resume must find it, so a resumed session really continues.
+// FAKE_CLAUDE_HOLD=1 (scripts/pa-eval-run.mjs sets it in a wrapper): a turn
+// records the message and never answers, as a helper still at work; the
+// session runs until it is cancelled. A connection check's prompt is still
+// answered.
 
 const { createInterface } = require("node:readline");
 const { randomUUID } = require("node:crypto");
@@ -161,6 +165,12 @@ function answerFrom(past, text) {
 function turn(text) {
   const past = history();
   append({ type: "user", message: { role: "user", content: text } });
+  // A held helper is still at work; a connection check is answered.
+  if (
+    process.env.FAKE_CLAUDE_HOLD === "1" &&
+    text.trim() !== "Reply with the single word OK."
+  )
+    return;
   const { text: answer, delaySeconds } = answerFrom(past, text);
   if (delaySeconds === undefined) reply(answer);
   else setTimeout(() => reply(answer), delaySeconds * 1000);
