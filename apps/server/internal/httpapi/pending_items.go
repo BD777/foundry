@@ -466,6 +466,10 @@ type pendingItemView struct {
 	ItemID          string `json:"itemId,omitempty"`
 	ItemAssistantID string `json:"itemAssistantId,omitempty"`
 	ItemText        string `json:"itemText,omitempty"`
+	// ConversationAssistant is the assistant whose own conversation the
+	// entry's session is: the page names that assistant, not the
+	// conversation's title, which its first message gave it.
+	ConversationAssistant *pendingAssistantView `json:"conversationAssistant,omitempty"`
 	// Notice is what became of an open request's notice to the person: its
 	// state, or why it has none. Absent for an item that never gets one.
 	Notice *pendingNoticeView `json:"notice,omitempty"`
@@ -547,6 +551,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	sessions := map[string]*store.AgentSession{}
+	conversations := map[string]*pendingAssistantView{}
 	workspaces := map[string]string{}
 	bot := s.cachedNoticeBot()
 	for _, item := range items {
@@ -567,11 +572,17 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 				sessions[item.SessionID] = session
+				if session != nil && s.assistant != nil {
+					if agent, ok := s.assistant.Conversation(ctx, *session); ok {
+						conversations[item.SessionID] = &pendingAssistantView{ID: agent.ID, Name: agent.Name, IsDefault: agent.IsDefault}
+					}
+				}
 			}
 			if session == nil || session.ArchivedAt != "" {
 				continue
 			}
 			view.SessionTitle = session.Title
+			view.ConversationAssistant = conversations[item.SessionID]
 			if link, linked := links[item.SessionID]; linked {
 				view.ItemID, view.ItemAssistantID, view.ItemText = link.ItemID, link.AssistantID, link.Text
 			}

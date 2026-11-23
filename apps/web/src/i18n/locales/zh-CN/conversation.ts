@@ -243,6 +243,12 @@ export const conversation: Translation<typeof en> = {
     scheduled: "定时任务",
     scheduledWith: "定时任务：{{title}}",
     notice: "Foundry 通知",
+    relay: {
+      question_answer: "你回答了提问",
+      question_answerWith: "你回答了：{{title}}",
+      decision_note: "你补充了说明",
+      decision_noteWith: "你补充了说明：{{title}}",
+    },
     automatic: "自动触发",
     automaticWith: "自动触发（{{kind}}）",
     showBody: "展开完整内容",

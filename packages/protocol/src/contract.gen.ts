@@ -4712,7 +4712,7 @@ interface components {
       /** @description A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose. */
       response?: string;
       /**
-       * @description Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration.
+       * @description Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words after a frame written for the model.
        * @enum {string}
        */
       noticeKind?:
@@ -4720,10 +4720,13 @@ interface components {
         | "digest"
         | "proposal_outcome"
         | "helper_question"
+        | "channel_item"
         | "device_back"
         | "operation"
         | "supervision"
-        | "upkeep";
+        | "upkeep"
+        | "question_answer"
+        | "decision_note";
     };
     AgentSessionEventMetadata: {
       workerFailure?: components["schemas"]["WorkerFailure"];

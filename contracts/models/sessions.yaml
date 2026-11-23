@@ -1056,17 +1056,20 @@ components:
             this instead of Foundry's report prose."
           type: string
         noticeKind:
-          description: "Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration."
+          description: "Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words after a frame written for the model."
           type: string
           enum:
             - reminder
             - digest
             - proposal_outcome
             - helper_question
+            - channel_item
             - device_back
             - operation
             - supervision
             - upkeep
+            - question_answer
+            - decision_note
           x-go-type: string
     AgentSessionEventMetadata:
       type: object

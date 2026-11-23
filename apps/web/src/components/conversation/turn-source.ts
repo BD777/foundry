@@ -30,6 +30,11 @@ export interface TurnSource {
   onOpen?: () => void;
   /** A child report's session, linked by its title when no sender resolved it (DEV-289). */
   sessionId?: string;
+  /**
+   * A Foundry notice that relays the person's own words (answer, note): the
+   * row names it in the person's language and shows only their words.
+   */
+  relay?: PersonWordsNoticeKind;
   /** The raw kind, for a source this build does not know. */
   raw?: string;
   /** A child report's turn status: completed, failed or canceled. */
@@ -98,6 +103,75 @@ function backgroundSource(message: ChatMessageItem): TurnSource {
   };
 }
 
+/**
+ * The Foundry notices that relay the person's own words after a line written
+ * for the model, in English (the server's AnswerFrame, ItemAnswerFrame and
+ * decision note), by the line that ends that frame. The model reads the whole
+ * text; the person sees what they said and what it was about.
+ */
+const personWordsNotices = {
+  question_answer: "\nTheir answer:\n",
+  decision_note: "\nTheir message:\n",
+} as const;
+
+export type PersonWordsNoticeKind = keyof typeof personWordsNotices;
+
+interface PersonWordsNotice {
+  kind: PersonWordsNoticeKind;
+  /** What the words answer: the frame's quoted question, item or request. */
+  subject?: string;
+  words: string;
+}
+
+/**
+ * The frame's quoted subject: Go's %q of it on the frame's first line, read
+ * as a JSON string (its escapes agree for printable text), else as written.
+ */
+function quotedSubject(frame: string): string | undefined {
+  const line = frame.split("\n")[0] ?? "";
+  const start = line.indexOf('"');
+  const end = line.lastIndexOf('"');
+  if (start < 0 || end <= start) return undefined;
+  const quoted = line.slice(start, end + 1);
+  try {
+    const value: unknown = JSON.parse(quoted);
+    if (typeof value === "string") return value.trim() || undefined;
+  } catch {
+    // Not JSON-compatible (a \x or \U escape): show it as written.
+  }
+  return quoted.slice(1, -1).trim() || undefined;
+}
+
+/** The person's words a structured Foundry notice relays, if it is one. */
+function personWordsNotice(
+  message: ChatMessageItem,
+): PersonWordsNotice | undefined {
+  const source = message.inputSource;
+  const kind = source?.kind === "foundry_notice" ? source.noticeKind : "";
+  if (kind !== "question_answer" && kind !== "decision_note") return undefined;
+  const text = typeof message.text === "string" ? message.text : "";
+  const cut = text.indexOf(personWordsNotices[kind]);
+  if (cut < 0) return undefined;
+  const subject = quotedSubject(text.slice(0, cut).trim());
+  return {
+    kind,
+    ...(subject ? { subject } : {}),
+    words: text.slice(cut + personWordsNotices[kind].length).trim(),
+  };
+}
+
+/** A relayed answer or note: the subject as its title, all of it below when long. */
+function relaySource(notice: PersonWordsNotice): TurnSource {
+  const title = continuationTitle(notice.subject);
+  const long = Boolean(notice.subject && notice.subject !== title);
+  return {
+    kind: "notice",
+    relay: notice.kind,
+    ...(title ? { title } : {}),
+    ...(long && notice.subject ? { detail: notice.subject } : {}),
+  };
+}
+
 /** A legacy event's marker opening a child session's turn_end report. */
 const reportPrefix = "Foundry report:";
 /** A legacy event's marker opening an input the server sent, not the person. */
@@ -152,8 +226,10 @@ function structuredSource(
       return backgroundSource(message);
     case "scheduled":
       return scheduledSource(message);
-    case "foundry_notice":
-      return { kind: "notice" };
+    case "foundry_notice": {
+      const relay = personWordsNotice(message);
+      return relay ? relaySource(relay) : { kind: "notice" };
+    }
     case "channel":
       return { kind: "channel" };
     default:
@@ -205,13 +281,16 @@ function inputSourceOf(message: ChatMessageItem): TurnSource | undefined {
 
 /**
  * A legacy body without the marker its source row already names. A
- * structured child report shows only its final answer.
+ * structured child report shows only its final answer; a notice relaying the
+ * person's words shows only those words.
  */
 export function sourceBody(message: ChatMessageItem): string {
   if (message.inputSource?.kind === "child_report") {
     const answer = message.inputSource.response?.trim();
     if (answer) return answer;
   }
+  const relay = personWordsNotice(message);
+  if (relay) return relay.words;
   const text = typeof message.text === "string" ? message.text.trim() : "";
   if (message.sentBy && text.startsWith(reportPrefix))
     return text.slice(reportPrefix.length).trimStart();

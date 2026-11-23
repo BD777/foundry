@@ -87,6 +87,44 @@ func TestAssistantAskRecordsOneItemForThePerson(t *testing.T) {
 	}
 }
 
+// An entry of the assistant's own conversation names that assistant, whatever
+// its source: the conversation's title is only its first message. A helper's
+// and an ordinary chat's entries name no conversation assistant.
+func TestPendingEntriesOfAnAssistantConversationNameTheAssistant(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	if _, failed := f.needsYou(t, map[string]any{"op": "ask", "question": "Cancel tomorrow's meeting?"}); failed {
+		t.Fatal("ask failed")
+	}
+	for _, session := range []store.AgentSession{f.conversation, f.helper, f.chat} {
+		if _, _, err := f.server.recordPendingItem(ctx, store.PendingItem{
+			UserID: f.aliceID, WorkspaceID: session.WorkspaceID, SessionID: session.ID, Source: store.PendingSourceTurnFailed,
+			Key: "failed:" + session.ID, Title: "The turn failed", Excerpt: "The turn failed",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	agent := defaultAssistantOf(t, f.server, f.aliceID)
+	list, _ := f.open(t)
+	named := map[string]int{}
+	for _, item := range list.Items {
+		switch item.SessionID {
+		case f.conversation.ID:
+			if item.ConversationAssistant == nil || item.ConversationAssistant.ID != agent.ID || !item.ConversationAssistant.IsDefault {
+				t.Fatalf("%s of the conversation names %+v", item.Source, item.ConversationAssistant)
+			}
+			named[item.Source]++
+		default:
+			if item.ConversationAssistant != nil {
+				t.Fatalf("%s of %s names %+v", item.Source, item.SessionID, item.ConversationAssistant)
+			}
+		}
+	}
+	if named[store.PendingSourceAssistantQuestion] != 1 || named[store.PendingSourceTurnFailed] != 1 {
+		t.Fatalf("conversation entries = %v of %+v", named, list.Items)
+	}
+}
+
 func TestHelperCannotAskThePerson(t *testing.T) {
 	f := newNeedsYouFixture(t)
 	token, err := f.db.MintAgentSessionToken(context.Background(), f.helper.ID)

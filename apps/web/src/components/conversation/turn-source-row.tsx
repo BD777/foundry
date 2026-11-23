@@ -128,7 +128,15 @@ function SourceLabel({
         </span>
       );
     case "notice":
-      return <span>{t("turnSource.notice")}</span>;
+      return (
+        <span>
+          {source.relay
+            ? title
+              ? t(`turnSource.relay.${source.relay}With`, { title })
+              : t(`turnSource.relay.${source.relay}`)
+            : t("turnSource.notice")}
+        </span>
+      );
     case "automatic":
       return (
         <span>
@@ -436,11 +444,12 @@ export function TurnSourceRow({
   const continuation =
     source.kind === "background" || source.kind === "scheduled";
   // A helper's report, another session's message or a Foundry notice arrives
-  // as Markdown; the person's and a channel's text keep their own rendering.
+  // as Markdown; the person's words (also relayed by a notice) and a
+  // channel's text keep their own rendering.
   const markdownBody =
     source.kind === "report" ||
     source.kind === "session" ||
-    source.kind === "notice";
+    (source.kind === "notice" && !source.relay);
   const detailText = source.detail?.trim();
   const hasDetails = Boolean(source.tasks?.length || detailText);
   const [open, setOpen] = useState(false);

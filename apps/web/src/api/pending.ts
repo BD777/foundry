@@ -108,6 +108,11 @@ export interface PendingItem {
   itemId?: string;
   itemAssistantId?: string;
   itemText?: string;
+  /**
+   * The assistant whose own conversation the entry's session is: the page
+   * names it, not the conversation's title (its first message).
+   */
+  conversationAssistant?: PendingAssistant;
   issueId?: string;
   /** The transcript event, and message, it was found in. */
   eventId?: string;

@@ -374,7 +374,7 @@ type AgentSessionInputSource struct {
 	// Response A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose.
 	Response string `json:"response,omitempty"`
 
-	// NoticeKind Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration.
+	// NoticeKind Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words after a frame written for the model.
 	NoticeKind string `json:"noticeKind,omitempty"`
 }
 
