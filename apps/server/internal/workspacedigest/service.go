@@ -28,19 +28,32 @@ type Sources interface {
 	Devices(ctx context.Context, userID string) ([]DeviceSource, error)
 }
 
-// Service computes and keeps digests and writes their summary files.
+// Store is what the service keeps digests and terms in, and the
+// workspaces and device skills it reads.
+type Store interface {
+	store.WorkspaceDigestStore
+	store.WorkspaceTermStore
+	GetWorkspace(ctx context.Context, id string) (store.WorkspaceProjection, error)
+	ListDeviceSkills(ctx context.Context, deviceID string) ([]store.DeviceSkill, error)
+}
+
+// Service computes and keeps digests and terms and writes their summary
+// files.
 type Service struct {
-	store   store.WorkspaceDigestStore
+	store   Store
 	sources Sources
 	// Now is the clock; time.Now by default.
 	Now func() time.Time
 	// Wake, when set, is told each time a summary falls due later, so the
 	// caller runs Due then.
 	Wake func(at time.Time)
+	// termBytes is how much text this service counted (TermBytesPerCall).
+	termBytes int
 }
 
-// New is a service over st and sources. It holds no state of its own.
-func New(st store.WorkspaceDigestStore, sources Sources) *Service {
+// New is a service over st and sources. It holds no state of its own but
+// how much text it counted (TermBytesPerCall).
+func New(st Store, sources Sources) *Service {
 	return &Service{store: st, sources: sources, Now: time.Now}
 }
 
@@ -179,6 +192,9 @@ func (s *Service) refresh(ctx context.Context, access Access, previous *store.Wo
 		return store.WorkspaceDigestRecord{}, err
 	}
 	source.UserID, source.Role = access.UserID, access.Role
+	if err := s.indexTerms(ctx, source); err != nil {
+		return store.WorkspaceDigestRecord{}, err
+	}
 	now := s.Now()
 	record := Compile(source, previous, now)
 	contentChanged := previous == nil || previous.ContentRev != record.ContentRev

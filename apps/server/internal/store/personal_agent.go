@@ -490,14 +490,17 @@ type WorkspaceDigest struct {
 	GitBranch      string                   `json:"gitBranch,omitempty"`
 	GitDirty       *bool                    `json:"gitDirty,omitempty"`
 	LastActivityAt string                   `json:"lastActivityAt,omitempty"`
-	CompiledAt     string                   `json:"compiledAt"`
-	SourceRev      string                   `json:"sourceRev"`
-	Dirty          bool                     `json:"dirty"`
-	L0             string                   `json:"l0"`
-	Summary        string                   `json:"summary"`
-	RouteWhen      []string                 `json:"routeWhen"`
-	NotWhen        []string                 `json:"notWhen"`
-	SummarizedAt   string                   `json:"summarizedAt,omitempty"`
+	// PersonActiveAt is the person's own latest chat there: a Foundry chat
+	// they started or a native chat on its device, not helpers' work.
+	PersonActiveAt string   `json:"personActiveAt,omitempty"`
+	CompiledAt     string   `json:"compiledAt"`
+	SourceRev      string   `json:"sourceRev"`
+	Dirty          bool     `json:"dirty"`
+	L0             string   `json:"l0"`
+	Summary        string   `json:"summary"`
+	RouteWhen      []string `json:"routeWhen"`
+	NotWhen        []string `json:"notWhen"`
+	SummarizedAt   string   `json:"summarizedAt,omitempty"`
 }
 
 type WorkspaceDigestSession struct {

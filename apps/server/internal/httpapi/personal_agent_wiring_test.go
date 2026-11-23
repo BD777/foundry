@@ -137,11 +137,13 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if second.PersonalAgentFiles[0].Content != first.PersonalAgentFiles[0].Content {
 		t.Fatalf("the instructions changed with only the turn's state: %s", firstDifference(first.PersonalAgentFiles[0].Content, second.PersonalAgentFiles[0].Content))
 	}
-	// Each turn carries only the time: no followed work, no index.
+	// Each turn carries the time, the assistant's computer and where the
+	// person last chatted: no followed work, no index.
 	for _, turn := range []string{prompt1, second.Session.Input.Prompt} {
 		_, block, _ := strings.Cut(turn, prompt.TurnContextStart)
-		if !strings.HasPrefix(block, "\nNow: ") || strings.Count(block, "\n") != 2 {
-			t.Fatalf("the turn's context carries more than the time: %q", turn)
+		if !strings.HasPrefix(block, "\nNow: ") || !strings.Contains(block, "\nYou run on: dev_home.\n") ||
+			!strings.Contains(block, "\nThe person's own latest chats, by computer: ") || strings.Count(block, "\n") != 4 {
+			t.Fatalf("the turn's context carries more than its facts: %q", turn)
 		}
 	}
 	if !strings.HasPrefix(second.Session.Input.Prompt, "and the next one\n\n") || strings.Contains(second.Session.Input.Prompt, "add an export") {

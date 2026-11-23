@@ -172,7 +172,7 @@ func TestCompileKeepsThePersonsRequestsAsHistory(t *testing.T) {
 	if fmt.Sprint(record.Files) != "[README.md src]" {
 		t.Fatalf("files = %v", record.Files)
 	}
-	files := ProjectFiles([]store.WorkspaceDigest{record.Digest, {WorkspaceID: "ws_2", Name: "Other"}}, nil, time.Now())
+	files := ProjectFiles([]store.WorkspaceDigest{record.Digest, {WorkspaceID: "ws_2", Name: "Other"}}, nil, nil, time.Now())
 	if len(files) != 3 || !strings.Contains(files[0].Content, "简历再精简一版") {
 		t.Fatalf("project summaries = %+v", files)
 	}

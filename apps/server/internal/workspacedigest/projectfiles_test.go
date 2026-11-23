@@ -27,7 +27,7 @@ func TestProjectFilesCoverTheProjectsAndNoOthers(t *testing.T) {
 		{WorkspaceID: "ws_old", Name: "Old", Archived: true},
 		{WorkspaceID: "ws_pa", Name: "Assistant", Kind: store.WorkspaceKindPersonalAgent},
 	}
-	files := ProjectFiles(digests, map[string]bool{"ws_ccm_byte": true}, now)
+	files := ProjectFiles(digests, map[string]bool{"ws_ccm_byte": true}, nil, now)
 	if len(files) != 3 {
 		t.Fatalf("project files = %d, want three (two copies and the manifest)", len(files))
 	}
@@ -72,7 +72,7 @@ func TestProjectFilesWriteAsOfAndRedact(t *testing.T) {
 		Purpose: "GPU box at 203.0.113.62", Summary: "Login ec2-user@203.0.113.62",
 		CompiledAt: "2026-11-15T00:00:00Z",
 	}
-	files := ProjectFiles([]store.WorkspaceDigest{digest}, nil, now)
+	files := ProjectFiles([]store.WorkspaceDigest{digest}, nil, nil, now)
 	summary := files[0].Content
 	for _, secret := range []string{"203.0.113.62", "ec2-user"} {
 		if strings.Contains(summary, secret) {

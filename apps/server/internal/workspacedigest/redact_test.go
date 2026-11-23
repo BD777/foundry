@@ -63,7 +63,7 @@ func TestCompileRedactsThePersonsHistory(t *testing.T) {
 	if !strings.Contains(digest.Purpose, "renderkit") || !strings.Contains(digest.OpenIssues[0].Title, "unreachable from dev-server") {
 		t.Errorf("routing words lost: %q, %q", digest.Purpose, digest.OpenIssues[0].Title)
 	}
-	files := ProjectFiles([]store.WorkspaceDigest{digest}, nil, time.Now())
+	files := ProjectFiles([]store.WorkspaceDigest{digest}, nil, nil, time.Now())
 	if len(files) != 2 || !strings.HasSuffix(files[0].Path, ".md") {
 		t.Fatalf("project files = %+v", files)
 	}

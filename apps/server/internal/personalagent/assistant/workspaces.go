@@ -16,6 +16,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/permission"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // The assistant's workspace tools (docs/personal-agent.md §5): finding and
@@ -634,6 +635,27 @@ func (s *Service) GetWorkspace(ctx context.Context, scope Scope, workspaceID str
 		answer["note"] = s.routingNote(ctx, scope.Agent, workspace.ID)
 	}
 	return answer, nil
+}
+
+// FindInProjects is find_in_projects: which of the projects the
+// assistant covers name every term of query in their chats, sessions,
+// file names, skills or connectors, and which skills on their computers
+// are named so.
+func (s *Service) FindInProjects(ctx context.Context, scope Scope, query string, offset, limit int) (workspacedigest.FindResult, error) {
+	if strings.TrimSpace(query) == "" {
+		return workspacedigest.FindResult{}, invalid("query is required")
+	}
+	records, err := s.workspaceCandidates(ctx, scope.Agent)
+	if err != nil {
+		return workspacedigest.FindResult{}, err
+	}
+	projects := make([]store.WorkspaceDigest, 0, len(records))
+	for _, record := range records {
+		if !record.Digest.Archived {
+			projects = append(projects, record.Digest)
+		}
+	}
+	return s.digests.Find(ctx, projects, query, offset, limit)
 }
 
 func (s *Service) liveWorkspace(ctx context.Context, workspace store.WorkspaceProjection, online bool) map[string]any {

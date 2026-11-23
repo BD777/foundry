@@ -66,6 +66,8 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 
 概括会话不设每日上限（§9，DEV-273 去掉）；每小时的刷新速率见 §14。
 
+**名字索引（确定性，无模型）。** 摘要只取标题与开头几句，主机名、服务名、内部代号（`sats-tokyo-7`、`cliproxyapi`、`zspread2`）多半只在对话全文里。`workspacedigest` 在每次刷新摘要时按工作区数一遍这些名字（表 `workspace_term_sources` 记来源与版本，`workspace_terms` 记来源 × 词 × 次数，随工作区删除）：来源是原生对话里本人与 Agent 写的话（`user` / `assistant` / `commentary`，不含工具输出与推理，每个来源取最新 256 KiB）、Foundry 会话的标题、首条与事件里的同类消息、顶层文件名、选定的 Skill 与连接器。只存名字与次数，不存原文：`redact.Text` 会去掉的东西也不进索引（标记后的密码、token 与登录名，邮箱与 `user@host`，认证头里的凭据，ssh 后带点的主机地址；单个词则在含数字或长于 16 个字符时整体过一遍 `redact.Text`，按词判断而不是先脱敏全文，全文脱敏每 MB 要数秒），再去掉常见词、数字与版本号、Foundry 的 id、哈希与随机串；只认拉丁字母与数字组成的名字，中文词不进索引。没变的来源不重数；进行中的来源数一次，结束后再数；每次调用（一次读取的同步或一次观察者刷新）最多数 2 MiB 文本（新的来源先），首次建索引分若干次调用完成。读取只在本人能读、且在助理权限包内的工作区里进行。两个出口：项目文件末尾一节「Names mentioned here」，列出相对本人其他项目最有区分度的至多 10 个名字（tf-idf，稀有度取平方，按次数与出现在几个来源里加权；项目多于 8 个时超过四分之一的项目都提到的不列）；工具 `find_in_projects`（§5）按词查全部项目。设备上安装的 Skill（`device_skills`）查询时现读：`~/` 下的属于该电脑上全部项目，项目目录内、上层或下层的属于对应项目。
+
 **路由笔记 `cards/<ws_id>.md`** 由助理自己写，记录“这个人什么时候想去这里”（纠正、例子），这是 Server 摘要给不了的东西；项目的摘要文件写明笔记路径，助理路由时一起读。
 
 ### 4. Workspace 生命周期由助理驱动
@@ -74,18 +76,18 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 
 **动作与默认策略**（存在 `personal_agents.settings_json.policy`，Server 在每次工具调用时检查；面板可改，但“不允许”一栏的项不可放开）：
 
-| 动作                                                                                      | 默认                       | 说明                                                 |
-| ----------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------- |
-| 在允许的设备的受管根目录里新建（空目录或克隆）                                            | 自动，事后告知             | 名称、目录名由助理起；放在哪台按下面的“放在哪台电脑” |
-| 把受管根目录之外的已有文件夹登记为项目                                                    | 先问                       | 碰到人原有的文件                                     |
-| 改名、改 `purpose`（写进摘要）                                                            | 自动                       | 可撤销；回复里说一句                                 |
-| 加 Skill（本人的库或内置）                                                                | 自动                       |                                                      |
-| 去掉 Skill                                                                                | 助理建的项目自动；其他先问 |                                                      |
-| 把本人的连接器账号绑定到一个项目                                                          | 每个账号 × 项目首次先问    | 意味着那里的会话能以本人身份对外                     |
-| 解绑连接器账号                                                                            | 先问                       | 可能让那里正在用的流程失效                           |
-| 归档 / 恢复                                                                               | 归档先问；恢复自动         | 归档 = 隐藏、停止接新会话、保留一切                  |
-| 在本人不是 Owner 的项目里做上述任何改动                                                   | 不允许                     |                                                      |
-| 删除项目或文件、成员与分享、飞书 Bot 配置、设备设置、模型服务、Accept / 确认 / 判定 Issue | 不允许（没有工具）         | 需要时给出页面链接，由人自己做                       |
+| 动作                                                                                      | 默认                       | 说明                                                                                                 |
+| ----------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 在允许的设备的受管根目录里新建（空目录或克隆）                                            | 自动，事后告知             | 名称、目录名由助理起；放在哪台按下面的“放在哪台电脑”                                                 |
+| 把受管根目录之外的已有文件夹登记为项目                                                    | 先问                       | 碰到人原有的文件                                                                                     |
+| 改名、改 `purpose`（写进摘要）                                                            | 自动                       | 可撤销；回复里说一句                                                                                 |
+| 加 Skill（本人的库或内置）                                                                | 自动                       |                                                                                                      |
+| 去掉 Skill                                                                                | 助理建的项目自动；其他先问 |                                                                                                      |
+| 把本人的连接器账号绑定到一个项目                                                          | 每个账号 × 项目首次先问    | 意味着那里的会话能以本人身份对外                                                                     |
+| 解绑连接器账号                                                                            | 先问                       | 可能让那里正在用的流程失效                                                                           |
+| 归档 / 恢复                                                                               | 归档先问；恢复自动         | 归档 = 隐藏、停止接新会话、保留一切                                                                  |
+| 在本人不是 Owner 的项目里做上述任何改动                                                   | 不允许                     |                                                                                                      |
+| 删除项目或文件、成员与分享、飞书 Bot 配置、设备设置、模型服务、Accept / 确认 / 判定 Issue | 不允许（没有工具）         | 需要时给出页面链接，由人自己做；本人在对话里明确要求时，项目里的帮手删除文件、卸载软件（2026-11-23） |
 
 策略的键（`store.PersonalAgentActions`，协议 `personalAgentActions`）：`create_workspace`（受管根目录内新建，含登记受管根目录内已有的文件夹）、`register_folder`、`rename_workspace`（名称与 `purpose`）、`add_skill`、`remove_skill_created`（助理建的项目）、`remove_skill`（其他项目）、`bind_connector`、`unbind_connector`、`archive_workspace`、`restore_workspace`；值为 `auto / ask / deny`。“不允许”的行没有键，任何设置都放不开。面板的三个预设：多问我 = 全部 `ask`；默认 = 上表；放手 = 全部 `auto`，只有 `bind_connector` 仍 `ask`。
 
@@ -120,6 +122,7 @@ PA 目录只有：`AGENTS.md`（顶部 Foundry 维护的块 + 本人的说明，
 | 工具                                                                                      | 类别 | 作用                                                                                                                                                                                                                                                                                               |
 | ----------------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get_workspace(workspaceId, include[])`                                                   | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                                                                                                                                                                                                                               |
+| `find_in_projects(query, offset?, limit?)`                                                | 读   | 按名字查本人的项目（§3 名字索引）：哪些项目的对话、会话、文件名、Skill 或连接器提到 query 的全部词（词按前缀匹配），次数、来源数、最近时间、匹配到的词与至多 3 个示例（对话或会话 id、标题、时间）；第一页另带电脑上名字含这些词的 Skill。只给计数与指针，一页至多 10 个项目                       |
 | `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`                   | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`                                                                                                                                                                                                             |
 | `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})`                  | 写   | §4；返回前后对比或提议                                                                                                                                                                                                                                                                             |
 | `archive_workspace(workspaceId, restore?)`                                                | 写   | §4                                                                                                                                                                                                                                                                                                 |
@@ -204,7 +207,7 @@ Foundry 不再对助理设用量上限（2026-11-17，本人决定，DEV-273）�
 不注入系统提示词，也不注入每轮引导（DEV-200，本人原则：“避免注入系统提示词和每轮引导”）：长期指导在 `AGENTS.md` 与助理 skills 里，由运行时原生加载；动态事实由工具按需读，或以简短的事实通知到达。
 
 - **助理目录的 `AGENTS.md`**（DEV-223 起分两部分）：顶部是 Foundry 维护的块（`prompt.ManagedBlock`，以 `<!-- foundry:managed:start … -->` / `<!-- foundry:managed:end -->` 标出），按设置填好的身份（名字、语言、风格）、本人的规则（设置里的额外要求、各项操作要不要先问本人）、本人确认过的记忆（两层，最新的在前，≤ 2,000 字符，其余用 `read_memory`）、可读的记忆发布、单聊原来的去处和本人能打开的页面；每次运行前经 `run_session.personalAgentFiles`（`managedBlock: true`）由 Worker 只替换这一块（`session/personal-agent-files.ts` 的 `withManagedBlock`）。块下面是说明，归本人：第一次从 `prompt.DefaultInstructions` 种下，之后 Foundry 不再改写，本人在助理设置的「工作区文件」里编辑（带版本历史），助理自己的对话在本人要求时也可以改；Foundry 发布新的默认说明时只提示本人「有新的默认版本」，看差异后由本人采用或保留。没有 `assistant_instructions_block` 能力的旧 Worker 仍收到整份文件（`prompt.AgentsFile` = 块 + 默认说明），此时编辑器只读。Claude Code（2.1.277 起，目录里没有 `CLAUDE.md` 时）与 Codex 都在会话开始时原生读取它。不含实时状态（时间、在线电脑、清单、进行中的事）。典型大小见 `prompt_test` 的 `agentsFileBudget`，上限 `prompt.AgentsFileMaxBytes`（28 KiB，编辑器显示用量并拒绝超限的保存）。示例在 `.foundry/assistant-examples.md`，项目与电脑索引在 `.foundry/project-index.md`（`prompt.ProjectIndexFile`，写入时刻的快照），说明里各留一行指引；`.foundry/` 与助理 skills 在编辑器里只读。
-- **本轮上下文**（`prompt.TurnContext`）：只有一行本人时区的当前时间（运行时不知道本人时区）；经收件箱捕获的消息再加一行回执（receipt id、原始来源、receivedAt、时区，重试时加上一次尝试的会话）。以“[Context from Foundry for this turn…]”标明，附在这一轮输入后面；存下的输入仍是本人的原话。
+- **本轮上下文**（`prompt.TurnContext`）：本人时区的当前时间（运行时不知道本人时区）；助理所在的电脑（家设备）；本人自己最近在哪些电脑上对话（摘要的 `personActiveAt`：本人发起的 Foundry 对话或该设备上的原生对话，不算帮手；只列本人拥有的电脑、最近 7 天、至多 3 台、每台至多 2 个项目，如 `MacBook 3 h ago (『家庭记账』)`）；经收件箱捕获的消息再加一行回执（receipt id、原始来源、receivedAt、时区，重试时加上一次尝试的会话）。以“[Context from Foundry for this turn…]”标明，附在这一轮输入后面；存下的输入仍是本人的原话。
 - **用工具读**：电脑与在线状态 `list_computers`，清单 `read_list`，跟进的事 `list_tasks`，等本人处理的事 `needs_you` op list，项目摘要（`.foundry/projects/`）与 `get_workspace`，记忆 `read_memory`。
 - **Foundry 通知**（以 `[Foundry] ` 开头）：静默、卡住、连不上服务，电脑上线，本人对卡片的回答，到点提醒和每日小结；helper 的完成与失败不是通知，而是通用子会话的 turn_end 报告（`Foundry report:`，DEV-240）。只写发生了什么、状态、简短细节、链接和下一次调用要用的 id；怎么处理写在助理 skills 里。
 
@@ -382,8 +385,9 @@ Handing off:
 # Limits and safety
 - If a tool says a limit was reached, tell the person plainly and offer the settings link.
 - You have no tools to delete projects or files, share with other people, change
-  computers' settings, or approve finished work on the person's behalf. Do not try to work
-  around that through helpers.
+  computers' settings, or approve finished work on the person's behalf. A helper deletes
+  files or uninstalls software in a project once the person explicitly asked for it
+  (personQuote passes their words on; person 2026-11-23).
 - Never send messages, emails or documents to anyone other than the person unless they
   asked for exactly that message to that recipient; let the helper doing it show a draft
   first.
