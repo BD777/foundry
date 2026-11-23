@@ -52,14 +52,21 @@ func helloWithSections(deviceID string, omit bool) map[string]any {
 	return hello
 }
 
-func readEnvelopeForTest(t *testing.T, conn *websocket.Conn) wsEnvelope {
+// readAnswerForTest reads until the server answers the message with id. The
+// device is published before its hello is answered, so requests from work
+// a previous connection started (resource_settings) may come first.
+func readAnswerForTest(t *testing.T, conn *websocket.Conn, id string) wsEnvelope {
 	t.Helper()
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	var envelope wsEnvelope
-	if err := conn.ReadJSON(&envelope); err != nil {
-		t.Fatalf("read: %v", err)
+	for {
+		var envelope wsEnvelope
+		if err := conn.ReadJSON(&envelope); err != nil {
+			t.Fatalf("waiting for the answer to %s: %v", id, err)
+		}
+		if envelope.ID == id {
+			return envelope
+		}
 	}
-	return envelope
 }
 
 // A registration that leaves out a section the server does not have is
@@ -75,9 +82,9 @@ func TestRegistrationLeavesOutSectionsTheServerKeeps(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = first.Close() })
 	writeWSIDForTest(t, first, "slim", wsHelloType, helloWithSections(deviceID, true))
-	answer := readEnvelopeForTest(t, first)
-	if answer.Type != wsRegistrationNeededType || answer.ID != "slim" {
-		t.Fatalf("answer to a slim hello on a fresh server = %s %s, want registration_needed", answer.Type, answer.ID)
+	answer := readAnswerForTest(t, first, "slim")
+	if answer.Type != wsRegistrationNeededType {
+		t.Fatalf("answer to a slim hello on a fresh server = %s, want registration_needed", answer.Type)
 	}
 	var needed wsRegistrationNeededPayload
 	if err := json.Unmarshal(answer.Payload, &needed); err != nil || len(needed.Sections) != 1 || needed.Sections[0] != "device" {
@@ -87,7 +94,7 @@ func TestRegistrationLeavesOutSectionsTheServerKeeps(t *testing.T) {
 		t.Fatal("a registration missing sections must not register the device")
 	}
 	writeWSIDForTest(t, first, "whole", wsHelloType, helloWithSections(deviceID, false))
-	if answer := readEnvelopeForTest(t, first); answer.Type != wsRegisteredType {
+	if answer := readAnswerForTest(t, first, "whole"); answer.Type != wsRegisteredType {
 		t.Fatalf("answer to the whole hello = %s %q", answer.Type, answer.Error)
 	}
 	_ = first.Close()
@@ -98,7 +105,7 @@ func TestRegistrationLeavesOutSectionsTheServerKeeps(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = second.Close() })
 	writeWSIDForTest(t, second, "again", wsHelloType, helloWithSections(deviceID, true))
-	if answer := readEnvelopeForTest(t, second); answer.Type != wsRegisteredType {
+	if answer := readAnswerForTest(t, second, "again"); answer.Type != wsRegisteredType {
 		t.Fatalf("answer to a slim hello the server can fill = %s %q", answer.Type, answer.Error)
 	}
 	connection := server.hub.connectionFor(deviceID)

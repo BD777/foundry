@@ -725,6 +725,35 @@ test("owned native refusal cache sends archive changes as summaries and keeps tr
   }
 });
 
+test("a log both runtimes' roots reach keeps each provider's own header", async (t) => {
+  // CODEX_HOME is the Claude config dir: Codex's archived_sessions walk
+  // reaches the archived Claude log too, and reading it as Codex first must
+  // not hide it from Claude.
+  const f = await fixture(t);
+  const keys = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"];
+  const prior = new Map(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    HOME: f.home,
+    CODEX_HOME: f.home,
+    CLAUDE_CONFIG_DIR: f.home,
+  });
+  try {
+    await mkdir(dirname(f.archived), { recursive: true });
+    await rename(f.active, f.archived);
+    invalidateNativeChatListings();
+    assert.equal(await nativeChatLogPath(f.workspace, "codex", id), undefined);
+    assert.equal(
+      await nativeChatLogPath(f.workspace, "claude", id),
+      f.archived,
+    );
+  } finally {
+    for (const [key, value] of prior) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("Codex discovery follows ancestry through pre-archived subagents without restoring them", async (t) => {
   const f = await fixture(t, "codex");
   const middle = "77777777-7777-4777-8777-777777777777",
