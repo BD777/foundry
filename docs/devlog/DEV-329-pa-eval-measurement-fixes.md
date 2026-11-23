@@ -1,4 +1,4 @@
-# DEV-328 PA 路由评测：把测量和产品分开（项目可打开、按生产方式构建夹具、隔离评测机、合成内容、默认判定）
+# DEV-329 PA 路由评测：把测量和产品分开（项目可打开、按生产方式构建夹具、隔离评测机、合成内容、默认判定）
 
 [事项索引](README.md) · 承接 [DEV-321](DEV-321-pa-eval-online-fixtures.md) · 诊断 `.foundry/reports/routing-diagnosis-20261123.md` §4.4 · 基线报告 `.foundry/reports/eval-baseline-20261124.md`（`.foundry/` 不入库）
 
