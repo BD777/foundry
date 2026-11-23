@@ -455,6 +455,14 @@ export const foundryCommands: Record<
       },
     },
     computers: { tool: "list_computers", flags: {} },
+    find: {
+      tool: "find_in_projects",
+      positional: "query",
+      flags: {
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
+    },
   },
   // The assistant's own settings and channels. Only a personal_agent session
   // may call them; for anyone else the server refuses the call.
