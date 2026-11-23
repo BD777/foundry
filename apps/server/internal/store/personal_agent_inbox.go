@@ -93,6 +93,8 @@ type PersonalAgentInboxStore interface {
 	GetPersonalAgentInbox(context.Context, string, string) (PersonalAgentInboxEntry, error)
 	ListPersonalAgentInbox(context.Context, string, int) ([]PersonalAgentInboxEntry, error)
 	DuePersonalAgentInbox(context.Context, string, int) ([]PersonalAgentInboxEntry, error)
+	PersonalAgentInboxAwaitsTurn(context.Context, string) (bool, error)
+	ReleasePersonalAgentInboxBusy(context.Context, string) error
 	SavePersonalAgentInbox(context.Context, PersonalAgentInboxEntry) (PersonalAgentInboxEntry, error)
 	PersonalAgentInboxSession(context.Context, string, string) (string, error)
 	PersonalAgentInboxByInput(context.Context, string, string) (PersonalAgentInboxEntry, error)

@@ -169,3 +169,78 @@ test("an answer to the agent's questions is labelled as one, not its envelope", 
   );
   assert.doesNotMatch(anchors[1].query, /send_user_message_question_reply/);
 });
+
+test("turn anchors are the person's messages, not reports, notices or other sessions' messages", () => {
+  const anchors = buildChatTurnAnchors([
+    { id: "person", role: "user", text: "Fix the service" },
+    {
+      id: "report",
+      role: "user",
+      text: "Foundry report: done",
+      inputSource: { kind: "child_report", sessionId: "sess_helper" },
+    },
+    {
+      id: "notice",
+      role: "user",
+      text: "[Foundry] the person answered",
+      inputSource: { kind: "foundry_notice" },
+    },
+    {
+      id: "relay",
+      role: "user",
+      text: "Foundry question: session sess_helper asks",
+      inputSource: { kind: "session", sessionId: "sess_helper" },
+    },
+    {
+      id: "steered-by-session",
+      role: "user",
+      steered: true,
+      text: "A helper's message",
+      sentBy: { sessionId: "sess_helper", label: "Helper" },
+    },
+    { id: "legacy-notice", role: "user", text: "[Foundry] an old notice" },
+    { id: "steered-person", role: "user", steered: true, text: "Also this" },
+    {
+      id: "person-structured",
+      role: "user",
+      text: "Next request",
+      inputSource: { kind: "person" },
+    },
+  ]);
+  assert.deepEqual(
+    anchors.map((anchor) => anchor.id),
+    ["person", "steered-person", "person-structured"],
+  );
+});
+
+test("a long conversation's rail keeps its markers distinct ticks", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  await import("../src/i18n/index.ts");
+  const { ChatTurnNavigator } =
+    await import("../src/components/conversation/chat-turn-navigator.tsx");
+  const anchors = Array.from({ length: 300 }, (_, index) => ({
+    accessibleLabel: `Turn ${index + 1}`,
+    id: `u${index}`,
+    messageIndex: index * 2,
+    query: `Turn ${index + 1}`,
+  }));
+  const markup = renderToStaticMarkup(
+    createElement(ChatTurnNavigator, {
+      activeIndex: 150,
+      anchors,
+      onNavigate: () => {},
+    }),
+  );
+  const markers = markup.match(/<button/g) ?? [];
+  assert.ok(markers.length <= 40, `${markers.length} markers`);
+  assert.ok(
+    markers.length >= 17,
+    "a long conversation still samples its turns",
+  );
+  assert.doesNotMatch(markup, /data-density="dense"/);
+  assert.match(
+    markup,
+    /aria-current="step"[^>]*aria-label="Current turn, 151 of 300/,
+  );
+});

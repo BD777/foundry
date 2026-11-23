@@ -102,7 +102,7 @@ func assistantQuestionOptions(raw []string) ([]string, error) {
 // resolve withdraws the question while nobody has answered it.
 func (s *Server) assistantQuestionOp(call mcpCall, scope assistant.Scope, op string, item store.PendingItem) (string, error) {
 	ctx := call.r.Context()
-	if item.AssistantID != scope.Agent.ID {
+	if item.AssistantID != scope.Agent.ID && !s.askedInConversation(ctx, scope.Agent, item) {
 		return "", &statusError{http.StatusForbidden, fmt.Errorf("only the questions this assistant asked")}
 	}
 	if op != "resolve" {
@@ -119,6 +119,21 @@ func (s *Server) assistantQuestionOp(call mcpCall, scope assistant.Scope, op str
 		return "", err
 	}
 	return encodeJSON(map[string]any{"withdrawn": s.needsYouLineOf(ctx, withdrawn)})
+}
+
+// askedInConversation reports whether item is a question the runtime asked
+// on its card in one of agent's own conversations: the assistant asked it as
+// surely as with needs_you ask, and withdraws it the same way.
+func (s *Server) askedInConversation(ctx context.Context, agent store.PersonalAgent, item store.PendingItem) bool {
+	if item.Source != store.PendingSourceQuestion || item.SessionID == "" {
+		return false
+	}
+	session, err := s.store.GetAgentSessionSummary(ctx, item.SessionID)
+	if err != nil {
+		return false
+	}
+	owner, ok := s.assistant.Conversation(ctx, session)
+	return ok && owner.ID == agent.ID
 }
 
 // answerAssistantQuestion gives the person's answer to the conversation that

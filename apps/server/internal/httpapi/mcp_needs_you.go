@@ -105,7 +105,8 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 		return "", &statusError{http.StatusBadRequest, fmt.Errorf("op is list, hand_over, tell, ask or resolve")}
 	}
 	if itemID != "" && (op == "hand_over" || op == "resolve") {
-		if item, err := s.store.GetPendingItem(ctx, user, itemID); err == nil && item.Source == store.PendingSourceAssistantQuestion {
+		if item, err := s.store.GetPendingItem(ctx, user, itemID); err == nil &&
+			(item.Source == store.PendingSourceAssistantQuestion || s.askedInConversation(ctx, scope.Agent, item)) {
 			return s.assistantQuestionOp(call, scope, op, item)
 		}
 	}

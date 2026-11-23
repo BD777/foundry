@@ -384,7 +384,7 @@ export const personalAgent: Translation<typeof en> = {
       ready: "可以开始",
       waiting: "等待中",
       working: "进行中",
-      review: "待检查结果",
+      review: "待验收",
     },
     operation: {
       pending: "已保存",

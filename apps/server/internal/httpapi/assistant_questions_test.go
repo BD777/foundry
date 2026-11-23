@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -234,5 +235,92 @@ func TestAssistantWithdrawsItsQuestionWithResolve(t *testing.T) {
 	}
 	if inbox := conversationInbox(t, f); len(inbox) != 0 {
 		t.Fatalf("withdrawing delivered a message: %+v", inbox)
+	}
+}
+
+// In the assistant's conversation the person hands over one unrelated thing
+// after another: their next message is not taken as the answer to a question
+// the conversation's runtime asked on its card. The question closes when the
+// person answers it on its card (the reply envelope names it) or when the
+// assistant withdraws it with needs_you resolve. A chat the person holds
+// themselves keeps its rule: the next message answers.
+func TestAssistantConversationQuestionWaitsForItsOwnAnswer(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	reactions := pendingReactions{f.server}
+	ask := func(session store.AgentSession, messageID, title string) store.PendingItem {
+		t.Helper()
+		reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{
+			ID: "evt_" + messageID, SessionID: session.ID, Label: "Response stream", Level: "info", At: time.Now().UTC().Format(time.RFC3339Nano),
+			Message: &store.TranscriptMessage{ID: "turn/" + messageID, Kind: "assistant", Delivery: "async", Text: title,
+				Questions: []store.AgentQuestion{{Title: title}}},
+		})
+		items, err := f.db.ListPendingItems(ctx, f.aliceID, []string{store.PendingOpen}, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			if item.Title == title {
+				return item
+			}
+		}
+		t.Fatalf("no open item %q", title)
+		return store.PendingItem{}
+	}
+	stateOf := func(id string) store.PendingItem {
+		t.Helper()
+		item, err := f.db.GetPendingItem(ctx, f.aliceID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+	queue := func(session store.AgentSession, inputID, prompt string, at time.Time) {
+		session.Input = store.SessionInput{ID: inputID, Prompt: prompt, At: at.UTC().Format(time.RFC3339Nano)}
+		reactions.SessionChanged(ctx, sessions.Queued, session)
+	}
+
+	nas := ask(f.conversation, "call_nas", "Which app manages your NAS?")
+	queue(f.conversation, "in_delete", "Delete notes/old-draft-test.txt, I am sure", time.Now().Add(time.Second))
+	reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{
+		ID: "evt_steer", SessionID: f.conversation.ID, Label: store.EventLabelSteeredIntoTurn, At: time.Now().Add(2 * time.Second).UTC().Format(time.RFC3339Nano),
+		Detail: "What day is December 8?",
+	})
+	if got := stateOf(nas.ID); got.State != store.PendingOpen {
+		t.Fatalf("assistant question after unrelated messages = %s %+v, want open", got.State, got.Answer)
+	}
+
+	// Answered on its card: the envelope names it.
+	queue(f.conversation, "in_card", agentQuestionReplyText(nas.MessageID, nas.Title, "Synology DSM"), time.Now().Add(3*time.Second))
+	if got := stateOf(nas.ID); got.State != store.PendingReplied || got.Outcome != store.PendingOutcomePersonAnswered || got.Answer != "Synology DSM" {
+		t.Fatalf("after the card answer = %s %s %+v", got.State, got.Outcome, got.Answer)
+	}
+
+	// The assistant sees a question of its own conversation and withdraws it.
+	stale := ask(f.conversation, "call_photos", "Where is the new NAS?")
+	if text, failed := f.needsYou(t, map[string]any{"op": "list"}); failed || !strings.Contains(text, stale.ID) {
+		t.Fatalf("list = %s (failed %v), want the conversation's question", text, failed)
+	}
+	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "itemId": stale.ID, "answer": "10.0.0.2"}); !failed {
+		t.Fatalf("resolve with an answer on its own question = %s", text)
+	}
+	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "itemId": stale.ID}); failed || !strings.Contains(text, `"withdrawn"`) {
+		t.Fatalf("resolve = %s (failed %v)", text, failed)
+	}
+	if got := stateOf(stale.ID); got.State != store.PendingDone || got.Outcome != store.PendingOutcomeWithdrawn {
+		t.Fatalf("withdrawn question = %s %s", got.State, got.Outcome)
+	}
+	if inbox := conversationInbox(t, f); len(inbox) != 0 {
+		t.Fatalf("withdrawing delivered a message: %+v", inbox)
+	}
+
+	// A question in a chat the person holds themselves: their next message answers it.
+	header := ask(f.chat, "call_header", "Keep the old header?")
+	if text, failed := f.needsYou(t, map[string]any{"op": "resolve", "itemId": header.ID}); !failed {
+		t.Fatalf("the assistant withdrew a question of the person's own chat: %s", text)
+	}
+	queue(f.chat, "in_chat", "Yes, keep it", time.Now().Add(4*time.Second))
+	if got := stateOf(header.ID); got.State != store.PendingReplied || got.Answer != "Yes, keep it" {
+		t.Fatalf("person's chat question after their message = %s %+v", got.State, got.Answer)
 	}
 }

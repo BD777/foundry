@@ -155,6 +155,9 @@ type Service struct {
 	starts  starts
 	// inboxFailed hears of each message Foundry gave up delivering.
 	inboxFailed func(context.Context, store.SessionInboxItem)
+	// personFirst says whether the person's own message for an idle
+	// session waits to be delivered (SetPersonFirst).
+	personFirst func(context.Context, store.AgentSession) bool
 }
 
 // New is the service over st, telling events what happens to sessions.

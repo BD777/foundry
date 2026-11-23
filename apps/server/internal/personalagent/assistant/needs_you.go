@@ -44,7 +44,8 @@ func (s *Service) PendingFor(ctx context.Context, agent store.PersonalAgent, lim
 				visible = append(visible, item)
 			}
 		case item.WorkspaceID != "":
-			if access.WorkspaceAllowed(item.WorkspaceID) {
+			// Its own home's items are its conversations' questions.
+			if item.WorkspaceID == agent.WorkspaceID || access.WorkspaceAllowed(item.WorkspaceID) {
 				visible = append(visible, item)
 			}
 		case pendingAccountID(item) != "":

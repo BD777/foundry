@@ -140,6 +140,8 @@ func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) Re
 			receipt.Note = "The session that created you is idle: Foundry delivers it with your turn's report when your current turn ends, at most 10 minutes from now; do not send it again."
 		case inboxReasonTurnFailed:
 			receipt.Note = "The session's last turn failed before its model answered; Foundry holds it and delivers it with the next turn that runs, retrying with growing waits; do not send it again."
+		case inboxReasonPersonFirst:
+			receipt.Note = "The person's own message to the session goes first; Foundry delivers this one after it; do not send it again."
 		default:
 			receipt.Note = "Foundry holds it and delivers it as soon as the session can take it; do not send it again."
 		}
@@ -349,7 +351,7 @@ func isQuestionAnswer(source *store.AgentSessionInputSource) bool {
 // refused for.
 func holdableReason(reason string) bool {
 	switch reason {
-	case "", "queued", "turn_end", "not_steerable", "device_offline", "device_unconfirmed", inboxReasonSenderTurn, inboxReasonTurnFailed:
+	case "", "queued", "turn_end", "not_steerable", "device_offline", "device_unconfirmed", inboxReasonSenderTurn, inboxReasonTurnFailed, inboxReasonPersonFirst:
 		return true
 	}
 	return false

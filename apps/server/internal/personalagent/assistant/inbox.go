@@ -367,7 +367,56 @@ type inboxReactions struct{ s *Service }
 func (r inboxReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
 	if change == sessions.Completed {
 		r.s.recordInboxResult(ctx, session)
+		r.s.wakeInboxFor(ctx, session)
 	}
+}
+
+// personConversation is the assistant whose person's own conversation
+// session is: one their web and direct messages go to, not a message
+// channel's (DEV-203).
+func (s *Service) personConversation(ctx context.Context, session store.AgentSession) (store.PersonalAgent, bool) {
+	agent, own := s.Conversation(ctx, session)
+	if !own {
+		return store.PersonalAgent{}, false
+	}
+	if s.channelOf != nil {
+		if _, channel := s.channelOf(ctx, session.ID); channel {
+			return store.PersonalAgent{}, false
+		}
+	}
+	return agent, true
+}
+
+// wakeInboxFor delivers at once the person's messages that waited for the
+// assistant's conversation to end its turn, instead of at their next try.
+func (s *Service) wakeInboxFor(ctx context.Context, session store.AgentSession) {
+	agent, own := s.personConversation(ctx, session)
+	if !own {
+		return
+	}
+	if err := s.store.ReleasePersonalAgentInboxBusy(ctx, agent.ID); err != nil {
+		log.Printf("personal agent inbox %s: release busy waits: %v", agent.ID, err)
+	}
+	select {
+	case s.inboxKick <- struct{}{}:
+	default:
+	}
+}
+
+// PersonFirst reports whether the person's own message waits for session's
+// next turn: the session is their conversation with the assistant, which
+// takes that message before the messages other sessions sent it
+// (sessions.SetPersonFirst).
+func (s *Service) PersonFirst(ctx context.Context, session store.AgentSession) bool {
+	agent, own := s.personConversation(ctx, session)
+	if !own {
+		return false
+	}
+	waiting, err := s.store.PersonalAgentInboxAwaitsTurn(ctx, agent.ID)
+	if err != nil {
+		log.Printf("personal agent inbox %s: read waiting messages: %v", agent.ID, err)
+	}
+	return waiting
 }
 
 // A result belongs to one input, not to whichever turn a session runs later.

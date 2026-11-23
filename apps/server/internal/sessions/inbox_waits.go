@@ -21,6 +21,12 @@ import (
 //     before they start another turn, longer after each failed turn that
 //     carried them, so a failing provider does not take one turn per
 //     message. A turn that runs meanwhile (the person's) takes them.
+//
+// And a third: while the person's own message for the conversation waits
+// to be delivered (SetPersonFirst), the conversation's held messages from
+// other sessions wait for it, so the person's message starts the next turn
+// and theirs follow. A question's answer is the person's words and does not
+// wait.
 
 const (
 	// inboxReasonSenderTurn: a child's turn_end message to its idle parent
@@ -29,7 +35,10 @@ const (
 	// inboxReasonTurnFailed: the session's last turn failed before its
 	// model answered; the message waits to start (or join) the next one.
 	inboxReasonTurnFailed = "turn_failed"
-	failedTurnRetryMax    = 30 * time.Minute
+	// inboxReasonPersonFirst: the person's own message for the idle
+	// session waits to be delivered; this one follows it.
+	inboxReasonPersonFirst = "person_first"
+	failedTurnRetryMax     = 30 * time.Minute
 	// turnAnswerWindow is how many of a session's newest events are read
 	// to tell whether its last turn's model answered.
 	turnAnswerWindow = 200
@@ -56,8 +65,13 @@ func (s *Service) withoutWaitingInboxItems(ctx context.Context, session store.Ag
 		return nil
 	}
 	senders := map[string]store.AgentSession{}
+	personFirst := s.personFirst != nil && s.personFirst(ctx, session)
 	ready := due[:0]
 	for _, index := range due {
+		if personFirst && !isQuestionAnswer(items[index].InputSource) {
+			items[index] = s.holdInboxItemFor(ctx, items[index], inboxReasonPersonFirst)
+			continue
+		}
 		if s.waitsForSenderTurn(ctx, session, items[index], senders, now) {
 			items[index] = s.holdInboxItemFor(ctx, items[index], inboxReasonSenderTurn)
 			continue
@@ -65,6 +79,13 @@ func (s *Service) withoutWaitingInboxItems(ctx context.Context, session store.Ag
 		ready = append(ready, index)
 	}
 	return ready
+}
+
+// SetPersonFirst has waiting say whether the person's own message for an
+// idle session waits to be delivered to it; while it does, the session's
+// held messages from other sessions wait for it (withoutWaitingInboxItems).
+func (s *Service) SetPersonFirst(waiting func(context.Context, store.AgentSession) bool) {
+	s.personFirst = waiting
 }
 
 func (s *Service) holdInboxItemFor(ctx context.Context, item store.SessionInboxItem, reason string) store.SessionInboxItem {

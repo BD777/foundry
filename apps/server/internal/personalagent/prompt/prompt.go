@@ -47,7 +47,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-23.2"
+const Version = "2026-11-24.1"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -365,7 +365,8 @@ func writeRules(out *strings.Builder, in Input) {
 			fmt.Fprintf(out, "- %s: %s\n", label, strings.Join(actions, "; "))
 		}
 	}
-	out.WriteString("- never, whatever the rules: delete anything, share with other people, change a computer's\n  settings, change a project the person does not own\n")
+	out.WriteString("- never, whatever the rules: share with other people, change a computer's settings, change a\n  project the person does not own\n")
+	out.WriteString("- deleting: your own tools delete no project or file; a helper deletes files or uninstalls\n  software in a project once the person explicitly asked for it (personQuote passes their\n  words on)\n")
 }
 
 // ProjectIndexFile is the project and device index as of the run (L0Index),
