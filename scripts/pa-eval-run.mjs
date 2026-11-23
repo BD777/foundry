@@ -743,7 +743,11 @@ class Worker {
       FOUNDRY_STACK: `scratch-${this.stack.name}`,
       // Each case is one turn: an idle runtime kept for the default 15
       // minutes is only memory (a few hundred MB each, several per case).
-      FOUNDRY_ACTIVE_RUNTIME_TTL_MS: "15000",
+      // An idle runtime holds its model connection (a gateway slot): with
+      // PA_EVAL_HELPER_SLOTS set (a parallel run) it lets go at once.
+      FOUNDRY_ACTIVE_RUNTIME_TTL_MS: process.env.PA_EVAL_HELPER_SLOTS
+        ? "1000"
+        : "15000",
       HOME: this.home,
       USER: "pa",
       LOGNAME: "pa",
@@ -1358,10 +1362,20 @@ async function workerAndAssistant(client, worker, logins) {
   // (Check in the device's model settings): one short turn through it.
   if (worker.deviceProfiles)
     for (const profile of worker.deviceProfiles) {
-      const check = await client.post(
-        `/api/devices/${encodeURIComponent(deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
-        {},
-      );
+      // A busy gateway (other stacks of a parallel run) may answer late:
+      // the check is tried up to four times.
+      let check;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        check = await client.post(
+          `/api/devices/${encodeURIComponent(deviceId)}/external-connections/${encodeURIComponent(profile.id)}/check`,
+          {},
+        );
+        if (check?.status === "passed") break;
+        log(
+          `${profile.id} check ${attempt}/4: ${check?.message || check?.status}`,
+        );
+        await sleep(20_000);
+      }
       if (check?.status !== "passed")
         throw new SetupError(
           `${profile.id} check did not pass: ${check?.message || check?.status || "no result"}`,
@@ -1688,6 +1702,7 @@ async function e2eRun(
     const reset = await resetAfterCase(client, base, {
       sessionId: session.id,
       workspaceId: agent.workspaceId,
+      tools,
     });
     presence?.restore();
     previousSessionId = session.id;
@@ -1985,7 +2000,14 @@ const summaries = [];
 // are put back as they were, and its conversation is archived so the next
 // inbox message starts a new one. Returns what could not be undone: a
 // project that would not go is a failed case, never left silently.
-async function resetAfterCase(client, base, { sessionId, workspaceId }) {
+async function resetAfterCase(
+  client,
+  base,
+  { sessionId, workspaceId, tools = [] },
+) {
+  // Projects the case created (create_workspace) must go; a workspace the
+  // server made for the assistant (its Personal Memory vault) may refuse to.
+  const created = tools.some((t) => t.name === "create_workspace");
   const failures = [];
   const problems = [];
   for (const w of await client.get("/api/workspaces").catch(() => [])) {
@@ -2000,8 +2022,14 @@ async function resetAfterCase(client, base, { sessionId, workspaceId }) {
       if (status < 300 || status === 404) break;
       await sleep(3000);
     }
-    if (status >= 300 && status !== 404)
-      failures.push(`project ${w.name} (${w.id}) not removed: ${status}`);
+    if (status >= 300 && status !== 404) {
+      if (created)
+        failures.push(`project ${w.name} (${w.id}) not removed: ${status}`);
+      else {
+        problems.push(`kept ${w.name} (${w.id}): ${status}`);
+        base.knownWorkspaces.add(w.id);
+      }
+    }
   }
   // Scheduled work of the conversation: stopped (it can no longer fire),
   // then removed where the server allows it.
@@ -3473,6 +3501,18 @@ function mergeReports(out, files, evalDir) {
     projects: e2eProjects,
   };
   if (maxRepeat > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
+  // Asking read from the question mark, as before the judge (comparable
+  // with runs without one).
+  if (verdicts.length) {
+    const byMark = scoreE2E(
+      rows.map((r) =>
+        r.decisionByMark ? { ...r, decision: r.decisionByMark } : r,
+      ),
+      cases,
+      names,
+    );
+    report.e2e.byMark = { metrics: byMark.metrics };
+  }
   report.judge = verdicts.length
     ? {
         costUsd: round(
@@ -3556,9 +3596,11 @@ async function main() {
   let relay;
   // Stopped from outside (a parallel run interrupted): its stack and
   // computers go with it, nothing is left running.
-  for (const signal of ["SIGTERM", "SIGINT"])
-    process.once(signal, async () => {
-      log(`${signal}: stopping the stack`);
+  for (const signal of ["SIGTERM", "SIGINT", "uncaughtException"])
+    process.once(signal, async (error) => {
+      log(
+        `${signal}: stopping the stack${error?.stack ? `\n${error.stack}` : ""}`,
+      );
       await worker.stop().catch(() => {});
       for (const w of activeWorkers) await w.stop().catch(() => {});
       relay?.stop();

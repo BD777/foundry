@@ -22,13 +22,14 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const hostProviders = () =>
@@ -140,25 +141,43 @@ export async function helperSlot(
       return error.code === "EPERM";
     }
   };
-  for (;;) {
-    for (let i = 0; i < slots; i++) {
-      const slot = join(dir, `slot-${i}`);
-      try {
-        mkdirSync(slot);
-        writeFileSync(join(slot, "pid"), String(process.pid));
-        return () => rmSync(slot, { recursive: true, force: true });
-      } catch (error) {
-        if (error.code !== "EEXIST") throw error;
-        let owner = 0;
-        try {
-          owner = Number(readFileSync(join(slot, "pid"), "utf8"));
-        } catch {
-          continue; // being made right now
-        }
-        if (owner && !alive(owner))
-          rmSync(slot, { recursive: true, force: true });
-      }
+  // First come, first served: a waiter takes a free slot only when no
+  // older waiter (a ticket of a live process) is still waiting, so a stack
+  // that starts last is not starved by the others.
+  const queue = join(dir, "queue");
+  mkdirSync(queue, { recursive: true, mode: 0o700 });
+  const ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  writeFileSync(join(queue, ticket), "");
+  const first = () => {
+    for (const name of readdirSync(queue).sort()) {
+      if (name === ticket) return true;
+      const owner = Number(name.split("-")[1]);
+      if (owner && alive(owner)) return false;
+      rmSync(join(queue, name), { force: true });
     }
+    return true;
+  };
+  for (;;) {
+    if (first())
+      for (let i = 0; i < slots; i++) {
+        const slot = join(dir, `slot-${i}`);
+        try {
+          mkdirSync(slot);
+          writeFileSync(join(slot, "pid"), String(process.pid));
+          rmSync(join(queue, ticket), { force: true });
+          return () => rmSync(slot, { recursive: true, force: true });
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          let owner = 0;
+          try {
+            owner = Number(readFileSync(join(slot, "pid"), "utf8"));
+          } catch {
+            continue; // being made right now
+          }
+          if (owner && !alive(owner))
+            rmSync(slot, { recursive: true, force: true });
+        }
+      }
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -187,7 +206,13 @@ export function startConnectionRelay(
     let header = Buffer.alloc(0);
     let child;
     let closed = false;
-    const onHeader = async (chunk) => {
+    // A connection that cannot be served ends; the relay goes on.
+    const onHeader = (chunk) =>
+      serve(chunk).catch((error) => {
+        log(`connection relay: ${error.code || error.message}`);
+        socket.destroy();
+      });
+    const serve = async (chunk) => {
       header = Buffer.concat([header, chunk]);
       const newline = header.indexOf(10);
       if (newline < 0) {
@@ -212,7 +237,9 @@ export function startConnectionRelay(
         release();
         return;
       }
-      const directory = mkdtempSync(join(tmpdir(), "pa-eval-connection-"));
+      // The run folder, not TMPDIR: a lease's temporary folder may go away
+      // while the run goes on.
+      const directory = mkdtempSync(join(runDir, "connection-"));
       child = spawn(executable, args, {
         cwd: directory,
         // The helper runs on this computer, outside the sandbox: it gets
