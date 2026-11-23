@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personnotice"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -492,7 +493,7 @@ func (s *Server) addDecisionNote(ctx context.Context, item store.PendingItem, me
 		InputID:           uuid.NewSHA1(assistantQuestionSpace, []byte("decision-note:"+messageID)).String(),
 		Prompt:            fmt.Sprintf("[Foundry] the person sent more information about %q; they have not decided it, so it stays open.\nTheir message:\n%s", item.Title, reply),
 		RequestedDelivery: store.DeliveryBoundary,
-		InputSource:       &store.AgentSessionInputSource{Kind: "foundry_notice", NoticeKind: store.NoticeKindDecisionNote},
+		InputSource:       personalagent.RelaySource(store.NoticeKindDecisionNote, item.Title, reply),
 	}, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
 	if err != nil {
 		return fmt.Errorf("deliver the decision note to session %s: %w", item.SessionID, err)

@@ -8723,7 +8723,7 @@
           "type": "string"
         },
         "noticeKind": {
-          "description": "Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words after a frame written for the model.",
+          "description": "Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words (question, personWords) after a frame written for the model.",
           "type": "string",
           "enum": [
             "reminder",
@@ -8738,6 +8738,14 @@
             "question_answer",
             "decision_note"
           ]
+        },
+        "question": {
+          "description": "What the person's words answer (question_answer, decision_note): the assistant's question, what an item waits on them for, or the approval a note is about. Viewers show it instead of the prompt, whose frame is written for the model.",
+          "type": "string"
+        },
+        "personWords": {
+          "description": "The person's own words a question_answer or decision_note relays, as the prompt carries them after its frame.",
+          "type": "string"
         }
       }
     },

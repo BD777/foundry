@@ -36,6 +36,16 @@ func ItemAnswerFrame(itemID, waitingFor, answer string) string {
 	return Notice(fmt.Sprintf("the person answered what item %s waits on them for: %q.", itemID, strings.TrimSpace(waitingFor))) + AnswerSeparator + strings.TrimSpace(answer)
 }
 
+// RelaySource is the structured source of a notice that relays the
+// person's words (question_answer, decision_note): viewers show the question
+// and the words from it, never from the frame, which is written for the model.
+func RelaySource(noticeKind, question, words string) *store.AgentSessionInputSource {
+	return &store.AgentSessionInputSource{
+		Kind: "foundry_notice", NoticeKind: noticeKind,
+		Question: strings.TrimSpace(question), PersonWords: strings.TrimSpace(words),
+	}
+}
+
 // IsNotice reports whether an input came from the server.
 func IsNotice(prompt string) bool {
 	return strings.HasPrefix(strings.TrimSpace(prompt), strings.TrimSpace(NoticePrefix))

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,10 @@ func TestAnItemWaitingOnThePersonIsARequestAnsweredToItsHolder(t *testing.T) {
 	if delivered == nil || !strings.HasSuffix(delivered.Prompt, "Their answer:\nBatch A") || !strings.Contains(delivered.Prompt, id) ||
 		delivered.InputSource == nil || delivered.InputSource.NoticeKind != store.NoticeKindQuestionAnswer {
 		t.Fatalf("the holder's inbox = %+v, want the person's answer", inbox)
+	}
+	if source := delivered.InputSource; source.PersonWords != "Batch A" || source.Question == "" ||
+		!strings.Contains(delivered.Prompt, fmt.Sprintf("%q", source.Question)) {
+		t.Fatalf("the answer's source = %+v, want what the item waits for and the person's words", source)
 	}
 	if said := eventsOfKind(t, f, agent.ID, id, store.PersonalAgentItemEventNeedsYouAnswered); len(said) != 1 || said[0].Actor != store.PersonalAgentActorPerson || said[0].Detail == nil || said[0].Detail.Quote != "Batch A" {
 		t.Fatalf("needs_you_answered events = %+v", said)

@@ -103,61 +103,32 @@ function backgroundSource(message: ChatMessageItem): TurnSource {
   };
 }
 
-/**
- * The Foundry notices that relay the person's own words after a line written
- * for the model, in English (the server's AnswerFrame, ItemAnswerFrame and
- * decision note), by the line that ends that frame. The model reads the whole
- * text; the person sees what they said and what it was about.
- */
-const personWordsNotices = {
-  question_answer: "\nTheir answer:\n",
-  decision_note: "\nTheir message:\n",
-} as const;
-
-export type PersonWordsNoticeKind = keyof typeof personWordsNotices;
+export type PersonWordsNoticeKind = "question_answer" | "decision_note";
 
 interface PersonWordsNotice {
   kind: PersonWordsNoticeKind;
-  /** What the words answer: the frame's quoted question, item or request. */
+  /** What the words answer: the question, what an item waits for, the approval. */
   subject?: string;
   words: string;
 }
 
 /**
- * The frame's quoted subject: Go's %q of it on the frame's first line, read
- * as a JSON string (its escapes agree for printable text), else as written.
+ * The person's words a Foundry notice relays, read from the fields the
+ * server set on its source (question, personWords). The prompt's frame is
+ * written for the model and never read here: an input stored before those
+ * fields shows as a generic notice.
  */
-function quotedSubject(frame: string): string | undefined {
-  const line = frame.split("\n")[0] ?? "";
-  const start = line.indexOf('"');
-  const end = line.lastIndexOf('"');
-  if (start < 0 || end <= start) return undefined;
-  const quoted = line.slice(start, end + 1);
-  try {
-    const value: unknown = JSON.parse(quoted);
-    if (typeof value === "string") return value.trim() || undefined;
-  } catch {
-    // Not JSON-compatible (a \x or \U escape): show it as written.
-  }
-  return quoted.slice(1, -1).trim() || undefined;
-}
-
-/** The person's words a structured Foundry notice relays, if it is one. */
 function personWordsNotice(
   message: ChatMessageItem,
 ): PersonWordsNotice | undefined {
   const source = message.inputSource;
-  const kind = source?.kind === "foundry_notice" ? source.noticeKind : "";
+  if (source?.kind !== "foundry_notice") return undefined;
+  const kind = source.noticeKind;
   if (kind !== "question_answer" && kind !== "decision_note") return undefined;
-  const text = typeof message.text === "string" ? message.text : "";
-  const cut = text.indexOf(personWordsNotices[kind]);
-  if (cut < 0) return undefined;
-  const subject = quotedSubject(text.slice(0, cut).trim());
-  return {
-    kind,
-    ...(subject ? { subject } : {}),
-    words: text.slice(cut + personWordsNotices[kind].length).trim(),
-  };
+  const words = source.personWords?.trim();
+  if (!words) return undefined;
+  const subject = source.question?.trim();
+  return { kind, ...(subject ? { subject } : {}), words };
 }
 
 /** A relayed answer or note: the subject as its title, all of it below when long. */

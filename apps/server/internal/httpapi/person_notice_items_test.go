@@ -231,8 +231,26 @@ func TestFreeTextOnAnApprovalDoesNotDecideIt(t *testing.T) {
 	if kept := f.reloadNotice(t, notice); kept.State != store.NoticeSent || kept.AnswerText != "" {
 		t.Fatalf("notice after free text = %+v, want still sent and unanswered", kept)
 	}
-	if item, err := f.server.store.GetPendingItem(ctx, f.session.CreatedByUserID, notice.ItemID); err != nil || item.State != store.PendingOpen {
+	item, err := f.server.store.GetPendingItem(ctx, f.session.CreatedByUserID, notice.ItemID)
+	if err != nil || item.State != store.PendingOpen {
 		t.Fatalf("the approval after free text = %+v (%v), want open", item, err)
+	}
+	// The note reaches the conversation with its words and subject as fields.
+	inbox, err := f.server.store.SessionInboxItems(ctx, f.session.ID, time.Now().Add(-time.Hour), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noted := 0
+	for _, message := range inbox {
+		if source := message.InputSource; source != nil && source.NoticeKind == store.NoticeKindDecisionNote {
+			if source.Question != item.Title || source.PersonWords != "再看看第二段" {
+				t.Fatalf("decision note source = %+v", source)
+			}
+			noted++
+		}
+	}
+	if noted != 1 {
+		t.Fatalf("decision notes delivered = %d of %+v", noted, inbox)
 	}
 	if !settledByReply(f.server, ctx, notice, replyFrom(notice, "同意")) {
 		t.Fatal("the approve option was not settled after the free text")

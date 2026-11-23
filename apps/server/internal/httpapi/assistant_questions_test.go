@@ -176,6 +176,10 @@ func TestAnswerToAnAssistantQuestionReachesItsConversationAndIsRecorded(t *testi
 		message.InputSource == nil || message.InputSource.NoticeKind != store.NoticeKindQuestionAnswer {
 		t.Fatalf("answer message = %+v", message)
 	}
+	// Viewers read the question and the person's words from the source, never the frame.
+	if source := message.InputSource; source.Question != question || source.PersonWords != answer {
+		t.Fatalf("answer source = %+v", source)
+	}
 
 	stored, err := f.db.GetPendingItem(ctx, f.aliceID, item.ID)
 	if err != nil {

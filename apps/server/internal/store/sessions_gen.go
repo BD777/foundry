@@ -374,8 +374,14 @@ type AgentSessionInputSource struct {
 	// Response A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose.
 	Response string `json:"response,omitempty"`
 
-	// NoticeKind Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words after a frame written for the model.
+	// NoticeKind Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words (question, personWords) after a frame written for the model.
 	NoticeKind string `json:"noticeKind,omitempty"`
+
+	// Question What the person's words answer (question_answer, decision_note): the assistant's question, what an item waits on them for, or the approval a note is about. Viewers show it instead of the prompt, whose frame is written for the model.
+	Question string `json:"question,omitempty"`
+
+	// PersonWords The person's own words a question_answer or decision_note relays, as the prompt carries them after its frame.
+	PersonWords string `json:"personWords,omitempty"`
 }
 
 // AgentSessionSchedule AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest input completed (Status still describes that input). Derived from the latest timer snapshot its device reported (SessionScheduleFromSnapshot).
