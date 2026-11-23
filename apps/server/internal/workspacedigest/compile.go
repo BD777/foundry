@@ -79,6 +79,7 @@ func Compile(src Source, previous *store.WorkspaceDigestRecord, now time.Time) s
 		GitBranch:      src.GitBranch,
 		GitDirty:       src.GitDirty,
 		LastActivityAt: lastActivity(src.Sessions, src.Chats),
+		PersonActiveAt: personActivity(src.UserID, src.Sessions, src.Chats),
 		RouteWhen:      []string{},
 		NotWhen:        []string{},
 	}
@@ -116,11 +117,12 @@ func Compile(src Source, previous *store.WorkspaceDigestRecord, now time.Time) s
 		Name, Kind, Device, Label   string
 		Online, Archived, Unserved  bool
 		Role, Branch, Intro, Active string
+		PersonActive                string
 		Dirty                       *bool
 		History, Files              []string
 	}{record.ContentRev, digest.Name, digest.Kind, digest.DeviceID, digest.DeviceLabel,
 		digest.DeviceOnline, digest.Archived, digest.Unavailable,
-		digest.AccessRole, digest.GitBranch, digest.Intro, digest.LastActivityAt, digest.GitDirty,
+		digest.AccessRole, digest.GitBranch, digest.Intro, digest.LastActivityAt, digest.PersonActiveAt, digest.GitDirty,
 		record.History, record.Files})
 	digest.CompiledAt = formatTime(now)
 	if previous != nil && previous.Digest.SourceRev == digest.SourceRev && previous.Digest.CompiledAt != "" {
@@ -372,6 +374,25 @@ func lastActivity(sessions []store.AgentSession, chats []store.ChatThread) strin
 		return formatTimeOrEmpty(all[0].at)
 	}
 	return ""
+}
+
+// personActivity is when the person last chatted there themselves: a
+// Foundry chat they started, or a native chat on the workspace's device.
+func personActivity(userID string, sessions []store.AgentSession, chats []store.ChatThread) string {
+	latest := time.Time{}
+	for _, session := range sessions {
+		if session.Source == store.SessionSourceChat && session.CreatedByUserID == userID {
+			if at := sessionActivity(session); at.After(latest) {
+				latest = at
+			}
+		}
+	}
+	for _, chat := range chats {
+		if at, ok := parseTime(chat.UpdatedAt); ok && at.After(latest) {
+			latest = at
+		}
+	}
+	return formatTimeOrEmpty(latest)
 }
 
 func openIssues(issues []store.Issue) []store.WorkspaceDigestIssue {

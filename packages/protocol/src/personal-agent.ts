@@ -515,6 +515,8 @@ export interface WorkspaceDigest {
   gitBranch?: string;
   gitDirty?: boolean;
   lastActivityAt?: string;
+  /** The person's own latest chat there: a Foundry chat they started or a native chat on its device. */
+  personActiveAt?: string;
   /** When the deterministic part was computed. */
   compiledAt: string;
   /** What it was computed from; a new one makes the summary dirty. */

@@ -79,6 +79,7 @@ type Backend interface {
 	store.PermissionPackageStore
 	store.PersonalAgentListStore
 	store.WorkspaceDigestStore
+	store.WorkspaceTermStore
 	store.DevicePlacementStore
 	store.DeviceFileStore
 	store.ChildReportStore

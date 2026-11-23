@@ -32,8 +32,9 @@ const (
 
 // ProjectFiles are the summary files of the digest's projects, plus the
 // manifest of their names, in a stable order. Archived projects and the
-// assistant's own workspace have none.
-func ProjectFiles(digests []store.WorkspaceDigest, notes map[string]bool, now time.Time) []personalagent.WorkspaceFile {
+// assistant's own workspace have none. mentions are each project's terms
+// (Service.Mentions), by workspace id.
+func ProjectFiles(digests []store.WorkspaceDigest, notes map[string]bool, mentions map[string][]Mention, now time.Time) []personalagent.WorkspaceFile {
 	projects := projectDigests(digests)
 	slugs := ProjectSlugs(digests)
 	files := make([]personalagent.WorkspaceFile, 0, len(projects)+1)
@@ -43,7 +44,7 @@ func ProjectFiles(digests []store.WorkspaceDigest, notes map[string]bool, now ti
 		names = append(names, name)
 		files = append(files, personalagent.WorkspaceFile{
 			Path:    ProjectFilesDir + "/" + name,
-			Content: projectFile(digest, notes[digest.WorkspaceID], now),
+			Content: projectFile(digest, notes[digest.WorkspaceID], mentions[digest.WorkspaceID], now),
 		})
 	}
 	manifest := strings.Join(names, "\n")
@@ -144,7 +145,7 @@ func shortWorkspaceID(id string) string {
 
 // projectFile is one project's summary as the assistant reads it: the
 // digest's facts and summary, and where its own note is.
-func projectFile(digest store.WorkspaceDigest, hasNote bool, now time.Time) string {
+func projectFile(digest store.WorkspaceDigest, hasNote bool, mentions []Mention, now time.Time) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "# 『%s』\n\n", oneLine(redact.Text(digest.Name)))
 	line := func(key, value string) {
@@ -223,6 +224,13 @@ func projectFile(digest store.WorkspaceDigest, hasNote bool, now time.Time) stri
 		}
 	}
 	section("Open Issues", issues)
+	if len(mentions) > 0 {
+		named := make([]string, len(mentions))
+		for i, mention := range mentions {
+			named[i] = fmt.Sprintf("%s (%d)", mention.Term, mention.Count)
+		}
+		fmt.Fprintf(&out, "\n## Names mentioned here\n\nNames that set it apart from the person's other projects, with how often its chats, sessions and file names use them. find_in_projects looks up any name.\n\n%s\n", strings.Join(named, ", "))
+	}
 	if hasNote {
 		section("Your note", []string{"cards/" + digest.WorkspaceID + ".md"})
 	}

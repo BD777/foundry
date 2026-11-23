@@ -1960,6 +1960,45 @@
     }
   },
   {
+    "name": "find_in_projects",
+    "_meta": {
+      "anthropic/searchHint": "workspaces & skills: which projects mention a host, service, code name, file or skill"
+    },
+    "description": "Look a name up across the person's projects (a host, service, code name, file or skill, e.g. sats-tokyo-7 or cliproxyapi): which projects' chats, sessions, file names, skills or connectors mention every term of query, with how often (mentions), in how many of them (sources), when last (lastAt), the stored terms that matched and up to 3 examples (a chat or session id read_context reads, its title and time); and the skills installed on their computers whose names hold the terms, for every project there or for the projects named. Counts and pointers only, never what was said.",
+    "summary": "Finds which of the person's projects mention a name, with counts, last time and example chats.",
+    "limits": [
+      "Only the projects the assistant covers (the person's readable projects within its permission package), not archived ones.",
+      "Terms are names in Latin letters and digits: Chinese words and common English words are not indexed; a term matches stored ones it starts.",
+      "Counts what the person and agents wrote in chats and sessions (not tool output or reasoning), at most the latest 256 KiB of each; a changed chat is counted the next time the project facts refresh, a first count of many chats over several refreshes.",
+      "At most 10 projects per call (5 by default); nextOffset pages on. Skills come with the first page, at most 10.",
+      "Only the person's assistant (a personal_agent session) has it."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "One or more names; a project must mention them all."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Where the page of projects starts (default 0)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "How many projects, at most 10 (default 5)."
+        }
+      },
+      "required": ["query"]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
     "name": "create_workspace",
     "_meta": {
       "anthropic/searchHint": "workspaces & skills: create or register a project, clone, folder"

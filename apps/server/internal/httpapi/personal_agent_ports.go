@@ -14,6 +14,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // The personal agent's ports (personalagent/run, knowledge, assistant)
@@ -362,6 +363,14 @@ func (d assistantDigests) Refresh(ctx context.Context, workspaceID string) {
 func (d assistantDigests) Prime(userID string) {
 	work := d.s.hub.work
 	work.Go(func() { d.s.primeAssistantDigests(work.ctx, userID) })
+}
+
+func (d assistantDigests) Mentions(ctx context.Context, workspaceIDs []string) (map[string][]workspacedigest.Mention, error) {
+	return d.s.workspaceDigests().Mentions(ctx, workspaceIDs)
+}
+
+func (d assistantDigests) Find(ctx context.Context, projects []store.WorkspaceDigest, query string, offset, limit int) (workspacedigest.FindResult, error) {
+	return d.s.workspaceDigests().Find(ctx, projects, query, offset, limit)
 }
 
 // assistantServer is assistant.Server: the access rules, built-in skills

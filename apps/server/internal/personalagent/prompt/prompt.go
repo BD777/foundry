@@ -47,7 +47,7 @@ var assistantProjectsSkill string
 // Version names these embedded instructions; it is stored as each assistant's
 // prompt_version. Bump it whenever the system prompt or a skill changes
 // (prompt_test holds the digest of every version).
-const Version = "2026-11-23.1"
+const Version = "2026-11-23.2"
 
 // AssistantSkillsPath is where Foundry keeps the canonical skill files in the
 // assistant's folder. It is outside the workspace-draft roots; the Worker
@@ -484,12 +484,101 @@ const (
 )
 
 // TurnContext is what Foundry adds to each turn's input of an assistant
-// session: the time now in the person's zone, which the runtime does not
-// know. It is a fact, never guidance; the caller may add the input's
-// receipt before TurnContextEnd.
+// session, which the runtime does not know: the time now in the person's
+// zone, the computer the assistant runs on and where the person last
+// chatted themselves (recentComputers). They are facts, never guidance;
+// the caller may add the input's receipt before TurnContextEnd.
 func TurnContext(in Input) string {
 	location := timeLocation(in)
-	return fmt.Sprintf("%s\nNow: %s (%s).\n%s", TurnContextStart, in.Now.In(location).Format(headerDateLayout+" 15:04"), location.String(), TurnContextEnd)
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s\nNow: %s (%s).\n", TurnContextStart, in.Now.In(location).Format(headerDateLayout+" 15:04"), location.String())
+	labels := map[string]string{}
+	for _, device := range in.Devices {
+		labels[device.DeviceID] = cmp.Or(strings.TrimSpace(device.Label), device.DeviceID)
+	}
+	if home := in.HomeDeviceID; home != "" {
+		if label := labels[home]; label != "" && label != home {
+			fmt.Fprintf(&out, "You run on: %s (%s).\n", label, home)
+		} else {
+			fmt.Fprintf(&out, "You run on: %s.\n", home)
+		}
+	}
+	fmt.Fprintf(&out, "The person's own latest chats, by computer: %s.\n", recentComputers(in, labels))
+	out.WriteString(TurnContextEnd)
+	return out.String()
+}
+
+// What recentComputers names.
+const (
+	recentComputersWindow   = 7 * 24 * time.Hour
+	recentComputersMax      = 3
+	recentProjectsPerDevice = 2
+)
+
+// recentComputers is where the person last chatted themselves (a Foundry
+// chat they started or a native chat; WorkspaceDigest.PersonActiveAt): of
+// the computers they own, the latest recentComputersMax within
+// recentComputersWindow, each with when and its latest projects.
+func recentComputers(in Input, labels map[string]string) string {
+	type project struct {
+		name string
+		at   time.Time
+	}
+	byDevice := map[string][]project{}
+	for _, workspace := range in.Workspaces {
+		if workspace.Archived || workspace.Kind == store.WorkspaceKindPersonalAgent || labels[workspace.DeviceID] == "" {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, workspace.PersonActiveAt)
+		if err != nil || in.Now.Sub(at) > recentComputersWindow {
+			continue
+		}
+		byDevice[workspace.DeviceID] = append(byDevice[workspace.DeviceID], project{name: workspace.Name, at: at})
+	}
+	devices := make([]string, 0, len(byDevice))
+	for deviceID, projects := range byDevice {
+		sort.Slice(projects, func(i, j int) bool {
+			if !projects[i].at.Equal(projects[j].at) {
+				return projects[i].at.After(projects[j].at)
+			}
+			return projects[i].name < projects[j].name
+		})
+		devices = append(devices, deviceID)
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		a, b := byDevice[devices[i]][0].at, byDevice[devices[j]][0].at
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return devices[i] < devices[j]
+	})
+	if len(devices) == 0 {
+		return fmt.Sprintf("none in the last %d days", int(recentComputersWindow.Hours()/24))
+	}
+	parts := []string{}
+	for _, deviceID := range devices[:min(len(devices), recentComputersMax)] {
+		projects := byDevice[deviceID]
+		names := []string{}
+		for _, project := range projects[:min(len(projects), recentProjectsPerDevice)] {
+			names = append(names, "『"+oneLine(project.name)+"』")
+		}
+		parts = append(parts, fmt.Sprintf("%s %s (%s)", labels[deviceID], ago(in.Now.Sub(projects[0].at)), strings.Join(names, ", ")))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// ago is a duration as "3 min ago", "5 h ago" or "2 d ago".
+func ago(elapsed time.Duration) string {
+	switch {
+	case elapsed < time.Minute:
+		return "just now"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%d min ago", int(elapsed.Minutes()))
+	case elapsed < 48*time.Hour:
+		return fmt.Sprintf("%d h ago", int(elapsed.Hours()))
+	default:
+		return fmt.Sprintf("%d d ago", int(elapsed.Hours()/24))
+	}
 }
 
 func writeMemory(out *strings.Builder, items []store.PersonalAgentMemoryItem, location *time.Location) {

@@ -14,12 +14,19 @@
 //	svc.Digest(ctx, userID, workspaceID)          // store.WorkspaceDigest; store.ErrNotFound when unreadable
 //	svc.Index(ctx, userID)                        // the L0 project and device index (≤ 3k tokens)
 //	svc.Devices(ctx, userID)                      // []store.DeviceDigest of the devices the person owns
+//	svc.Mentions(ctx, workspaceIDs)               // each project's distinctive names, for its project file
+//	svc.Find(ctx, projects, query, offset, limit) // find_in_projects: which projects mention a name
 //
 // The assistant's runtime reads one summary file per project from
 // .foundry/projects/<name>.md (ProjectFiles), written from the same
 // digests and summaries as the index; the index points at the files. The
 // assistant's own routing notes (cards/<workspaceId>.md) live on its home
 // device and are named in the project file.
+//
+// Terms (terms.go, terms_index.go): each refresh also counts the names
+// the workspace's chats, sessions, file names, skills and connectors
+// mention (store.WorkspaceTermStore), only for the sources that changed;
+// names and counts, never what was said.
 //
 // The summary loop: Refresh (observers) and the calls above mark a digest
 // dirty when what a summary reads changed and set when it is due (30 min

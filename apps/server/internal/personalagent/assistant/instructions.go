@@ -106,7 +106,23 @@ func (s *Service) ProjectFiles(ctx context.Context, agent store.PersonalAgent) (
 	for i, record := range records {
 		workspaces[i] = record.Digest
 	}
-	return workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), time.Now()), nil
+	mentions, err := s.projectMentions(ctx, workspaces)
+	if err != nil {
+		return nil, err
+	}
+	return workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), mentions, time.Now()), nil
+}
+
+// projectMentions are the terms each project's file names, ranked
+// against the person's other projects the assistant covers.
+func (s *Service) projectMentions(ctx context.Context, workspaces []store.WorkspaceDigest) (map[string][]workspacedigest.Mention, error) {
+	ids := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if !workspace.Archived {
+			ids = append(ids, workspace.WorkspaceID)
+		}
+	}
+	return s.digests.Mentions(ctx, ids)
 }
 
 // AssistantProjectFiles are the facts Foundry writes into every workspace
@@ -294,6 +310,10 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		return prompt.Input{}, err
 	}
 	l0Index := workspacedigest.Index(workspaces, devices, now)
+	mentions, err := s.projectMentions(ctx, workspaces)
+	if err != nil {
+		return prompt.Input{}, err
+	}
 	places, err := s.ownDevicePlacements(ctx, devices, now)
 	if err != nil {
 		return prompt.Input{}, err
@@ -318,7 +338,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Channels:                      channels,
 		OtherAssistants:               others,
 		L0Index:                       l0Index,
-		ProjectFiles:                  workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), now),
+		ProjectFiles:                  workspacedigest.ProjectFiles(workspaces, s.routingNoteIDs(ctx, agent), mentions, now),
 		Places:                        places,
 		DirectChatPreviousWorkspaceID: s.directChatPrior(ctx, agent),
 		ConnectorsURL:                 s.WebURL("/connectors"),

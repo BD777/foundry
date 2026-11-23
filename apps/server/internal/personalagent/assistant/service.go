@@ -43,6 +43,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
 // Store is what the assistant keeps and reads.
@@ -171,6 +172,12 @@ type Digests interface {
 	// Prime starts computing, in the background, which shutdown waits
 	// for, the digests of every project the person can read.
 	Prime(userID string)
+	// Mentions are the terms each workspace's project file names
+	// (workspacedigest.Service.Mentions).
+	Mentions(ctx context.Context, workspaceIDs []string) (map[string][]workspacedigest.Mention, error)
+	// Find looks a query's names up in the projects' terms
+	// (workspacedigest.Service.Find).
+	Find(ctx context.Context, projects []store.WorkspaceDigest, query string, offset, limit int) (workspacedigest.FindResult, error)
 }
 
 // Server is the rest of the server the assistant asks: access rules,

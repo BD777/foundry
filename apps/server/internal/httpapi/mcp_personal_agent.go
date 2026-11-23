@@ -21,6 +21,7 @@ import (
 // (docs/personal-agent.md §5): only a personal_agent session lists them.
 var personalAgentMCPTools = map[string]bool{
 	"get_workspace":        true,
+	"find_in_projects":     true,
 	"create_workspace":     true,
 	"update_workspace":     true,
 	"archive_workspace":    true,
@@ -183,6 +184,20 @@ func (s *Server) getWorkspaceForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	answer, err := s.assistant.GetWorkspace(ctx, scope, mcpArgString(call.args, "workspaceId"), mcpArgList(call.args, "include"))
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(answer)
+}
+
+// findInProjectsForMCP is find_in_projects (assistant.FindInProjects).
+func (s *Server) findInProjectsForMCP(call mcpCall) (string, error) {
+	ctx := call.r.Context()
+	scope, err := s.paScope(ctx, call.actor)
+	if err != nil {
+		return "", err
+	}
+	answer, err := s.assistant.FindInProjects(ctx, scope, mcpArgString(call.args, "query"), mcpArgNumber(call.args, "offset", 0), mcpArgNumber(call.args, "limit", 0))
 	if err != nil {
 		return "", err
 	}

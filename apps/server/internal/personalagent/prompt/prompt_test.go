@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-23.2": "73e828f2bea5b18202dd6290df4b7adcf19a102e7d7fcc275d2ddc8033132851", // routing facts A/B/C (person 2026-11-23): find_in_projects and the turn's computers are named as facts; deleting files or uninstalling software is a helper's work on the person's explicit request
 	"2026-11-23.1": "dcb698b815d8235955633743b290ea9b8d12ba2b93940e12b5bcda69fc2f38a1", // D4/D1 (person 2026-11-23): a one-off personal request is the assistant's to do or hand off; the person's existing chat and their other assistants take send_message
 	"2026-11-21.2": "07b640fcc0e6f3ca041b38a0351538e5b61fa0df4d382e95705ce6ac07907697", // DEV-324: keep an item so the next conversation can take it over; op decide records the person's decisions
 	"2026-11-21.1": "40e02b82e762e5726cd38d5b67c9d1f782171328ba3c63679a265e4879880d6c", // DEV-324: an item has a home and touches, a workspace session may hold it; grow a project from an item with create_workspace fromItemId
@@ -309,6 +310,25 @@ func TestRunFilesCarryTheUpkeepFacts(t *testing.T) {
 	}
 }
 
+// Where the person last chatted counts only their own computers and the
+// last week, at most three computers and two projects on each.
+func TestTurnContextNamesThePersonsRecentComputers(t *testing.T) {
+	in := fullInput()
+	in.Workspaces = append(in.Workspaces,
+		store.WorkspaceDigest{WorkspaceID: "ws_a", Name: "A", Kind: store.WorkspaceKindProject, DeviceID: "dev_mac", PersonActiveAt: at(-time.Minute)},
+		store.WorkspaceDigest{WorkspaceID: "ws_b", Name: "B", Kind: store.WorkspaceKindProject, DeviceID: "dev_mac", PersonActiveAt: at(-10 * time.Minute)},
+		store.WorkspaceDigest{WorkspaceID: "ws_old", Name: "Old", Kind: store.WorkspaceKindProject, DeviceID: "dev_nas", PersonActiveAt: at(-8 * 24 * time.Hour)},
+	)
+	out := prompt.TurnContext(in)
+	if want := "The person's own latest chats, by computer: MacBook 1 min ago (『A』, 『B』); Home server 2 d ago (『Personal blog』).\n"; !strings.Contains(out, want) {
+		t.Fatalf("turn context:\n%s\nwant %q", out, want)
+	}
+	in.Workspaces = nil
+	if out := prompt.TurnContext(in); !strings.Contains(out, "The person's own latest chats, by computer: none in the last 7 days.\n") {
+		t.Fatalf("turn context without activity:\n%s", out)
+	}
+}
+
 func TestTurnContextGolden(t *testing.T) {
 	golden(t, "turn_context_full", prompt.TurnContext(fullInput()))
 }
@@ -389,8 +409,10 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 // 860 bytes); D4 gives one-off personal requests back to the assistant's
 // judgement and names the person's chat and other assistants as places a
 // message reaches, and D1 adds what each assistant is in charge of (about
-// 800 bytes with fullInput's two other assistants).
-const agentsFileBudget = 11300
+// 800 bytes with fullInput's two other assistants); the routing facts name
+// find_in_projects, the turn's computers and a helper's deletes on the
+// person's explicit request (about 230 bytes).
+const agentsFileBudget = 11500
 
 // One assistant with nothing set gets no section about the others.
 func TestASingleAssistantHasNoAssistantsSection(t *testing.T) {
@@ -412,11 +434,14 @@ func TestAgentsFileStaysWithinItsBudget(t *testing.T) {
 	}
 }
 
-// The turn's context is facts only: the time in the person's zone (and a
-// receipt the caller adds). No guidance, no live state.
+// The turn's context is facts only: the time in the person's zone, the
+// computer the assistant runs on, where the person last chatted themselves
+// (and a receipt the caller adds). No guidance, no live state.
 func TestTurnContextCarriesNoGuidance(t *testing.T) {
 	out := prompt.TurnContext(fullInput())
-	want := prompt.TurnContextStart + "\nNow: Thursday, 2026-10-15 09:30 (Asia/Shanghai).\n" + prompt.TurnContextEnd
+	want := prompt.TurnContextStart + "\nNow: Thursday, 2026-10-15 09:30 (Asia/Shanghai).\n" +
+		"You run on: MacBook (dev_mac).\n" +
+		"The person's own latest chats, by computer: MacBook 3 h ago (『家庭记账』); Home server 2 d ago (『Personal blog』).\n" + prompt.TurnContextEnd
 	if out != want {
 		t.Fatalf("turn context:\n%s", out)
 	}
@@ -539,9 +564,9 @@ func fullInput() prompt.Input {
 		},
 		Workspaces: []store.WorkspaceDigest{
 			{WorkspaceID: "ws_pa", Name: "助理", Kind: store.WorkspaceKindPersonalAgent, AccessRole: store.WorkspaceRoleOwner, CompiledAt: at(-time.Hour)},
-			{WorkspaceID: "ws_budget", Name: "家庭记账", Kind: store.WorkspaceKindProject, L0: "记家庭开销的小网页，按月汇总。", DeviceID: "dev_mac", DeviceLabel: "MacBook", DeviceOnline: true, AccessRole: store.WorkspaceRoleOwner, GitDirty: &yes, LastActivityAt: at(-2 * time.Hour), CompiledAt: at(-2 * time.Hour)},
-			{WorkspaceID: "ws_blog", Name: "Personal blog", Kind: store.WorkspaceKindProject, Purpose: "Her personal blog,\nbuilt with Hugo.", DeviceID: "dev_nas", DeviceLabel: "Home server", AccessRole: store.WorkspaceRoleOwner, Dirty: true, LastActivityAt: at(-50 * time.Hour), CompiledAt: at(-50 * time.Hour)},
-			{WorkspaceID: "ws_admin", Name: "Company admin site", Kind: store.WorkspaceKindProject, L0: "The team's internal admin site.", DeviceID: "dev_work", DeviceLabel: "Office PC", DeviceOnline: true, AccessRole: store.WorkspaceRoleMember, LastActivityAt: at(-26 * time.Hour), CompiledAt: at(-3 * time.Hour)},
+			{WorkspaceID: "ws_budget", Name: "家庭记账", Kind: store.WorkspaceKindProject, L0: "记家庭开销的小网页，按月汇总。", DeviceID: "dev_mac", DeviceLabel: "MacBook", DeviceOnline: true, AccessRole: store.WorkspaceRoleOwner, GitDirty: &yes, LastActivityAt: at(-2 * time.Hour), PersonActiveAt: at(-3 * time.Hour), CompiledAt: at(-2 * time.Hour)},
+			{WorkspaceID: "ws_blog", Name: "Personal blog", Kind: store.WorkspaceKindProject, Purpose: "Her personal blog,\nbuilt with Hugo.", DeviceID: "dev_nas", DeviceLabel: "Home server", AccessRole: store.WorkspaceRoleOwner, Dirty: true, LastActivityAt: at(-50 * time.Hour), PersonActiveAt: at(-50 * time.Hour), CompiledAt: at(-50 * time.Hour)},
+			{WorkspaceID: "ws_admin", Name: "Company admin site", Kind: store.WorkspaceKindProject, L0: "The team's internal admin site.", DeviceID: "dev_work", DeviceLabel: "Office PC", DeviceOnline: true, AccessRole: store.WorkspaceRoleMember, LastActivityAt: at(-26 * time.Hour), PersonActiveAt: at(-26 * time.Hour), CompiledAt: at(-3 * time.Hour)},
 			{WorkspaceID: "ws_reports", Name: "Quarterly reports", Kind: store.WorkspaceKindProject, Intro: "Finance reports.", DeviceLabel: "Office PC", DeviceOnline: true, AccessRole: store.WorkspaceRoleViewer, Unavailable: true, CompiledAt: at(-10 * 24 * time.Hour)},
 			{WorkspaceID: "ws_oldblog", Name: "Old blog", Kind: store.WorkspaceKindProject, AccessRole: store.WorkspaceRoleOwner, Archived: true, CompiledAt: at(-time.Hour)},
 		},

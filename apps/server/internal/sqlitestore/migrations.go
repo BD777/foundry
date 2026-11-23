@@ -65,6 +65,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupProfileCodexTransports,
 		s.setupProfileChecks,
 		s.setupWorkspaceDigests,
+		s.setupWorkspaceTerms,
 		s.setupDevicePlacement,
 		s.setupDeviceFiles,
 		s.setupDeviceAccountSharing,
