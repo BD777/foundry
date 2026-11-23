@@ -9,9 +9,12 @@
 # One stack per run: the Worker keeps the server URL it paired with, and
 # every run picks a new port.
 #
-# usage: scripts/pa-eval-stack.sh DIR SERVER_BINARY PROFILE_ID MODEL EFFORT
+# usage: scripts/pa-eval-stack.sh DIR SERVER_BINARY PROFILE_ID MODEL EFFORT [KIND]
+# KIND is the execution default's provider kind (api, the default, for a
+# seeded server profile; environment for a device's connector profile such
+# as limen_default, which needs no server row and is not seeded).
 set -euo pipefail
-T=$1 BIN=$2 PROFILE=$3 MODEL=$4 EFFORT=$5
+T=$1 BIN=$2 PROFILE=$3 MODEL=$4 EFFORT=$5 KIND=${6:-api}
 here=$(cd "$(dirname "$0")" && pwd)
 key=${PA_EVAL_SECRET_KEY_PATH:-$HOME/.foundry/server/foundry-secret.key}
 [ -e "$T/data/foundry.db" ] && { echo "pa-eval-stack: $T already has a database" >&2; exit 2; }
@@ -33,7 +36,9 @@ kill "$pid"; wait "$pid" 2>/dev/null || true
 node -e 'process.stdout.write(require("crypto").randomBytes(18).toString("base64url"))' >"$T/data/eval-user.password"
 env -i "${senv[@]}" "$T/bin/foundry-server" users create --username pa1-eval --role admin \
   --display-name "PA1 Eval" --password-stdin <"$T/data/eval-user.password" >/dev/null
+seed_profile=(--profile "$PROFILE")
+[ "$KIND" = api ] || seed_profile=()
 node "$here/pa-eval-seed.mjs" "$T/data/foundry.db" pa1-eval "$HOME/.foundry/pa-eval/set" \
-  --profile "$PROFILE" --execution-default "api,$PROFILE,claude,$MODEL,$EFFORT" 2>&1 |
+  "${seed_profile[@]}" --execution-default "$KIND,$PROFILE,claude,$MODEL,$EFFORT" 2>&1 |
   grep -v -i "experimental\|trace-warnings" >"$T/logs/seed.json"
 echo "pa-eval-stack: $T ready (seed summary in $T/logs/seed.json)"
