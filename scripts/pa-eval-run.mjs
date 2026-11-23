@@ -119,6 +119,8 @@ import {
   cutoffGroups,
   exportDigests,
   importDigests,
+  markPresence,
+  restorePresence,
   writeRegistry,
 } from "./pa-eval-fixture.mjs";
 
@@ -191,6 +193,7 @@ function parseArgs(argv) {
     // The judge reads whether a reply asks (a question mark does not):
     // on by default, --no-judge to leave it out.
     judge: true,
+    presence: true,
     instance: "pa-eval",
     reuse: false,
     keep: false,
@@ -235,6 +238,9 @@ function parseArgs(argv) {
         break;
       case "--no-judge":
         args.judge = false;
+        break;
+      case "--no-presence":
+        args.presence = false;
         break;
       case "--instance":
         args.instance = value();
@@ -1590,6 +1596,8 @@ async function e2eRun(
       }
     }
     log(`e2e r${repeat} ${i + 1}/${sample.length} ${c.id}`);
+    // Where the person was: the computer the request was typed on.
+    const presence = presenceFor(worker.stack, base.index, c, args);
     let entry;
     let error = null;
     try {
@@ -1613,6 +1621,7 @@ async function e2eRun(
         sessionId: "",
         workspaceId: agent.workspaceId,
       });
+      presence?.restore();
       record({
         id: c.id,
         error: error.message,
@@ -1680,6 +1689,7 @@ async function e2eRun(
       sessionId: session.id,
       workspaceId: agent.workspaceId,
     });
+    presence?.restore();
     previousSessionId = session.id;
     const reply = typeof detail.response === "string" ? detail.response : "";
     const outcome = classifyOutcome(tools, reply, agent.workspaceId, projects);
@@ -1696,6 +1706,7 @@ async function e2eRun(
         resultError: finalEntry?.resultError || "",
       },
       cutoff: base.cutoff,
+      presence: presence?.computer || "",
       carryOver,
       // A case whose new project could not be removed did not end clean:
       // it fails (and later cases try the removal again).
@@ -1733,6 +1744,43 @@ async function e2eRun(
   }
   e2eProjects.splice(0, e2eProjects.length, ...projects);
   return rows;
+}
+
+// The person's presence for a case (pa-eval-fixture.mjs markPresence): a
+// real case was typed on its project's computer; a handwritten one has no
+// computer. Written into the running server's database; the turn's facts
+// read it. --no-presence leaves it out.
+function presenceFor(stack, index, c, args) {
+  if (!args.presence || !c.observed?.workspaceId || !index) return null;
+  const computer = index.projects.find(
+    (p) => p.workspaceId === c.observed.workspaceId,
+  )?.computer;
+  if (!computer) return null;
+  const db = new DatabaseSync(stack.dbPath);
+  try {
+    db.exec("PRAGMA busy_timeout = 15000");
+    const mark = markPresence(
+      db,
+      index,
+      computer,
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+    if (!mark) return null;
+    return {
+      computer,
+      restore: () => {
+        const again = new DatabaseSync(stack.dbPath);
+        try {
+          again.exec("PRAGMA busy_timeout = 15000");
+          restorePresence(again, mark);
+        } finally {
+          again.close();
+        }
+      },
+    };
+  } finally {
+    db.close();
+  }
 }
 
 // Run-wide counts the cost projection reads.
@@ -2697,7 +2745,9 @@ function runPlan(cases, args) {
 function historyAt(stack, index, cutoff, args, { reuse = true } = {}) {
   return withStackDb(stack, (db) => {
     const user = userIdOf(db, args.user);
-    const changed = applyHistory(db, index, user, cutoff);
+    const changed = applyHistory(db, index, user, cutoff, {
+      shiftMs: Date.now() - Date.parse(`${cutoff}T00:00:00Z`),
+    });
     const cached =
       args.digestCache && reuse
         ? resolve(args.digestCache, `${cutoff}.json`)
@@ -2951,7 +3001,7 @@ async function runRoutingAndE2E(
       missing: wait.missing,
       waitMs: Date.now() - waitStarted,
     });
-    base ||= await caseBaseline(client, agent, stack);
+    base ||= { ...(await caseBaseline(client, agent, stack)), index };
     base.cutoff = group.cutoff;
     log(
       `history ${group.cutoff}: ${group.cases.length} cases × ${args.repeat}`,

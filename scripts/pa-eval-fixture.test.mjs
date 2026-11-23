@@ -133,3 +133,59 @@ test("summarized digests carry over to another stack's person", async () => {
   assert.equal(row.summary_session_id, "");
   assert.equal(JSON.parse(row.digest_json).userId, "u2");
 });
+
+test("history is shifted to the replay's now, and presence marks the person's computer", async () => {
+  const { markPresence, restorePresence } =
+    await import("./pa-eval-fixture.mjs");
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT, payload_json TEXT, updated_at TEXT, workspace_id TEXT, provider TEXT, native_session_id TEXT, activity_at TEXT);
+           CREATE TABLE workspace_digests (user_id TEXT, workspace_id TEXT);`);
+  const index = {
+    projects: [
+      {
+        workspaceId: "ws_a",
+        computer: "macbook",
+        history: [{ at: "2026-05-30T10:00:00Z", title: "a", request: "a" }],
+      },
+      {
+        workspaceId: "ws_b",
+        computer: "work-dev",
+        history: [{ at: "2026-05-31T10:00:00Z", title: "b", request: "b" }],
+      },
+    ],
+  };
+  const day = 86_400_000;
+  applyHistory(db, index, "u", "2026-06-01", { shiftMs: 10 * day });
+  const times = () =>
+    Object.fromEntries(
+      db
+        .prepare("SELECT title, updated_at FROM chats")
+        .all()
+        .map((r) => [r.title, r.updated_at]),
+    );
+  assert.deepEqual(times(), {
+    a: "2026-06-09T10:00:00.000Z",
+    b: "2026-06-10T10:00:00.000Z",
+  });
+  // The same chats at another shift: only their times move.
+  assert.deepEqual(
+    applyHistory(db, index, "u", "2026-06-01", { shiftMs: 20 * day }),
+    [],
+  );
+  assert.equal(times().a, "2026-06-19T10:00:00.000Z");
+  const mark = markPresence(db, index, "macbook", "2026-11-24T00:00:00.000Z");
+  assert.equal(times().a, "2026-11-24T00:00:00.000Z");
+  assert.equal(
+    JSON.parse(
+      db.prepare("SELECT payload_json FROM chats WHERE title = 'a'").get()
+        .payload_json,
+    ).updatedAt,
+    "2026-11-24T00:00:00.000Z",
+  );
+  restorePresence(db, mark);
+  assert.equal(times().a, "2026-06-19T10:00:00.000Z");
+  assert.equal(
+    markPresence(db, index, "mac-mini", "2026-11-24T00:00:00.000Z"),
+    null,
+  );
+});

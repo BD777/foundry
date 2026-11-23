@@ -109,8 +109,15 @@ const chatId = (workspaceId, item) => {
  * (never summarized), as production does on a first summary. Returns the
  * ids of the projects that changed.
  */
-export function applyHistory(db, index, userId, cutoff) {
+export function applyHistory(db, index, userId, cutoff, { shiftMs = 0 } = {}) {
   const changed = [];
+  // Times as the replay has them: the cutoff is now, so what came just
+  // before it is recent (the person's latest chats, a project's last
+  // activity), as it was when the case was asked.
+  const shifted = (at) => new Date(Date.parse(at) + shiftMs).toISOString();
+  const setTime = db.prepare(
+    "UPDATE chats SET updated_at = ?, activity_at = ?, payload_json = json_set(payload_json, '$.updatedAt', ?) WHERE id = ?",
+  );
   db.exec("BEGIN");
   try {
     for (const p of index.projects) {
@@ -130,7 +137,15 @@ export function applyHistory(db, index, userId, cutoff) {
       const want = new Set(wanted.map((item) => item.id));
       const same =
         present.length === want.size && present.every((id) => want.has(id));
-      if (same) continue;
+      if (same) {
+        // Same chats, times of this cutoff (no content change: the digest
+        // stays).
+        for (const item of wanted) {
+          const at = shifted(item.at);
+          setTime.run(at, at, at, item.id);
+        }
+        continue;
+      }
       for (const id of present)
         db.prepare("DELETE FROM chats WHERE id = ?").run(id);
       for (const item of wanted) {
@@ -144,7 +159,7 @@ export function applyHistory(db, index, userId, cutoff) {
           title,
           preview: first,
           status: "completed",
-          updatedAt: item.at,
+          updatedAt: shifted(item.at),
           // The person's first message: a native chat with no turns is
           // dropped at server start.
           recentMessages: [{ role: "user", text: first }],
@@ -156,10 +171,10 @@ export function applyHistory(db, index, userId, cutoff) {
           item.id,
           title,
           JSON.stringify(payload),
-          item.at,
+          shifted(item.at),
           p.workspaceId,
           item.native,
-          item.at,
+          shifted(item.at),
         );
       }
       db.prepare(
@@ -173,6 +188,50 @@ export function applyHistory(db, index, userId, cutoff) {
     throw error;
   }
   return changed;
+}
+
+/**
+ * Where the person was when they asked: the computer they typed the
+ * request on. Their latest chat there before the cutoff (written by
+ * applyHistory) becomes active at `at`, as the person's own chatting on that
+ * computer was; the request's own chat stays out. Works on a running
+ * server's database. Returns what restorePresence puts back, or null when
+ * the computer has no chat yet.
+ */
+export function markPresence(db, index, computer, at) {
+  const projects = index.projects.filter((p) => p.computer === computer);
+  const ids = new Set(
+    projects.flatMap((p) =>
+      (p.history || []).map((item) => chatId(p.workspaceId, item).id),
+    ),
+  );
+  if (!projects.length) return null;
+  const marks = projects.map(() => "?").join(", ");
+  const latest = db
+    .prepare(
+      `SELECT id, updated_at, activity_at, payload_json FROM chats WHERE workspace_id IN (${marks}) ORDER BY updated_at DESC`,
+    )
+    .all(...projects.map((p) => p.workspaceId))
+    .find((row) => ids.has(row.id));
+  if (!latest) return null;
+  const update = db.prepare(
+    "UPDATE chats SET updated_at = ?, activity_at = ?, payload_json = ? WHERE id = ?",
+  );
+  const payload = JSON.parse(latest.payload_json);
+  update.run(at, at, JSON.stringify({ ...payload, updatedAt: at }), latest.id);
+  return {
+    chatId: latest.id,
+    updated_at: latest.updated_at,
+    activity_at: latest.activity_at,
+    payload_json: latest.payload_json,
+  };
+}
+
+/** The chat markPresence moved, back at its own time. */
+export function restorePresence(db, mark) {
+  db.prepare(
+    "UPDATE chats SET updated_at = ?, activity_at = ?, payload_json = ? WHERE id = ?",
+  ).run(mark.updated_at, mark.activity_at, mark.payload_json, mark.chatId);
 }
 
 /**
