@@ -87,6 +87,80 @@ const item = (fields) => ({
   ...fields,
 });
 
+test("the assistant's own conversation groups under the assistant or the item it asks about, never under its title", () => {
+  const home = { id: "asst_1", name: "", isDefault: true };
+  // Its title is only its first message.
+  const conversation = {
+    sessionId: "sess_home",
+    sessionTitle: "notes/old-draft-test-2.txt 也不要了，直接删掉",
+    conversationAssistant: home,
+  };
+  const items = [
+    item({
+      id: "ask",
+      source: "assistant_question",
+      assistantId: "asst_1",
+      ...conversation,
+      updatedAt: "2026-10-29T10:00:00Z",
+    }),
+    // A failure there carries no assistant of its own; the conversation names it.
+    item({
+      id: "failed",
+      source: "turn_failed",
+      ...conversation,
+      updatedAt: "2026-10-29T09:00:00Z",
+    }),
+    item({
+      id: "about-item",
+      source: "assistant_question",
+      assistantId: "asst_1",
+      ...conversation,
+      itemId: "pai_1",
+      itemText: "Move the backup to daytime",
+      updatedAt: "2026-10-29T08:00:00Z",
+    }),
+    item({ id: "chat", updatedAt: "2026-10-29T07:00:00Z" }),
+  ];
+  const groups = groupPendingItems(
+    items,
+    "open",
+    "Untitled",
+    "Personal",
+    "Default assistant",
+    "For your information",
+    (text) => `Item: ${text}`,
+  );
+  assert.deepEqual(
+    groups.map((group) => [
+      group.key,
+      group.title,
+      group.sessionId,
+      group.items.map((x) => x.id),
+    ]),
+    [
+      ["assistant:asst_1", "Default assistant", undefined, ["ask", "failed"]],
+      [
+        "item:pai_1",
+        "Item: Move the backup to daytime",
+        undefined,
+        ["about-item"],
+      ],
+      ["session:sess_1", "Fix the export", "sess_1", ["chat"]],
+    ],
+  );
+  // The card's origin and the assistant filter name the same assistant.
+  const failed = items[1];
+  assert.deepEqual(
+    pendingOrigin(failed, "Untitled", "Personal", "Default assistant"),
+    {
+      kind: "assistant",
+      name: "Default assistant",
+    },
+  );
+  assert.equal(pendingMatchesAssistant(failed, "assistant:asst_1"), true);
+  assert.equal(pendingMatchesAssistant(failed, "none"), false);
+});
+
 test("items group by chat or Issue, newest first, open apart from resolved", () => {
   const items = [
     item({ id: "a", updatedAt: "2026-10-29T08:00:00Z" }),

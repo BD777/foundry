@@ -251,6 +251,12 @@ export const conversation = {
     scheduled: "Scheduled task",
     scheduledWith: "Scheduled task: {{title}}",
     notice: "Foundry notice",
+    relay: {
+      question_answer: "You answered a question",
+      question_answerWith: "You answered: {{title}}",
+      decision_note: "You added information",
+      decision_noteWith: "You added information about: {{title}}",
+    },
     automatic: "Triggered automatically",
     automaticWith: "Triggered automatically ({{kind}})",
     showBody: "Show the full message",

@@ -194,7 +194,7 @@ func (s *Server) answerItemWait(ctx context.Context, entry store.PendingItem, an
 		InputID:           uuid.NewSHA1(itemWaitAnswerSpace, []byte(entry.ID)).String(),
 		Prompt:            personalagent.ItemAnswerFrame(item.ID, item.Plan.WaitingFor, answer),
 		RequestedDelivery: store.DeliveryBoundary,
-		InputSource:       &store.AgentSessionInputSource{Kind: "foundry_notice", NoticeKind: store.NoticeKindQuestionAnswer},
+		InputSource:       personalagent.RelaySource(store.NoticeKindQuestionAnswer, item.Plan.WaitingFor, answer),
 	}
 	if target.SessionID == "" {
 		// No session follows the item now: the answer waits on it for the next

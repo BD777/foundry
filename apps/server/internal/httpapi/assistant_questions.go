@@ -152,7 +152,7 @@ func (s *Server) answerAssistantQuestion(ctx context.Context, item store.Pending
 		InputID:           uuid.NewSHA1(assistantQuestionSpace, []byte(item.ID)).String(),
 		Prompt:            personalagent.AnswerFrame(item.Title, answer),
 		RequestedDelivery: store.DeliveryBoundary,
-		InputSource:       &store.AgentSessionInputSource{Kind: "foundry_notice", NoticeKind: store.NoticeKindQuestionAnswer},
+		InputSource:       personalagent.RelaySource(store.NoticeKindQuestionAnswer, item.Title, answer),
 	}, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
 	if err != nil {
 		return store.PendingItem{}, fmt.Errorf("deliver the answer to session %s: %w", item.SessionID, err)

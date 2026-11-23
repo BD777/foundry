@@ -36,7 +36,8 @@ export type PendingAssistantFilter = "all" | "none" | `assistant:${string}`;
 export function pendingAssistantFilter(
   item: PendingItem,
 ): Exclude<PendingAssistantFilter, "all"> {
-  return item.assistantId ? `assistant:${item.assistantId}` : "none";
+  const assistant = pendingAssistantOf(item);
+  return assistant ? `assistant:${assistant.id}` : "none";
 }
 
 export function pendingMatchesAssistant(
@@ -67,11 +68,9 @@ export function pendingOrigin(
   personal: string,
   defaultAssistant: string,
 ): PendingOrigin {
-  if (item.assistantId) {
-    return {
-      kind: "assistant",
-      name: item.assistantName || defaultAssistant,
-    };
+  const assistant = pendingAssistantOf(item);
+  if (assistant) {
+    return { kind: "assistant", name: assistant.name || defaultAssistant };
   }
   if (item.sessionTitle) {
     return { kind: "chat", name: item.sessionTitle };
@@ -83,6 +82,20 @@ export function pendingOrigin(
     return { kind: "personal", name: personal };
   }
   return { kind: "chat", name: untitled };
+}
+
+/**
+ * The assistant an item comes from: the one whose own conversation it is in,
+ * else the one it belongs to. A conversation's title is only its first
+ * message, so it never names an assistant's item.
+ */
+function pendingAssistantOf(
+  item: PendingItem,
+): { id: string; name: string } | undefined {
+  if (item.conversationAssistant) return item.conversationAssistant;
+  if (item.assistantId)
+    return { id: item.assistantId, name: item.assistantName ?? "" };
+  return undefined;
 }
 
 /**
@@ -108,16 +121,24 @@ export function groupPendingItems(
     // Saved messages and connector writes group under the assistant they
     // belong to, not a chat chosen among them (their attempts may run in
     // several chats; a write waits for the person, not a chat).
-    const inbox =
+    const assistantOwn =
       item.source === "assistant_inbox" || item.source === "connector_write";
-    // An item waiting on the person belongs to that item, not a chat.
-    const waitingItem = item.source === "item_wait";
+    // An item waiting on the person belongs to that item, not a chat; so
+    // does what the assistant's own conversation asks about an item.
+    const waitingItem =
+      item.source === "item_wait" ||
+      Boolean(!assistantOwn && item.conversationAssistant && item.itemId);
+    // The rest of the assistant's own conversation groups under the
+    // assistant too: the conversation's title is only its first message.
+    const inbox =
+      assistantOwn || (!waitingItem && Boolean(item.conversationAssistant));
+    const assistant = pendingAssistantOf(item);
     const key = notice
       ? noticeGroupKey
       : waitingItem
         ? `item:${item.itemId || item.id}`
         : inbox
-          ? `assistant-inbox:${item.assistantId || item.id}`
+          ? `assistant:${assistant?.id || item.id}`
           : own
             ? "personal"
             : item.issueId
@@ -132,7 +153,7 @@ export function groupPendingItems(
           : waitingItem
             ? itemLabel(item.itemText ?? "")
             : inbox
-              ? item.assistantName || defaultAssistant
+              ? assistant?.name || defaultAssistant
               : own
                 ? personal
                 : (item.issueId ? item.title : item.sessionTitle) || untitled,

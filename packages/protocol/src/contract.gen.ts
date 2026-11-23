@@ -4712,7 +4712,7 @@ interface components {
       /** @description A child report's final answer, as much as its report carried; the source row shows this instead of Foundry's report prose. */
       response?: string;
       /**
-       * @description Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration.
+       * @description Which Foundry notice a foundry_notice input is (DEV-260). upkeep is a retired project-upkeep notice, marked by the DEV-260 migration. question_answer and decision_note relay the person's own words (question, personWords) after a frame written for the model.
        * @enum {string}
        */
       noticeKind?:
@@ -4720,10 +4720,17 @@ interface components {
         | "digest"
         | "proposal_outcome"
         | "helper_question"
+        | "channel_item"
         | "device_back"
         | "operation"
         | "supervision"
-        | "upkeep";
+        | "upkeep"
+        | "question_answer"
+        | "decision_note";
+      /** @description What the person's words answer (question_answer, decision_note): the assistant's question, what an item waits on them for, or the approval a note is about. Viewers show it instead of the prompt, whose frame is written for the model. */
+      question?: string;
+      /** @description The person's own words a question_answer or decision_note relays, as the prompt carries them after its frame. */
+      personWords?: string;
     };
     AgentSessionEventMetadata: {
       workerFailure?: components["schemas"]["WorkerFailure"];

@@ -30,6 +30,11 @@ export interface TurnSource {
   onOpen?: () => void;
   /** A child report's session, linked by its title when no sender resolved it (DEV-289). */
   sessionId?: string;
+  /**
+   * A Foundry notice that relays the person's own words (answer, note): the
+   * row names it in the person's language and shows only their words.
+   */
+  relay?: PersonWordsNoticeKind;
   /** The raw kind, for a source this build does not know. */
   raw?: string;
   /** A child report's turn status: completed, failed or canceled. */
@@ -98,6 +103,46 @@ function backgroundSource(message: ChatMessageItem): TurnSource {
   };
 }
 
+export type PersonWordsNoticeKind = "question_answer" | "decision_note";
+
+interface PersonWordsNotice {
+  kind: PersonWordsNoticeKind;
+  /** What the words answer: the question, what an item waits for, the approval. */
+  subject?: string;
+  words: string;
+}
+
+/**
+ * The person's words a Foundry notice relays, read from the fields the
+ * server set on its source (question, personWords). The prompt's frame is
+ * written for the model and never read here: an input stored before those
+ * fields shows as a generic notice.
+ */
+function personWordsNotice(
+  message: ChatMessageItem,
+): PersonWordsNotice | undefined {
+  const source = message.inputSource;
+  if (source?.kind !== "foundry_notice") return undefined;
+  const kind = source.noticeKind;
+  if (kind !== "question_answer" && kind !== "decision_note") return undefined;
+  const words = source.personWords?.trim();
+  if (!words) return undefined;
+  const subject = source.question?.trim();
+  return { kind, ...(subject ? { subject } : {}), words };
+}
+
+/** A relayed answer or note: the subject as its title, all of it below when long. */
+function relaySource(notice: PersonWordsNotice): TurnSource {
+  const title = continuationTitle(notice.subject);
+  const long = Boolean(notice.subject && notice.subject !== title);
+  return {
+    kind: "notice",
+    relay: notice.kind,
+    ...(title ? { title } : {}),
+    ...(long && notice.subject ? { detail: notice.subject } : {}),
+  };
+}
+
 /** A legacy event's marker opening a child session's turn_end report. */
 const reportPrefix = "Foundry report:";
 /** A legacy event's marker opening an input the server sent, not the person. */
@@ -152,8 +197,10 @@ function structuredSource(
       return backgroundSource(message);
     case "scheduled":
       return scheduledSource(message);
-    case "foundry_notice":
-      return { kind: "notice" };
+    case "foundry_notice": {
+      const relay = personWordsNotice(message);
+      return relay ? relaySource(relay) : { kind: "notice" };
+    }
     case "channel":
       return { kind: "channel" };
     default:
@@ -205,13 +252,16 @@ function inputSourceOf(message: ChatMessageItem): TurnSource | undefined {
 
 /**
  * A legacy body without the marker its source row already names. A
- * structured child report shows only its final answer.
+ * structured child report shows only its final answer; a notice relaying the
+ * person's words shows only those words.
  */
 export function sourceBody(message: ChatMessageItem): string {
   if (message.inputSource?.kind === "child_report") {
     const answer = message.inputSource.response?.trim();
     if (answer) return answer;
   }
+  const relay = personWordsNotice(message);
+  if (relay) return relay.words;
   const text = typeof message.text === "string" ? message.text.trim() : "";
   if (message.sentBy && text.startsWith(reportPrefix))
     return text.slice(reportPrefix.length).trimStart();
