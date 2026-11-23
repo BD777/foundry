@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -765,6 +766,101 @@ test("a provider that cannot be used now stays, unavailable with the reason", as
     assert.equal(profile().externalConnection.identity, "");
     assert.equal(row().status, "unavailable");
     assert.equal(row().statusDetail, "Its service is not running.");
+  } finally {
+    removeExtension("corp");
+    host.stopAll();
+  }
+});
+
+test("a checked provider stays checked when its helper is found at another path", async () => {
+  // The same helper program installed twice; a restarted Worker whose PATH
+  // reaches the other install first must not lose the check (external
+  // connections are never checked automatically).
+  const first = mkdtempSync(join(tmpdir(), "fdy-helper-a-"));
+  const second = mkdtempSync(join(tmpdir(), "fdy-helper-b-"));
+  for (const dir of [first, second])
+    writeFileSync(join(dir, "helper"), "#!/bin/sh\n", { mode: 0o755 });
+  writeFileSync(join(second, "other"), "#!/bin/sh\n", { mode: 0o755 });
+  installFixture({
+    installed: true,
+    signedIn: true,
+    sessionCommand: join(first, "helper"),
+  });
+  const host = new ExtensionHost();
+  const profile = () =>
+    configuredAgentProfiles("", { device: [], native: [] }).find(
+      (p) => p.id === "corp_default",
+    );
+  const row = () =>
+    agentProfilesForWorkspace(
+      { id: "test", lastSeenLabel: "now" },
+      "",
+      [],
+    ).find((p) => p.id === "corp_default");
+  const { providerChecksPath, providerCheckFingerprint } =
+    await import("../dist/harness/provider-check-state.js");
+  try {
+    await refreshExtensionModelProviders(host);
+    const verified = profileFingerprint(profile());
+    writeFileSync(
+      providerChecksPath(),
+      JSON.stringify({
+        corp_default: {
+          status: "passed",
+          checkedAt: new Date().toISOString(),
+          fingerprint: providerCheckFingerprint(profile(), []),
+        },
+      }),
+    );
+    assert.equal(row().status, "healthy");
+
+    setState({
+      installed: true,
+      signedIn: true,
+      sessionCommand: join(second, "helper"),
+    });
+    assert.equal(await refreshExtensionModelProviders(host), false);
+    assert.equal(
+      profile().externalConnection.executable,
+      join(first, "helper"),
+    );
+    assert.equal(profileFingerprint(profile()), verified);
+    assert.equal(row().status, "healthy");
+
+    // A different program is a different connection.
+    setState({
+      installed: true,
+      signedIn: true,
+      sessionCommand: join(second, "other"),
+    });
+    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.equal(
+      profile().externalConnection.executable,
+      join(second, "other"),
+    );
+    assert.equal(row().status, "unavailable");
+    assert.equal(row().statusDetail, "Not checked yet.");
+
+    // The verified install gone: the one found now is used, unchecked.
+    setState({
+      installed: true,
+      signedIn: true,
+      sessionCommand: join(first, "helper"),
+    });
+    await refreshExtensionModelProviders(host);
+    rmSync(join(first, "helper"));
+    setState({
+      installed: true,
+      signedIn: true,
+      sessionCommand: join(second, "helper"),
+    });
+    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.equal(
+      profile().externalConnection.executable,
+      join(second, "helper"),
+    );
+    assert.equal(row().status, "unavailable");
+    assert.equal(row().statusDetail, "Not checked yet.");
   } finally {
     removeExtension("corp");
     host.stopAll();

@@ -123,7 +123,8 @@ const methods = {
           models: ["sonnet", "opus"],
           identity: state.modelProblem ? "" : "namespace-1",
           session: {
-            command: process.env.FOUNDRY_EXTENSION_COMMAND,
+            command:
+              state.sessionCommand ?? process.env.FOUNDRY_EXTENSION_COMMAND,
             args: ["${extensionDir}/session.mjs", "default"],
           },
           ...(state.modelProblem ? { problem: state.modelProblem } : {}),
