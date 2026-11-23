@@ -91,6 +91,14 @@ interface LogFolderEntry {
   /** The session id its header names, as a full parse reads it. */
   id: string;
 }
+type LogProvider = Exclude<WorkerRuntimeId, "mock">;
+/**
+ * Keyed by provider and log: a folder both runtimes' roots reach (CODEX_HOME
+ * the same as the Claude config dir) has its logs read under both providers'
+ * header rules, and one provider's reading must not stand for the other's.
+ */
+const headerKey = (provider: LogProvider, sessionPath: string) =>
+  `${provider}\0${sessionPath}`;
 const logFolders = new Map<string, LogFolderEntry>();
 const logFolderEntryLimit = 50_000;
 /**
@@ -112,18 +120,20 @@ function loadLogHeaders(): void {
       version?: number;
       headers?: unknown;
     };
-    if (value.version !== 1 || !Array.isArray(value.headers)) return;
+    if (value.version !== 2 || !Array.isArray(value.headers)) return;
     for (const item of value.headers) {
       if (!Array.isArray(item)) continue;
-      const [log, folder, id] = item as unknown[];
+      const [provider, log, folder, id] = item as unknown[];
       if (
+        (provider !== "codex" && provider !== "claude") ||
         typeof log !== "string" ||
         typeof folder !== "string" ||
-        typeof id !== "string" ||
-        logFolders.has(log)
+        typeof id !== "string"
       )
         continue;
-      logFolders.set(log, { mtimeMs: 0, size: 0, settled: true, folder, id });
+      const key = headerKey(provider, log);
+      if (logFolders.has(key)) continue;
+      logFolders.set(key, { mtimeMs: 0, size: 0, settled: true, folder, id });
     }
   } catch {
     // None yet, or unreadable: headers are read from the logs again.
@@ -133,12 +143,14 @@ function loadLogHeaders(): void {
 function saveLogHeaders(): void {
   if (!logHeadersChanged) return;
   logHeadersChanged = false;
-  const headers: [string, string, string][] = [];
-  for (const [log, entry] of logFolders)
-    if (entry.settled && looked.has(log))
-      headers.push([log, entry.folder, entry.id]);
+  const headers: [string, string, string, string][] = [];
+  for (const [key, entry] of logFolders)
+    if (entry.settled && looked.has(key)) {
+      const [provider, log] = key.split("\0") as [string, string];
+      headers.push([provider, log, entry.folder, entry.id]);
+    }
   try {
-    writePrivateJSONAtomic(logHeadersFile(), { version: 1, headers });
+    writePrivateJSONAtomic(logHeadersFile(), { version: 2, headers });
   } catch (error) {
     console.warn(`Could not keep native log headers: ${errorMessage(error)}`);
   }
@@ -943,31 +955,33 @@ const headerReads = new Map<string, Promise<LogHeader>>();
  * session id it names. */
 function logHeader(
   sessionPath: string,
-  provider: Exclude<WorkerRuntimeId, "mock">,
+  provider: LogProvider,
 ): Promise<LogHeader> | LogHeader {
-  looked.add(sessionPath);
+  const key = headerKey(provider, sessionPath);
+  looked.add(key);
   // A complete header never changes: no stat for it (most logs every round).
-  const known = logFolders.get(sessionPath);
+  const known = logFolders.get(key);
   if (known?.settled) return known;
-  const pending = headerReads.get(sessionPath);
+  const pending = headerReads.get(key);
   if (pending) return pending;
   const read = readLogHeader(sessionPath, provider, known).finally(() =>
-    headerReads.delete(sessionPath),
+    headerReads.delete(key),
   );
-  headerReads.set(sessionPath, read);
+  headerReads.set(key, read);
   return read;
 }
 
 async function readLogHeader(
   sessionPath: string,
-  provider: Exclude<WorkerRuntimeId, "mock">,
+  provider: LogProvider,
   known: LogFolderEntry | undefined,
 ): Promise<LogHeader> {
+  const key = headerKey(provider, sessionPath);
   let stat: Stats;
   try {
     stat = statSync(sessionPath);
   } catch {
-    logFolders.delete(sessionPath);
+    logFolders.delete(key);
     return { folder: "", id: "" };
   }
   if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) {
@@ -992,8 +1006,8 @@ async function readLogHeader(
     folder,
     id: headerSessionId(lines, provider, sessionPath),
   };
-  logFolders.delete(sessionPath);
-  logFolders.set(sessionPath, entry);
+  logFolders.delete(key);
+  logFolders.set(key, entry);
   if (settled) logHeadersChanged = true;
   while (logFolders.size > logFolderEntryLimit) {
     const oldest = logFolders.keys().next().value;

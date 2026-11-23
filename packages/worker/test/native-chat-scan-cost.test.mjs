@@ -100,11 +100,14 @@ test("a restarted scan takes complete log headers from the state root instead of
   const kept = JSON.parse(
     readFileSync(foundryStatePath("native-log-headers.json"), "utf8"),
   );
-  assert.equal(kept.version, 1);
+  assert.equal(kept.version, 2);
   assert.ok(
     kept.headers.some(
-      ([path, folder, id]) =>
-        path === log.path && folder === workspace.localPath && id === log.id,
+      ([provider, path, folder, id]) =>
+        provider === "claude" &&
+        path === log.path &&
+        folder === workspace.localPath &&
+        id === log.id,
     ),
   );
   // A fresh module instance stands for a restarted worker. The kept header
