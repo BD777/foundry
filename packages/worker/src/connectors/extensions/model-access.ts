@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { basename, isAbsolute } from "node:path";
 import type {
   ConnectorDescriptor,
   ExtensionModelProfile,
@@ -143,18 +143,31 @@ function checkedProvider(
     text
       .replaceAll("${extensionDir}", extensionDir)
       .replaceAll("${dataDir}", data);
-  const executable = substitute(value.session?.command ?? "");
+  const listed = substitute(value.session?.command ?? "");
   const args = (value.session?.args ?? []).map((arg) =>
     substitute(String(arg)),
   );
   if (
-    !isAbsolute(executable) ||
-    !existsSync(executable) ||
+    !isAbsolute(listed) ||
+    !existsSync(listed) ||
     args.length > 32 ||
     args.some((arg) => arg.length > 4096)
   )
     return undefined;
   probeFailures.delete(key);
+  // The same program found at another path (a restarted Worker whose PATH
+  // reaches another install of it first) is the connection already verified
+  // here. External connections are never checked automatically, so a new
+  // path would leave it unchecked and unusable; the verified one is kept
+  // while it is still on the device.
+  const verified = before?.externalConnection.executable ?? "";
+  const executable =
+    verified !== listed &&
+    isAbsolute(verified) &&
+    basename(verified) === basename(listed) &&
+    existsSync(verified)
+      ? verified
+      : listed;
   const unchanged =
     before &&
     !before.problem &&
