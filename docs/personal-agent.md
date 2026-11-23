@@ -427,6 +427,10 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
   - 夹具电脑提供与本人电脑相同的连接器模型配置（如 `limen_default`），帮手在助理这一轮结束前保持运行，结束后才取消；每例之后撤销新建项目（删不掉则该例失败）、清单、定时任务、记忆、规则和助理自己的文件。
   - 每台评测电脑（助理与夹具）都在自己的最小根文件系统和独立网络里运行（`scripts/pa-eval-sandbox.mjs`）：看不到宿主的文件与服务，只桥接评测服务端口和模型连接的本地端口；`--sandbox-check` 自证。
   - 是否在提问由只读的 Foundry 判定会话判断（默认开启，`--no-judge` 关闭），不看问号；判定会话不直接调用模型接口。
+  - 并行：`scripts/pa-eval-parallel.mjs --server <bin> --out <file> [--parallel N]`。它开 N 个互相隔离的栈（各自的库、端口、夹具电脑、助理、沙箱和模型连接中转），把（遍次, 用例）按截止周连续分片，跑完合并成一份报告（`pa-eval-run.mjs --merge`）。
+    - 每个截止周的项目摘要先各用一个栈算一次，结果按「server 二进制 + 评测集 + 模型」缓存在 `~/.foundry/pa-eval/digest-cache/`，分片直接复用。
+    - 所有栈共用一个模型连接并发上限（`--helper-slots`，默认 20）。
+    - N 默认按每 4 核、每 3 GB 可用内存各一个分片计算。
   - 评测集里的链接、名字、粘贴内容和图片是同类的合成内容（`scripts/pa-eval-build.mjs`，`--pin` 时从原始消息重新生成，上限 4096 字），不是占位符。
 
 **验收场景**（`cases/personal-agent/*.case.json`，真实浏览器与真实单聊）：

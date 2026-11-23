@@ -95,3 +95,41 @@ test("history before the cutoff replaces the earlier cutoff's and drops the chan
     ["ws_b"],
   );
 });
+
+test("summarized digests carry over to another stack's person", async () => {
+  const { exportDigests, importDigests } =
+    await import("./pa-eval-fixture.mjs");
+  const make = () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(
+      `CREATE TABLE workspace_digests (user_id TEXT, workspace_id TEXT, digest_json TEXT, summarized_at TEXT, summary_session_id TEXT, summary_due_at TEXT, pending_rev TEXT, l0 TEXT, PRIMARY KEY (user_id, workspace_id))`,
+    );
+    return db;
+  };
+  const a = make();
+  a.prepare(
+    "INSERT INTO workspace_digests VALUES (?, ?, ?, ?, '', '', '', ?)",
+  ).run(
+    "u1",
+    "ws_a",
+    JSON.stringify({ userId: "u1", workspaceId: "ws_a" }),
+    "2026-11-24T00:00:00Z",
+    "notes",
+  );
+  a.prepare(
+    "INSERT INTO workspace_digests VALUES (?, ?, ?, '', 'sess_1', 'x', '', '')",
+  ).run("u1", "ws_b", "{}");
+  const rows = exportDigests(a, "u1", ["ws_a", "ws_b"]);
+  assert.equal(rows.length, 1);
+  const b = make();
+  b.prepare(
+    "INSERT INTO workspace_digests VALUES ('u2', 'ws_a', '{}', '', 'sess_9', 'due', 'p', '')",
+  ).run();
+  assert.equal(importDigests(b, "u2", rows), 1);
+  const row = b
+    .prepare("SELECT * FROM workspace_digests WHERE user_id = 'u2'")
+    .get();
+  assert.equal(row.l0, "notes");
+  assert.equal(row.summary_session_id, "");
+  assert.equal(JSON.parse(row.digest_json).userId, "u2");
+});

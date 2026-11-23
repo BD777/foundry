@@ -62,6 +62,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
+import { connectorsOf } from "./pa-eval-fixture.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -1310,6 +1311,12 @@ async function main() {
       )
       .all(person.id)
       .map((r) => [r.workspace_id, r.intro]),
+  );
+  // Connector metadata of the projects (no secrets): the seed writes it
+  // without opening the dev database.
+  index.connectors = connectorsOf(
+    db,
+    index.projects.map((p) => p.workspaceId),
   );
   // The model profiles each computer could run a helper on (healthy in the
   // dev database): the fixture computers offer the same ones.

@@ -5,7 +5,7 @@
 // device profile with the same id, label, models and identity whose helper is
 // a small shim; the shim relays its stdin and stdout over a unix socket in the
 // run folder to the real helper, which the harness starts outside the
-// sandbox with the worker's basic variables. The helper writes its files
+// sandbox with this computer's basic variables. The helper writes its files
 // into the configuration folder named in the request, which is under the run
 // folder at the same path inside and outside. The helper's stderr is not
 // relayed (it may carry credentials); the harness logs only its error code.
@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -33,6 +34,13 @@ import { join, resolve } from "node:path";
 const hostProviders = () =>
   process.env.PA_EVAL_HOST_MODEL_PROVIDERS ||
   resolve(homedir(), ".foundry/extension-model-providers.json");
+
+const hostBasics = () =>
+  Object.fromEntries(
+    ["PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ"]
+      .filter((k) => process.env[k] !== undefined)
+      .map((k) => [k, process.env[k]]),
+  );
 
 /** The connector-provided profile with this id on this computer, if any. */
 export function hostConnectorProfile(id) {
@@ -114,6 +122,47 @@ function relayReply(stdout, socket, net, log) {
   stdout.on("data", onData);
 }
 
+// A slot among PA_EVAL_HELPER_SLOTS shared by every process that names the
+// same PA_EVAL_HELPER_SLOTS_DIR: a slot is a folder made atomically, holding
+// its owner's pid; a slot whose owner is gone is taken back. Without the
+// variables there is no limit. Resolves to the slot's release.
+export async function helperSlot(
+  dir = process.env.PA_EVAL_HELPER_SLOTS_DIR,
+  slots = Number(process.env.PA_EVAL_HELPER_SLOTS || 0),
+) {
+  if (!dir || !slots) return () => {};
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error.code === "EPERM";
+    }
+  };
+  for (;;) {
+    for (let i = 0; i < slots; i++) {
+      const slot = join(dir, `slot-${i}`);
+      try {
+        mkdirSync(slot);
+        writeFileSync(join(slot, "pid"), String(process.pid));
+        return () => rmSync(slot, { recursive: true, force: true });
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        let owner = 0;
+        try {
+          owner = Number(readFileSync(join(slot, "pid"), "utf8"));
+        } catch {
+          continue; // being made right now
+        }
+        if (owner && !alive(owner))
+          rmSync(slot, { recursive: true, force: true });
+      }
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
 /**
  * Starts the relay for one provider: returns the device profile for the
  * worker's agent-profiles.local.json and a stop function.
@@ -137,7 +186,8 @@ export function startConnectionRelay(
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     let header = Buffer.alloc(0);
     let child;
-    const onHeader = (chunk) => {
+    let closed = false;
+    const onHeader = async (chunk) => {
       header = Buffer.concat([header, chunk]);
       const newline = header.indexOf(10);
       if (newline < 0) {
@@ -153,10 +203,23 @@ export function startConnectionRelay(
         return;
       }
       const rest = header.subarray(newline + 1);
+      // A computer's gateway client serves a limited number of open
+      // connections: helpers of every shard of a parallel run share them
+      // (PA_EVAL_HELPER_SLOTS), the rest wait their turn.
+      socket.pause();
+      const release = await helperSlot();
+      if (closed) {
+        release();
+        return;
+      }
       const directory = mkdtempSync(join(tmpdir(), "pa-eval-connection-"));
       child = spawn(executable, args, {
         cwd: directory,
-        env: { ...env, TMPDIR: directory },
+        // The helper runs on this computer, outside the sandbox: it gets
+        // this computer's basic variables (its home holds the gateway's own
+        // state), as a helper the person's Worker starts does; the
+        // sandbox's own (its run-folder home) are ignored.
+        env: { ...hostBasics(), TMPDIR: directory },
         stdio: ["pipe", "pipe", "pipe"],
       });
       children.add(child);
@@ -171,6 +234,7 @@ export function startConnectionRelay(
       socket.pipe(child.stdin);
       child.stdin.on("error", () => {});
       child.on("close", (status) => {
+        release();
         children.delete(child);
         rmSync(directory, { recursive: true, force: true });
         const line = stderrTail.trimEnd().split("\n").pop() ?? "";
@@ -182,6 +246,7 @@ export function startConnectionRelay(
     socket.on("data", onHeader);
     socket.on("error", () => {});
     socket.on("close", () => {
+      closed = true;
       if (child && child.exitCode === null) child.kill("SIGTERM");
     });
   });

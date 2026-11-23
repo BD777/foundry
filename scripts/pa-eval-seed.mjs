@@ -31,7 +31,11 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-import { displayName, populateProject } from "./pa-eval-fixture.mjs";
+import {
+  connectorsOf,
+  displayName,
+  populateProject,
+} from "./pa-eval-fixture.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (name) => {
@@ -72,8 +76,16 @@ const slug = (s) =>
     .replace(/^-|-$/g, "");
 const mac = (computer) => /mac/i.test(computer);
 
-const dev = new DatabaseSync(liveDB, { readOnly: true });
-dev.exec("PRAGMA query_only = 1");
+// The dev database, read-only, only when the set does not carry what is
+// needed (connector metadata of an older set; a --profile's row and secret).
+let devDB = null;
+const dev = () => {
+  if (!devDB) {
+    devDB = new DatabaseSync(liveDB, { readOnly: true });
+    devDB.exec("PRAGMA query_only = 1");
+  }
+  return devDB;
+};
 
 const counts = { devices: 0, workspaces: 0, files: 0 };
 const seededConnectors = { accounts: [], bindings: [], deviceConnectors: [] };
@@ -160,29 +172,15 @@ try {
 
   // Connector metadata bound to the index's projects (dev DB, read-only).
   const projectIds = index.projects.map((p) => p.workspaceId);
-  const marks = projectIds.map(() => "?").join(", ");
   const neutralLabel = {
     feishu: () => "PA1 Eval",
     cloudflare: () => "PA1 Eval",
     openlark: () => "work-dev OpenLark（内网）",
   };
-  const bindings = dev
-    .prepare(
-      `SELECT workspace_id, account_id, access FROM external_account_bindings WHERE workspace_id IN (${marks})`,
-    )
-    .all(...projectIds);
-  const accountIds = [...new Set(bindings.map((b) => b.account_id))];
-  for (const accountId of accountIds) {
-    const a = dev
-      .prepare(
-        "SELECT id, provider, app_id, mode, status, keep_alive FROM external_accounts WHERE id = ?",
-      )
-      .get(accountId);
-    const app = dev
-      .prepare(
-        "SELECT id, provider, visibility, created_via FROM external_provider_apps WHERE id = ?",
-      )
-      .get(a.app_id);
+  const connectors = index.connectors || connectorsOf(dev(), projectIds);
+  const { bindings } = connectors;
+  for (const a of connectors.accounts) {
+    const { app } = a;
     const label = (neutralLabel[a.provider] || (() => a.provider))();
     db.prepare(
       `INSERT OR IGNORE INTO external_provider_apps (id, provider, owner_user_id, visibility, label, client_id, created_via, created_at, updated_at)
@@ -232,11 +230,7 @@ try {
   const projectDevice = new Map(
     index.projects.map((p) => [p.workspaceId, devices.get(p.computer)]),
   );
-  for (const b of dev
-    .prepare(
-      `SELECT workspace_id, kind, members FROM device_connector_bindings WHERE workspace_id IN (${marks})`,
-    )
-    .all(...projectIds)) {
+  for (const b of connectors.deviceBindings) {
     const deviceId = projectDevice.get(b.workspace_id);
     db.prepare(
       `INSERT OR IGNORE INTO device_connector_states (device_id, kind, status, installed, signed_in, checked_at)
@@ -253,7 +247,7 @@ try {
   }
 
   if (profileId) {
-    const profile = dev
+    const profile = dev()
       .prepare("SELECT * FROM profiles WHERE id = ?")
       .get(profileId);
     if (!profile)
@@ -268,7 +262,7 @@ try {
     db.prepare(
       `INSERT INTO profiles (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
     ).run(...cols.map((c) => profile[c]));
-    const secret = dev
+    const secret = dev()
       .prepare("SELECT * FROM secret_records WHERE id = ?")
       .get(`agent-profile:${profileId}`);
     if (!secret) throw new Error(`no secret for ${profileId}`);
@@ -291,7 +285,7 @@ try {
   db.exec("ROLLBACK");
   throw error;
 } finally {
-  dev.close();
+  devDB?.close();
 }
 db.close();
 console.log(

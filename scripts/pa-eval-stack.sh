@@ -19,7 +19,10 @@
 set -euo pipefail
 T=$1 BIN=$2 PROFILE=$3 MODEL=$4 EFFORT=$5 KIND=${6:-api}
 here=$(cd "$(dirname "$0")" && pwd)
-key=${PA_EVAL_SECRET_KEY_PATH:-$HOME/.foundry/server/foundry-secret.key}
+# A seeded server profile's secret is wrapped with the dev server's key, so
+# KIND api uses that key read-only; otherwise the stack has a key of its own.
+if [ "${6:-api}" = api ]; then key=${PA_EVAL_SECRET_KEY_PATH:-$HOME/.foundry/server/foundry-secret.key}
+else key=${PA_EVAL_SECRET_KEY_PATH:-$1/data/foundry-secret.key}; fi
 [ -e "$T/data/foundry.db" ] && { echo "pa-eval-stack: $T already has a database" >&2; exit 2; }
 case "$(cd "$(dirname "$T")" && pwd)/" in "$HOME"/*) echo "pa-eval-stack: $T is under $HOME; use a folder outside it" >&2; exit 2 ;; esac
 umask 077
@@ -31,6 +34,7 @@ senv=(PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}"
   NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
   FOUNDRY_DB_PATH="$T/data/foundry.db" FOUNDRY_SECRET_KEY_PATH="$key" FOUNDRY_STATE_ROOT="$T/state"
   FOUNDRY_INTEGRATIONS=off FOUNDRY_HOST=127.0.0.1)
+[ -e "$key" ] || env -i "${senv[@]}" "$T/bin/foundry-server" keys generate >/dev/null
 port=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
 env -i "${senv[@]}" PORT="$port" FOUNDRY_WEB_ORIGIN="http://127.0.0.1:$port" \
   "$T/bin/foundry-server" >>"$T/logs/server-init.log" 2>&1 </dev/null &

@@ -84,6 +84,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -116,6 +117,8 @@ import {
 import {
   applyHistory,
   cutoffGroups,
+  exportDigests,
+  importDigests,
   writeRegistry,
 } from "./pa-eval-fixture.mjs";
 
@@ -272,6 +275,22 @@ function parseArgs(argv) {
       case "--case-timeout-s":
         args.caseTimeoutS = Number(value());
         break;
+      case "--digest-cache":
+        args.digestCache = resolve(value());
+        break;
+      case "--prepare-digests":
+        args.prepareCutoff = value();
+        break;
+      case "--units": {
+        // [{ "id": case id, "repeat": k }, ...]
+        const units = JSON.parse(readFileSync(resolve(value()), "utf8"));
+        args.units = new Set(units.map((u) => journalKey(u.repeat, u.id)));
+        args.unitIds = new Set(units.map((u) => u.id));
+        if (units.every((u) => u.cutoff))
+          args.unitCutoffs = new Map(units.map((u) => [u.id, u.cutoff]));
+        args.repeat = Math.max(args.repeat, ...units.map((u) => u.repeat));
+        break;
+      }
       case "--resume":
         args.resume = value();
         break;
@@ -311,14 +330,17 @@ function parseArgs(argv) {
     throw new Error("--worker-home is scratch or real");
   if (args.scenario && !["a1a2", "plans"].includes(args.scenario))
     throw new Error("--scenario is a1a2 or plans");
-  if (!args.e2e && !args.scenario)
+  if (args.prepareCutoff && !args.digestCache)
+    throw new Error("--prepare-digests needs --digest-cache");
+  if (!args.e2e && !args.scenario && !args.prepareCutoff)
     throw new Error(
       "nothing to run: routing accuracy needs --e2e (or use --scenario)",
     );
   return args;
 }
 
-const log = (...parts) => console.error("pa-eval:", ...parts);
+const log = (...parts) =>
+  console.error(`pa-eval ${new Date().toISOString().slice(11, 19)}:`, ...parts);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hash = (s) => createHash("sha1").update(s).digest("hex");
 
@@ -776,6 +798,12 @@ class Worker {
   async start({ logins }) {
     await this.stop();
     this.logins = logins;
+    // This computer's egress (its Worker's proxy setting), as the person's
+    // computer has it: a model connection's helper sends its onward traffic
+    // through it. Only the assistant's computer talks to a model.
+    const egress = resolve(homedir(), ".foundry/worker-proxy.json");
+    if (this.hostEgress && existsSync(egress))
+      copyFileSync(egress, resolve(this.stateRoot, "worker-proxy.json"));
     // A connector-provided --profile (pa-eval-connection-relay.mjs).
     if (this.deviceProfiles)
       writeFileSync(
@@ -1797,7 +1825,13 @@ function rescoreRows(rows, assistantWorkspace, verdicts) {
 // digest was deleted, so the server builds and summarizes it anew). The
 // cases wait until every fixture project has a summarized digest. Returns
 // the summary sessions not seen before, with their cost.
-async function waitForDigests(client, stack, index, timeoutMs = 40 * 60_000) {
+async function waitForDigests(
+  client,
+  stack,
+  index,
+  timeoutMs = 40 * 60_000,
+  stallMs = 2 * 60_000,
+) {
   const { DatabaseSync } = await import("node:sqlite");
   const ids = index.projects.map((p) => p.workspaceId);
   const read = (sql, ...params) => {
@@ -1818,11 +1852,23 @@ async function waitForDigests(client, stack, index, timeoutMs = 40 * 60_000) {
     return ids.filter((id) => !done.has(id));
   };
   const until = Date.now() + timeoutMs;
+  // A summary whose session failed is due again only hours later (as in
+  // production): no progress for stallMs ends the wait early (stalled).
+  let lastCount = Infinity;
+  let lastProgress = Date.now();
+  let stalled = false;
   for (
     let left = pending();
     left.length && Date.now() < until;
     left = pending()
   ) {
+    if (left.length < lastCount) {
+      lastCount = left.length;
+      lastProgress = Date.now();
+    } else if (Date.now() - lastProgress > stallMs) {
+      stalled = true;
+      break;
+    }
     log(`waiting for ${left.length} project summaries`);
     await sleep(20_000);
   }
@@ -1845,7 +1891,7 @@ async function waitForDigests(client, stack, index, timeoutMs = 40 * 60_000) {
       costUsd: turnUsage(detail?.events || []).costUsd,
     });
   }
-  return { sessions: out, missing: left };
+  return { sessions: out, missing: left, stalled };
 }
 const seenSummaries = new Set();
 
@@ -2607,24 +2653,80 @@ function printReport(report) {
 // The cases in the order they run: by history cutoff (pa-eval-fixture.mjs
 // cutoffGroups), oldest first; within a cutoff every repetition. A group
 // the resumed journal holds in full is skipped.
+// With --units, only the listed (repetition, case) units run: a shard of a
+// parallel run (pa-eval-parallel.mjs).
 function runPlan(cases, args) {
-  const sample = sampleCases(cases, args.sample, args.only);
-  const groups = cutoffGroups(sample).map((g) => ({
-    ...g,
-    done: Array.from({ length: args.repeat }, (_, k) => k + 1).every((k) =>
-      g.cases.every((c) => args.resumed.has(journalKey(k, c.id))),
-    ),
-  }));
-  return { sample, groups };
+  const sample = args.units
+    ? cases.filter((c) => args.unitIds.has(c.id))
+    : sampleCases(cases, args.sample, args.only);
+  const wanted = (k, c) => !args.units || args.units.has(journalKey(k, c.id));
+  // A parallel run's units name their cutoff (the whole run's grouping), so
+  // every shard cuts history where the others do.
+  const grouped = args.unitCutoffs
+    ? [...new Set(sample.map((c) => args.unitCutoffs.get(c.id)))]
+        .sort()
+        .map((cutoff) => ({
+          cutoff,
+          cases: sample.filter((c) => args.unitCutoffs.get(c.id) === cutoff),
+        }))
+    : cutoffGroups(sample);
+  const groups = grouped.map((g) => {
+    const runs = Array.from({ length: args.repeat }, (_, i) => ({
+      k: i + 1,
+      cases: g.cases.filter((c) => wanted(i + 1, c)),
+    })).filter((r) => r.cases.length);
+    return {
+      ...g,
+      runs,
+      done: runs.every((r) =>
+        r.cases.every((c) => args.resumed.has(journalKey(r.k, c.id))),
+      ),
+    };
+  });
+  const units = groups.reduce(
+    (n, g) => n + g.runs.reduce((m, r) => m + r.cases.length, 0),
+    0,
+  );
+  return { sample, groups, units };
 }
 
-// Moves the fixture's history to a cutoff: the server stops, each project's
-// chats before the cutoff are written (pa-eval-fixture.mjs applyHistory),
-// and it starts again on the same port; the computers reconnect.
-async function moveHistory(client, stack, index, cutoff, args, workers) {
+// The fixture's history at a cutoff, written into the stopped server's
+// database; with --digest-cache, the digests another stack summarized at the
+// same cutoff (pa-eval-parallel.mjs prepares them) come with it, so the
+// projects are not summarized again here.
+function historyAt(stack, index, cutoff, args, { reuse = true } = {}) {
+  return withStackDb(stack, (db) => {
+    const user = userIdOf(db, args.user);
+    const changed = applyHistory(db, index, user, cutoff);
+    const cached =
+      args.digestCache && reuse
+        ? resolve(args.digestCache, `${cutoff}.json`)
+        : "";
+    const imported =
+      cached && existsSync(cached)
+        ? importDigests(db, user, JSON.parse(readFileSync(cached, "utf8")))
+        : 0;
+    return { changed, imported };
+  });
+}
+
+// The digests prepared at the first cutoff, put in once the assistant exists
+// (before it, the server keeps no digests of the person: it drops them). The
+// server restarts on them; their content differs only in the folders' file
+// stamps, so they are not summarized again now (a changed digest is, 30
+// minutes later, as in production).
+async function reuseDigests(client, stack, index, cutoff, args, workers) {
+  const cached = args.digestCache
+    ? resolve(args.digestCache, `${cutoff}.json`)
+    : "";
+  if (!cached || !existsSync(cached)) return 0;
   stack.down();
-  const changed = withStackDb(stack, (db) =>
-    applyHistory(db, index, userIdOf(db, args.user), cutoff),
+  const imported = withStackDb(stack, (db) =>
+    importDigests(
+      db,
+      userIdOf(db, args.user),
+      JSON.parse(readFileSync(cached, "utf8")),
+    ),
   );
   await stack.up();
   await client.post("/api/auth/login", {
@@ -2633,8 +2735,116 @@ async function moveHistory(client, stack, index, cutoff, args, workers) {
   });
   for (const { worker, deviceId } of workers)
     await worker.waitConnected(client, deviceId, true, 180_000);
-  log(`history moved to ${cutoff}: ${changed.length} projects changed`);
+  log(`history at ${cutoff}: ${imported} summaries reused`);
+  return imported;
+}
+
+// Moves the fixture's history to a cutoff: the server stops, each project's
+// chats before the cutoff are written (pa-eval-fixture.mjs applyHistory),
+// and it starts again on the same port; the computers reconnect.
+async function moveHistory(client, stack, index, cutoff, args, workers) {
+  stack.down();
+  const { changed, imported } = historyAt(stack, index, cutoff, args);
+  await stack.up();
+  await client.post("/api/auth/login", {
+    username: args.user,
+    password: stack.password(),
+  });
+  for (const { worker, deviceId } of workers)
+    await worker.waitConnected(client, deviceId, true, 180_000);
+  log(
+    `history moved to ${cutoff}: ${changed.length} projects changed, ${imported} summaries reused`,
+  );
   return changed;
+}
+
+// Every fixture project summarized. Summaries that failed (a model
+// connection refused, say) are made due again at once: their digests are
+// dropped and the server restarted, as for a history move; at most three
+// times.
+async function digestsReady(client, stack, index, args, workers) {
+  let wait = await waitForDigests(client, stack, index);
+  for (
+    let retry = 1;
+    retry <= 3 && wait.missing.length && wait.stalled;
+    retry++
+  ) {
+    log(
+      `summaries of ${wait.missing.length} projects did not finish: again (${retry}/3)`,
+    );
+    await restartWithout(client, stack, wait.missing, args, workers);
+    const again = await waitForDigests(client, stack, index);
+    wait = { ...again, sessions: [...wait.sessions, ...again.sessions] };
+  }
+  return wait;
+}
+
+// --prepare-digests CUTOFF --digest-cache DIR: a stack that only summarizes
+// the fixture at one cutoff and leaves the digests in DIR/<cutoff>.json for
+// the shards of a parallel run. No case runs.
+async function prepareDigests(client, worker, deviceId, index, args, report) {
+  const workers = [
+    ...fixtureWorkers.map((w) => ({ worker: w, deviceId: w.deviceId })),
+    { worker, deviceId },
+  ];
+  const started = Date.now();
+  await reuseDigests(
+    client,
+    worker.stack,
+    index,
+    args.prepareCutoff,
+    args,
+    workers,
+  );
+  const wait = await digestsReady(client, worker.stack, index, args, workers);
+  if (wait.missing.length)
+    throw new SetupError(
+      `${wait.missing.length} projects not summarized at ${args.prepareCutoff}`,
+    );
+  const rows = withStackDb(worker.stack, (db) =>
+    exportDigests(
+      db,
+      userIdOf(db, args.user),
+      index.projects.map((p) => p.workspaceId),
+    ),
+  );
+  mkdirSync(args.digestCache, { recursive: true, mode: 0o700 });
+  const file = resolve(args.digestCache, `${args.prepareCutoff}.json`);
+  writeFileSync(`${file}.tmp`, JSON.stringify(rows), { mode: 0o600 });
+  renameSync(`${file}.tmp`, file);
+  report.prepared = {
+    cutoff: args.prepareCutoff,
+    digests: rows.length,
+    summaries: wait.sessions.length,
+    costUsd: round(
+      wait.sessions.reduce((t, x) => t + x.costUsd, 0),
+      4,
+    ),
+    waitMs: Date.now() - started,
+  };
+  log(
+    `digests at ${args.prepareCutoff}: ${rows.length} kept in ${file} ($${report.prepared.costUsd})`,
+  );
+}
+
+// The server restarted without the person's digests of these projects:
+// they are built and summarized again when the computers reconnect.
+async function restartWithout(client, stack, workspaceIds, args, workers) {
+  stack.down();
+  withStackDb(stack, (db) => {
+    const user = userIdOf(db, args.user);
+    for (const id of workspaceIds)
+      db.prepare(
+        "DELETE FROM workspace_digests WHERE user_id = ? AND workspace_id = ?",
+      ).run(user, id);
+  });
+  await stack.up();
+  await client.post("/api/auth/login", {
+    username: args.user,
+    password: stack.password(),
+  });
+  for (const { worker, deviceId } of workers)
+    await worker.waitConnected(client, deviceId, true, 180_000);
 }
 
 function withStackDb(stack, fn) {
@@ -2706,15 +2916,15 @@ async function runRoutingAndE2E(
     ...fixtureWorkers.map((w) => ({ worker: w, deviceId: w.deviceId })),
     { worker, deviceId },
   ];
-  plannedCases = plan.sample.length * args.repeat;
+  plannedCases = plan.units;
   const runs = Array.from({ length: args.repeat }, () => []);
   const digestWaits = [];
   let base = null;
   let moved = false;
   for (const group of plan.groups) {
     if (group.done) {
-      for (let k = 1; k <= args.repeat; k++)
-        for (const c of group.cases) {
+      for (const { k, cases } of group.runs)
+        for (const c of cases) {
           const row = args.resumed.get(journalKey(k, c.id));
           row.repeat = k;
           runs[k - 1].push(row);
@@ -2726,8 +2936,10 @@ async function runRoutingAndE2E(
     // The first group's history was written before the server started.
     if (moved)
       await moveHistory(client, stack, index, group.cutoff, args, workers);
+    else await reuseDigests(client, stack, index, group.cutoff, args, workers);
     moved = true;
-    const wait = await waitForDigests(client, stack, index);
+    const waitStarted = Date.now();
+    const wait = await digestsReady(client, stack, index, args, workers);
     summaries.push(...wait.sessions);
     digestWaits.push({
       cutoff: group.cutoff,
@@ -2737,19 +2949,21 @@ async function runRoutingAndE2E(
         4,
       ),
       missing: wait.missing,
+      waitMs: Date.now() - waitStarted,
     });
     base ||= await caseBaseline(client, agent, stack);
     base.cutoff = group.cutoff;
     log(
       `history ${group.cutoff}: ${group.cases.length} cases × ${args.repeat}`,
     );
-    for (let k = 1; k <= args.repeat && !stopRun; k++) {
+    for (const { k, cases } of group.runs) {
+      if (stopRun) break;
       const rows = await e2eRun(
         client,
         worker,
         agent,
         deviceId,
-        group.cases,
+        cases,
         args,
         base,
         k,
@@ -3154,17 +3368,116 @@ function rescoreReport(file) {
   return report.checks.some((c) => c.pass === false) ? 1 : 0;
 }
 
+// --merge OUT SHARD...: one report from the shards of a parallel run
+// (pa-eval-parallel.mjs). Rows, summaries, judge verdicts and costs are put
+// together; the scores, the judge's rescoring and the agreement between
+// repetitions are taken again over all of them, as one run would have.
+function mergeReports(out, files, evalDir) {
+  const shards = files.map((f) => JSON.parse(readFileSync(resolve(f), "utf8")));
+  const { cases, names } = loadEvalSet(evalDir);
+  const rows = shards.flatMap((r) => r.e2e?.rows || []);
+  const seen = new Set();
+  for (const r of rows) {
+    const key = journalKey(r.repeat || 1, r.id);
+    if (seen.has(key)) throw new Error(`two shards ran ${r.id} #${r.repeat}`);
+    seen.add(key);
+  }
+  const projects = shards.find((r) => r.e2e?.projects?.length)?.e2e.projects;
+  e2eProjects.splice(0, e2eProjects.length, ...(projects || []));
+  const verdicts = shards.flatMap((r) => r.judge?.verdicts || []);
+  // Each shard's assistant has its own workspace id; a row's own is kept.
+  const report = {
+    startedAt: shards.map((r) => r.startedAt).sort()[0],
+    finishedAt: shards
+      .map((r) => r.finishedAt)
+      .sort()
+      .at(-1),
+    instance: shards.map((r) => r.instance).join(","),
+    cases: shards[0]?.cases,
+    evalSet: shards[0]?.evalSet,
+    parallel: {
+      shards: shards.length,
+      files,
+      rowsPerShard: shards.map((r) => r.e2e?.rows?.length || 0),
+      preflight: shards.map((r) => r.preflight),
+    },
+    checks: [],
+  };
+  const byShard = shards.flatMap((r) =>
+    (r.e2e?.rows || []).map((row) => [row, r.e2e.assistantWorkspace]),
+  );
+  for (const [row, assistant] of byShard)
+    if (verdicts.length) rescoreRows([row], assistant, verdicts);
+  const scored = scoreE2E(rows, cases, names);
+  const maxRepeat = Math.max(1, ...rows.map((r) => r.repeat || 1));
+  const runs = Array.from({ length: maxRepeat }, (_, i) =>
+    rows.filter((r) => (r.repeat || 1) === i + 1),
+  );
+  report.e2e = {
+    ...scored,
+    rows,
+    summaries: shards.flatMap((r) => r.e2e?.summaries || []),
+    digestWaits: shards.flatMap((r) =>
+      (r.e2e?.digestWaits || []).map((w) => ({ shard: r.instance, ...w })),
+    ),
+    projects: e2eProjects,
+  };
+  if (maxRepeat > 1) report.e2e.repeats = repeatSummary(runs, cases, names);
+  report.judge = verdicts.length
+    ? {
+        costUsd: round(
+          shards.reduce((t, r) => t + (r.judge?.costUsd || 0), 0),
+          4,
+        ),
+        judged: shards.reduce((t, r) => t + (r.judge?.judged || 0), 0),
+        verdictCount: verdicts.length,
+        plainShare: ratio(
+          verdicts.filter((v) => v.plain).length,
+          verdicts.length,
+        ),
+        notPlain: verdicts
+          .filter((v) => !v.plain)
+          .map((v) => ({ id: v.id, reason: v.reason })),
+        multipleQuestions: verdicts
+          .filter((v) => v.multipleQuestions)
+          .map((v) => v.id),
+        verdicts,
+      }
+    : shards.find((r) => r.judge?.error)?.judge;
+  report.checks.push(...scored.checks);
+  mkdirSync(resolve(out, ".."), { recursive: true });
+  writeFileSync(out, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
+  printReport(report);
+  console.log(`\nreport: ${out}`);
+  return report.checks.some((c) => c.pass === false) ? 1 : 0;
+}
+
 // --- main ------------------------------------------------------------------------
 
 async function main() {
   if (process.argv.includes("--sandbox-check"))
     process.exit(await sandboxCheck());
+  const mergeAt = process.argv.indexOf("--merge");
+  if (mergeAt > 0) {
+    const evalAt = process.argv.indexOf("--eval");
+    const evalDir =
+      evalAt > 0
+        ? resolve(process.argv[evalAt + 1])
+        : resolve(homedir(), ".foundry/pa-eval/set");
+    const files = process.argv
+      .slice(mergeAt + 2)
+      .filter((a, i, all) => a !== "--eval" && all[i - 1] !== "--eval");
+    process.exit(
+      mergeReports(resolve(process.argv[mergeAt + 1]), files, evalDir),
+    );
+  }
   const rescoreAt = process.argv.indexOf("--rescore");
   if (rescoreAt > 0) process.exit(rescoreReport(process.argv[rescoreAt + 1]));
   const args = parseArgs(process.argv);
   const { cases, index, names } = loadEvalSet(args.evalDir);
   const stack = new Stack(args.instance, args.stackDir);
   const worker = new Worker(stack, args.workerHome, "worker", args.provider);
+  worker.hostEgress = true;
   const report = {
     startedAt: new Date().toISOString(),
     instance: args.instance,
@@ -3191,18 +3504,35 @@ async function main() {
   }
   let failed = false;
   let relay;
+  // Stopped from outside (a parallel run interrupted): its stack and
+  // computers go with it, nothing is left running.
+  for (const signal of ["SIGTERM", "SIGINT"])
+    process.once(signal, async () => {
+      log(`${signal}: stopping the stack`);
+      await worker.stop().catch(() => {});
+      for (const w of activeWorkers) await w.stop().catch(() => {});
+      relay?.stop();
+      stack.down();
+      process.exit(2);
+    });
   try {
     // The cases' order and the fixture's first history cutoff, written
     // while the server is still down.
     const plan = args.e2e ? runPlan(cases, args) : null;
-    const firstGroup = plan?.groups.find((g) => !g.done);
+    const firstGroup = args.prepareCutoff
+      ? { cutoff: args.prepareCutoff }
+      : plan?.groups.find((g) => !g.done);
     if (firstGroup) {
       stack.load();
-      const changed = withStackDb(stack, (db) =>
-        applyHistory(db, index, userIdOf(db, args.user), firstGroup.cutoff),
+      const { changed, imported } = historyAt(
+        stack,
+        index,
+        firstGroup.cutoff,
+        args,
+        { reuse: false },
       );
       log(
-        `history at ${firstGroup.cutoff}: ${changed.length} projects written; cutoffs ${plan.groups.map((g) => `${g.cutoff}×${g.cases.length}`).join(" ")}`,
+        `history at ${firstGroup.cutoff}: ${changed.length} projects written, ${imported} summaries reused${plan ? `; cutoffs ${plan.groups.map((g) => `${g.cutoff}×${g.cases.length}`).join(" ")}` : ""}`,
       );
     }
     // A fresh seeded database holds no eval chats to hide, and the run signs
@@ -3225,6 +3555,12 @@ async function main() {
       log(
         `${runProfile.id} through this computer's ${hosted.connector?.label || "connector"} connection, relayed into the sandbox`,
       );
+    }
+    if (args.prepareCutoff) {
+      await startFixtureWorkers(client, stack, index);
+      const { deviceId } = await workerAndAssistant(client, worker, true);
+      report.preflight = await preflightProjects(client, index);
+      await prepareDigests(client, worker, deviceId, index, args, report);
     }
     if (args.e2e) {
       // The assistant reads the project summary files natively; the eval

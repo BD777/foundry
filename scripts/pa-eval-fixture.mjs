@@ -203,3 +203,90 @@ export function cutoffGroups(cases, { minCases = 3, joinDays = 21 } = {}) {
   }
   return groups;
 }
+
+// Connector metadata bound to the projects, from a database (the dev one,
+// read-only): no subject, scopes, tokens or secrets, only what the seed
+// writes. pa-eval-build.mjs stores the same in index.connectors.
+export function connectorsOf(source, projectIds) {
+  const marks = projectIds.map(() => "?").join(", ");
+  const bindings = source
+    .prepare(
+      `SELECT workspace_id, account_id, access FROM external_account_bindings WHERE workspace_id IN (${marks})`,
+    )
+    .all(...projectIds);
+  const accounts = [...new Set(bindings.map((b) => b.account_id))].map((id) => {
+    const a = source
+      .prepare(
+        "SELECT id, provider, app_id, mode, status FROM external_accounts WHERE id = ?",
+      )
+      .get(id);
+    const app = source
+      .prepare(
+        "SELECT id, provider, visibility, created_via FROM external_provider_apps WHERE id = ?",
+      )
+      .get(a.app_id);
+    return { ...a, app: { ...app } };
+  });
+  const deviceBindings = source
+    .prepare(
+      `SELECT workspace_id, kind, members FROM device_connector_bindings WHERE workspace_id IN (${marks})`,
+    )
+    .all(...projectIds)
+    .map((b) => ({ ...b }));
+  return {
+    bindings: bindings.map((b) => ({ ...b })),
+    accounts: accounts.map((a) => ({ ...a })),
+    deviceBindings,
+  };
+}
+
+/**
+ * The person's summarized digests of the fixture projects, to reuse at the
+ * same cutoff in another stack of the same set (a parallel run's shards):
+ * the rows as the server keeps them, without the person.
+ */
+export function exportDigests(db, userId, projectIds) {
+  const marks = projectIds.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `SELECT * FROM workspace_digests WHERE user_id = ? AND summarized_at != '' AND workspace_id IN (${marks})`,
+    )
+    .all(userId, ...projectIds)
+    .map((row) => ({ ...row, user_id: "" }));
+}
+
+/**
+ * Writes exported digests for this stack's person (a stopped server's
+ * database), replacing theirs. The server keeps a digest whose content is
+ * unchanged, so the projects are not summarized again; one whose chats
+ * differ would be. Returns how many were written.
+ */
+export function importDigests(db, userId, rows) {
+  db.exec("BEGIN");
+  try {
+    for (const row of rows) {
+      const digest = JSON.parse(row.digest_json);
+      digest.userId = userId;
+      const values = {
+        ...row,
+        user_id: userId,
+        digest_json: JSON.stringify(digest),
+        summary_session_id: "",
+        summary_due_at: "",
+        pending_rev: "",
+      };
+      db.prepare(
+        "DELETE FROM workspace_digests WHERE user_id = ? AND workspace_id = ?",
+      ).run(userId, row.workspace_id);
+      const cols = Object.keys(values);
+      db.prepare(
+        `INSERT INTO workspace_digests (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+      ).run(...cols.map((c) => values[c]));
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return rows.length;
+}

@@ -76,7 +76,8 @@ test("the shim relays one request and the helper ends with its stdin", async () 
     assert.deepEqual(reply, {
       protocol: "foundry.connection.v1",
       identity: "ns-1",
-      home: "/home/eval-worker",
+      // The helper gets this computer's home, not the sandbox's.
+      home: process.env.HOME,
       arg: "default",
     });
     shim.stdin.end();
@@ -135,4 +136,32 @@ test("the reply's loopback ports are the ones bridged", async () => {
   });
   assert.deepEqual(replyPorts(line), [41234, 5555]);
   assert.deepEqual(replyPorts("not json"), []);
+});
+
+test("helper slots are shared and a dead owner's slot is taken back", async () => {
+  const { helperSlot } = await import("./pa-eval-connection-relay.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "pa-eval-slots-"));
+  try {
+    const a = await helperSlot(dir, 2);
+    const b = await helperSlot(dir, 2);
+    let third = false;
+    const waiting = helperSlot(dir, 2).then((release) => {
+      third = true;
+      return release;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(third, false);
+    a();
+    const c = await waiting;
+    assert.equal(third, true);
+    // A slot whose owner is gone is free again.
+    writeFileSync(join(dir, "slot-0", "pid"), "999999999");
+    const d = await helperSlot(dir, 2);
+    b();
+    c();
+    d();
+    assert.equal(typeof (await helperSlot()), "function");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
