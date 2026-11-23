@@ -229,7 +229,7 @@ func projectFile(digest store.WorkspaceDigest, hasNote bool, mentions []Mention,
 		for i, mention := range mentions {
 			named[i] = fmt.Sprintf("%s (%d)", mention.Term, mention.Count)
 		}
-		fmt.Fprintf(&out, "\n## Names mentioned here\n\nNames that set it apart from the person's other projects, with how often its chats, sessions and file names use them. find_in_projects looks up any name.\n\n%s\n", strings.Join(named, ", "))
+		fmt.Fprintf(&out, "\n## Names talked about here\n\nHow often its chats, sessions and file names use these names, the ones that set it apart from the person's other projects. A name here was talked about here; where the thing itself lives or runs, the summary or the project says. find_in_projects looks up any name.\n\n%s\n", strings.Join(named, ", "))
 	}
 	if hasNote {
 		section("Your note", []string{"cards/" + digest.WorkspaceID + ".md"})

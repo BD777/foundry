@@ -1964,7 +1964,7 @@
     "_meta": {
       "anthropic/searchHint": "workspaces & skills: which projects mention a host, service, code name, file or skill"
     },
-    "description": "Look a name up across the person's projects (a host, service, code name, file or skill, e.g. sats-tokyo-7 or cliproxyapi): which projects' chats, sessions, file names, skills or connectors mention every term of query, with how often (mentions), in how many of them (sources), when last (lastAt), the stored terms that matched and up to 3 examples (a chat or session id read_context reads, its title and time); and the skills installed on their computers whose names hold the terms, for every project there or for the projects named. Counts and pointers only, never what was said.",
+    "description": "Look a name up across the person's projects (a host, service, code name, file or skill, e.g. sats-tokyo-7 or cliproxyapi): which projects' chats, sessions, file names, skills or connectors mention every term of query, with how often (mentions), in how many of them (sources), when last (lastAt), the stored terms that matched and up to 3 examples (a chat or session id read_context reads, its title and time); and the skills installed on their computers whose names hold the terms, for every project there or for the projects named. Counts and pointers only, never what was said. A mention is talk, not location: a service, host or group discussed in a project may live or be handled in another one.",
     "summary": "Finds which of the person's projects mention a name, with counts, last time and example chats.",
     "limits": [
       "Only the projects the assistant covers (the person's readable projects within its permission package), not archived ones.",

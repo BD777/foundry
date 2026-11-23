@@ -116,7 +116,7 @@ func TestFindInProjectsLooksNamesUpInReadableProjects(t *testing.T) {
 	}
 	for _, file := range files {
 		if strings.HasSuffix(file.Path, "/ws-alice.md") {
-			if !strings.Contains(file.Content, "## Names mentioned here") || !strings.Contains(file.Content, "sats-tokyo-7 (2)") {
+			if !strings.Contains(file.Content, "## Names talked about here") || !strings.Contains(file.Content, "sats-tokyo-7 (2)") {
 				t.Fatalf("ws_alice's project file:\n%s", file.Content)
 			}
 			return
