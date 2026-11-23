@@ -396,6 +396,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// fail the device's message stay in daemon_session_inbound.go.
 	inbox := server.sessionService.InboxObserver()
 	server.sessionService.OnInboxMessageFailed(server.childMessageFailed)
+	// The person's message to their assistant goes before what sessions sent it.
+	server.sessionService.SetPersonFirst(server.assistant.PersonFirst)
 	sessionEvents.Observe(sessions.Observers{
 		// A change of a session's state: a scheduled run's outcome, its
 		// Feishu card, the chat's queued messages, the chat's title, the

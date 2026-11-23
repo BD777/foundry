@@ -170,6 +170,10 @@ func replyItemID(questionItemID string) string {
 // pendingAnswerable are the sources an answer to a session settles.
 var pendingAnswerable = []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands, store.PendingSourceHelperStuck}
 
+// pendingSettledByNextMessage are the sources the person's next plain message
+// in an assistant's conversation settles: everything answerable but its questions.
+var pendingSettledByNextMessage = []string{store.PendingSourceTurnFailed, store.PendingSourceNeedsHands, store.PendingSourceHelperStuck}
+
 // pendingChat is a chat the person started and holds: not a session another
 // session started (orchestration, scheduled work), which reports to it.
 func pendingChat(session store.AgentSession) bool {
@@ -190,27 +194,7 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 			sender = event.Metadata.SentBySessionID
 		}
 		if kept && pendingAnswers(session, sender) {
-			outcome, by := store.PendingOutcomePersonAnswered, store.PendingAnsweredByPerson
-			acknowledgedAt := ""
-			if session.ParentSessionID != "" && sender == session.ParentSessionID {
-				outcome, by, acknowledgedAt = store.PendingOutcomeAssistantAnswered, store.PendingAnsweredByAssistant, event.At
-			}
-			resolution := store.PendingResolution{
-				SessionID: event.SessionID, Before: event.At, State: store.PendingReplied,
-				Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
-			}
-			if answers, named := answersByItem(event.Detail); named {
-				// An answer envelope answers the items it names, each with its
-				// own answers; the other open items stay open.
-				for _, answer := range answers {
-					resolution.MessageID = answer.itemID
-					resolution.Answer = store.PendingAnswer{Text: answer.text, By: by}
-					r.resolve(ctx, resolution)
-				}
-			} else {
-				resolution.Answer = store.PendingAnswer{Text: answerTextOf(event.Detail), By: by}
-				r.resolve(ctx, resolution)
-			}
+			r.answeredBy(ctx, session, sender, event.At, event.Detail)
 		}
 		return
 	}
@@ -253,16 +237,7 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		if before == "" {
 			before = formatPendingTime(time.Now())
 		}
-		outcome, by := store.PendingOutcomePersonAnswered, store.PendingAnsweredByPerson
-		acknowledgedAt := ""
-		if session.ParentSessionID != "" && input.SentBySessionID == session.ParentSessionID {
-			outcome, by, acknowledgedAt = store.PendingOutcomeAssistantAnswered, store.PendingAnsweredByAssistant, before
-		}
-		r.resolve(ctx, store.PendingResolution{
-			SessionID: session.ID, Before: before, State: store.PendingReplied,
-			Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
-			Answer: store.PendingAnswer{Text: answerTextOf(input.Prompt), By: by},
-		})
+		r.answeredBy(ctx, session, input.SentBySessionID, before, input.Prompt)
 	case sessions.Completed:
 		// A stuck helper's turn ended, however; a stopped session waits for
 		// nothing.
@@ -279,6 +254,40 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 			r.closePreviousTurnFailures(ctx, session)
 		}
 	}
+}
+
+// answeredBy settles what a message to session answers, sent at at by
+// sender (the person, or the assistant that started a helper). A reply
+// envelope (a question card's answer) answers the items it names, each with
+// its own answers; the other open items stay open. A plain message answers
+// the session's open items, except the questions of an assistant's own
+// conversation: there the person hands over one unrelated thing after
+// another, and whether a message answers a question is the assistant's
+// judgement, not Foundry's. Those close on their card's answer or when the
+// assistant withdraws them (needs_you resolve).
+func (r pendingReactions) answeredBy(ctx context.Context, session store.AgentSession, sender, at, message string) {
+	outcome, by := store.PendingOutcomePersonAnswered, store.PendingAnsweredByPerson
+	acknowledgedAt := ""
+	if session.ParentSessionID != "" && sender == session.ParentSessionID {
+		outcome, by, acknowledgedAt = store.PendingOutcomeAssistantAnswered, store.PendingAnsweredByAssistant, at
+	}
+	resolution := store.PendingResolution{
+		SessionID: session.ID, Before: at, State: store.PendingReplied,
+		Sources: pendingAnswerable, Outcome: outcome, AcknowledgedAt: acknowledgedAt,
+	}
+	if answers, named := answersByItem(message); named {
+		for _, answer := range answers {
+			resolution.MessageID = answer.itemID
+			resolution.Answer = store.PendingAnswer{Text: answer.text, By: by}
+			r.resolve(ctx, resolution)
+		}
+		return
+	}
+	if _, conversation := r.s.assistant.Conversation(ctx, session); conversation {
+		resolution.Sources = pendingSettledByNextMessage
+	}
+	resolution.Answer = store.PendingAnswer{Text: answerTextOf(message), By: by}
+	r.resolve(ctx, resolution)
 }
 
 // observeQuestionSettled closes the item of a question or approval its worker

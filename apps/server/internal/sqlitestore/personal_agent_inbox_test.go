@@ -285,3 +285,77 @@ func TestInboxKeepsAnswerAnnotationsAcrossReplayAndRetry(t *testing.T) {
 		t.Fatalf("retry lost its annotations: %+v %v", retry, err)
 	}
 }
+
+// The person's message awaits its conversation's turn while it is new,
+// being delivered or waiting for the busy assistant; not when it waits for
+// anything else, is delivered, or is a message channel's. A turn's end
+// makes the busy waits due at once.
+func TestInboxAwaitsTurnAndReleasesBusyWaits(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	assistantID := "asst_person-a"
+	awaits := func() bool {
+		t.Helper()
+		waiting, err := db.PersonalAgentInboxAwaitsTurn(ctx, assistantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return waiting
+	}
+	if _, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "mc:chan:conv", "channel-1")); err != nil {
+		t.Fatal(err)
+	}
+	if awaits() {
+		t.Fatal("a message channel's entry held the person's conversation")
+	}
+	entry, err := db.CapturePersonalAgentInbox(ctx, inboxFixture("person-a", "web", "message-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !awaits() {
+		t.Fatal("a new message does not await the turn")
+	}
+	save := func(status, reason, lease string) {
+		t.Helper()
+		entry.Status, entry.WaitingReason, entry.LeaseUntil = status, reason, lease
+		if entry, err = db.SavePersonalAgentInbox(ctx, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := time.Now().Add(10 * time.Second).UTC().Format(time.RFC3339Nano)
+	save("waiting", "device_offline", later)
+	if awaits() {
+		t.Fatal("a message waiting for its device held the conversation")
+	}
+	save("waiting", "assistant_busy", later)
+	if !awaits() {
+		t.Fatal("a message waiting for the busy assistant does not await the turn")
+	}
+	webDue := func() []store.PersonalAgentInboxEntry {
+		t.Helper()
+		due, err := db.DuePersonalAgentInbox(ctx, paNow(), 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var web []store.PersonalAgentInboxEntry
+		for _, item := range due {
+			if item.Channel == "web" {
+				web = append(web, item)
+			}
+		}
+		return web
+	}
+	if due := webDue(); len(due) != 0 {
+		t.Fatalf("busy wait due before its lease: %+v", due)
+	}
+	if err := db.ReleasePersonalAgentInboxBusy(ctx, assistantID); err != nil {
+		t.Fatal(err)
+	}
+	if due := webDue(); len(due) != 1 || due[0].ID != entry.ID || due[0].Revision != entry.Revision {
+		t.Fatalf("released busy wait = %+v; want due with its revision", due)
+	}
+	entry.SessionID = "sess_home"
+	save("delivered", "", "")
+	if awaits() {
+		t.Fatal("a delivered message still holds the conversation")
+	}
+}

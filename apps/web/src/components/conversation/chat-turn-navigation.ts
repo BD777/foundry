@@ -1,5 +1,6 @@
 import { i18n } from "../../i18n";
 import type { ChatMessageItem } from "./conversation-types";
+import { isPersonInput } from "./turn-source";
 
 const CHAT_TURN_QUERY_PREVIEW_LIMIT = 480;
 const CHAT_TURN_ACCESSIBLE_LABEL_LIMIT = 160;
@@ -55,10 +56,9 @@ export function buildChatTurnAnchors(
 ): ChatTurnAnchor[] {
   const anchors: ChatTurnAnchor[] = [];
   messages.forEach((message, messageIndex) => {
-    if (
-      message.role !== "user" ||
-      (message.kind !== undefined && message.kind !== "message")
-    ) {
+    // Turns are the person's messages: a helper's report, a Foundry notice
+    // or another session's message is no stop on the rail.
+    if (!isPersonInput(message)) {
       return;
     }
 

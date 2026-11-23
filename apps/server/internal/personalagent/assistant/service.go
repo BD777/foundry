@@ -250,6 +250,8 @@ type Service struct {
 	messageChannels store.MessageChannelStore
 	channelTarget   func(ctx context.Context, entry store.PersonalAgentInboxEntry) (ChannelTarget, error)
 	channelOf       func(ctx context.Context, sessionID string) (string, bool)
+	// inboxKick drains the inbox at once: a conversation's turn ended.
+	inboxKick       chan struct{}
 	events          sessions.ChangeNotifier
 	sessions        Sessions
 	devices         Devices
@@ -312,29 +314,31 @@ func New(st Store, events sessions.ChangeNotifier, ports Ports) *Service {
 		messageChannels: ports.MessageChannels, channelTarget: ports.ChannelTarget, channelOf: ports.ChannelOf,
 		archiveItemSessions: ports.ArchiveItemSessions, restoreItemSessions: ports.RestoreItemSessions,
 		itemClaimed: ports.ItemClaimed,
+		inboxKick:   make(chan struct{}, 1),
 	}
 }
 
 // Job is background work the server runs for the assistant: Run every
-// Interval, the first time at once when AtStart.
+// Interval, the first time at once when AtStart, and at once when Kick fires.
 type Job struct {
 	Name     string
 	Interval time.Duration
 	AtStart  bool
 	Run      func(ctx context.Context)
+	Kick     <-chan struct{}
 }
 
 // Jobs are the assistant's background loops, in the order the server
 // starts them; each drains its durable queue or looks for what is due.
 func (s *Service) Jobs() []Job {
 	return []Job{
-		{"personal-agent-inbox", 2 * time.Second, true, s.DrainInbox},
-		{"personal-agent-operations", 2 * time.Second, true, s.drainOperations},
-		{"personal-agent-run-controls", 5 * time.Second, true, s.drainRunControls},
-		{"personal-agent-maintenance", 30 * time.Second, true, s.drainMaintenance},
-		{"personal-agent-supervision", supervisionInterval, false, s.superviseNow},
-		{"personal-agent-reminders", reminderInterval, false, s.sendDueReminders},
-		{"knowledge-operations", 3 * time.Second, true, s.knowledge.Drain},
+		{"personal-agent-inbox", 2 * time.Second, true, s.DrainInbox, s.inboxKick},
+		{"personal-agent-operations", 2 * time.Second, true, s.drainOperations, nil},
+		{"personal-agent-run-controls", 5 * time.Second, true, s.drainRunControls, nil},
+		{"personal-agent-maintenance", 30 * time.Second, true, s.drainMaintenance, nil},
+		{"personal-agent-supervision", supervisionInterval, false, s.superviseNow, nil},
+		{"personal-agent-reminders", reminderInterval, false, s.sendDueReminders, nil},
+		{"knowledge-operations", 3 * time.Second, true, s.knowledge.Drain, nil},
 	}
 }
 

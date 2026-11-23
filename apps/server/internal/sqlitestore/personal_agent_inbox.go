@@ -198,6 +198,25 @@ func (s *Store) DuePersonalAgentInbox(ctx context.Context, now string, limit int
 		ORDER BY lease_until,created_at,id LIMIT ?`, now, min(max(limit, 1), 200))
 }
 
+// PersonalAgentInboxAwaitsTurn reports whether one of the person's own
+// messages to the assistant (not a message channel's, DEV-203) waits only
+// for its conversation's next turn: not tried yet, being delivered, or
+// waiting because the assistant was busy.
+func (s *Store) PersonalAgentInboxAwaitsTurn(ctx context.Context, assistantID string) (bool, error) {
+	var waiting bool
+	err := s.reader().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pa_inbox WHERE assistant_id=? AND channel NOT LIKE 'mc:%'
+		AND (status IN ('pending','dispatching') OR (status='waiting' AND waiting_reason='assistant_busy')))`, assistantID).Scan(&waiting)
+	return waiting, err
+}
+
+// ReleasePersonalAgentInboxBusy makes the person's messages that waited for
+// the busy assistant due at once. The lease only schedules the next try, so
+// the revision a dispatcher may hold stays as it is.
+func (s *Store) ReleasePersonalAgentInboxBusy(ctx context.Context, assistantID string) error {
+	_, err := s.conn().ExecContext(ctx, `UPDATE pa_inbox SET lease_until='' WHERE assistant_id=? AND status='waiting' AND waiting_reason='assistant_busy' AND lease_until<>''`, assistantID)
+	return err
+}
+
 func (s *Store) SavePersonalAgentInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) (store.PersonalAgentInboxEntry, error) {
 	if entry.Revision < 1 || !slices.Contains([]string{"pending", "waiting", "dispatching", "delivered", "resolved", "cancelled"}, entry.Status) {
 		return entry, errors.New("invalid inbox update")

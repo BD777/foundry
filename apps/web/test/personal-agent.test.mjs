@@ -1993,6 +1993,59 @@ test("a completed item keeps evidence in compact details and does not ask for ve
   await page.unmount();
 });
 
+test("an open item whose run the assistant checked shows the result, not a pending check", async () => {
+  const { ItemPlan } =
+    await import("../src/features/personal-agent/person-list-plan.tsx");
+  const item = {
+    id: "checked-item",
+    status: "open",
+    plan: {
+      mode: "execute",
+      progress: "review",
+      evidence: [
+        {
+          kind: "session",
+          ref: "sess_helper",
+          summary: "assistant ran health, write and read itself",
+          observedAt: "2026-11-23T17:15:30Z",
+        },
+      ],
+    },
+  };
+  const run = (createdAt) => ({
+    id: "checked-op",
+    itemId: item.id,
+    status: "review",
+    reason: "execution_completed_requires_evidence",
+    sessionId: "sess_helper",
+    createdAt,
+  });
+  const page = await render(ItemPlan, {
+    item,
+    items: [item],
+    workspaces: [],
+    operations: [run("2026-11-23T17:11:49.649620741Z")],
+  });
+  assert.match(page.container.textContent, /Result available/);
+  assert.match(page.container.textContent, /Awaiting acceptance/);
+  assert.doesNotMatch(
+    page.container.textContent,
+    /Result to review|still needs verification|Review result/,
+  );
+  await page.unmount();
+
+  // Evidence from an earlier run of the same session does not check a later one.
+  const later = await render(ItemPlan, {
+    item,
+    items: [item],
+    workspaces: [],
+    operations: [run("2026-11-23T17:20:00Z")],
+  });
+  assert.match(later.container.textContent, /Result to review/);
+  assert.doesNotMatch(later.container.textContent, /Result available/);
+  await later.unmount();
+});
+
 test("checking an item complete does not present its unsettled execution as stopped", async () => {
   const { ItemPlan } =
     await import("../src/features/personal-agent/person-list-plan.tsx");

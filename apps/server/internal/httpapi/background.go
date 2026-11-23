@@ -97,7 +97,7 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		if job.AtStart {
 			every = everyFromNow
 		}
-		jobs = append(jobs, backgroundJob{job.Name, func(ctx context.Context) { every(ctx, job.Interval, nil, job.Run) }})
+		jobs = append(jobs, backgroundJob{job.Name, func(ctx context.Context) { every(ctx, job.Interval, job.Kick, job.Run) }})
 	}
 	for _, starter := range s.integrationStarters() {
 		jobs = append(jobs, backgroundJob{starter.name, starter.start})

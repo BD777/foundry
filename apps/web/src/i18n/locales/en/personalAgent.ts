@@ -438,7 +438,7 @@ export const personalAgent = {
       ready: "Ready",
       waiting: "Waiting",
       working: "In progress",
-      review: "Review result",
+      review: "Awaiting acceptance",
     },
     operation: {
       pending: "Saved",

@@ -17,16 +17,19 @@ import {
   type ChatTurnAnchor,
 } from "./chat-turn-navigation";
 
-const MAX_RENDERED_TURN_MARKERS = 80;
+/**
+ * More turns are sampled down to this many markers: at 7px apart each 2px
+ * line stays a distinct tick, where 80 at 4px read as one solid bar.
+ */
+const MAX_RENDERED_TURN_MARKERS = 40;
 
 /** A marker's height by how many turns the rail shows. */
 const markerHeights = {
   relaxed: "h-[18px] flex-[0_1_18px]",
-  compact: "h-[9px] flex-[0_1_9px]",
-  dense: "h-1 flex-[0_1_4px]",
+  compact: "h-[6px] flex-[0_1_6px]",
 } as const;
 
-const listGaps = { relaxed: "gap-0.5", compact: "gap-px", dense: "gap-0" };
+const listGaps = { relaxed: "gap-0.5", compact: "gap-px" };
 
 /** How far a marker's line stretches with the pointer's distance from it. */
 const lineScales = [
@@ -60,12 +63,7 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
   );
   const previewMarkerPosition =
     previewIndex === undefined ? -1 : markerIndexes.indexOf(previewIndex);
-  const density =
-    markerIndexes.length <= 16
-      ? "relaxed"
-      : markerIndexes.length <= 40
-        ? "compact"
-        : "dense";
+  const density = markerIndexes.length <= 16 ? "relaxed" : "compact";
 
   useLayoutEffect(() => {
     const pendingIndex = pendingFocusRef.current;

@@ -1,5 +1,5 @@
 import type { ChatMessageItem } from "./conversation-types";
-import { isTurnInput, turnSource } from "./turn-source";
+import { isPersonInput, isTurnInput, turnSource } from "./turn-source";
 
 /**
  * "Only my conversation" hides turns the person did not start, the latest
@@ -17,13 +17,6 @@ export interface VisibleSessionTurns {
   hiddenTurns: number;
 }
 
-function plainUserMessage(message: ChatMessageItem): boolean {
-  return (
-    message.role === "user" &&
-    (message.kind === undefined || message.kind === "message")
-  );
-}
-
 function runsNow(message: ChatMessageItem): boolean {
   return Boolean(message.streaming) || message.kind === "waiting";
 }
@@ -32,11 +25,6 @@ function waitsForAnswer(message: ChatMessageItem): boolean {
   return (
     Boolean(message.questions?.length) && message.questionState !== "answered"
   );
-}
-
-/** A person's message inside the turn: a steer, or the input of its own turn. */
-function personSpoke(message: ChatMessageItem): boolean {
-  return plainUserMessage(message) && !turnSource(message);
 }
 
 function turnHides(
@@ -48,7 +36,7 @@ function turnHides(
   for (let index = start; index < end; index += 1) {
     const message = messages[index]!;
     if (runsNow(message) || waitsForAnswer(message)) return false;
-    if (personSpoke(message)) return false;
+    if (isPersonInput(message)) return false;
   }
   return true;
 }

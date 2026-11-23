@@ -168,6 +168,19 @@ function structuredSource(
  */
 export function turnSource(message: ChatMessageItem): TurnSource | undefined {
   if (!isTurnInput(message)) return undefined;
+  return inputSourceOf(message);
+}
+
+/**
+ * Whether a user message carries the person's own words, whether it opened a
+ * turn or was steered into one: not a report, a Foundry notice, a timer, a
+ * channel batch or another session's message.
+ */
+export function isPersonInput(message: ChatMessageItem): boolean {
+  return plainUserMessage(message) && !inputSourceOf(message);
+}
+
+function inputSourceOf(message: ChatMessageItem): TurnSource | undefined {
   if (message.channelOrigin && !message.inputSource) return { kind: "channel" };
   if (message.inputSource)
     return structuredSource(message, message.inputSource);

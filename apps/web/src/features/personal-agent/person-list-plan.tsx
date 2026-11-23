@@ -55,6 +55,11 @@ export function ItemPlan({
   const plan = item.plan;
   const runs = operations.filter((op) => op.itemId === item.id);
   const latest = runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  // A run whose result was checked: the item is done, or the plan records
+  // evidence from the run's session observed after the run was dispatched.
+  const latestChecked =
+    latest?.status === "review" &&
+    (item.status === "done" || runHasEvidence(latest, plan?.evidence));
   const refs = plan?.workRefs ?? [];
   const dependencies = (plan?.dependencies ?? [])
     .map((id) => items.find((i) => i.id === id))
@@ -198,15 +203,14 @@ export function ItemPlan({
           <div>
             <p>
               {t("planning.dispatchState", {
-                state:
-                  item.status === "done" && latest.status === "review"
-                    ? t("planning.resultAvailable")
-                    : state(latest.status),
+                state: latestChecked
+                  ? t("planning.resultAvailable")
+                  : state(latest.status),
               })}
             </p>
             {latest.reason &&
             !(
-              item.status === "done" &&
+              latestChecked &&
               latest.reason === "execution_completed_requires_evidence"
             ) ? (
               <FieldHint>{operationReason(latest.reason)}</FieldHint>
@@ -435,5 +439,20 @@ export function ItemPlan({
         <FieldHint>{t("planning.clarify")}</FieldHint>
       ) : null}
     </div>
+  );
+}
+
+/** Whether the plan records evidence from the run's session, observed after the run was dispatched. */
+function runHasEvidence(
+  run: PersonalAgentOperation,
+  evidence: PersonalAgentItemPlan["evidence"],
+): boolean {
+  if (!run.sessionId) return false;
+  const dispatched = Date.parse(run.createdAt);
+  return (evidence ?? []).some(
+    (e) =>
+      e.kind === "session" &&
+      e.ref.split("#")[0] === run.sessionId &&
+      Date.parse(e.observedAt) >= dispatched,
   );
 }

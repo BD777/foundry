@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-24.1": "b9651102a069aed15f0f08408ac2c7be933b20f3dd5445f436f7527186e7a815", // assistant live e2e P2: deleting is stated once, in the rules Foundry rewrites before every run (the old "never: delete anything" contradicted #305); system.md no longer repeats it
 	"2026-11-23.2": "73e828f2bea5b18202dd6290df4b7adcf19a102e7d7fcc275d2ddc8033132851", // routing facts A/B/C (person 2026-11-23): find_in_projects and the turn's computers are named as facts; deleting files or uninstalling software is a helper's work on the person's explicit request
 	"2026-11-23.1": "dcb698b815d8235955633743b290ea9b8d12ba2b93940e12b5bcda69fc2f38a1", // D4/D1 (person 2026-11-23): a one-off personal request is the assistant's to do or hand off; the person's existing chat and their other assistants take send_message
 	"2026-11-21.2": "07b640fcc0e6f3ca041b38a0351538e5b61fa0df4d382e95705ce6ac07907697", // DEV-324: keep an item so the next conversation can take it over; op decide records the person's decisions
@@ -393,6 +394,27 @@ func TestAgentsFileHoldsTheRulesAndConfirmedFacts(t *testing.T) {
 	}
 	if examples := prompt.ExamplesFile(in); !strings.HasPrefix(examples, "# Examples\n") || !strings.Contains(examples, "Person: \"") {
 		t.Fatalf("examples file: %.80q", examples)
+	}
+}
+
+// Deleting is stated once, in the block Foundry rewrites before every run,
+// so an assistant whose instructions predate it reads it too: its own tools
+// delete nothing, a helper deletes on the person's explicit request. No line
+// forbids what that allows (assistant live e2e P2).
+func TestDeletingIsOneFactInTheManagedBlock(t *testing.T) {
+	block := prompt.ManagedBlock(fullInput())
+	if !strings.Contains(block, "a helper deletes files or uninstalls\n  software in a project once the person explicitly asked for it") {
+		t.Fatalf("the managed block does not say a helper deletes on request:\n%s", block)
+	}
+	for _, text := range []string{block, prompt.DefaultInstructions()} {
+		for _, line := range strings.Split(text, "\n") {
+			if strings.Contains(line, "never") && strings.Contains(line, "delete") {
+				t.Errorf("a line forbids deleting outright: %q", line)
+			}
+		}
+	}
+	if strings.Contains(prompt.DefaultInstructions(), "delete") {
+		t.Error("the default instructions repeat the deleting fact the managed block states")
 	}
 }
 
