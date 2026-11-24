@@ -15,6 +15,7 @@ export {
   pendingRequest,
   pendingScopeUpdate,
   pendingTitle,
+  textContains,
   type PendingFailure,
   type PendingFailureKind,
 } from "../../lib/pending-display";
@@ -278,6 +279,11 @@ export function pendingApprovalDetail(
     .trim();
 }
 
+/**
+ * The chat message a reply becomes: the item quoted, then the reply. A reply
+ * that starts with a "/skill" leads instead, quote after it, since the agent
+ * runs a skill only when the message starts with it.
+ */
 export function pendingReplyText(item: PendingItem, reply: string): string {
   const messageId = item.messageId;
   if (item.source === "question" && messageId && item.title.trim())
@@ -291,7 +297,10 @@ export function pendingReplyText(item: PendingItem, reply: string): string {
     .split("\n")
     .map((line) => (line ? `> ${line}` : ">"))
     .join("\n");
-  return `${quoted}\n\n${reply.trim()}`;
+  const text = reply.trim();
+  return /^\/[\w-]+(?:\s|$)/.test(text)
+    ? `${text}\n\n${quoted}`
+    : `${quoted}\n\n${text}`;
 }
 
 /** Items of one chat, open first. */

@@ -53,11 +53,19 @@ export const pending = {
     superseded: "Superseded",
     done: "Done",
     dismissed: "Dismissed",
+    abandoned: "Abandoned",
   },
   outcome: {
     withdrawn: "Withdrawn",
   },
   item: {
+    startedIn: {
+      direct: "{{channel}} · direct chat with {{name}}",
+      group: "{{channel}} · {{name}}",
+      chat: "a Foundry chat",
+    },
+    startedSaid: "You said in {{where}} · {{when}}:",
+    speaker: "{{name}}:",
     origin: {
       assistant: "Assistant · {{name}}",
       chat: "Chat · {{name}}",
@@ -65,7 +73,7 @@ export const pending = {
       personal: "Source · {{name}}",
     },
     fromAssistant: "Your assistant:",
-    handedByAssistant: "handed this to you.",
+    handedMeta: "handed over by your assistant",
     assistantDecided: "Your assistant decided this",
     assistantClosed: "Closed by the assistant",
     assistantClosedReason: "Closed by the assistant: {{reason}}",
@@ -104,13 +112,14 @@ export const pending = {
     recommended: "Recommended",
     reply: "Reply",
     replyLabel: "Reply to “{{title}}”",
+    replyPlaceholder: "Write a reply…",
     replyHint:
-      "Sent to the chat as your message, quoting this item. Ctrl+Enter sends.",
+      "Sent to the chat as your message, quoting this item. Enter sends; Shift+Enter adds a line.",
     issueReplyHint: "Answers the Issue's question; the Issue continues.",
     assistantReplyHint:
-      "Goes to the assistant conversation that asked, as your answer to this question. Ctrl+Enter sends.",
+      "Goes to the assistant conversation that asked, as your answer to this question. Enter sends; Shift+Enter adds a line.",
     itemReplyHint:
-      "Goes to the session following this item (or the next one to take it up) as your answer, and is recorded on the item's timeline. Ctrl+Enter sends.",
+      "Goes to the session following this item (or the next one to take it up) as your answer, and is recorded on the item's timeline. Enter sends; Shift+Enter adds a line.",
     send: "Send",
     sending: "Sending…",
     cancel: "Cancel",
@@ -129,7 +138,8 @@ export const pending = {
     openSkillLibrary: "Open Skill Library",
     openMessageChannels: "Open message channels",
     permissionDenied: "Permission denied: {{path}}",
-    done: "Mark done",
+    done: "Done",
+    abandon: "Abandon",
     dismiss: "Dismiss",
     notNeeded: "Not for me",
     gotIt: "Got it",

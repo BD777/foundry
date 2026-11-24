@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AgentComposer } from "../agent-runtime/agent-composer";
+import { AttachmentComposer } from "./attachment-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
 import { AnnotationChip } from "./annotation-chip";
@@ -14,7 +13,6 @@ import type { ConversationAnnotation } from "./annotations";
 
 const NO_SENT_ANNOTATIONS: readonly ConversationAnnotation[] = [];
 import type { ChatMessageItem } from "./conversation-types";
-import { AttachmentList } from "./attachment-list";
 import { ImagePreview } from "./local-image";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import { useConversationInput } from "./use-conversation-input";
@@ -47,9 +45,7 @@ export function Conversation(
   const scroll = useChatScrollFollow(props.threadKey);
   const input = useConversationInput(props, scroll.followLatest);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
-  const files = useRef<HTMLInputElement | null>(null);
   const [preview, setPreview] = useState<ParsedImageTag>();
-  const [dragActive, setDragActive] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const onPreview = props.onImagePreview ?? setPreview;
   // Questions read their state from the transcript: a reply, what followed.
@@ -122,11 +118,6 @@ export function Conversation(
     [],
   );
   const focus = () => requestAnimationFrame(() => textarea.current?.focus());
-  const addFiles = (list: FileList | File[] | null | undefined) => {
-    if (input.sending) return;
-    const selected = Array.from(list ?? []).filter((file) => file.size > 0);
-    if (selected.length) props.onAttachmentsAdd?.(selected);
-  };
   const selectable =
     props.composer.mode === "selectable" ? props.composer : undefined;
   const hasDraft = Boolean(
@@ -183,8 +174,14 @@ export function Conversation(
           {props.readOnly}
         </div>
       ) : (
-        <AgentComposer
+        <AttachmentComposer
           pillStyle="flat"
+          attachments={props.attachments}
+          attachmentUploading={props.attachmentUploading}
+          onAttachmentsAdd={props.onAttachmentsAdd}
+          onAttachmentRemove={props.onAttachmentRemove}
+          locked={input.sending}
+          onPreview={onPreview}
           slashItems={selectable?.slashItems}
           input={{
             "aria-label": props.inputLabel ?? t("composer.inputLabel"),
@@ -207,14 +204,6 @@ export function Conversation(
                   : undefined,
               ),
             submitDisabled: input.unavailable || !hasDraft || input.sending,
-            onPaste: props.onAttachmentsAdd
-              ? (event) => {
-                  if (event.clipboardData.files.length) {
-                    event.preventDefault();
-                    addFiles(event.clipboardData.files);
-                  }
-                }
-              : undefined,
             placeholder: props.placeholder ?? t("composer.placeholder"),
           }}
           agentOptions={selectable?.agentOptions}
@@ -235,21 +224,6 @@ export function Conversation(
             props.composer.mode === "fixed" ? props.composer : undefined
           }
           hideAgent={props.composer.mode === "plain"}
-          fileInput={
-            props.onAttachmentsAdd
-              ? {
-                  ref: files,
-                  multiple: true,
-                  onChange: (event) => {
-                    addFiles(event.currentTarget.files);
-                    event.currentTarget.value = "";
-                  },
-                }
-              : undefined
-          }
-          onAttach={
-            props.onAttachmentsAdd ? () => files.current?.click() : undefined
-          }
           controlsDisabled={input.sending}
           actionState={input.action}
           actionLabel={actionLabel}
@@ -287,45 +261,22 @@ export function Conversation(
               ? !props.onStop || !props.active || input.pending
               : input.unavailable || !hasDraft)
           }
+          after={
+            input.error ? (
+              <Alert tone="error" title={t("composer.requestFailed")}>
+                {input.error}
+              </Alert>
+            ) : null
+          }
           onAction={() => {
             if (input.action === "stop") void input.stop();
             else if (input.action === "send") input.submit();
           }}
           className={cn(
-            "fdy-chat-composer relative z-2 -mt-4 mb-5 shadow-prompt focus-within:shadow-prompt-focus data-[drag-active=true]:bg-accent-soft data-[drag-active=true]:shadow-prompt-drag",
+            "fdy-chat-composer relative z-2 -mt-4 mb-5 shadow-prompt focus-within:shadow-prompt-focus data-[drag-active=true]:shadow-prompt-drag",
             turnRailVars,
             composerColumn,
           )}
-          data-drag-active={dragActive ? "true" : "false"}
-          onDragEnter={(event) => {
-            if (
-              props.onAttachmentsAdd &&
-              event.dataTransfer.types.includes("Files")
-            ) {
-              event.preventDefault();
-              setDragActive(true);
-            }
-          }}
-          onDragLeave={(event) => {
-            if (
-              !event.currentTarget.contains(event.relatedTarget as Node | null)
-            )
-              setDragActive(false);
-          }}
-          onDragOver={(event) => {
-            if (
-              props.onAttachmentsAdd &&
-              event.dataTransfer.types.includes("Files")
-            )
-              event.preventDefault();
-          }}
-          onDrop={(event) => {
-            if (props.onAttachmentsAdd && event.dataTransfer.files.length) {
-              event.preventDefault();
-              setDragActive(false);
-              addFiles(event.dataTransfer.files);
-            }
-          }}
         >
           {props.attention}
           {props.notice}
@@ -354,28 +305,7 @@ export function Conversation(
               />
             </div>
           ) : null}
-          {props.attachments?.length || props.attachmentUploading ? (
-            <div className="flex min-w-0 flex-wrap items-start gap-2 pt-0.5 pb-[9px]">
-              <AttachmentList
-                attachments={props.attachments ?? []}
-                onPreview={onPreview}
-                onRemove={input.sending ? undefined : props.onAttachmentRemove}
-                removable={!input.sending}
-              />
-              {props.attachmentUploading ? (
-                <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-panel-soft px-2.5 text-xs font-[650] text-ink-muted">
-                  <Paperclip size={14} />
-                  {t("composer.uploading")}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          {input.error ? (
-            <Alert tone="error" title={t("composer.requestFailed")}>
-              {input.error}
-            </Alert>
-          ) : null}
-        </AgentComposer>
+        </AttachmentComposer>
       )}
       {preview ? (
         <ImagePreview image={preview} onClose={() => setPreview(undefined)} />

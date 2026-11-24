@@ -14,6 +14,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
+	"github.com/google/uuid"
 )
 
 // Pending items (DEV-079) are what waits for the person in their sessions,
@@ -473,6 +474,9 @@ type pendingItemView struct {
 	// Notice is what became of an open request's notice to the person: its
 	// state, or why it has none. Absent for an item that never gets one.
 	Notice *pendingNoticeView `json:"notice,omitempty"`
+	// Origin is where an open item began: the person's own words that set its
+	// work going (pending_origin.go).
+	Origin *pendingOriginView `json:"origin,omitempty"`
 }
 
 type pendingAssistantView struct {
@@ -523,7 +527,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
-	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
+	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed, store.PendingAbandoned}
 	// The same visible set the assistant's card counts: an item whose
 	// conversation was archived or deleted is not shown here either, so the
 	// card's count and "All" can never disagree.
@@ -583,6 +587,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 			}
 			view.SessionTitle = session.Title
 			view.ConversationAssistant = conversations[item.SessionID]
+			if item.State == store.PendingOpen {
+				view.Origin = s.pendingOrigin(ctx, item, *session)
+			}
 			if link, linked := links[item.SessionID]; linked {
 				view.ItemID, view.ItemAssistantID, view.ItemText = link.ItemID, link.AssistantID, link.Text
 			}
@@ -650,7 +657,7 @@ func (s *Server) handleSetPendingItemState(w http.ResponseWriter, r *http.Reques
 				writeResult(w, nil, err)
 				return
 			}
-		case store.PendingOpen, store.PendingDone:
+		case store.PendingOpen, store.PendingDone, store.PendingAbandoned:
 			writeError(w, http.StatusConflict, "an unprocessed assistant message is retried or dismissed")
 			return
 		}
@@ -664,5 +671,65 @@ func (s *Server) handleSetPendingItemState(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if current.State == store.PendingOpen && item.State != store.PendingOpen {
+		s.tellHelperItemClosed(ctx, current, item.State)
+	}
 	writeJSON(w, http.StatusOK, item)
 }
+
+// personCloseReasons is what a helper waiting on a question is told when the
+// person closes it by hand instead of answering: it gets no answer, and why.
+var personCloseReasons = map[string]string{
+	store.PendingDone:      "The person marked this done: it was settled outside this conversation.",
+	store.PendingAbandoned: "The person dropped this: they no longer want it done.",
+	store.PendingDismissed: "The person says this is not theirs to decide.",
+}
+
+// tellHelperItemClosed sends a helper of the person's assistant, waiting on
+// the question the person just closed, the no-answer reply with the reason,
+// as the person's message; without it the helper would wait for an answer
+// that never comes. The person's own chats get nothing: their next message
+// is the answer there.
+func (s *Server) tellHelperItemClosed(ctx context.Context, item store.PendingItem, state string) {
+	reason := personCloseReasons[state]
+	if reason == "" || item.Source != store.PendingSourceQuestion || item.SessionID == "" {
+		return
+	}
+	helper, err := s.store.GetAgentSessionSummary(ctx, item.SessionID)
+	if err != nil {
+		return
+	}
+	if _, ok := s.assistant.HelperOf(ctx, helper); !ok {
+		return
+	}
+	prompt, err := s.noAnswerPrompt(ctx, helper, []store.PendingItem{item}, reason)
+	if err != nil {
+		log.Printf("pending item %s: no-answer reply: %v", item.ID, err)
+		return
+	}
+	// Through the helper's inbox, as its dispatcher's messages come: it
+	// waits for the device instead of holding the person's click, and a
+	// repeated close (same input id) delivers nothing twice.
+	sender := helper.ParentSessionID
+	if sender == "" {
+		sender = helper.ID
+	}
+	admission, err := s.store.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+		SessionID:         helper.ID,
+		SenderSessionID:   sender,
+		InputID:           uuid.NewSHA1(personCloseSpace, []byte(item.ID+":"+state)).String(),
+		Prompt:            prompt,
+		RequestedDelivery: store.DeliveryBoundary,
+	}, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
+	if err != nil {
+		log.Printf("pending item %s: tell helper %s it was closed: %v", item.ID, helper.ID, err)
+		return
+	}
+	if !admission.Duplicate {
+		s.sessionService.WakeInbox()
+	}
+}
+
+// personCloseSpace names the no-answer replies sent when the person closes an
+// item, so a repeated close sends nothing twice.
+var personCloseSpace = uuid.MustParse("5d3c2f9e-9a41-4f3e-b8f6-2a7c1d0e6b54")

@@ -70,7 +70,7 @@ func (s *Server) askNeedsYou(call mcpCall, scope assistant.Scope) (string, error
 		Source: store.PendingSourceAssistantQuestion,
 		Key:    flow.Key("assistant_question", scope.Agent.UserID, session.ID, question),
 		Title:  pendingTitle(question), Excerpt: textcut.Excerpt(question, pendingExcerptLimit),
-		Options: options, Handler: store.PendingHandlerPerson,
+		Options: options, Recommendation: pendingRecommendation(options), Handler: store.PendingHandlerPerson,
 	})
 	if err != nil {
 		return "", err
@@ -78,13 +78,14 @@ func (s *Server) askNeedsYou(call mcpCall, scope assistant.Scope) (string, error
 	return encodeJSON(map[string]any{"asked": s.needsYouLineOf(ctx, item)})
 }
 
-// assistantQuestionOptions checks ask's options: none, or 2 to 4 short ones.
+// assistantQuestionOptions checks the options of ask and hand_over: none,
+// or 2 to 4 short ones.
 func assistantQuestionOptions(raw []string) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	if len(raw) < assistantQuestionOptionsMin || len(raw) > assistantQuestionOptionsMax {
-		return nil, fmt.Errorf("ask takes %d to %d options", assistantQuestionOptionsMin, assistantQuestionOptionsMax)
+		return nil, fmt.Errorf("options are %d to %d short choices", assistantQuestionOptionsMin, assistantQuestionOptionsMax)
 	}
 	options := make([]string, 0, len(raw))
 	for _, option := range raw {

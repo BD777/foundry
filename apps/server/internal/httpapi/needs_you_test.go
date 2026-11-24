@@ -342,6 +342,10 @@ func TestNeedsYouOneListWithTwoHandlers(t *testing.T) {
 	}
 	// What only the person can decide, it hands over with a note.
 	f.ask(t, f.helper, "h2", "Delete the old exports?")
+	// The helper's own question keeps its options.
+	if text, failed = f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "Delete them?", "options": []any{"Yes", "No"}}); !failed || !strings.Contains(text, "keeps its options") {
+		t.Fatalf("options on the helper's own question: %s", text)
+	}
 	text, failed = f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "The helper wants to delete last year's exports; is that fine?"})
 	if failed {
 		t.Fatalf("hand_over: %s", text)
@@ -357,11 +361,18 @@ func TestNeedsYouOneListWithTwoHandlers(t *testing.T) {
 	// A helper that asked in its answer gets an item from the note alone.
 	helper.Input = store.SessionInput{ID: "in_more", SentBySessionID: f.conversation.ID, At: formatPendingTime(time.Now().Add(2 * time.Second))}
 	pendingReactions{f.server}.SessionChanged(ctx, sessions.Queued, helper)
-	if text, failed = f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "Pick a colour for the chart: blue or green?"}); failed {
+	if text, failed = f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "Pick a colour for the chart", "options": []any{"Blue"}}); !failed || !strings.Contains(text, "2 to 4") {
+		t.Fatalf("one option: %s", text)
+	}
+	// Its short choice comes as options, the recommended one marked.
+	if text, failed = f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "Pick a colour for the chart", "options": []any{"Blue (推荐)", "Green"}}); failed {
 		t.Fatalf("hand_over without an item: %s", text)
 	}
-	if _, open = f.open(t); open[f.helper.ID].Rule != store.PendingRuleHandedOver || open[f.helper.ID].Title != "Pick a colour for the chart: blue or green?" {
-		t.Fatalf("made item: %+v", open[f.helper.ID])
+	_, open = f.open(t)
+	made := open[f.helper.ID]
+	if made.Rule != store.PendingRuleHandedOver || made.Title != "Pick a colour for the chart" ||
+		!slices.Equal(made.Options, []string{"Blue (推荐)", "Green"}) || made.Recommendation != "Blue (推荐)" {
+		t.Fatalf("made item: %+v", made)
 	}
 	// The person's own chat is theirs alone.
 	if text, failed = f.needsYou(t, map[string]any{"op": "resolve", "itemId": open[f.chat.ID].ID}); !failed || !strings.Contains(text, "only items of your own helpers") {
@@ -509,5 +520,68 @@ func TestNeedsYouTellRefusesOtherSessionsAndAnEmptyNote(t *testing.T) {
 	}
 	if list, _ := f.open(t); len(list.Items) != 0 {
 		t.Fatalf("refused tells recorded items: %+v", list.Items)
+	}
+}
+
+// The person closes items by hand three ways (done, abandoned, not for me).
+// A helper waiting on the question gets the no-answer reply saying which,
+// instead of waiting for an answer that never comes; the person's own chat
+// gets nothing (their next message there is the answer).
+func TestPersonClosingAHelperQuestionTellsTheHelper(t *testing.T) {
+	f := newNeedsYouFixture(t)
+	ctx := context.Background()
+	f.ask(t, f.helper, "h1", "Delete the old exports?")
+	f.ask(t, f.chat, "c1", "Keep the old header?")
+	if text, failed := f.needsYou(t, map[string]any{"op": "hand_over", "sessionId": f.helper.ID, "note": "The helper wants to delete last year's exports; is that fine?"}); failed {
+		t.Fatalf("hand_over: %s", text)
+	}
+	_, open := f.open(t)
+	setState := func(id, state string) pendingItemView {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, "/api/pending-items/"+id+"/state", strings.NewReader(`{"state":"`+state+`"}`))
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		f.server.testActor = &Actor{Kind: ActorAccount, Account: &store.User{ID: f.aliceID}}
+		defer func() { f.server.testActor = nil }()
+		f.server.Routes().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("set %s: %d %s", state, recorder.Code, recorder.Body)
+		}
+		var item pendingItemView
+		if err := json.Unmarshal(recorder.Body.Bytes(), &item); err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+	closed := setState(open[f.helper.ID].ID, store.PendingAbandoned)
+	if closed.State != store.PendingAbandoned || closed.Outcome != store.PendingOutcomePersonAbandoned {
+		t.Fatalf("abandoned item = %+v", closed.PendingItem)
+	}
+	told := func(sessionID string) []store.SessionInboxItem {
+		t.Helper()
+		items, err := f.db.SessionInboxItems(ctx, sessionID, time.Time{}, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []store.SessionInboxItem
+		for _, item := range items {
+			if strings.Contains(item.Prompt, `"noAnswer":true`) {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
+	replies := told(f.helper.ID)
+	if len(replies) != 1 || !strings.Contains(replies[0].Prompt, "The person dropped this") || !strings.Contains(replies[0].Prompt, "Delete the old exports?") {
+		t.Fatalf("helper inbox = %+v", replies)
+	}
+	// Closing it again sends nothing twice.
+	setState(closed.ID, store.PendingAbandoned)
+	if again := told(f.helper.ID); len(again) != 1 {
+		t.Fatalf("a repeated close sent another reply: %+v", again)
+	}
+	setState(open[f.chat.ID].ID, store.PendingDismissed)
+	if replies := told(f.chat.ID); len(replies) != 0 {
+		t.Fatalf("the person's own chat got a reply: %+v", replies)
 	}
 }

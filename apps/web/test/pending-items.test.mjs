@@ -20,7 +20,9 @@ for (const key of [
   "HTMLButtonElement",
   "HTMLInputElement",
   "HTMLFormElement",
+  "HTMLTextAreaElement",
   "MutationObserver",
+  "ResizeObserver",
   "CustomEvent",
   "CustomEvent",
   "Event",
@@ -63,6 +65,7 @@ const {
   pendingReplyRoute,
   pendingReplyText,
   pendingStatusKey,
+  textContains,
 } = await import("../src/features/pending/pending-model.ts");
 const { PendingFeature } =
   await import("../src/features/pending/pending-feature.tsx");
@@ -253,6 +256,20 @@ test("a reply quotes the item's own words, line by line", () => {
   );
 });
 
+test("a reply that starts with a skill leads, so the agent runs it; the quote follows", () => {
+  const failed = item({ source: "turn_failed", excerpt: "Build broke" });
+  assert.equal(
+    pendingReplyText(failed, "/code-review the last commit"),
+    "/code-review the last commit\n\n> Build broke",
+  );
+  assert.equal(pendingReplyText(failed, "/debug"), "/debug\n\n> Build broke");
+  // A path is no skill.
+  assert.equal(
+    pendingReplyText(failed, "/etc/hosts is wrong"),
+    "> Build broke\n\n/etc/hosts is wrong",
+  );
+});
+
 test("a question's reply names the runtime's call id, as the question card does", () => {
   const asked = item({
     source: "question",
@@ -394,7 +411,7 @@ async function render(list) {
     calls.push({
       path,
       method: init.method ?? "GET",
-      body: init.body ? JSON.parse(init.body) : undefined,
+      body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
     });
     if (path.endsWith("/api/pending-items"))
       return answer({ assistants: [], ...list });
@@ -405,6 +422,22 @@ async function render(list) {
     if (path.includes("/answer")) return answer({ id: "iss_1" });
     if (path.includes("/models"))
       return answer([{ id: "gemini-3.8-flash-high" }]);
+    if (path === "/api/attachments") return answer([shotAttachment]);
+    if (path.startsWith("/api/foundry-data"))
+      return answer({
+        workspace: { id: "ws_1", name: "Project", deviceId: "dev_1" },
+        workspaceSkills: [{ name: "code-review", description: "Review" }],
+        providerHealth: [
+          {
+            deviceId: "dev_1",
+            provider: "claude",
+            officialSkills: [{ name: "debug", description: "Debug" }],
+          },
+        ],
+        builtinSkills: [],
+      });
+    if (path.startsWith("/api/agent-sessions/sess_1"))
+      return answer({ id: "sess_1", provider: "claude" });
     return answer({});
   };
   const host = document.createElement("div");
@@ -413,6 +446,29 @@ async function render(list) {
   await act(async () => root.render(createElement(Page)));
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   return { host, root, calls };
+}
+
+const shotAttachment = {
+  id: "att_1",
+  name: "shot.png",
+  path: ".foundry/attachments/shot.png",
+  mimeType: "image/png",
+  size: 3,
+  kind: "image",
+};
+
+/** The composer's send button: an icon named by its label. */
+const sendButton = (host) => host.querySelector('button[aria-label="Send"]');
+
+async function typeInto(textarea, text) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    ).set;
+    setter.call(textarea, text);
+    textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
 }
 
 const buttonNamed = (host, name) =>
@@ -592,7 +648,9 @@ test("the page shows an item in its own words and replies into its chat", async 
   assert.ok(recommended, host.innerHTML);
   assert.match(recommended.className, /fdy-button-primary/);
   assert.match(recommended.textContent, /Alpha· Recommended/);
-  // Done, the message and the context wait in one menu; "Not for me" is direct.
+  // The three ways to close it sit side by side; the menu only navigates.
+  assert.ok(buttonNamed(host, "Done"));
+  assert.ok(buttonNamed(host, "Abandon"));
   assert.ok(buttonNamed(host, "Not for me"));
   assert.equal(buttonNamed(host, "Open message"), undefined);
   assert.ok(buttonNamed(host, "Reply"));
@@ -608,15 +666,20 @@ test("the page shows an item in its own words and replies into its chat", async 
     sent.body.text,
     "> Keep the closed rows blocked?\n\nRun them too",
   );
-  // Marking it done changes it by hand, from the item's menu.
   const menu = await openMenu(host, "More for “Keep the closed rows blocked?”");
-  assert.deepEqual(menu, ["Open message", "Show context", "Mark done"]);
-  await act(async () => menuItem("Mark done").click());
+  assert.deepEqual(menu, ["Open message", "Show context"]);
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  // Abandoning it is its own state, neither done nor not-for-me.
+  await act(async () => buttonNamed(host, "Abandon").click());
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   const state = calls.find((call) =>
     call.path.includes("/api/pending-items/pnd_1/state"),
   );
-  assert.deepEqual(state.body, { state: "done" });
+  assert.deepEqual(state.body, { state: "abandoned" });
   await act(async () => root.unmount());
   host.remove();
 });
@@ -693,7 +756,7 @@ test("an item waiting on the person is answered from its card through its own an
     setter.call(textarea, "Batch A");
     textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
-  await act(async () => buttonNamed(host, "Send").click());
+  await act(async () => sendButton(host).click());
   const answered = calls.find((call) =>
     call.path.endsWith("/api/pending-items/pnd_w/answer"),
   );
@@ -782,7 +845,7 @@ test("an Issue's question is answered on the Issue, not in a chat", async (t) =>
     setter.call(textarea, "Yes");
     textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
-  await act(async () => buttonNamed(host, "Send").click());
+  await act(async () => sendButton(host).click());
   const answered = calls.find((call) =>
     call.path.includes("/api/issues/iss_1/answer"),
   );
@@ -824,7 +887,7 @@ test("a failed turn leads with what happened and its fix; the raw error waits in
   assert.ok(buttonNamed(host, "Fix in chat"));
   assert.ok(buttonNamed(host, "Reply"));
   const menu = await openMenu(host, "More for “Usage limit reached”");
-  assert.deepEqual(menu, ["Show the error", "Mark done"]);
+  assert.deepEqual(menu, ["Show the error"]);
   await act(async () => menuItem("Show the error").click());
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.match(
@@ -1507,7 +1570,7 @@ test("a hand-over shows the assistant's note as its reason, clamped, and says wh
   host.remove();
 });
 
-test("a hand-over whose note only repeats the title says it was handed over, without the title twice", async () => {
+test("a hand-over whose note only repeats the title says it was handed over on its meta line, without the title twice", async () => {
   const handed = item({
     id: "handed-title",
     sessionId: "sess_1",
@@ -1523,9 +1586,129 @@ test("a hand-over whose note only repeats the title says it was handed over, wit
     bySession: { sess_1: 1 },
     items: [handed],
   });
-  const block = host.querySelector(".fdy-pending-item-handed");
-  assert.ok(block);
-  assert.equal(block.textContent, "Your assistant: handed this to you.");
+  // Nothing more to say than the title: the hand-over is a fact on the meta
+  // line, not a block of its own.
+  assert.equal(host.querySelector(".fdy-pending-item-handed"), null);
+  assert.equal(
+    host.querySelector(".fdy-pending-item-handed-meta").textContent,
+    "handed over by your assistant",
+  );
+  assert.equal(
+    host
+      .querySelector(".fdy-pending-item")
+      .textContent.split("Which colour for the header?").length - 1,
+    1,
+  );
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("one text contains another when it is the same words or that text cut short", () => {
+  assert.equal(textContains("Pick A or B, then rerun.", "Pick A or B,…"), true);
+  assert.equal(textContains("Pick A or B.", "Pick A or B.…"), true);
+  assert.equal(textContains("Pick A or B.…", "Pick A or B."), false);
+  assert.equal(textContains("Pick  A\nor B.", "Pick A or B."), true);
+  assert.equal(textContains("Pick A or B.", "Pick C…"), false);
+  assert.equal(textContains("Pick A or B.", ""), true);
+});
+
+test("a long hand-over whose title is its note cut short shows the note once", async () => {
+  const note =
+    "你在和高逸斌的私聊里让我用 AutoRun 重跑前天那十几个 case 的复现。找到两批候选：A＝17 单原批次；B＝9 单重跑批次。建议选 A。回复 A / B，就会以你的身份提交重跑。";
+  const handed = item({
+    id: "handed-long",
+    sessionId: "sess_1",
+    title: `${note}…`,
+    excerpt: note,
+    handler: "person",
+    handedReason: "assistant",
+    rule: "handed_over",
+    note,
+  });
+  const { host, root } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [handed],
+  });
+  const card = host.querySelector(".fdy-pending-item");
+  assert.equal(card.textContent.split("找到两批候选").length - 1, 1);
+  const lead = card.querySelector(".fdy-pending-item-lead");
+  assert.ok(lead, "the whole note leads the card");
+  assert.ok(lead.querySelector(".fdy-clamped-text .line-clamp-4"));
+  assert.equal(host.querySelector(".fdy-pending-item-handed"), null);
+  assert.ok(host.querySelector(".fdy-pending-item-handed-meta"));
+  assert.equal(host.querySelectorAll(".fdy-pending-item-excerpt").length, 0);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a group's heading shows where its items come from, and its name once", async () => {
+  const byteWork = { id: "asst_bw", name: "ByteWork", isDefault: false };
+  const { host, root } = await render({
+    open: 2,
+    bySession: { sess_1: 1, sess_bw: 1 },
+    items: [
+      item({ id: "chat-q" }),
+      item({
+        id: "bw-failed",
+        source: "turn_failed",
+        sessionId: "sess_bw",
+        sessionTitle: "你好",
+        workspaceName: "ByteWork",
+        conversationAssistant: byteWork,
+        updatedAt: "2026-10-29T09:00:00Z",
+      }),
+    ],
+  });
+  const headings = [...host.querySelectorAll("section header")];
+  const bw = headings.find((h) => h.textContent.includes("ByteWork"));
+  assert.ok(bw);
+  assert.equal(bw.textContent.split("ByteWork").length - 1, 1);
+  const chat = headings.find((h) => h.textContent.includes("Fix the export"));
+  assert.match(
+    chat.querySelector("svg").getAttribute("class"),
+    /message-square-text/,
+  );
+  assert.match(bw.querySelector("svg").getAttribute("class"), /sparkles/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an open item says where it began: the person's own words, where and when", async () => {
+  const started = item({
+    id: "started",
+    sessionId: "sess_1",
+    handler: "person",
+    handedReason: "assistant",
+    assistantName: "ByteWork",
+    note: "Pick A or B for the rerun?",
+    title: "Pick A or B for the rerun?",
+    excerpt: "Pick A or B for the rerun?",
+    origin: {
+      sessionId: "sess_parent",
+      at: "2026-11-19T05:12:56Z",
+      text: "/ai rerun the dozen cases from the day before yesterday",
+      channel: "openlark",
+      conversation: "Gao",
+      conversationKind: "direct",
+    },
+  });
+  const { host, root } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [started],
+  });
+  const line = host.querySelector(".fdy-pending-item-origin");
+  assert.ok(line, "the origin line is shown");
+  assert.match(
+    line.textContent,
+    /You said in openlark · direct chat with Gao · .*: \/ai rerun the dozen cases/,
+  );
+  // The assistant's own words name their speaker: its "I" is the assistant.
+  assert.match(
+    host.querySelector(".fdy-pending-item-title").textContent,
+    /^ByteWork: Pick A or B/,
+  );
   await act(async () => root.unmount());
   host.remove();
 });
@@ -1833,7 +2016,7 @@ test("a reply to an older question item names that question's message, so it ans
     setter.call(textarea, "per month");
     textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
-  await act(async () => buttonNamed(olderCard, "Send").click());
+  await act(async () => sendButton(olderCard).click());
   await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   const sent = calls.find((call) =>
     call.path.includes("/api/chats/sess_1/queue"),
@@ -2166,4 +2349,125 @@ test("a request says whether its Feishu card went out, or why not", async () => 
     await act(async () => root.unmount());
     host.remove();
   }
+});
+
+test("the reply is the chat's composer: its skills, attached files sent with the reply, Escape closes it", async () => {
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      item({ id: "pnd_chat", source: "turn_failed", excerpt: "Build broke" }),
+    ],
+  });
+  const card = host.querySelector("article");
+  await act(async () => buttonNamed(card, "Reply").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const textarea = card.querySelector("textarea");
+  assert.ok(textarea, "the reply box");
+  // The skills of the chat it goes to: its workspace's and its agent's.
+  assert.ok(
+    calls.some((call) => call.path.startsWith("/api/foundry-data?")),
+    JSON.stringify(calls),
+  );
+  await typeInto(textarea, "/");
+  textarea.setSelectionRange(1, 1);
+  await act(async () =>
+    textarea.dispatchEvent(new window.Event("click", { bubbles: true })),
+  );
+  const options = [...host.querySelectorAll("[role=option]")].map(
+    (option) => option.textContent,
+  );
+  assert.ok(
+    options.some((text) => text.includes("code-review")),
+    JSON.stringify(options),
+  );
+  assert.ok(
+    options.some((text) => text.includes("debug")),
+    JSON.stringify(options),
+  );
+  // Files go through the chat's upload, to the item's workspace.
+  assert.ok(card.querySelector('button[aria-label="Attach context"]'));
+  const picker = card.querySelector('input[type="file"]');
+  assert.ok(picker, "the composer's file picker");
+  const file = new File(["png"], "shot.png", { type: "image/png" });
+  Object.defineProperty(picker, "files", {
+    configurable: true,
+    value: [file],
+  });
+  await act(async () =>
+    picker.dispatchEvent(new window.Event("change", { bubbles: true })),
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const upload = calls.find((call) => call.path === "/api/attachments");
+  assert.ok(upload, JSON.stringify(calls));
+  assert.equal(upload.body.get("workspaceId"), "ws_1");
+  assert.ok(
+    card.querySelector('button[aria-label="Remove shot.png"]'),
+    "the attached file waits above the input",
+  );
+  await typeInto(textarea, "Retry with the cache cleared");
+  await act(async () => sendButton(card).click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const sent = calls.find((call) =>
+    call.path.includes("/api/chats/sess_1/queue"),
+  );
+  assert.ok(sent, JSON.stringify(calls));
+  assert.equal(sent.body.text, "> Build broke\n\nRetry with the cache cleared");
+  assert.deepEqual(sent.body.attachments, [shotAttachment]);
+  assert.equal(
+    card.querySelector("textarea"),
+    null,
+    "the reply closes once sent",
+  );
+  // Escape closes a reopened reply; with "/" typed, the open menu takes the
+  // first Escape and the next one closes the reply.
+  await act(async () => buttonNamed(card, "Reply").click());
+  const again = card.querySelector("textarea");
+  const escape = () =>
+    act(async () =>
+      again.dispatchEvent(
+        new window.KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+  await typeInto(again, "/");
+  assert.ok(document.querySelector(".fdy-slash-menu"), "the skill menu opens");
+  await escape();
+  assert.equal(document.querySelector(".fdy-slash-menu"), null);
+  assert.ok(
+    card.querySelector("textarea"),
+    "the first Escape only closes the menu",
+  );
+  await escape();
+  assert.equal(card.querySelector("textarea"), null);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an answer that is not a chat message takes no files and offers no skills", async () => {
+  const { host, root, calls } = await render({
+    open: 1,
+    bySession: {},
+    items: [
+      item({
+        id: "pnd_ask",
+        source: "assistant_question",
+        sessionId: "sess_home",
+      }),
+    ],
+  });
+  await act(async () => buttonNamed(host, "Reply").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.ok(host.querySelector("textarea"), "the reply box");
+  assert.equal(host.querySelector('button[aria-label="Attach context"]'), null);
+  assert.equal(host.querySelector('input[type="file"]'), null);
+  assert.equal(
+    calls.some((call) => call.path.startsWith("/api/foundry-data?")),
+    false,
+  );
+  await act(async () => root.unmount());
+  host.remove();
 });
