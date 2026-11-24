@@ -278,6 +278,15 @@ export function useChatFeature({
       emit({ message, tone, type: "notice.requested" }),
     [emit],
   );
+  // A link's message is read back to only in the chat the loader shows.
+  const seekMessage =
+    history === transcript && transcript.state.threadId !== selectedThread?.id
+      ? undefined
+      : history.seekMessage;
+  const messageMissing = useCallback(
+    () => void notify(i18n.t("chat:history.messageMissing"), "warning"),
+    [notify],
+  );
   const {
     agentOptions,
     claudeEffort,
@@ -812,6 +821,9 @@ export function useChatFeature({
         contextCard={notices.linked ? undefined : panelCard}
         history={historyRow}
         onReachHistoryStart={history.loadEarlier}
+        onSeekMessage={seekMessage}
+        missingMessageId={history.state.missingMessage}
+        onMessageMissing={messageMissing}
         onContextPanelVisibleChange={setContextPanelVisible}
         onRetrySubagents={subagents.failed ? subagents.retry : undefined}
         backgroundWork={backgroundWork}

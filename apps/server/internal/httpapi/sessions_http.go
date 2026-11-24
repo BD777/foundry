@@ -103,6 +103,11 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 	}
 	item = s.presentSession(r.Context(), item)
 	if err == nil && sessionEventsRequested(r) && windowed {
+		window, pageErr := seekEventWindow(r.Context(), s.store, item.ID, window)
+		if pageErr != nil {
+			writeEventWindowError(w, pageErr)
+			return
+		}
 		page, pageErr := s.sessionEventWindow(r.Context(), item, window)
 		if pageErr != nil {
 			writeEventWindowError(w, pageErr)
@@ -120,8 +125,8 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if window.before != "" {
-		writeError(w, http.StatusBadRequest, "eventsBefore pages one session: read GET /api/agent-sessions/{id}")
+	if window.before != "" || window.through != "" {
+		writeError(w, http.StatusBadRequest, "eventsBefore and eventsThrough page one session: read GET /api/agent-sessions/{id}")
 		return
 	}
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
@@ -173,8 +178,8 @@ func (s *Server) handleListIssueExecutions(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if window.before != "" {
-		writeError(w, http.StatusBadRequest, "eventsBefore pages one session: read GET /api/agent-sessions/{id}")
+	if window.before != "" || window.through != "" {
+		writeError(w, http.StatusBadRequest, "eventsBefore and eventsThrough page one session: read GET /api/agent-sessions/{id}")
 		return
 	}
 	if window.limit == 0 {

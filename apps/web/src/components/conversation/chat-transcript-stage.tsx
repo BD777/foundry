@@ -30,6 +30,7 @@ import type {
 } from "./conversation-types";
 import {
   buildChatTurnAnchors,
+  chatMessageNamed,
   type ChatTurnAnchor,
 } from "./chat-turn-navigation";
 import { ChatTurnNavigator } from "./chat-turn-navigator";
@@ -137,7 +138,10 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   scrollController: ChatScrollFollowController;
   showScrollToLatest: boolean;
   threadKey: string;
-  /** A message a link opened the chat at: scrolled to once it is loaded. */
+  /**
+   * A message a link opened the chat at: scrolled to once it is loaded (the
+   * host reads back to it).
+   */
   focusMessageId?: string;
   /** The focused message was shown; the link's request is done. */
   onMessageFocused?: () => void;
@@ -250,15 +254,13 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   const [focusedId, setFocusedId] = useState("");
   useEffect(() => {
     if (!focusMessageId) return;
-    // Rows of a session's transcript name their message
-    // "agent-session:<session>:<message id>".
     const named = (message: ChatMessageItem) =>
-      message.id === focusMessageId ||
-      message.id.endsWith(`:${focusMessageId}`);
+      chatMessageNamed(message, focusMessageId);
     const messageIndex = rows.findIndex(named);
     if (messageIndex < 0) {
       // Hidden by "only my conversation": the person turns the filter off.
-      // A message the transcript has not loaded yet keeps the request.
+      // One not loaded yet keeps the request while the host reads back to
+      // it, or says it is gone.
       if (messages.some(named)) onMessageFocused?.();
       return;
     }
