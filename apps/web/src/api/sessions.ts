@@ -42,6 +42,14 @@ export function getAgentSession(
   return request("GET", sessionPath(sessionId), options);
 }
 
+/** A session without its transcript: who runs it, where, in what state. */
+export function getAgentSessionSummary(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<AgentSession> {
+  return request("GET", `${sessionPath(sessionId)}?events=none`, options);
+}
+
 /** Names a session for a link to it; 403/404 when the caller may not view it. */
 export function getSessionLink(
   sessionId: string,

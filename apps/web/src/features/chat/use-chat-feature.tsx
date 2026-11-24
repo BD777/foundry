@@ -29,7 +29,7 @@ import { i18n } from "../../i18n";
 import {
   composerSlashItems,
   type ComposerSlashSkills,
-} from "./composer/composer-slash";
+} from "../../components/conversation/composer-slash";
 import { shortUnavailableReason } from "../../lib/agent-picker";
 import { chatComposerChoices, chatSortValue } from "./thread/chat-model";
 import {

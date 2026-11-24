@@ -51,12 +51,16 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	itemID := strings.TrimSpace(mcpArgString(call.args, "itemId"))
 	sessionID := strings.TrimSpace(mcpArgString(call.args, "sessionId"))
 	note := strings.TrimSpace(mcpArgString(call.args, "note"))
+	var options []string
 	switch op {
 	case "list":
 		return s.needsYouList(ctx, scope.Agent)
 	case "hand_over":
 		if note == "" || utf8.RuneCountInString(note) > needsYouNoteLimit {
 			return "", &statusError{http.StatusBadRequest, fmt.Errorf("hand_over needs a note for the person of 1 to %d characters", needsYouNoteLimit)}
+		}
+		if options, err = assistantQuestionOptions(mcpArgList(call.args, "options")); err != nil {
+			return "", &statusError{http.StatusBadRequest, err}
 		}
 	case "tell":
 		if note == "" || utf8.RuneCountInString(note) > needsYouNoteLimit {
@@ -123,11 +127,14 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 	var changed []needsYouLine
 	if len(items) == 0 {
 		// A helper that asked in its answer, without a question card.
-		item, err := s.handOverWithoutCard(ctx, scope.Agent, helper, scope.Turn.ID, note, s.noticeBotReaches)
+		item, err := s.handOverWithoutCard(ctx, scope.Agent, helper, scope.Turn.ID, note, options, s.noticeBotReaches)
 		if err != nil {
 			return "", err
 		}
 		return encodeJSON(map[string]any{"handedOver": []needsYouLine{s.needsYouLineOf(ctx, item)}})
+	}
+	if len(options) > 0 {
+		return "", &statusError{http.StatusBadRequest, fmt.Errorf("options are for an item hand_over adds (a helper that asked in its answer); the helper's own question keeps its options")}
 	}
 	for _, item := range items {
 		handed, err := s.handPendingItem(ctx, user, item.ID, store.PendingHandlerPerson, note, store.PendingHandedByAssistant, store.PendingOutcomeHandedOver, scope.Turn.ID)
@@ -143,7 +150,7 @@ func (s *Server) needsYouForMCP(call mcpCall) (string, error) {
 // with no question card, in needs-you as handed to the person. It notifies the
 // person as any hand-over does: the item is recorded through the notice queue,
 // not around it, so a sink that takes hand-overs hears of it.
-func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAgent, helper store.AgentSession, turnID, note string, bot noticeBotLookup) (store.PendingItem, error) {
+func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAgent, helper store.AgentSession, turnID, note string, options []string, bot noticeBotLookup) (store.PendingItem, error) {
 	now := formatPendingTime(time.Now())
 	item, changed, err := s.store.RecordPendingItem(ctx, store.PendingItem{
 		UserID: agent.UserID, AssistantID: agent.ID, WorkspaceID: helper.WorkspaceID, SessionID: helper.ID,
@@ -151,6 +158,7 @@ func (s *Server) handOverWithoutCard(ctx context.Context, agent store.PersonalAg
 		Key:   "handover:" + helper.ID + ":" + helper.Input.ID,
 		Title: pendingTitle(note), Excerpt: textcut.Excerpt(note, pendingExcerptLimit),
 		Context: pendingAnswerContext(helper.Response),
+		Options: options, Recommendation: pendingRecommendation(options),
 		Handler: store.PendingHandlerPerson, Note: note, HandedReason: store.PendingHandedByAssistant, HandedAt: now,
 		HandedInputID: turnID, Outcome: store.PendingOutcomeHandedOver,
 	})

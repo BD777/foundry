@@ -129,6 +129,21 @@ export function pendingScopeUpdate(item: PendingDisplayItem): boolean {
 }
 
 /** Where a permission error was refused, as its output names it. */
+/**
+ * Whether full already says all of part: the same words, or part is full cut
+ * short (the server cuts a long title or excerpt and ends it with "…"). An
+ * item keeps one text in several fields (a hand-over's note, title and
+ * excerpt); the page shows such a text once.
+ */
+export function textContains(full: string, part: string): boolean {
+  const whole = full.replace(/\s+/g, " ").trim();
+  const piece = part.replace(/\s+/g, " ").trim();
+  if (!piece) return true;
+  if (whole === piece) return true;
+  const cut = piece.endsWith("…") ? piece.slice(0, -1).trimEnd() : "";
+  return cut !== "" && whole.startsWith(cut);
+}
+
 const deniedPath =
   /(?:EACCES: permission denied, \w+ |\[Errno 13\] Permission denied: )'([^']+)'|^[\w.-]+: (?:cannot [a-z ]+? )?'?(\/[^':]+)'?: Permission denied$/m;
 

@@ -73,7 +73,7 @@ func (s *Store) setupPendingItems(ctx context.Context) error {
 }
 
 // pendingStates are the states an item may be in.
-var pendingStates = []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
+var pendingStates = []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed, store.PendingAbandoned}
 
 const pendingItemColumns = `id, user_id, assistant_id, state, payload_json, created_at, updated_at, resolved_at, handler, deadline_at, acknowledged_at, notified_at, outcome`
 
@@ -551,12 +551,15 @@ func (s *Store) listPendingItems(ctx context.Context, userID string, states []st
 }
 
 func (s *Store) SetPendingItemState(ctx context.Context, userID, id, state string) (store.PendingItem, error) {
-	if state != store.PendingOpen && state != store.PendingDone && state != store.PendingDismissed {
-		return store.PendingItem{}, fmt.Errorf("an item can be marked done, dismissed or open")
+	if !settablePendingState(state) {
+		return store.PendingItem{}, fmt.Errorf("an item can be marked done, abandoned, dismissed or open")
 	}
 	outcome := store.PendingOutcomePersonAnswered
-	if state == store.PendingDismissed {
+	switch state {
+	case store.PendingDismissed:
 		outcome = store.PendingOutcomePersonDismissedNotNeeded
+	case store.PendingAbandoned:
+		outcome = store.PendingOutcomePersonAbandoned
 	}
 	return s.ResolvePendingItem(ctx, userID, id, state, outcome, store.PendingAnswer{})
 }
@@ -573,9 +576,17 @@ func (s *Store) ClosePendingItem(ctx context.Context, userID, id, reason string)
 	return s.resolvePendingItem(ctx, userID, id, store.PendingDone, store.PendingOutcomeAssistantClosed, store.PendingAnswer{}, reason)
 }
 
+func settablePendingState(state string) bool {
+	switch state {
+	case store.PendingOpen, store.PendingDone, store.PendingDismissed, store.PendingAbandoned:
+		return true
+	}
+	return false
+}
+
 func (s *Store) resolvePendingItem(ctx context.Context, userID, id, state, outcome string, answer store.PendingAnswer, closeReason string) (store.PendingItem, error) {
-	if state != store.PendingOpen && state != store.PendingDone && state != store.PendingDismissed {
-		return store.PendingItem{}, fmt.Errorf("an item can be marked done, dismissed or open")
+	if !settablePendingState(state) {
+		return store.PendingItem{}, fmt.Errorf("an item can be marked done, abandoned, dismissed or open")
 	}
 	if state != store.PendingOpen && outcome == "" {
 		return store.PendingItem{}, fmt.Errorf("closing an item needs an outcome")

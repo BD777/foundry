@@ -741,7 +741,7 @@ func (s *Server) messageChannelActions(ctx context.Context, agent store.Personal
 			}
 		}
 	}
-	items, _ := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen, store.PendingReplied, store.PendingDone, store.PendingDismissed, store.PendingSuperseded}, "", 300)
+	items, _ := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen, store.PendingReplied, store.PendingDone, store.PendingDismissed, store.PendingAbandoned, store.PendingSuperseded}, "", 300)
 	for _, item := range items {
 		if bySession[item.SessionID] == nil {
 			continue

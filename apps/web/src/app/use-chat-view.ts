@@ -2,7 +2,7 @@ import type { ToastTone } from "../components/ui/toast";
 import { createElement, useMemo, type ReactElement } from "react";
 import { useChatFeature, type ChatFeatureEvent } from "../features/chat";
 import { PendingChatBar, type PendingItems } from "../features/pending";
-import { workspaceComposerSkills } from "./composer-skills";
+import { workspaceComposerSkills } from "../components/conversation/composer-slash";
 import {
   useRemovedChatSelection,
   withSessionDetails,

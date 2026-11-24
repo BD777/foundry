@@ -130,6 +130,9 @@ const (
 	PendingSuperseded = "superseded"
 	PendingDone       = "done"
 	PendingDismissed  = "dismissed"
+	// PendingAbandoned: the person dropped what the item asks about; it is
+	// neither settled (done) nor somebody else's (dismissed).
+	PendingAbandoned = "abandoned"
 )
 
 // Why an item was resolved automatically. The detail says which condition
@@ -149,6 +152,7 @@ const (
 	PendingOutcomeAutoResolved             = "auto_resolved"
 	PendingOutcomePersonAnswered           = "person_answered"
 	PendingOutcomePersonDismissedNotNeeded = "person_dismissed_not_needed"
+	PendingOutcomePersonAbandoned          = "person_abandoned"
 	// PendingOutcomeWithdrawn: the assistant withdrew its own question
 	// (needs_you resolve on an assistant_question item) before anyone answered.
 	PendingOutcomeWithdrawn = "withdrawn"

@@ -554,7 +554,7 @@ func TestHandOverWithoutCardIsNoticedAndTakesNoReply(t *testing.T) {
 	ctx := context.Background()
 	agent := f.notifyKinds(t, "hand_over")
 	for _, helper := range []store.AgentSession{f.helper, f.conversation} {
-		item, err := f.server.handOverWithoutCard(ctx, agent, helper, "turn_"+helper.ID, "Pick a colour: blue or green?", noticeBotPaired)
+		item, err := f.server.handOverWithoutCard(ctx, agent, helper, "turn_"+helper.ID, "Pick a colour: blue or green?", nil, noticeBotPaired)
 		if err != nil {
 			t.Fatal(err)
 		}
