@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
+  ApiError,
   getAgentSessionEventsAfter,
   getAgentSessionEventsBefore,
+  getAgentSessionEventsThrough,
   getAgentSessionThread,
   type WindowedAgentSession,
 } from "../../../api";
@@ -27,6 +29,12 @@ export interface ChatTranscript {
   state: TranscriptLoadState;
   retry: () => void;
   loadEarlier: () => void;
+  /**
+   * Reads back to a message the transcript has not loaded (see
+   * createTranscriptLoader's seekMessage); state.missingMessage names one
+   * the chat holds no more.
+   */
+  seekMessage: (messageId: string) => void;
 }
 
 /** Sessions whose transcript this tab loaded at least once. */
@@ -78,6 +86,18 @@ export function useChatTranscript({
         getAgentSessionEventsBefore(sessionId, before, {
           eventsLimit: transcriptWindowEvents,
           signal,
+        }),
+      // A compaction's row is named after its event (transcript-adapters).
+      loadThrough: (sessionId, before, through, signal) =>
+        getAgentSessionEventsThrough(
+          sessionId,
+          before,
+          through.replace(/:compaction$/, ""),
+          { eventsLimit: transcriptWindowEvents, signal },
+        ).catch((error: unknown) => {
+          if (error instanceof ApiError && error.status === 404)
+            return undefined;
+          throw error;
         }),
       // A repair costs at most a window: more than that reloads it.
       loadAfter: (sessionId, after, signal) =>
@@ -141,5 +161,11 @@ export function useChatTranscript({
     () => loader.loadEarlier(),
     [loader, state.earlier],
   );
-  return { state, retry, loadEarlier };
+  // Changes with every state, so a caller waiting on the first load asks
+  // again once it is shown.
+  const seekMessage = useCallback(
+    (messageId: string) => loader.seekMessage(messageId),
+    [loader, state],
+  );
+  return { state, retry, loadEarlier, seekMessage };
 }

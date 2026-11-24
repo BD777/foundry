@@ -21,22 +21,25 @@ func sessionEventsRequested(r *http.Request) bool {
 const maxEventsWindow = 1000
 
 // eventWindow is a windowed transcript read: at most limit events, the
-// newest, or those before the cursor a previous read returned.
+// newest, or those before the cursor a previous read returned. With through
+// it reaches back to that message (seekEventWindow).
 type eventWindow struct {
-	limit  int
-	before string
+	limit   int
+	before  string
+	through string
 }
 
-// requestedEventWindow reads ?eventsLimit= and ?eventsBefore=. Without
-// either a read returns every event, as it always has. A limit above
-// maxEventsWindow is capped; a cursor without a limit reads that many.
+// requestedEventWindow reads ?eventsLimit=, ?eventsBefore= and
+// ?eventsThrough=. Without any a read returns every event, as it always
+// has. A limit above maxEventsWindow is capped; a cursor without a limit
+// reads that many.
 func requestedEventWindow(r *http.Request) (eventWindow, bool, error) {
 	query := r.URL.Query()
-	rawLimit, before := query.Get("eventsLimit"), query.Get("eventsBefore")
-	if rawLimit == "" && before == "" {
+	rawLimit, before, through := query.Get("eventsLimit"), query.Get("eventsBefore"), query.Get("eventsThrough")
+	if rawLimit == "" && before == "" && through == "" {
 		return eventWindow{}, false, nil
 	}
-	window := eventWindow{limit: maxEventsWindow, before: before}
+	window := eventWindow{limit: maxEventsWindow, before: before, through: through}
 	if rawLimit != "" {
 		limit, err := strconv.Atoi(rawLimit)
 		if err != nil || limit <= 0 {
@@ -45,6 +48,31 @@ func requestedEventWindow(r *http.Request) (eventWindow, bool, error) {
 		window.limit = min(limit, maxEventsWindow)
 	}
 	return window, true, nil
+}
+
+// errMessageNotInTranscript answers ?eventsThrough= naming a message no
+// event before the cursor holds: deleted, or never this session's.
+var errMessageNotInTranscript = errors.New("no event of the session before the cursor holds that message")
+
+// seekEventWindow is the window ?eventsThrough= asks for: a reader opened
+// at a message it has not loaded (a link to it) reads back to it at once,
+// rather than a page at a time through thousands of events. The window
+// holds every event from the cursor back to the message's, and limit more
+// before it for the message's context; it stays one contiguous page, so
+// paging back continues from its eventsBefore as from any other.
+func seekEventWindow(ctx context.Context, db Backend, sessionID string, window eventWindow) (eventWindow, error) {
+	if window.through == "" {
+		return window, nil
+	}
+	count, found, err := db.AgentSessionEventsThrough(ctx, sessionID, window.before, window.through)
+	if err != nil {
+		return window, err
+	}
+	if !found {
+		return window, errMessageNotInTranscript
+	}
+	window.limit += count
+	return window, nil
 }
 
 // windowedAgentSession is a session with one window of its events.
@@ -108,6 +136,10 @@ func (s *Server) sessionPanelOf(ctx context.Context, sessionID string) (store.Ag
 func writeEventWindowError(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrInvalidEventsCursor) {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if errors.Is(err, errMessageNotInTranscript) {
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeResult(w, nil, err)

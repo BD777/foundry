@@ -14,6 +14,7 @@ import {
 } from "../../components/conversation/conversation-frame";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
+import { chatMessageNamed } from "../../components/conversation/chat-turn-navigation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
 import { chatComposer } from "./composer/chat-surface-composer";
@@ -104,6 +105,27 @@ export function ChatSurface(props: ChatSurfaceProps) {
     replacePageQuery({ message: "" });
     setFocusMessageId("");
   }, []);
+  // One the transcript has not loaded is read back to; one the chat no
+  // longer holds is said so, and the link's request ends.
+  const { messages, missingMessageId, onMessageMissing, onSeekMessage } = props;
+  useEffect(() => {
+    if (!focusMessageId) return;
+    if (messages.some((message) => chatMessageNamed(message, focusMessageId)))
+      return;
+    if (missingMessageId === focusMessageId) {
+      onMessageMissing?.();
+      messageFocused();
+      return;
+    }
+    onSeekMessage?.(focusMessageId);
+  }, [
+    focusMessageId,
+    messageFocused,
+    messages,
+    missingMessageId,
+    onMessageMissing,
+    onSeekMessage,
+  ]);
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
   const panel = useChatContextPanel(props);

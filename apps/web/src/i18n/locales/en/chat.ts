@@ -596,6 +596,8 @@ export const chat = {
     loadingEarlier: "Loading earlier messages…",
     earlierFailed: "Couldn't load earlier messages.",
     start: "Beginning of the conversation",
+    messageMissing:
+      "That message is no longer in this chat. It may have been deleted or compacted away.",
   },
   onlyMine: {
     label: "Only my conversation",

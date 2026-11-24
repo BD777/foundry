@@ -6,6 +6,17 @@ const CHAT_TURN_QUERY_PREVIEW_LIMIT = 480;
 const CHAT_TURN_ACCESSIBLE_LABEL_LIMIT = 160;
 const CHAT_TURN_LATEST_TARGET_GAP_PX = 1;
 
+/**
+ * Whether a transcript row is the message a link names: rows of a session's
+ * transcript name theirs "agent-session:<session>:<message id>".
+ */
+export function chatMessageNamed(
+  message: ChatMessageItem,
+  messageId: string,
+): boolean {
+  return message.id === messageId || message.id.endsWith(`:${messageId}`);
+}
+
 export interface ChatTurnAnchor {
   accessibleLabel: string;
   id: string;

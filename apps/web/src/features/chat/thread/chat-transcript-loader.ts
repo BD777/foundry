@@ -25,6 +25,11 @@ export interface TranscriptLoadState {
   earlier: Readonly<Record<string, string>>;
   loadingEarlier: boolean;
   earlierFailed: boolean;
+  /**
+   * A message seekMessage looked for that no session holds: none of them
+   * has an event of it (deleted, compacted away, or never the chat's).
+   */
+  missingMessage?: string;
 }
 
 export interface TranscriptLoaderTransport {
@@ -40,6 +45,17 @@ export interface TranscriptLoaderTransport {
     before: string,
     signal: AbortSignal,
   ) => Promise<WindowedAgentSession>;
+  /**
+   * The page older than `before` that reaches back to message `through`;
+   * undefined when the session holds no event of it there. Without it a
+   * seek pages back with loadEarlier.
+   */
+  loadThrough?: (
+    sessionId: string,
+    before: string,
+    through: string,
+    signal: AbortSignal,
+  ) => Promise<WindowedAgentSession | undefined>;
   /**
    * The session's events after `after` (a cursor a load returned), at most
    * a window's worth (`eventsMore` beyond). Without it, a repair reloads the
@@ -119,6 +135,8 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
    * empty. Empty until the first load.
    */
   let cursors = new Map<string, string | undefined>();
+  /** The sessions a seek found holding no event of its message. */
+  let sought = { messageId: "", without: new Set<string>() };
 
   function publish(next: Partial<TranscriptLoadState>) {
     state = { ...state, ...next };
@@ -244,6 +262,91 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
     );
   }
 
+  /**
+   * Reads the session's page older than `before` (by `read`, loadEarlier's
+   * by default) and moves its cursor. Resolves true when `read` found
+   * nothing to load there, so a seek tries another session.
+   */
+  function loadOlder(
+    sessionId: string,
+    before: string,
+    read: (signal: AbortSignal) => Promise<WindowedAgentSession | undefined> = (
+      signal,
+    ) => options.transport.loadEarlier(sessionId, before, signal),
+  ): Promise<boolean> {
+    if (earlierController) return Promise.resolve(false);
+    const current = new AbortController();
+    earlierController = current;
+    publish({ loadingEarlier: true, earlierFailed: false });
+    return read(current.signal).then(
+      (session) => {
+        if (earlierController !== current) return false;
+        earlierController = undefined;
+        if (!session) {
+          publish({ loadingEarlier: false });
+          return true;
+        }
+        const earlier = { ...state.earlier };
+        if (session.eventsBefore && session.eventsBefore !== before)
+          earlier[sessionId] = session.eventsBefore;
+        else delete earlier[sessionId];
+        publish({ loadingEarlier: false, earlier });
+        options.onLoaded([session]);
+        return false;
+      },
+      () => {
+        if (earlierController !== current) return false;
+        earlierController = undefined;
+        publish({ loadingEarlier: false, earlierFailed: true });
+        return false;
+      },
+    );
+  }
+
+  /**
+   * Reads back to a message a link names that the transcript has not
+   * loaded (the caller looked): in one read per session where the
+   * transport can (loadThrough), else a page at a time, one request at a
+   * time. A session that holds no event of it is not asked again; when
+   * none is left, state.missingMessage names it. Before the chat's first
+   * load it waits: the caller asks again once that load is shown. After a
+   * failed read it waits for the person's retry (loadEarlier), so an
+   * offline chat is not asked in a loop.
+   */
+  function seekMessage(messageId: string): void {
+    if (
+      !messageId ||
+      !Number.isFinite(lastLoadedAt) ||
+      earlierController ||
+      state.earlierFailed
+    )
+      return;
+    if (sought.messageId !== messageId)
+      sought = { messageId, without: new Set() };
+    const entry = Object.entries(state.earlier).find(
+      ([sessionId]) => !sought.without.has(sessionId),
+    );
+    if (!entry) {
+      if (state.missingMessage !== messageId)
+        publish({ missingMessage: messageId });
+      return;
+    }
+    const [sessionId, before] = entry;
+    const loadThrough = options.transport.loadThrough;
+    if (!loadThrough) {
+      void loadOlder(sessionId, before);
+      return;
+    }
+    const search = sought;
+    void loadOlder(sessionId, before, (signal) =>
+      loadThrough(sessionId, before, messageId, signal),
+    ).then((absent) => {
+      if (!absent || sought !== search) return;
+      search.without.add(sessionId);
+      seekMessage(messageId);
+    });
+  }
+
   return {
     /** The chat shown; changing it is the only thing that drops a load. */
     select(threadId: string | undefined) {
@@ -258,6 +361,7 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
       begun = false;
       loadEpoch = Number.NEGATIVE_INFINITY;
       cursors = new Map();
+      sought = { messageId: "", without: new Set() };
       state = idle(threadId);
       options.onState(state);
     },
@@ -288,31 +392,9 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
     },
     loadEarlier() {
       const entry = Object.entries(state.earlier)[0];
-      if (!entry || earlierController) return;
-      const [sessionId, before] = entry;
-      const current = new AbortController();
-      earlierController = current;
-      publish({ loadingEarlier: true, earlierFailed: false });
-      void options.transport
-        .loadEarlier(sessionId, before, current.signal)
-        .then(
-          (session) => {
-            if (earlierController !== current) return;
-            earlierController = undefined;
-            const earlier = { ...state.earlier };
-            if (session.eventsBefore && session.eventsBefore !== before)
-              earlier[sessionId] = session.eventsBefore;
-            else delete earlier[sessionId];
-            publish({ loadingEarlier: false, earlier });
-            options.onLoaded([session]);
-          },
-          () => {
-            if (earlierController !== current) return;
-            earlierController = undefined;
-            publish({ loadingEarlier: false, earlierFailed: true });
-          },
-        );
+      if (entry) void loadOlder(entry[0], entry[1]);
     },
+    seekMessage,
     dispose() {
       controller?.abort();
       earlierController?.abort();

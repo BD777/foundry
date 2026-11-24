@@ -559,6 +559,7 @@ export const chat: Translation<typeof en> = {
     loadingEarlier: "正在加载更早的消息…",
     earlierFailed: "更早的消息加载失败。",
     start: "对话开始",
+    messageMissing: "这条消息已不在此对话中，可能已被删除或压缩。",
   },
   onlyMine: {
     label: "只看我的对话",
