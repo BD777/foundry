@@ -1,6 +1,7 @@
 /** The application frame: navigation, sidebar, page-level notices. */
 export const shell = {
   nav: {
+    yoursSection: "Yours",
     assistantSection: "Assistant",
     assistant: "Assistant",
     items: "Items",

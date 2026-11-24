@@ -3,6 +3,7 @@ import type { Translation } from "../../translation";
 
 export const shell: Translation<typeof en> = {
   nav: {
+    yoursSection: "我的",
     assistantSection: "助理",
     assistant: "助理",
     items: "事项",

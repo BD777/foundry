@@ -109,14 +109,20 @@ test("selector belongs only to Workspace; global navigation works without a work
     [...v.container.querySelectorAll("[data-section-id]")].map(
       (e) => e.dataset.sectionId,
     ),
-    ["workspace", "assistant", "manage"],
+    ["yours", "workspace", "assistant", "manage"],
   );
-  const divider = v.container.querySelector(".fdy-sidebar-scope-divider");
-  assert.equal(divider.previousElementSibling.dataset.sectionId, "workspace");
-  assert.equal(divider.nextElementSibling.dataset.sectionId, "assistant");
-  assert.equal(
-    v.container.querySelectorAll(".fdy-sidebar-scope-divider").length,
-    1,
+  // The workspace's scope is bounded on both sides by global entries.
+  assert.deepEqual(
+    [...v.container.querySelectorAll(".fdy-sidebar-scope-divider")].map(
+      (divider) => [
+        divider.previousElementSibling.dataset.sectionId,
+        divider.nextElementSibling.dataset.sectionId,
+      ],
+    ),
+    [
+      ["yours", "workspace"],
+      ["workspace", "assistant"],
+    ],
   );
   assert.equal(
     v.container
@@ -131,7 +137,7 @@ test("selector belongs only to Workspace; global navigation works without a work
     false,
   );
   for (const b of v.container.querySelectorAll(
-    '[data-section-id="manage"] [data-nav-id], [data-section-id="assistant"] [data-nav-id]',
+    '[data-section-id="manage"] [data-nav-id], [data-section-id="assistant"] [data-nav-id], [data-section-id="yours"] [data-nav-id]',
   )) {
     assert.equal(b.disabled, false);
     assert.equal(workspaceScopedViews.has(b.dataset.navId), false);
@@ -151,13 +157,22 @@ test("the assistant section has one dynamic entry and no switcher row", async ()
     [...section.querySelectorAll("[data-nav-id]")].map(
       (item) => item.dataset.navId,
     ),
-    ["assistant", "items", "pending", "assistantSettings"],
+    ["assistant", "assistantSettings"],
   );
   const assistant = section.querySelector('[data-nav-id="assistant"]');
   assert.match(assistant.textContent, /ByteWork/);
-  // Items are the person's across assistants: their tooltip says Global.
-  const items = section.querySelector('[data-nav-id="items"]');
-  assert.equal(items.title, "Global · Items");
+  // Needs you and items are the person's across assistants: their own
+  // section, first, with Global tooltips.
+  const yours = v.container.querySelector("[data-section-id]");
+  assert.equal(yours.dataset.sectionId, "yours");
+  assert.deepEqual(
+    [...yours.querySelectorAll("[data-nav-id]")].map((b) => b.dataset.navId),
+    ["pending", "items"],
+  );
+  assert.equal(
+    yours.querySelector('[data-nav-id="items"]').title,
+    "Global · Items",
+  );
   assert.match(assistant.title, /^Assistant: ByteWork · /);
   assert.match(
     assistant.querySelector("svg").getAttribute("class"),

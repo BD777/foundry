@@ -408,28 +408,26 @@ test("a direct load or reload of the items page opens the default assistant, not
   );
 });
 
-test("items are a global entry right after the assistant, in both interfaces, once", () => {
+test("Needs you and items are the person's own section, first, in both interfaces, once", () => {
   for (const sections of [navSections, simpleNavSections]) {
-    const items = sections
-      .find((section) => section.id === "assistant")
-      ?.items.map((item) => item.id);
-    assert.deepEqual(items, [
-      "assistant",
-      "items",
-      "pending",
-      "assistantSettings",
-    ]);
-    const entries = sections.flatMap((section) =>
-      section.items.filter((item) => item.id === "items"),
+    assert.equal(sections[0].id, "yours");
+    assert.deepEqual(
+      sections[0].items.map((item) => item.id),
+      ["pending", "items"],
     );
-    assert.equal(entries.length, 1);
+    assert.deepEqual(
+      sections
+        .find((section) => section.id === "assistant")
+        ?.items.map((item) => item.id),
+      ["assistant", "assistantSettings"],
+    );
+    for (const id of ["pending", "items"]) {
+      const entries = sections.flatMap((section) =>
+        section.items.filter((item) => item.id === id),
+      );
+      assert.equal(entries.length, 1);
+    }
   }
-  assert.equal(
-    navSections
-      .find((section) => section.id === "workspace")
-      ?.items.some((item) => item.id === "items"),
-    false,
-  );
 });
 
 test("the assistant's settings sections have their own URLs", () => {
