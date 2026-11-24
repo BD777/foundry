@@ -289,7 +289,18 @@ cmd_down() {
   instance "${1:-}"
   [ -d "$DIR" ] || die "no instance '$NAME'"
   stop_all
-  rm -rf "$DIR"
+  if [ -d "$DIR/state/skill-sets" ]; then
+    [ ! -f "$DIR/instance.env" ] || load
+    node --input-type=module - "$SRC" "$DIR" <<'JS'
+import { pathToFileURL } from "node:url";
+import { join } from "node:path";
+const [, , repo, directory] = process.argv;
+const { removeSkillSnapshotTree } = await import(pathToFileURL(join(repo, "packages/worker/dist/skills/skill-snapshot-permissions.js")));
+removeSkillSnapshotTree(directory);
+JS
+  else
+    rm -rf "$DIR"
+  fi
   echo "$NAME removed"
 }
 

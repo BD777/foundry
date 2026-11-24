@@ -1,5 +1,5 @@
 import { Alert } from "../../components/ui/alert";
-import { skillServerLabel } from "../../components/skills/skill-version-state";
+import { SkillLibraryRelationBadge } from "../../components/skills/skill-library-relation";
 import { type SkillServerFilter } from "./skill-search";
 import { SkillPromotionDialog } from "../../components/skills/skill-promotion-dialog";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
@@ -21,7 +21,6 @@ import { TextInput } from "../../components/ui/field";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
 import {
-  skillWorkspace,
   toNormalizedDeviceSkill,
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
@@ -36,7 +35,7 @@ const SkillCompareDialog = lazy(
 interface DeviceSkillsProps {
   device: DeviceProjection;
   roots: DeviceSkillRoot[];
-  /** This device's workspaces, whose own skill folders are scanned too. */
+  /** Available destinations when publishing. */
   workspaces: WorkspaceProjection[];
   onChanged: () => Promise<void>;
 }
@@ -54,8 +53,7 @@ function serverStatusOptions(t: TFunction<"skills">) {
 
 /**
  * Device-local skills: maintain scan roots, scan the machine, and promote
- * entries into the server catalog. Promotion is the only way a local skill
- * reaches a workspace — selection itself lives in the workspace Skills tab.
+ * entries into the server catalog with optional workspace selection.
  */
 export function DeviceSkills({
   device,
@@ -91,10 +89,8 @@ export function DeviceSkills({
   const online = deviceConnection(device) === "online";
 
   const normalizedSkills = useMemo(() => {
-    return skills.map((skill) =>
-      toNormalizedDeviceSkill(skill, skillWorkspace(skill, workspaces)),
-    );
-  }, [skills, workspaces]);
+    return skills.map((skill) => toNormalizedDeviceSkill(skill));
+  }, [skills]);
 
   function openRoots(): void {
     setDraftPaths(roots.map((root) => root.path));
@@ -172,6 +168,7 @@ export function DeviceSkills({
           online={online}
           skill={promotion}
           skills={skills}
+          workspaces={workspaces}
         />
       ) : null}
       {rootsOpen ? (
@@ -330,13 +327,13 @@ export function DeviceSkills({
                 </Button>
               ) : null}
               <Button
-                disabled={unreadable}
+                disabled={unreadable || !online}
                 onClick={() => setPromotion(raw)}
                 size="sm"
                 variant="secondary"
               >
                 <UploadCloud size={14} />
-                {t("device.reviewPromote")}
+                {t("promotion.publishSelect")}
               </Button>
             </>
           );
@@ -344,21 +341,7 @@ export function DeviceSkills({
         renderBadges={(skill) => {
           const raw = skill.deviceSkill;
           if (!raw) return null;
-          return (raw.serverState && raw.serverState !== "unpublished") ||
-            raw.promotedSkillId ? (
-            <Badge
-              tone={
-                raw.serverState === "in_sync"
-                  ? "online"
-                  : raw.serverState === "different" ||
-                      raw.serverState === "name_conflict"
-                    ? "warn"
-                    : "neutral"
-              }
-            >
-              {skillServerLabel(raw)}
-            </Badge>
-          ) : null;
+          return <SkillLibraryRelationBadge relation={raw.libraryRelation} />;
         }}
         searchPlaceholder={t("device.searchPlaceholder")}
         skills={normalizedSkills}
@@ -366,6 +349,23 @@ export function DeviceSkills({
         statusFilterPredicate={(skill, filterVal) => {
           const raw = skill.deviceSkill;
           if (!raw) return true;
+          if (raw.libraryRelation) {
+            const relation = raw.libraryRelation;
+            if (filterVal === "unpublished")
+              return relation.status === "notInLibrary";
+            if (filterVal === "different")
+              return (
+                relation.status === "differs" ||
+                relation.status === "diverged" ||
+                (relation.status === "same" &&
+                  relation.matchedRevision !== relation.latestRevision)
+              );
+            if (filterVal === "in_sync")
+              return (
+                relation.status === "same" &&
+                relation.matchedRevision === relation.latestRevision
+              );
+          }
           if (filterVal === "unpublished") return !raw.promotedSkillId;
           if (
             filterVal === "different" ||

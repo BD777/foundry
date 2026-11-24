@@ -1,5 +1,6 @@
 // Explicit native-client verification against localhost mock providers only.
 // Isolated temporary state, synthetic credentials, no external inference.
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import {
@@ -8,7 +9,6 @@ import {
   writeFileSync,
   readFileSync,
   existsSync,
-  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -346,5 +346,5 @@ try {
 } finally {
   server.closeAllConnections();
   server.close();
-  rmSync(root, { recursive: true, force: true });
+  removeSkillSnapshotTree(root);
 }

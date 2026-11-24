@@ -35,14 +35,20 @@ type ReplaceDeviceSkillsInput struct {
 
 // PromoteSkillInput lifts one device-local skill into the server catalog.
 type PromoteSkillInput struct {
-	TargetSkillID  string                     `json:"-"`
-	ForceNew       bool                       `json:"-"`
-	Resolutions    []SkillPromotionResolution `json:"resolutions,omitempty"`
-	PlanDigest     string                     `json:"planDigest,omitempty"`
-	IncludeRelated []string                   `json:"includeRelated,omitempty"`
-	DeviceID       string                     `json:"deviceId"`
-	Root           string                     `json:"root"`
-	DirName        string                     `json:"dirName"`
+	DraftID           string                     `json:"draftId,omitempty"`
+	SourceWorkspaceID string                     `json:"sourceWorkspaceId,omitempty"`
+	ExpectedRevision  *int                       `json:"expectedRevision,omitempty"`
+	WorkspaceID       string                     `json:"workspaceId,omitempty"`
+	MergedLatest      bool                       `json:"mergedLatest,omitempty"`
+	IncludeAllRelated bool                       `json:"includeAllRelated,omitempty"`
+	TargetSkillID     string                     `json:"-"`
+	ForceNew          bool                       `json:"-"`
+	Resolutions       []SkillPromotionResolution `json:"resolutions,omitempty"`
+	PlanDigest        string                     `json:"planDigest,omitempty"`
+	IncludeRelated    []string                   `json:"includeRelated,omitempty"`
+	DeviceID          string                     `json:"deviceId"`
+	Root              string                     `json:"root"`
+	DirName           string                     `json:"dirName"`
 }
 
 // SetWorkspaceSkillsInput replaces the workspace's whole selection.
@@ -119,10 +125,12 @@ type SkillPromotionPlan struct {
 }
 
 type SkillPromotionPackage struct {
-	Resolution SkillPromotionResolution
-	Source     DeviceSkill
-	Content    []byte
-	FileCount  int
+	LibraryDependency bool
+	DraftWorkspaceID  string
+	Resolution        SkillPromotionResolution
+	Source            DeviceSkill
+	Content           []byte
+	FileCount         int
 }
 
 type SkillRevisionIndex struct {
@@ -159,12 +167,14 @@ type SkillPromotionResolution struct {
 }
 
 type SkillComparisonInput struct {
-	DeviceID     string `json:"deviceId"`
-	Root         string `json:"root"`
-	DirName      string `json:"dirName"`
-	SkillID      string `json:"skillId"`
-	Revision     int    `json:"revision"`
-	SourceDigest string `json:"sourceDigest"`
-	Path         string `json:"path,omitempty"`
-	Side         string `json:"side,omitempty"`
+	DraftID           string `json:"draftId,omitempty"`
+	SourceWorkspaceID string `json:"sourceWorkspaceId,omitempty"`
+	DeviceID          string `json:"deviceId"`
+	Root              string `json:"root"`
+	DirName           string `json:"dirName"`
+	SkillID           string `json:"skillId"`
+	Revision          int    `json:"revision"`
+	SourceDigest      string `json:"sourceDigest"`
+	Path              string `json:"path,omitempty"`
+	Side              string `json:"side,omitempty"`
 }

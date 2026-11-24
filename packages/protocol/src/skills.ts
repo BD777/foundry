@@ -17,6 +17,7 @@ export type {
   SkillDependency,
   SkillDependencyStrength,
   SkillFileInfo,
+  SkillLibraryRelation,
   SkillPackRef,
   SkillToolAsset,
   SkillToolSetup,
@@ -385,6 +386,8 @@ export interface SkillPromotionResolution {
   name?: string;
 }
 export interface SkillComparisonInput {
+  draftId?: string;
+  sourceWorkspaceId?: string;
   deviceId: string;
   root: string;
   dirName: string;

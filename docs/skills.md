@@ -8,19 +8,20 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ### 概念
 
-- **来源**：设备的 Skill 根目录（默认 `~/.claude/skills`、`~/.codex/skills`，设备所有者可改）和该设备上每个 Workspace 自己的 `.agents/skills`、`.claude/skills`、`.codex/skills`。Workspace 里的是**草稿**：Agent（例如用 `skill-creator`）在那里新建或修改，经 Workspace 开关与设备能力协商启用后，Worker 将草稿及可解析依赖固定为受管快照用于当前执行。正式发布进库仍是独立动作。草稿与锁定版本试验的实施/准出状态见[接续记录](session-isolation-drafts-20261019.md)。
+- **设备来源**包括设备所有者配置的 Skill 根目录，默认扫描 `~/.claude/skills` 和 `~/.codex/skills`。设备页面比较本地内容与库版本，设备所有者可发布，再由 Maintainer 选用到 Workspace。
+- **Workspace 草稿**位于项目的 `.agents/skills`、`.claude/skills`、`.codex/skills`。启用草稿时，Worker 为会话准备受管快照。检出库版本会创建草稿并记录基线，修改后可从草稿发布。
 - **库条目与版本**：库里每个 Skill 有若干不可变的 zip 版本（revision），压缩后上限 64 MiB。内容不变不产生新版本。
 - **仓库跟随**：库也可以跟随一个 git 仓库或 npm 包（`npm:<name>`），两种模式：`pick`（挑选其中若干 Skill）与 `bundle`（整个仓库作为一个单元）。都跟随最新 release tag / npm `latest` / 默认分支（或指定的分支、tag），变了的 Skill 才得到新版本；可回滚并暂停，再恢复；上游删除的 Skill 保留在库里并标记。
 - **Workspace 选用**：Workspace 选库条目和 bundle，可把某个条目固定到某个版本；未固定的跟最新版本。
 - **个人默认 Skill**：每个人可设默认 Skill 和 bundle，它们进入**本人拥有的设备上**的每个 Workspace；Workspace 可以逐个关掉，同名的选用优先。
-- **Foundry 提供的 Skill**：Workspace 的（选用 > bundle > 设备所有者的默认 Skill > 默认 bundle，同名只取第一个）与 Foundry 内置 Skill（同名时内置优先，一个调用名只对应一个 Skill）。会话照常看到 Agent 自己的官方 Skill 和本人自己安装的 Skill（DEV-105）。
+- **同名优先级**依次为内置、Workspace 草稿、Workspace 选用、bundle、设备所有者的默认 Skill、默认 bundle。运行时另提供自己的官方 Skill。
 - **所需程序**：一个 Skill 需要的程序 = `SKILL.md` 中 `metadata.requires` 列出的 + 脚本扩展名对应的解释器 + 脚本 `#!` 行指定的程序。由 Server（`skillarchive.ToolRequirements`）得出，设备只回答有没有（Worker `skill-requirements.ts` `checkPrograms`）。
 
 ### 关键决定
 
 - **原生发现（DEV-105，2026-10-31；取代 2026-09-28 起的“会话只看到 Workspace 启用的 Skill”隔离）。** Foundry 提供的 Skill 放到 Agent 原生会找的位置：Claude Code 是一个本地插件（`foundry-workspace:<name>`），Codex 是工作区 `.agents/skills/<name>` 下指向已校验快照的链接（写入 `.git/info/exclude`）。不禁用任何 Skill、不在提示里列目录、不按 receipt 拒绝续接原生会话、自定义命令的账号照常运行。只有 Issue 的判定者保持原生发现关闭（防止候选结果给判定者埋 Skill）；2026-11-05 起它不再从提示里拿到 Skill 清单，目前没有 Workspace Skill，原生方式留待 Issue 重构（[D4 修订](architecture-modules.md)）。
 - **不往提示里注入 Skill（2026-11-05，DEV-121）。** 任何角色都不把 Skill 目录、索引或清单写进系统提示或输入，包括 Issue 的各个身份。Skill 只按 Agent 原生的形态提供，大 bundle 的列表大小由 Agent 自己的预算控制：Claude Code 的技能列表约占上下文的 1%，Codex 默认不超过 2%、可用 `skills.max_context_tokens` 调整。原来把大 bundle 合成一个条目的 `skillCatalog` 和 `skill-indexes/` 已删除。
-- **清单预算提示（DEV-218）。** Claude Code 把会话能用的 Skill 写进一份有预算的清单：上下文窗口 × 每 token 字节数 × 1%，按显示宽度计（中日韩字符算 2），描述最多 1,536 字符；超出时先全部只留名字，再按它自己的优先级把描述加回去（读自 Claude Code 2.1.311；dev 上 Opus 5.5 与 Haiku 5.5 的清单都填到 29,981 / 30,000）。Workspace 的 Skills 页按这条规则估算（`features/skills/skill-listing-budget.ts`，30,000 宽度，从最窄的描述加起，所以是下限），超出时提示“至少 N 个只显示名字”。计入的有 Foundry 给的（`foundry-workspace:` 前缀）、Claude Code 自带的（总带描述）和设备 `~/.claude/skills` 与本 Workspace `.claude/skills` 里的；不含本人另外装的插件。Codex 的初始清单上限是窗口的 2%（`skills.max_context_tokens`），未估算。
+- **清单预算提示（DEV-218）。** Claude Code 把会话能用的 Skill 写进一份有预算的清单：上下文窗口 × 每 token 字节数 × 1%，按显示宽度计（中日韩字符算 2），描述最多 1,536 字符；超出时先全部只留名字，再按它自己的优先级把描述加回去（读自 Claude Code 2.1.311；dev 上 Opus 5.5 与 Haiku 5.5 的清单都填到 29,981 / 30,000）。Workspace 的 Skills 页按这条规则估算（`features/skills/skill-listing-budget.ts`，30,000 宽度，从最窄的描述加起，所以是下限），超出时提示“至少 N 个只显示名字”。预算统计 Foundry 提供的条目和 Workspace 草稿。Codex 的初始清单上限是窗口的 2%（`skills.max_context_tokens`），未估算。
 - **Agent 的官方 Skill 清单**（`official-skills.ts`，#111/#112）：读取不发模型请求，按程序版本缓存，随账号状态上报，供输入框的 Skill 菜单显示。
 - **Foundry 内置 Skill**（`apps/server/internal/builtinskills`）：`foundry` 给 Claude Code 和 Codex，`skill-creator`（vendored，来源与许可见 `SOURCE.md`）只给 Claude Code。它们像 Workspace Skill 包一样下发，文件夹变化时在 `builtinskills.go` 中提升 revision。`foundry` Skill 只讲事实（会话是谁、代表谁、能触达什么、代价与限制），工具用法写在工具描述里（2026-10-12 起 revision 4，见 [Session 编排](session-orchestration-design.md)）。**`packages/worker/skills/foundry/` 与 `apps/server/internal/builtinskills/foundry/` 必须逐字节相同**：前者随 Worker 包发布、由 `foundry skill install foundry` 安装，后者嵌入 Server；`packages/worker/test/foundry-skill.test.mjs` 检查这一点，并检查 Skill 只提到存在的工具和参数。
 - **入库按依赖闭包。** 从设备发布时，Skill 身份是设备 / 根目录 / 目录名，不是名字；Worker 的依赖分析（`skill-dependencies.ts`，只索引、不执行文件内容）找出它引用的其他 Skill，计划里一并列出；同名的不同安装版本、缺少依赖图或超限都会阻止发布，而不是悄悄换成另一个版本。发布对话框可与库中已有版本逐文件对比，决定新建条目还是作为已有条目的新版本。
@@ -62,10 +63,11 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ## 实现边界
 
-截至 2026-10-14（`3092162`）。
+来源分工与草稿优先规则见 [DEV-331](devlog/DEV-331-foundry-only-skills.md)。
 
 **已实现**
 
+- 检出与发布：`checkout_skill` 按指定版本创建 Workspace 草稿；`refresh_workspace_skills` 返回草稿与库的关系；`publish_skill` 与 Web 共用发布路径，携带发布者看到的最新 revision。版本已变需重新比较，分叉草稿须合并后发布。
 - 扫描：Server 在设备连接时和每 30 分钟（`deviceSkillRescanInterval`）请求扫描，同一设备同一组目录的并发扫描合并为一次；扫描在 Worker 的独立线程中运行，避免饿死心跳（`skill-scan-thread.ts`、`skill-scanner.ts`）。
 - 库与版本：`internal/skillarchive`（不解压建立索引、清单解析、所需程序）、`sqlitestore/skills_catalog.go`、`skill_versions.go`；发布与对比 `httpapi/skill_promotion.go`、`skill_compare.go`（路由 `/api/skills/promote*`、`/api/skills/compare*`；发布要求设备所有者）。删除库条目、管理仓库要求 Admin（`routes.go` 中 `adminOnly`）。
 - 仓库跟随：`internal/skillrepo`（git、npm、设备代读的远端格式）、`httpapi/skill_repositories.go`、`skill_bundles.go`、`skill_device_fetch.go`、`sqlitestore/skill_repositories.go`。

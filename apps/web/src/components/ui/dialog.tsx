@@ -102,7 +102,7 @@ const titleVariants = cva("fdy-dialog-title m-0 text-xl", {
   variants: {
     layout: {
       sectioned: "leading-[1.4] [overflow-wrap:anywhere]",
-      compact: "leading-tight text-ink",
+      compact: "leading-tight text-ink [overflow-wrap:anywhere]",
     },
   },
 });
@@ -249,7 +249,7 @@ export function Dialog({
             }}
           >
             <header className={headerVariants({ layout })}>
-              <div>
+              <div className="min-w-0">
                 <RadixDialog.Title className={titleVariants({ layout })}>
                   {title}
                 </RadixDialog.Title>

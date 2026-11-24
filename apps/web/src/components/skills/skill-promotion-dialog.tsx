@@ -1,4 +1,4 @@
-import { ToastFeedback } from "../ui/toast";
+import { toast, ToastFeedback } from "../ui/toast";
 import { SkillVersionChoice } from "./skill-version-choice";
 import {
   automaticSkillResolution,
@@ -9,18 +9,24 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceSkill,
+  WorkspaceProjection,
   PromotedSkill,
   SkillPromotionResolution,
 } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { SelectMenu } from "../ui/select-menu";
 import { Checkbox } from "../ui/field";
 import {
   buildSkillPromotionSelection,
   defaultSkillPromotionReferences,
   sameSkillPromotionSources,
 } from "./skill-promotion-plan";
-import { previewSkillPromotion, promoteSkill } from "../../api";
+import {
+  previewSkillPromotion,
+  promoteSkill,
+  type DraftPromotionSource,
+} from "../../api";
 import { SkillCompareLoading } from "./skill-compare-loading";
 import { RowCard } from "../ui/row-card";
 import { SkillDialogBody } from "./skill-dialog-body";
@@ -34,17 +40,27 @@ export function SkillPromotionDialog({
   online,
   onClose,
   onChanged,
-  onPromoted,
+  draftSource,
+  initialWorkspaceId = "",
+  workspaces = [],
 }: {
   skill: DeviceSkill;
   skills: DeviceSkill[];
   online: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
-  /** The server entry the skill became, e.g. to select it in a workspace. */
-  onPromoted?: (promoted: PromotedSkill) => Promise<void>;
+  draftSource?: DraftPromotionSource;
+  initialWorkspaceId?: string;
+  workspaces?: WorkspaceProjection[];
 }) {
   const { t } = useTranslation(["skills", "common"]);
+  const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
+  const [mergedLatest, setMergedLatest] = useState(false);
+  const destinations = workspaces.filter(
+    (w) =>
+      !w.archivedAt &&
+      (w.accessRole === "owner" || w.accessRole === "maintainer"),
+  );
   const [related, setRelated] = useState<string[]>(() =>
     defaultSkillPromotionReferences(skill, skills),
   );
@@ -84,36 +100,54 @@ export function SkillPromotionDialog({
   const onlyReuse =
     !unresolved &&
     resolutions.every((r) => r.action === "reuse" || r.action === "keep");
-  const input = {
+  const source = draftSource ?? {
     deviceId: skill.deviceId,
     root: skill.root,
     dirName: skill.dirName,
   };
+  const relation = skill.libraryRelation;
+  const input = {
+    ...source,
+    expectedRevision:
+      resolutionFor(skill)?.expectedRevision ??
+      relation?.latestRevision ??
+      skill.serverCandidates?.[0]?.latestRevision ??
+      0,
+    mergedLatest: mergedLatest || undefined,
+    includeRelated: related,
+    resolutions,
+  };
+  const needsMerge = relation?.status === "diverged" && !mergedLatest;
+  const disabled =
+    busy ||
+    !online ||
+    (alreadySynced && !workspaceId) ||
+    unresolved ||
+    needsMerge ||
+    !!plan.problems.length;
+
   async function publish() {
-    if (busy || !online || alreadySynced || unresolved || plan.problems.length)
-      return;
+    if (disabled) return;
     setBusy(true);
     setError("");
     try {
-      const reviewed = await previewSkillPromotion({
-        ...input,
-        includeRelated: related,
-        resolutions,
-      });
+      const reviewed = await previewSkillPromotion(input);
       if (reviewed.problems.length)
         throw new Error(reviewed.problems.join("\n"));
       if (!sameSkillPromotionSources(plan.skills, reviewed.skills)) {
         throw new Error(t("promotion.graphChanged"));
       }
-      const promoted = await promoteSkill({
+      await promoteSkill({
         ...input,
         planDigest: reviewed.digest,
-        includeRelated: related,
-        resolutions,
+        workspaceId: workspaceId || undefined,
       });
-      await onChanged();
-      await onPromoted?.(promoted);
       onClose();
+      try {
+        await onChanged();
+      } catch (cause) {
+        toast({ tone: "error", title: String(cause) });
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -140,6 +174,7 @@ export function SkillPromotionDialog({
           }
         >
           <SkillCompareDialog
+            draftSource={draftSource}
             skill={comparison.skill}
             target={comparison.target}
             onClose={() => setComparison(undefined)}
@@ -156,22 +191,18 @@ export function SkillPromotionDialog({
             </Button>
             <Button
               variant="primary"
-              disabled={
-                busy ||
-                !online ||
-                alreadySynced ||
-                unresolved ||
-                !!plan.problems.length
-              }
+              disabled={disabled}
               onClick={() => void publish()}
             >
               {busy
                 ? t("promotion.publishing")
-                : alreadySynced
-                  ? t("promotion.alreadyInSync")
-                  : onlyReuse
-                    ? t("promotion.reuse", { count: plan.skills.length })
-                    : t("promotion.publish", { count: plan.skills.length })}
+                : workspaceId
+                  ? t("promotion.publishAndUse")
+                  : alreadySynced
+                    ? t("promotion.alreadyInSync")
+                    : onlyReuse
+                      ? t("promotion.reuse", { count: plan.skills.length })
+                      : t("promotion.publish", { count: plan.skills.length })}
             </Button>
           </>
         }
@@ -180,6 +211,38 @@ export function SkillPromotionDialog({
         title={t("promotion.title", { name: skill.name })}
       >
         <SkillDialogBody aria-busy={busy}>
+          {destinations.length ? (
+            <label className="grid min-w-0 gap-1.5">
+              <span>{t("promotion.destination")}</span>
+              <SelectMenu
+                insideDialog
+                ariaLabel={t("promotion.destination")}
+                value={workspaceId}
+                onChange={setWorkspaceId}
+                disabled={busy}
+                options={[
+                  { value: "", label: t("promotion.libraryOnly") },
+                  ...destinations.map((w) => ({
+                    value: w.id,
+                    label: w.name,
+                    meta: w.deviceLabel ?? w.localPath,
+                  })),
+                ]}
+              />
+            </label>
+          ) : null}
+          {relation?.status === "diverged" ? (
+            <label className="flex items-start gap-2 text-sm text-warning-text">
+              <Checkbox
+                checked={mergedLatest}
+                disabled={busy}
+                onChange={(e) => setMergedLatest(e.currentTarget.checked)}
+              />
+              {t("promotion.confirmMerge", {
+                revision: relation.latestRevision,
+              })}
+            </label>
+          ) : null}
           {plan ? (
             <>
               <h3>{t("promotion.toPublish", { count: plan.skills.length })}</h3>

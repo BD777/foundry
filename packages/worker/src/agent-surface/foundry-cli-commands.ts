@@ -828,6 +828,31 @@ export const foundryCommands: Record<
     },
   },
   library: {
+    checkout: {
+      tool: "checkout_skill",
+      positional: "skillId",
+      flags: {
+        "--workspace": flag("workspaceId"),
+        "--revision": flag("revision", "number"),
+      },
+    },
+    publish: {
+      tool: "publish_skill",
+      flags: {
+        "--draft": flag("draftId"),
+        "--source-workspace": flag("sourceWorkspaceId"),
+        "--device": flag("deviceId"),
+        "--root": flag("root"),
+        "--dir": flag("dirName"),
+        "--expected-revision": flag("expectedRevision", "json"),
+        "--workspace": flag("workspaceId"),
+        "--merged-latest": flag("mergedLatest", "boolean"),
+        "--preview": flag("preview", "boolean"),
+        "--plan-digest": flag("planDigest"),
+        "--include-related": flag("includeRelated", "json"),
+        "--resolutions": flag("resolutions", "json"),
+      },
+    },
     source: {
       tool: "set_skill_repository_source",
       positional: "repositoryId",

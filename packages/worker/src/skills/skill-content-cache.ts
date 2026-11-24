@@ -12,20 +12,13 @@ import {
   type SkillPackageOptions,
 } from "./skill-package-fetch.js";
 
+export { skillContentDigest } from "./skill-files.js";
+import { skillContentDigest } from "./skill-files.js";
+
 const maxBytes = 256 * 1024 * 1024;
 const maxFiles = 50_000;
 const maxHeader = 16 * 1024 * 1024;
 const sha = (data: Buffer) => createHash("sha256").update(data).digest("hex");
-
-/** Matches skillarchive.InspectStored (UTF-16 sort, path/NUL/size/NUL/bytes). */
-export function skillContentDigest(files: ZipEntry[]): string {
-  const hash = createHash("sha256");
-  for (const file of [...files].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  ))
-    hash.update(`${file.path}\0${file.data.length}\0`).update(file.data);
-  return hash.digest("hex");
-}
 
 function decode(bytes: Buffer, digest: string): ZipEntry[] {
   if (bytes.length < 4) throw new Error("Invalid expanded Skill cache.");

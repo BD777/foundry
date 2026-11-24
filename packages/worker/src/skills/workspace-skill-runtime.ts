@@ -1,9 +1,7 @@
-import { unpackZip } from "./skill-zip.js";
-import { draftContentDigest } from "./workspace-draft-skills.js";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 /** Combines selected library inputs and trusted project snapshots for one turn. */
 import { createHash } from "node:crypto";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import {
   materializeSkillSnapshot,
@@ -43,7 +41,13 @@ export async function combineWorkspaceDraftSkills(
     selected.pluginDir,
     selected.snapshotDigest,
   );
-  const ready = drafts.filter((d) => d.status === "ready");
+  const builtins = new Set(
+    selected.skills.filter((s) => s.builtin).map((s) => s.name.toLowerCase()),
+  );
+  const ready = drafts.filter(
+    (d) => d.status === "ready" && !builtins.has(d.name.toLowerCase()),
+  );
+  const draftNames = new Set(ready.map((d) => d.name.toLowerCase()));
   const inputs = ready.map((d) => {
     if (!d.snapshotPath || !d.snapshotDigest)
       throw new Error("Draft has no verified snapshot.");
@@ -55,59 +59,34 @@ export async function combineWorkspaceDraftSkills(
       ),
     };
   });
-  const duplicateAliases = new Map<string, string[]>();
-  const uniqueInputs = inputs.filter((input) => {
-    const duplicate =
-      !input.draft.entryPath &&
-      selected.skills.find((skill) => {
-        if (skill.name.toLowerCase() !== input.draft.name.toLowerCase())
-          return false;
-        const prefix =
-          relative(selected.pluginDir, skill.dir).split("\\").join("/") + "/";
-        const files = library
-          .filter((file) => file.path.startsWith(prefix))
-          .map((file) => ({ ...file, path: file.path.slice(prefix.length) }))
-          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-        return draftContentDigest(files) === input.draft.digest;
-      });
-    if (!duplicate) return true;
-    duplicateAliases.set(duplicate.name, [
-      ...(duplicateAliases.get(duplicate.name) ?? []),
-      `draft:${input.draft.name}`,
-    ]);
-    return false;
-  });
   const key = createHash("sha256")
     .update(
       JSON.stringify([
-        "workspace-combined-v2",
+        "workspace-combined-v3",
         selected.snapshotDigest,
         ready.map((d) => [d.id, d.digest, d.snapshotDigest]),
       ]),
     )
     .digest("hex");
-  const reserved = new Set([
-    ...selected.skills.map((s) => s.name.toLowerCase()),
-    "foundry",
-    "skill-creator",
-    "skill-installer",
-    "openai-docs",
-    "review-agent",
-    "imagegen",
-  ]);
+  const shadowedPrefixes = selected.skills
+    .filter((skill) => draftNames.has(skill.name.toLowerCase()))
+    .map(
+      (skill) =>
+        relative(selected.pluginDir, skill.dir).split(sep).join("/") + "/",
+    );
   const result = await materializeSkillSnapshot(key, (dir) => {
-    const files = [...library];
-    const skills: ManagedSkill[] = selected.skills.map((s) => ({
-      ...s,
-      dir: join(dir, relative(selected.pluginDir, s.dir)),
-      aliases: [...(s.aliases ?? []), ...(duplicateAliases.get(s.name) ?? [])],
-    }));
-    for (const { draft, files: content } of uniqueInputs) {
-      const name = `workspace-draft-${draft.id.slice(0, 16)}`;
-      if (reserved.has(name.toLowerCase()))
-        throw new Error(
-          "Draft native invocation conflicts with a selected skill.",
-        );
+    const files = library.filter(
+      (file) =>
+        !shadowedPrefixes.some((prefix) => file.path.startsWith(prefix)),
+    );
+    const skills: ManagedSkill[] = selected.skills
+      .filter((s) => !draftNames.has(s.name.toLowerCase()))
+      .map((s) => ({
+        ...s,
+        dir: join(dir, relative(selected.pluginDir, s.dir)),
+      }));
+    for (const { draft, files: content } of inputs) {
+      const name = draft.name;
       const entry = draft.entryPath
         ? join("draft-content", draft.id, draft.entryPath)
         : join("skills", name, "SKILL.md");
@@ -127,16 +106,13 @@ export async function combineWorkspaceDraftSkills(
         for (const f of content)
           files.push({
             path: `skills/${name}/${f.path}`,
-            data:
-              f.path === "SKILL.md"
-                ? nativeDraftDocument(f.data, name)
-                : f.data,
+            data: f.data,
           });
       }
       skills.push({
         name,
         invocationName: `draft:${draft.name}`,
-        aliases: reserved.has(draft.name.toLowerCase()) ? [] : [draft.name],
+        aliases: [name],
         dir: dirname(join(dir, entry)),
         draft,
       });
@@ -152,15 +128,4 @@ export async function combineWorkspaceDraftSkills(
     };
   });
   return result;
-}
-
-function nativeDraftDocument(data: Buffer, name: string): Buffer {
-  const text = data.toString("utf8");
-  return Buffer.from(
-    text.replace(
-      /^---\r?\n([\s\S]*?)\r?\n---/,
-      (_match, front: string) =>
-        `---\n${stringifyYaml({ ...parseYaml(front), name })}---`,
-    ),
-  );
 }

@@ -29,6 +29,8 @@ import {
 
 export interface ManagedSkill {
   name: string;
+  builtin?: boolean;
+  source?: "assistant";
   invocationName?: string;
   aliases?: string[];
   draft?: import("@bd777/foundry-protocol").WorkspaceDraftSkill;
@@ -229,6 +231,7 @@ export async function materializeSessionSkills(
           data: entry.data,
         });
       return {
+        builtin: ref.skillId.startsWith("builtin-"),
         name: ref.name,
         dir: join(dir, "skills", ref.name),
       };

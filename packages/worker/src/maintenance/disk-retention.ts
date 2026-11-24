@@ -11,6 +11,7 @@
  * - Folders of features that no longer exist (skill-revisions,
  *   skill-isolation).
  */
+import { removeSkillSnapshotTree } from "../skills/skill-snapshot-permissions.js";
 import { readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { foundryStatePath } from "../platform/state-root.js";
@@ -95,8 +96,12 @@ export async function pruneIdleVerifiers(
       const path = join(root, verifier);
       const used = (await stat(path).catch(() => undefined))?.mtimeMs;
       if (used === undefined || now - used < verifierRetentionMs) continue;
-      await rm(path, { recursive: true, force: true }).catch(() => undefined);
-      removed += 1;
+      try {
+        removeSkillSnapshotTree(path);
+        removed += 1;
+      } catch {
+        // Retry a busy directory on the next retention pass.
+      }
     }
   }
   return removed;

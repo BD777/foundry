@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "./skill-snapshot-permissions.js";
 import type { SessionToolPin } from "@bd777/foundry-protocol";
 import {
   accessSync,
@@ -7,7 +8,6 @@ import {
   mkdirSync,
   readdirSync,
   readlinkSync,
-  rmSync,
   statSync,
   symlinkSync,
 } from "node:fs";
@@ -129,14 +129,14 @@ export function prepareSessionTools(
   }
   const folder = join(sessionToolsRoot(), folderName(sessionId));
   try {
-    rmSync(folder, { recursive: true, force: true });
+    removeSkillSnapshotTree(folder);
     mkdirSync(folder, { recursive: true, mode: 0o755 });
     for (const [name, target] of tools) symlinkSync(target, join(folder, name));
   } catch (error) {
     log(
       `Session ${sessionId}: could not set up its tool folder (${errorMessage(error)}); it uses the current tool versions.`,
     );
-    rmSync(folder, { recursive: true, force: true });
+    removeSkillSnapshotTree(folder);
     return none;
   }
   folderBySession.set(sessionId, folder);
@@ -151,7 +151,7 @@ export function prepareSessionTools(
       released = true;
       runBySession.delete(sessionId);
       folderBySession.delete(sessionId);
-      rmSync(folder, { recursive: true, force: true });
+      removeSkillSnapshotTree(folder);
     },
   };
 }
@@ -191,7 +191,7 @@ export function reapSessionTools(log: (message: string) => void): void {
     const folder = join(sessionToolsRoot(), entry);
     if (live.has(folder)) continue;
     try {
-      rmSync(folder, { recursive: true, force: true });
+      removeSkillSnapshotTree(folder);
     } catch (error) {
       log(
         `Could not remove the leftover session tool folder ${folder}: ${errorMessage(error)}`,

@@ -218,7 +218,7 @@ type Store interface {
 	ListDeviceSkills(ctx context.Context, deviceID string) ([]DeviceSkill, error)
 	ListPromotedSkills(ctx context.Context) ([]PromotedSkill, error)
 	GetPromotedSkill(ctx context.Context, id string) (PromotedSkill, error)
-	PromoteSkillPackages(ctx context.Context, packages []SkillPromotionPackage) ([]PromotedSkill, error)
+	PromoteSkillPackages(ctx context.Context, packages []SkillPromotionPackage, selectWorkspace ...string) ([]PromotedSkill, error)
 	AddPromotedSkillRevision(ctx context.Context, input PromoteSkillInput, name string, description string, content []byte, fileCount int) (PromotedSkill, bool, error)
 	GetSkillRevisionIndex(ctx context.Context, skillID string, revision int) (SkillRevisionIndex, error)
 	GetDeviceSkillIndex(ctx context.Context, deviceID, root, dirName string) (SkillRevisionIndex, error)

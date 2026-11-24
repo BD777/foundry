@@ -1,3 +1,5 @@
+import type { SkillLibraryRelation } from "./contract.gen.js";
+
 /** A project method is snapshotted locally, independently of library publication. */
 export interface WorkspaceDraftSkill {
   id: string;
@@ -15,7 +17,10 @@ export interface WorkspaceDraftSkill {
   snapshotRoot?: string;
   entryPath?: string;
   sourceDigest?: string;
+  dependencies?: import("./contract.gen.js").SkillDependency[];
+  dependenciesAnalyzed?: boolean;
   previousDigest?: string;
+  libraryRelation?: SkillLibraryRelation;
 }
 
 export interface WorkspaceDraftSkills {

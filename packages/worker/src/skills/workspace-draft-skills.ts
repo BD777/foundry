@@ -1,13 +1,8 @@
+import { isFoundryManagedSkillPath } from "./managed-paths.js";
 /** Project-local discovery with bounded, stable reads and immutable snapshots. */
 import { createHash } from "node:crypto";
-import {
-  lstatSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-} from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import {
@@ -15,6 +10,7 @@ import {
   type SnapshotFile,
 } from "./skill-snapshots.js";
 import { draftPackages } from "./workspace-draft-packages.js";
+import { skillContentDigest } from "./skill-files.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
   SKILL_PACKAGE_MAX_BYTES,
@@ -86,10 +82,7 @@ function readTree(root: string, dir: string): SnapshotFile[] {
   return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 export function draftContentDigest(files: SnapshotFile[]): string {
-  const h = createHash("sha256");
-  for (const { path, data } of files)
-    h.update(`${path}\0${data.length}\0`).update(data);
-  return h.digest("hex");
+  return skillContentDigest(files);
 }
 function stableTree(root: string, dir: string): SnapshotFile[] {
   for (let retry = 0; retry < 3; retry++) {
@@ -136,7 +129,7 @@ export async function snapshotWorkspaceDrafts(
     }
     for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(root, relativeRoot, child.name);
-      if (managedAssistantSkill(root, path)) continue;
+      if (isFoundryManagedSkillPath(path, root)) continue;
       if (!child.isDirectory() && !child.isSymbolicLink()) continue;
       const relativePath = `${relativeRoot}/${child.name}`,
         dir = join(root, relativePath);
@@ -222,16 +215,4 @@ export async function snapshotWorkspaceDrafts(
     input.item.snapshotDigest = snapshot.snapshotDigest;
   }
   return inputs.map((i) => i.item);
-}
-
-/**
- * Assistant prompts provide one canonical skill copy under .foundry and link
- * it into both runtimes. Those links are Foundry-managed native discovery,
- * not drafts the person authored in the workspace.
- */
-function managedAssistantSkill(root: string, path: string): boolean {
-  if (!lstatSync(path).isSymbolicLink()) return false;
-  const canonicalRoot = join(root, ".foundry", "assistant-skills");
-  const target = resolve(dirname(path), readlinkSync(path));
-  return within(canonicalRoot, target);
 }

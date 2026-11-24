@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -218,9 +219,9 @@ test(
   { skip: process.platform !== "linux" },
   async (t) => {
     const { spawn } = await import("node:child_process");
-    const { rmSync, readFileSync } = await import("node:fs");
+    const { readFileSync } = await import("node:fs");
     const root = mkdtempSync(join(tmpdir(), "foundry-update-retry-"));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
+    t.after(() => removeSkillSnapshotTree(root));
     const self = ownPackage();
     const state = join(root, "state");
     const pkg = join(state, "runtime/current/node_modules", self.name);
@@ -295,7 +296,7 @@ exit 0
 
 test("pruning keeps the execution host runtime when HOME uses a symlink", async () => {
   const { pruneRuntimes } = await import("../dist/install/worker-install.js");
-  const { existsSync, symlinkSync, rmSync } = await import("node:fs");
+  const { existsSync, symlinkSync } = await import("node:fs");
   const root = mkdtempSync(join(tmpdir(), "runtime-pin-"));
   const previousState = process.env.FOUNDRY_STATE_ROOT;
   const physical = join(root, "physical");
@@ -327,6 +328,6 @@ test("pruning keeps the execution host runtime when HOME uses a symlink", async 
   } finally {
     if (previousState === undefined) delete process.env.FOUNDRY_STATE_ROOT;
     else process.env.FOUNDRY_STATE_ROOT = previousState;
-    rmSync(root, { recursive: true, force: true });
+    removeSkillSnapshotTree(root);
   }
 });

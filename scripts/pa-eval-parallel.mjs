@@ -45,7 +45,6 @@ import {
   openSync,
   mkdirSync,
   readFileSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, homedir } from "node:os";
@@ -194,6 +193,8 @@ function run(command, argv, options = {}) {
 }
 
 async function main() {
+  const { removeSkillSnapshotTree } =
+    await import("../packages/worker/dist/skills/skill-snapshot-permissions.js");
   const args = parseArgs(process.argv);
   const all = readFileSync(resolve(args.eval, "cases.jsonl"), "utf8")
     .split("\n")
@@ -239,7 +240,7 @@ async function main() {
   // One stack, then the eval in it (pa-eval-run.mjs); its output in outDir.
   const launch = (name, runArgv) => {
     const stack = resolve(args.root, name);
-    rmSync(stack, { recursive: true, force: true });
+    removeSkillSnapshotTree(stack);
     // Each stack: its own database, key, synthetic user and fixture.
     run(
       "bash",
@@ -395,7 +396,7 @@ async function main() {
   log(
     `${units} units on ${shards.length} shards in ${(wallMs / 60000).toFixed(1)} min (digests ${(preparedMs / 60000).toFixed(1)} min)${failed.length ? `; ${failed.length} shard(s) failed` : ""}`,
   );
-  if (!args.keep) rmSync(args.root, { recursive: true, force: true });
+  if (!args.keep) removeSkillSnapshotTree(args.root);
   process.exit(failed.length ? 2 : (merged.status ?? 2));
 }
 

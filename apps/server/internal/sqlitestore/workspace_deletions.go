@@ -235,6 +235,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"workspace_members", "workspace_id", ownerWorkspace},
 	{"workspace_skill_bindings", "workspace_id", ownerWorkspace},
 	{"workspace_draft_settings", "workspace_id", ownerWorkspace},
+	{"workspace_skill_checkouts", "workspace_id", ownerWorkspace},
 	{"workspace_draft_skills", "workspace_id", ownerWorkspace},
 	{"workspace_draft_revisions", "workspace_id", ownerWorkspace},
 	{"workspace_skill_exclusions", "workspace_id", ownerWorkspace},

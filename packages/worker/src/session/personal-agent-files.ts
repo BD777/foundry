@@ -14,6 +14,7 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -21,6 +22,11 @@ import {
 import { dirname, join, resolve } from "node:path";
 import type { AgentSession, SetupWorkspaceFile } from "@bd777/foundry-protocol";
 import { writeFileAtomic } from "../platform/storage.js";
+import { isFoundryManagedSkillPath } from "../skills/managed-paths.js";
+import type {
+  ManagedSkillRuntime,
+  ManagedSkill,
+} from "../skills/skill-materializer.js";
 import { within } from "../platform/paths.js";
 
 /** The only files Foundry writes into the assistant's folder for a run. */
@@ -127,6 +133,41 @@ export function writePersonalAgentFiles(
     workspaceId: session.workspaceId,
     revision: revision.digest("hex"),
   });
+}
+
+/** Include the project skills installed by syncAssistantSkills, also on a
+ * continuation whose dispatch carries no new files. */
+export function withPersonalAgentSkills(
+  managed: ManagedSkillRuntime,
+  workspacePath: string,
+): ManagedSkillRuntime {
+  const workspace = realpathSync(workspacePath);
+  const root = join(workspace, ...assistantSkillsRoot);
+  if (!existsSync(root) || realpathSync(root) !== root) return managed;
+  const names = new Set(
+    managed.skills.map((skill) => skill.name.toLowerCase()),
+  );
+  const skills: ManagedSkill[] = [...managed.skills];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const name = entry.name;
+    const dir = join(root, name);
+    if (!entry.isDirectory() || names.has(name.toLowerCase())) continue;
+    if (!lstatSync(join(dir, "SKILL.md"), { throwIfNoEntry: false })?.isFile())
+      continue;
+    const installed = runtimeSkillRoots.every((parts) => {
+      const link = join(workspace, ...parts, name);
+      return (
+        existsSync(link) &&
+        isFoundryManagedSkillPath(link, workspace) &&
+        realpathSync(link) === dir
+      );
+    });
+    if (installed) {
+      names.add(name.toLowerCase());
+      skills.push({ name, dir, source: "assistant" });
+    }
+  }
+  return { ...managed, skills };
 }
 
 /** Removes summary files of projects the manifest no longer lists. */

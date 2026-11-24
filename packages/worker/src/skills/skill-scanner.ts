@@ -1,3 +1,4 @@
+import { isFoundryManagedSkillPath } from "./managed-paths.js";
 /**
  * Device-local skill discovery and packaging. A skill is a directory
  * containing SKILL.md with YAML frontmatter; both ~/.claude/skills and
@@ -194,6 +195,13 @@ export function scanSkillRoots(
     }
     for (const child of children) {
       const dirName = child.name;
+      if (
+        isFoundryManagedSkillPath(
+          join(expanded, dirName),
+          join(expanded, "../.."),
+        )
+      )
+        continue;
       const skillPath = resolveSkillDir(expanded, child);
       if (!skillPath) continue;
       const skillMd = join(skillPath, SKILL_FILE_NAME);

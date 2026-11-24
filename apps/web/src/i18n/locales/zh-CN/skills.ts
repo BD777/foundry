@@ -2,6 +2,14 @@ import type { skills as en } from "../en/skills";
 import type { Translation } from "../../translation";
 
 export const skills: Translation<typeof en> = {
+  libraryRelation: {
+    notInLibrary: "未入库",
+    same: "与库 rev {{revision}} 相同",
+    sameOlder: "与 rev {{revision}} 相同，库已到 rev {{latest}}",
+    differs: "与库 rev {{latest}} 不同",
+    diverged: "基于 rev {{base}}，库已到 rev {{latest}}，需先合并",
+    unknown: "暂时无法比较",
+  },
   drafts: {
     title: "Workspace 草稿",
     hint: "在 .agents/skills/<name>/ 中创建或修改，然后刷新以使用固定快照。已有执行保持原版本，发布到库是独立操作。",
@@ -528,12 +536,11 @@ export const skills: Translation<typeof en> = {
     scanNow: "立即扫描",
     offline: "设备离线。连接后才能扫描或发布本地 Skill。",
     description:
-      "这台设备扫描目录里的 Skill，以及它们和服务器版本的对比。要使用某个 Skill，可以在工作区的 Skills 里添加，或在这里发布。",
+      "设备本地 Skill 不会进入 Foundry 会话。发布到库并选用到 Workspace 后，即可在该 Workspace 使用。",
     emptyTitle: "这台设备上还没有找到 Skill",
     emptyBody:
       "设备连接时以及之后每 30 分钟会自动扫描 Skill 目录；点「立即扫描」可马上检查。",
     compare: "比较",
-    reviewPromote: "检查并发布",
     searchPlaceholder: "按名称或描述筛选本地 Skill",
     title: "本地 Skill",
   },
@@ -610,8 +617,14 @@ export const skills: Translation<typeof en> = {
     downloadLocal: "下载本地 ZIP",
   },
   promotion: {
+    publishDraft: "发布到库…",
+    publishSelect: "发布并选用到 Workspace…",
+    publishAndUse: "发布并选用",
+    destination: "选用到 Workspace",
+    libraryOnly: "仅发布到库",
+    confirmMerge: "我已将库 rev {{revision}} 的改动合并到此草稿。",
     title: "把 {{name}} 发布到 Skill 库",
-    body: "它依赖的 Skill（设备上次扫描时发现的）会一起发布。发布不会把它加到任何工作区。",
+    body: "发布前可核对 Skill 内容及其依赖。",
     graphChanged:
       "保存的依赖图已变化。请关闭此预览并重新打开，检查更新后的 Skill。",
     toPublish_one: "将发布 {{count}} 个 Skill",

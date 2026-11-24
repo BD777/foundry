@@ -26,6 +26,12 @@ export function leadingSkillInvocation(
   return skill ? { skill, rest: prompt.slice(match[0].length) } : undefined;
 }
 
+export function claudeSkillName(skill: ManagedSkill): string {
+  return skill.source === "assistant"
+    ? skill.name
+    : `foundry-workspace:${skill.name}`;
+}
+
 /**
  * Claude Code namespaces plugin skills: `/name` typed for a workspace skill
  * becomes `/foundry-workspace:name`. Any other command is left to Claude Code.
@@ -36,7 +42,7 @@ export function claudeManagedPrompt(
 ): string {
   const invocation = leadingSkillInvocation(prompt, managed);
   if (!invocation) return prompt;
-  return `/foundry-workspace:${invocation.skill.name}${invocation.rest}`;
+  return `/${claudeSkillName(invocation.skill)}${invocation.rest}`;
 }
 
 /** Codex's own input for invoking a skill (its app server's `skill` item). */
@@ -51,14 +57,13 @@ export interface CodexSkillInput {
  * structured skill input, and the rest as text. A typed `$name` is only text
  * to Codex's app server, and a skill meant for explicit use only
  * (`allow_implicit_invocation: false`) is not in the model's list at all.
- * Drafts are not linked into Codex's skill folder, so they stay as typed.
  */
 export function codexManagedInput(
   prompt: string,
   managed: ManagedSkillRuntime | undefined,
 ): { text: string; skill?: CodexSkillInput } {
   const invocation = leadingSkillInvocation(prompt, managed);
-  if (!invocation || invocation.skill.draft) return { text: prompt };
+  if (!invocation) return { text: prompt };
   return {
     text: invocation.rest.trimStart(),
     skill: {

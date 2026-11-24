@@ -3085,11 +3085,123 @@
     ]
   },
   {
+    "name": "checkout_skill",
+    "_meta": {
+      "anthropic/searchHint": "workspaces & skills: checkout a library skill revision as an editable workspace draft"
+    },
+    "description": "Copy a library Skill revision into the workspace as a new editable draft. Returns the relative directory, skillId and base revision. An existing directory is refused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "skillId": { "type": "string", "description": "Library Skill id." },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Defaults to the latest revision."
+        }
+      },
+      "required": ["workspaceId", "skillId"],
+      "additionalProperties": false
+    },
+    "annotations": { "readOnlyHint": false },
+    "summary": "Check out a library Skill as a workspace draft.",
+    "limits": [
+      "Requires writable workspace membership and a connected Worker that supports checkout."
+    ]
+  },
+  {
+    "name": "publish_skill",
+    "_meta": {
+      "anthropic/searchHint": "workspaces & skills: publish a draft or local device skill to the library and select it"
+    },
+    "description": "Publish a workspace draft (draftId from refresh_workspace_skills, sourceWorkspaceId defaults to caller workspace) or a device skill (deviceId, root, dirName). Set expectedRevision to the reviewed library revision, or 0 for a new name. For dependency closures, call with preview=true and then pass the resulting planDigest and the same choices. Set mergedLatest only after merging the latest library revision. workspaceId also selects the closure there.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "draftId": {
+          "type": "string"
+        },
+        "sourceWorkspaceId": {
+          "type": "string"
+        },
+        "deviceId": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "dirName": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "planDigest": {
+          "type": "string"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mergedLatest": {
+          "type": "boolean"
+        },
+        "preview": {
+          "type": "boolean"
+        },
+        "includeRelated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolutions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "dirName": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "targetSkillId": {
+                "type": "string"
+              },
+              "expectedRevision": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["root", "dirName", "action"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["expectedRevision"]
+    },
+    "annotations": {
+      "readOnlyHint": false
+    },
+    "summary": "Publish a Skill snapshot to the Foundry library and optionally select it in a workspace.",
+    "limits": [
+      "Device owner only. Selecting the published closure requires workspace Maintainer. A changed library revision requires a new comparison."
+    ]
+  },
+  {
     "name": "refresh_workspace_skills",
     "_meta": {
       "anthropic/searchHint": "workspaces & skills: refresh and snapshot workspace skill drafts"
     },
-    "description": "Refresh this workspace's draft skills from .agents/skills: returns immutable snapshot paths and digests you can read and trial in this turn. It does not register them as native skills or publish them.",
+    "description": "Refresh Skill drafts in this execution root. Each draft includes its library comparison (matched, latest and checkout base revisions when available) and its immutable snapshot path and digest for trial. Use publish_skill to publish a change.",
     "inputSchema": {
       "type": "object",
       "properties": {},

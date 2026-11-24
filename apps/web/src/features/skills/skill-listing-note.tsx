@@ -1,8 +1,4 @@
-import type {
-  BuiltinSkill,
-  DeviceSkill,
-  ProviderHealth,
-} from "@bd777/foundry-protocol";
+import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { FieldHint } from "../../components/ui/field";
 import type { WorkspaceSkillSummary } from "../../api-types";
@@ -11,33 +7,28 @@ import { claudeSkillListing, type ListedSkill } from "./skill-listing-budget";
 /** Foundry hands Claude Code its Skills as the plugin `foundry-workspace`. */
 const pluginPrefix = "foundry-workspace:";
 
-/**
- * The Skills a Claude Code session in this workspace lists: Foundry's (this
- * workspace's, connector bundles', built-in), Claude Code's own, and the
- * device's own folders it reads (~/.claude/skills and the workspace's
- * .claude/skills).
- */
+/** The server projection includes selected library skills and ready workspace drafts. */
 export function claudeListedSkills({
   workspaceSkills,
   builtinSkills,
   providerHealth,
-  deviceSkills,
-  workspacePath,
 }: {
   workspaceSkills: WorkspaceSkillSummary[];
   builtinSkills: BuiltinSkill[];
   providerHealth: ProviderHealth[];
-  deviceSkills: DeviceSkill[];
-  workspacePath?: string;
 }): ListedSkill[] {
-  const projectRoot = workspacePath
-    ? `${workspacePath.replace(/\/+$/, "")}/.claude/skills`
-    : undefined;
+  const builtinNames = new Set(
+    builtinSkills
+      .filter((s) => s.runtime === "claude")
+      .map((s) => s.name.toLowerCase()),
+  );
   return [
-    ...workspaceSkills.map((skill) => ({
-      name: pluginPrefix + skill.name,
-      description: skill.description,
-    })),
+    ...workspaceSkills
+      .filter((s) => !builtinNames.has(s.name.toLowerCase()))
+      .map((skill) => ({
+        name: pluginPrefix + skill.name,
+        description: skill.description,
+      })),
     ...builtinSkills
       .filter((skill) => skill.runtime === "claude")
       .map((skill) => ({
@@ -52,12 +43,6 @@ export function claudeListedSkills({
         description: skill.description,
         bundled: true,
       })),
-    ...deviceSkills
-      .filter((skill) => {
-        const root = skill.root.replace(/\/+$/, "");
-        return root === "~/.claude/skills" || root === projectRoot;
-      })
-      .map((skill) => ({ name: skill.name, description: skill.description })),
   ];
 }
 

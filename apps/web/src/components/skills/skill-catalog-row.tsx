@@ -96,7 +96,7 @@ export function SkillCatalogRow({
           <strong
             className={cn(
               "text-sm font-[650] text-ink",
-              isWorkspace && "truncate",
+              isWorkspace ? "truncate" : "min-w-0 [overflow-wrap:anywhere]",
             )}
           >
             <SkillSearchHighlight query={query} text={skill.name} />
@@ -133,7 +133,7 @@ export function SkillCatalogRow({
             className={
               isWorkspace
                 ? "line-clamp-2 text-xs leading-[1.45] text-ellipsis text-ink-muted"
-                : "truncate text-xs text-ink-muted"
+                : "line-clamp-2 text-xs text-ink-muted [overflow-wrap:anywhere]"
             }
           >
             <SkillSearchHighlight query={query} text={skill.description} />

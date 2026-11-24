@@ -21,8 +21,8 @@ func (s *Store) setupSkillVersions(ctx context.Context) error {
 			return err
 		}
 	}
-	// Index legacy latest revisions once at startup, not during list/filter/preview.
-	rows, err := s.conn().QueryContext(ctx, `SELECT p.id,p.latest_revision FROM promoted_skills p LEFT JOIN skill_revision_index i ON i.skill_id=p.id AND i.revision=p.latest_revision WHERE i.skill_id IS NULL OR i.error='zip: checksum error'`)
+	// Index legacy revisions once at startup, not during list/filter/preview.
+	rows, err := s.conn().QueryContext(ctx, `SELECT r.skill_id,r.revision FROM promoted_skill_revisions r LEFT JOIN skill_revision_index i ON i.skill_id=r.skill_id AND i.revision=r.revision WHERE i.skill_id IS NULL OR i.error='zip: checksum error'`)
 	if err != nil {
 		return err
 	}
@@ -135,44 +135,19 @@ func (s *Store) enrichSkillStates(ctx context.Context, skills []store.DeviceSkil
 	if err != nil {
 		return err
 	}
+	histories, err := s.librarySkillHistories(ctx)
+	if err != nil {
+		return err
+	}
 	for i := range skills {
 		s := &skills[i]
-		s.ServerState = "unpublished"
 		s.ServerCandidates = byName[strings.ToLower(s.Name)]
 		b := bindings[s.DeviceID+"\x00"+s.Root+"\x00"+s.DirName]
 		if b.id != "" {
 			s.PromotedSkillID = b.id
 		}
-		if c, ok := byID[s.PromotedSkillID]; ok {
-			s.ServerRevision = c.LatestRevision
-			found := false
-			for _, v := range s.ServerCandidates {
-				if v.ID == c.ID {
-					found = true
-				}
-			}
-			if !found {
-				s.ServerCandidates = append([]store.PromotedSkill{c}, s.ServerCandidates...)
-			}
-			if s.SourceDigest == "" || c.SourceDigest == "" {
-				s.ServerState = "unknown"
-			} else if s.SourceDigest == c.SourceDigest || (s.SourceDigest == b.source && b.content == c.SourceDigest) {
-				s.ServerState = "in_sync"
-			} else {
-				s.ServerState = "different"
-			}
-		} else if len(s.ServerCandidates) > 0 {
-			s.ServerState = "name_conflict"
-			for _, c := range s.ServerCandidates {
-				if c.SourceDigest == "" || s.SourceDigest == "" {
-					s.ServerState = "unknown"
-				}
-				if c.SourceDigest != "" && c.SourceDigest == s.SourceDigest {
-					s.ServerState = "reusable"
-					break
-				}
-			}
-		}
+		s.LibraryRelation = histories.compare(s.Name, s.SourceDigest, s.PromotedSkillID, 0)
+		s.SetPromotionCandidates(s.ServerCandidates, byID[s.PromotedSkillID], b.source, b.content)
 	}
 	return nil
 }

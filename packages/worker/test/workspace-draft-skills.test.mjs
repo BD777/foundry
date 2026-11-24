@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  statSync,
   mkdtempSync,
   mkdirSync,
   writeFileSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -41,11 +43,14 @@ test("two sessions share project drafts but each execution holds its content ver
   const a = await withWorkspaceDraftSkills(library, context);
   const b = await withWorkspaceDraftSkills(library, context);
   assert.equal(a.pluginDir, b.pluginDir);
+  assert.equal(statSync(a.skills[0].dir).mode & 0o222, 0);
+  assert.equal(statSync(a.skills[0].draft.snapshotPath).mode & 0o222, 0);
+  assert.equal(statSync(join(a.skills[0].dir, "SKILL.md")).mode & 0o222, 0);
   assert.equal(a.skills[0].invocationName, "draft:example");
   assert.deepEqual(a.skills[0].aliases, ["example"]);
   assert.match(
     claudeManagedPrompt("/draft:example test", a),
-    /^\/foundry-workspace:workspace-draft-/,
+    /^\/foundry-workspace:example/,
   );
   writeFileSync(path, readFileSync(path, "utf8").replace("first", "second"));
   const c = await withWorkspaceDraftSkills(library, context);
@@ -60,7 +65,7 @@ test("two sessions share project drafts but each execution holds its content ver
   );
   assert.match(
     readFileSync(join(c.skills[0].dir, "SKILL.md"), "utf8"),
-    /name: workspace-draft-/,
+    /name: example/,
   );
 });
 test("draft references cannot cross workspace or Issue execution roots", async (t) => {
@@ -123,55 +128,68 @@ test("assistant runtime skill links are not workspace drafts", async (t) => {
   }
   draft(root, "user-method", "The person's method.", ".claude/skills");
 
+  const { scanSkillRoots } = await import("../dist/skills/skill-scanner.js");
+  assert.deepEqual(scanSkillRoots([join(root, ".agents/skills")]), []);
   const result = await snapshotWorkspaceDrafts("one", "one", root);
   assert.deepEqual(
     result.map((skill) => skill.name),
     ["user-method"],
   );
 });
-test("governance names require explicit draft invocation and do not replace built-ins", async (t) => {
-  const root = fixture(t);
-  draft(root, "foundry");
-  const combined = await withWorkspaceDraftSkills(
-    await materializeSessionSkills([], "", root),
-    { workspaceId: "one", executionRootId: "one", workspacePath: root },
-  );
-  assert.deepEqual(combined.skills[0].aliases, []);
-  assert.equal(claudeManagedPrompt("/foundry test", combined), "/foundry test");
-  assert.notEqual(
-    claudeManagedPrompt("/draft:foundry test", combined),
-    "/draft:foundry test",
-  );
-});
-
-test("publishing identical draft content keeps one callable method with an explicit draft alias", async (t) => {
-  const { combineWorkspaceDraftSkills } =
-    await import("../dist/skills/workspace-skill-runtime.js");
-  const { materializeSkillSnapshot } =
-    await import("../dist/skills/skill-snapshots.js");
-  const { createHash } = await import("node:crypto");
-  const root = fixture(t);
-  const source = draft(root, "example");
-  const [ref] = await snapshotWorkspaceDrafts("one", "one", root);
-  const data = readFileSync(source);
-  const selected = await materializeSkillSnapshot(
-    createHash("sha256").update("published-same-draft").digest("hex"),
-    (dir) => ({
-      files: [{ path: "skills/example/SKILL.md", data }],
-      value: {
-        pluginDir: dir,
-        skills: [{ name: "example", dir: join(dir, "skills/example") }],
+for (const libraryFolder of ["example", "different-package-folder"]) {
+  test(`a draft shadows a library revision in ${libraryFolder} and gives way to a builtin`, async (t) => {
+    const { combineWorkspaceDraftSkills } =
+      await import("../dist/skills/workspace-skill-runtime.js");
+    const { materializeSkillSnapshot } =
+      await import("../dist/skills/skill-snapshots.js");
+    const { createHash } = await import("node:crypto");
+    const root = fixture(t);
+    const source = draft(root, "example");
+    const [ref] = await snapshotWorkspaceDrafts("one", "one", root);
+    const data = Buffer.from(
+      readFileSync(source, "utf8").replace("first", "library"),
+    );
+    const selected = await materializeSkillSnapshot(
+      createHash("sha256")
+        .update(`published-same-draft/${libraryFolder}`)
+        .digest("hex"),
+      (dir) => ({
+        files: [{ path: `skills/${libraryFolder}/SKILL.md`, data }],
+        value: {
+          pluginDir: dir,
+          skills: [
+            { name: "example", dir: join(dir, "skills", libraryFolder) },
+          ],
+        },
+      }),
+    );
+    const combined = await combineWorkspaceDraftSkills(selected, [ref]);
+    assert.deepEqual(readdirSync(join(combined.pluginDir, "skills")), [
+      "example",
+    ]);
+    assert.equal(combined.skills.length, 1);
+    assert.match(
+      readFileSync(join(combined.skills[0].dir, "SKILL.md"), "utf8"),
+      /first/,
+    );
+    const builtin = await combineWorkspaceDraftSkills(
+      {
+        ...selected,
+        skills: selected.skills.map((s) => ({ ...s, builtin: true })),
       },
-    }),
-  );
-  const combined = await combineWorkspaceDraftSkills(selected, [ref]);
-  assert.equal(combined.skills.length, 1);
-  assert.equal(combined.skills[0].name, "example");
-  assert.equal(
-    claudeManagedPrompt("/draft:example run", combined),
-    "/foundry-workspace:example run",
-  );
-});
+      [ref],
+    );
+    assert.match(
+      readFileSync(join(builtin.skills[0].dir, "SKILL.md"), "utf8"),
+      /library/,
+    );
+    assert.equal(combined.skills[0].name, "example");
+    assert.equal(
+      claudeManagedPrompt("/draft:example run", combined),
+      "/foundry-workspace:example run",
+    );
+  });
+}
 
 test("explicit draft dependencies are copied with their relative layout and change the locked version", async (t) => {
   const root = fixture(t);

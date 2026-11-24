@@ -7,7 +7,8 @@
 // commands write to. What its runtime may call is its role
 // (session-roles.ts).
 
-import { mkdirSync, readdirSync, rmSync, statSync, utimesSync } from "node:fs";
+import { removeSkillSnapshotTree } from "../skills/skill-snapshot-permissions.js";
+import { mkdirSync, readdirSync, statSync, utimesSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
@@ -124,7 +125,7 @@ function workspaceSandboxExecution(
   workspaceWritable: boolean,
 ): { cwd: string; stateRoot: string; sandbox: WorkspaceSandbox } {
   const scratch = resolve(directory, "scratch");
-  rmSync(resolve(scratch, "tmp"), { recursive: true, force: true });
+  removeSkillSnapshotTree(resolve(scratch, "tmp"));
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const now = new Date();
   utimesSync(directory, now, now);
@@ -170,8 +171,7 @@ function pruneVerifiers(workspaceId: string, store: ExecutionStore): void {
   for (const entry of entries) {
     const path = resolve(root, entry);
     try {
-      if (statSync(path).mtimeMs < cutoff)
-        rmSync(path, { recursive: true, force: true });
+      if (statSync(path).mtimeMs < cutoff) removeSkillSnapshotTree(path);
     } catch {
       // Another turn removed or is using it; the next start tries again.
     }

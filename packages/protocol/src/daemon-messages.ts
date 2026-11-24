@@ -116,6 +116,8 @@ export const daemonMessageTypes = {
   providerKeyRead: "provider_key_read",
   readSkillFile: "read_skill_file",
   skillFileRead: "skill_file_read",
+  checkoutWorkspaceSkill: "checkout_workspace_skill",
+  workspaceSkillCheckedOut: "workspace_skill_checked_out",
   refreshWorkspaceSkills: "refresh_workspace_skills",
   workspaceSkillsRefreshed: "workspace_skills_refreshed",
   readSkillContent: "read_skill_content",
@@ -1015,6 +1017,12 @@ export interface FetchSkillRepositoryPayload {
   uploadPath: string;
 }
 
+export interface CheckoutWorkspaceSkillPayload {
+  issueId?: string;
+  workspaceId: string;
+  ref: SessionSkillRef;
+}
+
 /** Disposable prewarm; it never grants a session access to these files. */
 export interface PrepareSkillsPayload {
   refs: SessionSkillRef[];
@@ -1035,6 +1043,7 @@ export interface ScanSkillsPayload {
 
 /** read_skill_content */
 export interface ReadSkillContentPayload {
+  draft?: import("./workspace-draft-skills.js").WorkspaceDraftSkill;
   root?: string;
   dirName?: string;
 }

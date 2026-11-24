@@ -1,3 +1,4 @@
+import { officialSkills } from "../harness/official-skills.js";
 import { serverMcpURL } from "../platform/server-link/server-mcp-forwarder.js";
 import {
   markPrivateInputOwner,
@@ -44,7 +45,10 @@ import {
   withoutSessionToken,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
-import { claudeManagedPrompt } from "../skills/skill-invocation.js";
+import {
+  claudeManagedPrompt,
+  claudeSkillName,
+} from "../skills/skill-invocation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import {
   clarificationFoundryTools,
@@ -72,10 +76,15 @@ export function claudeSessionOptions(
   return {
     ...(utility
       ? { settingSources: [], strictMcpConfig: true, skills: [] }
-      : {}),
+      : {
+          skills: [
+            ...(managed?.skills ?? []).map(claudeSkillName),
+            ...(officialSkills("claude") ?? []).map((skill) => skill.name),
+          ],
+        }),
     mcpServers: {},
     plugins:
-      managed?.skills.length && !utility
+      !utility && managed?.skills.some((skill) => skill.source !== "assistant")
         ? [{ type: "local", path: managed.pluginDir }]
         : [],
     ...(append

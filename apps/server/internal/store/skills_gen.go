@@ -8,17 +8,20 @@ import (
 
 // DeviceSkill defines model for DeviceSkill.
 type DeviceSkill struct {
-	Manifest         []SkillFileInfo `json:"manifest,omitempty"`
-	ServerState      string          `json:"serverState,omitempty"`
-	ServerRevision   int             `json:"serverRevision,omitempty"`
-	ServerCandidates []PromotedSkill `json:"serverCandidates,omitempty"`
-	DeviceID         string          `json:"deviceId"`
-	Root             string          `json:"root"`
-	DirName          string          `json:"dirName"`
-	Name             string          `json:"name"`
-	Description      string          `json:"description"`
-	SizeBytes        int64           `json:"sizeBytes"`
-	MtimeLabel       string          `json:"mtimeLabel"`
+	Manifest []SkillFileInfo `json:"manifest,omitempty"`
+
+	// LibraryRelation Comparison against the library at the time of the read.
+	LibraryRelation  *SkillLibraryRelation `json:"libraryRelation,omitempty"`
+	ServerState      string                `json:"serverState,omitempty"`
+	ServerRevision   int                   `json:"serverRevision,omitempty"`
+	ServerCandidates []PromotedSkill       `json:"serverCandidates,omitempty"`
+	DeviceID         string                `json:"deviceId"`
+	Root             string                `json:"root"`
+	DirName          string                `json:"dirName"`
+	Name             string                `json:"name"`
+	Description      string                `json:"description"`
+	SizeBytes        int64                 `json:"sizeBytes"`
+	MtimeLabel       string                `json:"mtimeLabel"`
 
 	// PromotedSkillID Set once this exact entry has been promoted to the server catalog.
 	PromotedSkillID string `json:"promotedSkillId,omitempty"`
@@ -133,6 +136,15 @@ type SkillFileInfo struct {
 	Digest    string `json:"digest"`
 	SizeBytes int64  `json:"sizeBytes"`
 	Binary    bool   `json:"binary"`
+}
+
+// SkillLibraryRelation Comparison against the library at the time of the read.
+type SkillLibraryRelation struct {
+	Status          string `json:"status"`
+	SkillID         string `json:"skillId,omitempty"`
+	LatestRevision  int    `json:"latestRevision,omitempty"`
+	MatchedRevision int    `json:"matchedRevision,omitempty"`
+	BaseRevision    int    `json:"baseRevision,omitempty"`
 }
 
 // SkillPackRef defines model for SkillPackRef.

@@ -385,6 +385,7 @@ var workspaceMigrationRewrites = []workspaceMigrationColumn{
 // workspaceMigrationRegenerated are the workspace's rows activation deletes:
 // the target device reports them again for itself.
 var workspaceMigrationRegenerated = []struct{ table, where string }{
+	{"workspace_skill_checkouts", `workspace_id = ?`},
 	{"workspace_draft_skills", `workspace_id = ?`},
 	{"workspace_draft_revisions", `workspace_id = ?`},
 	// The source device's agents for the workspace; the target registers its own.
@@ -398,7 +399,8 @@ var workspaceMigrationKeptColumns = map[string]string{
 	"agents.device_id":     "regenerated: activation deletes the source device's agents; the target registers its own",
 	"workspace_files.path": "regenerated: paths inside the folder, replaced by the target's registration",
 	// Carried as is: relative to the workspace folder, so valid on the target.
-	"workspace_file_revisions.path": "carried: saved versions of a file, named by its path inside the folder",
+	"workspace_file_revisions.path":           "carried: saved versions of a file, named by its path inside the folder",
+	"workspace_skill_checkouts.relative_path": "carried: the checked-out Skill directory is relative to the workspace folder",
 	// Not carried: tied to the source device, listed in the job's notCarried.
 	"device_connector_bindings.device_id": "not carried: a connector held on the source device; set it up again on the target",
 	"feishu_gateway_grants.device_id":     "not carried: a Feishu grant of a session on the source device",

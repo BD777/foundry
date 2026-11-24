@@ -11,6 +11,16 @@ export const SKILL_PACKAGE_MAX_BYTES = 256 << 20; // expanded content
 export const SKILL_ARCHIVE_MAX_BYTES = 64 << 20; // compressed transport/storage
 export const SKILL_PACKAGE_MAX_FILES = 50_000; // below the ZIP32 entry ceiling
 
+/** Matches skillarchive.InspectStored (UTF-16 sort, path/NUL/size/NUL/bytes). */
+export function skillContentDigest(files: ZipEntry[]): string {
+  const hash = createHash("sha256");
+  for (const file of [...files].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  ))
+    hash.update(`${file.path}\0${file.data.length}\0`).update(file.data);
+  return hash.digest("hex");
+}
+
 export interface SkillInventory {
   entries: ZipEntry[];
   sizeBytes: number;
@@ -86,15 +96,11 @@ export function readSkillInventory(
     entries.push({ path: file.path, data });
   }
   const mtimeMs = tree.mtimeMs;
-  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  const hash = createHash("sha256");
-  for (const { path, data } of entries)
-    hash.update(`${path}\0${data.length}\0`).update(data);
   return {
     entries,
     sizeBytes,
     mtimeMs,
-    sourceDigest: hash.digest("hex"),
+    sourceDigest: skillContentDigest(entries),
     manifest: entries.map(({ path, data }) => ({
       path,
       digest: createHash("sha256").update(data).digest("hex"),

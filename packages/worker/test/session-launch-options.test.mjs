@@ -130,7 +130,7 @@ test("custom connection without a credential gets an actionable warning; a keyed
   assert.deepEqual(official.warnings, []);
 });
 
-test("one plan drives SDK and CLI paths: the native settings load and the workspace skills are a plugin", () => {
+test("the SDK launch plan passes the workspace plugin and its skill allowlist to Claude Code", () => {
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
@@ -142,11 +142,10 @@ test("one plan drives SDK and CLI paths: the native settings load and the worksp
     managedSkills: managed,
   });
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
-  // Claude Code loads the person's and project's settings as it would
-  // outside Foundry, and lists every skill it finds.
+  // Native settings still load, with the model's skill listing limited by the SDK.
   assert.equal(plan.sdk.settingSources, undefined);
   assert.equal(plan.sdk.strictMcpConfig, undefined);
-  assert.equal(plan.sdk.skills, undefined);
+  assert.deepEqual(plan.sdk.skills, ["foundry-workspace:qa"]);
   assert.equal(plan.env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST, "1");
   // How to use Foundry comes from its MCP server's instructions and the
   // device's resources from list_resources: nothing is appended.

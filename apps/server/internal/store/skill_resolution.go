@@ -37,3 +37,39 @@ func ResolveSkillPromotion(s DeviceSkill, choices []SkillPromotionResolution) Sk
 	}
 	return DefaultSkillResolution(s)
 }
+
+// SetPromotionCandidates derives the version choices shown in the shared promotion dialog.
+func (s *DeviceSkill) SetPromotionCandidates(candidates []PromotedSkill, c PromotedSkill, boundSource, boundContent string) {
+	s.ServerState = "unpublished"
+	s.ServerCandidates = candidates
+	if c.ID != "" {
+		s.ServerRevision = c.LatestRevision
+		found := false
+		for _, v := range s.ServerCandidates {
+			if v.ID == c.ID {
+				found = true
+			}
+		}
+		if !found {
+			s.ServerCandidates = append([]PromotedSkill{c}, s.ServerCandidates...)
+		}
+		if s.SourceDigest == "" || c.SourceDigest == "" {
+			s.ServerState = "unknown"
+		} else if s.SourceDigest == c.SourceDigest || (s.SourceDigest == boundSource && boundContent == c.SourceDigest) {
+			s.ServerState = "in_sync"
+		} else {
+			s.ServerState = "different"
+		}
+	} else if len(s.ServerCandidates) > 0 {
+		s.ServerState = "name_conflict"
+		for _, c := range s.ServerCandidates {
+			if c.SourceDigest == "" || s.SourceDigest == "" {
+				s.ServerState = "unknown"
+			}
+			if c.SourceDigest != "" && c.SourceDigest == s.SourceDigest {
+				s.ServerState = "reusable"
+				break
+			}
+		}
+	}
+}

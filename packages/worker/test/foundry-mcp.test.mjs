@@ -1,9 +1,10 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { Readable, Writable } from "node:stream";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runMcpServer } from "../dist/agent-surface/foundry-mcp.js";
@@ -153,7 +154,7 @@ test("foundry mcp without a session token authenticates as the paired device", a
     );
   });
   const state = mkdtempSync(join(tmpdir(), "foundry-mcp-"));
-  t.after(() => rmSync(state, { recursive: true, force: true }));
+  t.after(() => removeSkillSnapshotTree(state));
   writeFileSync(
     join(state, "daemon-config.json"),
     JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),

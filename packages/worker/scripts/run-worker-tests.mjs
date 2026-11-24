@@ -530,12 +530,14 @@ const MAC_SERVICE_TESTS = new Set([
   "watchdog.test.mjs",
 ]);
 
-function runTests() {
+async function runTests() {
   if (!existsSync(distEntry)) {
     fail(
       "dist/ is missing; build first (pnpm build) so tests load compiled modules.",
     );
   }
+  const { removeSkillSnapshotTree } =
+    await import("../dist/skills/skill-snapshot-permissions.js");
   const scratch = makeScratch();
   const scratchTmp = join(scratch, "tmp");
   const scratchState = join(scratch, "state");
@@ -604,7 +606,7 @@ function runTests() {
   }
 
   // Scratch is throwaway per run; leave it on failure for inspection.
-  if (status === 0) rmSync(scratch, { recursive: true, force: true });
+  if (status === 0) removeSkillSnapshotTree(scratch);
   else
     console.error(
       `[worker-test-launcher] tests failed; scratch kept at ${scratch}`,
@@ -621,4 +623,4 @@ if (probeOnly) {
     fail("--probe demonstrates kernel-level denials and needs the sandbox.");
   }
   probe();
-} else runTests();
+} else await runTests();

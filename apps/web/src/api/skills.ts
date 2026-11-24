@@ -91,25 +91,31 @@ export function setDeviceSkillRoots(
   );
 }
 
-export function previewSkillPromotion(input: {
-  deviceId: string;
-  root: string;
-  dirName: string;
+export interface DraftPromotionSource {
+  draftId: string;
+  sourceWorkspaceId: string;
+}
+
+type PromotionSource =
+  DraftPromotionSource | Pick<DeviceSkill, "deviceId" | "root" | "dirName">;
+
+type PromotionInput = PromotionSource & {
+  expectedRevision: number;
   includeRelated?: string[];
   resolutions?: SkillPromotionResolution[];
-}): Promise<SkillPromotionPlan> {
+  mergedLatest?: boolean;
+};
+
+export function previewSkillPromotion(
+  input: PromotionInput & { includeAllRelated?: boolean },
+): Promise<SkillPromotionPlan> {
   return request("POST", "/api/skills/promote-plan", { body: input });
 }
 
-export function promoteSkill(input: {
-  deviceId: string;
-  root: string;
-  dirName: string;
-  resolutions?: SkillPromotionResolution[];
-  planDigest?: string;
-  includeRelated?: string[];
-}): Promise<PromotedSkill> {
-  return request("POST", "/api/skills/promote", { body: input });
+export function promoteSkill(
+  input: PromotionInput & { planDigest: string; workspaceId?: string },
+): Promise<PromotedSkill> {
+  return request("POST", "/api/skills/publish", { body: input });
 }
 
 export function setWorkspaceSkills(

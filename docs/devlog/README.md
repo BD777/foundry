@@ -4,6 +4,7 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-24 Worker + Server + Web：[DEV-331 会话只认 Foundry 的 Skill；草稿优先并可发布；本地 Skill 只作导入来源](DEV-331-foundry-only-skills.md)：Server 与 Worker 已部署 dev 并通过验收步骤 1；Web 待部署；本人在 project_a 迭代 feishu-structured-doc 作为首个真实用例。
 2026-11-24 Server + Web：[DEV-332 等你处理：一条只说一遍、标出说话人和起因、完成/放弃/不需要我并列（关闭时告诉在等的帮手）、转交可带选项、回复框即对话输入框、跳到消息能跳到较早的消息](DEV-332-needs-you-readable.md)；dev Server b1de64a4d554 / Web a4d96957b7762cd9；本人 2026-11-24 已在真实条目上使用「放弃」。
 2026-11-23 脚本：[DEV-329 PA 路由评测：把测量和产品分开（项目可打开、按生产方式与用例日期构建夹具、夹具电脑有生产的模型配置、帮手回合后取消并归档、每例重置、评测电脑隔离、合成内容、默认判定）](DEV-329-pa-eval-measurement-fixes.md)（不涉及部署）；新基线见 `.foundry/reports/eval-baseline-20261124.md`。
 2026-11-21 Server + Web + Worker：[DEV-324 事项基座：事项有归属并可认领、帮手信号按事项投递、本人的决定与完成标准记在事项上、事项文件投影](DEV-324-item-ledger.md)。准出标准 E1–E7 全部在 dev 上通过（Agent 自验，2026-11-21）；已合入 main（PR #287、#288、#289）；dev Server 5bdd4e24e1dc / Web 94480578b2b159df / Worker 0.5.7-dev.379；待本人验收。

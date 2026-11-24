@@ -1,5 +1,13 @@
 /** Skills: catalog, versions, comparison and promotion. */
 export const skills = {
+  libraryRelation: {
+    notInLibrary: "Not in the library",
+    same: "Matches library rev {{revision}}",
+    sameOlder: "Matches rev {{revision}} · Library is at rev {{latest}}",
+    differs: "Differs from library rev {{latest}}",
+    diverged: "Based on rev {{base}} · Merge library rev {{latest}} first",
+    unknown: "Comparison unavailable",
+  },
   drafts: {
     title: "Workspace drafts",
     hint: "Create or edit .agents/skills/<name>/, then refresh to use an immutable copy. Existing runs keep their version. Publishing to the library is separate.",
@@ -547,12 +555,11 @@ export const skills = {
     scanNow: "Scan now",
     offline: "Device offline. Connect it to scan or promote local skills.",
     description:
-      "Skills in this device's scan folders and how they compare with the server. To use one, add it from a workspace's Skills, or publish it here.",
+      "Foundry sessions do not load device-local skills. Publish a skill to the library and select it for a workspace to use it there.",
     emptyTitle: "No skills found on this device yet",
     emptyBody:
       "The device scans its skill folders when it connects and every 30 minutes; Scan now checks right away.",
     compare: "Compare",
-    reviewPromote: "Review & promote",
     searchPlaceholder: "Filter local skills by name or description",
     title: "Local skills",
   },
@@ -634,8 +641,15 @@ export const skills = {
     downloadLocal: "Download local ZIP",
   },
   promotion: {
+    publishDraft: "Publish to library…",
+    publishSelect: "Publish and select for a workspace…",
+    publishAndUse: "Publish and select",
+    destination: "Use in workspace",
+    libraryOnly: "Library only",
+    confirmMerge:
+      "I have merged the changes from library rev {{revision}} into this draft.",
     title: "Publish {{name}} to the skill library",
-    body: "Skills it depends on (found at the device's last scan) are published with it. Publishing does not add it to any workspace.",
+    body: "Review the skill and its dependencies before publishing.",
     graphChanged:
       "The saved graph has changed. Close this preview and reopen it to review the updated skills.",
     toPublish_one: "{{count}} skill to publish",

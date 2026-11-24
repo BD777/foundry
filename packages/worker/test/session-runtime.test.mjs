@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import assert from "node:assert/strict";
 import {
   mkdirSync,
@@ -32,7 +33,7 @@ const cli = join(home, "agent-cli");
 writeFileSync(cli, "#!/bin/sh\necho 0.0.0-test\n", { mode: 0o755 });
 process.env.FOUNDRY_CLAUDE_BIN = cli;
 process.env.FOUNDRY_CODEX_BIN = cli;
-test.after(() => rmSync(home, { recursive: true, force: true }));
+test.after(() => removeSkillSnapshotTree(home));
 
 register("./fixtures/fake-agent-sdk-hooks.mjs", import.meta.url);
 const { calls } = await import("./fixtures/fake-agent-sdk.mjs");

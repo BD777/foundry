@@ -1,6 +1,5 @@
 import { toast } from "../../components/ui/toast";
-import { useEffect, useMemo, useState } from "react";
-import type { TFunction } from "i18next";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeviceProjection,
   DeviceSkill,
@@ -19,9 +18,7 @@ import {
 
 /**
  * A workspace's skill selection: what is chosen, what that pulls in, which
- * skills it gets from defaults or bundles but turned off, and saving it. A
- * skill just added from the workspace's device is selected as soon as it
- * reaches the catalog.
+ * skills it gets from defaults or bundles but turned off, and saving it.
  */
 export function useWorkspaceSkillSelection({
   catalog,
@@ -33,7 +30,6 @@ export function useWorkspaceSkillSelection({
   workspaceId,
   readOnlyReason,
   onChanged,
-  t,
 }: {
   catalog: PromotedSkill[];
   bindings: WorkspaceSkillBinding[];
@@ -45,7 +41,6 @@ export function useWorkspaceSkillSelection({
   workspaceId: string;
   readOnlyReason?: string;
   onChanged?: () => Promise<void>;
-  t: TFunction<["skills", "common"]>;
 }) {
   const initial = useMemo(
     () => new Set(bindings.map((binding) => binding.skillId)),
@@ -63,9 +58,29 @@ export function useWorkspaceSkillSelection({
   const [deselectedRelated, setDeselectedRelated] = useState<Set<string>>(
     new Set(),
   );
+  // Publishing can select skills on the server while unrelated checkboxes have
+  // unsaved edits. Apply just the changed bindings to the current form.
+  const previous = useRef({ initial, initialOff, workspaceId });
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { initial, initialOff, workspaceId };
+    if (before.workspaceId !== workspaceId) {
+      setExplicitlySelected(initial);
+      setOff(initialOff);
+      setDeselectedRelated(new Set());
+      return;
+    }
+    if (!sameSet(before.initial, initial))
+      setExplicitlySelected((current) =>
+        mergeBindingChanges(current, before.initial, initial),
+      );
+    if (!sameSet(before.initialOff, initialOff))
+      setOff((current) =>
+        mergeBindingChanges(current, before.initialOff, initialOff),
+      );
+  }, [initial, initialOff, workspaceId]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
 
   const deviceLabels = useMemo(() => {
     const labels = new Map<string, string>();
@@ -118,42 +133,6 @@ export function useWorkspaceSkillSelection({
     }
     return [...duplicates];
   }, [catalog, resolution.selectedIds]);
-
-  // A skill added from the workspace's device is selected once it is in the
-  // catalog (see LocalSkillsSection).
-  const [pendingSelect, setPendingSelect] = useState<string>();
-  useEffect(() => {
-    if (!pendingSelect || !normalizedSkills.some((s) => s.id === pendingSelect))
-      return;
-    setPendingSelect(undefined);
-    if (resolution.selectedIds.has(pendingSelect)) return;
-    const result = toggleSkillSelection(
-      pendingSelect,
-      normalizedSkills,
-      explicitlySelected,
-      deselectedRelated,
-    );
-    if (!result.allowed) {
-      setError(result.blockedReason);
-      return;
-    }
-    setExplicitlySelected(result.nextExplicit);
-    setDeselectedRelated(result.nextDeselectedRelated);
-    void persist(
-      resolveSkillSelection(
-        normalizedSkills,
-        result.nextExplicit,
-        result.nextDeselectedRelated,
-      ).selectedIds,
-      off,
-    );
-  }, [
-    pendingSelect,
-    normalizedSkills,
-    resolution.selectedIds,
-    explicitlySelected,
-    deselectedRelated,
-  ]);
 
   async function save(): Promise<void> {
     if (duplicateNames.length) return;
@@ -212,14 +191,6 @@ export function useWorkspaceSkillSelection({
 
     setExplicitlySelected(result.nextExplicit);
     setDeselectedRelated(result.nextDeselectedRelated);
-
-    if (result.newlyActivatedNames.length > 0) {
-      setNotice(
-        t("workspace.autoEnabled", {
-          names: result.newlyActivatedNames.join(", "),
-        }),
-      );
-    }
   }
 
   return {
@@ -232,14 +203,28 @@ export function useWorkspaceSkillSelection({
     saving,
     error,
     setError,
-    notice,
-    setNotice,
+    autoEnabledNames: normalizedSkills
+      .filter(
+        (skill) =>
+          resolution.autoActivatedIds.has(skill.id) && !initial.has(skill.id),
+      )
+      .map((skill) => skill.name),
     save,
     handleToggle,
-    selectAfterPublish: setPendingSelect,
   };
 }
 
 function sameSet(a: Set<string>, b: Set<string>): boolean {
   return a.size === b.size && [...a].every((id) => b.has(id));
+}
+
+function mergeBindingChanges(
+  current: Set<string>,
+  before: Set<string>,
+  after: Set<string>,
+) {
+  const next = new Set(current);
+  for (const id of before) if (!after.has(id)) next.delete(id);
+  for (const id of after) if (!before.has(id)) next.add(id);
+  return next;
 }

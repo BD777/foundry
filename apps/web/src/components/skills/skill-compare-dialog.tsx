@@ -9,6 +9,7 @@ import type {
   SkillComparisonInput,
 } from "@bd777/foundry-protocol";
 import {
+  type DraftPromotionSource,
   compareSkillVersions,
   compareSkillFile,
   downloadSkillComparisonPackage,
@@ -28,9 +29,11 @@ const FileDiff = lazy(() =>
 export default function SkillCompareDialog({
   skill,
   target,
+  draftSource,
   onClose,
 }: {
   skill: DeviceSkill;
+  draftSource?: DraftPromotionSource;
   target: PromotedSkill;
   onClose: () => void;
 }) {
@@ -46,6 +49,7 @@ export default function SkillCompareDialog({
   );
   const input = useMemo<SkillComparisonInput>(
     () => ({
+      ...draftSource,
       deviceId: skill.deviceId,
       root: skill.root,
       dirName: skill.dirName,
@@ -54,6 +58,7 @@ export default function SkillCompareDialog({
       revision,
     }),
     [
+      draftSource,
       skill.deviceId,
       skill.root,
       skill.dirName,

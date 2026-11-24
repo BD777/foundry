@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -651,7 +652,7 @@ test("every command calls its tool with the arguments its flags set", async (t) 
 test("a paired device's CLI names its workspace", async (t) => {
   const { calls, url } = await fakeTools(t, () => ["[]", false]);
   const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
-  t.after(() => rmSync(state, { recursive: true, force: true }));
+  t.after(() => removeSkillSnapshotTree(state));
   writeFileSync(
     join(state, "daemon-config.json"),
     JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
@@ -737,7 +738,7 @@ test("the foundry skill ships with the CLI, same as the server's built-in, and i
 test("inside a Foundry session the CLI never acts with the device credential", async (t) => {
   const { calls, url } = await fakeTools(t, () => ["[]", false]);
   const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
-  t.after(() => rmSync(state, { recursive: true, force: true }));
+  t.after(() => removeSkillSnapshotTree(state));
   writeFileSync(
     join(state, "daemon-config.json"),
     JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
@@ -761,7 +762,7 @@ test("inside a Foundry session the CLI never acts with the device credential", a
 test("inside a Foundry session the CLI works a lease with its command token", async (t) => {
   const { calls, url } = await fakeTools(t, () => ['{"results":[]}', false]);
   const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
-  t.after(() => rmSync(state, { recursive: true, force: true }));
+  t.after(() => removeSkillSnapshotTree(state));
   writeFileSync(
     join(state, "daemon-config.json"),
     JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
