@@ -78,15 +78,24 @@ export function toastPlacementForView(view: string): "top" | "bottom" {
   return bottomComposerViews.has(view) ? "top" : "bottom";
 }
 
+/**
+ * What is the person's across every workspace and assistant: what waits for
+ * them and the items they follow. Neither belongs to one assistant.
+ */
+const yoursNavSection: SidebarNavSection<SidebarView> = {
+  id: "yours",
+  label: "yoursSection",
+  items: [
+    { id: "pending", label: "pending", icon: Inbox },
+    { id: "items", label: "items", icon: ListChecks },
+  ],
+};
+
 const assistantNavSection: SidebarNavSection<SidebarView> = {
   id: "assistant",
   label: "assistantSection",
   items: [
     { id: "assistant", label: "assistant", icon: Sparkles },
-    // The person's items across workspaces and assistants: global, the
-    // first entry after the conversation they come from.
-    { id: "items", label: "items", icon: ListChecks },
-    { id: "pending", label: "pending", icon: Inbox },
     {
       id: "assistantSettings",
       label: "assistantSettings",
@@ -96,12 +105,14 @@ const assistantNavSection: SidebarNavSection<SidebarView> = {
 };
 
 /**
- * The sidebar: the selected workspace, then the global assistant and
- * management. Labels are keys of the shell namespace's `nav`; the shell
+ * The sidebar: what is the person's (Needs you, items), the selected
+ * workspace, then the global assistant and management. Labels are keys of the shell namespace's `nav`; the shell
  * translates them.
  */
 export const navSections: Array<SidebarNavSection<SidebarView>> = [
+  yoursNavSection,
   {
+    dividerBefore: true,
     id: "workspace",
     label: "workspace",
     items: [
@@ -128,10 +139,12 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
 ];
 
 /**
- * The simple interface's sidebar: the assistant, items and settings; the
+ * The simple interface's sidebar: Needs you and items, the assistant and its
+ * settings; the
  * account entries join the empty "manage" section (withAccountNav).
  */
 export const simpleNavSections: Array<SidebarNavSection<SidebarView>> = [
+  yoursNavSection,
   assistantNavSection,
   { id: "manage", label: "manage", items: [] },
 ];
