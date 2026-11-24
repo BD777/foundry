@@ -54,6 +54,7 @@ type Backend interface {
 	store.SessionInputSenderStore
 	store.SessionInputCompletionStore
 	store.SessionEventWindowStore
+	store.SessionUserMessageStore
 	store.SessionEventCatchUpStore
 	store.NativeHistoryStore
 	store.SessionStateStore

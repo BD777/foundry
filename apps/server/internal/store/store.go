@@ -18,12 +18,17 @@ type SessionAdoptionStore interface {
 	CreateAgentSessionAdopting(ctx context.Context, input CreateAgentSessionInput) (session AgentSession, adoptedChatID string, err error)
 }
 
-// SessionEventWindowStore reads a transcript a window at a time: a reader
-// shows a chat's newest events first and pages back on request.
-type SessionEventWindowStore interface {
+// SessionUserMessageStore reads the messages a session was sent, for where
+// a Needs you item began (its origin).
+type SessionUserMessageStore interface {
 	// SessionUserMessagesBefore are the session's "User message" events
 	// recorded at or before the time, newest first, as their raw payloads.
 	SessionUserMessagesBefore(ctx context.Context, sessionID, before string, limit int) ([]MessageChannelSessionEvent, error)
+}
+
+// SessionEventWindowStore reads a transcript a window at a time: a reader
+// shows a chat's newest events first and pages back on request.
+type SessionEventWindowStore interface {
 	// ListAgentSessionThreadRecords is ListAgentSessionThread without events.
 	ListAgentSessionThreadRecords(ctx context.Context, workspaceID string, id string) ([]AgentSession, error)
 	// ListIssueExecutionRecords is the Issue's latest limit executions

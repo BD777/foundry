@@ -747,8 +747,8 @@ func (s *Store) SessionUserMessagesBefore(ctx context.Context, sessionID, before
 		limit = 100
 	}
 	rows, err := s.reader().QueryContext(ctx, `SELECT session_id, created_at, payload_json FROM agent_session_events
-		WHERE session_id = ? AND created_at <= ? AND json_extract(payload_json, '$.label') = 'User message'
-		ORDER BY created_at DESC LIMIT ?`, sessionID, before, limit)
+		WHERE session_id = ? AND created_at <= ? AND json_extract(payload_json, '$.label') = ?
+		ORDER BY created_at DESC LIMIT ?`, sessionID, before, store.EventLabelUserMessage, limit)
 	if err != nil {
 		return nil, err
 	}
