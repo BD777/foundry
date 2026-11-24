@@ -23,6 +23,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // system.md alone; from that version it covers system.md and every skill.
 // Changing any instruction fails here until it gets a new Version and line.
 var promptVersions = map[string]string{
+	"2026-11-24.2": "94a8bf93f501aaf7e521ddf16484d5c397360223ba131990e4bde7b4096ba315", // routing judgment: a wrong guess is stated as a cost (a helper in the wrong place, two for two guesses), "which computer" and a project's name are no longer technical questions; dispatching is no longer called cheap
 	"2026-11-24.1": "b9651102a069aed15f0f08408ac2c7be933b20f3dd5445f436f7527186e7a815", // assistant live e2e P2: deleting is stated once, in the rules Foundry rewrites before every run (the old "never: delete anything" contradicted #305); system.md no longer repeats it
 	"2026-11-23.2": "73e828f2bea5b18202dd6290df4b7adcf19a102e7d7fcc275d2ddc8033132851", // routing facts A/B/C (person 2026-11-23): find_in_projects and the turn's computers are named as facts; deleting files or uninstalling software is a helper's work on the person's explicit request
 	"2026-11-23.1": "dcb698b815d8235955633743b290ea9b8d12ba2b93940e12b5bcda69fc2f38a1", // D4/D1 (person 2026-11-23): a one-off personal request is the assistant's to do or hand off; the person's existing chat and their other assistants take send_message
