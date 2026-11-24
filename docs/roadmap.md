@@ -201,7 +201,7 @@ Foundry 的核心。工作流只组合它们；保证 Workspace 安全演进的�
 | SK-2 | Server 直接读取私有来源                     | 下一步 | —    | 不依赖设备在线；凭据按 sealed secret 规则保存            | 同上、DEV-014                                    |
 | SK-3 | 原生子 Agent 的 Skill 隔离验证              | 下一步 | —    | 有独立验证后，Skill 试验可改用原生子 Agent               | [skills · 后续](skills.md#后续)                  |
 | SK-4 | 自动提炼与推荐 Skill                        | 探索   | —    | 产物仍经人发布进库                                       | 同上                                             |
-| SK-5 | 会话只认 Foundry 的 Skill；草稿优先并可发布 | 进行中 | —    | DEV-331 验收步骤 1–5 在 dev 通过                         | [DEV-331](devlog/DEV-331-foundry-only-skills.md) |
+| SK-5 | 会话只认 Foundry 的 Skill；草稿优先并可发布 | 待验收 | —    | DEV-331 验收步骤 1–5 在 dev 通过                         | [DEV-331](devlog/DEV-331-foundry-only-skills.md) |
 
 #### 模型与账号
 
