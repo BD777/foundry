@@ -107,9 +107,6 @@ export function AppSidebar({
           }),
           liveCount:
             item.id === "issues" && running ? { children: running } : undefined,
-          // Items are the person's, not one assistant's.
-          scopeLabel:
-            item.id === "items" ? t("sidebar.globalScope") : undefined,
         })),
       })),
     [
