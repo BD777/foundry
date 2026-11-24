@@ -3,12 +3,20 @@ import { toast } from "../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
-import type { WorkspaceDraftSkills } from "@bd777/foundry-protocol";
+import type {
+  DeviceSkill,
+  WorkspaceDraftSkill,
+  WorkspaceDraftSkills,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import {
   getWorkspaceDraftSkills,
+  previewSkillPromotion,
   refreshWorkspaceDraftSkills,
   setWorkspaceDraftSkills,
 } from "../../api";
+import { SkillLibraryRelationBadge } from "../../components/skills/skill-library-relation";
+import { SkillPromotionDialog } from "../../components/skills/skill-promotion-dialog";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
@@ -21,20 +29,32 @@ export function WorkspaceDrafts({
   readOnly,
   online,
   canRefresh = !readOnly,
+  canPublish = false,
+  workspaces = [],
+  onChanged,
 }: {
   workspaceId: string;
   readOnly: boolean;
   online?: boolean;
   canRefresh?: boolean;
+  canPublish?: boolean;
+  workspaces?: WorkspaceProjection[];
+  onChanged?: () => Promise<void>;
 }) {
   const { t } = useTranslation("skills");
   const [view, setView] = useState<WorkspaceDraftSkills>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [promotion, setPromotion] = useState<{
+    draft: WorkspaceDraftSkill;
+    skill: DeviceSkill;
+    skills: DeviceSkill[];
+  }>();
   const revision = useRef(0);
   useEffect(() => {
     const current = ++revision.current;
     setView(undefined);
+    setPromotion(undefined);
     setError("");
     setBusy(false);
     getWorkspaceDraftSkills(workspaceId).then(
@@ -65,12 +85,59 @@ export function WorkspaceDrafts({
       if (current === revision.current) setBusy(false);
     }
   }
+  async function reviewDraft(draft: WorkspaceDraftSkill) {
+    const current = revision.current;
+    setBusy(true);
+    try {
+      const plan = await previewSkillPromotion({
+        sourceWorkspaceId: workspaceId,
+        draftId: draft.id,
+        expectedRevision: draft.libraryRelation?.latestRevision ?? 0,
+        includeAllRelated: true,
+      });
+      if (revision.current !== current) return;
+      const skill = plan.skills.find(
+        (s) => s.root === workspaceId && s.dirName === draft.relativePath,
+      );
+      if (!skill)
+        throw new Error(plan.problems.join("\n") || t("plan.sourceMissing"));
+      setPromotion({
+        draft,
+        skill: { ...skill, libraryRelation: draft.libraryRelation },
+        skills: plan.skills,
+      });
+    } catch (cause) {
+      if (revision.current === current)
+        toast({ tone: "error", title: String(cause) });
+    } finally {
+      if (revision.current === current) setBusy(false);
+    }
+  }
   return (
     <section
       className="mb-6 grid min-w-0 gap-3"
       aria-label={t("drafts.title")}
       aria-busy={busy}
     >
+      {promotion && (
+        <SkillPromotionDialog
+          draftSource={{
+            draftId: promotion.draft.id,
+            sourceWorkspaceId: workspaceId,
+          }}
+          skill={promotion.skill}
+          skills={promotion.skills}
+          online={online !== false}
+          workspaces={workspaces}
+          onClose={() => setPromotion(undefined)}
+          onChanged={async () => {
+            const current = revision.current;
+            const next = await getWorkspaceDraftSkills(workspaceId);
+            if (current === revision.current) setView(next);
+            await onChanged?.();
+          }}
+        />
+      )}
       <SkillCatalogHeading
         actions={
           <Button
@@ -135,12 +202,27 @@ export function WorkspaceDrafts({
               key={skill.id}
             >
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
                   <strong className="text-md font-semibold text-ink">
                     {skill.name}
                   </strong>
+                  <SkillLibraryRelationBadge relation={skill.libraryRelation} />
                   <Badge tone={statusTone}>{t(`drafts.${skill.status}`)}</Badge>
                 </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={
+                    busy ||
+                    !canPublish ||
+                    online === false ||
+                    skill.status !== "ready" ||
+                    !skill.libraryRelation
+                  }
+                  onClick={() => void reviewDraft(skill)}
+                >
+                  {t("promotion.publishDraft")}
+                </Button>
               </div>
 
               {skill.description ? (
@@ -162,7 +244,7 @@ export function WorkspaceDrafts({
                 ) : null}
                 {skill.status === "ready" ? (
                   <span className="text-ink-faint">
-                    {t("drafts.invoke", { name: `draft:${skill.name}` })}
+                    {t("drafts.invoke", { name: skill.name })}
                   </span>
                 ) : null}
               </div>

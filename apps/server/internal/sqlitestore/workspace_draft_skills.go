@@ -11,6 +11,7 @@ import (
 func (s *Store) setupWorkspaceDraftSkills(ctx context.Context) error {
 	for _, q := range []string{
 		`CREATE TABLE IF NOT EXISTS workspace_draft_revisions (workspace_id TEXT NOT NULL, execution_root_id TEXT NOT NULL, id TEXT NOT NULL, digest TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(workspace_id,execution_root_id,id,digest))`,
+		`CREATE TABLE IF NOT EXISTS workspace_skill_checkouts (workspace_id TEXT NOT NULL, relative_path TEXT NOT NULL, skill_id TEXT NOT NULL, revision INTEGER NOT NULL, directory_id TEXT NOT NULL DEFAULT '', PRIMARY KEY(workspace_id,relative_path))`,
 		`CREATE TABLE IF NOT EXISTS workspace_draft_settings (workspace_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS workspace_draft_skills (workspace_id TEXT NOT NULL, execution_root_id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(workspace_id,execution_root_id))`,
 	} {
@@ -41,6 +42,24 @@ func (s *Store) WorkspaceDrafts(ctx context.Context, workspaceID, rootID string)
 	if result.Skills == nil {
 		result.Skills = []store.WorkspaceDraftSkill{}
 	}
+	if len(result.Skills) > 0 {
+		histories, err := s.librarySkillHistories(ctx)
+		if err != nil {
+			return result, err
+		}
+		var bases map[string]store.SkillCheckoutBaseline
+		if workspaceID == rootID {
+			bases, err = s.WorkspaceSkillCheckouts(ctx, workspaceID)
+			if err != nil {
+				return result, err
+			}
+		}
+		for i := range result.Skills {
+			draft := &result.Skills[i]
+			base := bases[draft.RelativePath]
+			draft.LibraryRelation = histories.compare(draft.Name, draft.SourceDigest, base.SkillID, base.Revision)
+		}
+	}
 	return result, nil
 }
 func (s *Store) SetWorkspaceDraftsEnabled(ctx context.Context, id string, enabled bool) error {
@@ -51,6 +70,16 @@ func (s *Store) SetWorkspaceDraftsEnabled(ctx context.Context, id string, enable
 	return err
 }
 func (s *Store) SaveWorkspaceDrafts(ctx context.Context, id, root string, value store.WorkspaceDraftSkills) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		if root == id && value.CheckoutOrigins != nil {
+			if err := tx.reconcileSkillCheckouts(ctx, id, value); err != nil {
+				return err
+			}
+		}
+		return tx.saveWorkspaceDraftSnapshot(ctx, id, root, value)
+	})
+}
+func (s *Store) saveWorkspaceDraftSnapshot(ctx context.Context, id, root string, value store.WorkspaceDraftSkills) error {
 	for _, draft := range value.Skills {
 		if draft.Status != "ready" {
 			continue

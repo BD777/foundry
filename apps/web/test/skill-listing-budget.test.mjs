@@ -42,3 +42,32 @@ test("descriptions count at most 1536 characters", () => {
   const long = [{ name: "a", description: "x".repeat(5000) }];
   assert.equal(claudeSkillListing(long, 100_000).fullWidth, 3 + 2 + 1536);
 });
+
+test("the listing counts resolved workspace skills and drafts, skipping device scans and shadowed entries", async () => {
+  const { claudeListedSkills } =
+    await import("../src/features/skills/skill-listing-note.tsx");
+  const listed = claudeListedSkills({
+    workspaceSkills: [
+      { name: "draft", description: "workspace" },
+      { name: "foundry", description: "shadowed" },
+    ],
+    builtinSkills: [
+      { runtime: "claude", name: "foundry", description: "builtin" },
+    ],
+    providerHealth: [
+      {
+        provider: "claude",
+        officialSkills: [{ name: "official", description: "runtime" }],
+      },
+    ],
+    deviceSkills: [
+      { root: "~/.claude/skills", name: "local" },
+      { root: "/repo/.claude/skills", name: "draft" },
+    ],
+    workspacePath: "/repo",
+  });
+  assert.deepEqual(
+    listed.map((s) => s.description),
+    ["workspace", "builtin", "runtime"],
+  );
+});

@@ -9199,6 +9199,22 @@
         "targetDirName": { "type": "string" }
       }
     },
+    "SkillLibraryRelation": {
+      "description": "Comparison against the library at the time of the read.",
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["same", "differs", "diverged", "notInLibrary"]
+        },
+        "skillId": { "type": "string" },
+        "latestRevision": { "type": "integer" },
+        "matchedRevision": { "type": "integer" },
+        "baseRevision": { "type": "integer" }
+      }
+    },
     "DeviceSkill": {
       "type": "object",
       "required": [
@@ -9217,6 +9233,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/SkillFileInfo" }
         },
+        "libraryRelation": { "$ref": "#/$defs/SkillLibraryRelation" },
         "serverState": {
           "type": "string",
           "enum": [

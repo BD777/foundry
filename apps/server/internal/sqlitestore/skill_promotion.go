@@ -11,7 +11,7 @@ import (
 
 // Prepare archives outside the transaction; catalog writes and source bindings
 // are atomic and guarded by the exact server revisions reviewed by the user.
-func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.SkillPromotionPackage) ([]store.PromotedSkill, error) {
+func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.SkillPromotionPackage, selectWorkspace ...string) ([]store.PromotedSkill, error) {
 	type prepared struct {
 		pkg    store.SkillPromotionPackage
 		idx    skillarchive.Index
@@ -109,6 +109,25 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 		// Check every target before writes, including aliases reusing the same entry.
 		for _, p := range ready {
 			r := p.pkg.Resolution
+			// A fork creates a new invocation but also depends on the reviewed
+			// original. Guard its revision in the same transaction as the write.
+			if r.Action == "fork" && p.pkg.Source.LibraryRelation != nil {
+				rel := p.pkg.Source.LibraryRelation
+				if rel.SkillID != "" {
+					item, err := tx.GetPromotedSkill(ctx, rel.SkillID)
+					if err != nil || item.LatestRevision != rel.LatestRevision {
+						return skillConflict("original library revision changed; compare again")
+					}
+				} else {
+					var n int
+					if err := tx.conn().QueryRowContext(ctx, `SELECT count(*) FROM promoted_skills WHERE lower(name)=lower(?)`, p.pkg.Source.Name).Scan(&n); err != nil {
+						return err
+					}
+					if n != 0 {
+						return skillConflict("original skill entered the library; compare again")
+					}
+				}
+			}
 			if r.TargetSkillID != "" {
 				current, err := tx.GetPromotedSkill(ctx, r.TargetSkillID)
 				if err != nil {
@@ -155,10 +174,43 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 				result = append(result, item)
 				continue
 			}
-			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO skill_sources(device_id,root,dir_name,skill_id,source_digest,content_digest) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id,root,dir_name) DO UPDATE SET skill_id=excluded.skill_id,source_digest=excluded.source_digest,content_digest=excluded.content_digest`, source.DeviceID, source.Root, source.DirName, item.ID, source.SourceDigest, item.SourceDigest); err != nil {
-				return err
+			if p.pkg.DraftWorkspaceID != "" && r.Action != "fork" {
+				if err := tx.SaveWorkspaceSkillCheckout(ctx, p.pkg.DraftWorkspaceID, source.DirName, store.SkillCheckoutBaseline{SkillID: item.ID, Revision: item.LatestRevision}); err != nil {
+					return err
+				}
+			} else if !p.pkg.LibraryDependency && p.pkg.DraftWorkspaceID == "" {
+				if _, err := tx.conn().ExecContext(ctx, `INSERT INTO skill_sources(device_id,root,dir_name,skill_id,source_digest,content_digest) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id,root,dir_name) DO UPDATE SET skill_id=excluded.skill_id,source_digest=excluded.source_digest,content_digest=excluded.content_digest`, source.DeviceID, source.Root, source.DirName, item.ID, source.SourceDigest, item.SourceDigest); err != nil {
+					return err
+				}
 			}
 			result = append(result, item)
+		}
+		if len(selectWorkspace) > 0 && selectWorkspace[0] != "" {
+			ws := selectWorkspace[0]
+			bindings, err := tx.ListWorkspaceSkillBindings(ctx, ws)
+			if err != nil {
+				return err
+			}
+			ids := make([]string, 0, len(bindings)+len(result))
+			selected := map[string]bool{}
+			for _, item := range result {
+				selected[item.ID] = true
+				ids = append(ids, item.ID)
+			}
+			for _, b := range bindings {
+				ids = append(ids, b.SkillID)
+			}
+			off, err := tx.ListWorkspaceSkillExclusions(ctx, ws)
+			if err != nil {
+				return err
+			}
+			retained := off[:0]
+			for _, id := range off {
+				if !selected[id] {
+					retained = append(retained, id)
+				}
+			}
+			return tx.SetWorkspaceSkills(ctx, store.SetWorkspaceSkillsInput{WorkspaceID: ws, SkillIDs: ids, OffSkillIDs: &retained})
 		}
 		return nil
 	})

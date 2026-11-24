@@ -578,16 +578,19 @@ export function status() {
   }
 }
 
-export function remove(name, options) {
+export async function remove(name, options) {
   const stack = stackByName(name);
   if (name === defaultStack.name)
     throw new Error("the default stack is not managed by this script");
   stop(name);
   for (const service of services)
     rmSync(plistPath(name, service), { force: true });
+  if (options.purgeState) {
+    const { removeSkillSnapshotTree } =
+      await import("../../packages/worker/dist/skills/skill-snapshot-permissions.js");
+    removeSkillSnapshotTree(stack.stateRoot);
+  }
   saveRegistry(registry().filter((entry) => entry.name !== name));
-  if (options.purgeState)
-    rmSync(stack.stateRoot, { recursive: true, force: true });
   console.log(
     `stack ${name} removed${options.purgeState ? " with its state" : `; state kept at ${stack.stateRoot}`}`,
   );

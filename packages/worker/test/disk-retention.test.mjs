@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  chmodSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -97,6 +98,10 @@ test("verifier sandboxes unused for a week go in every workspace", async (t) => 
   const fresh = join(root, "ws_b", "verifications", "sess_fresh");
   mkdirSync(stale, { recursive: true });
   mkdirSync(fresh, { recursive: true });
+  const snapshot = join(stale, "scratch", "skill-sets", "generation");
+  mkdirSync(snapshot, { recursive: true });
+  writeFileSync(join(snapshot, "SKILL.md"), "sealed", { mode: 0o400 });
+  chmodSync(snapshot, 0o500);
   const old = new Date(Date.now() - 8 * day);
   utimesSync(stale, old, old);
   assert.equal(await pruneIdleVerifiers(root), 1);

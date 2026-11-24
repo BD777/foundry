@@ -134,9 +134,23 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(append(append(personalAgentToolNames(), modelProviderToolNames()...), repositorySourceToolNames()...), "connector_instances", "connector_packages", "edge_access", "model_guides", "foundry_settings", "issues", "list_issues", "get_issue", "ask_person")...)) {
+	excluded := slices.Concat(personalAgentToolNames(), modelProviderToolNames(), repositorySourceToolNames(), skillPublicationToolNames,
+		[]string{"connector_instances", "connector_packages", "edge_access", "model_guides", "foundry_settings", "issues", "list_issues", "get_issue", "ask_person"})
+	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(excluded...)) {
 		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider, skill source, connector package, edge access, model guide, foundry settings or personal credential tools", names)
 	}
+	execCall := mcpToolCaller(t, handler, mint(execution.ID))
+	for _, name := range skillPublicationToolNames {
+		if text, failed := execCall(name, nil); !failed || !strings.Contains(text, "cannot publish") {
+			t.Fatalf("Issue calling %s: %q", name, text)
+		}
+	}
+	for _, tool := range slices.Concat(skillPublicationToolNames, []string{"checkout_skill"}) {
+		if mcpToolAllowed("", true, tool) == nil || mcpToolAllowed(store.AgentSessionRoleIssueClarification, false, tool) == nil {
+			t.Fatalf("read-only role may call %s", tool)
+		}
+	}
+
 }
 
 // list_sessions reads one cheap page at a time, filtered in SQL before the

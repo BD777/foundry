@@ -64,7 +64,7 @@ func buildSkillPromotionPlan(input store.PromoteSkillInput, skills []store.Devic
 			if !required {
 				plan.Related = append(plan.Related, dep)
 			}
-			required = required || included[dep.SkillName]
+			required = required || included[dep.SkillName] || input.IncludeAllRelated
 			if !required {
 				continue
 			}
@@ -84,15 +84,40 @@ func buildSkillPromotionPlan(input store.PromoteSkillInput, skills []store.Devic
 	return plan
 }
 
-func (s *Server) storedSkillPromotionPlan(ctx context.Context, input store.PromoteSkillInput) (store.SkillPromotionPlan, error) {
-	skills, err := s.store.ListDeviceSkills(ctx, input.DeviceID)
-	if err != nil {
-		return store.SkillPromotionPlan{}, err
-	}
-	plan := buildSkillPromotionPlan(input, skills)
+func (s *Server) storedSkillPromotionPlan(ctx context.Context, p *promotionSource) (store.SkillPromotionPlan, error) {
+	input := p.input
+	plan := buildSkillPromotionPlan(input, p.graph)
 	choices := []store.SkillPromotionResolution{}
 	for _, source := range plan.Skills {
 		r := store.ResolveSkillPromotion(source, input.Resolutions)
+		if input.ExpectedRevision != nil && source.Root == input.Root && source.DirName == input.DirName {
+			latest := 0
+			if source.LibraryRelation != nil {
+				latest = source.LibraryRelation.LatestRevision
+			}
+			if r.TargetSkillID != "" {
+				for _, c := range source.ServerCandidates {
+					if c.ID == r.TargetSkillID {
+						latest = c.LatestRevision
+					}
+				}
+			}
+			if latest != *input.ExpectedRevision {
+				plan.Problems = append(plan.Problems, "Library revision changed; compare again before publishing.")
+			}
+			if r.Action == "" && len(source.ServerCandidates) == 1 && *input.ExpectedRevision == latest {
+				r.Action = "update"
+				r.TargetSkillID = source.ServerCandidates[0].ID
+				r.ExpectedRevision = latest
+				p.input.Resolutions = append(p.input.Resolutions, r)
+			}
+		}
+		if source.Root == "library" && p.drafts != nil && r.Action != "reuse" {
+			plan.Problems = append(plan.Problems, "A selected library dependency can only be reused")
+		}
+		if source.LibraryRelation != nil && source.LibraryRelation.Status == "diverged" && (!input.MergedLatest || r.Action != "update" || r.ExpectedRevision != source.LibraryRelation.LatestRevision || input.ExpectedRevision == nil) {
+			plan.Problems = append(plan.Problems, source.Name+": merge the latest library revision and compare again before publishing.")
+		}
 		choices = append(choices, r)
 		if r.Action == "update" || r.Action == "reuse" || r.Action == "keep" {
 			found := false
@@ -142,10 +167,12 @@ func (s *Server) handleSkillPromotionPlan(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
+	p, err := s.publicationSource(r.Context(), actorFromContext(r.Context()), input)
+	if err != nil {
+		writeResult(w, nil, err)
 		return
 	}
-	plan, err := s.storedSkillPromotionPlan(r.Context(), input)
+	plan, err := s.storedSkillPromotionPlan(r.Context(), &p)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -155,79 +182,101 @@ func (s *Server) handleSkillPromotionPlan(w http.ResponseWriter, r *http.Request
 	writeResult(w, plan, err)
 }
 
+func (s *Server) handlePublishSkill(w http.ResponseWriter, r *http.Request) {
+	var input store.PromoteSkillInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if input.ExpectedRevision == nil || *input.ExpectedRevision < 0 {
+		writeError(w, http.StatusBadRequest, "expectedRevision is required (0 for a new skill)")
+		return
+	}
+	s.promoteSkillClosure(w, r, input)
+}
+
 func (s *Server) promoteSkillClosure(w http.ResponseWriter, r *http.Request, input store.PromoteSkillInput) {
-	plan, err := s.storedSkillPromotionPlan(r.Context(), input)
+	p, err := s.publicationSource(r.Context(), actorFromContext(r.Context()), input)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	if len(plan.Problems) > 0 {
-		writeError(w, http.StatusConflict, fmt.Sprintf("Cannot promote: %v", plan.Problems))
+	item, err := s.publishSkill(r.Context(), actorFromContext(r.Context()), input, p)
+	if err != nil {
+		writeResult(w, nil, err)
 		return
 	}
-	// Legacy callers can publish a dependency-free skill. Multi-skill writes
-	// always require the exact preview digest.
+	view, err := s.callerVisibility(r)
+	writeResultWithStatus(w, http.StatusCreated, view.skillUsage([]store.PromotedSkill{item})[0], err)
+}
+
+func (s *Server) publishSkill(ctx context.Context, actor Actor, request store.PromoteSkillInput, p promotionSource) (store.PromotedSkill, error) {
+	var empty store.PromotedSkill
+	plan, err := s.storedSkillPromotionPlan(ctx, &p)
+	if err != nil {
+		return empty, err
+	}
+	if len(plan.Problems) > 0 {
+		return empty, conflict(fmt.Sprintf("Cannot publish: %v", plan.Problems))
+	}
+	input := p.input
 	needsReview := len(plan.Skills) > 1
 	for _, source := range plan.Skills {
-		r := store.ResolveSkillPromotion(source, input.Resolutions)
-		if source.PromotedSkillID != "" || len(source.ServerCandidates) > 0 || r.Action == "fork" {
+		if input.ExpectedRevision == nil && (source.PromotedSkillID != "" || len(source.ServerCandidates) > 0 || store.ResolveSkillPromotion(source, input.Resolutions).Action == "fork") {
 			needsReview = true
 		}
 	}
 	if input.PlanDigest != plan.Digest && (input.PlanDigest != "" || needsReview) {
-		writeError(w, http.StatusConflict, "Skill dependencies changed. Review the promotion plan again.")
-		return
+		return empty, conflict("Skill dependencies changed. Review the promotion plan again.")
 	}
-	packages := []store.SkillPromotionPackage{}
+	packages := make([]store.SkillPromotionPackage, 0, len(plan.Skills))
 	for _, source := range plan.Skills {
 		resolution := store.ResolveSkillPromotion(source, input.Resolutions)
-		// Reused and kept entries publish nothing from the device.
-		if resolution.Action == "reuse" || resolution.Action == "keep" {
-			packages = append(packages, store.SkillPromotionPackage{Source: source, Resolution: resolution})
-			continue
+		pkg := store.SkillPromotionPackage{Source: source, Resolution: resolution, LibraryDependency: p.drafts != nil && source.Root == "library"}
+		if p.drafts != nil && source.Root == input.SourceWorkspaceID {
+			pkg.DraftWorkspaceID = input.SourceWorkspaceID
 		}
-		content, err := s.hub.ReadDeviceSkillContent(r.Context(), input.DeviceID, source.Root, source.DirName)
-		if err != nil {
-			writeResult(w, nil, err)
-			return
+		if resolution.Action != "reuse" && resolution.Action != "keep" {
+			content, err := s.readPromotionSource(ctx, p, source)
+			if err != nil {
+				return empty, err
+			}
+			if content.Name != source.Name || content.SourceDigest != source.SourceDigest {
+				return empty, conflict("Skill files changed since the last scan. Refresh and compare again.")
+			}
+			pkg.Content, err = base64.StdEncoding.DecodeString(content.ContentB64)
+			if err != nil {
+				return empty, &statusError{http.StatusBadGateway, errors.New("device returned malformed skill content")}
+			}
+			pkg.FileCount = content.FileCount
 		}
-		if content.Name != source.Name || content.SourceDigest != source.SourceDigest {
-			writeError(w, http.StatusConflict, "Skill files changed since the last scan. Run Scan now and review again.")
-			return
-		}
-		zip, err := base64.StdEncoding.DecodeString(content.ContentB64)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, "Device returned malformed skill content")
-			return
-		}
-		packages = append(packages, store.SkillPromotionPackage{Source: source, Content: zip, FileCount: content.FileCount, Resolution: resolution})
+		packages = append(packages, pkg)
 	}
-	// A concurrent explicit scan may replace the saved graph. No filesystem
-	// traversal here: each uploaded tree has already matched its source digest.
-	check, err := s.storedSkillPromotionPlan(r.Context(), input)
+	again, err := s.publicationSource(ctx, actor, request)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return empty, err
+	}
+	check, err := s.storedSkillPromotionPlan(ctx, &again)
+	if err != nil {
+		return empty, err
 	}
 	if check.Digest != plan.Digest {
-		writeError(w, http.StatusConflict, "Skills changed while packaging; review again")
-		return
+		return empty, conflict("Skills changed while packaging; compare again")
 	}
-	published, err := s.store.PromoteSkillPackages(r.Context(), packages)
+	published, err := s.store.PromoteSkillPackages(ctx, packages, input.WorkspaceID)
+	if errors.Is(err, store.ErrSkillVersionConflict) {
+		return empty, conflict(err.Error() + "; compare again")
+	}
 	if err != nil {
-		if errors.Is(err, store.ErrSkillVersionConflict) {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeResult(w, nil, err)
-		return
+		return empty, err
 	}
 	s.projectionsChanged("", skillLibraryFields...)
+	if input.WorkspaceID != "" {
+		s.projectionsChanged(input.WorkspaceID, workspaceSkillFields...)
+	}
 	for i, item := range published {
 		if packages[i].Source.Root == input.Root && packages[i].Source.DirName == input.DirName {
-			view, err := s.callerVisibility(r)
-			writeResultWithStatus(w, http.StatusCreated, view.skillUsage([]store.PromotedSkill{item})[0], err)
-			return
+			return item, nil
 		}
 	}
+	return empty, errors.New("published closure missing requested skill")
 }

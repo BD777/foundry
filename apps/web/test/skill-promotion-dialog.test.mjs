@@ -230,3 +230,60 @@ test("publishing decides by itself unless a different same-named skill exists", 
     container.remove();
   }
 });
+
+test("publishing a diverged draft requires confirming the merge and sends the reviewed revision and destination", async () => {
+  const item = {
+    ...skill("edited"),
+    libraryRelation: { status: "diverged", latestRevision: 4, baseRevision: 1 },
+  };
+  const holder = document.createElement("div");
+  document.body.append(holder);
+  const root = createRoot(holder);
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    const result = String(url).endsWith("/promote-plan")
+      ? { digest: "reviewed", skills: [item], related: [], problems: [] }
+      : { id: "published" };
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SkillPromotionDialog, {
+          skill: item,
+          skills: [item],
+          initialWorkspaceId: "dest",
+          draftSource: { draftId: "draft", sourceWorkspaceId: "src" },
+          online: true,
+          onClose: () => {},
+          onChanged: async () => {},
+        }),
+      ),
+    );
+    const publish = buttonNamed("Publish and select");
+    assert.equal(publish.disabled, true);
+    await act(async () =>
+      document.querySelector('input[type="checkbox"]').click(),
+    );
+    await act(async () => publish.click());
+    assert.equal(requests.length, 2);
+    const { url, body } = requests[1];
+    assert.ok(url.endsWith("/api/skills/publish"));
+    assert.equal(body.sourceWorkspaceId, "src");
+    assert.equal(body.draftId, "draft");
+    assert.equal(body.deviceId, undefined);
+    assert.equal(body.workspaceId, "dest");
+    assert.equal(body.expectedRevision, 4);
+    assert.equal(body.planDigest, "reviewed");
+    assert.equal(body.mergedLatest, true);
+  } finally {
+    await act(async () => root.unmount());
+    holder.remove();
+    globalThis.fetch = originalFetch;
+  }
+});

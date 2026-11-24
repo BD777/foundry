@@ -8,6 +8,7 @@ import {
   type SnapshotFile,
 } from "./skill-snapshots.js";
 import {
+  skillContentDigest,
   SKILL_PACKAGE_MAX_BYTES,
   SKILL_PACKAGE_MAX_FILES,
 } from "./skill-files.js";
@@ -71,8 +72,36 @@ export function draftPackages(
   const errors = new Map<Source, string>();
   for (const source of sources.filter((s) => s.draft)) {
     const targets: { target: Source; offset?: string }[] = [];
-    for (const dep of analyze(source, source.files).filter(
-      (d) => d.strength === "required",
+    const dependencies = analyze(source, source.files);
+    source.draft!.item.dependenciesAnalyzed = true;
+    const resolved = dependencies.map((dep) => ({
+      dep,
+      target:
+        sources.find(
+          (s) => s.root === dep.targetRoot && s.dirName === dep.targetDirName,
+        ) ??
+        (dep.status === "ambiguous"
+          ? sources.find((s) => !s.draft && s.name === dep.skillName)
+          : undefined),
+    }));
+    source.draft!.item.dependencies = resolved.map(({ dep, target }) => {
+      if (!target) return dep;
+      if (target.draft)
+        return {
+          ...dep,
+          status: "resolved",
+          targetRoot: source.draft!.item.workspaceId,
+          targetDirName: target.draft.item.relativePath,
+        };
+      return {
+        ...dep,
+        status: "resolved",
+        targetRoot: "library",
+        targetDirName: target.name + "@" + skillContentDigest(target.files),
+      };
+    });
+    for (const { dep, target } of resolved.filter(
+      ({ dep }) => dep.strength === "required",
     )) {
       if (/(?:^|[\s("'`])(?:\/|~\/|\$HOME\/)/.test(dep.evidence)) {
         errors.set(
@@ -81,12 +110,6 @@ export function draftPackages(
         );
         break;
       }
-      let target = sources.find(
-        (s) => s.root === dep.targetRoot && s.dirName === dep.targetDirName,
-      );
-      // A named method keeps the selected library meaning when a same-name draft exists.
-      if (!target && dep.status === "ambiguous")
-        target = sources.find((s) => !s.draft && s.name === dep.skillName);
       if (!target) {
         errors.set(
           source,

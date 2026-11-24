@@ -136,6 +136,8 @@ the work owns the files.
   `clientSecret`; replace may name either one to rotate it. Provision takes the
   `edgeAccessRequired` record and uses the connected Cloudflare account's Zero
   Trust authorization; token values stay on Foundry and never return.
+- Session skills come from Foundry. Library revisions are read-only snapshots:
+  use `checkout_skill` to edit a workspace draft and `publish_skill` to publish it.
 - To make a device read a skill repository, use
   `set_skill_repository_source`; the repository id comes from the Skill Library.
 - Use your own tools for timers and background commands within a session;

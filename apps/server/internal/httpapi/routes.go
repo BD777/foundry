@@ -373,6 +373,7 @@ func (s *Server) routeTable() []route {
 		// Owners remove anyone; any member may leave (in handler).
 		fn("DELETE /api/workspaces/{id}/members/{userId}", s.handleRemoveWorkspaceMember, inHandler()),
 		fn("GET /api/workspaces/{id}/draft-skills", s.handleWorkspaceDraftSkills, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/draft-skills/checkout", s.handleCheckoutSkill, workspaceRole(member, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/draft-skills/refresh", s.handleWorkspaceDraftSkills, workspaceRole(member, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/draft-skills", s.handleSetWorkspaceDraftSkills, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/skills", s.handleListWorkspaceSkills, workspaceRole(viewer, pathWorkspace("id"))),
@@ -597,6 +598,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/assets", s.handleListAssets, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/skills/catalog", s.handleListPromotedSkills, signedIn()),
 		fn("GET /api/builtin-skills/foundry", s.handleFoundrySkill, signedIn()),
+		fn("POST /api/skills/publish", s.handlePublishSkill, inHandler()),
 		fn("POST /api/skills/promote", s.handlePromoteSkill, inHandler()),
 		fn("POST /api/skills/promote-plan", s.handleSkillPromotionPlan, inHandler()),
 		fn("POST /api/skills/compare", s.handleSkillCompare, inHandler()),

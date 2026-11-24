@@ -1,11 +1,13 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  chmodSync,
+  statSync,
   mkdtempSync,
   mkdirSync,
   writeFileSync,
   readFileSync,
-  rmSync,
   existsSync,
   symlinkSync,
 } from "node:fs";
@@ -25,7 +27,7 @@ import {
 import { prepareNativeOperation } from "../dist/harness/native/native-operation.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "input-maintenance-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => removeSkillSnapshotTree(root));
   return root;
 }
 function mark(path, stale = false) {
@@ -73,7 +75,21 @@ test("cache GC waits for idle, retains historical heads and redirects retired re
     value: { dir },
   });
   const before = await materializeSkillSnapshot(key, describe, root);
-  writeFileSync(join(before.dir, "SKILL.md"), "corrupted");
+  assert.equal(statSync(before.dir).mode & 0o777, 0o500);
+  const file = join(before.dir, "SKILL.md");
+  assert.equal(statSync(file).mode & 0o777, 0o400);
+  assert.equal(statSync(before.manifestFile).mode & 0o777, 0o400);
+  if (process.getuid?.() !== 0) {
+    assert.throws(() => writeFileSync(file, "ordinary edit"), {
+      code: "EACCES",
+    });
+    assert.throws(() => writeFileSync(join(before.dir, "extra"), ""), {
+      code: "EACCES",
+    });
+  }
+  chmodSync(file, 0o600);
+  writeFileSync(file, "corrupted");
+  chmodSync(file, 0o400);
   const after = await materializeSkillSnapshot(key, describe, root);
   assert.notEqual(before.dir, after.dir);
   assert.equal(
@@ -98,6 +114,53 @@ test("cache GC waits for idle, retains historical heads and redirects retired re
     collectSkillSnapshotGarbage({ idle: true, minAgeMs: 0 }, root),
     0,
   );
+});
+
+test("writable legacy generations are replaced and abandoned sealed staging trees can be collected", async (t) => {
+  const root = fixture(t);
+  const key = createHash("sha256").update("legacy generation").digest("hex");
+  const build = () =>
+    materializeSkillSnapshot(
+      key,
+      (dir) => ({
+        files: [
+          { path: "skills/demo/SKILL.md", data: Buffer.from("original") },
+        ],
+        value: { dir },
+      }),
+      root,
+    );
+  const old = await build();
+  chmodSync(join(old.dir, "skills/demo/SKILL.md"), 0o600);
+  const current = await build();
+  assert.notEqual(current.dir, old.dir);
+  assert.equal(current.snapshotDigest, old.snapshotDigest);
+  assert.equal((await build()).dir, current.dir);
+
+  const staging = join(root, ".staging-abandoned");
+  mkdirSync(staging);
+  const marker = staging + ".owner.json";
+  markPrivateInputOwner(staging, "skill-staging", marker);
+  const record = JSON.parse(readFileSync(marker, "utf8"));
+  writeFileSync(
+    marker,
+    JSON.stringify({ ...record, startTime: "earlier-process" }),
+  );
+  const outside = fixture(t);
+  chmodSync(outside, 0o500);
+  symlinkSync(outside, join(staging, "outside"));
+  chmodSync(staging, 0o500);
+  assert.equal(
+    collectSkillSnapshotGarbage(
+      { idle: true, minAgeMs: 0, now: Date.now() + 1000 },
+      root,
+    ),
+    2,
+  );
+  assert.equal(existsSync(staging), false);
+  assert.equal(existsSync(marker), false);
+  assert.equal(statSync(outside).mode & 0o777, 0o500);
+  assert.ok(existsSync(current.dir));
 });
 
 test("metadata preparation owns disposable history/configuration but leaves the real login source intact", (t) => {

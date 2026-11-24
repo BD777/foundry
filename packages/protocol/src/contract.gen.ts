@@ -4990,8 +4990,18 @@ interface components {
       targetRoot?: string;
       targetDirName?: string;
     };
+    /** @description Comparison against the library at the time of the read. */
+    SkillLibraryRelation: {
+      /** @enum {string} */
+      status: "same" | "differs" | "diverged" | "notInLibrary";
+      skillId?: string;
+      latestRevision?: number;
+      matchedRevision?: number;
+      baseRevision?: number;
+    };
     DeviceSkill: {
       manifest?: components["schemas"]["SkillFileInfo"][];
+      libraryRelation?: components["schemas"]["SkillLibraryRelation"];
       /** @enum {string} */
       serverState?:
         | "unpublished"
@@ -6063,6 +6073,8 @@ export type SkillPackRef = components["schemas"]["SkillPackRef"];
 export type SkillDependencyStrength =
   components["schemas"]["SkillDependencyStrength"];
 export type SkillDependency = components["schemas"]["SkillDependency"];
+export type SkillLibraryRelation =
+  components["schemas"]["SkillLibraryRelation"];
 export type DeviceSkill = components["schemas"]["DeviceSkill"];
 export type PromotedSkill = components["schemas"]["PromotedSkill"];
 export type SessionSkillRef = components["schemas"]["SessionSkillRef"];

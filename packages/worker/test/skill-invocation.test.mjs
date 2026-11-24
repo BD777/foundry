@@ -77,7 +77,7 @@ test("Claude gets the plugin-namespaced name and keeps the rest as typed", () =>
   );
 });
 
-test("Codex gets the skill as its own skill input; drafts and non-leading names stay as typed", () => {
+test("Codex gets the skill as its own skill input; including drafts; non-leading names stay as typed", () => {
   assert.deepEqual(
     codexManagedInput("/foundry-orchestration brief it", managed),
     {
@@ -98,7 +98,8 @@ test("Codex gets the skill as its own skill input; drafts and non-leading names 
     text: "/unknown run",
   });
   assert.deepEqual(codexManagedInput("/draft:example run", managed), {
-    text: "/draft:example run",
+    text: "run",
+    skill: { type: "skill", name: "example", path: "/skills/example/SKILL.md" },
   });
   assert.deepEqual(codexManagedInput("ask /foundry-orchestration", managed), {
     text: "ask /foundry-orchestration",

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -183,8 +182,9 @@ func libraryTools(ctx context.Context, db Backend) []string {
 
 // wsReadSkillContentPayload requests one skill directory as a zip.
 type wsReadSkillContentPayload struct {
-	Root    string `json:"root"`
-	DirName string `json:"dirName"`
+	Draft   *store.WorkspaceDraftSkill `json:"draft,omitempty"`
+	Root    string                     `json:"root,omitempty"`
+	DirName string                     `json:"dirName,omitempty"`
 }
 
 // wsSkillContentReadPayload returns the zip as standard base64 alongside the
@@ -351,26 +351,8 @@ func (s *Server) scanPaths(ctx context.Context, deviceID string) ([]string, erro
 			paths = append(paths, root.Path)
 		}
 	}
-	// A workspace's own skill folders are a source too: a skill created or
-	// changed there (say by an agent using skill-creator) is a draft that can
-	// be published to the library. Sessions never see these folders directly.
-	workspaces, err := s.store.ListWorkspaces(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, workspace := range workspaces {
-		if workspace.DeviceID != deviceID || workspace.LocalPath == "" {
-			continue
-		}
-		for _, dir := range workspaceSkillDirs {
-			paths = append(paths, path.Join(workspace.LocalPath, dir))
-		}
-	}
 	return paths, nil
 }
-
-// workspaceSkillDirs are the skill folders agents read inside a project.
-var workspaceSkillDirs = []string{".agents/skills", ".claude/skills", ".codex/skills"}
 
 func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) {
 	deviceID := strings.TrimSpace(r.URL.Query().Get("deviceId"))

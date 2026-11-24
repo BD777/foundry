@@ -71,6 +71,7 @@ test("draft refresh failures remain visible, and drafts offer no Foundry trial",
     relativePath: ".agents/skills/example",
     description: "Test method",
     digest: "abc123",
+    libraryRelation: { status: "differs", latestRevision: 4 },
     status: "ready",
     snapshotPath: "/snapshot/SKILL.md",
   };
@@ -96,6 +97,12 @@ test("draft refresh failures remain visible, and drafts offer no Foundry trial",
       ),
     );
     assert.match(container.textContent, /example/);
+    assert.match(container.textContent, /Differs from library rev 4/);
+    assert.ok(
+      [...container.querySelectorAll("button")].find(
+        (b) => b.textContent === "Publish to library…",
+      ).disabled,
+    );
     const refresh = [...container.querySelectorAll("button")].find(
       (b) => b.textContent === "Refresh drafts",
     );

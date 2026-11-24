@@ -18,6 +18,7 @@ const { manageWorkspaceFile } =
   await import("../dist/session/files/workspace-file-write.js");
 const {
   withManagedBlock,
+  withPersonalAgentSkills,
   writePersonalAgentFiles,
   personalAgentFilesRevision,
 } = await import("../dist/session/personal-agent-files.js");
@@ -36,6 +37,55 @@ const code = (code) => (error) => error.code === code;
 
 const block = (body) =>
   `<!-- foundry:managed:start (kept current by Foundry) -->\n${body}\n<!-- foundry:managed:end -->`;
+
+test("assistant skills retain their project names and canonical paths in the session selection", async () => {
+  const { claudeSessionOptions } =
+    await import("../dist/session/session-launch-options.js");
+  const { claudeManagedPrompt } =
+    await import("../dist/skills/skill-invocation.js");
+  const { writeCodexSkillRules } =
+    await import("../dist/skills/codex-skill-config.js");
+  const { parse } = await import("smol-toml");
+  const ws = workspace();
+  const names = [
+    "assistant-handoff",
+    "assistant-projects",
+    "assistant-memory-and-list",
+  ];
+  writePersonalAgentFiles(
+    { role: "personal_agent", id: "assistant", workspaceId: "ws" },
+    ws,
+    names.map((name) => ({
+      path: `.foundry/assistant-skills/${name}/SKILL.md`,
+      content: `---\nname: ${name}\ndescription: Assistant method\n---\n`,
+    })),
+  );
+  const local = join(ws, ".agents/skills/local");
+  mkdirSync(local);
+  writeFileSync(join(local, "SKILL.md"), "---\nname: local\n---\n");
+  const managed = withPersonalAgentSkills({ skills: [], pluginDir: ws }, ws);
+  const options = claudeSessionOptions(managed);
+  assert.deepEqual(managed.skills.map((s) => s.name).sort(), [...names].sort());
+  for (const name of names) {
+    assert.ok(options.skills.includes(name));
+    assert.ok(!options.skills.includes(`foundry-workspace:${name}`));
+    assert.equal(claudeManagedPrompt(`/${name} run`, managed), `/${name} run`);
+  }
+  assert.ok(!options.skills.includes("local"));
+  const paths = [...names, "local"].map((name) =>
+    realpathSync(join(ws, ".agents/skills", name, "SKILL.md")),
+  );
+  const config = join(ws, "config.toml");
+  writeFileSync(config, "");
+  writeCodexSkillRules(
+    managed,
+    paths.map((path) => ({ path, scope: "repo", enabled: true })),
+    ws,
+  );
+  assert.deepEqual(parse(readFileSync(config, "utf8")).skills.config, [
+    { path: join(local, "SKILL.md"), enabled: false },
+  ]);
+});
 
 test("the managed block replaces only itself and keeps the person's text", () => {
   const current = `${block("old facts")}\n\nMy own rule.\n`;

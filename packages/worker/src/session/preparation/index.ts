@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { configureCodexSkills } from "../../skills/codex-skill-config.js";
 /** Shared preparation for workspace turns and independent judgments. */
 import { createHash } from "node:crypto";
 import { privateConfigurationVersion } from "../../harness/agent-runtime/private-identity.js";
@@ -149,7 +151,8 @@ export async function prepareExecution(
     if (managedSkills && profile.runtime === "codex")
       managedSkills = await (
         ports.inventory ??
-        (async (managed, workspacePath) => {
+        (async (managed, workspacePath, env, signal) => {
+          const configHome = nativeExecutionPaths(env)?.configHome;
           // Inside a sandbox (an Issue's sessions) the workspace and its Git
           // metadata may be read-only, and HOME is the agent's private
           // scratch (isolated-environment.ts): its skills go to
@@ -160,7 +163,16 @@ export async function prepareExecution(
               process.env.HOME
               ? process.env.HOME
               : workspacePath,
+            configHome ? join(configHome, "skills") : undefined,
           );
+          if (configHome)
+            await configureCodexSkills(
+              managed,
+              workspacePath,
+              env,
+              configHome,
+              signal,
+            );
           return managed;
         })
       )(managedSkills, request.workspacePath, env, request.signal);

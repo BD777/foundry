@@ -12,7 +12,7 @@ const managed = (skills) => ({
 test("a workspace session loads the native settings; a utility session none", () => {
   const options = claudeSessionOptions(managed([]));
   assert.equal(options.settingSources, undefined);
-  assert.equal(options.skills, undefined);
+  assert.deepEqual(options.skills, []);
   assert.deepEqual(options.plugins, []);
   const utility = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
@@ -28,7 +28,7 @@ test("Claude gets managed skills as a plugin and lists them itself", () => {
   const options = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
   );
-  assert.equal(options.skills, undefined);
+  assert.deepEqual(options.skills, ["foundry-workspace:qa"]);
   assert.deepEqual(options.plugins, [
     { type: "local", path: "/state/skill-sets/abc" },
   ]);
@@ -74,7 +74,7 @@ test("managed skills are linked where Codex looks, beside the person's own", asy
     rmSync(set, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });
   });
-  for (const name of ["qa", "mine", "old"]) {
+  for (const name of ["qa", "mine", "old", "draft"]) {
     mkdirSync(join(set, name), { recursive: true });
     writeFileSync(join(set, name, "SKILL.md"), `---\nname: ${name}\n---\n`);
   }
@@ -93,20 +93,43 @@ test("managed skills are linked where Codex looks, beside the person's own", asy
       skills: [
         { name: "qa", dir: join(set, "qa") },
         { name: "mine", dir: join(set, "mine") },
-        { name: "draft", dir: "/elsewhere", draft: { id: "d" } },
+        { name: "draft", dir: join(set, "draft"), draft: { id: "d" } },
       ],
     },
     workspace,
   );
   assert.equal(readlinkSync(at("qa")), join(set, "qa"));
   assert.ok(!lstatSync(at("mine")).isSymbolicLink());
-  assert.ok(!existsSync(at("old")) && !existsSync(at("draft")));
+  assert.ok(!existsSync(at("old")) && existsSync(at("draft")));
   const exclude = readFileSync(
     join(workspace, ".git", "info", "exclude"),
     "utf8",
   );
   assert.match(exclude, /^\/\.agents\/skills\/qa$/m);
   assert.doesNotMatch(exclude, /skills\/mine$/m);
+  const { writeCodexSkillRules } =
+    await import("../dist/skills/codex-skill-config.js");
+  const { parse } = await import("smol-toml");
+  const config = join(workspace, "config.toml");
+  writeFileSync(config, "[skills]\nmax_context_tokens=1200\n");
+  const { realpathSync } = await import("node:fs");
+  writeCodexSkillRules(
+    { pluginDir: set, skills: [{ name: "qa", dir: join(set, "qa") }] },
+    [
+      {
+        scope: "repo",
+        path: realpathSync(join(set, "qa", "SKILL.md")),
+        enabled: true,
+      },
+      { scope: "user", path: "/personal/y/SKILL.md", enabled: true },
+      { scope: "system", path: "/system/s/SKILL.md", enabled: true },
+    ],
+    workspace,
+  );
+  assert.deepEqual(parse(readFileSync(config, "utf8")).skills, {
+    max_context_tokens: 1200,
+    config: [{ path: "/personal/y/SKILL.md", enabled: false }],
+  });
   // A folder moved from another device brings a dangling link into that
   // device's skill snapshots: it is replaced with this device's.
   const { unlinkSync, symlinkSync } = await import("node:fs");
@@ -203,6 +226,7 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     notes,
   );
   assert.deepEqual(claudeSessionOptions(undefined), {
+    skills: [],
     mcpServers: {},
     plugins: [],
   });
@@ -377,8 +401,14 @@ test("a new skill set downloads only the revisions no set holds yet", async (t) 
 test("cached skill generations verify all bytes and preserve active paths on repair", async (t) => {
   const { createServer } = await import("node:http");
   const { createHash, randomUUID } = await import("node:crypto");
-  const { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } =
-    await import("node:fs");
+  const {
+    chmodSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+  } = await import("node:fs");
   const { join } = await import("node:path");
   const { packZip } = await import("../dist/skills/skill-zip.js");
   const { materializeSessionSkills } =
@@ -412,28 +442,31 @@ test("cached skill generations verify all bytes and preserve active paths on rep
   const original = current.pluginDir;
   assert.equal((await materialize()).pluginDir, original);
   assert.equal(requested, 1);
+  function changeFile(root, relativePath, contents) {
+    const path = join(root, relativePath);
+    chmodSync(path, 0o600);
+    writeFileSync(path, contents);
+    chmodSync(path, 0o400);
+  }
   for (const change of [
     (root) =>
-      writeFileSync(
-        join(root, "skills/integrity/SKILL.md"),
-        "tampered instruction",
-      ),
+      changeFile(root, "skills/integrity/SKILL.md", "tampered instruction"),
     (root) =>
-      writeFileSync(
-        join(root, "skills/integrity/scripts/run.js"),
-        "tampered script",
-      ),
-    (root) =>
-      writeFileSync(
-        join(root, ".foundry-input-snapshot.json"),
-        "forged marker",
-      ),
-    (root) => writeFileSync(join(root, ".claude-plugin/plugin.json"), "{}"),
-    (root) => mkdirSync(join(root, "extra")),
+      changeFile(root, "skills/integrity/scripts/run.js", "tampered script"),
+    (root) => changeFile(root, ".foundry-input-snapshot.json", "forged marker"),
+    (root) => changeFile(root, ".claude-plugin/plugin.json", "{}"),
     (root) => {
-      const script = join(root, "skills/integrity/scripts/run.js");
+      chmodSync(root, 0o700);
+      mkdirSync(join(root, "extra"), { mode: 0o500 });
+      chmodSync(root, 0o500);
+    },
+    (root) => {
+      const folder = join(root, "skills/integrity/scripts");
+      const script = join(folder, "run.js");
+      chmodSync(folder, 0o700);
       rmSync(script);
       symlinkSync("/etc/passwd", script);
+      chmodSync(folder, 0o500);
     },
   ]) {
     const held = current.pluginDir;

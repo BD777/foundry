@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../skills/skill-snapshot-permissions.js";
 import {
   accessSync,
   constants,
@@ -143,7 +144,7 @@ export function pruneSessionFolders(root: string, maxAgeMs: number): void {
     try {
       const folder = join(root, entry);
       if (Date.now() - statSync(folder).mtimeMs > maxAgeMs)
-        rmSync(folder, { recursive: true, force: true });
+        removeSkillSnapshotTree(folder);
     } catch {
       // Another process removed it.
     }

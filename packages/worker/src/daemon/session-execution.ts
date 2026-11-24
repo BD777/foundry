@@ -1,3 +1,4 @@
+import { withPersonalAgentSkills } from "../session/personal-agent-files.js";
 import { withWorkspaceDraftSkills } from "../skills/workspace-skill-runtime.js";
 import {
   daemonMessageTypes,
@@ -375,6 +376,11 @@ export async function executeAgentSession(
         JSON.stringify(managedSkills.draftSkills),
       );
     }
+    if (
+      session.role === "personal_agent" &&
+      !isReadOnlyWorkspaceSession(session)
+    )
+      managedSkills = withPersonalAgentSkills(managedSkills, execution.cwd);
     if (managedSkills.skills.length > 0) {
       await emit(
         "Loaded skills",

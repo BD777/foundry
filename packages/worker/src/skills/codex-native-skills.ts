@@ -11,47 +11,61 @@ import {
   unlinkSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { foundryStatePath } from "../platform/state-root.js";
+import { isFoundryManagedSkillPath } from "./managed-paths.js";
+import { isInside } from "../platform/paths.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
-/**
- * Codex finds skills itself, in `.agents/skills` from the working directory
- * up to the repository root, in `~/.agents/skills` and in its own. Foundry
- * adds the workspace's selected skills there as links into their verified
- * snapshots, so Codex lists them natively next to the person's own; nothing
- * is disabled and no catalog is written into its instructions. A folder of
- * the person's with the same name stays as it is. Links Foundry made for
- * skills no longer selected are removed, and git ignores the links.
- */
+/** Publish resolved snapshots in the native workspace discovery folder. */
 export function linkCodexSkills(
   managed: ManagedSkillRuntime,
   workspacePath: string,
+  fallbackSkillsRoot?: string,
 ): void {
   const root = join(workspacePath, ".agents", "skills");
-  const ours = (target: string) =>
-    resolve(root, target).startsWith(foundryStatePath("skill-sets"));
   const wanted = new Map(
     managed.skills
-      .filter((skill) => !skill.draft)
+      .filter((skill) => skill.source !== "assistant")
       .map((skill) => [skill.name, skill.dir]),
   );
   if (wanted.size === 0 && !existsSync(root)) return;
-  mkdirSync(root, { recursive: true });
+  for (const folder of [join(workspacePath, ".agents"), root]) {
+    if (isLink(folder))
+      throw new Error("Workspace skill root is a symbolic link.");
+    mkdirSync(folder, { recursive: true });
+  }
   for (const entry of readdirSync(root)) {
     const path = join(root, entry);
     if (!lstatSync(path).isSymbolicLink()) continue;
     const target = readlinkSync(path);
-    // A dangling link into skill snapshots is Foundry's from another device
-    // or state root (a moved or copied folder): it is made again here.
-    const stale = !existsSync(path) && /[\\/]skill-sets[\\/]/.test(target);
-    if (!stale && !ours(target)) continue;
-    if (stale || wanted.get(entry) !== resolve(root, target)) unlinkSync(path);
+    if (!isFoundryManagedSkillPath(path, workspacePath)) continue;
+    // Assistant links have their own lifecycle.
+    if (
+      isInside(
+        join(workspacePath, ".foundry", "assistant-skills"),
+        resolve(root, target),
+      )
+    )
+      continue;
+    if (wanted.get(entry) !== resolve(root, target)) unlinkSync(path);
   }
   const linked: string[] = [];
   for (const [name, dir] of wanted) {
     const path = join(root, name);
     if (!existsSync(path) && !isLink(path)) symlinkSync(dir, path, "dir");
-    if (isLink(path) && ours(readlinkSync(path))) linked.push(name);
+    if (isLink(path) && resolve(root, readlinkSync(path)) === dir)
+      linked.push(name);
+    else if (fallbackSkillsRoot) {
+      // Preserve the editable draft folder. The execution home exposes its
+      // immutable winner, even when another entry occupies the workspace path.
+      mkdirSync(fallbackSkillsRoot, { recursive: true });
+      const link = join(fallbackSkillsRoot, name);
+      if (
+        isLink(link) &&
+        resolve(fallbackSkillsRoot, readlinkSync(link)) !== dir
+      )
+        unlinkSync(link);
+      if (!isLink(link)) symlinkSync(dir, link, "dir");
+    }
   }
   ignoreInGit(workspacePath, linked);
 }

@@ -504,6 +504,8 @@ export function availableDaemonCapabilities(): string[] {
     "workspace_file_write",
     // workspace_file_manage: manage_file renames or deletes one file of a
     // workspace (the assistant's workspace files, DEV-223).
+    "workspace_skill_checkout",
+    "issue_skill_checkout",
     "workspace_file_manage",
     // assistant_instructions_block: the assistant's AGENTS.md arrives as
     // Foundry's managed block only; the rest of the file stays the person's.

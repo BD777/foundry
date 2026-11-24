@@ -1,4 +1,8 @@
 import {
+  removeSkillSnapshotTree,
+  setDirectoryWriteAccess,
+} from "./skill-snapshot-permissions.js";
+import {
   markPrivateInputOwner,
   privateInputCanBeRemoved,
 } from "../platform/process/private-input-owners.js";
@@ -54,10 +58,13 @@ function manifest(files: SnapshotFile[]) {
   return `${JSON.stringify({ version: 1, files: entries })}\n`;
 }
 
-function holdsFiles(root: string, files: SnapshotFile[]): boolean {
+function holdsFiles(
+  root: string,
+  files: SnapshotFile[],
+  requireReadOnly = false,
+): boolean {
   try {
-    if (!lstatSync(root).isDirectory() || lstatSync(root).isSymbolicLink())
-      return false;
+    if (!lstatSync(root).isDirectory()) return false;
     const expected = new Map(files.map((f) => [f.path, f.data]));
     const directories = new Set<string>();
     for (const path of expected.keys()) {
@@ -69,6 +76,7 @@ function holdsFiles(root: string, files: SnapshotFile[]): boolean {
     }
     const seen = new Set<string>();
     const walk = (folder: string): boolean => {
+      if (requireReadOnly && lstatSync(folder).mode & 0o222) return false;
       for (const entry of readdirSync(folder, { withFileTypes: true })) {
         const path = join(folder, entry.name),
           key = relative(root, path).split("\\").join("/");
@@ -77,7 +85,12 @@ function holdsFiles(root: string, files: SnapshotFile[]): boolean {
           if (!directories.has(key) || !walk(path)) return false;
         } else {
           const bytes = expected.get(key);
-          if (!entry.isFile() || !bytes || !readFileSync(path).equals(bytes))
+          if (
+            !entry.isFile() ||
+            !bytes ||
+            (requireReadOnly && lstatSync(path).mode & 0o222) ||
+            !readFileSync(path).equals(bytes)
+          )
             return false;
           seen.add(key);
         }
@@ -138,7 +151,7 @@ function build<T extends object>(
   };
   let directory = join(root, name),
     prepared = describeAt(directory);
-  if (holdsFiles(directory, prepared.files))
+  if (holdsFiles(directory, prepared.files, true))
     return {
       ...prepared.value,
       snapshotDigest: prepared.snapshotDigest,
@@ -158,12 +171,13 @@ function build<T extends object>(
     for (const file of prepared.files) {
       const path = join(staging, file.path);
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      writeFileSync(path, file.data, { mode: 0o600 });
+      writeFileSync(path, file.data, { flag: "wx", mode: 0o400 });
     }
+    setDirectoryWriteAccess(staging, false);
     try {
       renameSync(staging, directory);
     } catch (error) {
-      if (!holdsFiles(directory, prepared.files)) throw error;
+      if (!holdsFiles(directory, prepared.files, true)) throw error;
       // Another builder published the same verified generation first.
     }
     writeFileAtomic(head, JSON.stringify({ version: 1, directory: name }));
@@ -173,7 +187,7 @@ function build<T extends object>(
       manifestFile: prepared.manifestFile,
     };
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    removeSkillSnapshotTree(staging);
     rmSync(`${staging}.owner.json`, { force: true });
   }
 }
@@ -280,7 +294,7 @@ export function collectSkillSnapshotGarbage(
             allowUnsupervised: true,
           })
         ) {
-          rmSync(path, { recursive: true, force: true });
+          removeSkillSnapshotTree(path);
           rmSync(`${path}.owner.json`, { force: true });
           removed++;
         }
@@ -304,7 +318,7 @@ export function collectSkillSnapshotGarbage(
         if (!lstatSync(join(path, manifestName)).isFile()) continue;
         const expected = sha(readFileSync(join(path, manifestName), "utf8"));
         readSnapshot(join(root, head), expected);
-        rmSync(path, { recursive: true, force: true });
+        removeSkillSnapshotTree(path);
         removed++;
       } catch {
         /* Unknown head: never guess that a generation is obsolete. */

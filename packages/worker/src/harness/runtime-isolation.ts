@@ -97,12 +97,23 @@ function historyLink(link: string, target: string): void {
  * history are not among them (those have their own paths). A name the
  * source lacks is left out; a stale link Foundry made is replaced.
  */
+function readLegacySkillLink(path: string): string | undefined {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
 function linkNativeConfiguration(
   home: string,
   source: string | undefined,
   names: readonly string[],
 ): void {
   if (!source || resolve(source) === resolve(home)) return;
+  const legacyLink = resolve(home, "skills");
+  if (readLegacySkillLink(legacyLink) === resolve(source, "skills"))
+    rmSync(legacyLink);
   for (const name of names) {
     const target = resolve(source, name),
       link = resolve(home, name);
@@ -145,7 +156,6 @@ const claudeConfigurationNames = [
   "settings.json",
   "CLAUDE.md",
   "rules",
-  "skills",
   "agents",
   "commands",
   "output-styles",
@@ -159,7 +169,6 @@ const codexConfigurationNames = [
   "hooks.json",
   "prompts",
   "rules",
-  "skills",
   "plugins",
   "memories",
 ] as const;

@@ -294,7 +294,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                 roots={props.deviceSkillRoots.filter(
                   (root) => root.deviceId === device.id,
                 )}
-                workspaces={deviceWorkspaces(device.id)}
+                workspaces={workspaces}
               />
             ) : null}
             {section === "settings" && device.owned ? (

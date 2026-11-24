@@ -6,7 +6,7 @@ import type {
   DeviceSkill,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { Badge } from "../../components/ui/badge";
+import { SkillLibraryRelationBadge } from "../../components/skills/skill-library-relation";
 import { Button } from "../../components/ui/button";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
 import {
@@ -15,7 +15,6 @@ import {
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
 import { SkillPromotionDialog } from "../../components/skills/skill-promotion-dialog";
-import { skillServerLabel } from "../../components/skills/skill-version-state";
 
 /** Skills on a device that the server has no identical copy of. */
 export function localOnlySkills(
@@ -49,7 +48,6 @@ export function LocalSkillsSection({
   workspaceId,
   readOnly,
   onChanged,
-  onPromoted,
 }: {
   device: DeviceProjection;
   deviceSkills: DeviceSkill[];
@@ -57,7 +55,6 @@ export function LocalSkillsSection({
   workspaceId: string;
   readOnly: boolean;
   onChanged: () => Promise<void>;
-  onPromoted: (skillId: string) => void;
 }) {
   const { t } = useTranslation("skills");
   const [adding, setAdding] = useState<DeviceSkill>();
@@ -96,12 +93,11 @@ export function LocalSkillsSection({
             </Button>
           );
         }}
-        renderBadges={(skill) =>
-          skill.deviceSkill?.serverState === "different" ||
-          skill.deviceSkill?.serverState === "name_conflict" ? (
-            <Badge tone="warn">{skillServerLabel(skill.deviceSkill)}</Badge>
-          ) : null
-        }
+        renderBadges={(skill) => (
+          <SkillLibraryRelationBadge
+            relation={skill.deviceSkill?.libraryRelation}
+          />
+        )}
         searchPlaceholder={t("workspace.localSearchPlaceholder")}
         skills={localOnly}
         title={t("workspace.localTitle", { device: device.label })}
@@ -110,7 +106,7 @@ export function LocalSkillsSection({
         <SkillPromotionDialog
           onChanged={onChanged}
           onClose={() => setAdding(undefined)}
-          onPromoted={async (promoted) => onPromoted(promoted.id)}
+          initialWorkspaceId={workspaceId}
           online={online}
           skill={adding}
           skills={onDevice}

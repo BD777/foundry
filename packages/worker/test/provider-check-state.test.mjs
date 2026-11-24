@@ -1,12 +1,13 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 const root = mkdtempSync(join(tmpdir(), "foundry-provider-check-"));
 process.env.FOUNDRY_STATE_ROOT = root;
-test.after(() => rmSync(root, { recursive: true, force: true }));
+test.after(() => removeSkillSnapshotTree(root));
 
 const {
   currentProviderCheck,

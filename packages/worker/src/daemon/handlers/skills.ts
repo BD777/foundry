@@ -1,16 +1,20 @@
+import {
+  checkoutWorkspaceSkill,
+  checkoutOrigins,
+} from "../../skills/checkout-workspace-skill.js";
 import { serverFetch } from "../../platform/server-link/server-proxy.js";
-import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { SkillPrewarmer } from "../../skills/skill-prewarm.js";
 import type WebSocket from "ws";
 import { readVerifiedSkillSnapshot } from "../../skills/skill-snapshots.js";
 import { packZip } from "../../skills/skill-zip.js";
-import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
+import { SKILL_ARCHIVE_MAX_BYTES } from "../../skills/skill-files.js";
 import { join } from "node:path";
 import { ExecutionStore } from "../../candidate-store/execution-storage.js";
 import { scanWorkspaceDraftsFromRefs } from "../../skills/workspace-draft-scan-thread.js";
 import {
   daemonMessageTypes,
+  type CheckoutWorkspaceSkillPayload,
   type CheckToolPayload,
   type InstallToolPayload,
   type FetchRepositoryToolArchivePayload,
@@ -124,6 +128,15 @@ export async function scanAnswer(
     : { ...answer, digest };
 }
 
+function issueDraftEnvironment(workspaceId: string, issueId: string) {
+  const environment = new ExecutionStore().environment(workspaceId, issueId);
+  if (!environment)
+    throw new Error(
+      "Issue candidate is unavailable; draft operations require its working directory.",
+    );
+  return environment;
+}
+
 /** Skills on the device and in repositories, and the tools they need. */
 export function registerSkillHandlers(dispatch: DaemonDispatch): void {
   const warmers = new WeakMap<WebSocket, SkillPrewarmer>();
@@ -140,6 +153,25 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
       }
       warmer.update(payload.refs, ctx.serverURL);
     })
+    .on(daemonMessageTypes.checkoutWorkspaceSkill, (envelope, ctx) =>
+      reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.workspaceSkillCheckedOut,
+        async () => {
+          const { workspaceId, issueId, ref } =
+            envelope.payload as CheckoutWorkspaceSkillPayload;
+          const directoryId = await checkoutWorkspaceSkill(
+            issueId
+              ? issueDraftEnvironment(workspaceId, issueId).cwd
+              : ctx.roster.folderFor(workspaceId),
+            ref,
+            ctx.serverURL,
+          );
+          return { directoryId };
+        },
+      ),
+    )
     .on(daemonMessageTypes.refreshWorkspaceSkills, (envelope, ctx) => {
       const request = envelope.payload as {
         workspaceId: string;
@@ -154,33 +186,33 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
           let path = ctx.roster.folderFor(request.workspaceId);
           let storageRoot: string | undefined;
           if (request.issueId) {
-            const environment = new ExecutionStore().environment(
+            const environment = issueDraftEnvironment(
               request.workspaceId,
               request.issueId,
             );
-            if (!environment)
-              throw new Error(
-                "Issue candidate is unavailable; draft refresh cannot use the source workspace.",
-              );
             path = environment.cwd;
             storageRoot = join(environment.directory, "references", "drafts");
           }
+          const skills = await scanWorkspaceDraftsFromRefs(
+            [
+              request.workspaceId,
+              request.issueId
+                ? `issue:${request.issueId}`
+                : request.workspaceId,
+              path,
+              storageRoot,
+            ],
+            request.libraryRefs ?? [],
+            ctx.serverURL,
+          );
           return {
             enabled: true,
             supported: true,
             scannedAt: new Date().toISOString(),
-            skills: await scanWorkspaceDraftsFromRefs(
-              [
-                request.workspaceId,
-                request.issueId
-                  ? `issue:${request.issueId}`
-                  : request.workspaceId,
-                path,
-                storageRoot,
-              ],
-              request.libraryRefs ?? [],
-              ctx.serverURL,
-            ),
+            skills,
+            ...(!request.issueId
+              ? { checkoutOrigins: checkoutOrigins(path, skills) }
+              : {}),
           };
         },
       );
@@ -360,6 +392,38 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
     })
     .on(daemonMessageTypes.readSkillContent, (envelope, ctx) => {
       const payload = envelope.payload as ReadSkillContentPayload | undefined;
+      if (payload?.draft) {
+        const draft = payload.draft;
+        return reply(ctx, envelope, daemonMessageTypes.skillContentRead, () => {
+          if (
+            !draft.snapshotRoot ||
+            !draft.snapshotDigest ||
+            !draft.sourceDigest
+          )
+            throw new Error("Refresh the draft snapshot before publishing.");
+          const prefix =
+            draft.entryPath?.slice(0, draft.entryPath.lastIndexOf("/") + 1) ??
+            "";
+          const files = readVerifiedSkillSnapshot(
+            draft.snapshotRoot,
+            draft.snapshotDigest,
+          )
+            .filter((file) => file.path.startsWith(prefix))
+            .map((file) => ({
+              path: file.path.slice(prefix.length),
+              data: file.data,
+            }));
+          const zip = packZip(files);
+          if (zip.length > SKILL_ARCHIVE_MAX_BYTES)
+            throw new Error("Compressed skill package exceeds 64 MiB");
+          return {
+            name: draft.name,
+            sourceDigest: draft.sourceDigest,
+            fileCount: files.length,
+            contentBase64: zip.toString("base64"),
+          };
+        });
+      }
       const root = payload?.root;
       const dirName = payload?.dirName;
       if (!root || !dirName) {

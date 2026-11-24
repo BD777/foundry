@@ -1,5 +1,6 @@
 import type { ToastTone } from "../../components/ui/toast";
 import { ToastFeedback } from "../../components/ui/toast";
+import { SkillSelectionFeedback } from "./skill-selection-feedback";
 import { WorkspaceDrafts } from "./workspace-drafts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -133,10 +134,9 @@ export function SkillsFeature({
     duplicateNames,
     saving,
     error,
-    notice,
+    autoEnabledNames,
     save,
     handleToggle,
-    selectAfterPublish,
   } = useWorkspaceSkillSelection({
     catalog,
     bindings,
@@ -147,14 +147,11 @@ export function SkillsFeature({
     workspaceId,
     readOnlyReason,
     onChanged,
-    t,
   });
 
   return (
     <PageSurface embedded={embedded} variant="skills">
       {error ? <ToastFeedback tone="error" title={error} /> : null}
-
-      {notice ? <ToastFeedback tone="success" title={notice} /> : null}
 
       {workspaceSkills ? (
         <SkillListingNote
@@ -162,9 +159,6 @@ export function SkillsFeature({
             workspaceSkills,
             builtinSkills: builtinSkills ?? [],
             providerHealth: providerHealth ?? [],
-            deviceSkills,
-            workspacePath: workspaces?.find((w) => w.id === workspaceId)
-              ?.localPath,
           })}
         />
       ) : null}
@@ -176,6 +170,10 @@ export function SkillsFeature({
 
       {workspaceDeviceId ? (
         <WorkspaceDrafts
+          key={workspaceId}
+          workspaces={workspaces ?? []}
+          canPublish={!!workspaceDevice?.owned}
+          onChanged={onChanged}
           workspaceId={workspaceId}
           readOnly={!!readOnlyReason}
           online={workspaceDevice?.status === "connected"}
@@ -256,18 +254,15 @@ export function SkillsFeature({
           ) : null
         }
         headerExtras={
-          catalog.length > 0 && (duplicateNames.length || readOnlyReason) ? (
-            <>
-              {duplicateNames.length ? (
-                <ToastFeedback
-                  tone="error"
-                  title={t("workspace.duplicateNames", {
-                    names: duplicateNames.join(", "),
-                  })}
-                />
-              ) : null}
-              {readOnlyReason ? <p role="note">{readOnlyReason}</p> : null}
-            </>
+          catalog.length > 0 &&
+          (autoEnabledNames.length ||
+            duplicateNames.length ||
+            readOnlyReason) ? (
+            <SkillSelectionFeedback
+              autoEnabledNames={autoEnabledNames}
+              duplicateNames={duplicateNames}
+              readOnlyReason={readOnlyReason}
+            />
           ) : null
         }
         renderBadges={(skill) => (
@@ -339,7 +334,6 @@ export function SkillsFeature({
             await onChanged?.();
             await reloadDeviceSkills();
           }}
-          onPromoted={(id) => selectAfterPublish(id)}
         />
       ) : null}
     </PageSurface>

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -109,6 +110,9 @@ var remoteMCPTools = func() []mcpTool {
 // (session-roles.ts clarificationFoundryTools).
 var clarificationMCPTools = map[string]bool{"list_sessions": true, "read_context": true}
 
+// Publishing changes the person’s shared library, outside an Issue’s candidate.
+var skillPublicationToolNames = []string{"publish_skill"}
+
 // mcpToolAvailability decides which tools a caller may call; tools/list
 // shows exactly those. A session's role narrows its tools: an Issue's
 // clarification only reads sessions, a verifier only calls the tools that
@@ -134,7 +138,7 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 		if inIssue && issuesMCPTools[name] {
 			return &statusError{http.StatusForbidden, errors.New(name + " is not available to an Issue's own sessions: the person creates and changes Issues in Foundry")}
 		}
-		if err := mcpToolAllowed(role, verifier, name); err != nil {
+		if err := mcpToolAllowedInScope(role, verifier, inIssue, name); err != nil {
 			return err
 		}
 		return nil
@@ -155,11 +159,18 @@ func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool, 
 // mcpToolAllowed is the rule mcpToolAvailability applies to a session of
 // one role ("" for a chat, the sessions agents start and people at a shell).
 func mcpToolAllowed(role string, verifier bool, name string) error {
+	return mcpToolAllowedInScope(role, verifier, false, name)
+}
+
+func mcpToolAllowedInScope(role string, verifier, inIssue bool, name string) error {
 	if role == store.AgentSessionRoleIssueClarification && !clarificationMCPTools[name] {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to an Issue's clarification: it reads sessions with list_sessions and read_context")}
 	}
 	if verifier && !readOnlyMCPTool(name) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to a verifier")}
+	}
+	if (inIssue || role == store.AgentSessionRoleIssueExecution) && slices.Contains(skillPublicationToolNames, name) {
+		return &statusError{http.StatusForbidden, errors.New("an Issue session cannot publish to the shared skill library")}
 	}
 	if repositorySourceMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant change where their skill repositories are read")}
@@ -456,6 +467,8 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 		return s.sessionDigestForMCP(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"))
 	}),
 	"read_context":             mcpTextTool((*Server).readContextForMCP),
+	"checkout_skill":           mcpTextTool((*Server).checkoutSkillForMCP),
+	"publish_skill":            mcpTextTool((*Server).publishSkillForMCP),
 	"refresh_workspace_skills": mcpTextTool((*Server).refreshWorkspaceSkillsForMCP),
 	"register_service":         mcpTextTool((*Server).registerServiceForMCP),
 	"list_session_work":        mcpTextTool((*Server).listWorkForMCP),

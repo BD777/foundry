@@ -221,3 +221,60 @@ test("explicit execution owners isolate homes even without a Foundry session obj
     await second.dispose();
   }
 });
+
+test("Codex skill inventory failure allows startup after closing its preparation client", async (t) => {
+  const { configureCodexSkills } =
+    await import("../dist/skills/codex-skill-config.js");
+  const warn = t.mock.method(console, "warn", () => {});
+  for (const mode of ["ready", "unsupported", "invalid", "timeout", "cancel"]) {
+    const controller = new AbortController();
+    let closed = 0;
+    let rejectRequest;
+    const pending = configureCodexSkills(
+      { skills: [] },
+      "/workspace",
+      {},
+      "/unused",
+      controller.signal,
+      {
+        timeoutMs: mode === "timeout" ? 20 : 3000,
+        open: () => ({
+          async request(method) {
+            assert.equal(method, "skills/list");
+            if (mode === "ready") return { data: [{ skills: [] }] };
+            if (mode === "unsupported") throw new Error("Method not found");
+            if (mode === "invalid") return {};
+            return new Promise((_, reject) => {
+              rejectRequest = reject;
+            });
+          },
+          async close() {
+            closed++;
+            rejectRequest?.(new Error("closed"));
+          },
+        }),
+      },
+    );
+    if (mode === "cancel") {
+      controller.abort();
+      await assert.rejects(pending, { name: "AbortError" });
+    } else if (mode === "timeout") {
+      // A real app-server holds the loop open while the RPC is pending.
+      const keepAlive = setInterval(() => {}, 1000);
+      try {
+        await pending;
+      } finally {
+        clearInterval(keepAlive);
+      }
+    } else await pending;
+    assert.equal(closed, 1, mode);
+  }
+  assert.deepEqual(
+    warn.mock.calls.map((call) => call.arguments[0].split(";")[0]),
+    [
+      "Codex skills/list failed",
+      "Codex skills/list failed",
+      "Codex skills/list timed out",
+    ],
+  );
+});

@@ -100,7 +100,9 @@ func TestSkillVersionLifecycle(t *testing.T) {
 	if other.ServerState != "different" {
 		t.Fatalf("alias missed remote update: %s", other.ServerState)
 	}
-	// A deliberate fork changes only the server copy's invocation name.
+	// A deliberate fork changes only the server copy's invocation name; it is
+	// reviewed against the library's current revision.
+	source = scan(source)
 	fork := publish(source, zip2, store.SkillPromotionResolution{Action: "fork", Name: "team-alpha"})
 	if fork.ID == first.ID || fork.Name != "team-alpha" {
 		t.Fatal("fork overwrote original")

@@ -6,6 +6,7 @@ import {
   readFileSync,
   writeFileSync,
   rmSync,
+  chmodSync,
   mkdirSync,
   symlinkSync,
 } from "node:fs";
@@ -14,6 +15,7 @@ import {
   prepareSkillContent,
   skillContentDigest,
 } from "../dist/skills/skill-content-cache.js";
+import { draftContentDigest } from "../dist/skills/workspace-draft-skills.js";
 import { materializeSessionSkills } from "../dist/skills/skill-materializer.js";
 import { foundryStatePath } from "../dist/platform/state-root.js";
 import { packZip } from "../dist/skills/skill-zip.js";
@@ -48,13 +50,18 @@ function installArchive({ zip, ref }) {
 }
 
 test("content digest uses the server's UTF-16 ordering and binary framing", () => {
+  const entries = [
+    { path: "references/\ue000.txt", data: Buffer.from("bmp") },
+    { path: "SKILL.md", data: Buffer.from("method") },
+    { path: "references/🚀.txt", data: Buffer.from("supplementary") },
+  ];
+  const expected =
+    "ca23927a531692a2dd71b09ed2195a4415574efd6b1d6a5a1533167664956b35";
+  assert.equal(skillContentDigest(entries), expected);
+  // Draft discovery sorts paths before hashing the unmodified source tree.
   assert.equal(
-    skillContentDigest([
-      { path: "references/\ue000.txt", data: Buffer.from("bmp") },
-      { path: "SKILL.md", data: Buffer.from("method") },
-      { path: "references/🚀.txt", data: Buffer.from("supplementary") },
-    ]),
-    "ca23927a531692a2dd71b09ed2195a4415574efd6b1d6a5a1533167664956b35",
+    draftContentDigest(entries.sort((a, b) => (a.path < b.path ? -1 : 1))),
+    expected,
   );
 });
 
@@ -128,7 +135,9 @@ test("prepared content still repairs a tampered runtime generation without repla
   installArchive(f);
   const first = await materializeSessionSkills([f.ref], "", "/unused");
   const path = `${first.skills[0].dir}/scripts/tool.js`;
+  chmodSync(path, 0o600);
   writeFileSync(path, "tampered");
+  chmodSync(path, 0o400);
   let stats;
   const next = await materializeSessionSkills([f.ref], "", "/unused", {
     onComplete: (s) => {

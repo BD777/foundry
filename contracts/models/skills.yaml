@@ -174,6 +174,24 @@ components:
           type: string
         targetDirName:
           type: string
+    SkillLibraryRelation:
+      description: Comparison against the library at the time of the read.
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [same, differs, diverged, notInLibrary]
+          x-go-type: string
+        skillId:
+          type: string
+        latestRevision:
+          type: integer
+        matchedRevision:
+          type: integer
+        baseRevision:
+          type: integer
     DeviceSkill:
       type: object
       required:
@@ -191,6 +209,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillFileInfo"
+        libraryRelation:
+          $ref: "#/components/schemas/SkillLibraryRelation"
+          x-go-type-skip-optional-pointer: false
         serverState:
           type: string
           enum:

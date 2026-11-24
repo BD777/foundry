@@ -24,7 +24,7 @@ import { within, insidePath } from "../../platform/paths.js";
 import { readFilePrefix, utf8Prefix } from "./session-files.js";
 import { safeID } from "../../platform/utils.js";
 import { readFileDownloadChunk } from "./file-downloads.js";
-import { foundryStatePath } from "../../platform/state-root.js";
+import { isFoundryManagedSkillPath } from "../../skills/managed-paths.js";
 
 /**
  * Resolves a path inside the workspace through symlinks and refuses anything
@@ -78,8 +78,7 @@ function managedSkillDir(
     const link = join(folder, parts[depth]!);
     if (!lstatSync(link).isSymbolicLink()) return undefined;
     const skill = realpathSync(link);
-    const sets = realpathSync(foundryStatePath("skill-sets"));
-    if (skill === sets || !within(sets, skill)) return undefined;
+    if (!isFoundryManagedSkillPath(link, root, skill)) return undefined;
     if (!statSync(skill).isDirectory() || !existsSync(join(skill, "SKILL.md")))
       return undefined;
     return skill;

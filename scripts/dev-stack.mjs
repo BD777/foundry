@@ -65,7 +65,7 @@ try {
   else if (command === "create") await create(name, options);
   else if (command === "start" || command === "restart") await start(name);
   else if (command === "stop") stop(name);
-  else if (command === "remove") remove(name, options);
+  else if (command === "remove") await remove(name, options);
   else if (command === "doctor")
     process.exitCode = (await doctor(name, options)) ? 0 : 1;
   else if (command === "fix")

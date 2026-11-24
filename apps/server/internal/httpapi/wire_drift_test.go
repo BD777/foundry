@@ -211,6 +211,8 @@ var wireDecls = []wireDecl{
 	{dir: "out", kind: wsScanSkillsType, goType: goShape[wsScanSkillsPayload]()},
 	{dir: "out", kind: wsReadSkillContentType, goType: goShape[wsReadSkillContentPayload]()},
 	{dir: "out", kind: wsReadSkillFileType, unchecked: fromMap},
+	{dir: "out", kind: wsCheckoutWorkspaceSkillType, goType: goShape[wsCheckoutWorkspaceSkillPayload]()},
+	{dir: "in", kind: wsWorkspaceSkillCheckedOutType, goType: goShape[wsWorkspaceSkillCheckedOut]()},
 	{dir: "out", kind: wsRefreshWorkspaceSkillsType, unchecked: fromMap},
 	{dir: "out", kind: wsContextPatchType, goType: goShape[store.ContextPatchCommand]()},
 	{dir: "out", kind: wsKnowledgeCommandType, goType: goShape[store.KnowledgeCommand]()},

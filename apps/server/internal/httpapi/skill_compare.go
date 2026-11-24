@@ -39,17 +39,67 @@ func (s *Server) skillComparisonMetadata(ctx context.Context, input store.SkillC
 	}
 	return local.Files, remote.Files, nil
 }
+
+// A draft comparison uses only files from its server-recorded, verified snapshot.
+func (s *Server) comparisonFiles(w http.ResponseWriter, r *http.Request, input store.SkillComparisonInput) (local, remote []store.SkillFileInfo, draftArchive []byte, ok bool) {
+	if input.DraftID == "" {
+		if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
+			return
+		}
+		var err error
+		local, remote, err = s.skillComparisonMetadata(r.Context(), input)
+		if err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		ok = true
+		return
+	}
+	ctx := r.Context()
+	p, err := s.publicationSource(ctx, actorFromContext(ctx), store.PromoteSkillInput{DraftID: input.DraftID, SourceWorkspaceID: input.SourceWorkspaceID})
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	dir := input.DirName
+	if dir == "" {
+		dir = p.input.DirName
+	}
+	draft, found := p.drafts[dir]
+	if !found || draft.SourceDigest != input.SourceDigest || draft.Status != "ready" {
+		writeError(w, http.StatusConflict, "Refresh drafts and compare again.")
+		return
+	}
+	answer, err := s.readPromotionSource(ctx, p, store.DeviceSkill{Root: p.input.Root, DirName: dir})
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	zip, err := base64.StdEncoding.DecodeString(answer.ContentB64)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	data, idx, err := skillarchive.PreparePromotion(zip, input.SourceDigest)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	before, err := s.store.GetSkillRevisionIndex(ctx, input.SkillID, input.Revision)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	return idx.Files, before.Files, data, true
+}
+
 func (s *Server) handleSkillCompare(w http.ResponseWriter, r *http.Request) {
 	var input store.SkillComparisonInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
-		return
-	}
-	local, remote, err := s.skillComparisonMetadata(r.Context(), input)
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	local, remote, _, ok := s.comparisonFiles(w, r, input)
+	if !ok {
 		return
 	}
 	changes, unchanged := compareSkillFiles(remote, local)
@@ -60,12 +110,8 @@ func (s *Server) handleSkillCompareFile(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
-		return
-	}
-	local, remote, err := s.skillComparisonMetadata(r.Context(), input)
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	local, remote, draftArchive, ok := s.comparisonFiles(w, r, input)
+	if !ok {
 		return
 	}
 	var before, after *store.SkillFileInfo
@@ -111,7 +157,14 @@ func (s *Server) handleSkillCompareFile(w http.ResponseWriter, r *http.Request) 
 		}
 		result.Before = string(data)
 	}
-	if after != nil {
+	if after != nil && draftArchive != nil {
+		data, err := skillarchive.ReadFile(draftArchive, input.Path)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		result.After = string(data)
+	} else if after != nil {
 		conn := s.hub.connectionFor(input.DeviceID)
 		if conn == nil {
 			writeError(w, http.StatusBadGateway, "device offline; connect it to read the selected local file")
@@ -137,11 +190,8 @@ func (s *Server) handleSkillComparePackage(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
-		return
-	}
-	if _, _, err := s.skillComparisonMetadata(r.Context(), input); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	_, _, draftArchive, ok := s.comparisonFiles(w, r, input)
+	if !ok {
 		return
 	}
 	var data []byte
@@ -156,6 +206,8 @@ func (s *Server) handleSkillComparePackage(w http.ResponseWriter, r *http.Reques
 			writeResult(w, nil, err)
 			return
 		}
+	} else if input.Side == "local" && draftArchive != nil {
+		data = draftArchive
 	} else if input.Side == "local" {
 		pkg, err := s.hub.ReadDeviceSkillContent(r.Context(), input.DeviceID, input.Root, input.DirName)
 		if err != nil {

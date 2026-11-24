@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../dist/skills/skill-snapshot-permissions.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -236,7 +237,7 @@ if(r.method==='turn/interrupt')reply({});});`,
         process.kill(-host.pid, "SIGKILL");
       } catch {}
     }
-    if (complete) rmSync(root, { recursive: true, force: true });
+    if (complete) removeSkillSnapshotTree(root);
     else {
       console.error("host-test retained:", root);
       const log = join(hostRoot, "service.err.log");

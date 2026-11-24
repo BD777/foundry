@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../skills/skill-snapshot-permissions.js";
 import { daemonCameOnline } from "../daemon/daemon-health.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -808,7 +809,7 @@ export async function uninstallCommand(args: string[]): Promise<void> {
   await stopExecutionHost();
   removeWorkerApp();
   if (optionEnabled(args, "--purge")) {
-    rmSync(foundryStateRoot(), { recursive: true, force: true });
+    removeSkillSnapshotTree(foundryStateRoot());
     console.log(
       `Removed ${foundryStateRoot()}: pairing, runtime and local records. The device stays listed on the server until removed there.`,
     );

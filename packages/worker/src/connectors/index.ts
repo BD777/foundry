@@ -1,3 +1,4 @@
+import { removeSkillSnapshotTree } from "../skills/skill-snapshot-permissions.js";
 import type {
   AgentSession,
   ConnectorDescriptor,
@@ -10,7 +11,6 @@ import type {
   SessionToolPin,
 } from "@bd777/foundry-protocol";
 import { randomUUID } from "node:crypto";
-import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { foundryStatePath } from "../platform/state-root.js";
 import { prepareAppStoreConnectSession } from "./appstoreconnect.js";
@@ -325,7 +325,7 @@ export async function prepareSessionConnectors(
     // the isolation of a connector it may not use.
     pruneSessionFolders(sessionBinRoot(), staleSessionBinMs);
     binDir = join(sessionBinRoot(), safeFolderName(session.id));
-    rmSync(binDir, { recursive: true, force: true });
+    removeSkillSnapshotTree(binDir);
     const { environment, pathDirs } = deviceHeldConnectors.sessionSetup(
       uses,
       binDir,
@@ -353,7 +353,7 @@ export async function prepareSessionConnectors(
         preparedBySession.delete(session.id);
         environmentBySession.delete(session.id);
         binDirBySession.delete(session.id);
-        if (binDir) rmSync(binDir, { recursive: true, force: true });
+        if (binDir) removeSkillSnapshotTree(binDir);
       }
     },
   };

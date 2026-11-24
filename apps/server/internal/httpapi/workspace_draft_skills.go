@@ -11,6 +11,7 @@ import (
 )
 
 type workspaceDraftReply struct {
+	CheckoutOrigins map[string]store.SkillCheckoutOrigin `json:"checkoutOrigins,omitempty"`
 	store.WorkspaceDraftSkills
 	Error string `json:"error,omitempty"`
 }
@@ -80,12 +81,15 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 	if !current.Enabled {
 		return view, &statusError{http.StatusConflict, errors.New("workspace drafts were disabled during refresh")}
 	}
+	answer.WorkspaceDraftSkills.CheckoutOrigins = answer.CheckoutOrigins
 	answer.Enabled = current.Enabled
 	answer.Supported = true
 	if err = s.store.SaveWorkspaceDrafts(ctx, id, rootID, answer.WorkspaceDraftSkills); err != nil {
 		return view, err
 	}
-	return answer.WorkspaceDraftSkills, nil
+	view, err = s.store.WorkspaceDrafts(ctx, id, rootID)
+	view.Supported = true
+	return view, err
 }
 func (s *Server) handleWorkspaceDraftSkills(w http.ResponseWriter, r *http.Request) {
 	view, err := s.workspaceDraftView(r.Context(), r.PathValue("id"), r.Method == http.MethodPost)
@@ -130,6 +134,10 @@ func (s *Server) refreshWorkspaceSkillsForMCP(call mcpCall) (string, error) {
 	view, err := s.executionDraftView(call.r.Context(), session.WorkspaceID, session.IssueID, true)
 	if err != nil {
 		return "", err
+	}
+	// A publication preview returns the dependency graph on demand.
+	for i := range view.Skills {
+		view.Skills[i].Dependencies = nil
 	}
 	return encodeJSON(view)
 }
