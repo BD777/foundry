@@ -50,10 +50,13 @@ export function useNativeChatHistory(chat: ChatThread | undefined): {
   chat: ChatThread | undefined;
   state: TranscriptLoadState;
   loadEarlier: () => void;
+  /** Pages back to a message not shown yet, as the transcript's seek does. */
+  seekMessage: (messageId: string) => void;
 } {
   const [history, setHistory] = useState<NativeChatHistory>();
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [missingMessage, setMissingMessage] = useState<string>();
   const shown = useMemo(
     () => (chat ? withNativeChatHistory(chat, history) : undefined),
     [chat, history],
@@ -67,6 +70,7 @@ export function useNativeChatHistory(chat: ChatThread | undefined): {
     setHistory(undefined);
     setLoading(false);
     setFailed(false);
+    setMissingMessage(undefined);
     return () => {
       request.current?.abort();
       request.current = undefined;
@@ -105,6 +109,14 @@ export function useNativeChatHistory(chat: ChatThread | undefined): {
   }, [chat?.transcriptBefore, shown?.transcriptBefore]);
 
   const before = shown?.transcriptBefore ?? 0;
+  const seekMessage = useCallback(
+    (messageId: string) => {
+      if (!shown || loading || failed) return;
+      if (before > 0) loadEarlier();
+      else setMissingMessage(messageId);
+    },
+    [before, failed, loadEarlier, loading, shown],
+  );
   const state = useMemo<TranscriptLoadState>(
     () => ({
       loading: false,
@@ -113,8 +125,9 @@ export function useNativeChatHistory(chat: ChatThread | undefined): {
       earlier: shown && before > 0 ? { [shown.id]: String(before) } : {},
       loadingEarlier: loading,
       earlierFailed: failed,
+      ...(missingMessage ? { missingMessage } : {}),
     }),
-    [before, failed, loading, shown],
+    [before, failed, loading, missingMessage, shown],
   );
-  return { chat: shown, state, loadEarlier };
+  return { chat: shown, state, loadEarlier, seekMessage };
 }

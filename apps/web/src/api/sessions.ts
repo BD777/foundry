@@ -199,6 +199,29 @@ export function getAgentSessionEventsBefore(
   });
 }
 
+/**
+ * The page of a session's events older than `before` that reaches back to
+ * message `through` (a message id, or an event's own id), with `eventsLimit`
+ * more before it: a reader opened at a message it has not loaded reads back
+ * to it at once. 404 when no event before the cursor holds it.
+ */
+export function getAgentSessionEventsThrough(
+  sessionId: string,
+  before: string,
+  through: string,
+  options: RequestOptions & { eventsLimit?: number } = {},
+): Promise<WindowedAgentSession> {
+  const params = new URLSearchParams({
+    eventsBefore: before,
+    eventsThrough: through,
+  });
+  if (options.eventsLimit)
+    params.set("eventsLimit", String(options.eventsLimit));
+  return request("GET", `${sessionPath(sessionId)}?${params.toString()}`, {
+    signal: options.signal,
+  });
+}
+
 /** One of a session's recorded files, read from its device. */
 export function readSessionFile(
   sessionId: string,

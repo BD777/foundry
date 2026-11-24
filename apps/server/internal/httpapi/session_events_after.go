@@ -26,8 +26,8 @@ type caughtUpAgentSession struct {
 // is a window's eventsAfter or a previous catch-up's; ?eventsLimit= bounds
 // how far behind the reader may be.
 func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Has("eventsBefore") {
-		writeError(w, http.StatusBadRequest, "eventsAfter catches up and eventsBefore pages back: name one")
+	if r.URL.Query().Has("eventsBefore") || r.URL.Query().Has("eventsThrough") {
+		writeError(w, http.StatusBadRequest, "eventsAfter catches up and eventsBefore/eventsThrough page back: name one")
 		return
 	}
 	window, windowed, err := requestedEventWindow(r)

@@ -157,6 +157,15 @@ export interface ChatSurfaceProps {
   /** The person scrolled to the first message. */
   onReachHistoryStart?: () => void;
   /**
+   * Reads back to the message a link opened the chat at (?message=) while
+   * the transcript has not loaded it; asked again as the transcript changes.
+   */
+  onSeekMessage?: (messageId: string) => void;
+  /** A message the seek found the chat no longer holds. */
+  missingMessageId?: string;
+  /** Tells the person the link's message is not in the chat any more. */
+  onMessageMissing?: () => void;
+  /**
    * Background work still running while no turn is: the chat is idle, yet
    * its agent's commands or subagents keep working.
    */
