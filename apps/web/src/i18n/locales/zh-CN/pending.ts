@@ -53,11 +53,19 @@ export const pending: Translation<typeof en> = {
     superseded: "已被取代",
     done: "已完成",
     dismissed: "已忽略",
+    abandoned: "已放弃",
   },
   outcome: {
     withdrawn: "已撤回",
   },
   item: {
+    startedIn: {
+      direct: "{{channel}} · 与 {{name}} 的私聊",
+      group: "{{channel}} · {{name}}",
+      chat: "Foundry 对话",
+    },
+    startedSaid: "你在 {{where}} · {{when}} 说：",
+    speaker: "{{name}}：",
     origin: {
       assistant: "助理 · {{name}}",
       chat: "对话 · {{name}}",
@@ -65,7 +73,7 @@ export const pending: Translation<typeof en> = {
       personal: "来源 · {{name}}",
     },
     fromAssistant: "助理：",
-    handedByAssistant: "把这件事交给了你。",
+    handedMeta: "助理转交给你",
     assistantDecided: "助理替你决定",
     assistantClosed: "助理已关闭",
     assistantClosedReason: "助理已关闭：{{reason}}",
@@ -103,12 +111,14 @@ export const pending: Translation<typeof en> = {
     recommended: "推荐",
     reply: "回复",
     replyLabel: "回复“{{title}}”",
-    replyHint: "作为你的消息发到该对话，并引用这条内容。Ctrl+Enter 发送。",
+    replyPlaceholder: "写下回复…",
+    replyHint:
+      "作为你的消息发到该对话，并引用这条内容。Enter 发送，Shift+Enter 换行。",
     issueReplyHint: "回答 Issue 的提问，Issue 随后继续执行。",
     assistantReplyHint:
-      "作为你对这个问题的回答，发回提问的助理对话。Ctrl+Enter 发送。",
+      "作为你对这个问题的回答，发回提问的助理对话。Enter 发送，Shift+Enter 换行。",
     itemReplyHint:
-      "作为你的回答，送给跟进这个事项的会话（没有就留给下一个接手的会话），并记入事项时间线。Ctrl+Enter 发送。",
+      "作为你的回答，送给跟进这个事项的会话（没有就留给下一个接手的会话），并记入事项时间线。Enter 发送，Shift+Enter 换行。",
     send: "发送",
     sending: "正在发送…",
     cancel: "取消",
@@ -127,7 +137,8 @@ export const pending: Translation<typeof en> = {
     openSkillLibrary: "打开 Skill 库",
     openMessageChannels: "打开消息通道",
     permissionDenied: "权限被拒绝：{{path}}",
-    done: "标记完成",
+    done: "完成",
+    abandon: "放弃",
     dismiss: "忽略",
     notNeeded: "不需要我",
     gotIt: "知道了",

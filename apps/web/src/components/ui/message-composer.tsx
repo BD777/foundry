@@ -47,6 +47,11 @@ export interface ComposerInputProps extends Omit<TextareaProps, "onSubmit"> {
    * the workspace's selected skill catalog).
    */
   slashItems?: SlashSuggestion[];
+  /**
+   * Escape with no "/" menu open (an open menu takes the first Escape): a
+   * host that can be dismissed, such as an inline reply, closes itself.
+   */
+  onEscape?: () => void;
 }
 
 /**
@@ -77,6 +82,7 @@ export function ComposerInput({
   onChange,
   onClick,
   onKeyUp,
+  onEscape,
   ...props
 }: ComposerInputProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -261,6 +267,11 @@ export function ComposerInput({
             }
           }
 
+          if (event.key === "Escape" && onEscape) {
+            event.preventDefault();
+            onEscape();
+            return;
+          }
           if (event.key !== "Enter" || event.shiftKey) return;
           event.preventDefault();
           if (!submitDisabled)

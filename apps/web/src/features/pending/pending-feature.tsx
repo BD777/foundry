@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  Columns2,
+  Inbox,
+  ListChecks,
+  MessageSquareText,
+  Sparkles,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -189,11 +198,13 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
               key={group.key}
             >
               <header className="flex min-h-7 min-w-0 items-center justify-between gap-3 pl-1">
-                <div className="flex min-w-0 items-baseline gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <GroupIcon groupKey={group.key} />
                   <h2 className="min-w-0 truncate text-xs font-semibold text-ink-muted">
                     {group.title}
                   </h2>
-                  {group.workspaceName ? (
+                  {group.workspaceName &&
+                  group.workspaceName !== group.title ? (
                     <span className="flex-none text-2xs text-ink-faint">
                       {group.workspaceName}
                     </span>
@@ -254,4 +265,22 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
       ) : null}
     </PageSurface>
   );
+}
+
+/** Where a group's items come from, by its key: a chat, an Issue, an item,
+ * the assistant's own inbox, the person's account, or notices. */
+const groupIcons: Array<[string, LucideIcon]> = [
+  ["session:", MessageSquareText],
+  ["issue:", Columns2],
+  ["item:", ListChecks],
+  ["assistant:", Sparkles],
+  ["personal", User],
+  ["notices", Inbox],
+];
+
+function GroupIcon({ groupKey }: { groupKey: string }) {
+  const Icon = groupIcons.find(([prefix]) => groupKey.startsWith(prefix))?.[1];
+  return Icon ? (
+    <Icon aria-hidden="true" className="flex-none text-ink-faint" size={13} />
+  ) : null;
 }

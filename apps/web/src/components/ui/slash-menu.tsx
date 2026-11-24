@@ -44,7 +44,7 @@ export function SlashMenu({
 
   return (
     <Command
-      className="fdy-slash-menu absolute bottom-[calc(100%-6px)] left-0 z-40 w-[min(440px,90vw)] p-1.5 shadow-panel-focus"
+      className="fdy-slash-menu absolute bottom-[calc(100%-6px)] left-0 z-40 w-[min(440px,90vw)] max-w-full p-1.5 shadow-panel-focus"
       label={t("slashMenu.label")}
       onValueChange={(value) => {
         const index = items.findIndex((item) => item.value === value);

@@ -741,3 +741,25 @@ func (s *Store) MessageChannelSessionEvents(ctx context.Context, sessionIDs []st
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) SessionUserMessagesBefore(ctx context.Context, sessionID, before string, limit int) ([]store.MessageChannelSessionEvent, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	rows, err := s.reader().QueryContext(ctx, `SELECT session_id, created_at, payload_json FROM agent_session_events
+		WHERE session_id = ? AND created_at <= ? AND json_extract(payload_json, '$.label') = ?
+		ORDER BY created_at DESC LIMIT ?`, sessionID, before, store.EventLabelUserMessage, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.MessageChannelSessionEvent
+	for rows.Next() {
+		var event store.MessageChannelSessionEvent
+		if err := rows.Scan(&event.SessionID, &event.At, &event.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 import {
   answerIssueQuestion,
   answerPendingItem,
@@ -10,6 +11,7 @@ import {
   setPendingItemState,
   type PendingItem,
   type PendingItemList,
+  type PendingSettableState,
 } from "../../api";
 import { issuesEnabled } from "../../lib/feature-flags";
 import {
@@ -28,10 +30,17 @@ export interface PendingItems {
   refresh: () => void;
   changeState: (
     item: PendingItem,
-    state: "open" | "done" | "dismissed",
+    state: PendingSettableState,
   ) => Promise<void>;
-  /** Sends the reply to the item's chat, or answers its Issue. */
-  reply: (item: PendingItem, text: string) => Promise<void>;
+  /**
+   * Sends the reply to the item's chat, with the files the person attached,
+   * or answers its Issue, assistant question or waiting item (text only).
+   */
+  reply: (
+    item: PendingItem,
+    text: string,
+    attachments?: ChatAttachment[],
+  ) => Promise<void>;
   /** Asks for one more attempt of an unprocessed assistant message. */
   retry: (item: PendingItem) => Promise<void>;
   /** Allows or refuses the connector write an item stands for (DEV-265). */
@@ -92,7 +101,7 @@ export function usePendingItems(enabled = true): PendingItems {
   );
 
   const reply = useCallback<PendingItems["reply"]>(
-    async (item, text) => {
+    async (item, text, attachments = []) => {
       const route = pendingReplyRoute(item);
       if (route === "issue" && item.issueId && item.eventId) {
         await answerIssueQuestion(item.issueId, item.eventId, text.trim());
@@ -105,6 +114,7 @@ export function usePendingItems(enabled = true): PendingItems {
           item.sessionId,
           {
             text: pendingReplyText(item, text),
+            ...(attachments.length ? { attachments } : {}),
             runSettings: {},
             steer: true,
           },

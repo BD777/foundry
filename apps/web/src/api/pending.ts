@@ -72,10 +72,14 @@ export type PendingOutcome =
   | "auto_resolved"
   | "person_answered"
   | "person_dismissed_not_needed"
+  | "person_abandoned"
   | "withdrawn";
 
 export type PendingState =
-  "open" | "replied" | "superseded" | "done" | "dismissed";
+  "open" | "replied" | "superseded" | "done" | "dismissed" | "abandoned";
+
+/** The states the person sets by hand: closed three ways, or open again. */
+export type PendingSettableState = "open" | "done" | "dismissed" | "abandoned";
 
 /** How a failed assistant attempt ended, as it was classified (DEV-254). */
 export type PendingFailureCategory =
@@ -163,6 +167,21 @@ export interface PendingItem {
    * only on an open request the person handles whose kind earns a notice.
    */
   notice?: PendingNoticeStatus;
+  /** Where an open item began: the person's own words that set it going. */
+  origin?: PendingOrigin;
+}
+
+/**
+ * The person's own words an item's work started from: in a message
+ * channel's chat (channel, conversation) or typed in a Foundry chat.
+ */
+export interface PendingOrigin {
+  sessionId: string;
+  at: string;
+  text: string;
+  channel?: string;
+  conversation?: string;
+  conversationKind?: string;
 }
 
 /** The notice row's state: queued, being sent, sent, answered from the card… */
@@ -243,10 +262,10 @@ export function listPendingItems(
   return request("GET", "/api/pending-items", options);
 }
 
-/** Marks an item done or dismissed by hand, or opens it again. */
+/** Marks an item done, abandoned or dismissed by hand, or opens it again. */
 export function setPendingItemState(
   id: string,
-  state: "open" | "done" | "dismissed",
+  state: PendingSettableState,
 ): Promise<PendingItem> {
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/state`, {
     body: { state },

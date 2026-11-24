@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 import {
   ArrowRight,
   ArrowUpRight,
+  Ban,
   Check,
   CircleAlert,
   CornerDownLeft,
@@ -16,23 +17,28 @@ import {
   ListChecks,
   MessagesSquare,
   PackageX,
+  Quote,
   RotateCcw,
   ScrollText,
   X,
 } from "lucide-react";
-import { ApiError, type PendingItem } from "../../api";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
+import {
+  ApiError,
+  type PendingItem,
+  type PendingOrigin,
+  type PendingSettableState,
+} from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ClampedText } from "../../components/ui/clamped-text";
-import { ButtonRow } from "../../components/ui/button-row";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
-import { FieldHint, Textarea } from "../../components/ui/field";
 import { IconBox } from "../../components/ui/icon-box";
 import { MetaLine } from "../../components/ui/meta-line";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 import { cn } from "../../lib/cn";
-import { relativeWhen } from "../../lib/time-format";
+import { clockTime, relativeWhen } from "../../lib/time-format";
 import {
   pendingApprovalDetail,
   pendingCanReply,
@@ -44,15 +50,16 @@ import {
   pendingOrigin,
   pendingPersonal,
   pendingPrimary,
-  pendingReplyHintKey,
   pendingResolved,
   pendingStatusKey,
   pendingTitle,
+  textContains,
   type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
 import { PendingItemRef } from "./pending-item-ref";
 import { ConnectorWriteItemCard } from "./connector-write-item-card";
+import { PendingReply } from "./pending-reply";
 
 /** What kind of thing waits, by shape and tone: never by color alone. */
 const kindIcon = {
@@ -104,7 +111,6 @@ export function PendingItemCard({
 }) {
   const { t } = useTranslation("pending");
   const titleId = useId();
-  const hintId = useId();
   const recommendedId = useId();
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [shown, setShown] = useState<"" | "context" | "error">("");
@@ -172,10 +178,23 @@ export function PendingItemCard({
   // so only the fact of the hand-over is shown then.
   const handedByAssistant =
     item.handler !== "assistant" && item.handedReason === "assistant";
+  // A long text's title is the text cut short; the note or excerpt that holds
+  // all of it leads instead, once, so the card never shows it twice.
+  const lead =
+    [handedByAssistant ? note : "", headline.showExcerpt ? item.excerpt : ""]
+      .map((text) => text.trim())
+      .find(
+        (text) => textContains(text, title) && !textContains(title, text),
+      ) ?? "";
   const handedNote =
-    handedByAssistant &&
-    !(item.rule === "handed_over" && note === item.title.trim())
-      ? note
+    handedByAssistant && !textContains(lead || title, note) ? note : "";
+  // The words the card leads with are the assistant's own when it wrote them
+  // handing the item over: its "I" is the assistant, its "you" the person.
+  const leadSpeaker =
+    handedByAssistant && note !== "" && textContains(note, lead || title)
+      ? t("item.speaker", {
+          name: item.assistantName || t("page.defaultAssistant"),
+        })
       : "";
   const handedReasonText =
     item.handler !== "assistant" &&
@@ -190,7 +209,13 @@ export function PendingItemCard({
   // What an approval asks the person to allow: the command or the paths.
   const approvalDetail = pendingApprovalDetail(item);
   // A classified failure says what to do; its raw error waits in the menu.
-  const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
+  const detail =
+    known ||
+    !headline.showExcerpt ||
+    textContains(lead || title, item.excerpt) ||
+    (handedNote !== "" && textContains(handedNote, item.excerpt))
+      ? ""
+      : item.excerpt;
   const canReply = !resolved && !readOnly && pendingCanReply(item);
   const when = resolved
     ? t("item.resolved", {
@@ -206,27 +231,33 @@ export function PendingItemCard({
     setError("");
     window.requestAnimationFrame(() => replyRef.current?.focus());
   };
-  const send = async (text: string, option = "") => {
-    if (!text.trim() || busy) return;
+  const send = async (
+    text: string,
+    option = "",
+    attachments: ChatAttachment[] = [],
+  ) => {
+    if (!text.trim() || busy) return false;
     setBusy("send");
     setSendingOption(option);
     setError("");
     try {
-      await pending.reply(item, text);
+      await pending.reply(item, text, attachments);
       setDraft("");
       setReplying(false);
+      return true;
     } catch (reason) {
       setError(
         t("item.sendFailed", {
           error: reason instanceof Error ? reason.message : String(reason),
         }),
       );
+      return false;
     } finally {
       setBusy("");
       setSendingOption("");
     }
   };
-  const change = async (state: "open" | "done" | "dismissed") => {
+  const change = async (state: PendingSettableState) => {
     setBusy("state");
     setError("");
     try {
@@ -294,13 +325,6 @@ export function PendingItemCard({
       label: t("item.reopen"),
       icon: <RotateCcw aria-hidden="true" size={15} />,
       onSelect: () => void change("open"),
-    });
-  else if (!readOnly)
-    menu.push({
-      key: "done",
-      label: t("item.done"),
-      icon: <Check aria-hidden="true" size={15} />,
-      onSelect: () => void change("done"),
     });
 
   let action: ReactNode = null;
@@ -385,17 +409,40 @@ export function PendingItemCard({
         {t("item.reply")}
       </Button>
     ) : null;
-  const notNeeded =
+  // Three ways the person closes an item, side by side: settled (done),
+  // dropped (abandoned), or not theirs (dismissed). A helper waiting on the
+  // question is told which (the server sends it the no-answer reply).
+  const closers =
     !resolved && !readOnly ? (
-      <Button
-        disabled={Boolean(busy)}
-        onClick={() => void change("dismissed")}
-        size="sm"
-        variant="ghost"
-      >
-        <X aria-hidden="true" size={14} />
-        {t("item.notNeeded")}
-      </Button>
+      <>
+        <Button
+          disabled={Boolean(busy)}
+          onClick={() => void change("done")}
+          size="sm"
+          variant="ghost"
+        >
+          <Check aria-hidden="true" size={14} />
+          {t("item.done")}
+        </Button>
+        <Button
+          disabled={Boolean(busy)}
+          onClick={() => void change("abandoned")}
+          size="sm"
+          variant="ghost"
+        >
+          <Ban aria-hidden="true" size={14} />
+          {t("item.abandon")}
+        </Button>
+        <Button
+          disabled={Boolean(busy)}
+          onClick={() => void change("dismissed")}
+          size="sm"
+          variant="ghost"
+        >
+          <X aria-hidden="true" size={14} />
+          {t("item.notNeeded")}
+        </Button>
+      </>
     ) : null;
 
   return (
@@ -416,16 +463,44 @@ export function PendingItemCard({
         <KindIcon size={compact ? 13 : 15} />
       </IconBox>
       <div className="grid min-w-0 gap-1">
-        <strong
-          className={cn(
-            "fdy-pending-item-title min-w-0 leading-[1.45] font-semibold wrap-anywhere",
-            compact ? "text-xs" : "text-sm",
-            resolved ? "text-ink-muted" : "text-ink",
-          )}
-          id={titleId}
-        >
-          {title}
-        </strong>
+        {lead ? (
+          <div
+            className="fdy-pending-item-title fdy-pending-item-lead min-w-0"
+            id={titleId}
+          >
+            <ClampedText
+              clamp={4}
+              lessLabel={t("item.showLess")}
+              moreLabel={t("item.showMore")}
+              size={compact ? "xs" : "sm"}
+              tone={resolved ? "muted" : "ink"}
+            >
+              {leadSpeaker ? (
+                <strong className="fdy-pending-item-speaker font-semibold">
+                  {leadSpeaker}{" "}
+                </strong>
+              ) : null}
+              {lead}
+            </ClampedText>
+          </div>
+        ) : (
+          <strong
+            className={cn(
+              "fdy-pending-item-title min-w-0 leading-[1.45] font-semibold wrap-anywhere",
+              compact ? "text-xs" : "text-sm",
+              resolved ? "text-ink-muted" : "text-ink",
+            )}
+            id={titleId}
+          >
+            {leadSpeaker ? (
+              <span className="fdy-pending-item-speaker">{leadSpeaker} </span>
+            ) : null}
+            {title}
+          </strong>
+        )}
+        {item.origin && !resolved ? (
+          <PendingOriginLine origin={item.origin} />
+        ) : null}
         <PendingItemRef item={item} />
         <MetaLine className="text-2xs leading-[1.4] text-ink-faint">
           {showOrigin ? (
@@ -434,6 +509,11 @@ export function PendingItemCard({
             </span>
           ) : null}
           <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
+          {handedByAssistant && !handedNote ? (
+            <span className="fdy-pending-item-handed-meta text-ink-muted">
+              {t("item.handedMeta")}
+            </span>
+          ) : null}
           <time
             className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : item.createdAt}
@@ -490,7 +570,7 @@ export function PendingItemCard({
             {t("item.assistantClosedReason", { reason: closeReason })}
           </ClampedText>
         ) : null}
-        {handedByAssistant ||
+        {handedNote ||
         (handedReasonText && item.handedReason !== "assistant_timeout") ? (
           <div className="fdy-pending-item-handed min-w-0 rounded-lg bg-panel-soft px-2.5 py-2">
             <ClampedText
@@ -503,9 +583,7 @@ export function PendingItemCard({
               <strong className="font-semibold">
                 {t("item.fromAssistant")}
               </strong>{" "}
-              {handedByAssistant
-                ? handedNote || t("item.handedByAssistant")
-                : handedReasonText}
+              {handedNote || handedReasonText}
             </ClampedText>
           </div>
         ) : handedReasonText ? (
@@ -549,53 +627,20 @@ export function PendingItemCard({
           </blockquote>
         ) : null}
         {replying ? (
-          <div className="mt-1 grid gap-1.5">
-            <Textarea
-              aria-describedby={hintId}
-              aria-label={t("item.replyLabel", { title })}
-              disabled={busy === "send"}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                  event.preventDefault();
-                  void send(draft);
-                } else if (event.key === "Escape" && !busy) {
-                  event.preventDefault();
-                  setReplying(false);
-                }
-              }}
-              ref={replyRef}
-              resize="vertical"
-              rows={compact ? 2 : 3}
-              tone="boxed"
-              value={draft}
-            />
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-              <FieldHint id={hintId}>{t(pendingReplyHintKey(item))}</FieldHint>
-              <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
-                <Button
-                  disabled={busy === "send"}
-                  onClick={() => setReplying(false)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  {t("item.cancel")}
-                </Button>
-                <Button
-                  data-busy={busy === "send" ? "true" : undefined}
-                  disabled={!draft.trim() || Boolean(busy)}
-                  onClick={() => void send(draft)}
-                  size="sm"
-                >
-                  <CornerDownLeft aria-hidden="true" size={14} />
-                  {busy === "send" ? t("item.sending") : t("item.send")}
-                </Button>
-              </ButtonRow>
-            </div>
-          </div>
+          <PendingReply
+            compact={compact}
+            draft={draft}
+            inputRef={replyRef}
+            item={item}
+            onCancel={() => setReplying(false)}
+            onDraftChange={setDraft}
+            onSend={(text, attachments) => send(text, "", attachments)}
+            sending={busy === "send"}
+            title={title}
+          />
         ) : null}
         {error ? <Alert size="compact" title={error} tone="error" /> : null}
-        {action || secondaryReply || notNeeded ? (
+        {action || secondaryReply || closers ? (
           <div
             className={cn(
               "flex min-w-0 flex-wrap items-center gap-1.5",
@@ -604,7 +649,7 @@ export function PendingItemCard({
           >
             {action}
             {secondaryReply}
-            {notNeeded}
+            {closers}
           </div>
         ) : null}
       </div>
@@ -906,4 +951,38 @@ function failureHint(failure: PendingFailure, t: TFunction<"pending">): string {
   // An unclassified failure has no advice beyond its title.
   if (failure.kind === "other") return "";
   return t(`failure.${failure.kind}.hint`);
+}
+
+/**
+ * Where an item began, so the person recalls what it is about: their own
+ * words that set its work going, and where and when they said them.
+ */
+function PendingOriginLine({ origin }: { origin: PendingOrigin }) {
+  const { t } = useTranslation("pending");
+  const where = origin.channel
+    ? t(
+        origin.conversationKind === "direct"
+          ? "item.startedIn.direct"
+          : "item.startedIn.group",
+        { channel: origin.channel, name: origin.conversation || "" },
+      )
+    : t("item.startedIn.chat");
+  return (
+    <div className="fdy-pending-item-origin flex min-w-0 items-start gap-1.5 border-l-2 border-line-strong pl-2.5">
+      <Quote
+        aria-hidden="true"
+        className="mt-0.5 flex-none text-ink-faint"
+        size={12}
+      />
+      <ClampedText clamp={2} size="xs">
+        <span className="text-ink-faint">
+          {t("item.startedSaid", {
+            where,
+            when: clockTime(origin.at, { date: "short" }),
+          })}
+        </span>{" "}
+        <span className="text-ink">{origin.text}</span>
+      </ClampedText>
+    </div>
+  );
 }

@@ -239,6 +239,11 @@ function parseArgs(argv) {
       case "--no-judge":
         args.judge = false;
         break;
+      case "--transcripts":
+        // Each case's turn as the assistant had it (its input, tool calls
+        // with their results, its text), next to the report.
+        args.transcripts = true;
+        break;
       case "--no-presence":
         args.presence = false;
         break;
@@ -1498,7 +1503,23 @@ async function caseBaseline(client, agent, stack) {
     items: await itemIds(client),
     folder,
     copy,
+    caseRecords: caseRecordsOf(folder),
   };
+}
+
+// What a conversation leaves in the assistant's .foundry folder (its
+// sessions' inputs and results, the files sent with a message): a later case
+// would read an earlier one's there, so they go after each case. The rest of
+// .foundry is the server's, rewritten for every turn.
+const caseRecordFolders = ["sessions", "attachments"];
+function caseRecordsOf(folder) {
+  const out = new Set();
+  for (const name of caseRecordFolders) {
+    const dir = resolve(folder, ".foundry", name);
+    if (folder && existsSync(dir))
+      for (const entry of readdirSync(dir)) out.add(`${name}/${entry}`);
+  }
+  return out;
 }
 
 // What the server writes into the assistant's folder for each turn (its
@@ -1674,6 +1695,7 @@ async function e2eRun(
         )
         .catch(() => {});
     const events = detail.events || [];
+    if (args.transcripts && args.out) keepTranscript(args, repeat, c, detail);
     const tools = events.map(parseToolEvent).filter(Boolean);
     const { cancelled, helpers } = await cancelHelpers(
       client,
@@ -1796,6 +1818,36 @@ function presenceFor(stack, index, c, args) {
   } finally {
     db.close();
   }
+}
+
+// A case's turn, for reading what led the assistant to its decision:
+// <out>.transcripts/<repeat>-<case>.json with every event's label, kind and
+// text (each at most 6000 characters) and the reply.
+function keepTranscript(args, repeat, c, detail) {
+  const dir = `${args.out}.transcripts`;
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const events = (detail.events || []).map((e) => ({
+    at: e.createdAt || e.at || "",
+    label: e.label || "",
+    kind: e.message?.kind || e.kind || "",
+    text: String(e.detail || e.message?.text || "").slice(0, 6000),
+  }));
+  writeFileSync(
+    resolve(dir, `${repeat}-${c.id}.json`),
+    JSON.stringify(
+      {
+        id: c.id,
+        repeat,
+        request: c.request,
+        input: detail.input,
+        events,
+        reply: detail.response,
+      },
+      null,
+      1,
+    ),
+    { mode: 0o600 },
+  );
 }
 
 // Run-wide counts the cost projection reads.
@@ -2076,6 +2128,12 @@ async function resetAfterCase(
         .catch((e) => problems.push(`item ${id}: ${e.message}`));
   if (base.folder && existsSync(base.copy)) {
     try {
+      for (const entry of caseRecordsOf(base.folder))
+        if (!base.caseRecords.has(entry))
+          rmSync(resolve(base.folder, ".foundry", entry), {
+            recursive: true,
+            force: true,
+          });
       restoreFolder(base.folder, base.copy);
     } catch (e) {
       problems.push(`assistant files: ${e.message}`);
