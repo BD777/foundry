@@ -24,6 +24,7 @@
 //
 // Case and environment notes: docs/live-regression.md (C19).
 
+import { removeSkillSnapshotTree } from "../packages/worker/dist/skills/skill-snapshot-permissions.js";
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
@@ -34,7 +35,6 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
-  rmSync,
   existsSync,
 } from "node:fs";
 import { createServer } from "node:net";
@@ -458,7 +458,7 @@ class Stack {
     }
     if (this.serverRunning()) await this.stopServer();
     if (keep) console.log(`kept ${this.root}`);
-    else rmSync(this.root, { recursive: true, force: true });
+    else removeSkillSnapshotTree(this.root);
   }
 }
 
