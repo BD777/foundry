@@ -19,6 +19,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ### 关键决定
 
+- **会话只认 Foundry 的 Skill（DEV-331，2026-11-24，本人决定；取代下一条中“本人自己安装的 Skill 照常可见”）。** 会话里的 Skill 只来自 Foundry（内置、Workspace 选用与固定、bundle、个人默认、本 Workspace 草稿）和运行时自带的官方 Skill；设备本地 Skill 是导入来源，发布进库并选用到 Workspace 后才能用。同名只取一份：内置 > 本 Workspace 草稿 > 选用与固定 > bundle > 个人默认 > 默认 bundle；草稿保留原名。草稿或本地与库不同时页面标出并给发布入口；发布带基线，不静默覆盖更新的版本。规则与切片见 [DEV-331](devlog/DEV-331-foundry-only-skills.md)。
 - **原生发现（DEV-105，2026-10-31；取代 2026-09-28 起的“会话只看到 Workspace 启用的 Skill”隔离）。** Foundry 提供的 Skill 放到 Agent 原生会找的位置：Claude Code 是一个本地插件（`foundry-workspace:<name>`），Codex 是工作区 `.agents/skills/<name>` 下指向已校验快照的链接（写入 `.git/info/exclude`）。不禁用任何 Skill、不在提示里列目录、不按 receipt 拒绝续接原生会话、自定义命令的账号照常运行。只有 Issue 的判定者保持原生发现关闭（防止候选结果给判定者埋 Skill）；2026-11-05 起它不再从提示里拿到 Skill 清单，目前没有 Workspace Skill，原生方式留待 Issue 重构（[D4 修订](architecture-modules.md)）。
 - **不往提示里注入 Skill（2026-11-05，DEV-121）。** 任何角色都不把 Skill 目录、索引或清单写进系统提示或输入，包括 Issue 的各个身份。Skill 只按 Agent 原生的形态提供，大 bundle 的列表大小由 Agent 自己的预算控制：Claude Code 的技能列表约占上下文的 1%，Codex 默认不超过 2%、可用 `skills.max_context_tokens` 调整。原来把大 bundle 合成一个条目的 `skillCatalog` 和 `skill-indexes/` 已删除。
 - **清单预算提示（DEV-218）。** Claude Code 把会话能用的 Skill 写进一份有预算的清单：上下文窗口 × 每 token 字节数 × 1%，按显示宽度计（中日韩字符算 2），描述最多 1,536 字符；超出时先全部只留名字，再按它自己的优先级把描述加回去（读自 Claude Code 2.1.311；dev 上 Opus 5.5 与 Haiku 5.5 的清单都填到 29,981 / 30,000）。Workspace 的 Skills 页按这条规则估算（`features/skills/skill-listing-budget.ts`，30,000 宽度，从最窄的描述加起，所以是下限），超出时提示“至少 N 个只显示名字”。预算统计 Foundry 提供的条目和 Workspace 草稿。Codex 的初始清单上限是窗口的 2%（`skills.max_context_tokens`），未估算。
