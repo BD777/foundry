@@ -246,7 +246,10 @@ export function WorkerGroupsSection({
 }) {
   const { t } = useTranslation("profiles");
   const sources = useMemo(
-    () => executionSources(profiles, servers),
+    () =>
+      executionSources(profiles, servers).filter(
+        (source) => source.runtime !== "antigravity",
+      ),
     [profiles, servers],
   );
   const [groups, setGroups] = useState<WorkerGroup[]>();

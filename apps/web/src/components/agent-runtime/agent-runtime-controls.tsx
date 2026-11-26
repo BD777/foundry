@@ -40,6 +40,8 @@ export interface AgentRuntimeControlsProps {
   showPermissions?: boolean;
   disabled?: boolean;
   side?: "top" | "bottom";
+  antigravityEffort?: string;
+  onAntigravityEffortChange?: (value: string) => void;
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;
@@ -65,7 +67,9 @@ export interface AgentRuntimeControlsProps {
 }
 
 export function AgentRuntimeControls(props: AgentRuntimeControlsProps) {
-  const { showPermissions = true, disabled = false, onMenuOpenChange } = props;
+  const { disabled = false, onMenuOpenChange } = props;
+  const showPermissions =
+    props.selectedRuntime !== "antigravity" && (props.showPermissions ?? true);
   const [accessOpen, setAccessOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -177,6 +181,7 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
   const { codexSpeed, selectedRuntime } = controls;
   const view = describeModelAndEffort({
     runtime: selectedRuntime,
+    antigravityEffort: controls.antigravityEffort,
     claudeEffort: controls.claudeEffort,
     codexReasoningEffort: controls.codexReasoningEffort,
     modelLoadFailed: controls.modelLoadFailed,
@@ -184,7 +189,11 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
     modelOptions: controls.modelOptions,
     modelValue: controls.modelValue,
   });
-  const applyEffort = (value: ClaudeEffort | CodexReasoningEffort): void => {
+  const applyEffort = (value: string): void => {
+    if (selectedRuntime === "antigravity") {
+      controls.onAntigravityEffortChange?.(value);
+      return;
+    }
     if (selectedRuntime === "claude") {
       controls.onClaudeEffortChange(value as ClaudeEffort);
     } else {
@@ -225,7 +234,7 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
               {view.modelLabel}
             </span>
             <em className="font-medium text-ink-faint not-italic @max-[580px]/fdy-composer:hidden">
-              {view.effortLabel}
+              {view.effortOptions.length > 0 ? view.effortLabel : ""}
             </em>
             <ChevronDown size={15} />
           </Button>

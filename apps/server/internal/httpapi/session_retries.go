@@ -32,6 +32,10 @@ func newSessionRetryService(server *Server) *sessionRetryService {
 
 func (r *sessionRetryService) Failed(ctx context.Context, session store.AgentSession, failure string) (bool, error) {
 	code := r.server.sessionAlertFailureCode(ctx, session)
+	if session.Provider == "antigravity" {
+		pendingReactions{r.server}.recordTurnFailure(ctx, session, failure, code)
+		return false, nil
+	}
 	if reason := modelpool.AccountUnusableReason(code, failure); reason != "" {
 		return r.accountUnusable(ctx, session, failure, code, reason)
 	}

@@ -128,6 +128,7 @@ export interface CreateAgentSessionInput {
   annotations?: SessionInputAnnotation[];
   /** Continues this device-native chat: the new session adopts it. */
   chatId?: string;
+  antigravityEffort?: string;
   claudeEffort?: ClaudeEffort;
   claudePermissionMode?: ClaudePermissionMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
@@ -174,6 +175,7 @@ export type SendAgentSessionMessageInput = Omit<
   };
 
 export interface CreateAgentProfileInput {
+  antigravityEffort?: string;
   apiKey?: string;
   baseUrl?: string;
   claudeEffort?: ClaudeEffort;

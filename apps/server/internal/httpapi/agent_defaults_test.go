@@ -206,3 +206,60 @@ func TestWorkspaceDefaultAgent(t *testing.T) {
 		t.Fatalf("after clearing: %+v", answer)
 	}
 }
+
+func TestAntigravityRequiresExplicitSelection(t *testing.T) {
+	login := defaultsAccount("personal_google", "antigravity", true)
+	login.LastWorkedAt = "2026-11-23T12:00:00Z"
+	accounts := []workspaceAccount{login}
+	if _, ok := pickAccount(accounts, "", login.ProfileID); ok {
+		t.Fatal("assistant device default selected the personal subscription")
+	}
+	if _, ok := pickAccount(accounts, "antigravity", ""); !ok {
+		t.Fatal("explicit runtime selection must work")
+	}
+	accounts = append(accounts, defaultsAccount("codex_local", "codex", true))
+	if picked, _ := pickAccount(accounts, "", ""); picked.Runtime != "codex" {
+		t.Fatal("last-used Antigravity overrode the default")
+	}
+}
+func TestAntigravityProfileBoundary(t *testing.T) {
+	p := store.CreateAgentProfileInput{Runtime: "antigravity", Label: "Personal", ConnectionType: "local_login"}
+	if message := checkDeviceProfileInput(&p); message != "" {
+		t.Fatal(message)
+	}
+	for _, modify := range []func(*store.CreateAgentProfileInput){
+		func(p *store.CreateAgentProfileInput) { p.APIKey = "synthetic" },
+		func(p *store.CreateAgentProfileInput) { p.BaseURL = "https://example.invalid" },
+		func(p *store.CreateAgentProfileInput) { p.ConnectionType = "openai_compatible" },
+		func(p *store.CreateAgentProfileInput) { p.PromptPrefix = "synthetic" },
+	} {
+		q := p
+		modify(&q)
+		if checkDeviceProfileInput(&q) == "" {
+			t.Fatal("accepted a non-subscription profile")
+		}
+	}
+}
+
+func TestAntigravityRejectsAutomatedInputs(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, db, "antigravity")
+	direct := store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Prompt: "test"}
+	if _, err := db.CreateAgentSession(ctx, direct); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*store.CreateAgentSessionInput){
+		func(input *store.CreateAgentSessionInput) { input.Source = store.SessionSourceNaming },
+		func(input *store.CreateAgentSessionInput) {
+			input.InputSource = &store.AgentSessionInputSource{Kind: "scheduled"}
+		},
+		func(input *store.CreateAgentSessionInput) { input.ImportedContext = "prior transcript" },
+	} {
+		automated := direct
+		mutate(&automated)
+		if _, err := db.CreateAgentSession(ctx, automated); err == nil {
+			t.Fatal("automated Antigravity launch accepted")
+		}
+	}
+}

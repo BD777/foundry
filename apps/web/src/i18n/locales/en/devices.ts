@@ -523,6 +523,7 @@ export const devices = {
     manage: "Manage in Model providers",
     summary: {
       claude: "Claude subscription",
+      antigravity: "Antigravity subscription",
       codex: "ChatGPT subscription",
       server: "Server API providers",
       found: "Found in its configuration",

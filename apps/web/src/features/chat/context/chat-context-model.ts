@@ -1,3 +1,4 @@
+import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import type {
   AgentSession,
   AgentSessionPanel,
@@ -311,7 +312,9 @@ export function chatSessionStatus(
   const effort =
     session.provider === "claude"
       ? session.claudeEffort
-      : session.codexReasoningEffort;
+      : session.provider === "antigravity"
+        ? session.antigravityEffort
+        : session.codexReasoningEffort;
   return {
     sessionId: session.id,
     ...(session.nativeSessionId
@@ -484,7 +487,7 @@ export function chatContextCardForSessions(
     ...(openSession && backgroundRun
       ? {
           continuation: {
-            agent: openSession.provider === "codex" ? "Codex" : "Claude",
+            agent: runtimeMeta(openSession.provider).label,
             ...(backgroundRun.startedAt
               ? { startedAt: backgroundRun.startedAt }
               : {}),

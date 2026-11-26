@@ -205,7 +205,7 @@ type AgentProfileProjection struct {
 	ID           string `json:"id"`
 	DeviceID     string `json:"deviceId"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime     NativeRuntimeID  `json:"runtime"`
 	Label       string           `json:"label"`
 	Fingerprint string           `json:"fingerprint,omitempty"`
@@ -240,6 +240,7 @@ type AgentProfileProjection struct {
 	// Models Models offered for this profile wherever a run is configured.
 	Models               []string             `json:"models,omitempty"`
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
+	AntigravityEffort    string               `json:"antigravityEffort,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 
@@ -273,7 +274,7 @@ type AgentProjection struct {
 	DeviceID    string             `json:"deviceId"`
 	DeviceLabel string             `json:"deviceLabel"`
 
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider           NativeRuntimeID     `json:"provider"`
 	ProfileID          string              `json:"profileId,omitempty"`
 	ProfileFingerprint string              `json:"profileFingerprint,omitempty"`
@@ -360,6 +361,7 @@ type CreateAgentProfileInput struct {
 	Model                string               `json:"model,omitempty"`
 	Models               []string             `json:"models,omitempty"`
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
+	AntigravityEffort    string               `json:"antigravityEffort,omitempty"`
 	ClaudeEffort         string               `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode string               `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort string               `json:"codexReasoningEffort,omitempty"`
@@ -392,7 +394,7 @@ type ExecutionModelChoice struct {
 	ProviderKind ExecutionModelChoiceProviderKind `json:"providerKind,omitempty"`
 	ProviderID   string                           `json:"providerId,omitempty"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime NativeRuntimeID `json:"runtime,omitempty"`
 	Model   string          `json:"model,omitempty"`
 
@@ -412,7 +414,7 @@ type ExecutionModelDefault struct {
 	ProviderKind ExecutionModelDefaultProviderKind `json:"providerKind,omitempty"`
 	ProviderID   string                            `json:"providerId,omitempty"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime NativeRuntimeID `json:"runtime,omitempty"`
 	Model   string          `json:"model,omitempty"`
 
@@ -517,7 +519,7 @@ type NativeCliInstallResult struct {
 	Cli     *NativeCli `json:"cli,omitempty"`
 }
 
-// NativeRuntimeID A runtime Foundry runs natively: Claude Code or Codex.
+// NativeRuntimeID A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 type NativeRuntimeID = string
 
 // NativeSignInAction NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.
@@ -525,6 +527,8 @@ type NativeSignInAction string
 
 // NativeSignInInput NativeSignInInput is the body of POST /api/devices/{deviceId}/accounts/{runtime}/sign-in and its /poll, /code and /dismiss, the same as a device connector's sign-in: `requestId` (begin; the same id returns the same running sign-in), `operationId` (the others), and for /code the code the sign-in page showed.
 type NativeSignInInput struct {
+	// ProfileID Device subscription profile whose native home signs in.
+	ProfileID   string `json:"profileId,omitempty"`
 	RequestID   string `json:"requestId,omitempty"`
 	OperationID string `json:"operationId,omitempty"`
 	Code        string `json:"code,omitempty"`
@@ -540,7 +544,9 @@ type NativeSignInReplyPayload struct {
 
 // NativeSignInRequestPayload NativeSignInRequestPayload is native_sign_in (server to worker), answered by native_sign_in_reply.
 type NativeSignInRequestPayload struct {
-	Runtime string `json:"runtime"`
+	// ProfileID Device subscription profile whose native home signs in.
+	ProfileID string `json:"profileId,omitempty"`
+	Runtime   string `json:"runtime"`
 
 	// Action NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.
 	Action      NativeSignInAction `json:"action"`
@@ -585,7 +591,7 @@ type ProfileConnector struct {
 type ProfileDefinition struct {
 	ID string `json:"id"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime        NativeRuntimeID     `json:"runtime"`
 	Label          string              `json:"label"`
 	AuthMode       ProfileAuthMode     `json:"authMode"`
@@ -602,6 +608,7 @@ type ProfileDefinition struct {
 	// ContextWindows `contextWindows` is the person's own context window per model id, in tokens. A model without one runs with the window its endpoint reports, else the official model's, else 1M (decided by the worker).
 	ContextWindows       map[string]int64     `json:"contextWindows,omitempty"`
 	PromptPrefix         string               `json:"promptPrefix,omitempty"`
+	AntigravityEffort    string               `json:"antigravityEffort,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 
@@ -661,7 +668,7 @@ type ProviderAuthMode = string
 type ProviderHealth struct {
 	DeviceID string `json:"deviceId,omitempty"`
 
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider NativeRuntimeID  `json:"provider"`
 	Status   ProviderStatus   `json:"status"`
 	AuthMode ProviderAuthMode `json:"authMode"`
@@ -706,7 +713,7 @@ type WorkerGroup struct {
 type WorkerGroupDomain struct {
 	ProfileID string `json:"profileId"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime           NativeRuntimeID        `json:"runtime"`
 	State             WorkerGroupDomainState `json:"state"`
 	CooldownUntil     string                 `json:"cooldownUntil,omitempty"`
@@ -732,7 +739,7 @@ type WorkerGroupMember struct {
 	ProviderKind WorkerGroupMemberProviderKind `json:"providerKind"`
 	ProviderID   string                        `json:"providerId"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime         NativeRuntimeID `json:"runtime"`
 	Model           string          `json:"model"`
 	Effort          string          `json:"effort,omitempty"`

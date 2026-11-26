@@ -793,6 +793,7 @@ export interface DaemonAgentProfileInput {
    */
   apiKey?: string;
   baseUrl?: string;
+  antigravityEffort?: string;
   claudeEffort?: AgentProfileProjection["claudeEffort"];
   claudePermissionMode?: AgentProfileProjection["claudePermissionMode"];
   codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];

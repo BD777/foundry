@@ -164,7 +164,7 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		return
 	}
 	// Automatic naming happens once per chat; the title record guards reruns.
-	if session.Source != store.SessionSourceChat {
+	if session.Source != store.SessionSourceChat || session.Provider == "antigravity" {
 		return
 	}
 	if _, err := s.Start(ctx, session.WorkspaceID, session.ID, true); err != nil {
@@ -181,6 +181,9 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 		return
 	}
 	latest := thread[len(thread)-1]
+	if latest.Provider == "antigravity" {
+		return
+	}
 	messages := []chattitle.Message{}
 	for _, item := range thread {
 		messages = append(messages, chattitle.Message{Role: "user", Text: item.Prompt})

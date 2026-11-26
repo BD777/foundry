@@ -68,7 +68,7 @@ type ChatThread struct {
 	ID                string                `json:"id"`
 	WorkspaceID       string                `json:"workspaceId,omitempty"`
 
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider           NativeRuntimeID     `json:"provider,omitempty"`
 	ProfileID          string              `json:"profileId,omitempty"`
 	ProfileFingerprint string              `json:"profileFingerprint,omitempty"`
@@ -118,7 +118,7 @@ type NativeArchiveDesired = string
 
 // NativeArchiveItem NativeArchiveItem is the minimal device request; persistence/results also retain observations and errors in NativeArchiveTarget.
 type NativeArchiveItem struct {
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider        NativeRuntimeID      `json:"provider"`
 	NativeSessionID string               `json:"nativeSessionId"`
 	DeviceID        string               `json:"deviceId"`
@@ -134,7 +134,7 @@ type NativeArchiveTarget struct {
 	DeviceLabel         string   `json:"deviceLabel,omitempty"`
 	NativeDescendantIDs []string `json:"nativeDescendantIds,omitempty"`
 
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider        NativeRuntimeID      `json:"provider"`
 	NativeSessionID string               `json:"nativeSessionId"`
 	DeviceID        string               `json:"deviceId"`

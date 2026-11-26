@@ -3695,12 +3695,12 @@ interface components {
       groups: components["schemas"]["PersonalAgentItemReportGroup"][];
     };
     /**
-     * @description A runtime Foundry runs natively: Claude Code or Codex.
+     * @description A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
      * @enum {string}
      */
-    NativeRuntimeId: "claude" | "codex";
+    NativeRuntimeId: "claude" | "codex" | "antigravity";
     /** @enum {string} */
-    WorkerRuntimeId: "claude" | "codex" | "mock";
+    WorkerRuntimeId: "claude" | "codex" | "antigravity" | "mock";
     /** @enum {string} */
     CodexSpeed: "standard" | "fast";
     /** @enum {string} */
@@ -3778,7 +3778,7 @@ interface components {
     /** @description NativeCliInstallResult is what running the official installer for a device's program produced. */
     NativeCliInstallResult: {
       /** @enum {string} */
-      runtime: "claude" | "codex";
+      runtime: "claude" | "codex" | "antigravity";
       ok: boolean;
       command: string;
       log: string;
@@ -3805,8 +3805,10 @@ interface components {
     };
     /** @description NativeSignInRequestPayload is native_sign_in (server to worker), answered by native_sign_in_reply. */
     NativeSignInRequestPayload: {
+      /** @description Device subscription profile whose native home signs in. */
+      profileId?: string;
       /** @enum {string} */
-      runtime: "claude" | "codex";
+      runtime: "claude" | "codex" | "antigravity";
       action: components["schemas"]["NativeSignInAction"];
       operationId?: string;
       /** @description The code the person pasted (action input). */
@@ -3820,6 +3822,8 @@ interface components {
     };
     /** @description NativeSignInInput is the body of POST /api/devices/{deviceId}/accounts/{runtime}/sign-in and its /poll, /code and /dismiss, the same as a device connector's sign-in: `requestId` (begin; the same id returns the same running sign-in), `operationId` (the others), and for /code the code the sign-in page showed. */
     NativeSignInInput: {
+      /** @description Device subscription profile whose native home signs in. */
+      profileId?: string;
       requestId?: string;
       operationId?: string;
       code?: string;
@@ -3841,7 +3845,7 @@ interface components {
         | "not_exposed"
         | "account_changed";
       /** @enum {string} */
-      runtime: "claude" | "codex";
+      runtime: "claude" | "codex" | "antigravity";
       source: string;
       sources: string[];
       executionSource: string;
@@ -3945,6 +3949,7 @@ interface components {
       /** @description Models offered for this profile wherever a run is configured. */
       models?: string[];
       promptPrefix?: string;
+      antigravityEffort?: string;
       claudeEffort?: components["schemas"]["ClaudeEffort"];
       claudePermissionMode?: components["schemas"]["ClaudePermissionMode"];
       codexReasoningEffort?: components["schemas"]["CodexReasoningEffort"];
@@ -4013,6 +4018,7 @@ interface components {
         [key: string]: number;
       };
       promptPrefix?: string;
+      antigravityEffort?: string;
       claudeEffort?: components["schemas"]["ClaudeEffort"];
       claudePermissionMode?: components["schemas"]["ClaudePermissionMode"];
       codexReasoningEffort?: components["schemas"]["CodexReasoningEffort"];
@@ -4175,6 +4181,7 @@ interface components {
       model?: string;
       models?: string[];
       promptPrefix?: string;
+      antigravityEffort?: string;
       claudeEffort?: string;
       claudePermissionMode?: string;
       codexReasoningEffort?: string;
@@ -4891,6 +4898,7 @@ interface components {
       /** @description `createdGroupId` is populated on a session that caused a new orchestration group to be created, so the HTTP layer can trigger async naming. */
       createdGroupId?: string;
       model?: string;
+      antigravityEffort?: string;
       claudeEffort?: components["schemas"]["ClaudeEffort"];
       claudePermissionMode?: components["schemas"]["ClaudePermissionMode"];
       codexReasoningEffort?: components["schemas"]["CodexReasoningEffort"];

@@ -19,6 +19,7 @@ import {
 import {
   catalogModel,
   claudeEffortOptions,
+  antigravityEffortOptions,
   codexEffortOptions,
   effortLabel,
 } from "../../lib/agent-effort";
@@ -172,9 +173,13 @@ export function AgentDefaultFields({
     inherit,
     ...(runtime === "claude"
       ? claudeEffortOptions()
-      : runtime === "codex"
-        ? codexEffortOptions(catalogModel(models.catalog, value?.model ?? ""))
-        : []),
+      : runtime === "antigravity"
+        ? antigravityEffortOptions(
+            catalogModel(models.catalog, value?.model ?? ""),
+          )
+        : runtime === "codex"
+          ? codexEffortOptions(catalogModel(models.catalog, value?.model ?? ""))
+          : []),
   ];
 
   async function change(patch: AgentDefaultChange) {
@@ -281,7 +286,8 @@ export function AgentDefaultFields({
   );
 }
 
-function runtimeKind(runtime: string): "claude" | "codex" {
+function runtimeKind(runtime: string): AgentProfileProjection["runtime"] {
+  if (runtime === "antigravity") return runtime;
   return runtime === "claude" ? "claude" : "codex";
 }
 

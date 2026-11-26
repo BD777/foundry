@@ -1,3 +1,4 @@
+import { readAntigravityCatalog } from "./native/antigravity-inspection.js";
 /**
  * Agent model listing. Native CLIs answer for their own logins; a compatible
  * endpoint is asked for its catalog over its own `/models` route, which is the
@@ -15,6 +16,7 @@ import {
 } from "@bd777/foundry-protocol";
 import {
   profileConfigFromInput,
+  profileID,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
 import { codexCommandCandidates } from "./native/native-cli.js";
@@ -47,6 +49,8 @@ export async function listAgentModelsConfig(
   },
 ): Promise<AgentModelOption[]> {
   const profile = profileConfigFromInput(input);
+  if (profile.runtime === "antigravity")
+    return readAntigravityCatalog(profileID(profile));
   const baseUrl = profile.baseUrl?.trim();
   const isLogin = profile.connectionType === "local_login";
   if (profile.connectionType === "external")

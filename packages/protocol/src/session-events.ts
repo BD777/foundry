@@ -25,6 +25,7 @@ export const sessionEventLabels = {
   /** An Issue execution's streamed answer: appended or restarted. */
   /** The events that end a turn and carry its usage and result path. */
   claudeTurnEnd: "Claude Agent SDK finished",
+  antigravityTurnEnd: "Antigravity finished",
   codexTurnEnd: "Codex finished",
   profileCommandTurnEnd: "Custom profile command finished",
   /** A Claude process started for the session (it fires due timers). */
@@ -45,6 +46,7 @@ export type SessionEventLabelKey = keyof typeof sessionEventLabels;
 
 const turnEndLabels = new Set<string>([
   sessionEventLabels.claudeTurnEnd,
+  sessionEventLabels.antigravityTurnEnd,
   sessionEventLabels.codexTurnEnd,
   sessionEventLabels.profileCommandTurnEnd,
 ]);

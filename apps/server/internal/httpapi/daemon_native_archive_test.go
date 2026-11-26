@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -65,5 +66,56 @@ func TestArchiveNativeReconcilesOnConnect(t *testing.T) {
 			t.Fatalf("native reconcile=%+v want archived", targets)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAntigravityChatRetainsNativeHistory(t *testing.T) {
+	ctx := context.Background()
+	db := newEmptyTestStore(t)
+	registration := store.DaemonRegistration{
+		Device: store.DeviceProjection{ID: "dev_queue", Label: "Device", Status: "connected"}, Workspace: store.WorkspaceProjection{ID: "ws_queue", Name: "Chat", LocalPath: t.TempDir()},
+		Agents: []store.AgentProjection{
+			{ID: "agent_queue", WorkspaceID: "ws_queue", DeviceID: "dev_queue", Provider: "antigravity", ProfileID: "login_a"},
+			{ID: "agent_other", WorkspaceID: "ws_queue", DeviceID: "dev_queue", Provider: "antigravity", ProfileID: "login_b"},
+		},
+	}
+	if err := db.RegisterDaemon(ctx, registration); err != nil {
+		t.Fatal(err)
+	}
+	input := store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Prompt: "first"}
+	session, err := db.CreateAgentSession(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err = db.CompleteAgentSession(ctx, session.ID, "answer", "agy-native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ForkSessionID = session.ID
+	if _, err = db.CreateAgentSession(ctx, input); !errors.Is(err, store.ErrSubscriptionHistory) {
+		t.Fatalf("fork got %v", err)
+	}
+	if _, err = db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{Prompt: "scheduled", InputSource: &store.AgentSessionInputSource{Kind: "scheduled"}}); !errors.Is(err, store.ErrSubscriptionChat) {
+		t.Fatalf("scheduled turn got %v", err)
+	}
+	if _, err = db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{Prompt: "switch", ProfileID: "login_b"}); !errors.Is(err, store.ErrSubscriptionHistory) {
+		t.Fatalf("changed subscription home: %v", err)
+	}
+	next, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{Prompt: "next"})
+	if err != nil || next.NativeSessionID != "agy-native" || next.Input.ImportedContext != "" {
+		t.Fatalf("resume got %+v, %v", next, err)
+	}
+	if _, err = db.CompleteAgentSession(ctx, session.ID, "answer", "agy-native"); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{session.ID}
+	if preview, err := db.NativeArchivePreview(ctx, session.WorkspaceID, ids); err != nil || len(preview) != 0 {
+		t.Fatalf("archive preview %v %v", preview, err)
+	}
+	if _, err := db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: session.WorkspaceID, ChatIDs: ids}, false); err != nil {
+		t.Fatal(err)
+	}
+	if targets, err := db.NativeArchiveTargets(ctx, session.DeviceID); err != nil || len(targets) != 0 {
+		t.Fatalf("archive targets %v %v", targets, err)
 	}
 }

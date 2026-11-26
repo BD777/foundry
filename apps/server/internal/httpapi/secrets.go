@@ -116,7 +116,7 @@ func (h *DaemonHub) serverProfileCredential(ctx context.Context, profileID strin
 // error: silently dispatching without the credential would surface as a
 // confusing provider auth failure instead of a store problem.
 func (h *DaemonHub) dispatchCredential(ctx context.Context, session store.AgentSession) (string, error) {
-	if session.ProfileID == "" {
+	if session.ProfileID == "" || session.Provider == "antigravity" {
 		return "", nil
 	}
 	return openSecret(ctx, h.store, agentProfileSecretID(session.DeviceID, session.ProfileID))
@@ -143,7 +143,7 @@ func (s *Server) overlayServerCredential(ctx context.Context, profiles []store.A
 // daemon for model listing with the server-held credential, mirroring how
 // dispatch delivers it. Nothing here is persisted by the daemon.
 func (s *Server) injectModelListCredential(ctx context.Context, input *store.CreateAgentProfileInput) {
-	if !secretsConfigured(s.store) || input.APIKey != "" || input.ID == "" {
+	if input.Runtime == "antigravity" || !secretsConfigured(s.store) || input.APIKey != "" || input.ID == "" {
 		return
 	}
 	// The id may name a device-configured profile or a server profile; a server

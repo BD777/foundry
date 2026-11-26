@@ -43,7 +43,7 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusBadRequest, "usage is available only for the selected native subscription account")
 			return
 		}
-		if input.RuntimeGeneration == "" || profile.RuntimeGeneration != input.RuntimeGeneration {
+		if (runtime != "antigravity" || input.RuntimeGeneration != "") && (input.RuntimeGeneration == "" || profile.RuntimeGeneration != input.RuntimeGeneration) {
 			writeError(w, http.StatusConflict, "the selected account changed; reload the account selection")
 			return
 		}
@@ -51,8 +51,8 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "a selected profile is required")
 		return
 	}
-	result, err := s.hub.InspectNativeAccount(r.Context(), deviceID, runtime, input.Source, nativeInspectionOptions{input.RuntimeGeneration, input.Refresh})
-	if err == nil && input.ProfileID != "" && result.RuntimeGeneration != input.RuntimeGeneration {
+	result, err := s.hub.InspectNativeAccount(r.Context(), deviceID, runtime, input.Source, nativeInspectionOptions{ProfileID: input.ProfileID, RuntimeGeneration: input.RuntimeGeneration, Refresh: input.Refresh})
+	if err == nil && input.RuntimeGeneration != "" && result.RuntimeGeneration != input.RuntimeGeneration {
 		writeError(w, http.StatusConflict, "this worker cannot verify usage for the selected account; update it and retry")
 		return
 	}
@@ -64,6 +64,7 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 }
 
 type nativeInspectionOptions struct {
+	ProfileID         string `json:"profileId,omitempty"`
 	RuntimeGeneration string `json:"runtimeGeneration,omitempty"`
 	Refresh           bool   `json:"refresh,omitempty"`
 }
@@ -175,8 +176,8 @@ func (s *Server) deviceAccountTarget(w http.ResponseWriter, r *http.Request) (st
 // checkDeviceAccountTarget refuses a runtime or a device whose login cannot
 // be checked or signed in now.
 func (s *Server) checkDeviceAccountTarget(ctx context.Context, deviceID, runtime string) error {
-	if runtime != "claude" && runtime != "codex" {
-		return &statusError{http.StatusBadRequest, errors.New("runtime must be claude or codex")}
+	if !store.IsNativeRuntime(runtime) {
+		return &statusError{http.StatusBadRequest, errors.New("runtime must be claude, codex or antigravity")}
 	}
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {

@@ -11,10 +11,14 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+func supportsNativeArchive(provider string) bool {
+	return provider == "claude" || provider == "codex"
+}
+
 // This file alone writes native_archive_targets. Generation fences prevent an
 // old reply, sent before an offline archive/unarchive, from changing new intent.
 func (s *Store) saveNativeArchiveTarget(ctx context.Context, ws string, v store.NativeArchiveTarget) error {
-	if v.Provider != "claude" && v.Provider != "codex" {
+	if !supportsNativeArchive(v.Provider) {
 		return nil
 	}
 	var priorRaw string
@@ -74,7 +78,7 @@ func (s *Store) archiveNativeSubject(ctx context.Context, ws string, v archiveSu
 			targets = append(targets, store.NativeArchiveTarget{Provider: v.session.Provider, NativeSessionID: v.session.NativeSessionID, DeviceID: v.session.DeviceID, SessionID: v.session.ID, ProfileID: v.session.ProfileID})
 		}
 	}
-	if v.chat != nil && v.chat.NativeSessionID != "" {
+	if v.chat != nil && v.chat.NativeSessionID != "" && supportsNativeArchive(v.chat.Provider) {
 		targets = append(targets, store.NativeArchiveTarget{Provider: v.chat.Provider, NativeSessionID: v.chat.NativeSessionID, DeviceID: workspace.DeviceID, ProfileID: v.chat.ProfileID})
 	}
 	for _, t := range targets {
@@ -192,14 +196,16 @@ func (s *Store) NativeArchivePreview(ctx context.Context, ws string, ids []strin
 				if t.Provider == v.session.Provider && t.DeviceID == v.session.DeviceID {
 					t.ProfileID = v.session.ProfileID
 				}
-				result = append(result, t)
+				if supportsNativeArchive(t.Provider) {
+					result = append(result, t)
+				}
 				return nil
 			}, id)
 			if err != nil {
 				return nil, err
 			}
 		}
-		if v.chat != nil && v.chat.NativeSessionID != "" {
+		if v.chat != nil && v.chat.NativeSessionID != "" && supportsNativeArchive(v.chat.Provider) {
 			result = append(result, store.NativeArchiveTarget{Provider: v.chat.Provider, NativeSessionID: v.chat.NativeSessionID, DeviceID: workspace.DeviceID, ProfileID: v.chat.ProfileID, Desired: "archived", WorkspacePath: workspace.LocalPath})
 		}
 	}

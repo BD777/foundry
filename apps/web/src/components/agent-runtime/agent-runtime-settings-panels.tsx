@@ -1,10 +1,5 @@
 import { Check, ChevronRight, RotateCcw } from "lucide-react";
-import type {
-  AgentModelOption,
-  ClaudeEffort,
-  CodexReasoningEffort,
-  CodexSpeed,
-} from "@bd777/foundry-protocol";
+import type { AgentModelOption, CodexSpeed } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
@@ -58,7 +53,7 @@ export function AgentSettingsPanels({
   modelValue: string;
   onCodexSpeedChange: (value: CodexSpeed) => void;
   onDone: () => void;
-  onEffortChange: (value: ClaudeEffort | CodexReasoningEffort) => void;
+  onEffortChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onOpenPanel: (panel: SettingsPanel) => void;
   onResetControls: () => void;
@@ -81,12 +76,14 @@ export function AgentSettingsPanels({
           onClick={() => onOpenPanel("model")}
           value={view.modelLabel}
         />
-        <MainRow
-          active={panel === "effort"}
-          label={t("controls.effort")}
-          onClick={() => onOpenPanel("effort")}
-          value={view.effortLabel}
-        />
+        {selectedRuntime !== "antigravity" || view.effortOptions.length > 0 ? (
+          <MainRow
+            active={panel === "effort"}
+            label={t("controls.effort")}
+            onClick={() => onOpenPanel("effort")}
+            value={view.effortLabel}
+          />
+        ) : null}
         {selectedRuntime === "codex" ? (
           <MainRow
             active={panel === "speed"}

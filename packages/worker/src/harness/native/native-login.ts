@@ -1,3 +1,4 @@
+import { clearAntigravityHealth } from "./antigravity-inspection.js";
 import { readClaudeCredentialSource } from "./native-credential-source.js";
 import { execFile, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -118,6 +119,7 @@ const refreshing = new Map<string, number>();
 let loginRevision = 0;
 let generation = 0;
 export function clearNativeLoginHealth(): void {
+  clearAntigravityHealth();
   cache.clear();
   clearNativeCliCache();
   loginRevision += 1;

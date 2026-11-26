@@ -14,6 +14,7 @@ const (
 	EventLabelQuestionSettled       = "Question settled"
 	EventLabelResponseStream        = "Response stream"
 	EventLabelClaudeTurnEnd         = "Claude Agent SDK finished"
+	EventLabelAntigravityTurnEnd    = "Antigravity finished"
 	EventLabelCodexTurnEnd          = "Codex finished"
 	EventLabelProfileCommandTurnEnd = "Custom profile command finished"
 	EventLabelClaudeProcessStarted  = "Started Claude Agent SDK"
@@ -103,7 +104,7 @@ var HeartbeatProcessLabels = map[string]bool{
 // IsTurnEndLabel reports a turn-end event's label (isTurnEndLabel).
 func IsTurnEndLabel(label string) bool {
 	switch strings.TrimSpace(label) {
-	case EventLabelClaudeTurnEnd, EventLabelCodexTurnEnd, EventLabelProfileCommandTurnEnd:
+	case EventLabelAntigravityTurnEnd, EventLabelClaudeTurnEnd, EventLabelCodexTurnEnd, EventLabelProfileCommandTurnEnd:
 		return true
 	}
 	return false

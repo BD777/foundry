@@ -2,7 +2,8 @@ import type { NativeAccountInspection } from "@bd777/foundry-protocol";
 import { nativeCli } from "./native-cli.js";
 import { inspectNativeAccount } from "./native-inspection.js";
 
-export class NativeAccountChangedError extends Error {}
+import { NativeAccountChangedError } from "./native-account-changed.js";
+export { NativeAccountChangedError };
 
 export const quotaTtlMs = 60_000;
 export function createSelectedAccountInspector(

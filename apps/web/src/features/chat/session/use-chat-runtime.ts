@@ -143,7 +143,11 @@ export function useChatRuntime({
   // resolved by id below and is never substituted, so it can still land on
   // the legacy device agent.
   const selectableAgents = useMemo(
-    () => agents.filter((agent) => !promotedLegacyIds.has(agent.id)),
+    () =>
+      agents.filter(
+        (agent) =>
+          !promotedLegacyIds.has(agent.id) && agent.provider !== "antigravity",
+      ),
     [agents, promotedLegacyIds],
   );
   const selectedAgent = selectedAgentId
@@ -191,6 +195,10 @@ export function useChatRuntime({
     claudePermissionCandidate === "default"
       ? "bypassPermissions"
       : claudePermissionCandidate;
+  const antigravityEffort =
+    selectedOverride.antigravityEffort ??
+    selectedProfile?.antigravityEffort ??
+    "";
   const codexReasoningEffort =
     selectedOverride.codexReasoningEffort ??
     selectedProfile?.codexReasoningEffort ??
@@ -432,6 +440,7 @@ export function useChatRuntime({
     claudeEffort,
     claudePermissionMode,
     codexApprovalPolicy,
+    antigravityEffort,
     codexReasoningEffort,
     codexSandboxMode,
     codexSpeed,

@@ -119,9 +119,19 @@ func TestNativeSignInThroughTheDevice(t *testing.T) {
 	call(f.alice, base+"/sign-in/dismiss", `{"operationId":"`+begin.OperationID+`"}`, http.StatusOK)
 	call(f.alice, base+"/sign-out", `{}`, http.StatusOK)
 
+	const agy = "/api/devices/dev_alice/accounts/antigravity/sign-in"
+	var antigravity store.NativeSignInStep
+	_ = json.Unmarshal(call(f.alice, agy, `{"requestId":"browser-1"}`, http.StatusOK), &antigravity)
+	if antigravity.OperationID == begin.OperationID || antigravity.OperationID == "" {
+		t.Fatal("Antigravity sign-in shared a Claude login operation")
+	}
+
 	device.mu.Lock()
 	var actions []string
-	for _, request := range device.requests {
+	for i, request := range device.requests {
+		if i == len(device.requests)-1 && request.Runtime == "antigravity" && request.OperationID == antigravity.OperationID {
+			break
+		}
 		if request.Runtime != "claude" {
 			t.Errorf("request for %s", request.Runtime)
 		}

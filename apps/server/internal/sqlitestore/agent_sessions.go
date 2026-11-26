@@ -307,6 +307,9 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if err != nil {
 		return store.AgentSession{}, "", err
 	}
+	if err := session.CheckSubscriptionChat(); err != nil {
+		return store.AgentSession{}, "", err
+	}
 	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
 		return store.AgentSession{}, "", err
 	}
@@ -509,6 +512,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		Model:                strings.TrimSpace(input.Model),
 		WorkerGroupID:        strings.TrimSpace(input.WorkerGroupID),
 		DispatchID:           inputID,
+		AntigravityEffort:    strings.TrimSpace(input.AntigravityEffort),
 		ClaudeEffort:         strings.TrimSpace(input.ClaudeEffort),
 		ClaudePermissionMode: strings.TrimSpace(input.ClaudePermissionMode),
 		CodexReasoningEffort: strings.TrimSpace(input.CodexReasoningEffort),
@@ -793,11 +797,15 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			next := session
 			next.AgentID, next.DeviceID, next.Provider = agent.ID, agent.DeviceID, agent.Provider
 			next.ProfileID, next.ProfileFingerprint, next.ProfileLabel = agent.ProfileID, agent.ProfileFingerprint, agent.ProfileLabel
+			if (session.Provider == "antigravity" || next.Provider == "antigravity") && (session.Provider != next.Provider || session.ProfileID != next.ProfileID || session.DeviceID != next.DeviceID) {
+				return store.ErrSubscriptionHistory
+			}
 			if !compatibleAgentSessionProfile(session, next) {
 				// A model or setting chosen for the previous agent or account
 				// may not exist for the new one; it starts from its defaults.
 				next.Model = ""
 				if next.Provider != session.Provider {
+					next.AntigravityEffort = ""
 					next.ClaudeEffort, next.ClaudePermissionMode = "", ""
 					next.CodexReasoningEffort, next.CodexSandboxMode, next.CodexApprovalPolicy, next.CodexSpeed = "", "", "", ""
 				}
@@ -811,7 +819,8 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			}
 		}
 		for target, value := range map[*string]string{
-			&session.ClaudeEffort: input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,
+			&session.AntigravityEffort: input.AntigravityEffort,
+			&session.ClaudeEffort:      input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,
 			&session.CodexReasoningEffort: input.CodexReasoningEffort, &session.CodexSandboxMode: input.CodexSandboxMode,
 			&session.CodexApprovalPolicy: input.CodexApprovalPolicy, &session.CodexSpeed: input.CodexSpeed,
 		} {
@@ -837,6 +846,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),
 			ChannelOrigin:         input.ChannelOrigin,
 			InputSource:           input.InputSourceOf(),
+		}
+		if err := session.CheckSubscriptionChat(); err != nil {
+			return err
 		}
 		session.DispatchID = inputID
 		// What the native session missed is the server's to tell, never the

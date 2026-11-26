@@ -620,7 +620,8 @@ export function assistantRuntime(
     }
   | undefined {
   const onHome = profiles.filter(
-    (profile) => profile.deviceId === homeDeviceId,
+    (profile) =>
+      profile.runtime !== "antigravity" && profile.deviceId === homeDeviceId,
   );
   const chosen =
     onHome.find((profile) => profile.id === settings.assistantProfileId) ??

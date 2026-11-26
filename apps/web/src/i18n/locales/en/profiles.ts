@@ -19,6 +19,7 @@ export const profiles = {
     observed: "Checked {{time}}",
   },
   runtimeUpdates: {
+    selfUpdating: "Antigravity uses its own updater on this device.",
     updateNowLabel: "Update {{name}} to stable",
     noticeTitle: "{{name}} {{version}} → stable {{target}}",
     workerRequired:
@@ -79,6 +80,7 @@ export const profiles = {
     runtimeFilter: "Runtime",
     allRuntimes: "All runtimes",
     claudeRuntime: "Claude",
+    antigravityRuntime: "Antigravity",
     codexRuntime: "Codex",
     deviceFilter: "Device",
     allDevices: "All devices",
@@ -606,6 +608,8 @@ export const profiles = {
     sectionLabel: "{{runtime}} runtime defaults",
     codexCatalog:
       "Models from OpenAI’s published Codex catalog and the native CLI. Offline results may be older; availability depends on your account and CLI version.",
+    antigravityCatalog:
+      "Official options reported by Antigravity on this device.",
     claudeCatalog: "Official options reported by Claude Code on this device.",
     loadFailed: "Could not load official models. Retry.",
     hint: "Existing sessions are unchanged.",
@@ -696,9 +700,11 @@ export const profiles = {
       "Could not check this account. Reconnect the device and retry.",
   },
   subscriptions: {
+    antigravity: "Antigravity subscription",
+    addProfile: "Add subscription profile",
     title: "Subscriptions",
     intro:
-      "The official Claude and ChatGPT logins. Each device keeps its own: signing in runs the agent's own sign-in on that device, so the login and its requests stay there.",
+      "Each agent signs in to its official subscription on the selected device.",
     meta: "Credentials on each device",
     signedInCount: "{{count}} of {{total}} devices signed in",
     noDevices: "Add a device to sign in to a subscription.",

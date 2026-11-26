@@ -179,6 +179,7 @@ export interface ChatSurfaceProps {
     /** The timers' last ended run, when it failed. */
     failedRun?: ChatTimerFire;
   };
+  antigravityEffort?: string;
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;
@@ -203,6 +204,7 @@ export interface ChatSurfaceProps {
    * cancelled.
    */
   offlineDevice?: { label: string; waitingSessionId?: string };
+  onAntigravityEffortChange?: (value: string) => void;
   onClaudeEffortChange: (value: ClaudeEffort | "") => void;
   onClaudePermissionModeChange: (value: ClaudePermissionMode) => void;
   onCodexApprovalPolicyChange: (value: CodexApprovalPolicy) => void;

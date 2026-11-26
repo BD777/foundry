@@ -681,7 +681,7 @@
         },
         "runtime": {
           "type": "string",
-          "enum": ["claude", "codex"],
+          "enum": ["claude", "codex", "antigravity"],
           "description": "Only profiles of this runtime."
         }
       }
@@ -755,7 +755,7 @@
         },
         "runtime": {
           "type": "string",
-          "enum": ["claude", "codex"],
+          "enum": ["claude", "codex", "antigravity"],
           "description": "Only providers of this runtime."
         },
         "deviceId": {
@@ -980,7 +980,7 @@
         },
         "runtime": {
           "type": "string",
-          "enum": ["claude", "codex"]
+          "enum": ["claude", "codex", "antigravity"]
         },
         "model": {
           "type": "string",
@@ -1044,7 +1044,7 @@
               },
               "runtime": {
                 "type": "string",
-                "enum": ["claude", "codex"]
+                "enum": ["claude", "codex", "antigravity"]
               },
               "model": {
                 "type": "string"
@@ -1186,10 +1186,10 @@
   {
     "name": "sign_in_subscription",
     "_meta": {
-      "anthropic/searchHint": "connectors & accounts: start a subscription sign-in and relay its link and code"
+      "anthropic/searchHint": "connectors & accounts: install a native CLI or start a subscription sign-in and relay its link and code"
     },
-    "description": "Sign a device's Claude Code (runtime claude) or Codex (codex) in to the person's subscription, as the page's Sign in does: the device's own CLI signs in; you only relay. action start answers status, operationId, verificationUrl and, for Codex, userCode: give the person the link (and code) to open in their own browser; never open it yourself. For Claude, codeEntry true means the page shows a code after approval: ask the person for it and send it with action code. action status follows it while status is pending, until complete, denied, failed or expired; cancel stops it. Starting again while one runs answers that one.",
-    "summary": "Starts a subscription sign-in on a device and relays its link and code to the person.",
+    "description": "Sign a device's Claude Code, Codex or Antigravity in to the person's subscription, as the page's Sign in does: the device's own CLI signs in; you only relay. Use action install_cli with deviceId and runtime to install the native CLI on that device. It returns runtime, ok, version when available, and a short log on failure. For a separate Antigravity login use action create_profile with a label, then pass the returned profileId for each sign-in step. action start answers status, operationId, verificationUrl and, for Codex, userCode: give the person the link (and code) to open in their own browser; never open it yourself. For Claude or Antigravity, codeEntry true means the page shows a code after approval: ask the person for it and send it with action code. action status follows it while status is pending, until complete, denied, failed or expired; cancel stops it. Starting again while one runs answers that one.",
+    "summary": "Installs a native CLI or starts a subscription sign-in on a device and relays its link and code to the person.",
     "limits": [
       "Only the person's devices; the device must be online and its worker able to sign in.",
       "The person approves in their own browser; the agent never signs in itself.",
@@ -1202,13 +1202,28 @@
           "type": "string",
           "description": "The device to sign in."
         },
+        "profileId": {
+          "type": "string",
+          "description": "The selected Antigravity device subscription profile."
+        },
+        "label": {
+          "type": "string",
+          "description": "Name for a separate login, for create_profile."
+        },
         "runtime": {
           "type": "string",
-          "enum": ["claude", "codex"]
+          "enum": ["claude", "codex", "antigravity"]
         },
         "action": {
           "type": "string",
-          "enum": ["start", "status", "code", "cancel"]
+          "enum": [
+            "install_cli",
+            "create_profile",
+            "start",
+            "status",
+            "code",
+            "cancel"
+          ]
         },
         "operationId": {
           "type": "string",

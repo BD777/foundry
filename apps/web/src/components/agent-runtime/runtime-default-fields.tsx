@@ -1,3 +1,4 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import type { AgentModelOption } from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
@@ -11,10 +12,11 @@ import {
   codexSandboxOptions,
   codexSpeedOptions,
 } from "../../lib/runtime-options";
-import { catalogModel } from "../../lib/agent-effort";
+import { antigravityEffortOptions, catalogModel } from "../../lib/agent-effort";
 
 type Values = Pick<
   CreateAgentProfileInput,
+  | "antigravityEffort"
   | "claudeEffort"
   | "claudePermissionMode"
   | "codexReasoningEffort"
@@ -37,7 +39,7 @@ export function RuntimeDefaultFields({
   catalog = [],
   model = "",
 }: {
-  runtime: "claude" | "codex";
+  runtime: AgentProfileProjection["runtime"];
   value: Values;
   onChange: (patch: Values) => void;
   insideDialog?: boolean;
@@ -46,42 +48,53 @@ export function RuntimeDefaultFields({
   model?: string;
 }) {
   const { t } = useTranslation("agents");
+  const acpEfforts = antigravityEffortOptions(catalogModel(catalog, model));
   const fields =
-    runtime === "claude"
-      ? [
-          {
-            field: "claudeEffort" as const,
-            label: t("defaults.claudeEffort"),
-            options: claudeEffortOptions(),
-          },
-          {
-            field: "claudePermissionMode" as const,
-            label: t("defaults.claudePermission"),
-            options: claudePermissionOptions(),
-          },
-        ]
-      : [
-          {
-            field: "codexReasoningEffort" as const,
-            label: t("defaults.codexEffort"),
-            options: codexEffortOptions(catalogModel(catalog, model)),
-          },
-          {
-            field: "codexSandboxMode" as const,
-            label: t("defaults.codexSandbox"),
-            options: codexSandboxOptions(),
-          },
-          {
-            field: "codexApprovalPolicy" as const,
-            label: t("defaults.codexApproval"),
-            options: codexApprovalOptions(),
-          },
-          {
-            field: "codexSpeed" as const,
-            label: t("defaults.codexSpeed"),
-            options: codexSpeedOptions(),
-          },
-        ];
+    runtime === "antigravity"
+      ? acpEfforts.length
+        ? [
+            {
+              field: "antigravityEffort" as const,
+              label: t("controls.effort"),
+              options: acpEfforts,
+            },
+          ]
+        : []
+      : runtime === "claude"
+        ? [
+            {
+              field: "claudeEffort" as const,
+              label: t("defaults.claudeEffort"),
+              options: claudeEffortOptions(),
+            },
+            {
+              field: "claudePermissionMode" as const,
+              label: t("defaults.claudePermission"),
+              options: claudePermissionOptions(),
+            },
+          ]
+        : [
+            {
+              field: "codexReasoningEffort" as const,
+              label: t("defaults.codexEffort"),
+              options: codexEffortOptions(catalogModel(catalog, model)),
+            },
+            {
+              field: "codexSandboxMode" as const,
+              label: t("defaults.codexSandbox"),
+              options: codexSandboxOptions(),
+            },
+            {
+              field: "codexApprovalPolicy" as const,
+              label: t("defaults.codexApproval"),
+              options: codexApprovalOptions(),
+            },
+            {
+              field: "codexSpeed" as const,
+              label: t("defaults.codexSpeed"),
+              options: codexSpeedOptions(),
+            },
+          ];
   return (
     <div className="grid grid-cols-2 gap-x-4 gap-y-5">
       {fields.map(({ field, label, options }) => (

@@ -36,6 +36,8 @@ var approvalNoticeOptions = []string{"同意", "拒绝"}
 // name ("question", "approval", "hand_over", "ask"); false when it earns none.
 func personNoticeKind(item store.PendingItem) (string, bool) {
 	switch {
+	case item.Source == store.PendingSourceTurnFailed && item.FailureProvider == "antigravity" && item.FailureCategory == store.PendingFailureQuotaExhausted:
+		return "ask", true
 	case item.Source == store.PendingSourceAssistantQuestion, item.Source == store.PendingSourceItemWait:
 		return "ask", true
 	case item.Source == store.PendingSourceConnectorWrite && item.ConnectorWrite != nil:
@@ -58,7 +60,7 @@ func personNoticeKind(item store.PendingItem) (string, bool) {
 // from its answer) is answered by the assistant, so its notice takes no reply
 // and the reply goes to the assistant's inbox.
 func canAnswerFromNotice(item store.PendingItem) bool {
-	return item.Source != store.PendingSourceQuestion || item.MessageID != ""
+	return item.Source != store.PendingSourceTurnFailed && (item.Source != store.PendingSourceQuestion || item.MessageID != "")
 }
 
 // itemIsApproval reports whether the person's answer decides the item only

@@ -21,6 +21,7 @@ export const profiles: Translation<typeof en> = {
     observed: "读取于 {{time}}",
   },
   runtimeUpdates: {
+    selfUpdating: "Antigravity 在这台设备上自行更新。",
     updateNowLabel: "将 {{name}} 更新到稳定版",
     noticeTitle: "{{name}} {{version}} → 稳定版 {{target}}",
     workerRequired: "请先更新这台设备的 Worker，以启用 Agent 自动更新。",
@@ -76,6 +77,7 @@ export const profiles: Translation<typeof en> = {
     runtimeFilter: "运行时",
     allRuntimes: "全部运行时",
     claudeRuntime: "Claude",
+    antigravityRuntime: "Antigravity",
     codexRuntime: "Codex",
     deviceFilter: "设备",
     allDevices: "全部设备",
@@ -585,6 +587,7 @@ export const profiles: Translation<typeof en> = {
     sectionLabel: "{{runtime}} 运行时默认设置",
     codexCatalog:
       "合并 OpenAI 公布的 Codex 模型与原生 CLI 目录。离线结果可能较旧；实际可用性取决于账号和 CLI 版本。",
+    antigravityCatalog: "这台设备上 Antigravity 报告的官方选项。",
     claudeCatalog: "这台设备上 Claude Code 报告的官方选项。",
     loadFailed: "无法加载官方模型，请重试。",
     hint: "已有会话不受影响。",
@@ -668,9 +671,10 @@ export const profiles: Translation<typeof en> = {
     checkFailed: "无法检查这个账号。请重新连接设备后重试。",
   },
   subscriptions: {
+    antigravity: "Antigravity 订阅",
+    addProfile: "新增订阅档案",
     title: "订阅",
-    intro:
-      "官方的 Claude 和 ChatGPT 登录。每台设备各自保存：登录由那台设备上的 Agent 自己完成，登录和它的请求都留在那台设备上。",
+    intro: "在所选设备上通过 Agent 自己的登录流程连接官方订阅。",
     meta: "凭据在各台设备",
     signedInCount: "{{total}} 台设备中 {{count}} 台已登录",
     noDevices: "先添加一台设备，再登录订阅。",

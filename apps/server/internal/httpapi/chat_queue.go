@@ -540,7 +540,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 	if found {
 		return s.sessionService.Send(ctx, session.ID, store.SendAgentSessionInput{
 			AgentID: settings.AgentID, Provider: settings.Provider, ProfileID: settings.ProfileID, Model: settings.Model,
-			ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
+			AntigravityEffort: settings.AntigravityEffort, ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 			CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,
 			CodexApprovalPolicy: settings.CodexApprovalPolicy, CodexSpeed: settings.CodexSpeed,
 			Prompt: item.Text, Attachments: item.Attachments, Annotations: item.Annotations, ProfileTransitionNote: note,
@@ -550,7 +550,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 	return s.sessionService.Start(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: item.CreatedBy, WorkspaceID: workspaceID, ChatID: chatID, Source: store.SessionSourceChat,
 		AgentID: settings.AgentID, Provider: settings.Provider, ProfileID: settings.ProfileID, Model: settings.Model,
-		ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
+		AntigravityEffort: settings.AntigravityEffort, ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 		CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,
 		CodexApprovalPolicy: settings.CodexApprovalPolicy, CodexSpeed: settings.CodexSpeed,
 		Prompt: item.Text, Attachments: item.Attachments, Annotations: item.Annotations, ProfileTransitionNote: note, InputID: item.ID,

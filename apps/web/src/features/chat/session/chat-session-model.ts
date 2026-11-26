@@ -555,6 +555,7 @@ export function preferredChatId(chats: ChatThread[]): string {
 /** The composer's runtime controls a message is sent with. */
 export type ChatComposerControls = Pick<
   CreateAgentSessionInput,
+  | "antigravityEffort"
   | "claudePermissionMode"
   | "codexApprovalPolicy"
   | "codexSandboxMode"
@@ -579,6 +580,9 @@ export function chatComposerChoices(
   const codex = agent.provider === "codex";
   return {
     agentId: agent.id,
+    ...(agent.provider === "antigravity" && controls.antigravityEffort
+      ? { antigravityEffort: controls.antigravityEffort }
+      : {}),
     claudeEffort: (claude && controls.claudeEffort) || undefined,
     claudePermissionMode: claude ? controls.claudePermissionMode : undefined,
     codexApprovalPolicy: codex ? controls.codexApprovalPolicy : undefined,

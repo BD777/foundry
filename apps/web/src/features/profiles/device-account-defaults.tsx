@@ -47,6 +47,7 @@ export function DeviceAccountDefaults({
     runtime: profile.runtime,
     label: profile.label,
     model: profile.model ?? "",
+    antigravityEffort: profile.antigravityEffort,
     claudeEffort: profile.claudeEffort,
     claudePermissionMode: profile.claudePermissionMode,
     codexReasoningEffort: profile.codexReasoningEffort,
@@ -93,9 +94,7 @@ export function DeviceAccountDefaults({
       setCatalogHint(
         external
           ? t("accountDefaults.external.catalog", provider)
-          : profile.runtime === "codex"
-            ? t("accountDefaults.codexCatalog")
-            : t("accountDefaults.claudeCatalog"),
+          : t(`accountDefaults.${profile.runtime}Catalog`),
       );
     } catch (cause) {
       setLoadError(

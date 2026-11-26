@@ -309,3 +309,37 @@ test("official account defaults reject saved models absent from the native catal
     globalThis.fetch = originalFetch;
   }
 });
+
+test("two Antigravity profiles on one device inspect the chosen account", async () => {
+  const previous = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: new URL(url).pathname, body: JSON.parse(options.body) });
+    return Response.json({});
+  };
+  const view = await setup({
+    devices: [devices[0]],
+    runtimes: ["antigravity"],
+    profiles: ["Home", "Work"].map((label) => ({
+      id: label.toLowerCase(),
+      label,
+      deviceId: "a",
+      origin: "device",
+      runtime: "antigravity",
+      connectionType: "local_login",
+      status: "missing_auth",
+    })),
+  });
+  try {
+    await view.clickLabel("Check the Antigravity · Work login on Studio again");
+    assert.deepEqual(calls, [
+      {
+        url: "/api/devices/a/accounts/antigravity/inspect",
+        body: { profileId: "work" },
+      },
+    ]);
+  } finally {
+    globalThis.fetch = previous;
+    await view.cleanup();
+  }
+});

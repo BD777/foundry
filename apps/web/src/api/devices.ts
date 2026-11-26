@@ -1,3 +1,4 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import type {
   DeviceConnectorSignIn,
   AgentProfileCheck,
@@ -110,7 +111,7 @@ export function setDeviceWorkerProxy(
 /** Run the official installer for Claude Code or Codex on a device. */
 export function installDeviceCli(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
 ): Promise<NativeCliInstallResult> {
   return request(
     "POST",
@@ -121,11 +122,11 @@ export function installDeviceCli(
 
 export function inspectDeviceAccount(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
   source?: string,
   selection?: {
     profileId: string;
-    runtimeGeneration: string;
+    runtimeGeneration?: string;
     refresh?: boolean;
   },
 ): Promise<NativeAccountInspection> {
@@ -138,7 +139,7 @@ export function inspectDeviceAccount(
 
 function nativeSignInPath(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
 ): string {
   return `${devicePath(deviceId)}/accounts/${runtime}/sign-in`;
 }
@@ -150,55 +151,60 @@ function nativeSignInPath(
  */
 export function beginNativeSignIn(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
   requestId: string,
+  profileId?: string,
 ): Promise<DeviceConnectorSignIn> {
   return request("POST", nativeSignInPath(deviceId, runtime), {
-    body: { requestId },
+    body: { requestId, profileId },
   });
 }
 
 export function pollNativeSignIn(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
   operationId: string,
+  profileId?: string,
 ): Promise<DeviceConnectorSignIn> {
   return request("POST", `${nativeSignInPath(deviceId, runtime)}/poll`, {
-    body: { operationId },
+    body: { operationId, profileId },
   });
 }
 
 /** Hands the code the sign-in page showed to the device's waiting sign-in. */
 export function submitNativeSignInCode(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
   operationId: string,
   code: string,
+  profileId?: string,
 ): Promise<void> {
   return request("POST", `${nativeSignInPath(deviceId, runtime)}/code`, {
-    body: { operationId, code },
+    body: { operationId, code, profileId },
   });
 }
 
 export function dismissNativeSignIn(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
   operationId: string,
+  profileId?: string,
 ): Promise<void> {
   return request("POST", `${nativeSignInPath(deviceId, runtime)}/dismiss`, {
-    body: { operationId },
+    body: { operationId, profileId },
   });
 }
 
 /** Signs the runtime's CLI on the device out of its official login. */
 export function signOutNativeAccount(
   deviceId: string,
-  runtime: "claude" | "codex",
+  runtime: AgentProfileProjection["runtime"],
+  profileId?: string,
 ): Promise<void> {
   return request(
     "POST",
     `${devicePath(deviceId)}/accounts/${runtime}/sign-out`,
-    { body: {} },
+    { body: { profileId } },
   );
 }
 

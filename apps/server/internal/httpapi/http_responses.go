@@ -33,7 +33,7 @@ func errorStatus(err error) int {
 	if errors.Is(err, store.ErrSessionArchived) || errors.Is(err, store.ErrArchiveBlocked) {
 		return http.StatusConflict
 	}
-	if errors.Is(err, store.ErrInvalidArchive) {
+	if errors.Is(err, store.ErrInvalidArchive) || errors.Is(err, store.ErrSubscriptionChat) || errors.Is(err, store.ErrSubscriptionHistory) {
 		return http.StatusBadRequest
 	}
 	// The outermost refusal, the server's (statusError) or the session

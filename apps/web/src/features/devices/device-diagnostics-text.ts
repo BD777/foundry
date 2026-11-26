@@ -121,9 +121,14 @@ export function checkText(check: DiagnosticCheck): CheckText {
         advice: advise("sandbox.advice"),
       };
     case "agents.claude":
-    case "agents.codex": {
+    case "agents.codex":
+    case "agents.antigravity": {
       const name = runtimeMeta(
-        check.id === "agents.claude" ? "claude" : "codex",
+        check.id === "agents.claude"
+          ? "claude"
+          : check.id === "agents.antigravity"
+            ? "antigravity"
+            : "codex",
       ).productName;
       const detail = !values.installed
         ? t("agent.notInstalled")

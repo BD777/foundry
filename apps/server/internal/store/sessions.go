@@ -1,6 +1,9 @@
 package store
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // SessionTokenIdentity is the resolved actor behind a valid agent session
 // bearer token. AccountID is reserved for the upcoming accounts system.
@@ -47,6 +50,7 @@ type SendAgentSessionInput struct {
 	Provider                       string                   `json:"provider,omitempty"`
 	ProfileID                      string                   `json:"profileId,omitempty"`
 	Model                          string                   `json:"model,omitempty"`
+	AntigravityEffort              string                   `json:"antigravityEffort,omitempty"`
 	ClaudeEffort                   string                   `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode           string                   `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort           string                   `json:"codexReasoningEffort,omitempty"`
@@ -174,6 +178,7 @@ type CreateAgentSessionInput struct {
 	ProfileID                      string                  `json:"profileId,omitempty"`
 	Model                          string                  `json:"model,omitempty"`
 	WorkerGroupID                  string                  `json:"workerGroupId,omitempty"`
+	AntigravityEffort              string                  `json:"antigravityEffort,omitempty"`
 	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`
@@ -243,4 +248,22 @@ func ValidSessionInputID(id string) bool {
 		}
 	}
 	return true
+}
+
+var ErrSubscriptionChat = errors.New("Antigravity subscriptions run person-authored Chat turns")
+var ErrSubscriptionHistory = errors.New("Antigravity keeps its own conversation history; start a new Chat to change profiles or runtimes, or resume the original Chat")
+
+// CheckSubscriptionChat keeps Antigravity launches on person-authored Chat inputs,
+// including when a session is switched, recovered or resumed from durable work.
+func (session AgentSession) CheckSubscriptionChat() error {
+	if session.Provider != "antigravity" {
+		return nil
+	}
+	if session.Source != SessionSourceChat || session.Role != "" || session.ParentSessionID != "" || session.IssueID != "" || session.WorkerGroupID != "" || session.Input.ExecutionBudget != nil || SessionInputSourceOf(session.Input).Kind != "person" {
+		return ErrSubscriptionChat
+	}
+	if session.Input.ImportedContext != "" || session.ForkNativeSessionID != "" {
+		return ErrSubscriptionHistory
+	}
+	return nil
 }

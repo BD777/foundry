@@ -129,3 +129,12 @@ type PromoteProfileInput struct {
 type ListAgentModelsInput struct {
 	Profile CreateAgentProfileInput `json:"profile"`
 }
+
+// IsNativeRuntime reports whether Foundry can run this agent on a device.
+func IsNativeRuntime(runtime string) bool {
+	switch runtime {
+	case "claude", "codex", "antigravity":
+		return true
+	}
+	return false
+}

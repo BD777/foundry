@@ -9,15 +9,16 @@
 2026-11-24 Worker + Server + Web：[DEV-331 会话只认 Foundry 的 Skill；草稿优先并可发布；本地 Skill 只作导入来源](DEV-331-foundry-only-skills.md)：已合并（#315 `ae6e8a8f`）并部署 dev（Server `8fcaf301394a`、Worker `…1795524555`、Web `a2886d5d717f92e0`）；验收步骤 1 已过，2–5 待本人在 project_a 迭代 feishu-structured-doc 时验收。
 2026-11-24 Server + Web：[DEV-332 等你处理：一条只说一遍、标出说话人和起因、完成/放弃/不需要我并列（关闭时告诉在等的帮手）、转交可带选项、回复框即对话输入框、跳到消息能跳到较早的消息](DEV-332-needs-you-readable.md)；dev Server b1de64a4d554 / Web a4d96957b7762cd9；本人 2026-11-24 已在真实条目上使用「放弃」。
 2026-11-23 脚本：[DEV-329 PA 路由评测：把测量和产品分开（项目可打开、按生产方式与用例日期构建夹具、夹具电脑有生产的模型配置、帮手回合后取消并归档、每例重置、评测电脑隔离、合成内容、默认判定）](DEV-329-pa-eval-measurement-fixes.md)（不涉及部署）；新基线见 `.foundry/reports/eval-baseline-20261124.md`。
+2026-11-23 Worker + Server + Web：[DEV-328 第三个原生运行时 Antigravity（官方 `agy acp`，个人订阅登录，薄客户端）](DEV-328-antigravity-runtime.md)：已部署 dev（dev328c：Server `4dd5a43b20c2`；dev328d：Worker `…1795614842`），含 MCP 安装 CLI、agy 错误识别与同号重试、额度提示分 Gemini / Claude·GPT；待本人订阅登录和真实 Chat 验收。
 2026-11-21 Server + Web + Worker：[DEV-324 事项基座：事项有归属并可认领、帮手信号按事项投递、本人的决定与完成标准记在事项上、事项文件投影](DEV-324-item-ledger.md)。准出标准 E1–E7 全部在 dev 上通过（Agent 自验，2026-11-21）；已合入 main（PR #287、#288、#289）；dev Server 5bdd4e24e1dc / Web 94480578b2b159df / Worker 0.5.7-dev.379；待本人验收。
 2026-11-20 Server + Web + Worker：[DEV-322 后台任务结束后 Claude 自己接着跑的那一轮，从开始就显示为运行中（原来要等它跑完才有事件，期间面板看起来空闲）](DEV-322-background-continuation-running.md)（train 106）。
 2026-11-20 Server：[DEV-313 助理定位为编排者：调研等实际工作交给项目，助理只调度、判断、跟进](DEV-313-assistant-as-orchestrator.md)（train 105）。
-2026-11-19 Server：[DEV-323 会话可经 MCP（`connector_instances`）录入和绑定 App Store Connect 团队密钥](DEV-323-appstoreconnect-mcp-instances.md)（asc-mcp-train，train 105/106 沿用）。
-2026-11-19 脚本：[DEV-321 PA 路由评测：在线夹具设备（假运行时）、工具级派发评分、`--repeat` 与 `--resume` 运行日志、每个 stack 共享缓存、磁盘暂停；3× 基线不完整](DEV-321-pa-eval-online-fixtures.md)（不涉及部署）。
-2026-11-19 Worker + Server：[DEV-320 worker 原生对话扫描不再每轮重算指纹、不读服务端不收的对话的 transcript、重启不再重读所有日志开头；按规则清理旧会话 SDK 日志、闲置 verifier、闲置 compute scratch](DEV-320-worker-scan-cost-and-retention.md)（train 102）。
 2026-11-22 Server：[DEV-325 Cloudflare 网关：Zero Trust 级别下 `/zones` 列表把账号 ID 当成域名 ID 而报 502；开放邮件转发（Email Routing）路由](DEV-325-cloudflare-zones-email-routing.md)。
 2026-11-22 Server：[DEV-323 补：ASC 网关开放商店页编辑（新级别 listing：多语言名称、描述、关键词、截图；仍不放行改价格与提交审核）](DEV-323-appstoreconnect-mcp-instances.md)。
 2026-11-21 Server：[DEV-323 补：ASC 网关放行已绑定 App 下的只读子集合（订阅组），blinklet 实际接入并在线上复验](DEV-323-appstoreconnect-mcp-instances.md)（dev Server 4d62370c7719）。
+2026-11-19 Server：[DEV-323 会话可经 MCP（`connector_instances`）录入和绑定 App Store Connect 团队密钥](DEV-323-appstoreconnect-mcp-instances.md)（asc-mcp-train，train 105/106 沿用）。
+2026-11-19 脚本：[DEV-321 PA 路由评测：在线夹具设备（假运行时）、工具级派发评分、`--repeat` 与 `--resume` 运行日志、每个 stack 共享缓存、磁盘暂停；3× 基线不完整](DEV-321-pa-eval-online-fixtures.md)（不涉及部署）。
+2026-11-19 Worker + Server：[DEV-320 worker 原生对话扫描不再每轮重算指纹、不读服务端不收的对话的 transcript、重启不再重读所有日志开头；按规则清理旧会话 SDK 日志、闲置 verifier、闲置 compute scratch](DEV-320-worker-scan-cost-and-retention.md)（train 102）。
 2026-11-19 Worker：[DEV-319 Worker 每轮巡检的文件系统开销；remote-build 不再在设备上留作业](DEV-319-worker-io-and-build-disk.md)（train 101）。
 2026-11-19 Server + Worker：[DEV-318 有别人在场的通道对话卡在本人或失败时不发文字，只加表情（描述文件声明 react），细节经通知卡片发给本人](DEV-318-channel-react.md)（train 100）。
 2026-11-19 Server + Web + Worker：[DEV-316 Codex 思考强度按每个模型的官方目录列出全部档位（不再写死 minimal…xhigh）](DEV-316-codex-efforts.md)（train 97）。

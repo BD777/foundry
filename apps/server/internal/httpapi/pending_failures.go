@@ -76,7 +76,11 @@ func (r pendingReactions) recordTurnFailure(ctx context.Context, session store.A
 	if classified.resetAt.IsZero() {
 		item.FailureResetAt = ""
 	}
-	recorded, _, err := r.s.store.RecordPendingItem(ctx, item)
+	if session.Provider == "antigravity" && classified.category == store.PendingFailureQuotaExhausted {
+		item.FailureProvider = string(session.Provider)
+		item.FailureAccountID = failureAccountID(session)
+	}
+	recorded, _, err := r.s.recordPendingItem(ctx, item)
 	if err != nil {
 		log.Printf("record terminal failure pending item of %s: %v", session.ID, err)
 		return

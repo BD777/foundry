@@ -11,7 +11,7 @@ export interface ProviderModelSource {
   providerKind: ProviderKind;
   providerId: string;
   providerLabel: string;
-  runtime: "claude" | "codex";
+  runtime: AgentProfileProjection["runtime"];
   model: string;
 }
 
@@ -19,7 +19,7 @@ export interface ProviderModelGroup {
   key: string;
   label: string;
   kind: ProviderKind;
-  runtime: "claude" | "codex";
+  runtime: AgentProfileProjection["runtime"];
   models: ProviderModelSource[];
 }
 

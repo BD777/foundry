@@ -1,3 +1,4 @@
+import { agentRuntimes } from "../../lib/device-readiness";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProfileBinding,
@@ -32,8 +33,10 @@ export function ProviderFilters({
         onValueChange={onRuntimeChange}
         options={[
           { value: "all", label: t("page.allRuntimes") },
-          { value: "claude", label: t("page.claudeRuntime") },
-          { value: "codex", label: t("page.codexRuntime") },
+          ...agentRuntimes.map((value) => ({
+            value,
+            label: t(`page.${value}Runtime`),
+          })),
         ]}
         value={runtime}
       />
@@ -80,5 +83,5 @@ export function filterConnections(
 }
 
 export function runtimesFor(filter: RuntimeFilter): NativeRuntime[] {
-  return filter === "all" ? ["claude", "codex"] : [filter];
+  return filter === "all" ? [...agentRuntimes] : [filter];
 }
