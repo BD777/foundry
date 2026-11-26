@@ -368,14 +368,12 @@ pnpm --version'
 # counting semaphore, not a device lock: byte-dev gets 16, byte-dev-sg 3 and a
 # 10-CPU/16-GiB Mac mini 4 from the same formula.
 rc_slot_acquire() {
-  local line='set -eu
-mkdir -p .slots
-# A job left behind (a failed build kept for --fetch-only, a killed run) goes
+  local housekeeping='# A job left behind (a failed build kept for --fetch-only, a killed run) goes
 # after a day unless a live slot still names it.
 find jobs -mindepth 1 -maxdepth 1 -type d -mmin +1440 2>/dev/null | while read -r old; do
   grep -qsxF "$old" .slots/*/job || rm -rf "$old"
-done
-cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+done'
+  local line='cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 if [ -r /proc/meminfo ]; then
   mem_gib="$(awk '"'"'/MemTotal/{print int($2/1048576)}'"'"' /proc/meminfo)"
 elif command -v sysctl >/dev/null 2>&1; then
@@ -389,43 +387,51 @@ slots=$cpu_slots
 [ "$mem_slots" -lt "$slots" ] && slots=$mem_slots
 [ "$slots" -ge 1 ] || slots=1
 [ "$slots" -le 16 ] || slots=16
-tries=0
-while :; do
-  if [ -e .cleanup ] && find .cleanup -maxdepth 0 -mmin +5 | grep -q .; then
-    rm -rf .cleanup
+if [ -e .cleanup ] && find .cleanup -maxdepth 0 -mmin +5 | grep -q .; then
+  rm -rf .cleanup
+fi
+if [ -e .cleanup ]; then
+  echo cleanup_pending
+  exit 0
+fi
+mkdir -p .slots
+for existing in .slots/*; do
+  [ -d "$existing" ] || continue
+  owner_pid="$(cat "$existing/pid" 2>/dev/null || true)"
+  if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
+    rm -rf "$existing"
+  elif [ -z "$owner_pid" ] && find "$existing" -maxdepth 0 -mmin +1 | grep -q .; then
+    rm -rf "$existing"
   fi
-  if [ -e .cleanup ]; then
-    tries=$((tries + 1))
-    [ "$tries" -lt 450 ] || { echo "remote scratch cleanup is stuck" >&2; exit 1; }
-    sleep 1
-    continue
+done
+for slot in $(seq 1 "$slots"); do
+  if mkdir ".slots/$slot" 2>/dev/null; then
+    nohup sh -c "sleep 2100" >/dev/null 2>&1 &
+    echo "$!" > ".slots/$slot/pid"
+    echo __RC_JOB__ > ".slots/$slot/job"
+    echo "slot=$slot slots=$slots cpus=$cpus memGiB=$mem_gib"
+    exit 0
   fi
-  for existing in .slots/*; do
-    [ -d "$existing" ] || continue
-    owner_pid="$(cat "$existing/pid" 2>/dev/null || true)"
-    if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
-      rm -rf "$existing"
-    elif [ -z "$owner_pid" ] && find "$existing" -maxdepth 0 -mmin +1 | grep -q .; then
-      rm -rf "$existing"
-    fi
-  done
-  for slot in $(seq 1 "$slots"); do
-    if mkdir ".slots/$slot" 2>/dev/null; then
-      nohup sh -c "sleep 2100" >/dev/null 2>&1 &
-      echo "$!" > ".slots/$slot/pid"
-      echo __RC_JOB__ > ".slots/$slot/job"
-      echo "slot=$slot slots=$slots cpus=$cpus memGiB=$mem_gib"
-      exit 0
-    fi
-  done
-  tries=$((tries + 1))
-  [ "$tries" -lt 450 ] || { echo "all $slots remote job slots stayed busy" >&2; exit 1; }
-  [ "$tries" -ne 1 ] || echo "waiting for one of $slots remote job slots" >&2
-  sleep 2
-done'
+done
+echo slots_busy'
   line="${line//__RC_JOB__/$(printf '%q' "$rc_job")}"
-  local result
-  result="$(run_shell 1000 "$line")" || die "could not acquire a remote job slot"
+  # Requests sharing one lease execute serially. Give the holders a turn
+  # to finish and release their slots between acquisition attempts.
+  local result delay deadline=$((SECONDS + 900))
+  while :; do
+    result="$(run_shell 1000 "set -eu
+$housekeeping
+$line")" || die "could not acquire a remote job slot"
+    case "$result" in
+      cleanup_pending) delay=1 ;;
+      slots_busy) delay=2 ;;
+      *) break ;;
+    esac
+    [ -z "$housekeeping" ] || log "waiting for a remote job slot ($result)"
+    housekeeping=""
+    [ "$SECONDS" -lt "$deadline" ] || die "could not acquire a remote job slot ($result)"
+    sleep "$delay"
+  done
   rc_slot="$(sed -n 's/.*slot=\([0-9][0-9]*\).*/\1/p' <<<"$result" | tail -1)"
   [ -n "$rc_slot" ] || die "remote job slot answer was unreadable: $result"
   local slots cpus
@@ -633,7 +639,11 @@ rc_sync() {
       die "could not install the shared base archive"
   fi
   run_shell 60 "mkdir -p '$rc_job/run'" >/dev/null
-  result="$(run_shell 300 "mkdir -p '$rc_remote_repo' && tar -xzf '$remote_archive' -C '$rc_remote_repo'")" ||
+  # The checkout is a git repository whose HEAD is the base, so the tree's changes show
+  # as a working-tree diff and untracked files there, as check-changed.sh expects.
+  result="$(run_shell 300 "mkdir -p '$rc_remote_repo' && tar -xzf '$remote_archive' -C '$rc_remote_repo' &&
+cd '$rc_remote_repo' && git init -q && git add -A &&
+git -c user.name=remote-compute -c user.email=remote-compute@invalid -c commit.gpgsign=false commit -qm 'base $2' --no-verify")" ||
     die "could not extract base $2 into $rc_remote_repo"
   if [ -s "$rc_work/changes.diff" ]; then
     gzip -c "$rc_work/changes.diff" >"$rc_work/changes.diff.gz"
