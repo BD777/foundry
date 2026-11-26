@@ -150,6 +150,15 @@ export function liveHostRoots(roots = knownHostRoots()): string[] {
   return roots.filter((root) => liveHostIdentity(root));
 }
 
+/**
+ * Whether a host other than `self` still runs, retiring or not. What a host
+ * set up for the sessions it runs (feishu-cli profiles, tool folders) stays
+ * theirs while it lives, also after it gave the device's shared work up.
+ */
+export function otherHostRuns(self: string, roots = knownHostRoots()): boolean {
+  return liveHostRoots(roots).some((root) => root !== self);
+}
+
 /** Runtime entries that live hosts run from: their folders must not be pruned. */
 export function pinnedHostEntries(roots = knownHostRoots()): string[] {
   return roots.flatMap((root) => {

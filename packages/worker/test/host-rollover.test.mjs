@@ -32,6 +32,7 @@ import {
   markHostRetiring,
   markHostStopped,
   seniorHostLive,
+  otherHostRuns,
   seniorHostPresent,
 } from "../dist/execution-host/roots.js";
 import {
@@ -942,6 +943,41 @@ test("a senior host the daemon retires does not hold the device's work", () => {
     assert.equal(seniorHostPresent(self, new Map(), 0, 60_000, roots), false);
     markHostRetiring(senior, false);
     assert.equal(seniorHostPresent(self, new Map(), 0, 60_000, roots), true);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a retiring host still runs its sessions: their profiles and tool folders are not leftovers yet", () => {
+  const base = mkdtempSync(join(tmpdir(), "host-other-runs-"));
+  try {
+    const me = join(base, "me");
+    const senior = join(base, "senior");
+    mkdirSync(me);
+    mkdirSync(senior);
+    writeFileSync(
+      join(senior, "identity.json"),
+      JSON.stringify({
+        pid: process.pid,
+        startTime: processIdentity(process.pid).startTime,
+        startedAt: 1_000,
+      }),
+    );
+    const roots = [senior, me];
+    markHostRetiring(senior, true);
+    assert.equal(
+      seniorHostPresent(
+        { root: me, startedAt: 5_000 },
+        new Map(),
+        0,
+        60_000,
+        roots,
+      ),
+      false,
+      "the device's shared work moves to the new host",
+    );
+    assert.equal(otherHostRuns(me, roots), true, "its sessions' folders stay");
+    assert.equal(otherHostRuns(me, [deadRoot(base, "gone"), me]), false);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-25 Worker：[DEV-333 Worker 发布后，正在跑的会话的 feishu-cli profile 被新运行器删掉](DEV-333-rollover-reaps-live-profiles.md)。`sess_1795423194895939999` 在 04:01 发布 Worker 后报“profile 只剩 default”，飞书写入失败，授权本身没掉。原因：新宿主接管设备共享工作时，把退役宿主还在用的 profile 和会话工具目录当成残留删掉了；空闲会话交接时，旧宿主延迟到 5 秒后才释放，也可能删掉新宿主刚写的同名 profile。修复：有其他宿主活着时不清理会话残留；关闭空闲 agent 时同步释放。已部署 dev（Worker `…1795580477`，byte-dev / Mac mini / sg-chaos 已更新），byte-dev 实机切换后 profile 仍在；旧宿主退出后没有残留、在用的 profile 都在（08:30Z 补验）。人工验收待确认。
+
 2026-11-24 Worker + Server + Web：[DEV-331 会话只认 Foundry 的 Skill；草稿优先并可发布；本地 Skill 只作导入来源](DEV-331-foundry-only-skills.md)：已合并（#315 `ae6e8a8f`）并部署 dev（Server `8fcaf301394a`、Worker `…1795524555`、Web `a2886d5d717f92e0`）；验收步骤 1 已过，2–5 待本人在 project_a 迭代 feishu-structured-doc 时验收。
 2026-11-24 Server + Web：[DEV-332 等你处理：一条只说一遍、标出说话人和起因、完成/放弃/不需要我并列（关闭时告诉在等的帮手）、转交可带选项、回复框即对话输入框、跳到消息能跳到较早的消息](DEV-332-needs-you-readable.md)；dev Server b1de64a4d554 / Web a4d96957b7762cd9；本人 2026-11-24 已在真实条目上使用「放弃」。
 2026-11-23 脚本：[DEV-329 PA 路由评测：把测量和产品分开（项目可打开、按生产方式与用例日期构建夹具、夹具电脑有生产的模型配置、帮手回合后取消并归档、每例重置、评测电脑隔离、合成内容、默认判定）](DEV-329-pa-eval-measurement-fixes.md)（不涉及部署）；新基线见 `.foundry/reports/eval-baseline-20261124.md`。
