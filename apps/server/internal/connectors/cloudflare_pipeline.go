@@ -260,7 +260,13 @@ func (g *CloudflareGateway) Upstream(w http.ResponseWriter, r *http.Request, x *
 		var result json.RawMessage
 		var err error
 		if call.path == "/zones" {
-			result, err = g.listZones(ctx, account, lease.Held.Resources, call.query, use)
+			// Held.Resources also names the bound zones' accounts at the
+			// zero_trust level; only the zones themselves are listed.
+			bound, boundErr := g.bindingFor(ctx, lease.Session, lease.Grant.DeviceID, lease.Device.OwnerUserID, lease.Account.ID)
+			if boundErr != nil {
+				return asDenial(boundErr)
+			}
+			result, err = g.listZones(ctx, account, bound.binding.ResourceIDs, call.query, use)
 		} else {
 			result, err = g.accounts.CloudflareRead(ctx, account, call.path, call.query, use)
 		}

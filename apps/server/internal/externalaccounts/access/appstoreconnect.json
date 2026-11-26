@@ -3,19 +3,34 @@
     {
       "name": "read",
       "label": "Read",
-      "labels": { "zh-CN": "只读" },
-      "description": "GET requests for the bound apps: apps, subscription groups, subscriptions, prices and localized metadata. Changes nothing. Choose it when sessions only need to look things up.",
+      "labels": {
+        "zh-CN": "只读"
+      },
+      "description": "GET requests for the bound apps: apps, store page (app info, versions, localizations, screenshots), subscription groups, subscriptions, prices and localized metadata. Changes nothing. Choose it when sessions only need to look things up.",
       "descriptions": {
-        "zh-CN": "对所绑定 App 只发 GET 请求：App、订阅组、订阅、价格与本地化元数据。不做任何修改。会话只需要查询时选这一档。"
+        "zh-CN": "对所绑定 App 只发 GET 请求：App、商店页（App 信息、版本、本地化、截图）、订阅组、订阅、价格与本地化元数据。不做任何修改。会话只需要查询时选这一档。"
+      }
+    },
+    {
+      "name": "listing",
+      "label": "Read + store page",
+      "labels": {
+        "zh-CN": "只读 + 商店页"
+      },
+      "description": "Also edits the store page of the bound apps: app name, subtitle and categories, version description, keywords, promotional text and URLs per language, adding languages, and uploading or replacing screenshots. Price changes and review submission stay in App Store Connect, so nothing goes live until the person submits it. Choose it when sessions prepare the App Store listing.",
+      "descriptions": {
+        "zh-CN": "还可编辑所绑定 App 的商店页：各语言的 App 名称、副标题和分类，版本描述、关键词、推广文本和链接，新增语言，上传或替换截图。修改价格和提交审核仍需在 App Store Connect 中操作，所以本人提交前不会上线。需要让会话准备商店页时选这一档。"
       }
     },
     {
       "name": "commerce",
-      "label": "Read + commerce",
-      "labels": { "zh-CN": "只读 + commerce" },
-      "description": "Also creates and updates subscription groups, subscriptions, introductory offers, localizations and review screenshots of the bound apps. Price changes and review submission stay in App Store Connect. Choose it when sessions set up in-app subscriptions.",
+      "label": "Read + store page + commerce",
+      "labels": {
+        "zh-CN": "只读 + 商店页 + commerce"
+      },
+      "description": "Everything in the store page level, and also creates and updates subscription groups, subscriptions, introductory offers, localizations and review screenshots of the bound apps. Price changes and review submission stay in App Store Connect. Choose it when sessions set up in-app subscriptions.",
       "descriptions": {
-        "zh-CN": "还可为所绑定 App 创建和更新订阅组、订阅、推介优惠、本地化与审核截图。修改价格和提交审核仍需在 App Store Connect 中操作。需要让会话配置 App 内订阅时选这一档。"
+        "zh-CN": "包含商店页一档的全部权限，还可为所绑定 App 创建和更新订阅组、订阅、推介优惠、本地化与审核截图。修改价格和提交审核仍需在 App Store Connect 中操作。需要让会话配置 App 内订阅时选这一档。"
       }
     }
   ]

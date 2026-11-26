@@ -31,6 +31,7 @@ const (
 	appStoreConnectHandlePrefix   = "fdyasc_user_"
 	AppStoreConnectHandleLifetime = 30 * time.Minute
 	appStoreConnectReadLevel      = "read"
+	appStoreConnectListingLevel   = "listing"
 	appStoreConnectCommerceLevel  = "commerce"
 	maxAppStoreConnectBody        = 256 << 10
 	appStoreConnectLookupTTL      = 5 * time.Minute
@@ -276,17 +277,38 @@ func (g *AppStoreConnectGateway) Classify(r *http.Request, lease *gateway.Lease)
 	_ = r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(raw))
 	call.Body = raw
+	if call.TopType == "territories" {
+		need.Level = appStoreConnectReadLevel
+		return need, nil
+	}
+	if call.TopType == "apps" && call.Method == http.MethodPatch {
+		if err := appStoreConnectAppPatchAllowed(raw, call.AppID); err != nil {
+			return need, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: err.Error()}
+		}
+		need.Resource = call.AppID
+		need.Level = appStoreConnectCommerceLevel
+		need.Write = true
+		need.Risk = "appstoreconnect_change"
+		need.RiskSummary = "The assistant wants to change App Store Connect (" + call.Method + " " + appStoreConnectAuditPath(call.Path) + ")."
+		return need, nil
+	}
 	if call.Method != http.MethodGet {
 		if call.TopType == "subscriptionPrices" {
 			return need, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "App Store Connect price changes are not available to sessions; the person changes prices in App Store Connect"}
 		}
-		if !appStoreConnectWritable[call.TopType] {
+		if appStoreConnectWritable[call.TopType] == "" {
 			return need, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: call.Method + " /v1/" + call.TopType + " is outside what a session may change through Foundry"}
+		}
+		if call.Method == http.MethodDelete && !appStoreConnectDeletable[call.TopType] {
+			return need, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "DELETE /v1/" + call.TopType + " is outside what a session may change through Foundry; only screenshots and screenshot sets are deleted"}
 		}
 	}
 	appID := call.AppID
 	if appID == "" && call.ResourceID != "" {
 		resolved, err := g.appForResource(r.Context(), lease, call.TopType, call.ResourceID, 0)
+		if errors.Is(err, errAppStoreConnectOutsideBound) {
+			return need, &gateway.Denial{Reason: gateway.ReasonNotBound, Message: err.Error()}
+		}
 		if err != nil {
 			return need, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "Foundry could not establish which App this request belongs to; the request was not sent", Err: err}
 		}
@@ -294,6 +316,9 @@ func (g *AppStoreConnectGateway) Classify(r *http.Request, lease *gateway.Lease)
 	}
 	if call.Method != http.MethodGet {
 		bodyApp, bodyErr := g.appForWriteBody(r.Context(), lease, raw)
+		if errors.Is(bodyErr, errAppStoreConnectOutsideBound) {
+			return need, &gateway.Denial{Reason: gateway.ReasonNotBound, Message: bodyErr.Error()}
+		}
 		if bodyErr != nil {
 			return need, &gateway.Denial{Reason: gateway.ReasonBadRequest, Message: bodyErr.Error()}
 		}
@@ -311,7 +336,7 @@ func (g *AppStoreConnectGateway) Classify(r *http.Request, lease *gateway.Lease)
 	if call.Method == http.MethodGet {
 		need.Level = appStoreConnectReadLevel
 	} else {
-		need.Level = appStoreConnectCommerceLevel
+		need.Level = appStoreConnectWritable[call.TopType]
 		need.Write = true
 		need.Risk = "appstoreconnect_change"
 		need.RiskSummary = "The assistant wants to change App Store Connect (" + call.Method + " " + appStoreConnectAuditPath(call.Path) + ")."
@@ -321,8 +346,8 @@ func (g *AppStoreConnectGateway) Classify(r *http.Request, lease *gateway.Lease)
 
 func parseAppStoreConnectCall(r *http.Request) (*appStoreConnectCall, *gateway.Denial) {
 	method := strings.ToUpper(r.Method)
-	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPatch {
-		return &appStoreConnectCall{Method: method, Path: "/"}, &gateway.Denial{Reason: gateway.ReasonBadRequest, Message: "App Store Connect sessions use GET, POST or PATCH"}
+	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPatch && method != http.MethodDelete {
+		return &appStoreConnectCall{Method: method, Path: "/"}, &gateway.Denial{Reason: gateway.ReasonBadRequest, Message: "App Store Connect sessions use GET, POST, PATCH or DELETE"}
 	}
 	path := strings.TrimPrefix(r.URL.Path, AppStoreConnectGatewayPath)
 	path = "/" + strings.TrimPrefix(path, "/")
@@ -359,10 +384,17 @@ func parseAppStoreConnectCall(r *http.Request) (*appStoreConnectCall, *gateway.D
 		return call, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "list only a bound App; account-wide /v1/apps is not available to sessions"}
 	}
 	if call.TopType == "apps" {
-		if method != http.MethodGet || len(parts) != 2 {
-			return call, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "the Apps resource is read-only, and only by a bound app id"}
+		appPatch := method == http.MethodPatch && len(parts) == 2
+		if (method != http.MethodGet && !appPatch) || len(parts) > 3 {
+			return call, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "the Apps resource is read-only, and only by a bound app id; a PATCH may set only the App Store Server Notifications URLs"}
 		}
 		call.AppID = call.ResourceID
+	}
+	if call.TopType == "territories" {
+		if method != http.MethodGet || len(parts) > 2 {
+			return call, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "territories are Apple's reference list and are only read"}
+		}
+		return call, nil
 	}
 	if method == http.MethodGet && call.ResourceID == "" {
 		return call, &gateway.Denial{Reason: gateway.ReasonPathNotAllowed, Message: "account-wide App Store Connect collections are not available to sessions"}
@@ -374,19 +406,35 @@ var appStoreConnectKnownTypes = map[string]bool{
 	"apps": true, "subscriptionGroups": true, "subscriptions": true,
 	"subscriptionPrices": true, "subscriptionIntroductoryOffers": true,
 	"subscriptionLocalizations": true, "subscriptionGroupLocalizations": true,
-	"subscriptionAppStoreReviewScreenshots": true,
+	"subscriptionAppStoreReviewScreenshots": true, "subscriptionAvailabilities": true, "territories": true, "builds": true,
+	"appInfos": true, "appInfoLocalizations": true,
+	"appStoreVersions": true, "appStoreVersionLocalizations": true,
+	"appScreenshotSets": true, "appScreenshots": true,
 }
 
-var appStoreConnectWritable = map[string]bool{
-	"subscriptionGroups": true, "subscriptions": true,
-	"subscriptionIntroductoryOffers": true, "subscriptionLocalizations": true,
-	"subscriptionGroupLocalizations": true, "subscriptionAppStoreReviewScreenshots": true,
+// appStoreConnectWritable is the access level each changeable resource type
+// needs: the store page (listing) or in-app subscriptions (commerce).
+var appStoreConnectWritable = map[string]string{
+	"appInfos": appStoreConnectListingLevel, "appInfoLocalizations": appStoreConnectListingLevel,
+	"appStoreVersions": appStoreConnectListingLevel, "appStoreVersionLocalizations": appStoreConnectListingLevel,
+	"appScreenshotSets": appStoreConnectListingLevel, "appScreenshots": appStoreConnectListingLevel,
+	"subscriptionGroups": appStoreConnectCommerceLevel, "subscriptions": appStoreConnectCommerceLevel,
+	"subscriptionIntroductoryOffers": appStoreConnectCommerceLevel, "subscriptionLocalizations": appStoreConnectCommerceLevel,
+	"subscriptionGroupLocalizations": appStoreConnectCommerceLevel, "subscriptionAppStoreReviewScreenshots": appStoreConnectCommerceLevel,
+	"subscriptionAvailabilities": appStoreConnectCommerceLevel,
 }
+
+// appStoreConnectDeletable replaces store screenshots; nothing else is deleted.
+var appStoreConnectDeletable = map[string]bool{"appScreenshotSets": true, "appScreenshots": true}
 
 var appStoreConnectNested = map[string]map[string]bool{
-	"apps":               {"subscriptionGroups": true, "subscriptions": true},
-	"subscriptionGroups": {"subscriptions": true, "subscriptionGroupLocalizations": true, "relationships": true},
-	"subscriptions":      {"subscriptionPrices": true, "subscriptionIntroductoryOffers": true, "subscriptionLocalizations": true, "subscriptionAppStoreReviewScreenshots": true, "relationships": true},
+	"apps":                         {"subscriptionGroups": true, "subscriptions": true, "appInfos": true, "appStoreVersions": true, "builds": true},
+	"appInfos":                     {"appInfoLocalizations": true},
+	"appStoreVersions":             {"appStoreVersionLocalizations": true},
+	"appStoreVersionLocalizations": {"appScreenshotSets": true},
+	"appScreenshotSets":            {"appScreenshots": true},
+	"subscriptionGroups":           {"subscriptions": true, "subscriptionGroupLocalizations": true, "relationships": true},
+	"subscriptions":                {"prices": true, "introductoryOffers": true, "subscriptionLocalizations": true, "appStoreReviewScreenshot": true, "subscriptionAvailability": true, "relationships": true},
 }
 
 func appStoreConnectNestedAllowed(topType string, tail []string, method string) bool {
@@ -400,26 +448,43 @@ func appStoreConnectNestedAllowed(topType string, tail []string, method string) 
 		}
 		return method == http.MethodGet || (method == http.MethodPost && len(tail) == 2)
 	}
-	if !allowed[tail[0]] {
+	// Sub-collections are read; changes go to the resource's own path.
+	if !allowed[tail[0]] || method != http.MethodGet {
 		return false
 	}
 	return len(tail) == 1 || (len(tail) == 3 && tail[1] == "relationships")
 }
 
+// appStoreConnectRelation is how a resource names its parent: Relation is
+// the relationship Apple returns with ?include=Relation. A resource Apple
+// cannot include its App for (ListedUnderApp) is found instead by listing
+// /v1/apps/{bound}/Relation.
 type appStoreConnectRelation struct {
-	ParentType  string
-	Relation    string
-	RelatedType string
+	ParentType     string
+	Relation       string
+	RelatedType    string
+	ListedUnderApp bool
 }
 
+// errAppStoreConnectOutsideBound is a resource that belongs to none of the
+// session's bound Apps.
+var errAppStoreConnectOutsideBound = errors.New("the resource belongs to none of this workspace's bound Apps")
+
 var appStoreConnectParents = map[string]appStoreConnectRelation{
-	"subscriptionGroups":                    {ParentType: "apps", Relation: "app", RelatedType: "apps"},
-	"subscriptions":                         {ParentType: "subscriptionGroups", Relation: "subscriptionGroup", RelatedType: "subscriptionGroups"},
+	"subscriptionGroups":                    {ParentType: "apps", Relation: "subscriptionGroups", RelatedType: "apps", ListedUnderApp: true},
+	"subscriptions":                         {ParentType: "subscriptionGroups", Relation: "group", RelatedType: "subscriptionGroups"},
 	"subscriptionPrices":                    {ParentType: "subscriptions", Relation: "subscription", RelatedType: "subscriptions"},
 	"subscriptionIntroductoryOffers":        {ParentType: "subscriptions", Relation: "subscription", RelatedType: "subscriptions"},
 	"subscriptionLocalizations":             {ParentType: "subscriptions", Relation: "subscription", RelatedType: "subscriptions"},
 	"subscriptionGroupLocalizations":        {ParentType: "subscriptionGroups", Relation: "subscriptionGroup", RelatedType: "subscriptionGroups"},
 	"subscriptionAppStoreReviewScreenshots": {ParentType: "subscriptions", Relation: "subscription", RelatedType: "subscriptions"},
+	"builds":                                {ParentType: "apps", Relation: "app", RelatedType: "apps"},
+	"appInfos":                              {ParentType: "apps", Relation: "app", RelatedType: "apps"},
+	"appInfoLocalizations":                  {ParentType: "appInfos", Relation: "appInfo", RelatedType: "appInfos"},
+	"appStoreVersions":                      {ParentType: "apps", Relation: "app", RelatedType: "apps"},
+	"appStoreVersionLocalizations":          {ParentType: "appStoreVersions", Relation: "appStoreVersion", RelatedType: "appStoreVersions"},
+	"appScreenshotSets":                     {ParentType: "appStoreVersionLocalizations", Relation: "appStoreVersionLocalization", RelatedType: "appStoreVersionLocalizations"},
+	"appScreenshots":                        {ParentType: "appScreenshotSets", Relation: "appScreenshotSet", RelatedType: "appScreenshotSets"},
 }
 
 func (g *AppStoreConnectGateway) appForResource(ctx context.Context, lease *gateway.Lease, resourceType, id string, depth int) (string, error) {
@@ -440,13 +505,21 @@ func (g *AppStoreConnectGateway) appForResource(ctx context.Context, lease *gate
 	if parent.ParentType == "" {
 		return "", errors.New("the resource has no App relationship")
 	}
-	parentID, err := g.relationshipID(ctx, lease, resourceType, id, parent.Relation)
-	if err != nil {
-		return "", err
-	}
-	appID, err := g.appForResource(ctx, lease, parent.ParentType, parentID, depth+1)
-	if err != nil {
-		return "", err
+	var appID string
+	if parent.ListedUnderApp {
+		found, err := g.boundAppListing(ctx, lease, parent.Relation, id)
+		if err != nil {
+			return "", err
+		}
+		appID = found
+	} else {
+		parentID, err := g.relationshipID(ctx, lease, resourceType, id, parent.Relation)
+		if err != nil {
+			return "", err
+		}
+		if appID, err = g.appForResource(ctx, lease, parent.ParentType, parentID, depth+1); err != nil {
+			return "", err
+		}
 	}
 	g.lookupMu.Lock()
 	if len(g.lookups) > 4096 {
@@ -458,32 +531,58 @@ func (g *AppStoreConnectGateway) appForResource(ctx context.Context, lease *gate
 }
 
 func (g *AppStoreConnectGateway) relationshipID(ctx context.Context, lease *gateway.Lease, resourceType, id, relation string) (string, error) {
-	response, err := g.accounts.DoAppStoreConnect(ctx, lease.App, http.MethodGet, "/v1/"+resourceType+"/"+url.PathEscape(id), nil, nil, nil)
-	if err != nil {
-		return "", err
-	}
-	payload, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	response.Body.Close()
-	if readErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("App Store Connect resource read answered HTTP %d", response.StatusCode)
-	}
-	if related := appStoreConnectRelationshipValue(payload, relation); related != "" {
-		return related, nil
-	}
-	// Some JSON:API responses omit relationship data unless it is requested.
-	response, err = g.accounts.DoAppStoreConnect(ctx, lease.App, http.MethodGet, "/v1/"+resourceType+"/"+url.PathEscape(id)+"/"+url.PathEscape(relation), nil, nil, nil)
-	if err != nil {
-		return "", err
-	}
-	payload, readErr = io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	response.Body.Close()
-	if readErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("App Store Connect relationship read answered HTTP %d", response.StatusCode)
-	}
-	if related := appStoreConnectRelationshipValue(payload, ""); related != "" {
-		return related, nil
+	// JSON:API returns a relationship's data only when it is included; a
+	// resource that cannot include it is read once more without.
+	for _, query := range []url.Values{{"include": {relation}}, nil} {
+		response, err := g.accounts.DoAppStoreConnect(ctx, lease.App, http.MethodGet, "/v1/"+resourceType+"/"+url.PathEscape(id), query, nil, nil)
+		if err != nil {
+			return "", err
+		}
+		payload, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		response.Body.Close()
+		if readErr != nil {
+			return "", readErr
+		}
+		if response.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("App Store Connect has no %s %s", resourceType, id)
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			continue
+		}
+		if related := appStoreConnectRelationshipValue(payload, relation); related != "" {
+			return related, nil
+		}
 	}
 	return "", errors.New("the resource names no parent App relationship")
+}
+
+// boundAppListing is the bound App whose /v1/apps/{id}/relation lists id.
+func (g *AppStoreConnectGateway) boundAppListing(ctx context.Context, lease *gateway.Lease, relation, id string) (string, error) {
+	for _, appID := range lease.Held.Resources {
+		response, err := g.accounts.DoAppStoreConnect(ctx, lease.App, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"/"+relation, url.Values{"limit": {"200"}, "fields[" + relation + "]": {"referenceName"}}, nil, nil)
+		if err != nil {
+			return "", err
+		}
+		payload, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+		response.Body.Close()
+		if readErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+			return "", fmt.Errorf("App Store Connect listing of an App's %s answered HTTP %d", relation, response.StatusCode)
+		}
+		var document struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(payload, &document); err != nil {
+			return "", err
+		}
+		for _, item := range document.Data {
+			if item.ID == id {
+				return appID, nil
+			}
+		}
+	}
+	return "", errAppStoreConnectOutsideBound
 }
 
 func appStoreConnectRelationshipValue(payload []byte, relation string) string {
@@ -516,6 +615,44 @@ func appStoreConnectRelationshipValue(payload []byte, relation string) string {
 	return ""
 }
 
+// appStoreConnectAppPatchAttributes are the App attributes a session may
+// set: where Apple sends App Store Server Notifications.
+var appStoreConnectAppPatchAttributes = map[string]bool{
+	"subscriptionStatusUrl": true, "subscriptionStatusUrlForSandbox": true,
+	"subscriptionStatusUrlVersion": true, "subscriptionStatusUrlVersionForSandbox": true,
+}
+
+func appStoreConnectAppPatchAllowed(raw json.RawMessage, appID string) error {
+	var document struct {
+		Data struct {
+			Type          string                     `json:"type"`
+			ID            string                     `json:"id"`
+			Attributes    map[string]json.RawMessage `json:"attributes"`
+			Relationships map[string]json.RawMessage `json:"relationships"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil || document.Data.Type != "apps" || document.Data.ID != appID {
+		return errors.New("a PATCH of an App must be one apps resource with the App's id")
+	}
+	if len(document.Data.Relationships) > 0 || len(document.Data.Attributes) == 0 {
+		return errors.New("a PATCH of an App may set only the App Store Server Notifications URLs")
+	}
+	for name := range document.Data.Attributes {
+		if !appStoreConnectAppPatchAttributes[name] {
+			return errors.New("a PATCH of an App may set only subscriptionStatusUrl, subscriptionStatusUrlForSandbox and their versions, not " + name)
+		}
+	}
+	return nil
+}
+
+// appStoreConnectOwningRelations are the body relationships that place a new
+// resource under an App, by relationship name.
+var appStoreConnectOwningRelations = map[string]string{
+	"app": "apps", "group": "subscriptionGroups", "subscriptionGroup": "subscriptionGroups", "subscription": "subscriptions",
+	"appInfo": "appInfos", "appStoreVersion": "appStoreVersions",
+	"appStoreVersionLocalization": "appStoreVersionLocalizations", "appScreenshotSet": "appScreenshotSets",
+}
+
 func (g *AppStoreConnectGateway) appForWriteBody(ctx context.Context, lease *gateway.Lease, raw json.RawMessage) (string, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return "", nil
@@ -537,28 +674,28 @@ func (g *AppStoreConnectGateway) appForWriteBody(ctx context.Context, lease *gat
 	for _, item := range items {
 		var resource struct {
 			Relationships map[string]struct {
-				Data *struct {
-					Type string `json:"type"`
-					ID   string `json:"id"`
-				} `json:"data"`
+				Data json.RawMessage `json:"data"`
 			} `json:"relationships"`
 		}
 		if err := json.Unmarshal(item, &resource); err != nil {
 			return "", errors.New("the JSON body must be one App Store Connect resource object")
 		}
-		for name, relationship := range resource.Relationships {
+		for name, linkage := range resource.Relationships {
+			// A to-many relationship (an array) never names the owner.
+			var relationship struct {
+				Data *struct {
+					Type string `json:"type"`
+					ID   string `json:"id"`
+				}
+			}
+			if !bytes.HasPrefix(bytes.TrimSpace(linkage.Data), []byte("{")) || json.Unmarshal(linkage.Data, &relationship.Data) != nil {
+				continue
+			}
 			if relationship.Data == nil || relationship.Data.ID == "" {
 				continue
 			}
-			resourceType := relationship.Data.Type
-			switch name {
-			case "app":
-				resourceType = "apps"
-			case "subscriptionGroup":
-				resourceType = "subscriptionGroups"
-			case "subscription":
-				resourceType = "subscriptions"
-			default:
+			resourceType, owning := appStoreConnectOwningRelations[name]
+			if !owning {
 				continue
 			}
 			appID, err := g.appForResource(ctx, lease, resourceType, relationship.Data.ID, 0)

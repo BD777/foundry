@@ -64,28 +64,28 @@ func newAppStoreConnectFixture(t *testing.T) *appStoreConnectFixture {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps" && r.URL.Query().Get("limit") == "1":
 			reply([]any{})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/"+f.boundApp+"/subscriptionGroups":
+			reply([]any{map[string]any{"id": "group-1", "type": "subscriptionGroups"}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/"+f.boundApp:
 			reply(map[string]any{"id": f.boundApp, "type": "apps", "attributes": map[string]any{"name": "Fixture App"}})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptionGroups/group-1":
-			reply(map[string]any{"id": "group-1", "type": "subscriptionGroups", "relationships": map[string]any{
-				"app": map[string]any{"data": map[string]any{"id": f.boundApp, "type": "apps"}},
-			}})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptionGroups/group-other":
-			reply(map[string]any{"id": "group-other", "type": "subscriptionGroups", "relationships": map[string]any{
-				"app": map[string]any{"data": map[string]any{"id": "987654321", "type": "apps"}},
-			}})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub-1":
-			reply(map[string]any{"id": "sub-1", "type": "subscriptions", "relationships": map[string]any{
-				"subscriptionGroup": map[string]any{"data": map[string]any{"id": "group-1", "type": "subscriptionGroups"}},
-			}})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub-other":
-			reply(map[string]any{"id": "sub-other", "type": "subscriptions", "relationships": map[string]any{
-				"subscriptionGroup": map[string]any{"data": map[string]any{"id": "group-other", "type": "subscriptionGroups"}},
-			}})
+		case r.Method == http.MethodGet && (r.URL.Path == "/v1/subscriptionGroups/group-1" || r.URL.Path == "/v1/subscriptionGroups/group-other"):
+			reply(map[string]any{"id": strings.TrimPrefix(r.URL.Path, "/v1/subscriptionGroups/"), "type": "subscriptionGroups"})
+		case r.Method == http.MethodGet && (r.URL.Path == "/v1/subscriptions/sub-1" || r.URL.Path == "/v1/subscriptions/sub-other"):
+			group := map[string]string{"sub-1": "group-1", "sub-other": "group-other"}[strings.TrimPrefix(r.URL.Path, "/v1/subscriptions/")]
+			reply(appStoreConnectFakeResource(r, "subscriptions", strings.TrimPrefix(r.URL.Path, "/v1/subscriptions/"), "group", "subscriptionGroups", group))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptionPrices/price-1":
 			reply(map[string]any{"id": "price-1", "type": "subscriptionPrices", "relationships": map[string]any{
 				"subscription": map[string]any{"data": map[string]any{"id": "sub-1", "type": "subscriptions"}},
 			}})
+		case r.Method == http.MethodGet && appStoreConnectStorePageParents[strings.TrimPrefix(r.URL.Path, "/v1/")] != nil:
+			path := strings.TrimPrefix(r.URL.Path, "/v1/")
+			parent := appStoreConnectStorePageParents[path]
+			parentID := parent[2]
+			if parentID == "bound" {
+				parentID = f.boundApp
+			}
+			parts := strings.SplitN(path, "/", 2)
+			reply(appStoreConnectFakeResource(r, parts[0], parts[1], parent[0], parent[1], parentID))
 		case strings.HasPrefix(r.URL.Path, "/v1/"):
 			reply(map[string]any{"id": strings.TrimPrefix(r.URL.Path, "/v1/"), "type": "fixture"})
 		default:
@@ -171,7 +171,7 @@ func TestAppStoreConnectGatewayMapsResourcesAndBlocksMoneyWrites(t *testing.T) {
 	if !strings.HasPrefix(f.handle, "fdyasc_user_") {
 		t.Fatal("session did not receive an App Store Connect stand-in")
 	}
-	for _, path := range []string{"/v1/apps/" + f.boundApp, "/v1/subscriptions/sub-1", "/v1/subscriptions/sub-1", "/v1/subscriptionPrices/price-1"} {
+	for _, path := range []string{"/v1/apps/" + f.boundApp, "/v1/apps/" + f.boundApp + "/subscriptionGroups", "/v1/subscriptions/sub-1", "/v1/subscriptions/sub-1", "/v1/subscriptionPrices/price-1"} {
 		status, body := callAppStoreConnectGateway(f, "device-alice", "alice", http.MethodGet, path, nil, nil)
 		if status != http.StatusOK {
 			t.Fatalf("GET %s: %d %s", path, status, body)
@@ -200,6 +200,9 @@ func TestAppStoreConnectGatewayMapsResourcesAndBlocksMoneyWrites(t *testing.T) {
 	}{
 		{http.MethodGet, "/v1/apps", gateway.ReasonPathNotAllowed, nil},
 		{http.MethodGet, "/v1/apps/987654321", gateway.ReasonNotBound, nil},
+		{http.MethodGet, "/v1/apps/987654321/subscriptionGroups", gateway.ReasonNotBound, nil},
+		{http.MethodGet, "/v1/apps/" + f.boundApp + "/customerReviews", gateway.ReasonPathNotAllowed, nil},
+		{http.MethodPost, "/v1/apps/" + f.boundApp + "/subscriptionGroups", gateway.ReasonPathNotAllowed, json.RawMessage(`{"data":{"type":"subscriptionGroups"}}`)},
 		{http.MethodGet, "/v1/subscriptions/sub-other", gateway.ReasonNotBound, nil},
 		{http.MethodGet, "/v1/customers", gateway.ReasonPathNotAllowed, nil},
 		{http.MethodPatch, "/v1/subscriptionPrices/price-1", gateway.ReasonPathNotAllowed, json.RawMessage(`{"data":{"type":"subscriptionPrices","id":"price-1"}}`)},
@@ -227,7 +230,7 @@ func TestAppStoreConnectGatewayMapsResourcesAndBlocksMoneyWrites(t *testing.T) {
 		if call.Method == http.MethodPost || call.Method == http.MethodPatch {
 			writes++
 		}
-		if call.Method == http.MethodGet && call.Path == "/v1/subscriptionGroups/group-1" {
+		if call.Method == http.MethodGet && call.Path == "/v1/apps/"+f.boundApp+"/subscriptionGroups" {
 			groupLookups++
 		}
 		if call.Path == "/v1/subscriptionPrices/price-1" && call.Method != http.MethodGet {
@@ -237,8 +240,10 @@ func TestAppStoreConnectGatewayMapsResourcesAndBlocksMoneyWrites(t *testing.T) {
 	if writes != 2 {
 		t.Fatalf("writes reached Apple: %+v", f.calls)
 	}
-	if groupLookups != 1 {
-		t.Fatalf("relationship lookup cache missed: %+v", f.calls)
+	// The session's own listing, then one lookup each for group-1 (cached
+	// afterwards) and group-other (outside the bound App).
+	if groupLookups != 3 {
+		t.Fatalf("relationship lookup cache missed: %d listings", groupLookups)
 	}
 	events, err := f.st.ListExternalAccountEvents(ctx, f.account.ID, 100)
 	if err != nil {
@@ -251,5 +256,169 @@ func TestAppStoreConnectGatewayMapsResourcesAndBlocksMoneyWrites(t *testing.T) {
 		if strings.Contains(event.Detail, f.handle) || strings.Contains(event.Detail, "Bearer ") || strings.Contains(event.Detail, "Renamed") {
 			t.Fatalf("audit leaked a credential or request body: %+v", event)
 		}
+	}
+}
+
+// appStoreConnectStorePageParents is the fake store page tree: resource path
+// to its owning relationship, the related type and id ("bound" is the bound
+// App).
+var appStoreConnectStorePageParents = map[string]*[3]string{
+	"builds/build-1":                     {"app", "apps", "bound"},
+	"appInfos/info-1":                    {"app", "apps", "bound"},
+	"appInfoLocalizations/info-loc-1":    {"appInfo", "appInfos", "info-1"},
+	"appStoreVersions/ver-1":             {"app", "apps", "bound"},
+	"appStoreVersions/ver-other":         {"app", "apps", "987654321"},
+	"appStoreVersionLocalizations/loc-1": {"appStoreVersion", "appStoreVersions", "ver-1"},
+	"appStoreVersionLocalizations/loc-x": {"appStoreVersion", "appStoreVersions", "ver-other"},
+	"appScreenshotSets/set-1":            {"appStoreVersionLocalization", "appStoreVersionLocalizations", "loc-1"},
+	"appScreenshots/shot-1":              {"appScreenshotSet", "appScreenshotSets", "set-1"},
+}
+
+func TestAppStoreConnectGatewayStorePageLevel(t *testing.T) {
+	ctx := context.Background()
+	f := newAppStoreConnectFixture(t)
+	call := func(method, path string, body string) (int, []byte) {
+		var raw json.RawMessage
+		if body != "" {
+			raw = json.RawMessage(body)
+		}
+		return callAppStoreConnectGateway(f, "device-alice", "alice", method, path, nil, raw)
+	}
+	for _, path := range []string{
+		"/v1/apps/" + f.boundApp + "/appInfos", "/v1/apps/" + f.boundApp + "/appStoreVersions",
+		"/v1/appInfos/info-1/appInfoLocalizations", "/v1/appStoreVersions/ver-1/appStoreVersionLocalizations",
+		"/v1/appStoreVersionLocalizations/loc-1/appScreenshotSets", "/v1/appScreenshotSets/set-1/appScreenshots",
+	} {
+		if status, body := call(http.MethodGet, path, ""); status != http.StatusOK {
+			t.Fatalf("read binding GET %s: %d %s", path, status, body)
+		}
+	}
+	patchLocalization := `{"data":{"type":"appStoreVersionLocalizations","id":"loc-1","attributes":{"description":"Snap a receipt"}}}`
+	if status, body := call(http.MethodPatch, "/v1/appStoreVersionLocalizations/loc-1", patchLocalization); status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != gateway.ReasonAccessLevel {
+		t.Fatalf("read binding edited the store page: %d %s", status, body)
+	}
+	if err := f.st.SetExternalAccountBindingAccess(ctx, "workspace-a", f.account.ID, "alice", "listing"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPatch, "/v1/appStoreVersionLocalizations/loc-1", patchLocalization},
+		{http.MethodPost, "/v1/appStoreVersionLocalizations", `{"data":{"type":"appStoreVersionLocalizations","attributes":{"locale":"zh-Hans"},"relationships":{"appStoreVersion":{"data":{"type":"appStoreVersions","id":"ver-1"}}}}}`},
+		{http.MethodPost, "/v1/appInfoLocalizations", `{"data":{"type":"appInfoLocalizations","attributes":{"locale":"zh-Hans","name":"Blinklet"},"relationships":{"appInfo":{"data":{"type":"appInfos","id":"info-1"}}}}}`},
+		{http.MethodPost, "/v1/appScreenshots", `{"data":{"type":"appScreenshots","attributes":{"fileName":"a.png","fileSize":10},"relationships":{"appScreenshotSet":{"data":{"type":"appScreenshotSets","id":"set-1"}}}}}`},
+		{http.MethodDelete, "/v1/appScreenshots/shot-1", ""},
+	} {
+		if status, body := call(tc.method, tc.path, tc.body); status != http.StatusOK {
+			t.Fatalf("listing binding %s %s: %d %s", tc.method, tc.path, status, body)
+		}
+	}
+	for _, tc := range []struct{ method, path, body, reason string }{
+		{http.MethodPost, "/v1/subscriptionGroups", `{"data":{"type":"subscriptionGroups","attributes":{"referenceName":"Fixture"},"relationships":{"app":{"data":{"type":"apps","id":"` + f.boundApp + `"}}}}}`, gateway.ReasonAccessLevel},
+		{http.MethodPatch, "/v1/appStoreVersionLocalizations/loc-x", `{"data":{"type":"appStoreVersionLocalizations","id":"loc-x"}}`, gateway.ReasonNotBound},
+		{http.MethodPost, "/v1/appStoreVersionLocalizations", `{"data":{"type":"appStoreVersionLocalizations","relationships":{"appStoreVersion":{"data":{"type":"appStoreVersions","id":"ver-other"}}}}}`, gateway.ReasonNotBound},
+		{http.MethodDelete, "/v1/appStoreVersionLocalizations/loc-1", "", gateway.ReasonPathNotAllowed},
+		{http.MethodDelete, "/v1/subscriptions/sub-1", "", gateway.ReasonPathNotAllowed},
+		{http.MethodPatch, "/v1/apps/" + f.boundApp, `{"data":{"type":"apps","id":"` + f.boundApp + `"}}`, gateway.ReasonPathNotAllowed},
+		{http.MethodPost, "/v1/appStoreVersionSubmissions", `{"data":{"type":"appStoreVersionSubmissions"}}`, gateway.ReasonPathNotAllowed},
+	} {
+		if status, body := call(tc.method, tc.path, tc.body); status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != tc.reason {
+			t.Fatalf("%s %s: %d %s (want %s)", tc.method, tc.path, status, body, tc.reason)
+		}
+	}
+}
+
+// appStoreConnectFakeResource answers like Apple: a relationship's data only
+// when the request includes it.
+func appStoreConnectFakeResource(r *http.Request, resourceType, id, relation, relatedType, relatedID string) map[string]any {
+	resource := map[string]any{"id": id, "type": resourceType, "relationships": map[string]any{
+		relation: map[string]any{"links": map[string]any{"self": "https://example.invalid"}},
+	}}
+	if r.URL.Query().Get("include") == relation {
+		resource["relationships"] = map[string]any{relation: map[string]any{"data": map[string]any{"id": relatedID, "type": relatedType}}}
+	}
+	return resource
+}
+
+func TestAppStoreConnectGatewayAvailabilityTerritoriesAndNotificationURLs(t *testing.T) {
+	ctx := context.Background()
+	f := newAppStoreConnectFixture(t)
+	call := func(method, path, body string) (int, []byte) {
+		var raw json.RawMessage
+		if body != "" {
+			raw = json.RawMessage(body)
+		}
+		return callAppStoreConnectGateway(f, "device-alice", "alice", method, path, nil, raw)
+	}
+	availability := `{"data":{"type":"subscriptionAvailabilities","attributes":{"availableInNewTerritories":true},"relationships":{"subscription":{"data":{"type":"subscriptions","id":"sub-1"}},"availableTerritories":{"data":[{"type":"territories","id":"USA"}]}}}}`
+	notify := `{"data":{"type":"apps","id":"` + f.boundApp + `","attributes":{"subscriptionStatusUrl":"https://api.example.invalid/n","subscriptionStatusUrlVersion":"V2"}}}`
+	for _, path := range []string{"/v1/territories", "/v1/subscriptions/sub-1/subscriptionAvailability"} {
+		if status, body := call(http.MethodGet, path, ""); status != http.StatusOK {
+			t.Fatalf("read binding GET %s: %d %s", path, status, body)
+		}
+	}
+	if err := f.st.SetExternalAccountBindingAccess(ctx, "workspace-a", f.account.ID, "alice", "listing"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPost, "/v1/subscriptionAvailabilities", availability},
+		{http.MethodPatch, "/v1/apps/" + f.boundApp, notify},
+	} {
+		if status, body := call(tc.method, tc.path, tc.body); status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != gateway.ReasonAccessLevel {
+			t.Fatalf("listing binding %s %s: %d %s", tc.method, tc.path, status, body)
+		}
+	}
+	if err := f.st.SetExternalAccountBindingAccess(ctx, "workspace-a", f.account.ID, "alice", "commerce"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPost, "/v1/subscriptionAvailabilities", availability},
+		{http.MethodPatch, "/v1/apps/" + f.boundApp, notify},
+	} {
+		if status, body := call(tc.method, tc.path, tc.body); status != http.StatusOK {
+			t.Fatalf("commerce binding %s %s: %d %s", tc.method, tc.path, status, body)
+		}
+	}
+	for _, tc := range []struct{ method, path, body, reason string }{
+		{http.MethodPatch, "/v1/apps/" + f.boundApp, `{"data":{"type":"apps","id":"` + f.boundApp + `","attributes":{"primaryLocale":"zh-Hans"}}}`, gateway.ReasonPathNotAllowed},
+		{http.MethodPatch, "/v1/apps/987654321", `{"data":{"type":"apps","id":"987654321","attributes":{"subscriptionStatusUrl":"https://x.invalid"}}}`, gateway.ReasonNotBound},
+		{http.MethodPost, "/v1/territories", `{"data":{"type":"territories"}}`, gateway.ReasonPathNotAllowed},
+		{http.MethodPost, "/v1/subscriptionAvailabilities", `{"data":{"type":"subscriptionAvailabilities","relationships":{"subscription":{"data":{"type":"subscriptions","id":"sub-other"}}}}}`, gateway.ReasonNotBound},
+	} {
+		if status, body := call(tc.method, tc.path, tc.body); status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != tc.reason {
+			t.Fatalf("%s %s: %d %s (want %s)", tc.method, tc.path, status, body, tc.reason)
+		}
+	}
+}
+
+func TestAppStoreConnectGatewayNestedPathsUseApplesNamesAndOnlyRead(t *testing.T) {
+	f := newAppStoreConnectFixture(t)
+	if err := f.st.SetExternalAccountBindingAccess(context.Background(), "workspace-a", f.account.ID, "alice", "commerce"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/v1/subscriptions/sub-1/introductoryOffers", "/v1/subscriptions/sub-1/prices", "/v1/subscriptions/sub-1/appStoreReviewScreenshot", "/v1/subscriptions/sub-1/subscriptionLocalizations"} {
+		if status, body := callAppStoreConnectGateway(f, "device-alice", "alice", http.MethodGet, path, nil, nil); status != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, status, body)
+		}
+	}
+	for _, path := range []string{"/v1/subscriptions/sub-1/prices", "/v1/subscriptions/sub-1/introductoryOffers", "/v1/subscriptionGroups/group-1/subscriptions"} {
+		status, body := callAppStoreConnectGateway(f, "device-alice", "alice", http.MethodPost, path, nil, json.RawMessage(`{"data":{"type":"fixture"}}`))
+		if status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != gateway.ReasonPathNotAllowed {
+			t.Fatalf("POST %s: %d %s", path, status, body)
+		}
+	}
+}
+
+func TestAppStoreConnectGatewayReadsBuildsOfTheBoundApp(t *testing.T) {
+	f := newAppStoreConnectFixture(t)
+	for _, path := range []string{"/v1/apps/" + f.boundApp + "/builds", "/v1/builds/build-1"} {
+		if status, body := callAppStoreConnectGateway(f, "device-alice", "alice", http.MethodGet, path, nil, nil); status != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, status, body)
+		}
+	}
+	if err := f.st.SetExternalAccountBindingAccess(context.Background(), "workspace-a", f.account.ID, "alice", "commerce"); err != nil {
+		t.Fatal(err)
+	}
+	status, body := callAppStoreConnectGateway(f, "device-alice", "alice", http.MethodPatch, "/v1/builds/build-1", nil, json.RawMessage(`{"data":{"type":"builds","id":"build-1","attributes":{"expired":true}}}`))
+	if status != http.StatusForbidden || appStoreConnectDenialReason(t, body) != gateway.ReasonPathNotAllowed {
+		t.Fatalf("PATCH a build: %d %s", status, body)
 	}
 }
