@@ -293,3 +293,14 @@ func TestWorkerGroupAllocationIsFixedAtCreation(t *testing.T) {
 		t.Fatalf("after send = model %q pool %q, want the allocation kept", sent.Model, sent.WorkerGroupID)
 	}
 }
+
+func TestAntigravityNeverSchedulesModelRetry(t *testing.T) {
+	f, _ := retryChildWithGroup(t, false)
+	f.child.Provider = "antigravity"
+	if failRetryAttempt(t, f, 1) {
+		t.Fatal("personal subscription scheduled an automatic model request")
+	}
+	if _, found, err := f.db.GetSessionRetry(context.Background(), f.child.ID, f.child.Input.ID); err != nil || found {
+		t.Fatalf("retry exists=%t, err=%v", found, err)
+	}
+}

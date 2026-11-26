@@ -403,7 +403,10 @@ export function ExecutionDefaultFields({
     executionValueFromInput(controlledValue),
   );
   const sources = useMemo(
-    () => executionSources(profiles, servers),
+    () =>
+      executionSources(profiles, servers).filter(
+        (source) => source.runtime !== "antigravity",
+      ),
     [profiles, servers],
   );
   const effective = view?.effective;

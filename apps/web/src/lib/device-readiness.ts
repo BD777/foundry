@@ -1,3 +1,4 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import type {
   DeviceProfileBinding,
   DeviceProjection,
@@ -8,8 +9,12 @@ import type {
 } from "@bd777/foundry-protocol";
 import { deviceConnection } from "./device-connection";
 
-export type AgentRuntime = "claude" | "codex";
-export const agentRuntimes: readonly AgentRuntime[] = ["claude", "codex"];
+export type AgentRuntime = AgentProfileProjection["runtime"];
+export const agentRuntimes: readonly AgentRuntime[] = [
+  "claude",
+  "codex",
+  "antigravity",
+];
 
 /**
  * Where one agent runtime stands on a device, as its worker reports it plus

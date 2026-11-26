@@ -13,17 +13,19 @@ paths: {}
 components:
   schemas:
     NativeRuntimeId:
-      description: "A runtime Foundry runs natively: Claude Code or Codex."
+      description: "A runtime Foundry runs natively: Claude Code, Codex or Antigravity."
       type: string
       enum:
         - claude
         - codex
+        - antigravity
       x-go-type: string
     WorkerRuntimeId:
       type: string
       enum:
         - claude
         - codex
+        - antigravity
         - mock
       x-go-type: string
     CodexSpeed:
@@ -216,6 +218,7 @@ components:
           enum:
             - claude
             - codex
+            - antigravity
           x-go-type: string
         ok:
           type: boolean
@@ -283,11 +286,15 @@ components:
         - action
       additionalProperties: false
       properties:
+        profileId:
+          description: Device subscription profile whose native home signs in.
+          type: string
         runtime:
           type: string
           enum:
             - claude
             - codex
+            - antigravity
           x-go-type: string
         action:
           $ref: "#/components/schemas/NativeSignInAction"
@@ -321,6 +328,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        profileId:
+          description: Device subscription profile whose native home signs in.
+          type: string
         requestId:
           type: string
         operationId:
@@ -376,6 +386,7 @@ components:
           enum:
             - claude
             - codex
+            - antigravity
           x-go-type: string
         source:
           type: string
@@ -597,6 +608,8 @@ components:
             type: string
         promptPrefix:
           type: string
+        antigravityEffort:
+          type: string
         claudeEffort:
           $ref: "#/components/schemas/ClaudeEffort"
         claudePermissionMode:
@@ -752,6 +765,8 @@ components:
             type: integer
             format: int64
         promptPrefix:
+          type: string
+        antigravityEffort:
           type: string
         claudeEffort:
           $ref: "#/components/schemas/ClaudeEffort"
@@ -1191,6 +1206,8 @@ components:
           items:
             type: string
         promptPrefix:
+          type: string
+        antigravityEffort:
           type: string
         claudeEffort:
           type: string

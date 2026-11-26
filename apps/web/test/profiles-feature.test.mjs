@@ -393,7 +393,24 @@ test("the default execution model can be a worker group, managed in the Worker g
 
 test("a worker group is created with members from different providers", async () => {
   const { serve } = serveWorkerGroups();
-  const view = await renderFeature({ tab: "groups" }, serve);
+  const view = await renderFeature(
+    {
+      tab: "groups",
+      // This would sort first if an official ACP account leaked into group defaults.
+      agentProfiles: [
+        {
+          id: "agy-only",
+          label: "AAA",
+          runtime: "antigravity",
+          connectionType: "local_login",
+          deviceId: "a",
+          origin: "device",
+          model: "gemini",
+        },
+      ],
+    },
+    serve,
+  );
   await settle();
   const editGroup = view.query(
     'button[aria-label="Edit worker group DeepSeek Flash"]',

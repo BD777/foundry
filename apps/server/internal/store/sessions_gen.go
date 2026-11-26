@@ -156,7 +156,7 @@ type AgentSession struct {
 	AgentID             string `json:"agentId"`
 	DeviceID            string `json:"deviceId"`
 
-	// Provider A runtime Foundry runs natively: Claude Code or Codex.
+	// Provider A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Provider           NativeRuntimeID `json:"provider"`
 	ProfileID          string          `json:"profileId,omitempty"`
 	ProfileFingerprint string          `json:"profileFingerprint,omitempty"`
@@ -198,6 +198,7 @@ type AgentSession struct {
 	// CreatedGroupID `createdGroupId` is populated on a session that caused a new orchestration group to be created, so the HTTP layer can trigger async naming.
 	CreatedGroupID       string               `json:"createdGroupId,omitempty"`
 	Model                string               `json:"model,omitempty"`
+	AntigravityEffort    string               `json:"antigravityEffort,omitempty"`
 	ClaudeEffort         ClaudeEffort         `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 

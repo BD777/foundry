@@ -25,6 +25,7 @@ import {
 } from "../harness/profiles.js";
 import { spawnProcessGroup } from "../platform/process/process-group.js";
 import { runClaudeWorkspaceSession } from "./runner/claude-turn.js";
+import { runAntigravityWorkspaceSession } from "./runner/antigravity-turn.js";
 import { runCodexWorkspaceSession } from "./runner/codex-turn.js";
 import { sandboxLaunch, type WritableTreeProfile } from "../sandbox/index.js";
 import {
@@ -89,6 +90,10 @@ export interface WorkspaceSessionRun {
 export async function runWorkspaceSession(
   run: WorkspaceSessionRun,
 ): Promise<AgentSessionRunResult> {
+  if (run.sandbox && run.session.provider === "antigravity")
+    throw new Error(
+      "Antigravity subscription sessions require a device Chat workspace.",
+    );
   if (run.sandbox) {
     const release = await acquireRuntime(
       run.session.provider,
@@ -111,10 +116,11 @@ export async function runWorkspaceSession(
       }
     }
   }
-  const start =
-    run.session.provider === "codex"
-      ? runCodexWorkspaceSession
-      : runClaudeWorkspaceSession;
+  const start = {
+    claude: runClaudeWorkspaceSession,
+    codex: runCodexWorkspaceSession,
+    antigravity: runAntigravityWorkspaceSession,
+  }[run.session.provider];
   return start(
     run.cwd,
     run.session,

@@ -181,7 +181,7 @@ func (s *Store) resumeNativeSession(ctx context.Context, session *store.AgentSes
 	if err != nil {
 		return "", err
 	}
-	if found && row.lastInputID != "" && row.lastInputID == previousInputID {
+	if session.Provider == "antigravity" || (found && row.lastInputID != "" && row.lastInputID == previousInputID) {
 		return "", nil
 	}
 	if !found {
@@ -241,6 +241,9 @@ func (s *Store) bindNativeSession(ctx context.Context, session *store.AgentSessi
 // claimed before it exists; Codex's SDK cannot fork, so its new thread
 // starts from the source's Foundry conversation instead.
 func (s *Store) forkNativeSession(ctx context.Context, session *store.AgentSession, sourceID, nativeID string) error {
+	if session.Provider == "antigravity" {
+		return store.ErrSubscriptionHistory
+	}
 	source, err := s.GetAgentSessionSummary(ctx, sourceID)
 	if err != nil {
 		return err

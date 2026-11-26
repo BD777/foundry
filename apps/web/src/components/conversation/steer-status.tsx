@@ -1,3 +1,4 @@
+import { runtimeMeta } from "../agent-runtime/runtime-mark";
 import { Check, CircleStop, MailCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,7 +44,8 @@ export function SteerStatus({
   useEffect(() => {
     if (confirming) keepRef.current?.focus();
   }, [confirming]);
-  const agent = steer.runtime === "codex" ? "Codex" : "Claude";
+  if (steer.runtime === "antigravity") return null; // ACP has no in-turn steer.
+  const agent = runtimeMeta(steer.runtime).label;
   if (!waiting) {
     const readAt = steer.readAt ? new Date(steer.readAt) : undefined;
     if (!readAt || Number.isNaN(readAt.getTime())) return null;

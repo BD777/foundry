@@ -23,9 +23,7 @@ const endpointCodexEfforts: CodexReasoningEffort[] = [
  * A value with no label of its own shows as its own name, so a value a newer
  * runtime advertises is still readable instead of a missing-key string.
  */
-export function effortLabel(
-  value: ClaudeEffort | CodexReasoningEffort,
-): string {
+export function effortLabel(value: string): string {
   return i18n.t(`agents:effort.${value}`, { defaultValue: value });
 }
 
@@ -58,4 +56,12 @@ export function catalogModel(
 
 export function claudeEffortOptions(): EffortOption<ClaudeEffort>[] {
   return claudeEfforts.map((value) => ({ label: effortLabel(value), value }));
+}
+
+/** ACP option values are opaque. Only offer values reported for this model. */
+export function antigravityEffortOptions(model: AgentModelOption | undefined) {
+  return (model?.reasoningEfforts ?? []).map((value) => ({
+    value,
+    label: effortLabel(value),
+  }));
 }

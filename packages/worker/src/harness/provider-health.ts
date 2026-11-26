@@ -1,3 +1,5 @@
+import { antigravityBoundProfile } from "./native/antigravity.js";
+import { antigravityHealth } from "./native/antigravity-inspection.js";
 import { claudeAccount, codexAccount } from "./native/native-account.js";
 import {
   nativeCli,
@@ -16,7 +18,7 @@ let claudeLocalHealthCache:
 
 /** Local readiness of each native runtime: can it run, and is it signed in. */
 export function providerHealthData(): ProviderHealth[] {
-  return (["claude", "codex"] as const).map((provider) => {
+  const legacy = (["claude", "codex"] as const).map((provider) => {
     const cli = nativeCliWithUpdate(provider);
     const health = providerHealthFor(provider, cli.installed);
     const note = outdatedNote(provider, cli);
@@ -41,6 +43,13 @@ export function providerHealthData(): ProviderHealth[] {
         : {}),
     };
   });
+  return [
+    ...legacy,
+    {
+      ...antigravityHealth(antigravityBoundProfile()),
+      cli: nativeCli("antigravity"),
+    },
+  ];
 }
 
 function providerHealthFor(

@@ -6,7 +6,7 @@ import type {
 export interface AccountUsageTarget {
   deviceId: string;
   profileId: string;
-  runtime: "claude" | "codex";
+  runtime: AgentProfileProjection["runtime"];
   generation: string;
   online: boolean;
 }

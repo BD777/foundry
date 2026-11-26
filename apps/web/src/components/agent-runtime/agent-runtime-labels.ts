@@ -7,6 +7,7 @@ import type {
   CodexSpeed,
 } from "@bd777/foundry-protocol";
 import {
+  antigravityEffortOptions,
   catalogModel,
   claudeEffortOptions,
   codexEffortOptions,
@@ -132,6 +133,7 @@ export function describePermission(input: {
 /** What the model-and-effort trigger and its panels show. */
 export function describeModelAndEffort(input: {
   runtime: ControlledRuntime;
+  antigravityEffort?: string;
   claudeEffort: ClaudeEffort | "";
   codexReasoningEffort: CodexReasoningEffort | "";
   modelLoadFailed: boolean;
@@ -148,7 +150,11 @@ export function describeModelAndEffort(input: {
   const effortValue =
     input.runtime === "claude"
       ? input.claudeEffort || "high"
-      : input.codexReasoningEffort || codexModel?.defaultReasoningEffort || "";
+      : input.runtime === "antigravity"
+        ? input.antigravityEffort || codexModel?.defaultReasoningEffort || ""
+        : input.codexReasoningEffort ||
+          codexModel?.defaultReasoningEffort ||
+          "";
   const modelPanel = resolveModelPanelState({
     loading: input.modelLoading,
     failed: input.modelLoadFailed,
@@ -169,7 +175,9 @@ export function describeModelAndEffort(input: {
     effortOptions:
       input.runtime === "claude"
         ? claudeEffortOptions()
-        : codexEffortOptions(codexModel),
+        : input.runtime === "antigravity"
+          ? antigravityEffortOptions(codexModel)
+          : codexEffortOptions(codexModel),
     triggerDescription: i18n.t("agents:controls.modelAndEffortTrigger", {
       model: modelLabel,
       effort: currentEffortLabel,

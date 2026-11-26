@@ -114,6 +114,8 @@ export async function prepareExecution(
     };
   };
   try {
+    if (request.profile.runtime === "antigravity")
+      throw new Error("Antigravity uses native ACP session preparation.");
     const requestedProfile = structuredClone(request.profile);
     request.signal?.throwIfAborted();
     const model =
@@ -183,7 +185,7 @@ export async function prepareExecution(
       ownerId: request.ownerId,
       workspacePath: request.workspacePath,
       profileId: profileID(profile),
-      runtime: profile.runtime,
+      runtime: request.profile.runtime,
       model: model || undefined,
       contextWindow,
       runtimeGeneration: nativeCli(profile.runtime).generation,

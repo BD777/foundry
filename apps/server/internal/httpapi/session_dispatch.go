@@ -78,6 +78,9 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 // input: the server profile and credential, skills, the Issue it works on,
 // a session token and the external accounts it may act as.
 func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.AgentSession) (wsRunSessionPayload, error) {
+	if err := session.CheckSubscriptionChat(); err != nil {
+		return wsRunSessionPayload{}, err
+	}
 	if err := c.hub.store.BindNativeAccount(ctx, session); err != nil {
 		return wsRunSessionPayload{}, err
 	}

@@ -30,6 +30,8 @@ export function chatComposer(props: ChatSurfaceProps): ConversationComposer {
       // A verifier keeps its sandbox; a message cannot change it.
       showPermissions: !props.contextCard?.status?.verification,
       selectedRuntime,
+      antigravityEffort: props.antigravityEffort,
+      onAntigravityEffortChange: props.onAntigravityEffortChange,
       claudeEffort: props.claudeEffort,
       claudePermissionMode: props.claudePermissionMode,
       codexApprovalPolicy: props.codexApprovalPolicy,

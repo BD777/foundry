@@ -67,6 +67,8 @@ func validEffort(runtime, effort string) bool {
 	switch runtime {
 	case "claude":
 		return slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort)
+	case "antigravity":
+		return strings.TrimSpace(effort) != "" && len(effort) <= 64
 	case "codex":
 		return store.ValidCodexEffort(effort)
 	}
@@ -195,6 +197,8 @@ func (choice agentChoice) apply(input *store.CreateAgentSessionInput) {
 	input.ProfileID, input.Provider = choice.ProfileID, choice.Runtime
 	input.Model = cmp.Or(input.Model, choice.Model)
 	switch choice.Runtime {
+	case "antigravity":
+		input.AntigravityEffort = cmp.Or(input.AntigravityEffort, choice.Effort)
 	case "claude":
 		input.ClaudeEffort = cmp.Or(input.ClaudeEffort, choice.Effort)
 	case "codex":
@@ -408,8 +412,8 @@ func (s *Server) validAgentDefault(ctx context.Context, workspace store.Workspac
 		}
 		value.Runtime = accounts[index].Runtime
 	}
-	if value.Runtime != "" && value.Runtime != "claude" && value.Runtime != "codex" {
-		return refuse("runtime must be claude or codex")
+	if value.Runtime != "" && !store.IsNativeRuntime(value.Runtime) {
+		return refuse("runtime must be claude, codex or antigravity")
 	}
 	if value.Effort != "" && (value.Runtime == "" || !validEffort(value.Runtime, value.Effort)) {
 		return refuse(fmt.Sprintf("effort %q is not one of the %s runtime's", value.Effort, cmp.Or(value.Runtime, "chosen")))

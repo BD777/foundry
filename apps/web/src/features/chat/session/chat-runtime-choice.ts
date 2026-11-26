@@ -13,6 +13,7 @@ export interface ChatRuntimeChoice {
 }
 
 const overrideFields = [
+  "antigravityEffort",
   "claudeEffort",
   "claudePermissionMode",
   "codexApprovalPolicy",
@@ -50,13 +51,20 @@ export function defaultAgentChoice(
       candidate.profileId === resolved.profileId &&
       candidate.provider === resolved.runtime,
   );
-  if (!agent) return undefined;
+  if (
+    !agent ||
+    (agent.provider === "antigravity" &&
+      resolved.accountSource === "first_usable")
+  )
+    return undefined;
   const override: ChatOverrideDraft = {};
   if (resolved.model) override.model = resolved.model;
   if (resolved.effort) {
     if (resolved.runtime === "claude") {
       override.claudeEffort =
         resolved.effort as ChatOverrideDraft["claudeEffort"];
+    } else if (resolved.runtime === "antigravity") {
+      override.antigravityEffort = resolved.effort;
     } else {
       override.codexReasoningEffort =
         resolved.effort as ChatOverrideDraft["codexReasoningEffort"];

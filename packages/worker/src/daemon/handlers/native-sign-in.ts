@@ -1,3 +1,5 @@
+import { antigravityBoundProfile } from "../../harness/native/antigravity.js";
+import { inspectAntigravity } from "../../harness/native/antigravity-inspection.js";
 import {
   daemonMessageTypes,
   type NativeSignInReplyPayload,
@@ -22,6 +24,10 @@ export function registerNativeSignInHandlers(dispatch: DaemonDispatch): void {
         const signIn = await nativeSignIn(request);
         const changed =
           request.action === "sign_out" || signIn?.status === "complete";
+        if (request.runtime === "antigravity" && signIn?.status === "complete")
+          await inspectAntigravity(
+            request.profileId ?? antigravityBoundProfile(),
+          );
         return {
           ...(signIn ? { signIn } : {}),
           ...(changed

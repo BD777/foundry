@@ -17,6 +17,7 @@ export interface NativeSignInTarget {
   deviceId: string;
   deviceName: string;
   runtime: NativeRuntime;
+  profileId?: string;
 }
 
 /**
@@ -52,7 +53,7 @@ export function NativeSignInDialog({
     >
       {target ? (
         <DeviceSignInFlow
-          key={`${target.deviceId}:${target.runtime}`}
+          key={`${target.deviceId}:${target.runtime}:${target.profileId ?? ""}`}
           deviceName={target.deviceName}
           label={name}
           onSignedIn={onSignedIn}
@@ -66,14 +67,17 @@ export function NativeSignInDialog({
 function nativeTransport({
   deviceId,
   runtime,
+  profileId,
 }: NativeSignInTarget): DeviceSignInTransport {
   return {
-    begin: (requestId) => beginNativeSignIn(deviceId, runtime, requestId),
-    poll: (operationId) => pollNativeSignIn(deviceId, runtime, operationId),
+    begin: (requestId) =>
+      beginNativeSignIn(deviceId, runtime, requestId, profileId),
+    poll: (operationId) =>
+      pollNativeSignIn(deviceId, runtime, operationId, profileId),
     dismiss: (operationId) =>
-      dismissNativeSignIn(deviceId, runtime, operationId),
+      dismissNativeSignIn(deviceId, runtime, operationId, profileId),
     submitCode: (operationId, code) =>
-      submitNativeSignInCode(deviceId, runtime, operationId, code),
+      submitNativeSignInCode(deviceId, runtime, operationId, code, profileId),
     // The CLI said it finished; the device's next report shows the account.
     confirmed: (step) => step.status === "complete",
   };

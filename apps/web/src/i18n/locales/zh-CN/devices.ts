@@ -495,6 +495,7 @@ export const devices: Translation<typeof en> = {
     manage: "在模型服务页管理",
     summary: {
       claude: "Claude 订阅",
+      antigravity: "Antigravity 订阅",
       codex: "ChatGPT 订阅",
       server: "服务端 API",
       found: "在设备配置里发现",

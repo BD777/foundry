@@ -123,7 +123,7 @@ test("provider health falls back to the server row, then to unavailable", () => 
 
   assert.deepEqual(
     health.map((entry) => entry.provider),
-    ["claude", "codex"],
+    ["claude", "codex", "antigravity"],
   );
   assert.deepEqual(health[0], {
     authMode: "missing",

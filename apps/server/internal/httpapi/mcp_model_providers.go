@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/google/uuid"
 )
 
 // The Model providers page as Foundry tools (docs/model-providers-design.md):
@@ -219,7 +220,10 @@ type mcpProviderDevice struct {
 	Check    *store.AgentProfileCheck `json:"check,omitempty"`
 }
 
-func profileEffort(runtime, claudeEffort, codexEffort string) string {
+func profileEffort(runtime, claudeEffort, codexEffort, antigravityEffort string) string {
+	if runtime == "antigravity" {
+		return antigravityEffort
+	}
 	if runtime == "codex" {
 		return codexEffort
 	}
@@ -263,7 +267,7 @@ func (v providerView) deviceEntry(row store.AgentProfileProjection, withDefaults
 	}
 	if withDefaults {
 		entry.Model = row.Model
-		entry.Effort = profileEffort(row.Runtime, row.ClaudeEffort, row.CodexReasoningEffort)
+		entry.Effort = profileEffort(row.Runtime, row.ClaudeEffort, row.CodexReasoningEffort, row.AntigravityEffort)
 	}
 	return entry
 }
@@ -277,7 +281,7 @@ func (v providerView) providers() []mcpProvider {
 		item := mcpProvider{
 			ID: profile.ID, Kind: providerKindAPI, Runtime: profile.Runtime, Label: profile.Label,
 			BaseURL: profile.BaseURL, Model: profile.Model, KeySet: &keySet,
-			Effort:  profileEffort(profile.Runtime, profile.ClaudeEffort, profile.CodexReasoningEffort),
+			Effort:  profileEffort(profile.Runtime, profile.ClaudeEffort, profile.CodexReasoningEffort, profile.AntigravityEffort),
 			Devices: []mcpProviderDevice{},
 		}
 		capModels(&item, profile.Models)
@@ -508,6 +512,12 @@ func (s *Server) saveModelProviderForMCP(call mcpCall) (string, error) {
 }
 
 func checkEffort(runtime, effort string) error {
+	if runtime == "antigravity" {
+		if effort == "" || validEffort(runtime, effort) {
+			return nil
+		}
+		return invalid("choose an effort from the Antigravity catalog")
+	}
 	if runtime == "codex" {
 		if effort == "" || store.ValidCodexEffort(effort) {
 			return nil
@@ -639,7 +649,7 @@ func (s *Server) checkModelProviderForMCP(call mcpCall) (string, error) {
 		if err := s.checkDeviceAccountTarget(ctx, deviceID, row.Runtime); err != nil {
 			return "", err
 		}
-		inspection, err := s.hub.InspectNativeAccount(ctx, deviceID, row.Runtime, "")
+		inspection, err := s.hub.InspectNativeAccount(ctx, deviceID, row.Runtime, "", nativeInspectionOptions{ProfileID: row.ID})
 		if errors.Is(err, store.ErrNotFound) {
 			err = &statusError{http.StatusConflict, errors.New("device disconnected")}
 		}
@@ -689,7 +699,7 @@ func (s *Server) setModelDefaultsForMCP(call mcpCall) (string, error) {
 	input := store.CreateAgentProfileInput{
 		ID: row.ID, DeviceID: deviceID, ConfigScope: "device", ConnectionType: row.ConnectionType,
 		Runtime: row.Runtime, Label: row.Label, Model: row.Model,
-		ClaudeEffort: row.ClaudeEffort, ClaudePermissionMode: row.ClaudePermissionMode,
+		AntigravityEffort: row.AntigravityEffort, ClaudeEffort: row.ClaudeEffort, ClaudePermissionMode: row.ClaudePermissionMode,
 		CodexReasoningEffort: row.CodexReasoningEffort, CodexSandboxMode: row.CodexSandboxMode,
 		CodexApprovalPolicy: row.CodexApprovalPolicy, CodexSpeed: row.CodexSpeed,
 		ContextWindows: row.ContextWindows, PromptPrefix: row.PromptPrefix,
@@ -702,7 +712,9 @@ func (s *Server) setModelDefaultsForMCP(call mcpCall) (string, error) {
 		if err := checkEffort(row.Runtime, effort); err != nil {
 			return "", err
 		}
-		if row.Runtime == "codex" {
+		if row.Runtime == "antigravity" {
+			input.AntigravityEffort = effort
+		} else if row.Runtime == "codex" {
 			input.CodexReasoningEffort = effort
 		} else {
 			input.ClaudeEffort = effort
@@ -735,13 +747,45 @@ func (s *Server) signInSubscriptionForMCP(call mcpCall) (string, error) {
 	if err := s.checkDeviceAccountTarget(ctx, deviceID, runtime); err != nil {
 		return "", err
 	}
+	if mcpArgString(args, "action") == "install_cli" {
+		result, err := s.hub.InstallNativeCli(ctx, deviceID, runtime)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", &statusError{http.StatusConflict, errors.New("device disconnected")}
+		}
+		if err != nil {
+			return "", err
+		}
+		summary := map[string]any{"runtime": result.Runtime, "ok": result.OK}
+		if result.Cli != nil && result.Cli.Version != "" {
+			summary["version"] = result.Cli.Version
+		}
+		if !result.OK {
+			log := []rune(strings.TrimSpace(result.Log))
+			summary["log"] = string(log[max(0, len(log)-500):])
+		}
+		return encodeJSON(summary)
+	}
+	if mcpArgString(args, "action") == "create_profile" {
+		if runtime != "antigravity" {
+			return "", invalid("only Antigravity supports a separate subscription home for each profile")
+		}
+		input := store.CreateAgentProfileInput{ID: uuid.NewString(), DeviceID: deviceID, Runtime: runtime, Label: mcpArgString(args, "label"), ConfigScope: "device", ConnectionType: "local_login"}
+		if message := checkDeviceProfileInput(&input); message != "" {
+			return "", invalid("%s", message)
+		}
+		row, err := s.saveDeviceProfile(ctx, input)
+		if err != nil {
+			return "", err
+		}
+		return encodeJSON(map[string]string{"profileId": row.ID, "label": row.Label, "runtime": row.Runtime})
+	}
 	actions := map[string]store.NativeSignInAction{
 		"start": store.NativeSignInActionBegin, "status": store.NativeSignInActionPoll,
 		"code": store.NativeSignInActionInput, "cancel": store.NativeSignInActionDismiss,
 	}
 	action, ok := actions[mcpArgString(args, "action")]
 	if !ok {
-		return "", &statusError{http.StatusBadRequest, errors.New("action is start, status, code or cancel")}
+		return "", &statusError{http.StatusBadRequest, errors.New("action is install_cli, create_profile, start, status, code or cancel")}
 	}
 	// One sign-in per caller, device and runtime: starting again answers the
 	// one already running.
@@ -750,7 +794,7 @@ func (s *Server) signInSubscriptionForMCP(call mcpCall) (string, error) {
 		requestID = "mcp:" + m.userID
 	}
 	step, err := s.nativeSignInStep(ctx, m.userID, deviceID, runtime, action, store.NativeSignInInput{
-		RequestID: requestID, OperationID: mcpArgString(args, "operationId"), Code: mcpArgString(args, "code"),
+		ProfileID: mcpArgString(args, "profileId"), RequestID: requestID, OperationID: mcpArgString(args, "operationId"), Code: mcpArgString(args, "code"),
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		err = &statusError{http.StatusConflict, errors.New("device disconnected")}

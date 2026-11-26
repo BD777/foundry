@@ -31,7 +31,7 @@ export function DeviceAccess({
   const rows = ownProfiles.filter(
     (row) => row.deviceId === device.id && row.origin === "device",
   );
-  const subscription = (runtime: "claude" | "codex") => {
+  const subscription = (runtime: AgentProfileProjection["runtime"]) => {
     const row = rows.find(
       (entry) =>
         entry.runtime === runtime &&
@@ -64,6 +64,7 @@ export function DeviceAccess({
   const entries: Array<[string, string]> = [
     [t("access.summary.claude"), subscription("claude")],
     [t("access.summary.codex"), subscription("codex")],
+    [t("access.summary.antigravity"), subscription("antigravity")],
     [t("access.summary.server"), names(assigned)],
     [t("access.summary.found"), names(found)],
     [t("access.summary.environments"), names(environments)],

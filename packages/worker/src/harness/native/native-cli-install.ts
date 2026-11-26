@@ -19,7 +19,7 @@ import {
 } from "./native-cli.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
 
-type Runtime = "claude" | "codex";
+type Runtime = "claude" | "codex" | "antigravity";
 
 const logLimit = 200_000;
 const timeoutMs = 10 * 60_000;
@@ -67,6 +67,32 @@ async function runInstall(
   runtime: Runtime,
   { onProgress }: InstallNativeCliOptions,
 ): Promise<NativeCliInstallResult> {
+  if (runtime === "antigravity") {
+    const command = nativeCliInstallCommands.antigravity;
+    const cli = nativeCliWithUpdate(runtime);
+    if (cli.installed)
+      return {
+        runtime,
+        ok: true,
+        cli,
+        command,
+        log: "Antigravity is installed and manages its own updates.",
+      };
+    const release = await tryMaintainRuntime(runtime);
+    if (!release)
+      return {
+        runtime,
+        ok: false,
+        cli,
+        command,
+        log: "Antigravity is busy. Retry installation when its active operation has finished.",
+      };
+    try {
+      return await officialInstall(runtime, command);
+    } finally {
+      release();
+    }
+  }
   const testCommand = process.env.FOUNDRY_NATIVE_CLI_INSTALL_COMMAND?.trim();
   if (testCommand) return officialInstall(runtime, testCommand);
   const cli = nativeCliWithUpdate(runtime);
@@ -128,7 +154,7 @@ function npmAvailable(): boolean {
  * and a failure stays there with its reason until the next attempt.
  */
 async function managedInstall(
-  runtime: Runtime,
+  runtime: Exclude<Runtime, "antigravity">,
   replacing: boolean,
   onProgress?: () => void,
 ): Promise<NativeCliInstallResult> {

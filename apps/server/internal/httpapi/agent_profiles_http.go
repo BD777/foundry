@@ -85,6 +85,10 @@ func checkDeviceProfileInput(input *store.CreateAgentProfileInput) string {
 		return message
 	}
 	input.ContextWindows = windows.ContextWindows
+	input.Runtime = strings.TrimSpace(input.Runtime)
+	if input.Runtime == "antigravity" && (input.ConnectionType != "local_login" || input.APIKey != "" || input.BaseURL != "" || input.PromptPrefix != "") {
+		return "Antigravity requires an official device subscription login"
+	}
 	if input.Command != "" || len(input.Env) > 0 {
 		return "command and env are local-only profile fields"
 	}
@@ -160,13 +164,29 @@ func (s *Server) readAgentModels(ctx context.Context, actor Actor, profile store
 	if profile.Command != "" || len(profile.Env) > 0 {
 		return nil, &statusError{http.StatusBadRequest, errors.New("command and env are local-only profile fields")}
 	}
+	if profile.Runtime == "antigravity" && (profile.APIKey != "" || profile.BaseURL != "" || (profile.ConnectionType != "" && profile.ConnectionType != "local_login")) {
+		return nil, invalid("Antigravity model catalogs require the device subscription")
+	}
 	if actor.Agent() && (profile.DeviceID == "" || profile.DeviceID == actor.Identity.DeviceID) {
 		profile.DeviceID = actor.Identity.DeviceID
 		profile.WorkspaceID = actor.Identity.WorkspaceID
 	}
 	// Runtime and account changes must not reuse a catalog from the old executable.
 	var runtimeGeneration string
-	if health, err := s.store.ListProviderHealth(ctx, profile.DeviceID); err == nil {
+	if profile.Runtime == "antigravity" {
+		id := profile.ID
+		if id == "" {
+			id = "antigravity_local"
+		}
+		row, err := s.deviceProfileProjection(ctx, profile.DeviceID, id)
+		if err != nil {
+			return nil, err
+		}
+		if row.Runtime != profile.Runtime || row.ConnectionType != "local_login" {
+			return nil, invalid("select an Antigravity subscription profile on this device")
+		}
+		runtimeGeneration = row.RuntimeGeneration
+	} else if health, err := s.store.ListProviderHealth(ctx, profile.DeviceID); err == nil {
 		for _, item := range health {
 			if item.Provider == profile.Runtime && item.Cli != nil {
 				runtimeGeneration = item.Cli.Generation + ":" + item.AccountLabel

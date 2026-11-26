@@ -277,6 +277,8 @@ export async function nativeChatHistory(
   nativeSessionId: string,
   before: number,
 ): Promise<NativeHistoryReadPayload> {
+  if (provider === "antigravity")
+    throw new Error("Antigravity Chat history is delivered through ACP.");
   if (!Number.isSafeInteger(before) || before <= 0)
     throw new Error("before must be a positive byte offset");
   const path = await nativeChatLogPath(
@@ -302,7 +304,7 @@ export async function nativeChatHistory(
 async function readShownWindow(
   sessionPath: string,
   end: number,
-  provider: Exclude<WorkerRuntimeId, "mock">,
+  provider: "codex" | "claude",
   enough: (transcript: NonNullable<ChatThread["transcript"]>) => boolean,
 ): Promise<LogWindow & { transcript: NonNullable<ChatThread["transcript"]> }> {
   let window = await readLogWindow(
@@ -343,6 +345,7 @@ export async function nativeChatLogPath(
   provider: Exclude<WorkerRuntimeId, "mock">,
   id: string,
 ): Promise<string | undefined> {
+  if (provider === "antigravity") return undefined;
   const [homes, folder, depth, cache, parse] =
     provider === "codex"
       ? ([

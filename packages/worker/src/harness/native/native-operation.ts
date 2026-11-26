@@ -16,6 +16,10 @@ export function prepareNativeOperation(
   env: NodeJS.ProcessEnv,
   cwd: string,
 ) {
+  if (profile.runtime === "antigravity")
+    throw new Error(
+      "Antigravity metadata uses its profile-scoped ACP connection.",
+    );
   const ownerId = `metadata:${randomUUID()}`;
   const dataHome = env.FOUNDRY_EXECUTION_SESSION_ROOT
     ? join(

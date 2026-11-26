@@ -6,11 +6,13 @@ import { HelpHint } from "../../components/ui/help-hint";
 
 export function AgentRuntimeStatus({
   cli,
+  selfUpdating = false,
   online,
   busy,
   onCheck,
 }: {
   cli: NativeCli;
+  selfUpdating?: boolean;
   online: boolean;
   busy: boolean;
   onCheck: () => void;
@@ -22,7 +24,11 @@ export function AgentRuntimeStatus({
       <div className="my-3 flex items-center gap-1.5 text-xs">
         <strong>{t("runtimeUpdates.title")}</strong>
         <HelpHint label={t("runtimeUpdates.policyLabel")}>
-          {t("runtimeUpdates.policy")}
+          {t(
+            selfUpdating
+              ? "runtimeUpdates.selfUpdating"
+              : "runtimeUpdates.policy",
+          )}
         </HelpHint>
       </div>
       <dl className="grid grid-cols-[minmax(7rem,1fr)_minmax(0,3fr)] gap-x-4 gap-y-2 [&>dd]:wrap-anywhere">
@@ -30,16 +36,24 @@ export function AgentRuntimeStatus({
         <dd>{cli.version ?? "—"}</dd>
         <dt>{t("runtimeUpdates.path")}</dt>
         <dd>{cli.path ?? "—"}</dd>
-        <dt>{t("runtimeUpdates.target")}</dt>
-        <dd>{update?.target ?? "—"}</dd>
+        {!selfUpdating && (
+          <>
+            <dt>{t("runtimeUpdates.target")}</dt>
+            <dd>{update?.target ?? "—"}</dd>
+          </>
+        )}
         {update?.sdkTarget ? (
           <>
             <dt>{t("runtimeUpdates.sdk")}</dt>
             <dd>{update.sdkTarget}</dd>
           </>
         ) : null}
-        <dt>{t("runtimeUpdates.status")}</dt>
-        <dd>{t(`runtimeUpdates.states.${update?.state ?? "unknown"}`)}</dd>
+        {!selfUpdating && (
+          <>
+            <dt>{t("runtimeUpdates.status")}</dt>
+            <dd>{t(`runtimeUpdates.states.${update?.state ?? "unknown"}`)}</dd>
+          </>
+        )}
       </dl>
       {update?.detail ? (
         <Alert
@@ -49,15 +63,17 @@ export function AgentRuntimeStatus({
           title={update.detail}
         />
       ) : null}
-      <Button
-        size="sm"
-        variant="secondary"
-        busy={busy}
-        disabled={!online}
-        onClick={onCheck}
-      >
-        {busy ? t("runtimeUpdates.checking") : t("runtimeUpdates.check")}
-      </Button>
+      {!selfUpdating && (
+        <Button
+          size="sm"
+          variant="secondary"
+          busy={busy}
+          disabled={!online}
+          onClick={onCheck}
+        >
+          {busy ? t("runtimeUpdates.checking") : t("runtimeUpdates.check")}
+        </Button>
+      )}
     </div>
   );
 }

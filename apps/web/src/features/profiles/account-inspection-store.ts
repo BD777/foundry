@@ -1,9 +1,10 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import { useEffect, useSyncExternalStore } from "react";
 import type { NativeAccountInspection } from "@bd777/foundry-protocol";
 import { inspectDeviceAccount } from "../../api";
 import { i18n } from "../../i18n";
 
-type Runtime = "claude" | "codex";
+type Runtime = AgentProfileProjection["runtime"];
 
 // Per device/runtime inspection memory. It deliberately lives for the page
 // session rather than in component state: collapsing the account row or
@@ -92,6 +93,7 @@ async function request(
   deviceId: string,
   runtime: Runtime,
   source: string | undefined,
+  profileId?: string,
 ) {
   const entry = entryFor(key);
   const target = source ?? "";
@@ -105,7 +107,12 @@ async function request(
   entry.loadingSource = target;
   publish(key);
   try {
-    const result = await inspectDeviceAccount(deviceId, runtime, source);
+    const result = await inspectDeviceAccount(
+      deviceId,
+      runtime,
+      source,
+      profileId ? { profileId } : undefined,
+    );
     const current = entryFor(key);
     if (current.seq !== seq) return;
     // The accepted response is the only authoritative configuration identity.
@@ -138,8 +145,13 @@ async function request(
   }
 }
 
-function keyOf(deviceId: string, runtime: Runtime, identity = "") {
-  return `${deviceId}\u0000${runtime}\u0000${identity}`;
+function keyOf(
+  deviceId: string,
+  runtime: Runtime,
+  identity = "",
+  profileId = "",
+) {
+  return `${deviceId}\u0000${runtime}\u0000${profileId}\u0000${identity}`;
 }
 
 export function useDeviceAccountInspection(
@@ -147,8 +159,9 @@ export function useDeviceAccountInspection(
   runtime: Runtime,
   online: boolean,
   identity?: string,
+  profileId?: string,
 ): InspectionSnapshot {
-  const key = keyOf(deviceId, runtime, identity);
+  const key = keyOf(deviceId, runtime, identity, profileId);
   const snapshot = useSyncExternalStore(
     (listener) => subscribe(key, listener),
     () => entryFor(key).view,
@@ -161,8 +174,8 @@ export function useDeviceAccountInspection(
     const entry = entryFor(key);
     if (entry.initialized) return;
     entry.initialized = true;
-    void request(key, deviceId, runtime, undefined);
-  }, [deviceId, key, online, runtime]);
+    void request(key, deviceId, runtime, undefined, profileId);
+  }, [deviceId, key, online, runtime, profileId]);
   return snapshot;
 }
 
@@ -171,8 +184,15 @@ export function checkInspection(
   runtime: Runtime,
   source?: string,
   identity?: string,
+  profileId?: string,
 ) {
-  void request(keyOf(deviceId, runtime, identity), deviceId, runtime, source);
+  void request(
+    keyOf(deviceId, runtime, identity, profileId),
+    deviceId,
+    runtime,
+    source,
+    profileId,
+  );
 }
 
 export function selectInspectionSource(
@@ -180,12 +200,13 @@ export function selectInspectionSource(
   runtime: Runtime,
   source: string,
   identity?: string,
+  profileId?: string,
 ) {
-  const key = keyOf(deviceId, runtime, identity);
+  const key = keyOf(deviceId, runtime, identity, profileId);
   const entry = entryFor(key);
   entry.selectedSource = source;
   publish(key);
-  void request(key, deviceId, runtime, source);
+  void request(key, deviceId, runtime, source, profileId);
 }
 
 export function resetInspectionSource(
@@ -193,8 +214,9 @@ export function resetInspectionSource(
   runtime: Runtime,
   source: string,
   identity?: string,
+  profileId?: string,
 ) {
-  const key = keyOf(deviceId, runtime, identity);
+  const key = keyOf(deviceId, runtime, identity, profileId);
   entryFor(key).selectedSource = source;
   publish(key);
 }

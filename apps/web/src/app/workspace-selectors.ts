@@ -1,3 +1,4 @@
+import { agentRuntimes } from "../lib/device-readiness";
 import type { FoundryData } from "../api-types";
 import type {
   AgentProfileProjection,
@@ -8,10 +9,6 @@ import type {
   WorkspaceProjection,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
-
-// Providers the local daemon can run. Provider health is always reported for
-// this set so Settings and Devices show a stable row order.
-const localProviders = ["claude", "codex"] as const;
 
 function isCurrentWorkspace<T extends { workspaceId: string }>(
   item: T,
@@ -74,7 +71,7 @@ export function currentProviderHealth(
     }
   }
 
-  return localProviders.map(
+  return agentRuntimes.map(
     (provider) =>
       agentHealth.get(provider) ??
       fallback.get(provider) ?? {

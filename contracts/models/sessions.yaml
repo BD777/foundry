@@ -1476,6 +1476,8 @@ components:
               type: string
             model:
               type: string
+            antigravityEffort:
+              type: string
             claudeEffort:
               $ref: ./profiles.yaml#/components/schemas/ClaudeEffort
             claudePermissionMode:

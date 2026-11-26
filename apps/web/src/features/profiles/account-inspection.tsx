@@ -1,3 +1,4 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import { AccountUsageWindows } from "../../components/account-usage-windows";
 import { useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -17,13 +18,15 @@ import {
 export function AccountInspection({
   deviceId,
   identity,
+  profileId,
   runtime,
   online,
   onChecked,
 }: {
   deviceId: string;
   identity?: string;
-  runtime: "claude" | "codex";
+  profileId?: string;
+  runtime: AgentProfileProjection["runtime"];
   online: boolean;
   /** A new read also refreshed the device's agents on the server. */
   onChecked: () => Promise<void>;
@@ -34,6 +37,7 @@ export function AccountInspection({
     runtime,
     online,
     identity,
+    profileId,
   );
   // Reads restored from an earlier mount are not new; only later ones are.
   const seenChecks = useRef(snapshot.accepted);
@@ -66,13 +70,32 @@ export function AccountInspection({
       (!snapshot.selectedSource && loadingTarget === ""));
 
   function checkCurrent() {
-    checkInspection(deviceId, runtime, viewedSource || undefined, identity);
+    checkInspection(
+      deviceId,
+      runtime,
+      viewedSource || undefined,
+      identity,
+      profileId,
+    );
   }
   function backToExecution() {
     if (!executionSource) return;
     if (snapshot.results[executionSource])
-      resetInspectionSource(deviceId, runtime, executionSource, identity);
-    else selectInspectionSource(deviceId, runtime, executionSource, identity);
+      resetInspectionSource(
+        deviceId,
+        runtime,
+        executionSource,
+        identity,
+        profileId,
+      );
+    else
+      selectInspectionSource(
+        deviceId,
+        runtime,
+        executionSource,
+        identity,
+        profileId,
+      );
   }
 
   const checkLabel = t("inspection.checkAccount");
@@ -153,7 +176,13 @@ export function AccountInspection({
                       : t("inspection.otherApp"),
                 }))}
                 onChange={(source) =>
-                  selectInspectionSource(deviceId, runtime, source, identity)
+                  selectInspectionSource(
+                    deviceId,
+                    runtime,
+                    source,
+                    identity,
+                    profileId,
+                  )
                 }
               />
             </AccountFieldLabel>

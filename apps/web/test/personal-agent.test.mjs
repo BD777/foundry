@@ -740,6 +740,24 @@ test("a quiet conversation starts a new session; the home computer picks the run
   );
 });
 
+test("the assistant never uses an Antigravity subscription for automated runs", () => {
+  const profiles = [
+    {
+      id: "agy-work",
+      deviceId: "studio",
+      runtime: "antigravity",
+      status: "healthy",
+    },
+  ];
+  assert.equal(model.assistantRuntime(profiles, "studio", {}), undefined);
+  assert.equal(
+    model.assistantRuntime(profiles, "studio", {
+      assistantProfileId: "agy-work",
+    }),
+    undefined,
+  );
+});
+
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 test("an assistant without a time zone gets the browser's, once; a set one stays", async () => {

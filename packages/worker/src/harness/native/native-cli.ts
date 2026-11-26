@@ -10,7 +10,9 @@ import { join, resolve } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
 import { errorMessage } from "../../platform/utils.js";
 
-type Runtime = "claude" | "codex";
+import { antigravityBinDir } from "./antigravity.js";
+type ManagedRuntime = "claude" | "codex";
+type Runtime = ManagedRuntime | "antigravity";
 
 /**
  * The official standalone installers (macOS and Linux), from each project's
@@ -18,6 +20,10 @@ type Runtime = "claude" | "codex";
  * neither root nor a writable npm prefix.
  */
 export const nativeCliInstallCommands: Record<Runtime, string> = {
+  get antigravity() {
+    const dir = antigravityBinDir().replaceAll("'", "'\\''");
+    return `curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir '${dir}'`;
+  },
   claude: "curl -fsSL https://claude.ai/install.sh | bash -s stable",
   codex: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 };
@@ -30,6 +36,7 @@ export function nativeCliUpdateCommand(
   runtime: Runtime,
   command: string,
 ): string {
+  if (runtime === "antigravity") return "agy update";
   if (runtime === "claude") return "claude update";
   let path = command;
   try {
@@ -69,6 +76,7 @@ export const claudeTimerResumeVersion = "2.1.291";
  * is often a release ahead of the CLI it is paired with.
  */
 export function minimumCliVersion(runtime: Runtime): string | undefined {
+  if (runtime === "antigravity") return undefined;
   return runtime === "claude" ? claudeTimerResumeVersion : "0.159.1";
 }
 
@@ -103,7 +111,7 @@ export function clearNativeCliCache(): void {
  * is not there are not news.
  */
 function nativeRuntimeUpdate(
-  runtime: Runtime,
+  runtime: ManagedRuntime,
   installed: boolean,
 ): NativeCli["update"] {
   let update: ReturnType<typeof runtimeUpdateState>;
@@ -142,6 +150,7 @@ export function nativeCli(runtime: Runtime): NativeCli {
 /** Daemon-facing program status, including the Worker's own update bookkeeping. */
 export function nativeCliWithUpdate(runtime: Runtime): NativeCli {
   const cli = nativeCli(runtime);
+  if (runtime === "antigravity") return cli;
   return {
     ...cli,
     update: nativeRuntimeUpdate(runtime, cli.installed),
@@ -151,7 +160,11 @@ export function nativeCliWithUpdate(runtime: Runtime): NativeCli {
 function detectNativeCli(runtime: Runtime): NativeCli {
   const installCommand = nativeCliInstallCommands[runtime];
   const found = resolveDeviceCommand(
-    runtime === "claude" ? claudeCommandCandidates() : codexCommandCandidates(),
+    runtime === "antigravity"
+      ? [join(antigravityBinDir(), "agy")]
+      : runtime === "claude"
+        ? claudeCommandCandidates()
+        : codexCommandCandidates(),
   );
   if (!found)
     return {
@@ -164,7 +177,10 @@ function detectNativeCli(runtime: Runtime): NativeCli {
     installed: true,
     version,
     path: commandPath(found.command),
-    generation: `${runtimeDescriptor(runtime)?.generation ?? commandPath(found.command)}:${version}:${nativeAccountFingerprint(runtime)}`,
+    generation:
+      runtime === "antigravity"
+        ? `${found.command}:${version}`
+        : `${runtimeDescriptor(runtime)?.generation ?? commandPath(found.command)}:${version}:${nativeAccountFingerprint(runtime)}`,
     minimumVersion,
     outdated: Boolean(
       version && minimumVersion && isOlderVersion(version, minimumVersion),

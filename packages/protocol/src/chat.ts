@@ -47,6 +47,7 @@ export interface ChatQueueRunSettings {
   provider?: string;
   profileId?: string;
   model?: string;
+  antigravityEffort?: string;
   claudeEffort?: string;
   claudePermissionMode?: string;
   codexReasoningEffort?: string;

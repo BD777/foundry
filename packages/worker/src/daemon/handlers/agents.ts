@@ -1,3 +1,4 @@
+import { inspectAntigravity } from "../../harness/native/antigravity-inspection.js";
 import {
   daemonMessageTypes,
   type CancelExternalConnectionSetupPayload,
@@ -63,11 +64,16 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.inspectNativeAccount, (envelope, ctx) => {
       const input = envelope.payload as {
         runtime?: string;
+        profileId?: string;
         source?: string;
         runtimeGeneration?: string;
         refresh?: boolean;
       };
-      if (input?.runtime !== "claude" && input?.runtime !== "codex") {
+      if (
+        input?.runtime !== "claude" &&
+        input?.runtime !== "codex" &&
+        input?.runtime !== "antigravity"
+      ) {
         trySendWebSocket(
           ctx.socket,
           daemonMessageTypes.nativeAccountInspected,
@@ -77,13 +83,15 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         return;
       }
       void (
-        input.runtimeGeneration
-          ? inspectSelectedAccount(
-              input.runtime,
-              input.runtimeGeneration,
-              input.refresh,
-            )
-          : inspectNativeAccount(input.runtime, input.source)
+        input.runtime === "antigravity"
+          ? inspectAntigravity(input.profileId, input.runtimeGeneration)
+          : input.runtimeGeneration
+            ? inspectSelectedAccount(
+                input.runtime,
+                input.runtimeGeneration,
+                input.refresh,
+              )
+            : inspectNativeAccount(input.runtime, input.source)
       )
         .catch((error: unknown) => {
           const reason = errorMessage(error);
@@ -108,7 +116,7 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
           // The device's agent list shows the same login: refresh it with
           // this check instead of a status cached before, say, the CLI
           // was installed.
-          clearNativeLoginHealth();
+          if (input.runtime !== "antigravity") clearNativeLoginHealth();
           trySendWebSocket(
             ctx.socket,
             daemonMessageTypes.nativeAccountInspected,
@@ -134,7 +142,11 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
     })
     .on(daemonMessageTypes.installNativeCli, (envelope, ctx) => {
       const input = envelope.payload as { runtime?: string };
-      if (input?.runtime !== "claude" && input?.runtime !== "codex") {
+      if (
+        input?.runtime !== "claude" &&
+        input?.runtime !== "codex" &&
+        input?.runtime !== "antigravity"
+      ) {
         trySendWebSocket(
           ctx.socket,
           daemonMessageTypes.nativeCliInstalled,
@@ -156,7 +168,7 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
           });
           // A newly installed program brings its own skills; read them
           // before reporting the device again.
-          if (result.ok)
+          if (result.ok && runtime !== "antigravity")
             await refreshOfficialSkills([runtime]).catch(() => false);
           return { result, registration: ctx.roster.currentRegistration() };
         },

@@ -1,8 +1,9 @@
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { HTMLAttributes } from "react";
 import { cn } from "../../lib/cn";
 
-export type RuntimeKind = "claude" | "codex" | "mock";
+export type RuntimeKind = AgentProfileProjection["runtime"] | "mock";
 
 interface RuntimeMeta {
   label: string;
@@ -17,6 +18,12 @@ export function runtimeMeta(runtime: RuntimeKind): RuntimeMeta {
     claude: { label: "Claude", mark: "C", productName: "Claude Code" },
     // i18n-ignore: runtime brand name
     codex: { label: "Codex", mark: "Cx", productName: "Codex" },
+    antigravity: {
+      // i18n-ignore: runtime brand name
+      label: "Antigravity",
+      mark: "Ag",
+      productName: "Antigravity",
+    },
     // i18n-ignore: runtime brand name
     mock: { label: "Mock", mark: "M", productName: "Mock" },
   };
@@ -37,6 +44,7 @@ export const runtimeMarkVariants = cva(
           "bg-linear-150/srgb from-(--fdy-brand-claude-start) to-(--fdy-brand-claude-end)",
         codex:
           "bg-linear-150/srgb from-(--fdy-brand-codex-start) to-(--fdy-brand-codex-end)",
+        antigravity: "bg-accent",
         mock: "bg-(--fdy-media-surface)",
       },
       size: {

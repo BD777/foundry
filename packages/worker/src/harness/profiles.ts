@@ -1,3 +1,8 @@
+import {
+  antigravityHealth,
+  antigravityHealthRevision,
+  antigravityGeneration,
+} from "./native/antigravity-inspection.js";
 import { nativeCli } from "./native/native-cli.js";
 /**
  * Agent profile management — local config, runtime environment, and status.
@@ -100,6 +105,7 @@ export interface AgentProfileLocalConfig {
   discovered?: boolean;
   baseUrl?: string;
   command?: string;
+  antigravityEffort?: AgentProfileProjection["antigravityEffort"];
   claudeEffort?: AgentProfileProjection["claudeEffort"];
   claudePermissionMode?: AgentProfileProjection["claudePermissionMode"];
   codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];
@@ -146,21 +152,25 @@ export const deviceAgentProfilesPath = foundryStatePath(
  * moves ctime and would re-report the device on every heartbeat.
  */
 export function deviceProfileRevision(): string {
-  return [
-    deviceAgentProfilesPath,
-    providerChecksPath(),
-    connectorModelProvidersPath(),
-    externalProfileDefaultsPath(),
-  ]
-    .map((path) => {
-      try {
-        const stat = statSync(path);
-        return `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-      } catch {
-        return "missing";
-      }
-    })
-    .join(";");
+  return (
+    antigravityHealthRevision() +
+    ":" +
+    [
+      deviceAgentProfilesPath,
+      providerChecksPath(),
+      connectorModelProvidersPath(),
+      externalProfileDefaultsPath(),
+    ]
+      .map((path) => {
+        try {
+          const stat = statSync(path);
+          return `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+        } catch {
+          return "missing";
+        }
+      })
+      .join(";")
+  );
 }
 
 export function readAgentProfilesFile(path: string): AgentProfilesLocalFile {
@@ -192,7 +202,7 @@ export function builtInProfile(
   return {
     connectionType: "local_login",
     id: `${runtime}_local`,
-    label: `${runtime === "codex" ? "Codex" : "Claude"} Local`,
+    label: `${runtime === "antigravity" ? "Antigravity" : runtime === "codex" ? "Codex" : "Claude"} Local`,
     runtime,
   };
 }
@@ -227,18 +237,13 @@ export function configuredAgentProfiles(
     discovered: true,
     configScope: "device" as AgentConfigScope,
   }));
-  const defaults = [
-    {
-      ...builtInProfile("claude"),
+  const defaults = (["claude", "codex", "antigravity"] as const).map(
+    (runtime) => ({
+      ...builtInProfile(runtime),
       configLabel: "device local login",
       configScope: "device" as AgentConfigScope,
-    },
-    {
-      ...builtInProfile("codex"),
-      configLabel: "device local login",
-      configScope: "device" as AgentConfigScope,
-    },
-  ];
+    }),
+  );
   const byID = new Map<
     string,
     AgentProfileLocalConfig & {
@@ -276,7 +281,12 @@ export function configuredAgentProfiles(
   ]) {
     if (
       profile.enabled === false ||
-      (profile.runtime !== "claude" && profile.runtime !== "codex")
+      (profile.runtime !== "claude" &&
+        profile.runtime !== "codex" &&
+        !(
+          profile.runtime === "antigravity" &&
+          profile.connectionType === "local_login"
+        ))
     ) {
       continue;
     }
@@ -337,7 +347,13 @@ export function profileID(profile: AgentProfileLocalConfig): string {
 export function profileFingerprint(
   profile: Pick<
     AgentProfileLocalConfig,
-    "baseUrl" | "command" | "connectionType" | "runtime" | "externalConnection"
+    | "baseUrl"
+    | "command"
+    | "connectionType"
+    | "runtime"
+    | "externalConnection"
+    | "id"
+    | "label"
   >,
 ): string {
   const runtime = profile.runtime;
@@ -347,7 +363,9 @@ export function profileFingerprint(
       .update(JSON.stringify(profile.externalConnection ?? {}))
       .digest("hex")}`;
   if (connectionType === "local_login") {
-    return `${runtime}:local_login`;
+    return runtime === "antigravity"
+      ? `antigravity:local_login:${profileID(profile)}`
+      : `${runtime}:local_login`;
   }
   if (
     connectionType === "anthropic_compatible" ||
@@ -392,6 +410,8 @@ export function localHealthForProfile(
   profile: AgentProfileLocalConfig,
   healthData: ProviderHealth[],
 ): ProviderHealth | undefined {
+  if (profile.runtime === "antigravity")
+    return antigravityHealth(profileID(profile));
   return healthData.find((item) => item.provider === profile.runtime);
 }
 
@@ -521,12 +541,19 @@ export function agentProfilesForWorkspace(
     const health =
       healthData ??
       (profile.connectionType === "local_login"
-        ? [nativeLoginHealth(profile.runtime)]
+        ? [
+            profile.runtime === "antigravity"
+              ? antigravityHealth(profileID(profile))
+              : nativeLoginHealth(profile.runtime),
+          ]
         : providerHealthData());
     const id = profileID(profile);
     return {
       id,
-      runtimeGeneration: nativeCli(profile.runtime).generation,
+      runtimeGeneration:
+        profile.runtime === "antigravity"
+          ? antigravityGeneration(id)
+          : nativeCli(profile.runtime).generation,
       // Only a local login has an account to name; endpoint profiles
       // authenticate with a key, which identifies nobody.
       accountLabel:
@@ -555,7 +582,11 @@ export function agentProfilesForWorkspace(
       fingerprint: profileFingerprint(profile),
       label:
         profile.label?.trim() ||
-        (profile.runtime === "codex" ? "Codex" : "Claude"),
+        (profile.runtime === "antigravity"
+          ? "Antigravity"
+          : profile.runtime === "codex"
+            ? "Codex"
+            : "Claude"),
       lastSeenLabel: device.lastSeenLabel,
       model: profile.model,
       models: profile.models,
@@ -563,6 +594,7 @@ export function agentProfilesForWorkspace(
       /* Reported so a saved value round-trips; nothing injects it and no field
          offers it, so a stale env var must not revive one either. */
       promptPrefix: profile.promptPrefix,
+      antigravityEffort: profile.antigravityEffort,
       claudeEffort: profile.claudeEffort,
       claudePermissionMode: profile.claudePermissionMode,
       codexApprovalPolicy: profile.codexApprovalPolicy,
@@ -640,6 +672,7 @@ export function profileConfigFromDefinition(
 ): AgentProfileLocalConfig {
   return {
     baseUrl: definition.baseUrl?.trim() || undefined,
+    antigravityEffort: definition.antigravityEffort,
     claudeEffort: definition.claudeEffort,
     claudePermissionMode: definition.claudePermissionMode,
     codexApprovalPolicy: definition.codexApprovalPolicy,
@@ -796,6 +829,7 @@ export function profileRuntimeEnvironment(
   profile: AgentProfileLocalConfig,
   session?: AgentSession,
 ): Record<string, string> {
+  if (profile.runtime === "antigravity") return {};
   const env: Record<string, string> = { ...(profile.env ?? {}) };
   if (profile.runtime === "claude") {
     env.DISABLE_AUTOUPDATER = "1";
@@ -936,11 +970,32 @@ export function baseProcessEnvironment(
   return env;
 }
 
+function validateAntigravityInput(
+  input: UpsertAgentProfilePayload["profile"],
+): void {
+  if (
+    input.runtime === "antigravity" &&
+    ((input.connectionType && input.connectionType !== "local_login") ||
+      input.apiKey?.trim() ||
+      input.baseUrl?.trim() ||
+      input.promptPrefix?.trim())
+  )
+    throw new Error(
+      "Antigravity supports personal Google subscription profiles only.",
+    );
+}
+
 export function upsertAgentProfileConfig(
   input: UpsertAgentProfilePayload["profile"],
   workspacePath: string,
 ): AgentProfileProjection {
-  const runtime = input.runtime === "codex" ? "codex" : "claude";
+  const runtime =
+    input.runtime === "antigravity"
+      ? "antigravity"
+      : input.runtime === "codex"
+        ? "codex"
+        : "claude";
+  validateAntigravityInput(input);
   const label = input.label.trim();
   if (!label) {
     throw new Error("agent profile label is required");
@@ -948,7 +1003,11 @@ export function upsertAgentProfileConfig(
   const configScope: AgentConfigScope = "device";
   const connectionType =
     input.connectionType ??
-    (runtime === "claude" ? "anthropic_compatible" : "openai_compatible");
+    (runtime === "antigravity"
+      ? "local_login"
+      : runtime === "claude"
+        ? "anthropic_compatible"
+        : "openai_compatible");
   const targetPath = deviceAgentProfilesPath;
   const current = readAgentProfilesFile(targetPath);
   const nextID = profileID({ id: input.id, label, runtime });
@@ -957,6 +1016,13 @@ export function upsertAgentProfileConfig(
   );
   if (input.connectionType === "external")
     return saveExternalDefaults(input, nextID, workspacePath);
+  if (
+    runtime === "antigravity" &&
+    configuredAgentProfiles(workspacePath).some(
+      (profile) => profileID(profile) === nextID && profile.runtime !== runtime,
+    )
+  )
+    throw new Error("Choose a unique ID for this Antigravity profile.");
   if (existing?.connectionType === "external")
     throw new Error(
       "External connections must be configured on the device; remote edits are not supported.",
@@ -964,6 +1030,7 @@ export function upsertAgentProfileConfig(
   const profile: AgentProfileLocalConfig = {
     apiKey: existing?.apiKey,
     baseUrl: input.baseUrl?.trim() || undefined,
+    antigravityEffort: input.antigravityEffort || undefined,
     claudeEffort: input.claudeEffort || undefined,
     claudePermissionMode: input.claudePermissionMode || undefined,
     codexApprovalPolicy: input.codexApprovalPolicy || undefined,
@@ -1041,7 +1108,13 @@ function saveExternalDefaults(
 export function profileConfigFromInput(
   input: UpsertAgentProfilePayload["profile"],
 ): AgentProfileLocalConfig {
-  const runtime = input.runtime === "codex" ? "codex" : "claude";
+  const runtime =
+    input.runtime === "antigravity"
+      ? "antigravity"
+      : input.runtime === "codex"
+        ? "codex"
+        : "claude";
+  validateAntigravityInput(input);
   const current = readAgentProfilesFile(deviceAgentProfilesPath);
   const inputID = input.id?.trim();
   const fallbackID = profileID({
@@ -1065,7 +1138,11 @@ export function profileConfigFromInput(
   const connectionType =
     input.connectionType ??
     existing?.connectionType ??
-    (runtime === "claude" ? "anthropic_compatible" : "openai_compatible");
+    (runtime === "antigravity"
+      ? "local_login"
+      : runtime === "claude"
+        ? "anthropic_compatible"
+        : "openai_compatible");
 
   return {
     ...existing,
@@ -1073,6 +1150,7 @@ export function profileConfigFromInput(
     // outranks whatever the local file holds.
     apiKey: input.apiKey?.trim() || existing?.apiKey,
     baseUrl: input.baseUrl?.trim() || existing?.baseUrl,
+    antigravityEffort: input.antigravityEffort || existing?.antigravityEffort,
     claudeEffort: input.claudeEffort || existing?.claudeEffort,
     claudePermissionMode:
       input.claudePermissionMode || existing?.claudePermissionMode,

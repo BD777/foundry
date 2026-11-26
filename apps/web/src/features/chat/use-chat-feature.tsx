@@ -292,6 +292,7 @@ export function useChatFeature({
     claudeEffort,
     claudePermissionMode,
     codexApprovalPolicy,
+    antigravityEffort,
     codexReasoningEffort,
     codexSandboxMode,
     codexSpeed,
@@ -338,6 +339,7 @@ export function useChatFeature({
         claudeEffort,
         claudePermissionMode,
         codexApprovalPolicy,
+        antigravityEffort,
         codexReasoningEffort,
         codexSandboxMode,
         codexSpeed,
@@ -832,6 +834,10 @@ export function useChatFeature({
         claudeEffort={claudeEffort}
         claudePermissionMode={claudePermissionMode}
         codexApprovalPolicy={codexApprovalPolicy}
+        antigravityEffort={antigravityEffort}
+        onAntigravityEffortChange={(value) =>
+          updateOverride({ antigravityEffort: value })
+        }
         codexReasoningEffort={codexReasoningEffort}
         codexSandboxMode={codexSandboxMode}
         codexSpeed={codexSpeed}

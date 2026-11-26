@@ -143,6 +143,13 @@ export interface PickerAgentMeta {
  * picker needs one short, readable line; the full text stays reachable via the
  * row's native title and on the device management page.
  */
+/** Issues run unattended, so a personal Antigravity subscription never serves them. */
+export function issueEligibleAgents(
+  agents: AgentProjection[],
+): AgentProjection[] {
+  return agents.filter((agent) => agent.provider !== "antigravity");
+}
+
 export function shortUnavailableReason(
   status: ProviderStatus,
   statusDetail?: string,
@@ -194,16 +201,18 @@ export function pickerAgentLabel(
   agent: AgentProjection,
   profiles: AgentProfileProjection[] = [],
 ): string {
-  const account = profiles
-    .find(
-      (profile) =>
-        profile.id === agent.profileId &&
-        profile.deviceId === agent.deviceId &&
-        profile.runtime === agent.provider &&
-        profile.connectionType === "local_login" &&
-        profile.origin !== "server",
-    )
-    ?.accountLabel?.trim();
+  const profile = profiles.find(
+    (profile) =>
+      profile.id === agent.profileId &&
+      profile.deviceId === agent.deviceId &&
+      profile.runtime === agent.provider &&
+      profile.connectionType === "local_login" &&
+      profile.origin !== "server",
+  );
+  const account =
+    agent.provider === "antigravity"
+      ? profile?.label || agent.profileLabel || profile?.accountLabel
+      : profile?.accountLabel?.trim();
   if (agent.connectionType === "local_login" && account)
     return i18n.t("agents:picker.namedAccount", {
       runtime: runtimeMeta(agent.provider).label,

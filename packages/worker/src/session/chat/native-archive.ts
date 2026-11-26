@@ -620,7 +620,7 @@ export function applyNativeArchive(
         !Number.isSafeInteger(item.generation) ||
         item.generation < 0 ||
         !["active", "archived"].includes(item.desired) ||
-        !["claude", "codex"].includes(item.provider)
+        (item.provider !== "codex" && item.provider !== "claude")
       )
         throw new Error("Invalid native archive request");
       if (inUse) throw new Error("Native session is in use");

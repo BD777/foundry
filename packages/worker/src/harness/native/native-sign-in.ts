@@ -1,6 +1,14 @@
+import { AcpClient } from "../agent-runtime/acp-client.js";
+import { tryMaintainRuntime } from "../agent-runtime/maintenance.js";
+import {
+  antigravityBinDir,
+  antigravityInvocation,
+  bindAntigravityProfile,
+  requireAntigravityLogin,
+} from "./antigravity.js";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type {
   NativeSignInRequestPayload,
   NativeSignInStep,
@@ -19,7 +27,8 @@ import { foundryStatePath } from "../../platform/state-root.js";
  * server only relays the page and codes. Signing out is the CLI's logout.
  */
 
-type Runtime = "claude" | "codex";
+type OriginalRuntime = "claude" | "codex";
+type Runtime = OriginalRuntime | "antigravity";
 
 const waitForPageMs = 30_000;
 const signInLifetimeMs = 15 * 60_000;
@@ -48,13 +57,49 @@ export function parseCodexDeviceCode(
   return url && code ? { url, code } : undefined;
 }
 
+export function parseAntigravityLoginPage(output: string): string | undefined {
+  return /https:\/\/accounts\.google\.com\/o\/oauth2\/(?:v2\/)?auth\?[^\s]+/.exec(
+    output.replace(ansi, ""),
+  )?.[0];
+}
+
+/** Check service reachability with D-Bus Peer.Ping. No credential operation. */
+function checkLinuxKeyring(): void {
+  if (process.platform !== "linux") return;
+  const result = spawnSync(
+    "dbus-send",
+    [
+      "--session",
+      "--print-reply",
+      "--reply-timeout=3000",
+      "--dest=org.freedesktop.secrets",
+      "/org/freedesktop/secrets",
+      "org.freedesktop.DBus.Peer.Ping",
+    ],
+    { stdio: "ignore", timeout: 4000 },
+  );
+  if ((result.error as NodeJS.ErrnoException)?.code === "ENOENT") return;
+  if (result.status !== 0)
+    throw new Error(
+      "Antigravity cannot reach Linux Secret Service (org.freedesktop.secrets) on the Worker's session D-Bus. Start and unlock the OS keyring for this user before signing in.",
+    );
+}
+
 const runtimeName: Record<Runtime, string> = {
+  antigravity: "Antigravity",
   claude: "Claude Code",
   codex: "Codex",
 };
 
 /** The CLI's last words, never a URL with its state or a code in them. */
 function failure(output: string, runtime: Runtime): string {
+  if (runtime === "antigravity") {
+    if (/keyring|keychain|secret service|dbus/i.test(output))
+      return "Antigravity could not access the device's secure keyring.";
+    if (/invalid|expired|denied/i.test(output))
+      return "The Google sign-in code was rejected or expired.";
+    return "The Antigravity CLI could not complete Google sign-in. Check the CLI and its access to the device keyring.";
+  }
   const line =
     output
       .replace(ansi, "")
@@ -83,11 +128,11 @@ function failure(output: string, runtime: Runtime): string {
   return (reason || `${runtimeName[runtime]} could not sign in.`).slice(0, 300);
 }
 
-function command(runtime: Runtime): string {
+function command(runtime: OriginalRuntime): string {
   return runtime === "claude" ? resolveClaudeCommand() : resolveCodexCommand();
 }
 
-function environment(runtime: Runtime): NodeJS.ProcessEnv {
+function environment(runtime: OriginalRuntime): NodeJS.ProcessEnv {
   return {
     ...process.env,
     ...nativeLoginEnvironment(runtime),
@@ -106,11 +151,11 @@ function environment(runtime: Runtime): NodeJS.ProcessEnv {
  * worker, or the next attempt, ends it.
  */
 const signInPidsPath = foundryStatePath("native-sign-ins.json");
-const signInArgs: Record<Runtime, string[]> = {
+const signInArgs: Record<OriginalRuntime, string[]> = {
   claude: ["auth", "login", "--claudeai"],
   codex: ["login", "--device-auth"],
 };
-const signOutArgs: Record<Runtime, string[]> = {
+const signOutArgs: Record<OriginalRuntime, string[]> = {
   claude: ["auth", "logout"],
   codex: ["logout"],
 };
@@ -144,7 +189,13 @@ function endLeftSignIn(runtime: Runtime): void {
     encoding: "utf8",
     timeout: 5_000,
   }).stdout?.trim();
-  if (args?.endsWith(signInArgs[runtime].join(" "))) {
+  if (
+    runtime === "antigravity"
+      ? args?.startsWith(
+          join(antigravityBinDir(), "agy") + " acp --gemini-dir ",
+        ) && args.endsWith(" --app-data-dir antigravity-cli --login")
+      : args?.endsWith(signInArgs[runtime].join(" "))
+  ) {
     try {
       process.kill(-pid, "SIGTERM");
     } catch {
@@ -156,6 +207,7 @@ function endLeftSignIn(runtime: Runtime): void {
 
 /** Ends the sign-ins a previous worker process left running. */
 export function reapNativeSignIns(): void {
+  endLeftSignIn("antigravity");
   endLeftSignIn("claude");
   endLeftSignIn("codex");
 }
@@ -165,6 +217,8 @@ type Step = Omit<NativeSignInStep, "operationId">;
 /** The one sign-in of a runtime running on this device, if any. */
 class NativeSignIn {
   operationId = "";
+  profileId?: string;
+  private releaseLogin?: () => void;
   private child: ChildProcess | undefined;
   private output = "";
   /** How much output there was when the person last sent a code. */
@@ -180,11 +234,41 @@ class NativeSignIn {
 
   constructor(private readonly runtime: Runtime) {}
 
-  async begin(operationId: string): Promise<Step> {
+  async begin(operationId: string, profileId: string): Promise<Step> {
     this.cancel();
     endLeftSignIn(this.runtime);
-    const child = spawn(command(this.runtime), signInArgs[this.runtime], {
-      env: environment(this.runtime),
+    this.profileId = profileId;
+    let launch: { command: string; args: string[]; env: NodeJS.ProcessEnv };
+    if (this.runtime === "antigravity") {
+      const invocation = antigravityInvocation(profileId);
+      checkLinuxKeyring();
+      const release = await tryMaintainRuntime("antigravity");
+      if (!release)
+        throw new Error(
+          "Antigravity is active. Finish the current session before changing its login.",
+        );
+      this.releaseLogin = release;
+      this.profileId = profileId;
+      try {
+        bindAntigravityProfile();
+      } catch (error) {
+        this.finish();
+        throw error;
+      }
+      launch = {
+        ...invocation,
+        args: [...invocation.args, "--login"],
+        env: { ...invocation.env, BROWSER: "true", NO_COLOR: "1" },
+      };
+    } else {
+      launch = {
+        command: command(this.runtime),
+        args: signInArgs[this.runtime],
+        env: environment(this.runtime),
+      };
+    }
+    const child = spawn(launch.command, launch.args, {
+      env: launch.env,
       stdio: ["pipe", "pipe", "pipe"],
       // Its own process group, so ending it ends whatever it started too.
       detached: true,
@@ -244,8 +328,11 @@ class NativeSignIn {
 
   private page(): Step | undefined {
     const expiresAt = new Date(Date.now() + signInLifetimeMs).toISOString();
-    if (this.runtime === "claude") {
-      const url = parseClaudeLoginPage(this.output);
+    if (this.runtime !== "codex") {
+      const url =
+        this.runtime === "antigravity"
+          ? parseAntigravityLoginPage(this.output)
+          : parseClaudeLoginPage(this.output);
       return url
         ? {
             status: "pending",
@@ -296,7 +383,12 @@ class NativeSignIn {
     // tells why the sign-in ended.
     const after = this.output.slice(this.shownAt);
     const exit = this.exit;
-    this.finish();
+    try {
+      if (this.runtime === "antigravity" && exit === 0)
+        bindAntigravityProfile(this.profileId);
+    } finally {
+      this.finish();
+    }
     clearNativeLoginHealth();
     if (exit === 0) return this.end({ status: "complete" });
     const error = failure(after, this.runtime);
@@ -344,6 +436,8 @@ class NativeSignIn {
     this.shown = undefined;
     if (this.child) recordSignInPid(this.runtime, undefined);
     this.child = undefined;
+    this.releaseLogin?.();
+    this.releaseLogin = undefined;
   }
 }
 
@@ -351,12 +445,13 @@ class NativeSignIn {
 const endedKeptMs = 2 * 60_000;
 
 const signIns: Record<Runtime, NativeSignIn> = {
+  antigravity: new NativeSignIn("antigravity"),
   claude: new NativeSignIn("claude"),
   codex: new NativeSignIn("codex"),
 };
 
 /** Runs the CLI's own logout; the login it removes is the worker's. */
-function signOut(runtime: Runtime): Promise<void> {
+function signOut(runtime: OriginalRuntime): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command(runtime), signOutArgs[runtime], {
       env: environment(runtime),
@@ -414,19 +509,49 @@ export async function nativeSignIn(
   request: NativeSignInRequestPayload,
 ): Promise<NativeSignInStep | undefined> {
   const runtime = request?.runtime;
-  if (runtime !== "claude" && runtime !== "codex")
+  if (runtime !== "claude" && runtime !== "codex" && runtime !== "antigravity")
     throw new Error("Unknown runtime.");
   const signIn = signIns[runtime];
+  const profileId = request.profileId ?? "antigravity_local";
   if (request.action === "sign_out") {
     signIn.cancel();
-    await signOut(runtime);
+    if (runtime === "antigravity") {
+      const release = await tryMaintainRuntime(runtime);
+      if (!release)
+        throw new Error(
+          "Finish the current Antigravity session before signing out.",
+        );
+      try {
+        requireAntigravityLogin(profileId);
+        const invocation = antigravityInvocation(profileId);
+        const client = new AcpClient(invocation, invocation.env.HOME!);
+        try {
+          const initial = await client.initialize();
+          if (!initial.agentCapabilities?.auth?.logout)
+            throw new Error("This Antigravity CLI does not support logout.");
+          await client.request("logout", {});
+          bindAntigravityProfile();
+          clearNativeLoginHealth();
+        } finally {
+          client.close();
+        }
+      } finally {
+        release();
+      }
+    } else await signOut(runtime);
     return undefined;
   }
   const operationId = request.operationId ?? "";
   if (!operationIdPattern.test(operationId))
     throw new Error("A sign-in operation id is required.");
   if (request.action === "begin")
-    return checkedStep(await signIn.begin(operationId), operationId);
+    return checkedStep(await signIn.begin(operationId, profileId), operationId);
+  if (
+    runtime === "antigravity" &&
+    request.profileId &&
+    signIn.profileId !== profileId
+  )
+    return { status: "expired", operationId };
   if (operationId !== signIn.operationId || !signIn.running()) {
     // Its end was answered once already and the answer may have been lost.
     const ended =

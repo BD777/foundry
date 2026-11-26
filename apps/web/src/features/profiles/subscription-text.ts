@@ -6,7 +6,5 @@ export function subscriptionName(
   t: TFunction<"profiles">,
   runtime: NativeRuntime,
 ): string {
-  return runtime === "claude"
-    ? t("subscriptions.claude")
-    : t("subscriptions.codex");
+  return t(`subscriptions.${runtime}`);
 }

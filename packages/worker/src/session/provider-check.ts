@@ -1,3 +1,4 @@
+import { readAntigravityCatalog } from "../harness/native/antigravity-inspection.js";
 import { selectedExternalConnection } from "../harness/external-connection.js";
 import {
   registeredExternalConnection,
@@ -186,7 +187,9 @@ async function runProviderCheck(
   const directory = mkdtempSync(join(tmpdir(), "foundry-provider-check-"));
   const timeout = AbortSignal.timeout(checkTimeoutMs);
   try {
-    if (profile.runtime === "codex")
+    if (profile.runtime === "antigravity")
+      await readAntigravityCatalog(profileID(profile));
+    else if (profile.runtime === "codex")
       await runCodexTurn(profile, directory, timeout);
     else await runClaudeTurn(profile, directory, timeout);
     return {

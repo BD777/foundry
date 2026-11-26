@@ -29,7 +29,7 @@ type ModelGuideAlias struct {
 	ProviderKind string `json:"providerKind,omitempty"`
 	ProviderID   string `json:"providerId,omitempty"`
 
-	// Runtime A runtime Foundry runs natively: Claude Code or Codex.
+	// Runtime A runtime Foundry runs natively: Claude Code, Codex or Antigravity.
 	Runtime NativeRuntimeID `json:"runtime,omitempty"`
 	Model   string          `json:"model"`
 }

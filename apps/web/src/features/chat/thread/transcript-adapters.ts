@@ -1,3 +1,4 @@
+import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import {
   type ModelRequestUsage,
   type AgentSession,
@@ -296,7 +297,7 @@ export function sessionTranscriptEntries(
             })
           : "";
       const background = timerFire.origin === "background";
-      const agent = session.provider === "codex" ? "Codex" : "Claude";
+      const agent = runtimeMeta(session.provider).label;
       // The timer's prompt or the finished work, for the turn's source row.
       const detail = (timerFire.prompt ?? "")
         .split(/\r?\n/)

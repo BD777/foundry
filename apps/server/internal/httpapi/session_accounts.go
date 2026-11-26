@@ -177,6 +177,9 @@ func pickAccount(accounts []workspaceAccount, runtime, preferred string) (worksp
 func pickAccountFrom(accounts []workspaceAccount, runtime, preferred string) (workspaceAccount, string, bool) {
 	var usable []workspaceAccount
 	for _, account := range accounts {
+		if runtime == "" && account.Runtime == "antigravity" {
+			continue // This subscription requires an explicit selection.
+		}
 		if account.Usable && (runtime == "" || account.Runtime == runtime) {
 			usable = append(usable, account)
 		}

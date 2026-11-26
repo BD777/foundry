@@ -427,6 +427,30 @@ func TestSetModelDefaultsWritesTheDeviceProfile(t *testing.T) {
 	}
 }
 
+func TestSignInSubscriptionInstallsNativeCLI(t *testing.T) {
+	f := newExternalAccountsFixture(t)
+	alice := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.aliceID})
+	bob := f.providerSession(store.CreateAgentSessionInput{CreatedByUserID: f.bobID, AgentID: "agent_bob", WorkspaceID: "ws_bob"})
+	const args = `{"deviceId":"dev_alice","runtime":"antigravity","action":"install_cli"}`
+	if text, failed, _ := bob.call("sign_in_subscription", args); !failed || !strings.Contains(text, "device not found") {
+		t.Fatalf("non-owner install: %q", text)
+	}
+	asked := attachWorker[wsNativeCliInstallResult](t, f.server, nil,
+		`{"result":{"runtime":"antigravity","ok":true,"command":"installer","log":"verbose","cli":{"installed":true,"version":"1.5.15"}}}`)
+	var result map[string]any
+	alice.ok("sign_in_subscription", args, &result)
+	envelope := <-asked
+	var request struct {
+		Runtime string `json:"runtime"`
+	}
+	if err := json.Unmarshal(envelope.Payload, &request); err != nil || envelope.Type != wsInstallNativeCliType || request.Runtime != "antigravity" {
+		t.Fatalf("install request = %s %s", envelope.Type, envelope.Payload)
+	}
+	if len(result) != 3 || result["ok"] != true || result["version"] != "1.5.15" || result["runtime"] != request.Runtime {
+		t.Fatalf("install result = %+v", result)
+	}
+}
+
 // A subscription's sign-in is started on its device and its link handed
 // back; the agent never signs in itself.
 func TestSignInSubscriptionRelaysTheDevicesSignIn(t *testing.T) {

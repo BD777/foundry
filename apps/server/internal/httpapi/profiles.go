@@ -742,6 +742,7 @@ func agentProfileInputFromProjection(profile store.AgentProfileProjection) store
 		DeviceID:             profile.DeviceID,
 		Runtime:              profile.Runtime,
 		Label:                profile.Label,
+		AntigravityEffort:    profile.AntigravityEffort,
 		ConfigScope:          profile.ConfigScope,
 		ConnectionType:       profile.ConnectionType,
 		BaseURL:              profile.BaseURL,
@@ -772,6 +773,9 @@ func agentProfileInputFromProjection(profile store.AgentProfileProjection) store
 // profile (a disabled admin binding stays disabled) or when the device has its
 // own sealed credential (a working local configuration is left untouched).
 func (h *DaemonHub) serverProfileForSession(ctx context.Context, session store.AgentSession) (*store.ProfileDefinition, error) {
+	if session.Provider == "antigravity" {
+		return nil, nil
+	} // Subscription homes are local to the device.
 	profileID := strings.TrimSpace(session.ProfileID)
 	deviceID := strings.TrimSpace(session.DeviceID)
 	if profileID == "" || deviceID == "" {

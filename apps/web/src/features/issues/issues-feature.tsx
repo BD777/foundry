@@ -24,6 +24,7 @@ import {
   buildPickerAgentOptions,
   canonicalPickerAgents,
   firstDisabledDeviceId,
+  issueEligibleAgents,
 } from "../../lib/agent-picker";
 import { navigateToDeviceAgents } from "../../lib/in-app-navigation";
 import { workspaceDenial } from "../../lib/workspace-access";
@@ -82,8 +83,10 @@ export function IssuesFeature({
     title: string;
     tone: "success" | "warning";
   }>();
+  const eligibleAgents = useMemo(() => issueEligibleAgents(agents), [agents]);
   const availableRuntime = providerHealth.find(
-    (provider) => provider.status === "healthy",
+    (provider) =>
+      provider.provider !== "antigravity" && provider.status === "healthy",
   )?.provider;
   const [runtime, setRuntime] = useState<WorkerRuntimeId>(
     availableRuntime ?? "claude",
@@ -96,8 +99,8 @@ export function IssuesFeature({
   // represented by the server definition only. Genuinely distinct same-named
   // connections stay separate.
   const pickerAgents = useMemo(
-    () => canonicalPickerAgents(agents, profiles),
-    [agents, profiles],
+    () => canonicalPickerAgents(eligibleAgents, profiles),
+    [eligibleAgents, profiles],
   );
   const modelSettings = useIssueModels(
     runtime,
@@ -106,8 +109,8 @@ export function IssuesFeature({
     workspace.id,
   );
   const agentOptions = useMemo(
-    () => buildPickerAgentOptions(agents, profiles),
-    [agents, profiles],
+    () => buildPickerAgentOptions(eligibleAgents, profiles),
+    [eligibleAgents, profiles],
   );
   const disabledAgentDeviceId = firstDisabledDeviceId(agentOptions);
   const [submitting, setSubmitting] = useState(false);

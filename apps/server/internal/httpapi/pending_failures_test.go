@@ -495,3 +495,22 @@ func TestPendingTurnFailureClosesWhenSessionArchivedOrDeleted(t *testing.T) {
 		t.Fatalf("resolutions = %+v", details)
 	}
 }
+
+func TestAntigravityQuotaCreatesOneNotifiableFailure(t *testing.T) {
+	f := newPendingFixture(t)
+	f.session.Provider = "antigravity"
+	f.session.ProfileID = "selected"
+	const failure = "Antigravity quota exhausted for profile selected"
+	if failPendingTurn(f, "evt_agy_quota", failure, "") {
+		t.Fatal("Server scheduled a retry")
+	}
+	items := openFailureItems(t, f)
+	if len(items) != 1 {
+		t.Fatalf("failures = %+v", items)
+	}
+	item := items[0]
+	if kind, ok := personNoticeKind(item); !ok || kind != "ask" || canAnswerFromNotice(item) ||
+		item.FailureAccountID != "selected" || item.FailureResetAt != "" || item.Title != failure {
+		t.Fatalf("quota notice = %+v, kind = %q", item, kind)
+	}
+}

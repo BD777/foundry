@@ -35,7 +35,7 @@ import { useSharedNow } from "../../lib/use-shared-now";
 const accountLogClass =
   "m-0 max-h-60 overflow-auto text-2xs whitespace-pre-wrap";
 
-export type NativeRuntime = "claude" | "codex";
+export type NativeRuntime = AgentProfileProjection["runtime"];
 
 /** The device's official login row for a runtime, when it reported one. */
 export function localLoginRow(
@@ -61,6 +61,7 @@ export function localLoginRow(
 export function RuntimeAccountRow({
   device,
   runtime,
+  account,
   profiles,
   health,
   bindings,
@@ -70,6 +71,7 @@ export function RuntimeAccountRow({
 }: {
   device: DeviceProjection;
   runtime: NativeRuntime;
+  account?: AgentProfileProjection;
   /** Profile rows the device reported (any device; this one's are used). */
   profiles: AgentProfileProjection[];
   /** This device's runtime health. */
@@ -100,13 +102,15 @@ export function RuntimeAccountRow({
   const [error, setError] = useState("");
   const [resuming, setResuming] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const local = localLoginRow(profiles, device.id, runtime);
+  const local = account ?? localLoginRow(profiles, device.id, runtime);
+  const profileId = runtime === "antigravity" ? local?.id : undefined;
   const nativeHealth = health.find((row) => row.provider === runtime);
   const status = local?.status ?? nativeHealth?.status;
   const hold = local?.accountHold;
   const signedIn = !!local && status === "healthy";
   const unavailable = status === "unavailable";
   const name = runtimeMeta(runtime).productName;
+  const accountName = account ? `${name} · ${account.label}` : name;
   const cli = nativeHealth?.cli;
   const missing = cli?.installed === false;
   const online = device.status === "connected";
@@ -122,7 +126,12 @@ export function RuntimeAccountRow({
     setChecking(true);
     setError("");
     try {
-      await inspectDeviceAccount(device.id, runtime);
+      await inspectDeviceAccount(
+        device.id,
+        runtime,
+        undefined,
+        profileId ? { profileId } : undefined,
+      );
       await onRefresh();
     } catch (cause) {
       setError(
@@ -135,7 +144,7 @@ export function RuntimeAccountRow({
   async function signOut(): Promise<void> {
     setError("");
     try {
-      await signOutNativeAccount(device.id, runtime);
+      await signOutNativeAccount(device.id, runtime, profileId);
       await onRefresh();
     } catch (cause) {
       setError(
@@ -179,13 +188,15 @@ export function RuntimeAccountRow({
           className="-ml-2 h-auto flex-1 justify-start gap-3 rounded-lg border-0 p-2 text-left whitespace-normal active:scale-100 focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-control-focus)] max-[700px]:basis-[70%]"
           aria-expanded={expanded}
           aria-label={t("accounts.detailsLabel", {
-            name,
+            name: accountName,
             device: device.label,
           })}
           onClick={() => setExpanded(!expanded)}
         >
           <span className="grid min-w-0 flex-1 gap-1">
-            <strong className="text-sm">{device.label}</strong>
+            <strong className="text-sm">
+              {account ? `${device.label} · ${account.label}` : device.label}
+            </strong>
             <small className="text-xs leading-[1.5] font-normal text-ink-muted">
               {summary}
             </small>
@@ -217,7 +228,7 @@ export function RuntimeAccountRow({
                 variant="primary"
                 disabled={!online}
                 aria-label={t("accounts.signInLabel", {
-                  name,
+                  name: accountName,
                   device: device.label,
                 })}
                 onClick={onSignIn}
@@ -231,7 +242,7 @@ export function RuntimeAccountRow({
               disabled={!online || checking}
               aria-busy={checking}
               aria-label={t("accounts.checkAgainLabel", {
-                name,
+                name: accountName,
                 device: device.label,
               })}
               busy={checking}
@@ -242,7 +253,10 @@ export function RuntimeAccountRow({
           </>
         )}
         <RowMenu
-          label={t("accounts.actions", { name, device: device.label })}
+          label={t("accounts.actions", {
+            name: accountName,
+            device: device.label,
+          })}
           disabled={!online}
           items={
             signedIn
@@ -253,11 +267,11 @@ export function RuntimeAccountRow({
                     tone: "danger",
                     confirm: {
                       title: t("accounts.signOutTitle", {
-                        name,
+                        name: accountName,
                         device: device.label,
                       }),
                       body: t("accounts.signOutBody", {
-                        name,
+                        name: accountName,
                         device: device.label,
                       }),
                       action: t("accounts.signOut"),
@@ -316,7 +330,7 @@ export function RuntimeAccountRow({
         <Alert
           tone="error"
           title={t("accounts.installCliFailed", {
-            name,
+            name: accountName,
             device: device.label,
           })}
           details={
@@ -341,7 +355,7 @@ export function RuntimeAccountRow({
           {attempt.detail}
         </Alert>
       ) : null}
-      {cli?.installed ? (
+      {cli?.installed && runtime !== "antigravity" ? (
         <AgentRuntimeUpdateNotice
           cli={cli}
           name={name}
@@ -355,6 +369,7 @@ export function RuntimeAccountRow({
         <div className="grid grid-cols-2 gap-7 pt-2 pb-6 max-[1000px]:grid-cols-1">
           {cli?.installed ? (
             <AgentRuntimeStatus
+              selfUpdating={runtime === "antigravity"}
               cli={cli}
               online={online}
               busy={busy}
@@ -363,6 +378,7 @@ export function RuntimeAccountRow({
           ) : null}
           <AccountInspection
             key={local?.runtimeGeneration ?? cli?.generation ?? runtime}
+            profileId={profileId}
             identity={local?.runtimeGeneration ?? cli?.generation}
             deviceId={device.id}
             runtime={runtime}

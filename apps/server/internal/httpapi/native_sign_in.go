@@ -97,13 +97,16 @@ func (s *Server) nativeSignInRoute(w http.ResponseWriter, r *http.Request, actio
 // Beginning takes the caller's requestId (the same id answers the sign-in it
 // already started); the other steps name the operationId it answered.
 func (s *Server) nativeSignInStep(ctx context.Context, owner, deviceID, runtime string, action store.NativeSignInAction, input store.NativeSignInInput) (*store.NativeSignInStep, error) {
-	request := store.NativeSignInRequestPayload{Runtime: runtime, Action: action, OperationID: input.OperationID}
+	if err := s.checkSignInProfile(ctx, deviceID, runtime, input.ProfileID); err != nil {
+		return nil, err
+	}
+	request := store.NativeSignInRequestPayload{Runtime: runtime, ProfileID: input.ProfileID, Action: action, OperationID: input.OperationID}
 	switch action {
 	case store.NativeSignInActionBegin:
 		if input.RequestID == "" || len(input.RequestID) > 100 {
 			return nil, &statusError{http.StatusBadRequest, errors.New("sign-in request ID is required")}
 		}
-		operationID, running, err := s.nativeSignIns.operation(owner + "\x00" + deviceID + "\x00" + runtime + "\x00" + input.RequestID)
+		operationID, running, err := s.nativeSignIns.operation(owner + "\x00" + deviceID + "\x00" + runtime + "\x00" + input.ProfileID + "\x00" + input.RequestID)
 		if err != nil {
 			return nil, err
 		}
@@ -132,12 +135,34 @@ func (s *Server) nativeSignInStep(ctx context.Context, owner, deviceID, runtime 
 	return step, nil
 }
 
+func (s *Server) checkSignInProfile(ctx context.Context, deviceID, runtime, profileID string) error {
+	if profileID == "" {
+		return nil
+	}
+	profile, err := s.deviceProfileProjection(ctx, deviceID, profileID)
+	if err != nil {
+		return err
+	}
+	if profile.Runtime != runtime || profile.ConnectionType != "local_login" {
+		return invalid("select a subscription profile for this runtime")
+	}
+	return nil
+}
+
 func (s *Server) handleNativeSignOut(w http.ResponseWriter, r *http.Request) {
 	deviceID, runtime, ok := s.deviceAccountTarget(w, r)
 	if !ok {
 		return
 	}
-	if _, err := s.hub.NativeSignIn(r.Context(), deviceID, store.NativeSignInRequestPayload{Runtime: runtime, Action: store.NativeSignInActionSignOut}); err != nil {
+	var input store.NativeSignInInput
+	if r.ContentLength != 0 && !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if err := s.checkSignInProfile(r.Context(), deviceID, runtime, input.ProfileID); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if _, err := s.hub.NativeSignIn(r.Context(), deviceID, store.NativeSignInRequestPayload{Runtime: runtime, ProfileID: input.ProfileID, Action: store.NativeSignInActionSignOut}); err != nil {
 		writeNativeSignInError(w, err)
 		return
 	}

@@ -39,6 +39,7 @@ import type {
 
 /** User-editable runtime settings for one selected Chat agent. */
 export interface ChatOverrideDraft {
+  antigravityEffort?: string;
   claudeEffort?: ClaudeEffort | "";
   claudePermissionMode?: ClaudePermissionMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
@@ -306,7 +307,7 @@ export interface ChatSessionStatus {
   profileLabel?: string;
   /** The model that answered, else the one the session asked for. */
   model?: string;
-  effort?: ClaudeEffort | CodexReasoningEffort;
+  effort?: string;
   claudePermissionMode?: ClaudePermissionMode;
   codexSandboxMode?: CodexSandboxMode;
   codexApprovalPolicy?: CodexApprovalPolicy;

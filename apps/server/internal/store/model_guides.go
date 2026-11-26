@@ -69,8 +69,8 @@ func NormalizeModelGuideAlias(alias ModelGuideAlias) (ModelGuideAlias, error) {
 	case alias.ProviderKind != "" && alias.ProviderKind != "subscription" && alias.ProviderKind != "api" &&
 		alias.ProviderKind != "environment" && alias.ProviderKind != "discovered":
 		return alias, invalidModelGuide("alias providerKind must be subscription, api, environment or discovered")
-	case alias.Runtime != "" && alias.Runtime != "claude" && alias.Runtime != "codex":
-		return alias, invalidModelGuide("alias runtime must be claude or codex")
+	case alias.Runtime != "" && !IsNativeRuntime(alias.Runtime):
+		return alias, invalidModelGuide("alias runtime must be claude, codex or antigravity")
 	}
 	return alias, nil
 }

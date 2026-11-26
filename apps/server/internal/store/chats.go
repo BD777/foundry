@@ -37,6 +37,7 @@ type ChatQueueRunSettings struct {
 	Provider              string `json:"provider,omitempty"`
 	ProfileID             string `json:"profileId,omitempty"`
 	Model                 string `json:"model,omitempty"`
+	AntigravityEffort     string `json:"antigravityEffort,omitempty"`
 	ClaudeEffort          string `json:"claudeEffort,omitempty"`
 	ClaudePermissionMode  string `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort  string `json:"codexReasoningEffort,omitempty"`

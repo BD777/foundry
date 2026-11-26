@@ -101,3 +101,11 @@ func TestExecutionDefaultCanBeAWorkerGroup(t *testing.T) {
 		t.Fatal("a default naming a missing group was accepted")
 	}
 }
+
+func TestAntigravityNeverAdmittedToWorkerGroup(t *testing.T) {
+	f := newAccountsFixture(t)
+	group := store.StoredWorkerGroup{OwnerUserID: f.aliceID, Label: "Auto assignment", Members: []store.WorkerGroupMember{{ProviderKind: "subscription", ProviderID: "antigravity_local", Runtime: "antigravity", Model: "synthetic"}}}
+	if _, err := f.db.SaveWorkerGroup(context.Background(), group); err == nil {
+		t.Fatal("personal subscription admitted to automated group")
+	}
+}

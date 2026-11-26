@@ -246,7 +246,10 @@ export function ModelsSection({
         assistantModel: next.model ?? "",
       });
   };
-  const sources = everySource(agentProfiles, devices);
+  const eligible = agentProfiles.filter(
+    (profile) => profile.runtime !== "antigravity",
+  );
+  const sources = everySource(eligible, devices);
   return (
     <>
       <FieldHint>{t("settings.models.flowsIntro")}</FieldHint>
@@ -258,7 +261,7 @@ export function ModelsSection({
           title={t("settings.models.flows.coordinator.title")}
           value={assistant}
           onChange={(patch) => updateAssistant({ ...assistant, ...patch })}
-          sources={homeSources(agentProfiles, home?.id)}
+          sources={homeSources(eligible, home?.id)}
           defaultLabel={t("settings.models.homeDefault")}
         />
       </SettingsGroup>

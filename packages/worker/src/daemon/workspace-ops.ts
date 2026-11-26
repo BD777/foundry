@@ -214,8 +214,13 @@ export function doctor(inputPath: string | undefined): void {
       ? `paired with ${config.serverURL}`
       : "not paired; add this device from Foundry → Devices → Add device",
   );
-  for (const runtime of ["claude", "codex"] as const) {
-    const name = runtime === "claude" ? "Claude Code" : "Codex";
+  for (const runtime of ["claude", "codex", "antigravity"] as const) {
+    const name =
+      runtime === "antigravity"
+        ? "Antigravity"
+        : runtime === "claude"
+          ? "Claude Code"
+          : "Codex";
     const cli = nativeCli(runtime);
     if (!cli.installed) {
       console.log(`--  ${name} not installed. Install: ${cli.installCommand}`);
