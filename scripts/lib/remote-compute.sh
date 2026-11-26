@@ -270,8 +270,12 @@ node_ok() {
     version_ge 22 "$(node -p "process.versions.node")"
 }
 
-go_need="$(sed -n "s/^go //p" "$RC_REPO/apps/server/go.mod" 2>/dev/null | head -1)"
-[ -n "$go_need" ] || go_need=1.24.0
+# The newest go directive of the Server and the contract tools (oapi-codegen, oasdiff).
+go_need=1.24.0
+for mod in "$RC_REPO/apps/server/go.mod" "$RC_REPO"/contracts/tools/*/go.mod; do
+  want="$(sed -n "s/^go //p" "$mod" 2>/dev/null | head -1)"
+  [ -z "$want" ] || version_ge "$want" "$go_need" || go_need="$want"
+done
 go_ok() {
   command -v go >/dev/null 2>&1 &&
     version_ge "$go_need" "$(go env GOVERSION 2>/dev/null || go version | sed -E "s/^go version go([^ ]+).*/\1/")"
