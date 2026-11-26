@@ -346,8 +346,9 @@ export function residentSessions(): Array<{
 
 /**
  * Closes the agent processes and threads that hold no work (no turn, no
- * background task, no timer), of one session or of all. A busy one stays:
- * closing it would end its work. Returns the sessions that were closed.
+ * background task, no timer), of one session or of all, and releases what
+ * their runs kept for them (holdWhileAgentRuns). A busy one stays: closing
+ * it would end its work. Returns the sessions that were closed.
  */
 export function closeIdleRuntimes(sessionId?: string): string[] {
   const closed = new Set<string>();
@@ -371,6 +372,15 @@ export function closeIdleRuntimes(sessionId?: string): string[] {
       void entry.thread.close?.().catch(() => undefined);
       closed.add(entry.sessionId);
     }
+  // What their runs kept for the closed agents goes now, not at the next
+  // sweep: a session handed over runs next on another host, which writes the
+  // same profiles and tool folder (release_session answers after this).
+  if (closed.size > 0) {
+    const live = sessionsWithLiveAgent();
+    releaseAgentEnvironmentHolds(
+      (hold) => closed.has(hold.sessionId) && !live.has(hold.sessionId),
+    );
+  }
   return [...closed];
 }
 

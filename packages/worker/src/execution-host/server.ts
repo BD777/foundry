@@ -67,6 +67,7 @@ import {
   clearHostStopped,
   knownHostRoots,
   markHostRetiring,
+  otherHostRuns,
   seniorHostPresent,
 } from "./roots.js";
 import { startHostLiveness } from "./liveness.js";
@@ -151,10 +152,20 @@ export async function serveExecutionHost(
     seniorHostPresent({ root: paths.root, startedAt }, seniorDeadSince);
   const deferredFile = resolve(paths.root, "deferred-session-work.json");
   let standby = seniorLive();
-  const takeOverDeviceWork = () => {
-    standby = false;
+  // The profiles and tool folders earlier hosts made for their sessions. A
+  // retiring host still runs its sessions' agents with them (background work
+  // keeps a session there), so they are leftovers only once no other host
+  // runs: a host's own runs remove theirs.
+  let sessionLeftoversReaped = false;
+  const reapSessionLeftovers = () => {
+    if (sessionLeftoversReaped || otherHostRuns(paths.root)) return;
+    sessionLeftoversReaped = true;
     reapConnectorLeftovers(console.error);
     reapSessionTools(console.error);
+  };
+  const takeOverDeviceWork = () => {
+    standby = false;
+    reapSessionLeftovers();
     clearClaudeSettingsFiles();
     keepSessionTimers();
     startTimerRevival(serverURL);
@@ -313,6 +324,7 @@ export async function serveExecutionHost(
   const announce = () => {
     if (started) {
       if (standby && !seniorLive()) takeOverDeviceWork();
+      if (!standby) reapSessionLeftovers();
       if (retiring && !draining) closeIdleRuntimes();
       adoptStoppedHosts();
     }

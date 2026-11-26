@@ -23,6 +23,7 @@ import {
   SessionExecutionRegistry,
 } from "../dist/session/session-state.js";
 import {
+  closeIdleRuntimes,
   holdWhileAgentRuns,
   sessionHasNativeWork,
   sessionsWithNativeWork,
@@ -226,6 +227,37 @@ test("a held profile is live: a reap in its own process leaves it", async (t) =>
   assert.equal(existsSync(profileDir(paths)), true);
   runtime.close();
   sweepAgentEnvironmentHolds();
+});
+
+test("an idle agent handed over releases its profile before the next host writes it", async () => {
+  const paths = scratch();
+  activeCodexThreads.set("codex-handover", {
+    key: "codex-handover",
+    lastUsed: Date.now(),
+    sessionId: "sess_handover",
+    nativeSessionId: "thread_h",
+    thread: { isBusy: () => false, close: async () => {} },
+  });
+  try {
+    const prepared = await materializeSessionAccounts(
+      { id: "sess_handover" },
+      [material(1)],
+      paths,
+    );
+    holdWhileAgentRuns("sess_handover", prepared.release);
+    assert.equal(existsSync(profileDir(paths)), true);
+    // release_session: the retiring host closes the idle agent and answers;
+    // the newest host then writes the same profile for the next turn.
+    assert.deepEqual(closeIdleRuntimes("sess_handover"), ["sess_handover"]);
+    assert.equal(
+      existsSync(profileDir(paths)),
+      false,
+      "released with the agent, not at a later sweep",
+    );
+    assert.deepEqual(sessionExternalAccountEnvironment("sess_handover"), {});
+  } finally {
+    activeCodexThreads.delete("codex-handover");
+  }
 });
 
 test("a kept Codex app-server's own work holds the session too", () => {
