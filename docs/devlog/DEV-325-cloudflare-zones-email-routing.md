@@ -38,6 +38,8 @@
   - 目标地址是 Cloudflare 账号本人的邮箱，被直接标为 verified，不需要点验证链接；
   - 新建规则：发往 `support@blinklet.app` 的邮件转发到本人邮箱。
 
+- 2026-11-26 合入 main：PR #319（rebase 合入，按事项分提交），提交 `4b1049ad`（与 DEV-323 补丁同一提交）。dev 由合入后的 main `7600d2fc` 重新构建部署（`--label batch-20261127`，2026-11-26 20:02Z）：Server `ebf56c7b9b93`（回滚副本 `foundry-server.pre-batch-20261127`）、Web `a2886d5d717f92e0`（源码未变）、Worker `0.5.7-dev.415.g7600d2fc`。
+
 ## 验收步骤（本人）
 
 1. 在一个 Cloudflare 级别为"Read + DNS edit + Zero Trust"的工作区里，让会话运行 `cf zones list`。预期：列出这个工作区绑定的域名，不报 9109。

@@ -38,6 +38,7 @@
 
 ## 时间线
 
+- 2026-11-26 20:02Z 合入 main：PR #319（rebase 合入，按事项分提交），提交 `1c23d4f1`。dev 由合入后的 main `7600d2fc` 重新构建部署（`--label batch-20261127`，2026-11-26 20:02Z）：Server `ebf56c7b9b93`（回滚副本 `foundry-server.pre-batch-20261127`）、Web `a2886d5d717f92e0`（源码未变）、Worker `0.5.7-dev.415.g7600d2fc`。
 - 2026-11-25 04:15Z 调查定位（证据见“调查”）。
 - 2026-11-25 04:22Z 部署 dev：`deploy-dev.sh --prebuilt /tmp/dev333-build --label dev333 --worker`（回滚：`release.json.pre-dev333`）。`update_worker` 已更新 byte-dev、CanWendeMac-mini、sg-chaos，三台都报告 `…1795580477`。
 - 2026-11-25 04:23Z byte-dev 实机核对：新宿主 `27327456d59c`（修复版，pid 1820467）04:22:26 启动；旧宿主 `154c51db3e47`（dev.403，retiring）仍在运行 `sess_1795423194895939999`。该会话的 `foundry-7a3ec9ed-…-48670c76ac` profile 与清单条目在切换后 45 s 仍在，会话 04:22 之后没有错误事件。旧宿主退出后残留清理是否正常，待下次切换后补验。人工验收待确认。
