@@ -123,6 +123,10 @@ App Store Connect 团队密钥原来只能在 Web 的 Connectors 页录入和绑
 - **测试**：新增 `TestAppStoreConnectGatewayReadsBuildsOfTheBoundApp`。`go test ./internal/connectors/` 和 `go vet` 通过。
 - **部署与线上验证**：Server `466338ca42c7`（`--label asc-builds-read`，2026-11-22 16:16Z）。blinklet 会话 `sess_1795367018319725666` 读取 `GET /apps/6837762590/builds` 返回 200，目前还没有构建。中间几次验证失败，与本改动无关：Mac mini 到 NAS 的 SMB 共享卡死，见 roadmap WS-2。
 
+### 2026-11-26：合入
+
+- 2026-11-21 至 11-22 的补丁经 PR #319 合入 main（rebase 合入，按事项分提交；提交 `4b1049ad`，与 DEV-325 同一）。dev 由合入后的 main `7600d2fc` 重新构建部署（`--label batch-20261127`，2026-11-26 20:02Z）：Server `ebf56c7b9b93`（回滚副本 `foundry-server.pre-batch-20261127`）、Web `a2886d5d717f92e0`（源码未变）、Worker `0.5.7-dev.415.g7600d2fc`。
+
 ## 验收步骤（本人）
 
 1. 在会话里让 Agent 用 `connector_instances`（`kind: appstoreconnect`、`action: list`）列出密钥。预期：列出与 Connectors 页相同的密钥，不显示私钥内容。

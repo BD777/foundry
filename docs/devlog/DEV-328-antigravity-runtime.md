@@ -96,6 +96,10 @@
 - Mac 远程测试报「Cannot identify runtime lease owner」：远程计算作业里 `/bin/ps` 读不到进程启动时间，属于测试环境问题。真实回合与 Claude/Codex 走同一个 `acquireRuntime`，Codex 在 Mac 上正常。
 - 部署 `--label dev328d`，只换 Worker：`0.5.7-dev.409.gc276f3e9.local.1795614842`。与线上 dev333 的包相比只有 `antigravity-turn.js` 不同，protocol 包一致。
 
+## 合入（2026-11-26）
+
+- 合入 main：PR #319（rebase 合入，按事项分提交），提交 `82e1255d`。dev 由合入后的 main `7600d2fc` 重新构建部署（`--label batch-20261127`，2026-11-26 20:02Z）：Server `ebf56c7b9b93`（回滚副本 `foundry-server.pre-batch-20261127`）、Web `a2886d5d717f92e0`（源码未变）、Worker `0.5.7-dev.415.g7600d2fc`。
+
 ## 未完成
 
 - 登录后的真实对话、工具审批、续接和 Worker 重启：等本人登录订阅后验收。
