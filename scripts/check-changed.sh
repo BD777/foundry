@@ -62,6 +62,8 @@ if [ $files_given -eq 1 ]; then
     printf '%s\n' ${explicit_files[@]+"${explicit_files[@]}"} | grep . | sort -u
   )
 else
+  git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1 ||
+    { echo "check-changed: $root has no git commit $base to diff against; pass --files" >&2; exit 2; }
   scope="changed files against $base"
   changed=()
   while IFS= read -r file; do changed+=("$file"); done < <(
