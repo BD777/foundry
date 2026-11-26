@@ -371,6 +371,14 @@ func (f *cloudflareZeroTrustFixture) answer(t *testing.T, w http.ResponseWriter,
 			ingress = []any{map[string]any{"hostname": "fixture.invalid", "path": "/lan", "service": "http://127.0.0.1:8080"}, map[string]any{"service": "http_status:404"}}
 		}
 		respond(map[string]any{"config": map[string]any{"ingress": ingress}})
+	case call.Method == "GET" && call.Path == "/zones/"+cfZone+"/email/routing":
+		respond(map[string]any{"enabled": false, "name": "fixture.invalid"})
+	case call.Method == "POST" && call.Path == "/zones/"+cfZone+"/email/routing/dns":
+		respond(map[string]any{"enabled": true})
+	case call.Method == "POST" && call.Path == "/zones/"+cfZone+"/email/routing/rules":
+		respond(map[string]any{"id": "rule-1", "matchers": call.Body["matchers"]})
+	case call.Method == "POST" && call.Path == "/accounts/"+cfAccount+"/email/routing/addresses":
+		respond(map[string]any{"id": "address-1", "email": call.Body["email"], "verified": nil})
 	default:
 		fail(1000, "unexpected upstream call "+call.Method+" "+call.Path)
 	}
@@ -432,4 +440,56 @@ func stringMapValues(values map[string]any) []string {
 		out = append(out, key+"="+string(raw))
 	}
 	return out
+}
+
+func TestCloudflareZeroTrustListsOnlyBoundZonesAndRoutesEmail(t *testing.T) {
+	f := newCloudflareZeroTrustFixture(t, false, false, false)
+	call := func(method, path string, body any) ([]byte, error) {
+		var raw json.RawMessage
+		if body != nil {
+			raw, _ = json.Marshal(body)
+		}
+		return callGateway(f.gateway, f.handle, f.session.DeviceID, "alice", method, path, nil, raw)
+	}
+	// At zero_trust the holdings also name the zone's account; /zones lists
+	// the bound zones only, never /zones/<account>.
+	listed, err := call("GET", "/zones", nil)
+	if err != nil || !strings.Contains(string(listed), `"total_count":1`) || !strings.Contains(string(listed), "fixture.invalid") {
+		t.Fatalf("GET /zones at zero_trust: %s %v", listed, err)
+	}
+	if f.firstCall("GET", "/zones/"+cfAccount) != nil {
+		t.Fatal("GET /zones read the account id as a zone")
+	}
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{"GET", "/zones/" + cfZone + "/email/routing", nil},
+		{"POST", "/zones/" + cfZone + "/email/routing/dns", map[string]any{}},
+		{"POST", "/zones/" + cfZone + "/email/routing/rules", map[string]any{"matchers": []any{map[string]any{"type": "literal", "field": "to", "value": "support@fixture.invalid"}}, "actions": []any{map[string]any{"type": "forward", "value": []any{"owner@example.invalid"}}}}},
+		{"POST", "/accounts/" + cfAccount + "/email/routing/addresses", map[string]any{"email": "owner@example.invalid"}},
+	} {
+		if body, err := call(tc.method, tc.path, tc.body); err != nil {
+			t.Fatalf("zero_trust %s %s: %s %v", tc.method, tc.path, body, err)
+		}
+	}
+	if err := f.st.SetExternalAccountBindingAccess(context.Background(), "workspace-a", f.account.ID, "alice", externalaccounts.CloudflareAccessDNSEdit); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := call("POST", "/zones/"+cfZone+"/email/routing/rules", map[string]any{"matchers": []any{}}); err != nil {
+		t.Fatalf("dns_edit email rule: %s %v", body, err)
+	}
+	var refusal *CloudflareRefusal
+	if _, err := call("POST", "/accounts/"+cfAccount+"/email/routing/addresses", map[string]any{"email": "owner@example.invalid"}); !errors.As(err, &refusal) || refusal.Reason != RefusalAccessLevel {
+		t.Fatalf("dns_edit added a destination address: %v", err)
+	}
+	if err := f.st.SetExternalAccountBindingAccess(context.Background(), "workspace-a", f.account.ID, "alice", externalaccounts.CloudflareAccessRead); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := call("GET", "/zones/"+cfZone+"/email/routing", nil); err != nil {
+		t.Fatalf("read email routing: %v", err)
+	}
+	if _, err := call("POST", "/zones/"+cfZone+"/email/routing/dns", map[string]any{}); !errors.As(err, &refusal) || refusal.Reason != RefusalAccessLevel {
+		t.Fatalf("read level enabled email routing: %v", err)
+	}
 }

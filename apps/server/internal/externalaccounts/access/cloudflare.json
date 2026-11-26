@@ -4,9 +4,9 @@
       "name": "read",
       "label": "Read",
       "labels": { "zh-CN": "只读" },
-      "description": "Reads the selected zones: zone details, DNS records, SSL and certificate metadata, subscription, page rules, Workers routes and the cache ruleset. Changes nothing, and does not reach account-level Zero Trust (Access, Tunnel). Choose it when sessions only need to look things up.",
+      "description": "Reads the selected zones: zone details, DNS records, SSL and certificate metadata, subscription, page rules, Workers routes, the cache ruleset and Email Routing settings and rules. Changes nothing, and does not reach account-level Zero Trust (Access, Tunnel). Choose it when sessions only need to look things up.",
       "descriptions": {
-        "zh-CN": "读取所选域名：域名详情、DNS 记录、SSL 与证书信息、订阅、Page Rules、Workers 路由和缓存规则。不做任何修改，也读不到账号级的 Zero Trust（Access、Tunnel）。会话只需要查询时选这一档。"
+        "zh-CN": "读取所选域名：域名详情、DNS 记录、SSL 与证书信息、订阅、Page Rules、Workers 路由、缓存规则，以及邮件转发（Email Routing）的设置和规则。不做任何修改，也读不到账号级的 Zero Trust（Access、Tunnel）。会话只需要查询时选这一档。"
       }
     },
     {
@@ -14,9 +14,9 @@
       "scopes": ["dns.write"],
       "label": "Read + DNS edit",
       "labels": { "zh-CN": "只读 + DNS 编辑" },
-      "description": "Also creates, updates and deletes DNS records in the selected zones, such as A, CNAME or ACME TXT records. Still no Access or Tunnel. Each change is listed under Activity on the identity.",
+      "description": "Also creates, updates and deletes DNS records in the selected zones, such as A, CNAME or ACME TXT records, and turns on Email Routing and changes its forwarding rules. Still no Access or Tunnel. Each change is listed under Activity on the identity.",
       "descriptions": {
-        "zh-CN": "在只读之外，还可在所选域名中新建、修改、删除 DNS 记录，例如 A、CNAME 或 ACME TXT 验证记录。仍然碰不到 Access 和 Tunnel。每次修改都列在身份的“活动”中。"
+        "zh-CN": "在只读之外，还可在所选域名中新建、修改、删除 DNS 记录，例如 A、CNAME 或 ACME TXT 验证记录；还可开启邮件转发并修改转发规则。仍然碰不到 Access 和 Tunnel。每次修改都列在身份的“活动”中。"
       },
       "grantHint": "Allow Zone > DNS: Edit when re-authorizing.",
       "grantHints": { "zh-CN": "重新授权时允许 Zone > DNS: Edit。" }
@@ -39,9 +39,9 @@
       ],
       "label": "Read + DNS edit + Zero Trust",
       "labels": { "zh-CN": "只读 + DNS 编辑 + Zero Trust" },
-      "description": "Also works on the Cloudflare accounts of the selected zones: reads Access applications, policies and service tokens, and Tunnels with their connections and ingress; creates and updates Access applications and policies, creates and deletes service tokens, and updates a Tunnel's ingress (public hostnames). It cannot create a Bypass policy, or create or delete a Tunnel. Choose it to diagnose a Tunnel (such as Error 1033) or to let sessions change a public hostname. Each change is listed under Activity.",
+      "description": "Also works on the Cloudflare accounts of the selected zones: reads Access applications, policies and service tokens, and Tunnels with their connections and ingress; creates and updates Access applications and policies, creates and deletes service tokens, updates a Tunnel's ingress (public hostnames), and adds Email Routing destination addresses (each one is verified by its owner before mail is forwarded). It cannot create a Bypass policy, or create or delete a Tunnel. Choose it to diagnose a Tunnel (such as Error 1033) or to let sessions change a public hostname. Each change is listed under Activity.",
       "descriptions": {
-        "zh-CN": "还可操作所选域名所属的 Cloudflare 账号：读取 Access 应用、策略、服务令牌，以及 Tunnel 的详情、连接状态和 ingress；创建和更新 Access 应用与策略，创建和删除服务令牌，更新 Tunnel 的 ingress（Public Hostname）。不能创建 Bypass 策略，也不能新建或删除 Tunnel。要排查 Tunnel（例如 Error 1033）或让会话修改 Public Hostname 时选这一档。每次修改都列在“活动”中。"
+        "zh-CN": "还可操作所选域名所属的 Cloudflare 账号：读取 Access 应用、策略、服务令牌，以及 Tunnel 的详情、连接状态和 ingress；创建和更新 Access 应用与策略，创建和删除服务令牌，更新 Tunnel 的 ingress（Public Hostname），添加邮件转发的目标地址（目标邮箱的主人点验证链接后才会转发）。不能创建 Bypass 策略，也不能新建或删除 Tunnel。要排查 Tunnel（例如 Error 1033）或让会话修改 Public Hostname 时选这一档。每次修改都列在“活动”中。"
       },
       "grantHint": "Allow Account > Access: Apps and Policies Edit, Access: Service Tokens Edit and Cloudflare Tunnel Edit, plus Zone > DNS: Edit, when re-authorizing.",
       "grantHints": {
@@ -216,6 +216,62 @@
       "path": "/accounts/{account}/cfd_tunnel/{id}/configurations",
       "level": "zero_trust",
       "action": "tunnel_ingress_update"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/email/routing",
+      "level": "read"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/email/routing/dns",
+      "level": "read"
+    },
+    {
+      "methods": ["POST"],
+      "path": "/zones/{zone}/email/routing/dns",
+      "level": "dns_edit",
+      "action": "email_routing"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/email/routing/rules",
+      "level": "read",
+      "query": ["page", "per_page", "enabled"]
+    },
+    {
+      "methods": ["POST"],
+      "path": "/zones/{zone}/email/routing/rules",
+      "level": "dns_edit",
+      "action": "email_routing"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/zones/{zone}/email/routing/rules/{id}",
+      "level": "read"
+    },
+    {
+      "methods": ["PUT", "DELETE"],
+      "path": "/zones/{zone}/email/routing/rules/{id}",
+      "level": "dns_edit",
+      "action": "email_routing"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/email/routing/addresses",
+      "level": "zero_trust",
+      "query": ["page", "per_page", "verified", "direction", "order"]
+    },
+    {
+      "methods": ["POST"],
+      "path": "/accounts/{account}/email/routing/addresses",
+      "level": "zero_trust",
+      "action": "email_routing_address"
+    },
+    {
+      "methods": ["GET"],
+      "path": "/accounts/{account}/email/routing/addresses/{id}",
+      "level": "zero_trust"
     }
   ]
 }

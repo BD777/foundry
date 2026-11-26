@@ -13,6 +13,9 @@
 2026-11-19 Server：[DEV-323 会话可经 MCP（`connector_instances`）录入和绑定 App Store Connect 团队密钥](DEV-323-appstoreconnect-mcp-instances.md)（asc-mcp-train，train 105/106 沿用）。
 2026-11-19 脚本：[DEV-321 PA 路由评测：在线夹具设备（假运行时）、工具级派发评分、`--repeat` 与 `--resume` 运行日志、每个 stack 共享缓存、磁盘暂停；3× 基线不完整](DEV-321-pa-eval-online-fixtures.md)（不涉及部署）。
 2026-11-19 Worker + Server：[DEV-320 worker 原生对话扫描不再每轮重算指纹、不读服务端不收的对话的 transcript、重启不再重读所有日志开头；按规则清理旧会话 SDK 日志、闲置 verifier、闲置 compute scratch](DEV-320-worker-scan-cost-and-retention.md)（train 102）。
+2026-11-22 Server：[DEV-325 Cloudflare 网关：Zero Trust 级别下 `/zones` 列表把账号 ID 当成域名 ID 而报 502；开放邮件转发（Email Routing）路由](DEV-325-cloudflare-zones-email-routing.md)。
+2026-11-22 Server：[DEV-323 补：ASC 网关开放商店页编辑（新级别 listing：多语言名称、描述、关键词、截图；仍不放行改价格与提交审核）](DEV-323-appstoreconnect-mcp-instances.md)。
+2026-11-21 Server：[DEV-323 补：ASC 网关放行已绑定 App 下的只读子集合（订阅组），blinklet 实际接入并在线上复验](DEV-323-appstoreconnect-mcp-instances.md)（dev Server 4d62370c7719）。
 2026-11-19 Worker：[DEV-319 Worker 每轮巡检的文件系统开销；remote-build 不再在设备上留作业](DEV-319-worker-io-and-build-disk.md)（train 101）。
 2026-11-19 Server + Worker：[DEV-318 有别人在场的通道对话卡在本人或失败时不发文字，只加表情（描述文件声明 react），细节经通知卡片发给本人](DEV-318-channel-react.md)（train 100）。
 2026-11-19 Server + Web + Worker：[DEV-316 Codex 思考强度按每个模型的官方目录列出全部档位（不再写死 minimal…xhigh）](DEV-316-codex-efforts.md)（train 97）。
